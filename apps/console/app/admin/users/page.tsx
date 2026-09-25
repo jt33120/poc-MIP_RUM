@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
-import { popSecret } from "@/lib/auth";
+import { FormulaireSecret, SecretAffiche } from "@/components/secret/SecretUnique";
 import { chargerComptes } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
@@ -20,10 +20,6 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/administration.ts`) : l'administrateur de la plateforme seul (C9).
   const { comptes: users } = accesAdmin(await chargerEcran(chargerComptes, {}));
-  // mot de passe généré : consommé du stash, affiché une seule fois
-  const pwt = typeof sp.pwt === "string" ? sp.pwt : null;
-  const pwe = typeof sp.pwe === "string" ? sp.pwe : null;
-  const oneTime = pwt ? popSecret(pwt) : null;
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : null;
   // arrivée depuis le wizard client : préremplit un viewer scopé sur l'app
   const prefillApp = typeof sp.app === "string" ? sp.app : null;
@@ -46,35 +42,21 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
         </div>
       )}
 
-      {pwe && (
-        <div
-          data-testid="one-time-password"
-          className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
-        >
-          {oneTime ? (
-            <>
-              Mot de passe de <strong>{decodeURIComponent(pwe)}</strong> (affiché une seule fois,
-              note-le maintenant) :{" "}
-              <code
-                data-testid="generated-password"
-                className="rounded bg-panel px-2 py-0.5 font-mono text-ink"
-              >
-                {oneTime}
-              </code>
-            </>
-          ) : (
-            <>Mot de passe de {decodeURIComponent(pwe)} déjà affiché — utilise « Reset mdp » si besoin.</>
-          )}
-        </div>
-      )}
+      {/* Le mot de passe généré (création ou réinitialisation) : rendu au formulaire
+          par l'action, affiché une seule fois (C9c). */}
+      <SecretAffiche
+        nom="mot-de-passe"
+        testid="one-time-password"
+        testidValeur="generated-password"
+        className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
+        codeClassName="rounded bg-panel px-2 py-0.5 font-mono text-ink"
+        prefixe="Mot de passe de"
+        suffixe="(affiché une seule fois, note-le maintenant) :"
+      />
 
       <div className="card mb-8 p-4">
         <h2 className="mb-3 text-sm font-semibold text-ink-soft">Créer un utilisateur</h2>
-        <form
-          action={createUserAction}
-          data-testid="create-user-form"
-          className="flex flex-wrap items-end gap-3"
-        >
+        <FormulaireSecret action={createUserAction} testid="create-user-form" className="flex flex-wrap items-end gap-3">
           <label className="text-xs font-medium text-ink-soft">
             Email
             <input
@@ -105,7 +87,7 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
           <button type="submit" className="btn-accent">
             Créer (mot de passe généré)
           </button>
-        </form>
+        </FormulaireSecret>
       </div>
 
       <div className="card overflow-hidden">
@@ -161,12 +143,12 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
                         {u.active ? "Désactiver" : "Activer"}
                       </button>
                     </form>
-                    <form action={resetPasswordAction} data-testid={`reset-${u.email}`}>
+                    <FormulaireSecret action={resetPasswordAction} testid={`reset-${u.email}`}>
                       <input type="hidden" name="email" value={u.email} />
                       <button type="submit" className="btn-ghost px-2 py-1">
                         Reset mdp
                       </button>
-                    </form>
+                    </FormulaireSecret>
                   </div>
                 </td>
               </tr>

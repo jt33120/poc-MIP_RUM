@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FormulaireSecret } from "@/components/secret/SecretUnique";
 import { chargerClients } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
@@ -44,7 +45,8 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
       {creation && (
       <div className="mb-8 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold text-slate-700">Ajouter un client</h2>
-        <form action={createCustomerAction} data-testid="create-customer-form" className="grid max-w-3xl gap-3">
+        {/* La clé générée est rendue au formulaire, qui l'affiche sur la fiche de l'application (C9c). */}
+        <FormulaireSecret action={createCustomerAction} testid="create-customer-form" className="grid max-w-3xl gap-3">
           <div className="flex flex-wrap gap-3">
             <label className="text-xs font-medium text-slate-600">
               Nom de l&apos;application
@@ -105,7 +107,7 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
               Créer le client (clé d&apos;API générée)
             </button>
           </div>
-        </form>
+        </FormulaireSecret>
       </div>
       )}
 

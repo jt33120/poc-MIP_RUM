@@ -4,17 +4,17 @@
 // (`lib/commandes/applications.ts`) : créer une application revient à
 // l'administrateur de la PLATEFORME ; la gérer, à l'administrateur de CETTE
 // application. La clé d'ingestion est générée, hachée (sha256) et rendue UNE fois
-// par la commande ; ici, son affichage unique (stash mémoire, même mécanique que
-// les mots de passe de /admin/users).
+// par la commande, puis rendue au formulaire (`useActionState`, C9c), qui l'affiche
+// sur la fiche de l'application.
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { stashSecret } from "@/lib/auth";
 import { executerCommande } from "@/lib/commande-locale";
 import { apresRefus } from "@/lib/commande-suite";
+import { cleDe, type SecretRemis } from "@/lib/secret-remis";
 
 const champ = (fd: FormData, nom: string) => String(fd.get(nom) ?? "").trim();
 
-export async function createCustomerAction(fd: FormData): Promise<void> {
+export async function createCustomerAction(_precedent: SecretRemis, fd: FormData): Promise<SecretRemis> {
   const clientId = champ(fd, "client_id");
   const notes = champ(fd, "notes");
   const r = await executerCommande("creerApplication", {
@@ -34,16 +34,16 @@ export async function createCustomerAction(fd: FormData): Promise<void> {
   if (d.etat === "refus") redirect(`/admin/customers?error=${d.champ}${"detail" in d && d.detail ? `&detail=${encodeURIComponent(d.detail)}` : ""}`);
   if (d.etat === "existe") redirect("/admin/customers?error=exists");
   revalidatePath("/admin/customers");
-  if (d.etat === "cree") redirect(`/admin/customers/${d.app}?kt=${stashSecret(d.cle)}`);
+  return d.etat === "cree" ? { nom: cleDe(d.app), valeur: d.cle, pour: d.app, aller: `/admin/customers/${d.app}` } : null;
 }
 
-export async function rotateKeyAction(fd: FormData): Promise<void> {
+export async function rotateKeyAction(_precedent: SecretRemis, fd: FormData): Promise<SecretRemis> {
   const appId = champ(fd, "app_id");
   const r = await executerCommande("renouvelerCle", { app: appId });
   if (!r.ok) apresRefus(r);
   if (!r.ok || r.data.etat !== "ok") redirect("/admin/customers?error=unknown");
   revalidatePath(`/admin/customers/${appId}`);
-  redirect(`/admin/customers/${appId}?kt=${stashSecret(r.data.cle)}`);
+  return { nom: cleDe(appId), valeur: r.data.cle, pour: appId };
 }
 
 /** Le formulaire porte l'état VOULU (`active`), pas un « inverser ». */

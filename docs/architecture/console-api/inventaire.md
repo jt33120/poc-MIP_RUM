@@ -13,7 +13,7 @@
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
 | Modules `lib/queries*.ts` | 45 (208 fonctions exportées) | — |
-| Sections `lire()` (appels) | 276 | — |
+| Sections `lire()` (appels) | 278 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 4 / 0 | — |
 | Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 53 | — |
 | Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 47 | **47** / 50 |

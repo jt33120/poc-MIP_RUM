@@ -9,21 +9,24 @@ import Link from "next/link";
 import { CopyBlock } from "@/components/CopyBlock";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { Bookmarklet } from "@/components/onboarding/Bookmarklet";
 import { OnboardingPoll } from "@/components/OnboardingPoll";
+import { CodeAvecSecret, FormulaireSecret, SecretAffiche, SecretFourni } from "@/components/secret/SecretUnique";
 import { WizardBadge } from "@/components/wizard/WizardStep";
 import { ingestEndpoint } from "@/lib/ingest-endpoint";
-import { popSecret } from "@/lib/auth";
 import { chargerNouveauSite } from "@/lib/chargeurs/projets";
 import { chargerEcran } from "@/lib/ecran-local";
 import { fmtDate } from "@/lib/format";
 import { buildSnippet, deriveStatus } from "@/lib/onboarding";
+import { cleDe } from "@/lib/secret-remis";
 import type { SearchParams } from "@/lib/filters";
 import type { Fil } from "@mip/console-contract";
 import { selectProjectAction } from "../actions";
 import { createSiteAction } from "./actions";
 
 export const dynamic = "force-dynamic";
+
+/** Le repère de la clé d'API dans un code à copier, tant qu'elle n'a pas été remise. */
+const REPERE_CLE = "COLLE_ICI_LA_CLE_API";
 
 const ERRORS: Record<string, string> = {
   name: "Donnez un nom à l'application.",
@@ -85,7 +88,7 @@ export default async function AddSite({ searchParams }: { searchParams: Promise<
         </header>
 
         {ecran.etat === "integration" ? (
-          <Integration ecran={ecran} ktToken={typeof sp.kt === "string" ? sp.kt : null} />
+          <Integration ecran={ecran} />
         ) : (
           <CreateForm error={typeof sp.error === "string" ? sp.error : null} />
         )}
@@ -111,7 +114,8 @@ function CreateForm({ error }: { error: string | null }) {
         </div>
       )}
 
-      <form action={createSiteAction} className="mt-6 grid gap-4">
+      {/* La clé générée est rendue au formulaire, qui la remet à l'étape 2 (C9c). */}
+      <FormulaireSecret action={createSiteAction} className="mt-6 grid gap-4">
         <label className="text-sm font-medium text-ink-soft">
           Nom de l&apos;application
           <input name="name" required autoFocus placeholder="Ma boutique" className="field mt-1 w-full" />
@@ -189,7 +193,7 @@ function CreateForm({ error }: { error: string | null }) {
         <button type="submit" className="btn-accent mt-1 w-fit px-4 py-2">
           Créer le projet →
         </button>
-      </form>
+      </FormulaireSecret>
     </>
   );
 }
@@ -197,16 +201,17 @@ function CreateForm({ error }: { error: string | null }) {
 /** Étape 2 — configuration selon le mode + simulation + checklist live. */
 async function Integration({
   ecran,
-  ktToken,
 }: {
   ecran: Extract<Fil<Awaited<ReturnType<typeof chargerNouveauSite>>>, { etat: "integration" }>;
-  ktToken: string | null;
 }) {
   // Domaines observés par l'extension (dérivés des origines CORS de l'app), avec
   // leur statut réel dans le registre extension_scope : lus par le chargeur.
   const { app: appId, mode, client: customer, sonde: probe, domaines: extensionDomains } = ecran;
   const status = deriveStatus(probe);
-  const oneTimeKey = ktToken ? popSecret(ktToken) : null;
+  // La clé d'API, juste après la création : rendue au formulaire de l'étape 1 et
+  // remise ici (C9c) — le bandeau l'affiche, le bookmarklet et la commande de
+  // l'agent la portent à la place de leur repère. Sinon, le repère reste.
+  const nomCle = cleDe(appId);
 
   const host = (await headers()).get("host") ?? "localhost:3000";
   const proto = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
@@ -216,9 +221,9 @@ async function Integration({
   const snippet = buildSnippet({ sdkUrl, endpoint, appId, clientId: null, withConsent: false });
   // Bookmarklet : injecte le SDK sur la page courante puis démarre la mesure —
   // pour monitorer/simuler un parcours sur un site qu'on ne contrôle pas. La clé
-  // est embarquée (l'enforcement l'exige) : la vraie si on l'a encore sous la
-  // main (juste après création), sinon un placeholder à remplacer.
-  const bmKey = oneTimeKey ?? "COLLE_ICI_LA_CLE_API";
+  // est embarquée (l'enforcement l'exige) : la vraie si elle vient d'être remise
+  // (juste après création), sinon un placeholder à remplacer.
+  const bmKey = REPERE_CLE;
   const bookmarklet =
     `javascript:(function(){var s=document.createElement('script');s.src=${JSON.stringify(sdkUrl)};` +
     `s.onload=function(){window.MIPRum&&MIPRum.init({endpoint:${JSON.stringify(endpoint)},` +
@@ -229,11 +234,11 @@ async function Integration({
   // backend »). C'est la « démo qui vend », désormais accessible dès le self-service.
   const agentCmd =
     `MIP_RUM_ENDPOINT=${JSON.stringify(endpoint)} MIP_RUM_APP_ID=${JSON.stringify(appId)} ` +
-    `MIP_RUM_API_KEY=${JSON.stringify(oneTimeKey ?? "COLLE_ICI_LA_CLE_API")} \\\n  ` +
+    `MIP_RUM_API_KEY=${JSON.stringify(REPERE_CLE)} \\\n  ` +
     `node -r @mip/agent-node/register app.js`;
 
   return (
-    <>
+    <SecretFourni nom={nomCle}>
       <div className="flex items-center gap-2">
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-good/15 text-good-ink">✓</span>
         <h1 className="text-2xl font-bold tracking-tight text-ink">{customer.name} est créé</h1>
@@ -249,21 +254,20 @@ async function Integration({
         </Link>
       </p>
 
-      {ktToken && (
-        <div className="mt-5 rounded-lg border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-ink">
-          {oneTimeKey ? (
-            <>
-              <strong>Clé d&apos;API</strong> (affichée une seule fois) :{" "}
-              <code className="rounded bg-panel px-2 py-0.5 font-mono text-ink">{oneTimeKey}</code>
-              <span className="mt-1 block text-xs text-ink-soft">
-                Déjà incluse dans le snippet ci-dessous. Notez-la pour instrumenter un backend plus tard.
-              </span>
-            </>
-          ) : (
-            <>Clé déjà affichée. Régénérez-la depuis l&apos;administration si elle est perdue.</>
-          )}
-        </div>
-      )}
+      <SecretAffiche
+        nom={nomCle}
+        testid="one-time-key"
+        testidValeur="generated-key"
+        className="mt-5 rounded-lg border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-ink"
+        codeClassName="rounded bg-panel px-2 py-0.5 font-mono text-ink"
+        prefixe="Clé d'API de"
+        suffixe="(affichée une seule fois) :"
+        note={
+          <span className="mt-1 block text-xs text-ink-soft">
+            Déjà incluse dans le bookmarklet et la commande de l&apos;agent ci-dessous. Notez-la pour la suite.
+          </span>
+        }
+      />
 
       {mode === "extension" ? (
         <ExtensionConfig
@@ -302,15 +306,15 @@ async function Integration({
               <code className="chip-mono">{appId}</code>.
             </p>
             <div className="mt-3">
-              <Bookmarklet code={bookmarklet} label={`Monitorer ${appId}`} />
+              <CodeAvecSecret nom={nomCle} code={bookmarklet} repere={REPERE_CLE} rendu="bookmarklet" label={`Monitorer ${appId}`} />
             </div>
             <details className="mt-3 text-xs">
               <summary className="cursor-pointer font-medium text-ink-soft">Voir le code / limites</summary>
               <div className="mt-2 grid gap-2 text-ink-soft">
-                <CopyBlock code={bookmarklet} />
+                <CodeAvecSecret nom={nomCle} code={bookmarklet} repere={REPERE_CLE} rendu="copie" />
                 <p className="text-ink-faint">
                   Créez un favori manuellement et collez ce code comme URL si le glisser-déposer n&apos;est pas
-                  possible. {!oneTimeKey && <>Remplacez <code>COLLE_ICI_LA_CLE_API</code> par la clé du projet. </>}
+                  possible. Sans la clé affichée ci-dessus, remplacez <code>{REPERE_CLE}</code> par la clé du projet.{" "}
                   Une application à <strong>CSP stricte</strong> peut bloquer l&apos;injection : dans ce cas,
                   utilisez la méthode 1 (ou le mode extension). C&apos;est une mesure <strong>temporaire</strong>{" "}
                   (le temps de l&apos;onglet), parfaite pour tester ; l&apos;injection JS est le mode permanent.
@@ -343,7 +347,7 @@ async function Integration({
           changement de code —
         </p>
         <div className="mt-3">
-          <CopyBlock code={agentCmd} />
+          <CodeAvecSecret nom={nomCle} code={agentCmd} repere={REPERE_CLE} rendu="copie" />
         </div>
         <p className="mt-2 text-xs text-ink-faint">
           Autres stacks (FastAPI, Express, agent OpenTelemetry standard) : voir{" "}
@@ -388,7 +392,7 @@ async function Integration({
           Superviser ce projet →
         </button>
       </form>
-    </>
+    </SecretFourni>
   );
 }
 

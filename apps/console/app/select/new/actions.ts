@@ -4,13 +4,14 @@
 // /admin/customers — application, clé hachée, et en mode extension le domaine —
 // avec un formulaire minimal (nom + URL ; l'identifiant dérivé du nom, l'origine
 // CORS de l'URL), en une transaction. Administrateur de la plateforme, audité. Ici :
-// le formulaire, et l'affichage unique de la clé (stash mémoire).
+// le formulaire ; la clé est rendue au formulaire (`useActionState`, C9c), qui la
+// remet à l'étape 2 (bandeau, bookmarklet, commande de l'agent).
 import { redirect } from "next/navigation";
-import { stashSecret } from "@/lib/auth";
 import { executerCommande } from "@/lib/commande-locale";
 import { apresRefus } from "@/lib/commande-suite";
+import { cleDe, type SecretRemis } from "@/lib/secret-remis";
 
-export async function createSiteAction(fd: FormData): Promise<void> {
+export async function createSiteAction(_precedent: SecretRemis, fd: FormData): Promise<SecretRemis> {
   const rawId = String(fd.get("app_id") ?? "").trim();
   // Mode de collecte choisi à l'étape 1 : 'sdk' (injection JS) | 'extension'.
   const mode = String(fd.get("mode") ?? "sdk") === "extension" ? "extension" : "sdk";
@@ -24,5 +25,7 @@ export async function createSiteAction(fd: FormData): Promise<void> {
   const d = r.data;
   if (d.etat === "refus") redirect(`/select/new?error=${d.champ}`);
   if (d.etat === "existe") redirect("/select/new?error=exists");
-  if (d.etat === "cree") redirect(`/select/new?app=${encodeURIComponent(d.app)}&kt=${stashSecret(d.cle)}&mode=${d.mode}`);
+  return d.etat === "cree"
+    ? { nom: cleDe(d.app), valeur: d.cle, pour: d.app, aller: `/select/new?app=${encodeURIComponent(d.app)}&mode=${d.mode}` }
+    : null;
 }
