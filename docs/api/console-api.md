@@ -34,6 +34,10 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `alerts.createRule` | `POST /v1/alert-rules` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `alert_rule.create` |
 | `alerts.updateRule` | `PUT /v1/alert-rules/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `alert_rule.update` |
 | `alerts.setRuleActive` | `PUT /v1/alert-rules/{id}/active` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `alert_rule.set_active` |
+| `apps.setActive` | `PUT /v1/app/active` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `app.set_active` |
+| `apps.rotateKey` | `POST /v1/app/key-rotations` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `app.rotate_key` |
+| `apps.updateOrigins` | `PUT /v1/app/origins` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `app.update_origins` |
+| `apps.create` | `POST /v1/apps` | administrateur de la plateforme | — | **refusée** | exigé | `app.create` |
 | `auth.demo` | `POST /v1/auth/demo-sessions` | aucune session | — | **refusée** | exigé | `auth.demo` |
 | `auth.methods` | `GET /v1/auth/methods` | aucune session | — | lecture | exigé | — |
 | `auth.oidc` | `POST /v1/auth/oidc-sessions` | aucune session | — | **refusée** | exigé | `auth.oidc` |
@@ -53,6 +57,9 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `dashboards.moveWidget` | `POST /v1/dashboards/{id}/widgets/{index}/moves` | session | — | **refusée** | exigé | exemptée : édition des cartes d'un tableau (ajouter, retirer, ranger, régler) : gestes fréquents, sans effet sur qui lit quoi ; la révision du tableau refuse toute écriture fondée sur une lecture dépassée |
 | `dashboards.cloneTemplate` | `POST /v1/dashboards/templates/{modele}/clones` | session | — | **refusée** | exigé | `dashboard.clone_template` |
 | `errors.setStatus` | `PUT /v1/errors/{fingerprint}/status` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `error.set_status` |
+| `extensionInstalls.forget` | `DELETE /v1/extension-installs/{installId}` | administrateur de la plateforme | — | **refusée** | exigé | `extension_install.forget` |
+| `extensionScopes.create` | `POST /v1/extension-scopes` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `extension_scope.create` |
+| `extensionScopes.setActive` | `PUT /v1/extension-scopes/{id}/active` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `extension_scope.set_active` |
 | `goals.create` | `POST /v1/goals` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `goal.create` |
 | `goals.delete` | `DELETE /v1/goals/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `goal.delete` |
 | `goals.update` | `PATCH /v1/goals/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `goal.update` |
@@ -61,10 +68,14 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `issues.requestTicket` | `POST /v1/issues/{id}/tickets` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.request_ticket` |
 | `issues.triage` | `POST /v1/issues/{id}/triage` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.triage` |
 | `auth.me` | `GET /v1/me` | session | — | lecture | exigé | — |
+| `mobileCapabilities.verify` | `POST /v1/mobile-capabilities/verifications` | administrateur de la plateforme | — | **refusée** | exigé | `mobile_capability.verify` |
 | `channels.create` | `POST /v1/notify-channels` | session administrateur | — | **refusée** | exigé | `notify_channel.create` |
 | `channels.delete` | `DELETE /v1/notify-channels/{id}` | session administrateur | — | **refusée** | exigé | `notify_channel.delete` |
 | `channels.setActive` | `PUT /v1/notify-channels/{id}/active` | session administrateur | — | **refusée** | exigé | `notify_channel.set_active` |
+| `users.resetPassword` | `POST /v1/password-resets` | administrateur de la plateforme | — | **refusée** | exigé | `user.reset_password` |
 | `public.platformStatus` | `GET /v1/public/platform-status` | aucune session | — | lecture | exigé | — |
+| `readTokens.create` | `POST /v1/read-tokens` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `read_token.create` |
+| `readTokens.revoke` | `DELETE /v1/read-tokens/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `read_token.revoke` |
 | `replay.session` | `GET /v1/replays/{sessionId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `savedViews.create` | `POST /v1/saved-views` | session | — | **refusée** | exigé | exemptée : vue personnelle : son propriétaire seul la lit et l'écrit, et elle ne donne aucun droit (son AST est rejoué dans le périmètre de qui l'ouvre) |
 | `savedViews.delete` | `DELETE /v1/saved-views/{id}` | session | — | **refusée** | exigé | exemptée : vue personnelle : son propriétaire seul la lit et l'écrit, et elle ne donne aucun droit (son AST est rejoué dans le périmètre de qui l'ouvre) |
@@ -104,12 +115,19 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `screens.trace` | `GET /v1/screens/tracing/{traceId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.ux` | `GET /v1/screens/ux` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `console.shell` | `GET /v1/shell` | session | — | lecture | exigé | — |
+| `apps.createSite` | `POST /v1/sites` | administrateur de la plateforme | — | **refusée** | exigé | `app.create` |
 | `slo.create` | `POST /v1/slos` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `slo.create` |
 | `slo.delete` | `DELETE /v1/slos/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `slo.delete` |
 | `slo.setActive` | `PUT /v1/slos/{id}/active` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `slo.set_active` |
+| `sourcemapTokens.create` | `POST /v1/sourcemap-tokens` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `sourcemap_token.create` |
+| `sourcemapTokens.revoke` | `DELETE /v1/sourcemap-tokens/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `sourcemap_token.revoke` |
+| `ticketIntegrations.create` | `POST /v1/ticket-integrations` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `ticket_integration.create` |
+| `ticketIntegrations.update` | `PATCH /v1/ticket-integrations/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `ticket_integration.update` |
 | `uptime.create` | `POST /v1/uptime-checks` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `uptime_check.create` |
 | `uptime.delete` | `DELETE /v1/uptime-checks/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `uptime_check.delete` |
 | `uptime.setEnabled` | `PUT /v1/uptime-checks/{id}/enabled` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `uptime_check.set_enabled` |
+| `users.setActive` | `PUT /v1/user-activations` | administrateur de la plateforme | — | **refusée** | exigé | `user.set_active` |
+| `users.create` | `POST /v1/users` | administrateur de la plateforme | — | **refusée** | exigé | `user.create` |
 | `ops.version` | `GET /v1/version` | aucune session | — | lecture | **non exigé** | — |
 
 ## Les codes d'erreur

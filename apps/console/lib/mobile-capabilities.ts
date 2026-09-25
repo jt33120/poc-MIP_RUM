@@ -22,6 +22,9 @@ import type { ResolvedRange } from "./query-contract";
 
 export type MobileCapability = (typeof MOBILE_CAPABILITIES)[number];
 
+/** Dans un formulaire, la release « sans version » : l'application n'en déclare aucune (`null` en base). */
+export const SANS_RELEASE = "__sans_release";
+
 /** Le vocabulaire fermé, dans l'ordre d'affichage. Il vient du serveur, pas d'ici. */
 export const CAPABILITIES: readonly MobileCapability[] = MOBILE_CAPABILITIES;
 

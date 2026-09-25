@@ -1,6 +1,7 @@
 // Inventaire des postes équipés de l'extension navigateur (Ext-D, migration-v52).
 // Écriture par le battement de cœur public, lecture par /admin/extension-installs.
 import { q } from "./db";
+import { ecrire, type ClientEcriture } from "./requete";
 import { browserFromUA, browserMajorFromUA, platformFromUA } from "./format";
 
 export interface InstallRow {
@@ -90,7 +91,12 @@ export async function listInstalls(): Promise<InstallRow[]> {
   );
 }
 
-/** Retire un poste de l'inventaire. La cascade emporte ses liaisons. */
-export async function forgetInstall(installId: string): Promise<void> {
-  await q(`delete from extension_install where install_id = $1`, [installId]);
+/**
+ * Retire un poste de l'inventaire. La cascade emporte ses liaisons. Un poste n'a
+ * pas d'application : il en observe plusieurs — l'oublier est un geste de
+ * l'administrateur de la plateforme (C9). `false` s'il est inconnu.
+ */
+export async function forgetInstall(installId: string, client?: ClientEcriture): Promise<boolean> {
+  const { rowCount } = await ecrire(client, `delete from extension_install where install_id = $1`, [installId]);
+  return rowCount > 0;
 }

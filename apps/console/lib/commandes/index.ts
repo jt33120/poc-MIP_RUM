@@ -19,6 +19,8 @@ import {
   supprimerCanal,
   supprimerSlo,
 } from "./alertes";
+import { activerApplication, creerApplication, creerSite, majOrigines, renouvelerCle } from "./applications";
+import { activerCompte, creerCompte, reinitialiserMotDePasse } from "./comptes";
 import { commenterIssue, demanderTicket, lierTicket, trierGroupe, trierIssue } from "./issues";
 import { activerObjectif, creerObjectif, supprimerObjectif } from "./objectifs";
 import {
@@ -34,6 +36,18 @@ import {
   retirerCarte,
   supprimerTableau,
 } from "./tableaux";
+import {
+  activerDomaineExtension,
+  creerDomaineExtension,
+  creerIntegration,
+  creerJetonLecture,
+  creerJetonSourcemap,
+  majIntegration,
+  oublierPoste,
+  revoquerJetonLecture,
+  revoquerJetonSourcemap,
+  validerCapaciteMobile,
+} from "./raccordements";
 import { activerSonde, creerSonde, supprimerSonde } from "./uptime";
 import { creerVue, modifierVue, supprimerVue } from "./vues";
 
@@ -77,4 +91,23 @@ export const COMMANDES_CONSOLE = {
   creerSonde,
   activerSonde,
   supprimerSonde,
+  // C9 — administration.
+  creerCompte,
+  activerCompte,
+  reinitialiserMotDePasse,
+  creerApplication,
+  creerSite,
+  renouvelerCle,
+  activerApplication,
+  majOrigines,
+  creerJetonLecture,
+  revoquerJetonLecture,
+  creerJetonSourcemap,
+  revoquerJetonSourcemap,
+  creerIntegration,
+  majIntegration,
+  creerDomaineExtension,
+  activerDomaineExtension,
+  oublierPoste,
+  validerCapaciteMobile,
 } satisfies { readonly [K in CleCommande]: CommandeQuelconque };

@@ -7,17 +7,17 @@
 | | Nombre | Atteignent la base |
 |---|---|---|
 | Écrans (`page.tsx`) | 57 | **50** |
-| Fichiers d'actions serveur (`"use server"`) | 18 (54 actions) | **17** |
+| Fichiers d'actions serveur (`"use server"`) | 20 (57 actions) | **19** |
 | Actions déclarées dans un écran | 0 | — |
-| Routes (`route.ts`) | 50 | **43** |
+| Routes (`route.ts`) | 46 | **39** |
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
-| Modules `lib/queries*.ts` | 45 (207 fonctions exportées) | — |
+| Modules `lib/queries*.ts` | 45 (208 fonctions exportées) | — |
 | Sections `lire()` (appels) | 276 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 4 / 0 | — |
 | Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 53 | — |
 | Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 34 | **34** / 50 |
-| Fichiers d'actions passés par une commande (`lib/commandes/`, C6 → C9) | 6 (32 commandes) | **6** / 17 |
+| Fichiers d'actions passés par une commande (`lib/commandes/`, C6 → C9) | 15 (50 commandes) | **15** / 19 |
 
 **Le cliquet** (`cliquet.json`) liste nominativement ce qui atteint la base. `tests/unit/inventaire-console.test.ts` refuse toute entrée nouvelle, et demande de le resserrer quand une entrée disparaît.
 
@@ -31,35 +31,35 @@
 | `/actions` | C3 | **oui** | actions | queries, actions, deploys, explorer, sessions | 4 | — | oui |
 | `/admin/audit` | C9 administration | **oui** | — | — | — | — | oui |
 | `/admin/composants` | C9 administration | non | — | — | — | — | oui |
-| `/admin/customers/[appId]` | C9 administration | **oui** | — | customers | — | — | oui |
-| `/admin/customers` | C9 administration | **oui** | — | customers | — | — | oui |
-| `/admin/extension-installs` | C9 administration | **oui** | — | extension-installs | — | — | oui |
-| `/admin/extension-scope` | C9 administration | **oui** | — | queries, explorer, extension-scope, sessions | — | — | oui |
+| `/admin/customers/[appId]` | C9 administration | **oui** | — | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
+| `/admin/customers` | C9 administration | **oui** | — | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
+| `/admin/extension-installs` | C9 administration | **oui** | — | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
+| `/admin/extension-scope` | C9 administration | **oui** | — | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
 | `/admin/health` | C9 administration | **oui** | — | queries, errors, events, explorer, health, sessions | 1 | — | oui |
 | `/admin/privacy` | C10 RGPD | **oui** | — | queries, dsar, errors, events, explorer, sessions | — | — | oui |
-| `/admin/read-tokens` | C9 administration | **oui** | — | queries, explorer, read-tokens, sessions | — | — | oui |
+| `/admin/read-tokens` | C9 administration | **oui** | — | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
 | `/admin/sourcemaps` | C9 administration | **oui** | — | queries, explorer, sessions, sourcemap, sourcemap-tokens | — | — | oui |
-| `/admin/ticket-integrations` | C9 administration | **oui** | — | queries, errors, events, explorer, sessions, ticket-integrations | — | — | oui |
-| `/admin/uptime` | C9 administration | **oui** | sondes | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, planifie, saved-views, sessions, ticket-integrations, uptime, v2 | — | — | oui |
+| `/admin/ticket-integrations` | C9 administration | **oui** | — | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
+| `/admin/uptime` | C9 administration | **oui** | sondes | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, planifie, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
 | `/admin/usage` | C9 administration | **oui** | — | usage | — | — | oui |
-| `/admin/users` | C9 administration | **oui** | — | — | — | — | oui |
+| `/admin/users` | C9 administration | **oui** | — | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
 | `/ai` | C5 | **oui** | ai | deploys, events, explorer, v2 | — | — | oui |
-| `/alerts` | C8 alerting | **oui** | alertes | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | 8 | — | oui |
+| `/alerts` | C8 alerting | **oui** | alertes | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | 8 | — | oui |
 | `/api-docs` | statique ou vitrine | non | — | — | — | — | oui |
 | `/correlation` | C4 | **oui** | correlation | deploys, events, explorer, v2 | 11 | — | oui |
-| `/dashboards/[id]` | C6 espace de travail | **oui** | tableau | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | — | — | non |
-| `/dashboards` | C6 espace de travail | **oui** | tableaux | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | — | — | non |
-| `/errors/[fingerprint]` | C4 | **oui** | erreur | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | 3 | — | oui |
+| `/dashboards/[id]` | C6 espace de travail | **oui** | tableau | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | non |
+| `/dashboards` | C6 espace de travail | **oui** | tableaux | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | non |
+| `/errors/[fingerprint]` | C4 | **oui** | erreur | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | 3 | — | oui |
 | `/errors/issues/[id]` | C4 | **oui** | issue | queries, deploys, errors, events, explorer, sessions, ticket-integrations | 2 | — | oui |
 | `/errors` | C4 | **oui** | errors | queries, breakdowns, deploys, errors, events, explorer, sessions | 8 | error | oui |
 | `/events` | C3 | **oui** | events | deploys, events, explorer | 2 | event | oui |
 | `/experience` | C5 | **oui** | experience | queries, breakdowns, deploys, experience, explorer, mobile, sessions | 9 | — | oui |
-| `/explorer` | C3 | **oui** | explorer | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | 3 | — | non |
-| `/explorer/views` | C6 espace de travail | **oui** | vues | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | — | — | non |
+| `/explorer` | C3 | **oui** | explorer | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | 3 | — | non |
+| `/explorer/views` | C6 espace de travail | **oui** | vues | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | non |
 | `/extension-privacy` | statique ou vitrine | non | — | — | — | — | oui |
 | `/forecast` | C4 | **oui** | forecast | deploys, explorer, grid | 3 | — | oui |
 | `/forms` | C5 | **oui** | forms | deploys, explorer, form-analytics, sessions | 3 | — | oui |
-| `/goals` | C5 | **oui** | goals | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, goals, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | 4 | — | oui |
+| `/goals` | C5 | **oui** | goals | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, goals, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | 4 | — | oui |
 | `/legal/cgu` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/cgv` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/confidentialite` | statique ou vitrine | non | — | — | — | — | oui |
@@ -67,17 +67,17 @@
 | `/login` | C1–C2 identité, sélection | **oui** | — | — | — | — | oui |
 | `/logs` | C5 | **oui** | logs | deploys, events, explorer, logs, v2 | — | — | oui |
 | `/map` | C4 | **oui** | map | deploys, explorer, map, sessions, tracing | 6 | noeud | oui |
-| `/mobile` | C3 | **oui** | mobile | deploys, explorer, mobile, sessions | 8 | — | oui |
+| `/mobile` | C3 | **oui** | mobile | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | 8 | — | oui |
 | `/` | C4 | **oui** | overview | queries, breakdowns, deploys, errors, events, explorer, grid, sessions, v2 | 32 | — | oui |
 | `/pages` | C4 | **oui** | pages | queries, breakdowns, deploys, errors, events, explorer, longtasks, resources, sessions, v2 | 22 | route | oui |
 | `/paths` | C5 | **oui** | paths | queries, deploys, explorer, funnel, paths, sessions | 9 | — | oui |
 | `/presentation` | statique ou vitrine | **oui** | — | planifie | — | — | oui |
 | `/retention` | C5 | **oui** | retention | cohorts, deploys, explorer, sessions | 3 | — | oui |
-| `/select/new` | C1–C2 identité, sélection | **oui** | — | queries, customers, explorer, extension-scope, sessions | — | — | oui |
+| `/select/new` | C1–C2 identité, sélection | **oui** | — | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
 | `/select` | C1–C2 identité, sélection | **oui** | — | queries, explorer, projects, sessions | — | — | oui |
 | `/sessions/[id]` | C3 | **oui** | session | queries, deploys, explorer, sessions | 2 | — | oui |
 | `/sessions` | C3 | **oui** | sessions | queries, deploys, explorer, sessions | 13 | — | oui |
-| `/slo` | C8 alerting | **oui** | slo | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | 4 | — | oui |
+| `/slo` | C8 alerting | **oui** | slo | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | 4 | — | oui |
 | `/svi/appels/[callId]` | C5 | **oui** | svi | deploys, events, explorer, svi, v2 | — | — | oui |
 | `/svi/appels` | C5 | **oui** | svi | deploys, events, explorer, svi, v2 | — | — | oui |
 | `/svi` | C5 | **oui** | svi | deploys, events, explorer, svi, v2 | — | — | oui |
@@ -92,14 +92,15 @@
 | Fichier | Actions | Base | Commandes | Auditée |
 |---|---|---|---|---|
 | `app/actions-dashboard.ts` | reglerBlocsAction | non | — | non |
-| `app/admin/customers/actions.ts` | createCustomerAction, rotateKeyAction, toggleAppAction, updateOriginsAction | **oui** | — | oui |
-| `app/admin/extension-installs/actions.ts` | forgetInstallAction | **oui** | — | oui |
-| `app/admin/extension-scope/actions.ts` | createExtensionScopeAction, toggleExtensionScopeAction | **oui** | — | oui |
+| `app/admin/customers/actions.ts` | createCustomerAction, rotateKeyAction, toggleAppAction, updateOriginsAction | **oui** | activerApplication, creerApplication, majOrigines, renouvelerCle | par règle |
+| `app/admin/extension-installs/actions.ts` | forgetInstallAction | **oui** | oublierPoste | par règle |
+| `app/admin/extension-scope/actions.ts` | createExtensionScopeAction, toggleExtensionScopeAction | **oui** | activerDomaineExtension, creerDomaineExtension | par règle |
 | `app/admin/privacy/actions.ts` | searchIdentityAction, eraseIdentityAction, eraseUserAction | **oui** | — | oui |
-| `app/admin/read-tokens/actions.ts` | createReadTokenAction, revokeReadTokenAction | **oui** | — | oui |
-| `app/admin/ticket-integrations/actions.ts` | creerIntegrationAction, majIntegrationAction | **oui** | — | oui |
+| `app/admin/read-tokens/actions.ts` | createReadTokenAction, revokeReadTokenAction | **oui** | creerJetonLecture, revoquerJetonLecture | par règle |
+| `app/admin/sourcemaps/actions.ts` | creerJetonSourcemapAction, revoquerJetonSourcemapAction | **oui** | creerJetonSourcemap, revoquerJetonSourcemap | par règle |
+| `app/admin/ticket-integrations/actions.ts` | creerIntegrationAction, majIntegrationAction | **oui** | creerIntegration, majIntegration | par règle |
 | `app/admin/uptime/actions.ts` | createUptimeCheckAction, toggleUptimeCheckAction, deleteUptimeCheckAction | **oui** | activerSonde, creerSonde, supprimerSonde | par règle |
-| `app/admin/users/actions.ts` | createUserAction, toggleUserAction, resetPasswordAction | **oui** | — | oui |
+| `app/admin/users/actions.ts` | createUserAction, toggleUserAction, resetPasswordAction | **oui** | activerCompte, creerCompte, reinitialiserMotDePasse | par règle |
 | `app/alerts/actions.ts` | createRuleAction, updateRuleAction, toggleRuleAction, ackEventAction, evaluateNowAction, createSloAction, toggleSloAction, deleteSloAction, createChannelAction, toggleChannelAction, deleteChannelAction | **oui** | acquitterEvenement, activerCanal, activerRegle, activerSlo, creerCanal, creerRegle, creerSlo, evaluerAlertes, modifierRegle, supprimerCanal, supprimerSlo | par règle |
 | `app/dashboards/actions.ts` | createDashboardAction, cloneTemplateAction, cloneDashboardAction, renameDashboardAction, deleteDashboardAction, addWidgetAction, addSectionAction, saveAnalysisAction, configureWidgetAction, removeWidgetAction, moveWidgetAction | **oui** | ajouterCarte, ajouterSection, clonerModele, clonerTableau, configurerCarte, creerTableau, deplacerCarte, enregistrerAnalyse, modifierTableau, retirerCarte, supprimerTableau | par règle |
 | `app/errors/[fingerprint]/actions.ts` | setErrorStatusAction | **oui** | trierGroupe | par règle |
@@ -107,8 +108,9 @@
 | `app/explorer/actions.ts` | saveViewAction, renameViewAction, deleteViewAction | **oui** | creerVue, modifierVue, supprimerVue | par règle |
 | `app/goals/actions.ts` | createGoalAction, toggleGoalAction, deleteGoalAction | **oui** | activerObjectif, creerObjectif, supprimerObjectif | par règle |
 | `app/login/actions.ts` | loginAction | **oui** | — | oui |
+| `app/mobile/actions.ts` | validerCapaciteAction | **oui** | validerCapaciteMobile | par règle |
 | `app/select/actions.ts` | selectProjectAction | **oui** | — | oui |
-| `app/select/new/actions.ts` | createSiteAction | **oui** | — | oui |
+| `app/select/new/actions.ts` | createSiteAction | **oui** | creerSite | par règle |
 
 ## Routes
 
@@ -117,10 +119,6 @@
 | Route | Méthodes | Authentification | Base | Destination |
 |---|---|---|---|---|
 | `/admin/privacy/export` | GET | session | **oui** | console-api (C10 RGPD) |
-| `/api/admin/sourcemap-tokens/[id]` | DELETE | session administrateur | **oui** | console-api (C9) |
-| `/api/admin/sourcemap-tokens` | GET, POST | session administrateur | **oui** | console-api (C9) |
-| `/api/admin/ticket-integrations/[id]` | PATCH | session administrateur | **oui** | console-api (C9) |
-| `/api/admin/ticket-integrations` | GET, POST | session administrateur | **oui** | console-api (C9) |
 | `/api/auth/oidc/callback` | GET | émet la session | **oui** | console-api (C1 identité) |
 | `/api/auth/oidc/login` | GET | — | non | console-api (C1 identité) |
 | `/api/cron/daily` | GET | — | non | à supprimer (410 depuis P0) |
@@ -188,48 +186,48 @@
 
 | Module | Fonctions exportées | Écrans qui l'atteignent |
 |---|---|---|
-| `lib/queries-accounts.ts` | 1 | 9 |
+| `lib/queries-accounts.ts` | 1 | 18 |
 | `lib/queries-acquisition.ts` | 2 | 1 |
 | `lib/queries-actions.ts` | 3 | 1 |
-| `lib/queries-alerting.ts` | 9 | 9 |
+| `lib/queries-alerting.ts` | 9 | 18 |
 | `lib/queries-breakdowns.ts` | 2 | 4 |
 | `lib/queries-cohorts.ts` | 1 | 1 |
 | `lib/queries-customers.ts` | 3 | 3 |
-| `lib/queries-dashboards.ts` | 6 | 9 |
-| `lib/queries-deploys.ts` | 4 | 34 |
+| `lib/queries-dashboards.ts` | 6 | 18 |
+| `lib/queries-deploys.ts` | 4 | 42 |
 | `lib/queries-dimensions.ts` | 1 | 0 |
 | `lib/queries-dsar.ts` | 9 | 1 |
-| `lib/queries-errors.ts` | 11 | 16 |
-| `lib/queries-events.ts` | 3 | 24 |
+| `lib/queries-errors.ts` | 11 | 24 |
+| `lib/queries-events.ts` | 3 | 32 |
 | `lib/queries-experience.ts` | 7 | 1 |
-| `lib/queries-explorer.ts` | 2 | 42 |
-| `lib/queries-extension-installs.ts` | 3 | 1 |
-| `lib/queries-extension-scope.ts` | 5 | 2 |
+| `lib/queries-explorer.ts` | 2 | 46 |
+| `lib/queries-extension-installs.ts` | 3 | 18 |
+| `lib/queries-extension-scope.ts` | 6 | 18 |
 | `lib/queries-form-analytics.ts` | 1 | 1 |
-| `lib/queries-frustration.ts` | 5 | 10 |
+| `lib/queries-frustration.ts` | 5 | 19 |
 | `lib/queries-funnel.ts` | 2 | 1 |
 | `lib/queries-goals.ts` | 3 | 1 |
-| `lib/queries-grid.ts` | 3 | 11 |
+| `lib/queries-grid.ts` | 3 | 20 |
 | `lib/queries-health.ts` | 1 | 1 |
 | `lib/queries-histogramme.ts` | 1 | 0 |
 | `lib/queries-logs.ts` | 5 | 1 |
 | `lib/queries-longtasks.ts` | 2 | 1 |
 | `lib/queries-map.ts` | 4 | 1 |
-| `lib/queries-mobile.ts` | 7 | 12 |
+| `lib/queries-mobile.ts` | 7 | 20 |
 | `lib/queries-paths.ts` | 3 | 1 |
 | `lib/queries-planifie.ts` | 3 | 2 |
 | `lib/queries-projects.ts` | 1 | 1 |
-| `lib/queries-read-tokens.ts` | 4 | 1 |
+| `lib/queries-read-tokens.ts` | 4 | 18 |
 | `lib/queries-resources.ts` | 1 | 1 |
-| `lib/queries-saved-views.ts` | 7 | 9 |
-| `lib/queries-sessions.ts` | 6 | 33 |
-| `lib/queries-sourcemap-tokens.ts` | 3 | 1 |
+| `lib/queries-saved-views.ts` | 7 | 18 |
+| `lib/queries-sessions.ts` | 6 | 37 |
+| `lib/queries-sourcemap-tokens.ts` | 3 | 19 |
 | `lib/queries-sourcemap.ts` | 2 | 1 |
 | `lib/queries-summary.ts` | 1 | 0 |
 | `lib/queries-svi.ts` | 6 | 3 |
-| `lib/queries-ticket-integrations.ts` | 9 | 11 |
+| `lib/queries-ticket-integrations.ts` | 9 | 19 |
 | `lib/queries-tracing.ts` | 8 | 3 |
-| `lib/queries-uptime.ts` | 4 | 9 |
+| `lib/queries-uptime.ts` | 4 | 18 |
 | `lib/queries-usage.ts` | 1 | 1 |
-| `lib/queries-v2.ts` | 22 | 18 |
-| `lib/queries.ts` | 20 | 28 |
+| `lib/queries-v2.ts` | 22 | 27 |
+| `lib/queries.ts` | 20 | 33 |

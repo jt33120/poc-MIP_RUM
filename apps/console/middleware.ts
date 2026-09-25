@@ -87,17 +87,13 @@ export async function middleware(req: NextRequest) {
   if (req.nextUrl.pathname.startsWith("/api/ingest")) return NextResponse.next();
   // /demo : ouvre elle-même la session démo, donc s'exécute sans cookie.
   if (req.nextUrl.pathname === "/demo") return NextResponse.next();
-  // Source maps (P5.4) : la CI poste avec un jeton dédié, sans cookie, et ces
-  // routes répondent 401/403 en JSON plutôt qu'une redirection. Leur garde
+  // Source maps (P5.4) : la CI poste avec un jeton dédié, sans cookie, et la
+  // route répond 401/403 en JSON plutôt qu'une redirection. Sa garde
   // (lib/api/admin.ts) exige une session admin non démo et l'Origin de la
   // console pour toute mutation — la borne démo ci-dessous y est donc incluse.
-  if (req.nextUrl.pathname === "/api/sourcemaps" || req.nextUrl.pathname.startsWith("/api/admin/sourcemap-tokens")) {
-    return NextResponse.next();
-  }
-  // /api/admin/ticket-integrations (P8.6) : même raison que ci-dessus — la garde
-  // (lib/api/admin.ts) exige une session admin non démo et l'Origin de la
-  // console, et la route répond en JSON plutôt qu'en redirection.
-  if (req.nextUrl.pathname.startsWith("/api/admin/ticket-integrations")) return NextResponse.next();
+  // (Les jetons de CI et les connecteurs de tickets s'administrent depuis leurs
+  // écrans depuis C9 : leurs routes `/api/admin/*` ont été retirées.)
+  if (req.nextUrl.pathname === "/api/sourcemaps") return NextResponse.next();
   // /api/webhooks/* : livraisons entrantes d'un fournisseur de tickets (P8.6).
   // Aucun cookie, aucune session : l'autorité est la SIGNATURE vérifiée dans le
   // handler. Sans ce contournement, chaque livraison recevrait un 302 vers

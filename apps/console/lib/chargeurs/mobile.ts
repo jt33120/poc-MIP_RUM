@@ -89,10 +89,16 @@ export const chargerMobile = (async (principal, sp) => {
       section(() => mobileDeploiements(f, schema, 20)),
     ]);
 
+  // R5 (C9) : poser la RECETTE d'une capacité déclarée revient à l'administrateur de
+  // la plateforme, sur une application nommée — ce que la commande exige aussi.
+  const app = query.scope.requestedApp;
+  const recette = principal?.role === "admin" && !principal.demo && principal.apps === null && app ? { app } : null;
+
   return {
     etat: "ok",
     query,
     label: ecran.label,
+    recette,
     // Le schéma sans son jeu de dimensions (un `Set` ne voyage pas) : l'écran n'en lit que les capacités.
     schema: mapSection(schemaLu, ({ runtime, capabilities, errorSource }) => ({ runtime, capabilities, errorSource })),
     resume,

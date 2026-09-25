@@ -111,6 +111,7 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
                   {!t.revoked_at && (
                     <form action={revokeReadTokenAction}>
                       <input type="hidden" name="id" value={t.id} />
+                      <input type="hidden" name="app" value={t.app_id} />
                       <button type="submit" className="btn-ghost px-2 py-1 text-bad-ink">
                         Révoquer
                       </button>

@@ -328,6 +328,29 @@ export const COMMANDES = Object.freeze({
   creerSonde: commande("uptime.create", "POST", "/v1/uptime-checks"),
   activerSonde: commande<{ id: string }>("uptime.setEnabled", "PUT", "/v1/uptime-checks/{id}/enabled"),
   supprimerSonde: commande<{ id: string }>("uptime.delete", "DELETE", "/v1/uptime-checks/{id}"),
+  // C9 — l'administration. Les comptes, la création d'une application et ce qui
+  // n'appartient à aucune (un poste de l'extension, la recette d'une capacité
+  // mobile) : l'administrateur de la plateforme. Ce qui appartient à UNE
+  // application (sa clé, ses origines, ses jetons, ses connecteurs, ses domaines) :
+  // son administrateur, l'application en portée (`?app=`).
+  creerCompte: commande("users.create", "POST", "/v1/users"),
+  activerCompte: commande("users.setActive", "PUT", "/v1/user-activations"),
+  reinitialiserMotDePasse: commande("users.resetPassword", "POST", "/v1/password-resets"),
+  creerApplication: commande("apps.create", "POST", "/v1/apps"),
+  creerSite: commande("apps.createSite", "POST", "/v1/sites"),
+  renouvelerCle: commande("apps.rotateKey", "POST", "/v1/app/key-rotations"),
+  activerApplication: commande("apps.setActive", "PUT", "/v1/app/active"),
+  majOrigines: commande("apps.updateOrigins", "PUT", "/v1/app/origins"),
+  creerJetonLecture: commande("readTokens.create", "POST", "/v1/read-tokens"),
+  revoquerJetonLecture: commande<{ id: string }>("readTokens.revoke", "DELETE", "/v1/read-tokens/{id}"),
+  creerJetonSourcemap: commande("sourcemapTokens.create", "POST", "/v1/sourcemap-tokens"),
+  revoquerJetonSourcemap: commande<{ id: string }>("sourcemapTokens.revoke", "DELETE", "/v1/sourcemap-tokens/{id}"),
+  creerIntegration: commande("ticketIntegrations.create", "POST", "/v1/ticket-integrations"),
+  majIntegration: commande<{ id: string }>("ticketIntegrations.update", "PATCH", "/v1/ticket-integrations/{id}"),
+  creerDomaineExtension: commande("extensionScopes.create", "POST", "/v1/extension-scopes"),
+  activerDomaineExtension: commande<{ id: string }>("extensionScopes.setActive", "PUT", "/v1/extension-scopes/{id}/active"),
+  oublierPoste: commande<{ installId: string }>("extensionInstalls.forget", "DELETE", "/v1/extension-installs/{installId}"),
+  validerCapaciteMobile: commande("mobileCapabilities.verify", "POST", "/v1/mobile-capabilities/verifications"),
 });
 export type CleCommande = keyof typeof COMMANDES;
 

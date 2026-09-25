@@ -156,6 +156,7 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
                     </Link>
                     <form action={toggleAppAction}>
                       <input type="hidden" name="app_id" value={c.app_id} />
+                      <input type="hidden" name="active" value={c.active ? "false" : "true"} />
                       <button
                         type="submit"
                         className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"

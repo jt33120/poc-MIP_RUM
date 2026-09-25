@@ -70,6 +70,8 @@ export async function listSourcemapTokens(appId: string | null): Promise<Sourcem
 export async function createSourcemapToken(
   request: { appId: string; name: string; expiresInDays: number },
   adminEmail: string,
+  /** La ligne d'audit de la commande (C9), dans la transaction ; absente, l'action historique. */
+  auditer?: (client: import("pg").PoolClient, detail: string) => Promise<void>,
 ): Promise<{ token: SourcemapToken; secret: string } | null> {
   const { id, jeton, empreinte } = genererJetonUpload();
   return tx(async (client) => {
@@ -83,10 +85,9 @@ export async function createSourcemapToken(
        returning ${COLONNES}`,
       [id, request.appId, request.name, empreinte, PRIVILEGE_JETON, adminEmail, request.expiresInDays],
     );
-    await client.query("insert into audit_log (user_email, action, detail) values ($1, 'sourcemap_token_create', $2)", [
-      adminEmail,
-      JSON.stringify({ id, app_id: request.appId, name: request.name, expires_at: token.expiresAt }),
-    ]);
+    const detail = JSON.stringify({ id, app_id: request.appId, name: request.name, expires_at: token.expiresAt });
+    if (auditer) await auditer(client, detail);
+    else await client.query("insert into audit_log (user_email, action, detail) values ($1, 'sourcemap_token_create', $2)", [adminEmail, detail]);
     return { token, secret: jeton };
   });
 }
@@ -95,27 +96,35 @@ export async function createSourcemapToken(
  * Révoque un jeton (idempotent) et trace la révocation effective. `null` si le
  * jeton n'existe pas ; un jeton déjà révoqué est rendu tel quel, sans nouvel audit.
  */
-export async function revokeSourcemapToken(id: string, adminEmail: string): Promise<SourcemapToken | null> {
+export async function revokeSourcemapToken(
+  id: string,
+  adminEmail: string,
+  /** C9 : le jeton est cherché DANS cette application ; `null` : dans toutes (appel historique). */
+  appId: string | null = null,
+  auditer?: (client: import("pg").PoolClient, detail: string) => Promise<void>,
+): Promise<SourcemapToken | null> {
   if (!UUID.test(id)) return null;
   return tx(async (client) => {
     const {
       rows: [revoque],
     } = await client.query<SourcemapToken>(
       `update sourcemap_upload_token set revoked_at = now(), revoked_by = $2
-        where id = $1 and revoked_at is null
+        where id = $1 and ($3::text is null or app_id = $3) and revoked_at is null
         returning ${COLONNES}`,
-      [id, adminEmail],
+      [id, adminEmail, appId],
     );
     if (revoque) {
-      await client.query("insert into audit_log (user_email, action, detail) values ($1, 'sourcemap_token_revoke', $2)", [
-        adminEmail,
-        JSON.stringify({ id, app_id: revoque.appId, name: revoque.name }),
-      ]);
+      const detail = JSON.stringify({ id, app_id: revoque.appId, name: revoque.name });
+      if (auditer) await auditer(client, detail);
+      else await client.query("insert into audit_log (user_email, action, detail) values ($1, 'sourcemap_token_revoke', $2)", [adminEmail, detail]);
       return revoque;
     }
     const {
       rows: [existant],
-    } = await client.query<SourcemapToken>(`select ${COLONNES} from sourcemap_upload_token where id = $1`, [id]);
+    } = await client.query<SourcemapToken>(`select ${COLONNES} from sourcemap_upload_token where id = $1 and ($2::text is null or app_id = $2)`, [
+      id,
+      appId,
+    ]);
     return existant ?? null;
   });
 }

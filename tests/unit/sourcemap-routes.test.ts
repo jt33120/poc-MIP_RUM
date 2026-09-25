@@ -2,9 +2,11 @@
 //
 // POST /api/sourcemaps accepte un jeton dédié OU une session admin avec l'Origin
 // de la console ; jamais un jeton de lecture, jamais une session viewer ou démo.
-// Les routes /api/admin/sourcemap-tokens sont réservées à la session admin. Les
-// lectures et écritures en base sont simulées ; le contrat d'upload RÉEL (bornes,
-// validation) s'exécute, et l'écriture est prouvée sur PostgreSQL ailleurs.
+// Les lectures et écritures en base sont simulées ; le contrat d'upload RÉEL
+// (bornes, validation) s'exécute, et l'écriture est prouvée sur PostgreSQL
+// ailleurs. Les jetons de CI s'administrent depuis C9 par leurs commandes
+// (`tests/unit/sourcemap-jetons-commandes.test.ts`) : les routes
+// `/api/admin/sourcemap-tokens` ont été retirées.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const simul = vi.hoisted(() => ({
@@ -35,8 +37,6 @@ vi.mock("@/lib/queries-sourcemap-tokens", async (original) => ({
   revokeSourcemapToken: simul.revokeSourcemapToken,
 }));
 
-import { GET as LISTE_JETONS, POST as CREER_JETON } from "../../apps/console/app/api/admin/sourcemap-tokens/route";
-import { DELETE as REVOQUER } from "../../apps/console/app/api/admin/sourcemap-tokens/[id]/route";
 import { GET as LISTE_MAPS, POST as UPLOAD } from "../../apps/console/app/api/sourcemaps/route";
 import { guardAdmin, sameOrigin } from "../../apps/console/lib/api/admin";
 import { signJwt } from "../../apps/console/lib/auth";
@@ -227,19 +227,7 @@ describe("GET /api/sourcemaps — releases et manifeste (admin)", () => {
   });
 });
 
-describe("/api/admin/sourcemap-tokens", () => {
-  const JETON_VU = {
-    id: "11111111-1111-1111-1111-111111111111",
-    name: "CI",
-    appId: "app-a",
-    createdAt: new Date(0),
-    expiresAt: new Date(0),
-    revokedAt: null,
-    lastUsedAt: null,
-  };
-  const creer = (qui: Qui, corps: unknown) =>
-    CREER_JETON(requete("/api/admin/sourcemap-tokens", qui, { method: "POST", body: JSON.stringify(corps) }));
-
+describe("jetons de CI : le contrat de création", () => {
   it("parseTokenRequest : nom requis, 1 à 90 jours entiers, 30 par défaut", () => {
     expect(parseTokenRequest({ appId: " app-a ", name: " CI " })).toEqual({ ok: true, appId: "app-a", name: "CI", expiresInDays: 30 });
     expect(parseTokenRequest({ appId: "app-a", name: "CI", expiresInDays: 90 })).toMatchObject({ ok: true, expiresInDays: 90 });
@@ -250,46 +238,5 @@ describe("/api/admin/sourcemap-tokens", () => {
     expect(parseTokenRequest({ appId: "app-a", name: "n".repeat(101) })).toMatchObject({ ok: false });
     expect(parseTokenRequest({ name: "CI" })).toMatchObject({ ok: false });
     expect(parseTokenRequest(null)).toMatchObject({ ok: false });
-  });
-
-  it("GET : session admin seulement ; ni secret ni hash dans la réponse", async () => {
-    expect((await LISTE_JETONS(requete("/api/admin/sourcemap-tokens", { bearer: "tok" }))).status).toBe(401);
-    expect((await LISTE_JETONS(requete("/api/admin/sourcemap-tokens", { cookie: viewer }))).status).toBe(403);
-    simul.listSourcemapTokens.mockResolvedValue([JETON_VU]);
-    const reponse = await LISTE_JETONS(requete("/api/admin/sourcemap-tokens?appId=app-a", { cookie: admin }));
-    expect(simul.listSourcemapTokens).toHaveBeenCalledWith("app-a");
-    const corps = await reponse.json();
-    expect(Object.keys(corps.tokens[0]).sort()).toEqual(["appId", "createdAt", "expiresAt", "id", "lastUsedAt", "name", "revokedAt"]);
-  });
-
-  it("POST : Origin exigé, contrat validé, app inconnue 404, secret rendu une fois en 201", async () => {
-    expect((await creer({ cookie: admin, origin: null }, { appId: "app-a", name: "CI" })).status).toBe(403);
-    expect((await creer({ cookie: demo }, { appId: "app-a", name: "CI" })).status).toBe(403);
-    expect((await creer({ cookie: admin }, { appId: "app-a", name: "CI", expiresInDays: 91 })).status).toBe(400);
-    expect(simul.createSourcemapToken).not.toHaveBeenCalled();
-
-    simul.createSourcemapToken.mockResolvedValueOnce(null);
-    expect((await creer({ cookie: admin }, { appId: "inconnue", name: "CI" })).status).toBe(404);
-
-    simul.createSourcemapToken.mockResolvedValueOnce({ token: JETON_VU, secret: JETON });
-    const reponse = await creer({ cookie: admin }, { appId: "app-a", name: "CI" });
-    expect(reponse.status).toBe(201);
-    expect((await reponse.json()).secret).toBe(JETON);
-    expect(simul.createSourcemapToken).toHaveBeenLastCalledWith({ ok: true, appId: "app-a", name: "CI", expiresInDays: 30 }, "admin@mip");
-  });
-
-  it("DELETE : Origin exigé, 404 inconnu, révocation au nom de l'admin", async () => {
-    const supprimer = (qui: Qui, id: string) =>
-      REVOQUER(requete(`/api/admin/sourcemap-tokens/${id}`, qui, { method: "DELETE" }), { params: Promise.resolve({ id }) });
-    expect((await supprimer({ cookie: admin, origin: "https://evil.exemple" }, JETON_VU.id)).status).toBe(403);
-    expect((await supprimer({ cookie: viewer }, JETON_VU.id)).status).toBe(403);
-    expect(simul.revokeSourcemapToken).not.toHaveBeenCalled();
-
-    simul.revokeSourcemapToken.mockResolvedValueOnce(null);
-    expect((await supprimer({ cookie: admin }, "inconnu")).status).toBe(404);
-    simul.revokeSourcemapToken.mockResolvedValueOnce({ ...JETON_VU, revokedAt: new Date(0) });
-    const reponse = await supprimer({ cookie: admin }, JETON_VU.id);
-    expect(reponse.status).toBe(200);
-    expect(simul.revokeSourcemapToken).toHaveBeenLastCalledWith(JETON_VU.id, "admin@mip");
   });
 });

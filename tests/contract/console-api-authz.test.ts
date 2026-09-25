@@ -124,6 +124,12 @@ const CHEMINS: Record<string, Record<string, string>> = {
   "channels.delete": { id: ABSENT },
   "uptime.setEnabled": { id: ABSENT },
   "uptime.delete": { id: ABSENT },
+  // C9 — des identifiants qu'aucune ligne ne porte.
+  "readTokens.revoke": { id: ABSENT },
+  "sourcemapTokens.revoke": { id: VUE_ABSENTE },
+  "ticketIntegrations.update": { id: ABSENT },
+  "extensionScopes.setActive": { id: ABSENT },
+  "extensionInstalls.forget": { installId: VUE_ABSENTE },
 };
 
 /** Une analyse de l'Explorer (AST v1) sur l'app A : ce qu'une vue enregistre. */
@@ -229,6 +235,22 @@ const CORPS: Record<string, unknown> = {
   "channels.setActive": { active: false },
   "uptime.create": { name: "authz", url: "https://exemple.fr/sante" },
   "uptime.setEnabled": { enabled: false },
+  // C9 — des comptes et des lignes qu'aucune écriture ne trouve (`introuvable`), ou
+  // des créations dédiées à la matrice, nettoyées par `nettoyer()`.
+  "users.create": { email: "authz-c9-compte@test.local", role: "viewer", apps: A },
+  "users.setActive": { email: "authz-c9-inconnu@test.local", active: true },
+  "users.resetPassword": { email: "authz-c9-inconnu@test.local" },
+  "apps.create": { app_id: "authz-c9-app", name: "authz", origins: "https://authz-c9.exemple.fr" },
+  "apps.createSite": { name: "authz c9 site", url: "https://authz-c9-site.exemple.fr", mode: "sdk" },
+  "apps.setActive": { active: true },
+  "apps.updateOrigins": { origins: "https://authz.exemple.fr" },
+  "readTokens.create": { label: "authz" },
+  "sourcemapTokens.create": { name: "authz" },
+  "ticketIntegrations.create": { provider: "github", target: "authz/depot", credentialRef: "env:TICKET_AUTHZ" },
+  "ticketIntegrations.update": { champ: "enabled", valeur: true },
+  "extensionScopes.create": { domain: "authz-a.exemple.fr" },
+  "extensionScopes.setActive": { active: true },
+  "mobileCapabilities.verify": { app_id: A, runtime: "react_native", release: null, capability: "js_errors", note: "" },
 };
 /** Hors de la boucle : la déconnexion RÉVOQUE la session du profil — testée à part, en dernier. */
 const HORS_MATRICE = new Set(["auth.logout"]);
@@ -309,6 +331,14 @@ function cibles(p: Politique): Cible[] {
     await pool.query("delete from slo where app_id = any($1)", [[A, B]]);
     await pool.query("delete from notify_channel where app_id = any($1) or target like 'https://hooks.exemple.fr/authz%'", [[A, B]]);
     await pool.query("delete from uptime_check where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from read_tokens where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from sourcemap_upload_token where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from ticket_outbox where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from ticket_integration where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from extension_scope where app_id = any($1) or domain like 'authz-%'", [[A, B]]);
+    await pool.query("delete from mobile_capabilities where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from console_user where email like 'authz-c9-%'");
+    await pool.query("delete from app_registry where app_id like 'authz-c9%'");
     await pool.query("delete from replay_chunk where app_id = any($1)", [[A, B]]);
     await pool.query("delete from rum_error where app_id = any($1)", [[A, B]]);
     await pool.query("delete from error_issue where app_id = any($1)", [[A, B]]);
@@ -581,7 +611,7 @@ function cibles(p: Politique): Cible[] {
     expect(ecarts).toEqual([]);
   });
 
-  it("les écritures (C6 → C8), de bout en bout : chaque commande aboutit pour qui a le droit, et s'inscrit au journal", async () => {
+  it("les écritures (C6 → C9), de bout en bout : chaque commande aboutit pour qui a le droit, et s'inscrit au journal", async () => {
     /** Appelle une commande comme la console le fera : son opération, sa portée, son corps. */
     const appeler = async (cle: keyof typeof COMMANDES, profil: Profil, o: { app?: string; chemin?: Record<string, string>; corps?: unknown } = {}) => {
       const op = COMMANDES[cle];
@@ -701,6 +731,48 @@ function cibles(p: Politique): Cible[] {
     // « Évaluer maintenant » touche toutes les applications : la plateforme seule.
     expect(await appeler("evaluerAlertes", "plateforme")).toMatchObject({ etat: "ok" });
 
+    // C9 — l'administration. Un compte : l'administrateur de la PLATEFORME seul ; le mot
+    // de passe rendu une fois ; désactiver révoque ses sessions.
+    const compte = await appeler("creerCompte", "plateforme", { corps: { email: "authz-c9-bob@test.local", role: "viewer", apps: A } });
+    expect(compte).toMatchObject({ etat: "cree", email: "authz-c9-bob@test.local" });
+    expect(String(compte.motDePasse)).toMatch(/^[A-Za-z0-9_-]{18}$/);
+    expect(await appeler("creerCompte", "plateforme", { corps: { email: "authz-c9-bob@test.local", role: "viewer", apps: "" } })).toEqual({ etat: "existe" });
+    const idBob = (await pool.query<{ id: string }>("select id::text as id from console_user where email = 'authz-c9-bob@test.local'")).rows[0].id;
+    await pool.query("insert into console_session (user_id, expires_at) values ($1, now() + interval '1 hour')", [idBob]);
+    expect(await appeler("activerCompte", "plateforme", { corps: { email: "authz-c9-bob@test.local", active: false } })).toEqual({ etat: "ok" });
+    expect((await pool.query("select count(*)::int as n from console_session where user_id = $1 and revoked_at is null", [idBob])).rows[0].n).toBe(0);
+    expect(await appeler("activerCompte", "plateforme", { corps: { email: EMAILS.plateforme, active: false } })).toEqual({ etat: "soi_meme" });
+    expect(await appeler("reinitialiserMotDePasse", "plateforme", { corps: { email: "authz-c9-bob@test.local" } })).toMatchObject({ etat: "ok" });
+    // Une application : la créer, la plateforme ; renouveler sa clé, son administrateur.
+    const cle = await appeler("renouvelerCle", "admin", { app: A });
+    expect(cle).toMatchObject({ etat: "ok", app: A });
+    expect(String(cle.cle)).toMatch(/^mip_[0-9a-f]{32}$/);
+    // Un jeton de lecture et un jeton de CI de l'app A : créés, puis révoqués dans elle.
+    const lecture = await appeler("creerJetonLecture", "admin", { app: A, corps: { label: "C9" } });
+    const idLecture = (await pool.query<{ id: string }>("select id::text as id from read_tokens where app_id = $1 and label = 'C9'", [A])).rows[0].id;
+    expect(lecture).toMatchObject({ etat: "cree", app: A });
+    expect(await appeler("revoquerJetonLecture", "plateforme", { app: B, chemin: { id: idLecture } })).toEqual({ etat: "introuvable" });
+    expect(await appeler("revoquerJetonLecture", "admin", { app: A, chemin: { id: idLecture } })).toEqual({ etat: "ok" });
+    const ci = await appeler("creerJetonSourcemap", "admin", { app: A, corps: { name: "C9" } });
+    expect(ci).toMatchObject({ etat: "cree" });
+    const idCi = (ci.token as { id: string }).id;
+    expect(await appeler("revoquerJetonSourcemap", "plateforme", { app: B, chemin: { id: idCi } })).toEqual({ etat: "introuvable" });
+    expect(await appeler("revoquerJetonSourcemap", "admin", { app: A, chemin: { id: idCi } })).toMatchObject({ etat: "ok" });
+    // Un connecteur de tickets : une RÉFÉRENCE, jamais un jeton collé.
+    expect(await appeler("creerIntegration", "admin", { app: A, corps: { provider: "github", target: "authz/c9", credentialRef: "ghp_pas_une_reference" } })).toMatchObject({ etat: "refus" });
+    const integration = await appeler("creerIntegration", "admin", { app: A, corps: { provider: "github", target: "authz/c9", credentialRef: "env:TICKET_C9" } });
+    expect(integration).toMatchObject({ etat: "cree" });
+    expect(await appeler("majIntegration", "plateforme", { app: B, chemin: { id: String(integration.id) }, corps: { champ: "enabled", valeur: false } })).toEqual({ etat: "introuvable" });
+    expect(await appeler("majIntegration", "admin", { app: A, chemin: { id: String(integration.id) }, corps: { champ: "enabled", valeur: false } })).toEqual({ etat: "ok" });
+    // Un domaine de l'extension déjà rattaché à B : l'administrateur de A ne le reprend pas.
+    expect(await appeler("creerDomaineExtension", "plateforme", { app: B, corps: { domain: "authz-c9-b.exemple.fr" } })).toEqual({ etat: "ok" });
+    expect(await appeler("creerDomaineExtension", "admin", { app: A, corps: { domain: "https://authz-c9-b.exemple.fr/x" } })).toMatchObject({ etat: "refus" });
+    expect(await appeler("creerDomaineExtension", "admin", { app: A, corps: { domain: "authz-c9-a.exemple.fr" } })).toEqual({ etat: "ok" });
+    // R5 — la recette d'une capacité mobile DÉCLARÉE : la plateforme seule, auditée.
+    await pool.query("insert into mobile_capabilities (app_id, runtime, release, capability, declared) values ($1, 'react_native', '1.0.0', 'js_errors', true)", [A]);
+    expect(await appeler("validerCapaciteMobile", "plateforme", { corps: { app_id: A, runtime: "react_native", release: "1.0.0", capability: "js_errors", note: "vu sur Pixel 8" } })).toEqual({ etat: "ok" });
+    expect((await pool.query("select verified_by, verified_note from mobile_capabilities where app_id = $1", [A])).rows[0]).toEqual({ verified_by: EMAILS.plateforme, verified_note: "vu sur Pixel 8" });
+
     // Le journal : une ligne par écriture auditée, avec la requête, l'acteur et l'application.
     const { rows } = await pool.query<{ action: string; actor_kind: string; app_id: string | null; request_id: string }>(
       "select action, actor_kind, app_id, request_id from audit_log where request_id like 'authz-c6-%' order by id",
@@ -727,14 +799,28 @@ function cibles(p: Politique): Cible[] {
       "uptime_check.create",
       "uptime_check.set_enabled",
       "uptime_check.delete",
+      "user.create",
+      "user.set_active",
+      "user.reset_password",
+      "app.rotate_key",
+      "read_token.create",
+      "read_token.revoke",
+      "sourcemap_token.create",
+      "sourcemap_token.revoke",
+      "ticket_integration.create",
+      "ticket_integration.update",
+      "extension_scope.create",
+      "mobile_capability.verify",
     ]) {
       expect(actions, a).toContain(a);
     }
     // L'édition des cartes et les vues personnelles sont exemptées : aucune ligne.
     expect(actions.some((a) => a.startsWith("dashboard.add") || a.startsWith("savedViews") || a.startsWith("saved_view"))).toBe(false);
     // Chaque ligne porte l'application de ce qu'elle touche ; un canal global et l'évaluation, aucune.
-    const sansApp = new Set(["notify_channel.create", "notify_channel.set_active", "notify_channel.delete", "alert.evaluate"]);
-    expect(rows.filter((r) => r.actor_kind !== "user" || r.app_id !== (sansApp.has(r.action) ? null : A))).toEqual([]);
+    const sansApp = new Set(["notify_channel.create", "notify_channel.set_active", "notify_channel.delete", "alert.evaluate", "user.create", "user.set_active", "user.reset_password"]);
+    // Un domaine de B enregistré par la plateforme : sa ligne porte B.
+    const appAttendue = (r: { action: string; detail?: string }) => (sansApp.has(r.action) ? null : A);
+    expect(rows.filter((r) => r.actor_kind !== "user" || (r.app_id !== appAttendue(r) && !(r.action === "extension_scope.create" && r.app_id === B)))).toEqual([]);
     expect(actions).toEqual(expect.arrayContaining([...sansApp]));
   });
 

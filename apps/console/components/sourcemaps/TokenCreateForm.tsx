@@ -4,6 +4,7 @@
 // le hash, et un rafraîchissement de la page le fait disparaître.
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { creerJetonSourcemapAction } from "@/app/admin/sourcemaps/actions";
 import { CopyBlock } from "@/components/CopyBlock";
 import { INPUT_CLASS } from "@/components/forms/Field";
 
@@ -21,21 +22,13 @@ export function TokenCreateForm({ appId }: { appId: string }) {
     setErreur(null);
     setSecret(null);
     try {
-      const res = await fetch("/api/admin/sourcemap-tokens", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          appId,
-          name: String(donnees.get("name") ?? ""),
-          expiresInDays: Number(donnees.get("expiresInDays")),
-        }),
-      });
-      const corps = await res.json().catch(() => null);
-      if (!res.ok) {
-        setErreur(corps?.error ?? `Création impossible (HTTP ${res.status})`);
+      // C9 : la server action appelle la commande (plus la route /api/admin/sourcemap-tokens).
+      const retour = await creerJetonSourcemapAction(appId, String(donnees.get("name") ?? ""), Number(donnees.get("expiresInDays")));
+      if (!retour.ok) {
+        setErreur(retour.erreur);
         return;
       }
-      setSecret({ value: corps.secret, name: corps.token.name });
+      setSecret({ value: retour.secret, name: retour.nom });
       form.reset();
       router.refresh();
     } catch {

@@ -1,10 +1,12 @@
 "use client";
-// Révocation d'un jeton de CI (P5.4) : confirmation, DELETE, puis relecture
-// serveur de la liste. La ligne reste visible, marquée révoquée.
+// Révocation d'un jeton de CI (P5.4) : confirmation, server action (la commande
+// `revoquerJetonSourcemap`, C9), puis relecture serveur de la liste. La ligne reste
+// visible, marquée révoquée.
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { revoquerJetonSourcemapAction } from "@/app/admin/sourcemaps/actions";
 
-export function TokenRevokeButton({ id, name }: { id: string; name: string }) {
+export function TokenRevokeButton({ id, name, appId }: { id: string; name: string; appId: string }) {
   const router = useRouter();
   const [etat, setEtat] = useState<"repos" | "envoi" | "echec">("repos");
 
@@ -14,7 +16,7 @@ export function TokenRevokeButton({ id, name }: { id: string; name: string }) {
     }
     setEtat("envoi");
     try {
-      const res = await fetch(`/api/admin/sourcemap-tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const res = await revoquerJetonSourcemapAction(appId, id);
       if (!res.ok) {
         setEtat("echec");
         return;

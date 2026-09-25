@@ -166,6 +166,7 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
                   <div className="flex gap-2">
                     <form action={toggleUserAction} data-testid={`toggle-${u.email}`}>
                       <input type="hidden" name="email" value={u.email} />
+                      <input type="hidden" name="active" value={u.active ? "false" : "true"} />
                       <button type="submit" className="btn-ghost px-2 py-1">
                         {u.active ? "Désactiver" : "Activer"}
                       </button>
