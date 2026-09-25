@@ -26,6 +26,16 @@
  */
 export const TICK_VISE_MIN = 5;
 export const TICKS_ADMIS_MIN = Object.freeze([5, 10, 15, 20, 30]);
+/**
+ * La cadence D'UN DÉPLOIEMENT SANS RÉGLAGE : 15, la base gratuite (ADR-0014).
+ *
+ * Ce n'était pas le cas jusqu'au 24/09 : sans `SCHEDULER_TICK_MIN`, le service
+ * tournait à 5 — la cible d'un vrai produit, qui a épuisé le quota Neon du mois
+ * en trois semaines. Tant que l'IaC qui pose 15 n'est pas appliquée, le prochain
+ * déploiement du scheduler hériterait de ce 5 et referait la même chose. Le
+ * défaut suit donc la décision en vigueur ; un vrai produit pose 5, explicitement.
+ */
+export const TICK_DEFAUT_MIN = 15;
 
 /** Les cadences, et leur signification en clair. */
 export function decrireCadences(tickMin = TICK_VISE_MIN) {

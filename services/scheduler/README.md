@@ -67,7 +67,7 @@ Toute autre route : 404. (`/status`, sans jeton, a disparu : son contenu est dan
 | `METRICS_TOKEN` | non (secret, ≥ 32 car.) | — | jeton de `/ready` et `/metrics` ; absent : 404 |
 | `DEADMAN_URL` | non (secret, `https:`) | — | dead-man's switch ; absent : aucun signal |
 | `SCHEDULER_DELIVERY` | non | `on` | `off` : le tick ne livre plus (notifier). Retour arrière : `on` |
-| `SCHEDULER_TICK_MIN` | non | `5` | cadence du tick : 5, 10, 15, 20 ou 30 ; **15 sur la base gratuite** (voir plus haut) |
+| `SCHEDULER_TICK_MIN` | non | `15` | cadence du tick : 5, 10, 15, 20 ou 30. Le défaut suit la base gratuite (voir plus haut) ; **un vrai produit pose 5** |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non, **à poser** | 10 hors Railway, **0 sur Railway** | délai SIGTERM → SIGKILL ; 15 à 30 |
 | `RAILWAY_DEPLOYMENT_ID`, `RAILWAY_REPLICA_ID` | fournies par Railway | — | titulaire du bail : `${RAILWAY_DEPLOYMENT_ID}:${RAILWAY_REPLICA_ID}` |
 | `MIGRATION_DATABASE_URL` | non | — | pré-déploiement seulement (connexion directe pour les `predeploy-vNN`) |
