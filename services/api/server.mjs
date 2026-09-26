@@ -36,7 +36,7 @@ const config = defineConfig(
     ...COMMON_ENV,
     DATABASE_URL: { type: "url", required: true, secret: true, protocols: ["postgres:", "postgresql:"], description: "Postgres. Cible : le rôle mip_api, en lecture seule (migration v89)." },
     PGPOOL_MAX: { type: "int", default: 6, min: 2, max: 20, description: "Taille du pool, par réplique." },
-    CONSOLE_API_TOKENS: { type: "string", secret: true, description: "Jetons machine, `jeton` ou `jeton@app1;app2` séparés par des virgules — la MÊME valeur que sur la console. Les jetons en base (écran Jetons de lecture) valent aussi." },
+    CONSOLE_API_TOKENS: { type: "string", secret: true, description: "Jetons machine, `jeton` ou `jeton@app1;app2` séparés par des virgules — la MÊME valeur que sur la console. Les jetons de lecture en base (écran Jetons de lecture) n'ouvrent que /api/rum/summary, pas l'API v1." },
     CONSOLE_API_ALLOWED_ORIGINS: { type: "string", description: "Origines autorisées en CORS, séparées par des virgules — la MÊME valeur que sur la console." },
     CONSOLE_API_RATE_LIMIT: { type: "int", min: 0, max: 100_000, description: "Requêtes par minute et par principal, par réplique (défaut 120 ; 0 = sans limite)." },
     XSOM_AI_URL: { type: "url", protocols: ["https:", "http:"], description: "xSOM AI Guard, pour la moitié IA de /api/rum/summary. Absent : section IA indisponible." },

@@ -12,14 +12,12 @@ coverage/
 test-results/
 playwright-report/
 .vercel/
-supabase/.temp/
 .env.production
 .secrets-v02.local.md
 
 # v0.4 demo backend
 demo/.venv/
 __pycache__/
-.vercel
 
 # Ext-D : clé privée de signature de l'extension — NE JAMAIS committer (l'ID
 # d'extension stable dérive de la clé PUBLIQUE, déjà dans manifest.json "key" ;
@@ -30,6 +28,8 @@ apps/extension/*-key*.b64
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+# …et son réglage de recherche ripgrep, propre à l'outil (outillage local).
+.ignore
 
 # OUTILLAGE IA LOCAL — présent sur le poste, absent du dépôt.
 #

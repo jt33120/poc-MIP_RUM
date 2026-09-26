@@ -703,9 +703,8 @@ declare module "@mip/backend/lib/error-issue-workflow.mjs" {
 
 // --- Travaux planifiés (packages/backend/jobs) ------------------------------------
 // Ils vivaient dans les route handlers `app/api/cron/*` ; ils sont descendus
-// dans le noyau pour que le service `scheduler` (Railway) et ces routes
-// exécutent LE MÊME code. Une divergence entre les deux ne serait pas visible :
-// les deux « marchent », mais ne font pas la même chose.
+// dans le noyau, que seul le service `scheduler` (Railway) exécute depuis la
+// suppression de ces routes (25/09/2026). La console n'en garde que les types.
 
 declare module "@mip/backend/jobs/planifie.mjs" {
   import type { Pool } from "pg";

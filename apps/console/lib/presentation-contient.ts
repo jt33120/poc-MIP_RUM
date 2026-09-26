@@ -45,21 +45,24 @@ export interface ReserveChaine {
 // faute de BENCH_DATABASE_URL), F2 « déployé, non éprouvé » (la CI type la console
 // et les quatre paquets publiés, pas l'extension), F1 « livré avec un défaut
 // connu » (`pnpm -r build` échoue sur un dépôt fraîchement installé).
+//
+// RELECTURE DU 26/09/2026. Les trois réserves étaient devenues fausses le 24/09
+// (PR #281) : la CI joue les deux bancs dans un job à part, type l'extension, et
+// construit le dépôt depuis un clone propre. Ce que ces chiffres ne disent toujours
+// pas se lit dans .github/workflows/ci.yml : les bancs impriment leurs temps sans
+// seuil de latence, et le JavaScript du backend n'est typé par rien. F1 n'a plus de
+// réserve. Les verdicts gardés sont ceux du document au 23/09, qui n'a pas été
+// relevé depuis : un relevé qui les change fait rougir le test, et la phrase se relit.
 export const RESERVES_CHAINE: readonly ReserveChaine[] = [
   {
     source: "F3",
     verdict: "livre_avec_defaut_connu",
-    texte: "ces deux bancs ne tournent jamais en CI, et les temps publiés ne sont donc jamais revérifiés",
+    texte: "les deux bancs de mesure tournent en CI depuis le 24/09/2026, mais sans seuil : les temps publiés y sont remesurés, pas garantis",
   },
   {
     source: "F2",
     verdict: "deploye_non_eprouve",
-    texte: "la CI ne vérifie pas les types de l'extension navigateur",
-  },
-  {
-    source: "F1",
-    verdict: "livre_avec_defaut_connu",
-    texte: "la construction échoue sur un dépôt fraîchement installé",
+    texte: "le JavaScript du backend n'est typé par rien",
   },
 ];
 

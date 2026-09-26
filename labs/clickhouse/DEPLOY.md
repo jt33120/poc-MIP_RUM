@@ -1,11 +1,11 @@
 # Déploiement ClickHouse production — MIP RUM (C2 / P0 « scale grand compte »)
 
-> **But** : passer du stockage POC (Postgres/Supabase, plafond ~10⁶–10⁷ events) au
-> stockage analytique **ClickHouse** (milliards d'events, souverain, auto-hébergeable).
-> Le chemin est **prouvé en local** (`bench.mjs`, Δ=0 sur les p75, ×15 plus compact,
-> ~88 k lignes/s sans tuning — cf. `clickhouse.notes.md`). Ce document est le **runbook
-> de bascule** ; tout est prêt côté code, **le seul vrai pré-requis est un hébergement
-> financé**.
+> **Expérience, jamais déployée** (état au 26/09/2026) : ce runbook décrit une bascule vers ClickHouse qui n'a pas eu lieu ; la production stocke dans Postgres (Neon).
+> **But d'origine** : passer du stockage POC (Postgres, alors sur Supabase, plafond ~10⁶–10⁷ events) au stockage analytique **ClickHouse** (milliards d'events, auto-hébergeable).
+> Le chemin n'est **éprouvé qu'en local**, le 11/06/2026 (`bench.mjs`, Δ=0 sur les p75, ×15 plus compact,
+> ~88 k lignes/s sans tuning — cf. [`NOTES.md`](NOTES.md)). Ce document est le **runbook
+> de bascule**. Tout n'est pas prêt côté code : la couche dialecte de la console, l'aplatissement dans le Collector et le mode `both` restent à écrire (voir plus bas) ;
+> un hébergement financé reste le préalable.
 
 ## Ce qui est prêt (autonome, dans le repo)
 
@@ -68,7 +68,8 @@ différences SQL sont **3 idiomes** (équivalences prouvées Δ=0) :
 ## Conformité & exploitation
 
 - **RGPD** : TTL 30 j sur les tables brutes (la MV garde la tendance 400 j, **sans PII** :
-  agrégats par app/route/device/heure). Zéro IP stockée (géo par timezone, déjà en place).
+  agrégats par app/route/device/heure). Zéro IP stockée (pays estimé par fuseau horaire ; la résolution
+  GeoIP embarquée dans l'image backend ne résout aucun pays en production, `docs/TOPOLOGIE_BACKEND.md`).
 - **Durcissement** : CH derrière le réseau privé ; HTTP auth (user/mot de passe ou mTLS) ;
   `readonly` pour le user console ; quotas par user ; pas d'accès public au port 8123/9000.
 - **Sauvegardes** : `BACKUP`/`RESTORE` (disque ou S3 souverain) ; tester la restauration.

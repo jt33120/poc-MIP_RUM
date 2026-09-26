@@ -7,7 +7,7 @@
  * `tracestate: mip=s:<session_id>`.
  *
  * Activation par variables d'environnement — sans elles, passthrough total :
- *   MIP_RUM_ENDPOINT  ex. https://xxx.supabase.co/functions/v1/v1-traces
+ *   MIP_RUM_ENDPOINT  ex. https://mip-rum-console.vercel.app/api/ingest/v1/traces
  *   MIP_RUM_APP_ID    ex. mon-app
  *   MIP_RUM_API_KEY   optionnel (clé d'app MIP RUM)
  *   MIP_RUM_IGNORE    routes exactes ignorées (défaut "/health,/favicon.ico")

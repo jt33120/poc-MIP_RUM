@@ -16,25 +16,30 @@
 // identifiants qui sont des lignes du document. Pas de seconde liste qui pourrait
 // diverger.
 //
-// RELEVÉ DU 23/09/2026 (P**.10). Trois textes du plan ne tiennent plus et ont été
-// réécrits depuis le document, pas recopiés du plan :
-//   - R2 disait la migration de la reprise « non appliquée en production ». Le
-//     document établit que v83 l'est, par DÉDUCTION des journaux de déploiement,
-//     sans lecture de la base (ligne D8, § 2, § 12.2) : le texte garde ce degré de
-//     certitude. Ce qui manque encore n'est plus le schéma, c'est l'exécution.
-//   - R9 disait « la CI ne vérifie pas les types » et « deux suites SQL […] dont une
-//     est rouge ». F2 est passée « déployé, non éprouvé » : la CI type les SDK et
-//     l'agent Node (#213) et la console (#217), pas l'extension ; la suite rouge
-//     (fenêtre v82→v83) est réparée et jouée en CI. Restent les bancs hors CI, la
-//     construction depuis un dépôt propre, l'extension, la restauration (F1–F3, D7,
-//     § 11).
-//   - R6 finissait par « Aucun pays n'est résolu aujourd'hui », qui se lisait comme
-//     « aucun pays du tout », alors que le pays estimé existe (§ 6.4). Le sujet est
-//     désormais la résolution par base IP→pays, comme dans la ligne D14.
-// Les six autres points sont les textes du plan : leurs lignes du document sont
-// identiques d'un relevé à l'autre, et R8, qui n'en cite aucune, a été relu dans
-// les fichiers qu'il cite. Les numéros de ligne cités hors du document ont été
-// relevés à nouveau (ils avaient bougé depuis le commit 322c9a7 du plan).
+// RELEVÉ DU 23/09/2026 (P**.10). Trois textes du plan ne tenaient plus et ont été
+// réécrits depuis le document : R2 (la migration de la reprise est appliquée), R9
+// (la CI type la console et les paquets) et R6 (c'est la résolution par base
+// IP→pays qui ne donne rien, pas le pays estimé, qui existe : § 6.4).
+//
+// RELECTURE DU 26/09/2026. Le document de couverture n'a pas été relevé depuis le
+// 23/09 ; des fichiers du dépôt plus récents que lui ont rendu cinq points faux.
+// Ils sont réécrits depuis ces fichiers, qu'ils citent :
+//   - R1 et R2 suivent le relevé de production du 23/09/2026, LU EN BASE
+//     (docs/operations/releve-p0-2026-09-23.md) : la chaîne reçoit du trafic (le
+//     dernier événement ne date pas du 17/09), et v83 est inscrite au registre
+//     `schema_migration` — le document ne l'avait que déduite des journaux ;
+//   - R6 : le chemin est choisi (ADR 0005). Le relais de la console transmet le pays
+//     seul et saute la résolution ; seule une collecte directe (P6b.G) s'en servira.
+//     Les deux passages du document qui disaient « rien n'est tranché » (§ 11,
+//     étape 2 ; TOPOLOGIE_BACKEND.md, section GeoIP) ne sont plus cités ;
+//   - R8 : six applications sur sept n'ont aucune clé d'ingestion (même relevé) ;
+//   - R9 : la construction depuis un dépôt propre, le typage de l'extension et les
+//     deux bancs de mesure sont joués par la CI depuis le 24/09 (PR #281,
+//     .github/workflows/ci.yml), et la procédure de restauration est écrite
+//     (docs/operations/runbook.md § 8), jamais éprouvée. F1 à F3 ne sont plus ses
+//     pastilles : ce que leurs lignes disent manquer est fait.
+// Les autres points ont été relus contre le code le même jour et gardent le texte
+// du plan. Les numéros de ligne cités hors du document ont été relevés à nouveau.
 import { capaciteParId, type Capacite } from "./couverture";
 import type { PointReste } from "./couverture-controle";
 
@@ -47,26 +52,41 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R1",
     titre: "Une recette sur une vraie application",
     manque:
-      "Aucune donnée n'a été ingérée depuis les déploiements ; le dernier événement reçu date du 17/09/2026 à 17:23, d'après le journal de livraison (non recontrôlé).",
+      "Aucun écran n'a été relu sur des données réellement ingérées. Du trafic arrive pourtant : le relevé lu en base le 23/09/2026 compte 378 événements pour l'application du client, le dernier reçu ce jour-là à 13:01 UTC, et 33 pour la console elle-même. Le volume reste faible, et la production est coupée du 24 septembre au 1er octobre 2026, faute de quota (voir R10).",
     debloque:
-      "Réactiver un émetteur sur une application de recette, attendre quelques centaines d'événements, puis relire les erreurs, l'Explorer, un tableau de bord et l'écran mobile.",
+      "Une fois la base rouverte, relire les erreurs, l'Explorer et un tableau de bord sur le trafic reçu ; faire émettre une application de recette pour ce qu'il ne couvre pas, dont l'écran mobile.",
     decide: "L'équipe MIP ; c'est le point le moins coûteux.",
-    // § 6.2 (aucune recette, date reprise sans recontrôle) ; § 11, étape 1.
-    sources: [`${DOC}:295-308`, `${DOC}:560-563`],
+    // § 6.2 (aucun écran éprouvé sur des données réellement ingérées) ; § 11, étape 1 ;
+    // le relevé de production du 23/09, lu en base : le « dernier événement le 17/09 »
+    // que le document reprenait sans recontrôle est faux.
+    sources: [
+      `${DOC}:297-298`,
+      `${DOC}:560-563`,
+      "docs/operations/releve-p0-2026-09-23.md:13",
+      "docs/operations/releve-p0-2026-09-23.md:54-57",
+    ],
   },
   {
     id: "R2",
     titre: "P8.3 — Reprise de l'historique",
     manque:
-      "L'outil de reprise est livré et testé (dry-run, vérification), et sa migration v83 est appliquée en production : c'est déduit des journaux de déploiement, pas lu en base. Aucun environnement ne lance l'outil, qui est une ligne de commande, et son exécution en production a été écartée le 18/09/2026 : environ 97 lignes étaient concernées (chiffre non recontrôlé).",
+      "L'outil de reprise est livré et testé (dry-run, vérification), et sa migration v83 est appliquée en production : le registre des migrations, lu en base le 23/09/2026, l'inscrit le 18/09/2026 à 11:46 UTC. Aucun environnement ne lance l'outil, qui est une ligne de commande, et son exécution en production a été écartée le 18/09/2026 : environ 97 lignes étaient concernées (chiffre non recontrôlé).",
     debloque:
       "Rien n'est obligatoire. Si une reprise redevient nécessaire, plus rien n'est à faire côté schéma : il reste à lancer l'outil sur la base de production, depuis un poste qui y a accès.",
     decide: "Le responsable du produit.",
-    // D8 (v83 appliquée, déduite des journaux ; aucun environnement ne lance l'outil),
-    // D9 (décision du 18/09, ≈ 97 lignes non recontrôlées, poste de livraison refusé
-    // par la base) ; § 10 (seul point fermé par une décision) ; § 12.2 (« rien côté
-    // schéma, seulement lancer l'outil »).
-    sources: ["D8", "D9", `${DOC}:546-548`, `${DOC}:611-631`],
+    // D8 (aucun environnement ne lance l'outil), D9 (décision du 18/09, ≈ 97 lignes
+    // non recontrôlées, poste de livraison refusé par la base) ; § 10 (seul point
+    // fermé par une décision) ; fin du § 12.2 (« rien côté schéma, seulement lancer
+    // l'outil ») ; le relevé de production du 23/09 : v83 LUE dans `schema_migration`,
+    // là où le document ne l'avait que déduite des journaux du runner.
+    sources: [
+      "D8",
+      "D9",
+      `${DOC}:546-548`,
+      `${DOC}:629-631`,
+      "docs/operations/releve-p0-2026-09-23.md:12",
+      "docs/operations/releve-p0-2026-09-23.md:45",
+    ],
   },
   {
     id: "R3",
@@ -101,13 +121,22 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R6",
     titre: "Le pays par adresse IP, inerte tant que la collecte passe par Vercel",
     manque:
-      "La résolution est déployée dans l'image Railway, mais le trafic entre par la route de la console sur Vercel, qui ne l'appelle pas ; la base elle-même reste à déposer. Cette résolution ne donne donc aucun pays aujourd'hui.",
+      "La résolution et sa base (DB-IP Lite, téléchargée à la construction de l'image) sont livrées dans le collecteur, un service Railway que le dépôt déclare mais qui n'est pas encore créé. Le trafic entre par la route de la console sur Vercel, qui ne l'appelle pas ; et le relais de la console vers le collecteur, livré éteint, ne lui transmettra que le pays posé par Vercel, jamais l'adresse : la résolution y est sautée. Cette résolution ne donne donc aucun pays aujourd'hui.",
     debloque:
-      "Choisir entre un collecteur backend public et une résolution depuis la console. Aucun des deux n'est tranché.",
+      "Le chemin est choisi : une collecte directe vers le collecteur, pour les sites dont la politique de sécurité du contenu (CSP) le permet, une fois que le relais porte tout le trafic depuis 7 jours sans repli. Avant, prouver sur un environnement de recette que la façade Railway écrase une adresse forgée par le client. Rien de cela n'est livré.",
     decide: "L'équipe MIP.",
-    // D14 : déployée, INERTE (règle 3 du § 8.0) — elle figure ici et nulle part dans
-    // « Ce qu'il sait faire ». § 11, étape 2 ; la topologie, section GeoIP.
-    sources: ["D14", `${DOC}:564-566`, "docs/TOPOLOGIE_BACKEND.md:112-123"],
+    // D14 : INERTE (règle 3 du § 8.0) — elle figure ici et nulle part dans « Ce qu'il
+    // sait faire ». La décision (ADR 0005, points 5 et conséquences), le GeoIP éteint
+    // du collector et sa condition d'allumage (.railway/railway.ts), la collecte
+    // directe P6b.G (mode d'emploi du relais), la base dans l'image (Dockerfile).
+    sources: [
+      "D14",
+      "docs/architecture/adr/0005-relais-ingestion.md:17",
+      "docs/architecture/adr/0005-relais-ingestion.md:21",
+      ".railway/railway.ts:232-241",
+      "docs/operations/relais-ingestion.md:295-302",
+      "services/collector/Dockerfile:103-131",
+    ],
   },
   {
     id: "R7",
@@ -117,26 +146,33 @@ export const POINTS_RESTE: readonly PointReste[] = [
     debloque:
       "Confirmer l'outil ITSM cible, ouvrir un espace et ses droits, poser un secret de webhook, décider de la synchronisation des statuts.",
     decide: "La DSI de MIP.",
-    // D12 : déployée, INERTE (règle 3 du § 8.0), comme D14 en R6.
-    sources: ["D12", "D13"],
+    // D12 : déployée, INERTE (règle 3 du § 8.0), comme D14 en R6. Aucune intégration
+    // configurée : lu en base au relevé de production du 23/09.
+    sources: ["D12", "D13", "docs/operations/releve-p0-2026-09-23.md:16"],
   },
   {
     id: "R8",
     titre: "Souveraineté et mise en service chez un client",
     manque:
-      "Les trois hébergeurs relèvent du droit américain ; la console n'a pas d'image conteneur, donc « déployable chez vous » n'est pas livrable de bout en bout ; la clé d'ingestion n'est pas encore exigée par défaut ; aucune certification.",
+      "Les trois hébergeurs relèvent du droit américain ; la console n'a pas d'image conteneur, donc « déployable chez vous » n'est pas livrable de bout en bout ; la clé d'ingestion n'est pas exigée par défaut, et six applications sur sept n'en ont aucune, dont celle du client (relevé du 23/09/2026) : l'exiger aujourd'hui couperait leur collecte ; aucune certification.",
     debloque:
-      "Choisir un hébergeur relevant du droit européen, conteneuriser la console, fermer l'ingestion par défaut, lancer une démarche de certification si un appel d'offres l'exige.",
+      "Choisir un hébergeur relevant du droit européen ; retirer à la console son accès direct à la base, puis la conteneuriser ; provisionner une clé par application (l'outil est livré), la poser dans chaque intégration, puis exiger la clé ; lancer une démarche de certification si un appel d'offres l'exige.",
     decide: "Le responsable du produit et le client.",
     // Hors du document de couverture (qui ne couvre que P5 à P8) : les fichiers du
-    // dépôt qui le disent. Droit des hébergeurs ; console sans image ; clé exigée
-    // seulement si REQUIRE_API_KEY vaut « true » ; aucune certification acquise.
+    // dépôt qui le disent. Droit des hébergeurs ; console sans image, et pourquoi
+    // elle attend le retrait de la base (lot C12b) ; clé exigée seulement si
+    // REQUIRE_API_KEY vaut « true », six apps sur sept sans clé (relevé du 23/09,
+    // R8a), l'outil de provisionnement ; aucune certification acquise.
     sources: [
       "apps/console/lib/specs.ts:98-102",
-      "apps/console/lib/specs.ts:199-203",
+      "apps/console/lib/specs.ts:207-213",
       "apps/console/components/presentation/Specs.tsx:161-165",
       "apps/console/components/presentation/Specs.tsx:186-195",
+      "docs/architecture/console-api/README.md:221",
       "apps/console/lib/ingest.ts:16",
+      "docs/operations/releve-p0-2026-09-23.md:14",
+      ".railway/railway.ts:221-228",
+      "scripts/ops/provisionner-cles.mjs:1-7",
       "docs/CONFORMITE.md:24-26",
       "docs/CONFORMITE.md:198-201",
     ],
@@ -145,14 +181,22 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R9",
     titre: "Une chaîne de livraison qui dit vrai",
     manque:
-      "La construction échoue sur un dépôt fraîchement installé ; la CI vérifie les types de la console, des SDK et de l'agent Node, mais pas ceux de l'extension navigateur ; les deux bancs de mesure ne tournent jamais en CI, si bien que les temps de réponse publiés ne sont jamais revérifiés ; la restauration d'une sauvegarde sans ressusciter des données effacées n'est ni écrite, ni éprouvée.",
+      "Depuis le 24/09/2026, la CI construit le dépôt depuis un clone propre, vérifie les types de l'extension navigateur et joue les deux bancs de mesure, et la procédure de restauration d'une sauvegarde sans ressusciter des données effacées est écrite. Reste que cette procédure n'a jamais été éprouvée et que sa partie « identités » est manuelle ; que les bancs impriment leurs temps sans seuil, si bien que les temps publiés sont remesurés, pas garantis ; et que le JavaScript du backend n'est typé par rien.",
     debloque:
-      "Deux corrections courtes pour l'extension : déclarer sa dépendance au SDK, ce qui ordonne la construction, et l'ajouter au typage de la CI. Jouer les bancs de mesure sur une base préparée, dans la CI ou à chaque relevé. Écrire la procédure de restauration.",
+      "Répéter la procédure de restauration sur la branche Neon de répétition, avant d'en avoir besoin.",
     decide: "L'équipe MIP.",
-    // F1 (construction, défaut), F2 (typage : « déployé, non éprouvé » depuis le
-    // 23/09, limite = l'extension), F3 (bancs hors CI), D7 (restauration) ; § 11,
-    // étapes 3 à 5.
-    sources: ["F1", "F2", "F3", "D7", `${DOC}:567-575`],
+    // D7 (restauration ; le document la dit « non commencée », le runbook l'a écrite
+    // le 24/09 sans l'éprouver). La CI : typage de l'extension et limite du backend
+    // `.mjs`, construction depuis un dépôt propre, bancs de mesure sans seuil de
+    // latence. F1 à F3 ne sont plus citées : ce qu'elles disent manquer est fait.
+    sources: [
+      "D7",
+      ".github/workflows/ci.yml:78-93",
+      ".github/workflows/ci.yml:102-131",
+      ".github/workflows/ci.yml:462-481",
+      "docs/operations/runbook.md:113-115",
+      "docs/operations/runbook.md:146",
+    ],
   },
   {
     // AJOUTÉ LE 24/09/2026, décision du responsable du produit : la base reste sur

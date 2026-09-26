@@ -20,6 +20,17 @@
 > numéros de ligne cités bougeront : au début de chaque lot, on relit la fonction citée avant de la
 > modifier. Ce qui n'a pas pu être établi est écrit « non établi » et rassemblé au § 9.4.
 
+> **État au 26/09/2026 — plan exécuté, plus en cours.** Les neuf vagues du § 6.2 (0 à 8) ont été
+> fusionnées sur `master`, la dernière par la PR #277 (commit `5f809cb`, 23/09/2026). Ce document est
+> désormais la spécification de ce qui a été construit, pas une liste de travaux à faire. Il n'a pas été
+> relu lot par lot après exécution : un écart entre un lot livré et sa spécification n'est pas signalé
+> ici. Seul **P*.10** (doublons d'issues, conditionné à l'activation du regroupement v2) n'a aucun lot
+> fusionné à son nom dans l'historique. Les `fichier:ligne` sont ceux de `322c9a7` et ont bougé depuis.
+> Les notes de lecture du dossier `plan-frontend-notes/` (§ 0.2) ne sont **plus dans le dépôt** :
+> retirées du suivi le 23/09/2026 avec l'outillage des agents (commit `c9a307fd`), elles restent lisibles
+> dans l'historique (`git show 0f2c7466:_bmad-output/implementation-artifacts/plan-frontend-notes/<fichier>`) ;
+> seule `iplabel.md` a été gardée, sous le nom [notes-lecture-ekara.md](notes-lecture-ekara.md).
+
 ## Sommaire
 
 0. Comment utiliser ce document
@@ -58,7 +69,7 @@ les brouillons qui l'ont précédé. Il se suffit à lui-même :
 | « backend : manque » + `Bn` | patch hors lots F (requête ou migration) listé au § 6.3 | livrer l'état « non disponible, raison : … » du widget tant que `Bn` manque, **jamais des zéros** |
 | « non établi » | fait non vérifié | ne pas le supposer ; le vérifier en ouvrant le lot, et s'il est faux, appliquer le repli écrit |
 | `§ x.y` | renvoi interne à ce plan | — |
-| `reads/*.md Lnn`, `console-ecrans-*.md`, `iplabel.md`, `datadog-*.md`, `grafana.md` | notes de lecture qui ont fondé une décision, versionnées à côté de ce plan dans [`plan-frontend-notes/`](plan-frontend-notes/) (un renvoi `reads/x.md Lnn` désigne `plan-frontend-notes/x.md`, ligne nn) ; la décision et sa preuve dans le code sont reformulées ici | rien : ces renvois disent d'où vient un constat, ils ne sont pas nécessaires pour implémenter |
+| `reads/*.md Lnn`, `console-ecrans-*.md`, `iplabel.md`, `datadog-*.md`, `grafana.md` | notes de lecture qui ont fondé une décision, versionnées à la rédaction à côté de ce plan dans `plan-frontend-notes/`, retirées du dépôt le 23/09/2026 (encadré d'état en tête ; `iplabel.md` est devenu [notes-lecture-ekara.md](notes-lecture-ekara.md)) (un renvoi `reads/x.md Lnn` désigne `plan-frontend-notes/x.md`, ligne nn) ; la décision et sa preuve dans le code sont reformulées ici | rien : ces renvois disent d'où vient un constat, ils ne sont pas nécessaires pour implémenter |
 | `NN-nom.png` (ex. `01-overview.png`) | capture de travail de la console, régénérable (§ 0.6, § 9.1) | la régénérer pour comparer avant / après |
 
 Chemins : `app/…`, `components/…`, `lib/…` sont relatifs à `apps/console/` ; `packages/…`, `packages/backend/…`,
@@ -3935,7 +3946,7 @@ couvert par le refus de F40 tant que F66 n'est pas livré.
 > sont vérifiés par un test (P*.1).
 >
 > **Chemins.** Relatifs au dépôt ; code de la console sous `apps/console/`. Numéros de ligne relevés le
-> 21/09/2026 sur `322c9a7`. Les renvois `reads/*.md` désignent les notes de lecture versionnées dans `plan-frontend-notes/` (§ 0.2).
+> 21/09/2026 sur `322c9a7`. Les renvois `reads/*.md` désignent les notes de lecture de `plan-frontend-notes/`, hors du dépôt depuis le 23/09/2026 (§ 0.2).
 
 ---
 

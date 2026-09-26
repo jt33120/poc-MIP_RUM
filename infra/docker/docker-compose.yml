@@ -1,4 +1,4 @@
-# Backend MIP RUM auto-hébergé — les CINQ services Railway, sur un poste ou un
+# Backend MIP RUM auto-hébergé — les SIX services Railway, sur un poste ou un
 # serveur, avec leurs images de production (`services/<x>/Dockerfile`).
 #
 #   db (Postgres 17) ◀── migrate (one-shot) ◀── collector   (profil `collector`)
@@ -12,7 +12,7 @@
 #
 #   docker compose run --rm migrate                     la base de dev, migrée
 #   docker compose up -d --build --wait collector       + le collecteur
-#   docker compose --profile tout up -d --build --wait  les cinq services
+#   docker compose --profile tout up -d --build --wait  les six services
 #
 # SCHEDULER ET NOTIFIER ENSEMBLE (`tout`) : poser SCHEDULER_DELIVERY=off. Sinon
 # le scheduler livre aussi, sans clé Resend, et solde les e-mails `skipped`.

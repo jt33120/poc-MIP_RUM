@@ -12,7 +12,7 @@
 | Réplicas | 2 (sans état : le débit par principal est compté par réplique) |
 | Image | `services/api/Dockerfile` — `dist/server.mjs` et `pg`, rien d'autre |
 
-État au 24/09/2026 : **pas encore déployé**. L'API v1 est servie par la console Vercel ; le relais de la console vers ce service (bascule par `platform_flag`, comme la collecte) vient ensuite.
+État au 26/09/2026 : **pas encore créé** sur Railway — déclaré dans `.railway/railway.ts`, il attend ses variables partagées (dont `API_DATABASE_URL`) et un apply approuvé. Le rôle `mip_api` arrive avec migration-v89, pas encore appliquée en production. L'API v1 est servie par la console Vercel ; le relais de la console vers ce service est livré (`apps/console/lib/api-relay.ts`, #292) et éteint : `CONSOLE_API_RELAY_URL` non posée sur Vercel, drapeau `platform_flag.api_relay_pct` à 0 ([mode d'emploi](../../docs/operations/relais-api.md)).
 
 ## Pourquoi un bundle des routes de la console
 
@@ -51,6 +51,7 @@ Réponses : l'enveloppe de la console (`{ meta, data }`, ETag faible, `Cache-Con
 | `CONSOLE_API_ALLOWED_ORIGINS` | non | origines CORS, **la même valeur que la console** |
 | `CONSOLE_API_RATE_LIMIT` | non | requêtes par minute et par principal, par réplique (défaut 120) |
 | `XSOM_AI_URL`, `XSOM_AI_TOKEN` | non | la moitié IA de `/api/rum/summary` (xSOM AI Guard) |
+| `CONSOLE_API_RELAY_URL` | **à ne pas poser** | variable de la console, qui désigne ce service ; posée ici, elle le ferait relayer vers lui-même : refus de démarrer |
 | `PGPOOL_MAX`, `PORT`, `LOG_LEVEL`, `METRICS_TOKEN`, `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non | voir le kit |
 
 ## Ce que le rôle `mip_api` interdit, même au code du service

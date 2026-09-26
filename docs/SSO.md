@@ -6,16 +6,34 @@
 > disponible en repli. Provisioning **JIT** (le compte console est créé/mis à jour
 > à la 1ʳᵉ connexion). Implémentation **OIDC standard** → tout IdP conforme.
 
-## Depuis C1c : le SSO passe par `console-api`
+## Quel flux sert en production (26/09/2026)
+
+Deux implémentations du même contrat existent dans le code (master) ; les routes
+`/api/auth/oidc/login` et `/api/auth/oidc/callback` de la console choisissent entre elles
+à chaque requête (`backend().estBranche()`, `apps/console/lib/backend.ts`) :
+
+- **La console seule — le flux en service.** Tant que la console n'est pas branchée sur
+  `console-api` (il y faudrait `CONSOLE_API_URL`, `CONSOLE_API_CLIENT_SECRET` et
+  `SESSION_PUBLIC_JWKS` sur Vercel, et un service `console-api` qui n'existe pas encore),
+  c'est son propre code OIDC qui tourne
+  (`apps/console/lib/oidc.ts`, sections « Activation » et suivantes), avec les défauts
+  décrits dans le tableau ci-dessous. Le SSO n'y est actif que si les `OIDC_*` sont posées
+  sur Vercel — non vérifié ici.
+- **Par `console-api` (C1c) — livré, pas en service.** Le service `console-api` n'est pas
+  encore créé sur Railway, la connexion par `console-api` n'est pas branchée, et la
+  migration-v91 (colonnes `oidc_iss`, `oidc_sub`) n'est pas encore appliquée en production
+  (appliquée jusqu'à v86).
+
+## Depuis C1c : le SSO par `console-api`
 
 > Ce qui suit décrit le flux **de la console branchée sur `console-api`** (piste C). Tant que la console n'y est pas branchée, le flux historique décrit plus bas reste en service, avec ses défauts.
 
 **Où vit la configuration.** Sur le service `console-api`, plus sur Vercel :
 - `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` (toujours la route de la console, `/api/auth/oidc/callback`) ;
 - `OIDC_TX_KEY` : 32 octets en base64url ;
-- en option : `OIDC_ROLE_CLAIM`, `OIDC_ADMIN_VALUES`, `OIDC_APPS_CLAIM`, `OIDC_ALLOWED_DOMAINS`.
+- en option : `OIDC_SCOPES`, `OIDC_ROLE_CLAIM`, `OIDC_ADMIN_VALUES`, `OIDC_APPS_CLAIM`, `OIDC_ALLOWED_DOMAINS`.
 
-C'est tout ou rien : une configuration partielle refuse le démarrage.
+C'est tout ou rien : une configuration partielle refuse le démarrage (`services/console-api/server.mjs`).
 
 **Le flux.** La console appelle `GET /v1/auth/oidc/authorization`. Le service découvre l'IdP, dont l'émetteur est **épinglé** : il doit être celui de la configuration. Il prépare le PKCE, l'état et le nonce, et les **scelle** dans une transaction JWE (`dir` + A256GCM). La console garde cette transaction en cookie 10 minutes, sans pouvoir la lire.
 
@@ -35,16 +53,16 @@ Chaque refus rend le même « Identifiants invalides » au navigateur. Sa raison
 
 **Ce qui le prouve.** `tests/integration/console-api-sso-sql.test.ts` joue contre un faux IdP qui vérifie le PKCE, avec la vraie base : chaque cas du tableau, et chaque mensonge (état, transaction, nonce, émetteur, audience).
 
-## Activation
+## Activation (flux historique, la console seule)
 
-Définir ces variables d'environnement sur la console (vides ⇒ SSO **désactivé**, le
-bouton n'apparaît pas) :
+Définir ces variables d'environnement sur la console, sur Vercel (vides ⇒ SSO **désactivé**, le
+bouton n'apparaît pas ; `oidcConfig()`, `apps/console/lib/oidc.ts`) :
 
 | Variable | Requis | Rôle |
 |---|---|---|
 | `OIDC_ISSUER` | ✅ | URL de l'émetteur (ex. `https://idp.example/realms/mip`) — la discovery `/.well-known/openid-configuration` en découle |
 | `OIDC_CLIENT_ID` | ✅ | identifiant du client OIDC |
-| `OIDC_CLIENT_SECRET` | ✅ | secret du client (client confidentiel) — **à injecter depuis un coffre** (Supabase Vault / secret manager), jamais en clair dans le repo |
+| `OIDC_CLIENT_SECRET` | ✅ | secret du client (client confidentiel) — variable **secrète** de l'hébergeur (Vercel aujourd'hui, le service `console-api` après la bascule), jamais en clair dans le repo |
 | `OIDC_REDIRECT_URI` | ✅ | `https://<console>/api/auth/oidc/callback` |
 | `OIDC_SCOPES` | — | défaut `openid email profile` |
 | `OIDC_ROLE_CLAIM` | — | claim portant les rôles/groupes (ex. `groups`). Absent ⇒ le rôle reste géré dans la console |

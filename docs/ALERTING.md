@@ -39,7 +39,8 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
   **% de budget consommé**, et **`fast_burn`**.
 - **Burn-rate** : `fast_burn` = le taux non conforme de la **dernière heure** dépasse
   **14,4×** le budget (convention SRE multi-fenêtres — épuiserait un budget 30 j en ~2 j).
-- **`check_slo_burn()`** (pg_cron toutes les 5 min) crée un `alert_event` **critical**
+- **`check_slo_burn()`** (étape du tick du service `scheduler`, toutes les 15 min en production —
+  `SCHEDULER_TICK_MIN`, ADR-0014 ; pg_cron n'existe pas sur Neon) crée un `alert_event` **critical**
   rattaché au SLO (`slo_id`) sur burn rapide. Flux d'événements **unifié** avec les
   règles (`alert_event.rule_id` OU `slo_id`). **Cadence dégressive** (migration-v45)
   : 1 h, 2 h, 4 h, 8 h puis 16 h de plafond selon le nombre d'alertes déjà émises
@@ -57,20 +58,35 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
   `severity_min`, app correspondante ou globale `app_id null`), **en plus** du
   `webhook_url` historique de la règle (rétro-compatible).
 - Canaux livrés : **`webhook`** (JSON complet, champ `text` lisible par Slack) et **`slack`**
-  (*incoming webhooks*). Depuis la migration v88, `route_alert` ne fait que **mettre en file**
-  une livraison `queued` par canal éligible ; l'envoi appartient au livreur
-  (`packages/backend/lib/dispatch-alerts.mjs`) : le service **`notifier`**, ou le tick du
-  scheduler tant que `SCHEDULER_DELIVERY` vaut `on`. pg_net n'existe pas sur Neon.
-- Chaque webhook porte `x-mip-delivery-id` ; avec `WEBHOOK_SIGNING_SECRET`, aussi
-  `x-mip-timestamp` et `x-mip-signature: sha256=HMAC(secret, "<timestamp>.<corps>")`
+  (*incoming webhooks*). Le livreur est `packages/backend/lib/dispatch-alerts.mjs` : le service
+  **`notifier`**, ou le tick du scheduler tant que `SCHEDULER_DELIVERY` vaut `on` (défaut).
+  pg_net n'existe pas sur Neon.
+- Chaque webhook porte `x-mip-delivery-id` ; avec `WEBHOOK_SIGNING_SECRET` (variable du
+  **notifier**), aussi `x-mip-timestamp` et `x-mip-signature: sha256=HMAC(secret, "<timestamp>.<corps>")`
   (vérification de référence : `verifierSignature`, `packages/backend/lib/net/signature-webhook.mjs`).
-- **E-mail** (`kind='email'`, cible = adresse) : envoyé par **Resend** depuis le notifier,
-  seul détenteur de la clé, avec une clé d'idempotence par livraison. **Mode test** tant que
-  le domaine d'envoi n'est pas vérifié : expéditeur `onboarding@resend.dev`, seuls les
-  destinataires de `ALERT_EMAIL_TEST_RECIPIENTS` sont servis, les autres soldés `skipped`
-  avec la raison. Sans clé (le scheduler), `skipped` avec la raison. **Avant v88, aucun
-  e-mail d'alerte n'était jamais parti** : `route_alert` les soldait `skipped` en SQL.
+  Le tick du scheduler ne signe pas : il appelle le livreur sans secret.
+- **E-mail** (`kind='email'`, cible = adresse) : envoyé par **Resend**
+  (`packages/backend/lib/net/resend.mjs`) depuis le notifier, seul détenteur de la clé
+  (`RESEND_API_KEY`, `ALERT_EMAIL_FROM`), avec une clé d'idempotence par livraison. **Mode
+  test** tant que le domaine d'envoi n'est pas vérifié : expéditeur `onboarding@resend.dev`,
+  seuls les destinataires de `ALERT_EMAIL_TEST_RECIPIENTS` sont servis, les autres soldés
+  `skipped` avec la raison. Sans clé (le scheduler), `skipped` avec la raison.
 - **SMS** : non livré.
+
+**Ce que v88 a changé (dans le dépôt).** `route_alert` ne fait plus que **mettre en file** une
+livraison `queued` par canal éligible, sans pg_net ; avant, elle tentait l'envoi depuis
+Postgres et soldait `skipped` en SQL toute livraison e-mail sans clé au coffre Supabase ni
+relais — **aucun e-mail d'alerte n'est jamais parti**. v88 efface aussi
+`alert_config.email_relay_url` (l'URL, jeton compris, du relais `POST /api/alerts/email` de la
+console, route retirée) ; la colonne reste, comme `email_from`, mais n'est plus lue.
+
+**Ce qui livre en production au 26/09/2026.** Le service `notifier` n'est pas encore créé sur
+Railway ; le scheduler n'a ni `SCHEDULER_DELIVERY` (donc `on`), ni `WEBHOOK_SIGNING_SECRET`, ni
+clé Resend (relevé Railway du 26/09). Son tick livre donc les webhooks et Slack, **non
+signés** ; aucun e-mail ne part. v88 n'est pas encore appliquée en production (appliquée
+jusqu'à v86) : tant qu'elle ne l'est pas, les livraisons e-mail sont soldées `skipped` par
+`route_alert` elle-même ; après, par le livreur du scheduler, faute de clé. Et tant que le
+calcul Neon est suspendu (jusqu'au 01/10/2026), rien n'est évalué ni livré.
 
 ## Pilier 4 — Issues d'erreurs : nouvelle, régression, pic (P5.6, migrations v73 et v74)
 
@@ -84,9 +100,9 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
   pas recopiée dans la charge (v74) : elle ne peut plus faire échouer le lot qui crée l'issue.
 - **`route_error_issue_notifications()`**, étape du tick juste après `check_alerts` : crée
   l'`alert_event` (rattaché à la règle pour un pic) et appelle `route_alert` — mêmes
-  canaux, même sévérité, même livraison. `for update skip locked` : le scheduler et le cron
-  GitHub ne routent jamais deux fois la même notification ; échec = nouvel essai à 30 s ×
-  2^n, `failed` après 5.
+  canaux, même sévérité, même livraison. `for update skip locked` : deux passes concurrentes
+  ne routent jamais deux fois la même notification ; échec = nouvel essai à 30 s × 2^n,
+  `failed` après 5.
 - **Régression confirmée** : issue résolue, occurrence postérieure à la résolution, dans
   l'env de référence, sur une release dont le **premier marqueur de déploiement** de cet env
   est strictement postérieur à celui de la release de référence (release et env de la
@@ -116,14 +132,15 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
   l'arriéré antérieur a été soldé `skipped` par la migration. Chaque livraison est réservée
   (`for update skip locked`), postée et marquée dans **sa** transaction : une passe coupée
   ne reposte que la livraison en cours. Passe bornée à 50 livraisons et par une échéance
-  (10 s dans le notifier, 45 s dans le tick) ; une cible ni HTTP ni adresse e-mail est
+  (10 s dans le notifier, `BUDGET_PASSE_MS` ; 45 s dans le tick, `ECHEANCE_LIVRAISON_MS`) ; une cible ni HTTP ni adresse e-mail est
   `skipped` au lieu d'échouer cinq fois.
 
 ## Sécurité / exploitation
 
 - `check_alerts` / `check_slo_burn` / `route_alert` / `metric_baseline` sont
-  **`SECURITY DEFINER`** à **`search_path` figé** (anti-injection, cf. v11), appelés par
-  pg_cron (propriétaire) — jamais via l'API.
+  **`SECURITY DEFINER`** à **`search_path` figé** (anti-injection, cf. v11), appelés par le
+  service `scheduler` (connecté en propriétaire, `neondb_owner`) — jamais via l'API. Les
+  blocs `cron.schedule` de v17 sont sautés sur Neon, faute de pg_cron.
 - Accès **`console_ro`** des nouvelles tables (`slo`, `notify_channel`) + `alert_rule`/
   `alert_event` codifié dans v17 (RLS + grant + policy, motif du finding #1).
 

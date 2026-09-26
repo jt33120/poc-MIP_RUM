@@ -13,7 +13,7 @@
 | Où envoyer | URL | Plafond |
 |---|---|---|
 | **Aujourd'hui** : la console | `https://mip-rum-console.vercel.app/api/sourcemaps` | 4 Mio par requête (limite Vercel) : envoyer map par map |
-| Quand le collector sera en ligne (P2) | `https://<domaine du collector>/v1/sourcemaps` | 20 Mio par requête, 15 Mio par map |
+| Quand le collector sera en service (code livré en P2 ; service pas encore créé au 26/09/2026, domaine à venir) | `https://<domaine du collector>/v1/sourcemaps` | 20 Mio par requête, 15 Mio par map |
 
 ## 2. Le contrat, en une ligne
 
@@ -91,7 +91,7 @@ Un marqueur de déploiement permet aux écrans de dater une régression par rapp
       -d "{\"app_id\":\"mon-app\",\"version\":\"${{ github.sha }}\",\"env\":\"prod\"}"
 ```
 
-Réponse `201`. Un jeton d'API (`CONSOLE_API_TOKENS`) est encore accepté sur cette route **jusqu'au 31/12/2026**, et chacune de ses réponses l'annonce (`Deprecation`, `Sunset`) : remplacez-le par un jeton `deploys:write` avant cette date. Quand le collector sera en ligne, la même requête vaut sur `https://<domaine du collector>/v1/deploys`.
+Réponse `201`. Un jeton d'API (`CONSOLE_API_TOKENS`) est encore accepté sur cette route **jusqu'au 31/12/2026**, et chacune de ses réponses l'annonce (`Deprecation`, `Sunset`) : remplacez-le par un jeton `deploys:write` avant cette date. Quand le collector sera en service, la même requête vaut sur `https://<domaine du collector>/v1/deploys`.
 
 ## 7. Vérifier
 

@@ -44,10 +44,12 @@ describe("1 — les nombres des accès programmatiques sont lus dans le document
   });
 });
 
-describe("2 — « Ce que ces chiffres ne disent pas » suit le verdict de F1, F2 et F3", () => {
+describe("2 — « Ce que ces chiffres ne disent pas » suit le verdict de F2 et F3", () => {
   it("au relevé d'aujourd'hui, chaque réserve dit encore vrai", () => {
     expect(reservesPerimees()).toEqual([]);
-    expect(RESERVES_CHAINE.map((r) => r.source)).toEqual(["F3", "F2", "F1"]);
+    // F1 n'a plus de réserve depuis la relecture du 26/09 : la CI construit le dépôt
+    // depuis un clone propre (job « Construction depuis un dépôt propre »).
+    expect(RESERVES_CHAINE.map((r) => r.source)).toEqual(["F3", "F2"]);
     for (const r of RESERVES_CHAINE) expect(r.texte.trim(), r.source).not.toBe("");
   });
 
@@ -55,25 +57,31 @@ describe("2 — « Ce que ces chiffres ne disent pas » suit le verdict de F1, F
     // Le relevé du 18/09 : F2 « livré avec un défaut connu », la CI ne typait rien.
     const au18 = avec("F2", { verdict: "livre_avec_defaut_connu" });
     expect(reservesPerimees(RESERVES_CHAINE, au18)).toEqual([
-      "F2 est passée de « deploye_non_eprouve » à « livre_avec_defaut_connu » : réécrire « la CI ne vérifie pas les types de l'extension navigateur » depuis sa ligne",
+      "F2 est passée de « deploye_non_eprouve » à « livre_avec_defaut_connu » : réécrire « le JavaScript du backend n'est typé par rien » depuis sa ligne",
     ]);
   });
 
   it("des bancs rejoués en CI, ou une ligne retirée du document, sont signalés", () => {
     const bancsEnCi = avec("F3", { verdict: "deploye_non_eprouve" });
     expect(reservesPerimees(RESERVES_CHAINE, bancsEnCi)[0]).toMatch(/^F3 est passée de « livre_avec_defaut_connu »/);
-    const sansF1 = CAPACITES.filter((c) => c.id !== "F1");
-    expect(reservesPerimees(RESERVES_CHAINE, sansF1)).toEqual([
-      "F1 n'est plus une ligne du document : réécrire « la construction échoue sur un dépôt fraîchement installé »",
+    const sansF2 = CAPACITES.filter((c) => c.id !== "F2");
+    expect(reservesPerimees(RESERVES_CHAINE, sansF2)).toEqual([
+      "F2 n'est plus une ligne du document : réécrire « le JavaScript du backend n'est typé par rien »",
     ]);
   });
 
-  it("chaque réserve reprend la limite de SA ligne", () => {
-    const limite = (id: string) => CAPACITES.find((c) => c.id === id)!.limite;
-    expect(limite("F3")).toContain("les deux bancs de mesure ne tournent jamais en CI");
-    expect(limite("F3")).toContain("Les temps publiés (`B9`) ne sont donc jamais revérifiés");
-    expect(limite("F2")).toContain("L'extension navigateur (`apps/extension`, en TypeScript) n'est **pas** typée par la CI");
-    expect(limite("F1")).toContain("`pnpm -r build` échoue sur un dépôt fraîchement installé");
+  it("chaque réserve dit ce que dit la CI (relecture du 26/09/2026)", () => {
+    // Les lignes F1 à F3 du document datent du 23/09 ; la CI du 24/09 (PR #281) les
+    // a dépassées. Le fait se lit donc dans .github/workflows/ci.yml.
+    const ci = lire(".github/workflows/ci.yml");
+    expect(ci).toContain("name: Bancs de mesure (Explorer P6.6, /mobile P7.5)");
+    expect(ci).toContain("Aucun seuil de LATENCE");
+    expect(ci).toContain("pnpm --filter extension typecheck");
+    expect(ci).toContain("Reste HORS typage, et c'est connu : le JavaScript du backend");
+    expect(ci).toContain("name: Construction depuis un dépôt propre");
+    const textes = RESERVES_CHAINE.map((r) => r.texte).join(" ; ");
+    // Les trois phrases que la CI du 24/09 a rendues fausses.
+    expect(textes).not.toMatch(/ne tournent jamais en CI|types de l'extension|fraîchement installé/);
   });
 });
 

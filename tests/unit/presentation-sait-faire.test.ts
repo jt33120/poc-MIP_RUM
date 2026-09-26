@@ -63,11 +63,16 @@ describe("PS7 — les cartes", () => {
     for (const id of DEPLOYEES_INERTES) expect(puces).not.toContain(id);
   });
 
-  it("K15 (F2) garde les deux réserves de sa ligne, et ne dit pas « paquets publiés »", () => {
+  it("K15 (F2) suit la CI : l'extension est typée, le backend .mjs ne l'est pas ; pas de « paquets publiés »", () => {
     const k15 = CARTES.find((c) => c.id === "K15")!;
     expect(k15.limites.map((l) => l.id)).toEqual(["F2"]);
-    expect(ligneDoc(CAPACITES.find((c) => c.id === "F2")!.ligne)).toContain("L'extension navigateur");
-    expect(k15.limites[0].texte).toContain("L'extension navigateur n'est pas typée par l'intégration continue");
+    // Le fait, dans la CI (relecture du 26/09/2026 ; la ligne F2 du document date du 23/09).
+    const ci = readFileSync(join(RACINE, ".github/workflows/ci.yml"), "utf8");
+    expect(ci).toContain("pnpm --filter extension typecheck");
+    expect(ci).toContain("Reste HORS typage, et c'est connu : le JavaScript du backend");
+    expect(k15.faitQuoi).toContain("et de l'extension navigateur");
+    expect(k15.limites[0].texte).toContain("Le JavaScript du backend (paquets et services en .mjs) n'est typé par rien");
+    expect(k15.limites[0].texte).not.toContain("L'extension navigateur n'est pas typée");
     expect(k15.limites[0].texte).toContain("n'arrête une fusion que si l'on attend son verdict");
     // Le paquet React Native n'est pas publié (C9) : l'intitulé de l'étape de CI ne se reprend pas tel quel.
     expect(`${k15.titre} ${k15.faitQuoi}`).not.toMatch(/publiés?/);

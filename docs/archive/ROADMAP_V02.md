@@ -1,5 +1,7 @@
 # ROADMAP v0.2 — Sprint nuit 10→11/06/2026 (« une semaine boostée IA »)
 
+> **Archivé** (dans `docs/archive/` depuis le 01/07/2026) : plan de sprint écrit avant exécution. Ce qui a été livré est dans [CHANGELOG.md](../../CHANGELOG.md) (§ v0.2) ; l'état actuel est dans [docs/RUM_PARITY_STATUS.md](../RUM_PARITY_STATUS.md).
+
 Objectif : transformer le POC v0.1 en **v0.2 produit**, le meilleur sur le créneau MIP
 (OTel-native + souverain + corrélation synthétique↔RUM). GO complet de Julian le 10/06 soir.
 Garde-fous maintenus : pas de push prod sur `uti-platform` cette nuit (PR seulement),

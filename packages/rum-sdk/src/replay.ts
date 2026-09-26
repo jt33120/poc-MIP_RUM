@@ -144,7 +144,7 @@ export class ReplayBuffer {
 
 // ---------------------------------------------------------------------------
 // Contrôleur DOM (non couvert par les tests unitaires : validé par
-// scripts/validate-replay.mjs en démo headless)
+// tests/e2e/rum-flow.spec.ts, démo headless avec replay:true)
 // ---------------------------------------------------------------------------
 
 // src du script principal, capturé au chargement du bundle (document.currentScript

@@ -10,9 +10,9 @@ Code : `apps/console/lib/ingest-relay.ts` (relais), `apps/console/lib/platform-f
 (drapeau), `packages/db/sql/migration-v87.sql` (table `platform_flag`). Tests :
 `tests/unit/ingest-relay.test.ts`, `tests/contract/relais-ingestion.test.ts`.
 
-## État à la fusion : inerte
+## État au 26/09/2026 : inerte
 
-À la fusion, **le relais ne fait rien en production**, et c'est vérifié par un test.
+Fusionné le 24/09 (#286), **le relais ne fait rien en production**, et c'est vérifié par un test. Le collector lui-même n'est pas encore créé sur Railway.
 
 - `CONSOLE_INGEST_RELAY_URL` n'est pas posée sur Vercel : le relais est éteint **quel que
   soit le drapeau**. La console ne lit même pas `platform_flag` : aucune requête SQL de plus.
@@ -22,7 +22,7 @@ Code : `apps/console/lib/ingest-relay.ts` (relais), `apps/console/lib/platform-f
   retombe alors sur `INGEST_RELAY_PCT` (défaut 0), sans exception.
 - La ligne que v87 sème vaut `'0'`. Appliquer la migration ne relaie donc rien non plus.
 
-Ce qui change quand même à la fusion, et vient de **P2** (voulu : la console répond comme
+Ce qui a changé quand même à la fusion (la console est déployée à chaque fusion), et vient de **P2** (voulu : la console répond comme
 le collector, contrat de parité `tests/contract/ingest-parity.test.ts`) :
 
 - une base injoignable rend **503 + `retry-after: 2`** au lieu de 500. Le SDK rejoue les
@@ -47,7 +47,7 @@ Chaque point ci-dessous est bloquant.
    select * from platform_flag;
    ```
 
-2. **Le collector est déployé** (P2), avec 2 répliques, et son `/health` affiche le bord de
+2. **Le collector est créé et déployé** (code P2, IaC #284 ; pas encore créé au 26/09/2026), avec 2 répliques, et son `/health` affiche le bord de
    confiance **et porte la signature** `x-mip-collector: 1` :
 
    ```sh
@@ -84,15 +84,16 @@ Chaque point ci-dessous est bloquant.
    Vercel, on doit voir la requête partir vers le collector, et dans ceux du collector la
    ligne `ingested`.
 
-6. **`p3/conformite-bascule` fusionnée ET déployée sur Vercel AVANT le premier
+6. **La conformité (PR #296, `p4/conformite-api`, ouverte au 26/09/2026 ; elle remplace
+   #285, `p3/conformite-bascule`, fermée) fusionnée ET déployée sur Vercel AVANT le premier
    `update … set value = '<n>'` avec n > 0.** Vérifier le texte en ligne de
    `/legal/confidentialite` : il doit désigner le collector Railway comme celui qui reçoit,
    hache et écrit les mesures relayées. Sinon, dès 10 %, la page publique et
    `docs/CONFORMITE.md` §7 affirment que Railway ne fait que lire alors qu'il écrit.
 
    **Aucun test ne tient ce prérequis.** `tests/unit/conformite.test.ts` compare les textes
-   au code, pas à la valeur du drapeau en base : il est vert AVANT la bascule (sur cette
-   branche) et vert APRÈS (sur `p3/conformite-bascule`). Il ne rougit **pas** le jour de la
+   au code, pas à la valeur du drapeau en base : il est vert AVANT la bascule (sur `master`)
+   et vert APRÈS (sur la branche de #296). Il ne rougit **pas** le jour de la
    bascule. La montée est un `update` en base, pas un commit : rien dans la CI ne la voit.
    La garde est **humaine** — c'est ce point de la liste.
 
@@ -283,12 +284,12 @@ Tant qu'une part passe par le chemin local, les sessions qu'il écrit n'ont pas 
 Vercel n'a pas de secret, c'est voulu. Une donnée manquante, jamais incohérente. Le
 recouvrement de `user_id_hash` d'un jour sur l'autre se vérifie une fois à 100 %.
 
-## Ce qui reste à faire (jusqu'à P6b)
+## Ce qui reste à faire
 
 - **Conformité, fusionnée et déployée AVANT le premier `update platform_flag` au-dessus
   de 0** (prérequis n° 6). La montée est un `update` en base, pas un commit : la
-  conformité ne peut pas « partir avec » elle. La branche `p3/conformite-bascule` porte les
-  textes. Ici, `lib/legal.ts` et `docs/CONFORMITE.md` §7 disent encore que Vercel collecte
+  conformité ne peut pas « partir avec » elle. La PR #296 porte les
+  textes. Sur `master`, `lib/legal.ts` et `docs/CONFORMITE.md` §7 disent encore que Vercel collecte
   et que Railway lit, et ne sont **pas** modifiés. `tests/unit/conformite.test.ts` reste
   vert avant comme après : il ne signalera pas un oubli.
 - **Soak** : au moins 3 jours à 100 %, environ 0 `relay fallback`.

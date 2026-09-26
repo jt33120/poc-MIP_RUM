@@ -1,5 +1,15 @@
 # Extraction de la supervision IA vers `xsom-ai-guard`
 
+> **Document historique — spécification du 20/07/2026, relue le 26/09/2026.** Il décrit la supervision
+> IA telle qu'elle existait dans `mip-rum` **avant** son extraction, et la solution proposée pour
+> l'extraire. L'extraction est faite : la décision est l'[ADR-0001](ADR-0001-supervision-ia-xsom.md) ;
+> la page `/ai`, les routes `/api/v1/ai*`, le cron OpenRouter et les bibliothèques IA ont quitté la
+> console le 21/07/2026 (commits `f14d97c0`, `c24ba5e4`, `4a5407c7`), et `/api/rum/summary` lit la
+> partie IA chez xSOM par une façade (`apps/console/lib/xsom-ai.ts`, PR #129). Les fichiers cités plus
+> bas (`supabase/functions/…`, `app/api/v1/ai/route.ts`, `lib/openrouter.ts`…) n'existent plus, et
+> « aujourd'hui » y veut dire le 20/07/2026. À archiver sous `docs/archive/SCISSION_XSOM_AI_GUARD.md`
+> quand les documents qui le citent (`docs/API_CONSOLE.md`, `docs/context/`) auront suivi.
+
 > **But du document.** Décrire de façon exhaustive le stack technique et le backend
 > de la **supervision IA d'API** tels qu'ils existent aujourd'hui dans `mip-rum`,
 > puis donner la **solution technique d'implémentation** pour :

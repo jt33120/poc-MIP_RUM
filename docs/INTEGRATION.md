@@ -4,7 +4,7 @@ Comment instrumenter une application web cliente avec le SDK MIP RUM : snippet, 
 
 ## 0. Par la console (recommandé, v0.5)
 
-Le chemin nominal n'est plus ce document : **Console → Clients → Ajouter un client**. La création génère la clé d'API (affichée une seule fois), autorise les domaines (CORS dynamique, effectif ≤ 60 s, sans redéploiement) et ouvre un wizard qui fournit le snippet prérempli, les middlewares backend téléchargeables (FastAPI, Express), une checklist de vérification **live** et un assistant IA pour les stacks non couvertes. Ce document reste la référence détaillée des options.
+Le chemin nominal n'est plus ce document : **Console → Administration → Clients → Ajouter un client** (`/admin/customers`). La création génère la clé d'API (affichée une seule fois), autorise les domaines (CORS dynamique, effectif ≤ 60 s, sans redéploiement) et ouvre un wizard qui fournit le snippet prérempli, les middlewares backend téléchargeables (FastAPI, Express), l'adaptateur `otel-collector.yaml` et une checklist de vérification **live**. L'assistant IA qui proposait une intégration pour les stacks non couvertes a été retiré le 09/09/2026. Ce document reste la référence détaillée des options.
 
 ## 1. En bref
 
@@ -24,13 +24,15 @@ Deux balises `<script>` dans le `<head>`, rien d'autre à modifier :
 </script>
 ```
 
-URLs réelles du POC : SDK `https://mip-rum-console.vercel.app/mip-rum.js`, ingestion `https://mip-rum-console.vercel.app/api/ingest/v1/traces` (cf. [DEPLOY.md](../DEPLOY.md)). Le SDK peut aussi être auto-hébergé : c'est un fichier IIFE statique unique (`packages/rum-sdk/dist/mip-rum.js`), à servir depuis le domaine du client (recommandé : évite les bloqueurs et simplifie la CSP).
+URLs réelles du POC : SDK `https://mip-rum-console.vercel.app/mip-rum.js`, ingestion `https://mip-rum-console.vercel.app/api/ingest/v1/traces` (cf. [DEPLOY.md](../DEPLOY.md)). C'est la console (Vercel) qui reçoit l'ingestion en production au 26/09/2026 ; le service `collector` de Railway, qui sert la même collecte sous `/v1/traces`, est dans le code mais pas encore créé. Le SDK peut aussi être auto-hébergé : c'est un fichier IIFE statique unique (`packages/rum-sdk/dist/mip-rum.js`), à servir depuis le domaine du client (recommandé : évite les bloqueurs et simplifie la CSP).
 
 Prérequis côté MIP (à faire une fois par application) :
-1. Enregistrer l'application dans `app_registry` (`app_id`, `name`, `client_id`, hash sha256 de la clé d'API, `active = true`).
-2. Whitelister l'origine du site dans `ALLOWED_ORIGINS` de l'ingestion (edge function + dev-server) — le CORS est en liste blanche stricte, pas de reflet d'origine inconnue.
+1. Enregistrer l'application dans `app_registry` (`app_id`, `name`, `client_id`, hash sha256 de la clé d'API, `active = true`) — ce que fait l'écran « Ajouter un client ».
+2. Autoriser l'origine du site dans les **domaines autorisés** de l'app (`app_registry.allowed_origins`, depuis la console) — le CORS est en liste blanche stricte, pas de reflet d'origine inconnue. Le socle statique (`STATIC_ALLOWED_ORIGINS`, `packages/backend/shared/cors.mjs`) ne couvre que la plateforme G-IT et `localhost`.
 
-## 2. Options de `MIPRum.init` (complètes, v0.2)
+## 2. Options de `MIPRum.init`
+
+Source de vérité : l'interface `MIPRumConfig`, `packages/rum-sdk/src/types.ts`.
 
 | Option | Type | Défaut | Rôle |
 |---|---|---|---|
@@ -43,12 +45,19 @@ Prérequis côté MIP (à faire une fois par application) :
 | `keepOnError` | `boolean` | `true` | Échantillonnage biaisé-erreurs : les sessions hors `sampleRate` ne sont pas jetées mais passent en mode « error-biased » (télémétrie de routine supprimée, **erreurs conservées**, la 1ʳᵉ erreur promeut la session en collecte complète pour la suite). `false` = ancien comportement (session non échantillonnée → rien) |
 | `errorSampleRate` | `number` 0..1 | `1.0` | Fraction des sessions hors `sampleRate` gardées sur erreur (n'a d'effet que si `keepOnError`) |
 | `flushIntervalMs` | `number` | `3000` | Intervalle de flush du batch OTLP (un flush immédiat est forcé quand la page passe en arrière-plan) |
-| `apiKey` | `string` | — | Clé d'API de l'application, transmise en attribut resource `mip.api_key` (sendBeacon ne porte pas de header). Vérifiée côté ingestion contre le hash sha256 de `app_registry` ; rejet 403 seulement si l'ingestion tourne avec `REQUIRE_API_KEY=true` |
+| `apiKey` | `string` | — | Clé d'API de l'application, transmise en attribut resource `mip.api_key` (sendBeacon ne porte pas de header). Vérifiée côté ingestion contre le hash sha256 de `app_registry` ; rejet 403 seulement si l'ingestion tourne avec `REQUIRE_API_KEY=true` (variable de la console sur Vercel, et du collector) |
 | `requireConsent` | `boolean` | `false` | Mode consentement RGPD : tant que `MIPRum.consent(true)` n'a pas été appelé, **aucune requête réseau ne part** (cf. §3) |
 | `honorDNT` | `boolean` | `true` | Souveraineté/RGPD : honore les signaux navigateur d'opt-out **Do Not Track** et **Global Privacy Control**. Si un refus est signalé, **aucune collecte** (0 session, 0 requête). Mettre `false` seulement si l'app recueille elle-même un consentement affirmatif via `MIPRum.consent()` (cf. §3) |
 | `slowResourceMs` | `number` | `300` | Seuil au-delà duquel une ressource (script, image, fetch…) est reportée comme lente (cap 20 ressources/page) |
 | `forms` | `boolean` | `true` | Form analytics : instrumentation des formulaires **au niveau du champ** (ordre de remplissage, temps par champ, abandon). Émet `form.submit` / `form.abandon`. **Ne capte jamais les valeurs** (identifiants + durées ; champs `password` réduits à `[password]`). `false` pour désactiver |
 | `captureErrors` | `{ console?, resources?, csp?, network? }` | tout à `false` | Collecte d'erreurs élargie, **voie par voie et sur demande** : `console.error`, échecs de chargement de ressources, violations CSP, échecs fetch/XHR. Les exceptions non interceptées et les promesses rejetées restent collectées sans option (cf. « Erreurs : collecte élargie ») |
+| `trace` | `boolean \| string[]` | `true` | Tracing distribué : `true` propage `traceparent` sur les appels même origine ; une liste ajoute des origines (ex. `["https://api.exemple.fr"]`) ; `false` coupe le tracing, et avec lui la voie `network` de `captureErrors` |
+| `frustration` | `boolean` | `true` | Signaux de frustration (rage / dead / error clicks, cf. [FRUSTRATION.md](FRUSTRATION.md)) ; `false` pour désactiver |
+| `replay` | `boolean \| number` | `false` | Session replay (bundle séparé `mip-rum-replay.js`, chargé à la demande) : `true` = toutes les sessions, un nombre 0..1 = taux |
+| `replayEndpoint` | `string` | `endpoint` où `/v1/traces` devient `/v1/replay` | Adresse d'ingestion du replay |
+| `replayMask` | `"all" \| "media" \| "inputs"` | `"all"` | Ce que le replay masque : saisies + texte + médias (`all`), saisies + médias (`media`), saisies seules (`inputs`). Un bloc `.mip-rum-block` n'est jamais capturé |
+| `feedback` | `boolean \| { label, accent, offset, onlyPaths, cooldownDays, once }` | `false` | Widget d'avis (CSAT) « Votre avis ? », chargé en lazy (`mip-rum-feedback.js`) ; la note part en `MIPRum.track("feedback", { score })` |
+| `collectionSource` | `"sdk" \| "extension"` | `"sdk"` | Étiquette du capteur (`mip.collection_source`) : `extension` quand le SDK est injecté par l'extension navigateur. N'affecte pas la collecte |
 | `beforeSend` | `(attrs, meta?) => attrs \| null` | — | Filtre de dernière chance ; `meta` expose le type/nom d'événement. Le second argument est optionnel pour préserver les callbacks existants. Retourner `null` supprime le span. Les identités, contexte, props et contenus sensibles restent supprimables ; seuls les champs structurels (session/app/trace/type/liaisons) sont restaurés par le SDK. |
 
 API runtime exposée sur `window.MIPRum` :
@@ -65,7 +74,7 @@ API runtime exposée sur `window.MIPRum` :
 Le contexte est un snapshot JSON immuable avec précédence `global < user/account < view < action < événement`.
 Les noms/clefs sont bornés à 100 caractères, les chaînes à 500, la profondeur à 4, le total à 64 clefs
 et 16 Kio sérialisés. Les champs `mip.*`, de session, trace, app et sampling restent réservés au SDK.
-`IDENTITY_HASH_SECRET` doit être configuré sur chaque port d'ingestion : s'il manque, la télémétrie continue
+`IDENTITY_HASH_SECRET` doit être configuré sur chaque port d'ingestion (la console sur Vercel ; le collector quand il sera créé) : s'il manque, la télémétrie continue
 mais les identités user/account sont omises et `/admin/health` affiche un état dégradé.
 - `MIPRum.flush()` — force l'export des spans en attente (utile en test).
 
@@ -166,8 +175,8 @@ Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe
 
 ## 5. Poids et impact performance
 
-- Bundle cœur mesuré : **22,0 KB gzip** (63,4 KB raw) — toutes les instrumentations incluses (vitals, erreurs et leurs voies opt-in console/ressources/CSP/réseau, ressources, long tasks, actions causales, breadcrumbs, tracing front→back, consent, retry, contexte et événements manuels). Le replay (rrweb) est un bundle séparé chargé à la demande.
-- Historique : v0.1 **22,3 KB**, v0.2 **23,8 KB**, puis **27,4 KB** avant l'allègement. Le SDK OpenTelemetry a été remplacé par un émetteur OTLP/HTTP JSON maison (même format sur le fil), d'où la chute à ~12 KB.
+- Bundle cœur mesuré : **≈ 22 KB gzip** (≈ 64 KB raw ; 22,1 KB gzip sur un build local du 25/09/2026 ; budget de `packages/rum-sdk/build.mjs` : 35 KB gzip) — toutes les instrumentations incluses (vitals, erreurs et leurs voies opt-in console/ressources/CSP/réseau, ressources, long tasks, actions causales, breadcrumbs, tracing front→back, consent, retry, contexte et événements manuels). Le replay (rrweb) est un bundle séparé chargé à la demande.
+- Historique : v0.1 **22,3 KB**, v0.2 **23,8 KB**, puis **27,4 KB** avant l'allègement. Le SDK OpenTelemetry a été remplacé par un émetteur OTLP/HTTP JSON maison (même format sur le fil), d'où la chute à ~12 KB à l'époque ; les instrumentations ajoutées depuis (actions causales, voies d'erreurs opt-in, contexte, événements manuels) l'ont ramené au poids actuel.
 - C'est un SDK **OTLP-natif** (vrai OTLP sur le fil, backend remplaçable) — dans la fourchette des RUM du marché (Sentry ~20 KB, Datadog ~25 KB).
 - Émission par batch (flush toutes les `flushIntervalMs`), `sendBeacon`/flush forcé au passage en arrière-plan : pas de requête bloquante pendant la navigation.
 - Caps par page pour borner le volume : 20 ressources lentes, 30 long tasks, 50 breadcrumbs, 50 erreurs distinctes — plus 20 console, 20 ressources, 10 CSP et 20 réseau quand ces voies sont activées.
@@ -234,6 +243,10 @@ Coût mesuré sur le chemin d'écriture : 8 à 16 µs par ligne insérée selon 
 
 ### Ingestion différée (`INGEST_DEFERRED`) — optionnelle, et pas gratuite
 
+**Réservée au collector** (`services/collector`, `packages/backend/lib/receiver.mjs`) : la route
+d'ingestion de la console, seule en service au 26/09/2026, écrit toujours de façon synchrone.
+Le mode n'est donc actif nulle part en production.
+
 Par défaut, le receveur écrit le lot dans les tables finales avant de répondre 200. Avec
 `INGEST_DEFERRED=true`, il le débarque dans `ingest_raw` et un travailleur (dans le même processus,
 toutes les 250 ms par défaut, `INGEST_DRAIN_MS`) écrit la suite.
@@ -256,7 +269,7 @@ pas pour de la donnée dont dépend une décision. D'où le mode optionnel, éte
 
 `/admin/health` affiche la file en attente, les lots abandonnés (cinq échecs d'écriture) et l'âge du
 plus vieux. Une file qui monte n'est pas un détail de performance : c'est la quantité de données
-qu'un redémarrage emporterait. `GET /health` du service d'ingestion annonce `ingest_deferred`.
+qu'un redémarrage emporterait. `GET /health` du collector annonce `ingest_deferred`.
 
 ## 6. RGPD — ce qui est collecté, ce qui est anonymisé
 
@@ -287,8 +300,8 @@ Garanties :
 - **Aucune PII par construction** : pas de nom, email, IP stockée ; pas de cookie (session en `localStorage`, TTL 30 min d'inactivité) ; l'identifiant de visiteur est un tirage aléatoire, sans lien avec le terminal ni avec un compte.
 - **Scrub des URLs en double rideau** : query strings et fragments retirés côté SDK **et** côté ingestion.
 - `beforeSend` = point de filtrage final côté client (ex. masquer un label de breadcrumb sensible).
-- **Rétention 30 jours** (purge quotidienne automatique, v0.2).
-- Hébergement UE (Supabase Paris, eu-west-3) ; architecture auto-hébergeable on-prem.
+- **Rétention 30 jours** par défaut, réglable par client (`app_registry.retention_days`) ; purge quotidienne par le service `scheduler` (`purge_rum_tenants(30)`, 03:17 UTC).
+- Hébergement UE : base Neon à Francfort (aws-eu-central-1), console Vercel en `fra1`, services Railway à Amsterdam (europe-west4) ; architecture auto-hébergeable on-prem.
 - Consent mode disponible (§3) si la base légale du client l'exige.
 
 À la charge du client : mentionner la mesure d'audience/performance dans sa politique de confidentialité, et brancher le consent mode si sa CMP le requiert.
@@ -297,11 +310,10 @@ Garanties :
 
 | Symptôme | Cause probable | Fix |
 |---|---|---|
-| Erreur CORS dans la console navigateur (`blocked by CORS policy`) | origine du site absente de la liste blanche | ajouter l'origine dans `ALLOWED_ORIGINS` (edge function `v1-traces` + dev-server) et redéployer |
-| `403` sur les POST | `REQUIRE_API_KEY=true` côté ingestion et `apiKey` absente/incorrecte, ou app `active=false` | vérifier la clé fournie vs le hash en `app_registry` ; vérifier `active` |
-| `401` sur les POST | edge function déployée **sans** `--no-verify-jwt` | redéployer avec `--no-verify-jwt` (les beacons n'ont pas de header Authorization) |
+| Erreur CORS dans la console navigateur (`blocked by CORS policy`) | origine du site absente de la liste blanche | ajouter l'origine aux **domaines autorisés** de l'app dans la console (effectif ≤ 60 s, sans redéploiement) |
+| `403` sur les POST | `REQUIRE_API_KEY=true` côté ingestion et `apiKey` absente/incorrecte, ou app `active=false` ; ou ingestion suspendue pour l'app (après un effacement) | vérifier la clé fournie vs le hash en `app_registry` ; vérifier `active` et `ingestion_suspended_at` |
 | POST `200` mais **rien en base** | `appId` manquant ou inconnu (payload sans `mip.app_id` rejeté silencieusement) | vérifier `appId` dans `MIPRum.init` et l'enregistrement dans `app_registry` |
-| `429` sur les POST | rate limit dépassé (600 req/min/app) | vérifier qu'il n'y a pas de boucle d'émission ; augmenter `flushIntervalMs` ; réduire `sampleRate` |
+| `429` sur les POST | rate limit dépassé (600 req/min/app par défaut, `RATE_LIMIT_PER_MIN`) | vérifier qu'il n'y a pas de boucle d'émission ; augmenter `flushIntervalMs` ; réduire `sampleRate` |
 | Aucune requête réseau du tout | `requireConsent: true` sans appel `MIPRum.consent(true)` ; ou session en mode « error-biased » sans erreur (collecte de routine supprimée) ou « off » (`keepOnError: false` + hors `sampleRate`) ; ou bloqueur de pub | vérifier la CMP ; tester avec `sampleRate: 1` ; servir le SDK et l'ingestion en first-party |
 | Données partielles (INP/CLS absents) | l'onglet n'est jamais passé en arrière-plan (ces vitals sont finalisés au `visibilitychange`) | comportement normal ; ils arrivent quand l'utilisateur quitte/masque la page |
 | Le SDK ne se charge pas | CSP `script-src` bloquante | cf. §4 |
@@ -344,7 +356,7 @@ Architecture : `app sous agent OTel → Collector → ingestion MIP`.
    ```
 2. **Le Collector** (`otel-collector.yaml`, téléchargeable sur la page du client) absorbe le format de l'agent et réémet vers MIP : il ne garde que les spans `SERVER` (un par requête), injecte `mip.app_id` + `mip.api_key` (l'app n'a rien de spécifique à régler), et exporte en `otlphttp encoding: json` vers l'endpoint d'ingestion.
 
-| Choix | Middleware MIP (`§3`) | Auto-instrumentation OTel + Collector |
+| Choix | Middleware MIP (wizard de la console, § 0) | Auto-instrumentation OTel + Collector |
 |---|---|---|
 | Modification du code | 1 fichier + 3 lignes de wiring | aucune |
 | Composant à exploiter | aucun | 1 Collector (conteneur) |

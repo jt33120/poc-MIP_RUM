@@ -1,7 +1,7 @@
-# ClickHouse — chemin prod prouvé en local (B4, v0.3)
+# ClickHouse — expérience locale, jamais déployée (B4, v0.3)
 
-> POC/v0.2 = Postgres (Supabase). Prod grand compte = ClickHouse (décision rapport v1, option E).
-> v0.3 : le chemin est **prouvé en local** — schéma MergeTree appliqué, 100 000 metrics réalistes
+> **Expérience, pas un chemin de production** (état au 26/09/2026) : ClickHouse n'a jamais été déployé, la production stocke dans Postgres (Neon), et ce banc local du 11/06/2026, antérieur à la migration vers Neon, n'a pas été rejoué depuis.
+> Origine : en v0.2 (Postgres sur Supabase), ClickHouse était envisagé pour les gros volumes (décision rapport v1, option E). En v0.3, le chemin a été éprouvé **en local seulement** : schéma MergeTree appliqué, 100 000 metrics réalistes
 > insérées dans les deux stores, mêmes p75 au millième près, chiffres ci-dessous mesurés pour de vrai.
 
 ## Bench réel (11/06/2026, local)
@@ -63,10 +63,12 @@ ORDER BY (app_id, name, route, ts);
 
 Écriture : `labs/clickhouse/writer.mjs` — interface HTTP native (`fetch` node 26, JSONEachRow,
 batchs 10 000), **zéro dépendance**. Prêt à brancher derrière `STORE=clickhouse|both` dans le dev-server.
+*Non branché au 26/09/2026 : aucun receveur ne lit `STORE`. Seul `scripts/load-bench.mjs` le lit, pour
+choisir le store de sa phase requêtes (`postgres` ou `clickhouse`).*
 
 ## Chemin de migration (1 cran à la fois, rien ne change côté client)
 
-1. Déployer **OTel Collector + ClickHouse** (cf. `infra/otel-collector.example.yaml`) — on-prem ou cloud
+1. Déployer **OTel Collector + ClickHouse** (cf. `labs/clickhouse/otel-collector.example.yaml`) — on-prem ou cloud
    souverain (argument CSPN/souveraineté MIP ; CH est Apache-2.0, auto-hébergeable).
 2. Pointer le snippet sur le Collector (`endpoint:` dans `MIPRum.init`) — **seul** changement côté client.
 3. Transposer le parser : la logique `flattenOtlp` (attributs `mip.*`/`webvital.*` → colonnes) vit dans un
@@ -139,7 +141,7 @@ comparables. Le générateur est testé contre le vrai parser d'ingestion
 node scripts/load-bench.mjs --dry-run
 
 # bench réel contre une base dédiée type-prod :
-ENDPOINT=https://<ingest>/v1/traces \
+ENDPOINT=https://<console>/api/ingest/v1/traces \
 DATABASE_URL=postgres://user:pwd@host:5432/db \
 TARGET_EVENTS=1000000 CONCURRENCY=32 \
 node scripts/load-bench.mjs        # KEEP=1 pour conserver les données injectées
@@ -155,3 +157,7 @@ node scripts/load-bench.mjs
 soutenu (events/s), les p95 d'ingestion et de requêtes console, et la
 volumétrie — à comparer aux ~88 k lignes/s ClickHouse et au profil
 `1 M pages vues/jour` ci-dessus. Ne PAS valider sur le free tier (throttling).
+
+*Au 26/09/2026 : aucun run type-prod n'a eu lieu. Un banc local du collecteur, qui se sert de
+`scripts/load-bench.mjs` comme générateur de charge, est consigné dans
+`docs/operations/banc-collecteur-2026-09-24.md`.*

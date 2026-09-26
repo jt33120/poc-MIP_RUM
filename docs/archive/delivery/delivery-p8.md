@@ -1,5 +1,7 @@
 # Livraison P8 — journal des sous-lots
 
+> **Archivé** (dans `docs/archive/delivery/` depuis le 23/09/2026) : journal de livraison des lots P5 à P8 (septembre 2026). L'état courant est dans [docs/RUM_PARITY_STATUS.md](../../RUM_PARITY_STATUS.md) ; les documents qu'il cite (`PLAN-CLAUDE-P5-P8.md`, spécifications) sont restés hors dépôt.
+
 Référence : [PLAN-CLAUDE-P5-P8.md](PLAN-CLAUDE-P5-P8.md) · [spec-rum-operations-integrations-p8.md](spec-rum-operations-integrations-p8.md).
 Base : `origin/master` au 18/09/2026 (P5, P6 et P7.1/P7.2/P7.4 fusionnés).
 

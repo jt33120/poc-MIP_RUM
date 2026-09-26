@@ -7,6 +7,21 @@
 > pré-requis ne sont pas levés. Les charges sont des **ordres de grandeur**
 > (jours-homme, `j·h`) destinés à arbitrer, pas des engagements.
 
+> **Statut au 26/09/2026.** Cadrage du 17/06/2026, conservé pour ses chiffrages ; l'inventaire
+> et les chemins qu'il cite datent de cette époque. Ce qui a bougé depuis :
+> - **C1, option B** : livrée le 17/06/2026 — l'API REST `/api/v1`, alors onze routes en
+>   lecture seule (`apps/console/app/api/v1/`, `docs/API_CONSOLE.md`). L'option A (module
+>   Angular) n'a pas été engagée. La console compte aujourd'hui 57 écrans, pas 9
+>   (`docs/architecture/console-api/inventaire.md`).
+> - **C2** : non engagé. Les préparatifs listés en fin de document ont été faits en partie le
+>   18/06/2026 (`labs/clickhouse/schema.prod.sql` avec TTL et vues matérialisées,
+>   `labs/clickhouse/DEPLOY.md`, `STORE=clickhouse` dans `scripts/load-bench.mjs`) ; la couche
+>   « dialecte » n'existe pas dans la console. La « fonction serverless » à décommissionner
+>   n'existe plus sous cette forme : l'ingestion de production est la route de la console
+>   (Vercel), et un collector Railway (`services/collector`) est écrit mais pas encore déployé.
+> - **C3** : aucun des quatre items n'est acquis. Côté mobile, seul un SDK React Native existe
+>   (`packages/rum-mobile`), jamais exécuté sur un appareil (`apps/console/lib/specs.ts`).
+
 ## Récapitulatif des pré-requis bloquants
 
 | Item | Objet | Pré-requis bloquant | Décideur |
@@ -138,13 +153,11 @@ relèvent de **décisions de direction** (budget, go-to-market), pas d'un sprint
    seulement si MIP tranche pour le module Angular natif (et fournit le repo).
 3. **C3** au fil des décisions commerciales/réglementaires.
 
-## Ce que je peux préparer dès maintenant (sans lever les pré-requis)
+## Préparatifs possibles sans lever les pré-requis (état au 26/09/2026 entre crochets)
 - **Extraire une couche « dialecte SQL »** dans la console (abstraction PG/CH) pour
-  rendre C2 quasi mécanique le jour J.
+  rendre C2 quasi mécanique le jour J. [non fait]
 - **Spécifier le contrat d'API** (option B de C1) : endpoints + DTO documentés,
-  consommables par l'Angular sans toucher au repo MIP.
+  consommables par l'Angular sans toucher au repo MIP. [fait : `/api/v1`, OpenAPI servi par
+  la console]
 - **Durcir `scripts/load-bench.mjs`** pour cibler ClickHouse (mode `STORE=clickhouse`)
-  afin de re-prouver la capacité au déploiement C2.
-
-> Dis lequel de ces préparatifs tu veux que j'attaque — ils sont, eux, dans mon
-> périmètre autonome.
+  afin de re-prouver la capacité au déploiement C2. [fait le 18/06/2026]

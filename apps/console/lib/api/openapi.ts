@@ -169,10 +169,14 @@ export function buildOpenApi(): Record<string, unknown> {
     info: {
       title: "MIP RUM — API console v1",
       version: "1.0.0",
+      // `POST /deploys` (l'unique écriture, jeton de CI) n'est pas dans cette spec : le
+      // descripteur `GET /api/v1` la liste à part (`write`), et docs/API_CONSOLE.md la décrit.
       description:
-        "API REST lecture seule des agrégats RUM (Real User Monitoring), consommée par le front MIP " +
-        "(Angular) ou tout autre client. Auth Bearer (CONSOLE_API_TOKENS) ou cookie de session (RBAC). " +
-        "Enveloppe stable { meta, data }. Voir docs/API_CONSOLE.md et docs/DEPLOY_API.md.",
+        "API REST de lecture des agrégats RUM (Real User Monitoring), consommée par le serveur MCP et " +
+        "destinée au front MIP (Angular) ou à tout autre client. Auth Bearer (CONSOLE_API_TOKENS) ou cookie " +
+        "de session (RBAC). Enveloppe stable { meta, data }. Cette spec décrit les lectures ; la seule " +
+        "écriture, POST /api/v1/deploys (marqueur de déploiement d'une CI), est décrite dans " +
+        "docs/API_CONSOLE.md. Voir aussi docs/DEPLOY_API.md.",
     },
     servers: [{ url: "/api/v1", description: "Base de l'API (relative à l'origine de la console)" }],
     tags: [
@@ -471,7 +475,9 @@ export function buildOpenApi(): Record<string, unknown> {
         bearerAuth: {
           type: "http",
           scheme: "bearer",
-          description: "Jeton machine listé dans CONSOLE_API_TOKENS (lecture seule, toutes apps).",
+          // lib/api/auth.ts, parseTokenConfig : `jeton` ou `jeton@app1;app2`.
+          description:
+            "Jeton machine listé dans CONSOLE_API_TOKENS (lecture seule) : toutes les apps, ou celles qu'il nomme après « @ » (jeton@app1;app2).",
         },
         sessionCookie: {
           type: "apiKey",

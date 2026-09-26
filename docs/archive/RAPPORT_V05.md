@@ -1,5 +1,7 @@
 # RAPPORT v0.5 — Onboarding clients self-service (11/06/2026, sprint jour 2)
 
+> **Archivé** (dans `docs/archive/` depuis le 01/07/2026) : compte rendu de sprint du 11/06/2026, qui décrit la production d'alors (Supabase, fonctions Deno). Remplacé par [CHANGELOG.md](../../CHANGELOG.md) (§ v0.5) et [BUILD_LOG.md](../../BUILD_LOG.md) pour l'historique, par [docs/RUM_PARITY_STATUS.md](../RUM_PARITY_STATUS.md) et [docs/TOPOLOGIE_BACKEND.md](../TOPOLOGIE_BACKEND.md) pour l'état actuel.
+
 Verdict : **la console sait maintenant ajouter un client toute seule** — zéro SQL, zéro redéploiement, guide pas-à-pas intégré, vérification live. C'était le dernier maillon « produit » manquant côté code (hors accès tiers type API Ekara).
 
 ## Ce que ça change concrètement

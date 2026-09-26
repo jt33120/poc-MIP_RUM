@@ -20,7 +20,10 @@ services/mcp/     les deux points d'entrée : stdio (local), HTTP (Railway)
 
 **C'est un client de l'API v1.** Il n'a aucun accès à Postgres : pas de
 `DATABASE_URL`, pas de `pg` dans son image. Chaque outil se traduit en un
-`GET /api/v1/…` porteur du jeton de l'appelant.
+appel `/api/v1/…` porteur du jeton de l'appelant. En production (26/09/2026),
+cette API est celle de la console Vercel (`MIP_CONSOLE_URL`) ; le code prévoit
+de passer par le service `api` sur le réseau privé Railway (`MIP_API_HOST`,
+§ 5), inerte tant que ce service n'existe pas et que la variable n'est pas posée.
 
 Ce n'est pas un détail d'implémentation, c'est la conception :
 
@@ -50,7 +53,9 @@ verrouille cette absence.
 ## 2. Authentification
 
 **Oui, un jeton est nécessaire.** C'est le même que celui de l'API v1 :
-une entrée de `CONSOLE_API_TOKENS` côté console.
+une entrée de `CONSOLE_API_TOKENS` côté console. Les jetons de lecture en base
+(`/admin/read-tokens`) ne valent que pour `/api/rum/summary`, pas pour l'API v1 :
+ils ne donnent accès à aucun outil.
 
 ```
 CONSOLE_API_TOKENS=jeton-interne,jeton-partenaire@uti-portail
@@ -210,7 +215,8 @@ les ignore comble les trous par des suppositions :
   groupe historique qu'aucune issue ne reprend ; `reappeared` est une réapparition
   **à vérifier**, pas une régression confirmée, et `low_confidence` un repli peu
   discriminant ;
-- `device=tablet` n'est pas distingué par les endpoints historiques ;
+- `device=tablet` est appliqué par tous les endpoints depuis P6.2, y compris
+  `overview`, `vitals`, `pages`, `tracing` et `health-grid` ;
 - aucune donnée personnelle : les utilisateurs sont des empreintes.
 
 ### `json` ou `markdown`
@@ -225,7 +231,7 @@ outils, pas seize gabarits. Un gabarit oublié n'échoue pas — il affiche l'an
 colonne comme si elle était toute la vérité.
 
 En JSON, ce que le serveur MCP a constaté est rangé à part, sous `_mcp`
-(`chemin`, `pagination`, `avertissement`) : on ne doit pas pouvoir confondre une
+(`outil`, `chemin`, `pagination`, `avertissement` — `packages/mcp-tools/serveur.mjs`) : on ne doit pas pouvoir confondre une
 observation du serveur avec une donnée mesurée.
 
 ---
@@ -249,6 +255,7 @@ Dans la configuration du client MCP (Claude Desktop, un IDE…) :
 }
 ```
 
+Le transport stdio n'appelle que la console : il ne lit pas `MIP_API_HOST`.
 Sans l'une des deux variables, le serveur **refuse de démarrer** (code 2) au lieu
 de s'annoncer puis de répondre 401 à chaque outil — le pire des deux mondes,
 puisque le modèle croirait avoir un accès.
@@ -270,17 +277,24 @@ MIP_CONSOLE_URL=http://localhost:3000 MIP_API_TOKEN=xxx \
 | `MIP_API_HOST` | non | le service `api` (P4) par le **réseau privé** Railway, ex. `api.railway.internal` ; l'emporte sur `MIP_CONSOLE_URL`. HTTP clair : l'hôte doit être privé (`*.railway.internal`, un service compose, `localhost`), sinon le serveur refuse de démarrer — le jeton de l'appelant y partirait en clair |
 | `MIP_API_PORT` | non | port du service `api` (défaut 8080) |
 | `MIP_CONSOLE_URL` | oui, sans `MIP_API_HOST` | origine de la console, ex. `https://mip-rum-console.vercel.app` |
+
+Sans aucune des deux, le serveur refuse de démarrer (code 2). La règle est dans
+`origineApi` (`packages/mcp-tools/lib/client.mjs`).
 | `PORT` | fourni par l'hébergeur | port d'écoute (défaut 8080) |
 | `MCP_PATH` | non | chemin du point MCP (défaut `/mcp`) |
 
 Pas de `MIP_API_TOKEN` : le serveur relaie celui de l'appelant.
 
-**Par le réseau privé (P4).** Avec `MIP_API_HOST`, un appel d'outil ne quitte
+**Par le réseau privé (P4) — dans le code, pas encore en service.** Avec `MIP_API_HOST`, un appel d'outil ne quitte
 plus Railway : `mcp` → `api` → Neon, au lieu de `mcp` → Internet → console
 Vercel → Neon. Le service `api` sert les mêmes routes v1, compilées depuis la
 console, en lecture seule sous le rôle `mip_api` ; les outils du catalogue ne
 font que lire, le POST de l'Explorer compris. Le journal de démarrage dit le
-chemin retenu (`"via": "reseau-prive"` ou `"console"`).
+chemin retenu (`"via": "reseau-prive"` ou `"console"`). `.railway/railway.ts` déclare
+`MIP_API_HOST` (le domaine privé du service `api`) et `MIP_API_PORT` ; tant que l'apply
+de l'IaC n'est pas fait et que le service `api` n'est pas créé, le service `mcp` de
+production n'a que `MIP_CONSOLE_URL`, `NODE_ENV` et `PORT` (relevé Railway du 26/09/2026)
+et lit donc la console.
 
 ```
 POST /mcp     JSON-RPC MCP — exige Authorization: Bearer <jeton>
@@ -295,13 +309,15 @@ laisser le client attendre serait pire qu'un refus.
 
 ### Déploiement Railway — fait
 
-Service `mcp` dans le projet `mip-rum-backend`, à côté de `ingest` et
-`scheduler` :
+Service `mcp` dans le projet `mip-rum-backend`, à côté de `scheduler` — les deux
+seuls services créés au 26/09/2026 ; `collector`, `api`, `console-api` et `notifier`
+sont déclarés dans `.railway/railway.ts` mais pas encore créés, et le service
+`ingest` a été supprimé le 21/09/2026 (`docs/TOPOLOGIE_BACKEND.md`) :
 
 | Réglage | Valeur |
 |---|---|
 | Dockerfile | `services/mcp/Dockerfile` (le sien, comme chaque service depuis P1) |
-| Variables | `MIP_CONSOLE_URL`, `PORT=8080`, `NODE_ENV=production` ; puis `MIP_API_HOST` = référence `RAILWAY_PRIVATE_DOMAIN` du service `api` (IaC, une fois `api` déployé) |
+| Variables | `MIP_CONSOLE_URL`, `PORT=8080`, `NODE_ENV=production` ; puis `MIP_API_HOST` = référence `RAILWAY_PRIVATE_DOMAIN` du service `api` et `MIP_API_PORT` (IaC, une fois `api` déployé) |
 | Healthcheck | `/health` |
 | Région | `europe-west4-drams3a` (Amsterdam) |
 | Branche | `master` |
@@ -348,7 +364,7 @@ Un `POST /mcp` sans `Authorization` doit répondre `401` avec un en-tête
 
 ## 7. Limites connues
 
-- **Quinze outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
+- **Seize outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
   exposé : SLO, alertes, tableaux de bord, replay, logs, SVI. Les ajouter passe
   par l'API d'abord, jamais par un accès direct depuis le serveur MCP.
 - **Pas de total sur les sessions.** L'API n'en fournit pas ; le serveur ne

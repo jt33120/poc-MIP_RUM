@@ -1,6 +1,6 @@
 # ADR-0011 — Sessions signées ES256, révocables en base
 
-- **Statut** : acceptée ; code livré (C0c, C1), mise en service après P6b
+- **Statut** : acceptée ; code livré (C0c, C1) ; pas en service (ni `console-api` déployé, ni v90 et v91 appliquées en production)
 - **Date** : 2026-09-25
 - **Portée** : `console-api` (émission, vérification), la console Vercel (vérification seule), migrations v90 et v91
 
@@ -19,7 +19,7 @@ Les sessions de la console étaient des JWT HS256 signés par `AUTH_SECRET` — 
 
 ## Conséquences
 
-- La bascule (après P6b) impose une reconnexion de tous : les sessions HS256 cessent de valoir quand `AUTH_SECRET` quitte Vercel.
+- La bascule ne coupe aucune session : une session HS256 reste servie par la console jusqu'à son expiration. Le retrait d'`AUTH_SECRET` de Vercel, préalable au mode strict, impose la reconnexion de ceux qui en ont encore une.
 - Chaque requête d'écran relit une ligne de session (en cache 30 s) : c'est le prix de la révocation.
 - Le middleware de la console vérifie la signature seule (runtime Node) ; les pages résolvent le principal par `GET /v1/me`.
 

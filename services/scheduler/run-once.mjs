@@ -1,5 +1,5 @@
 // Déclenchement MANUEL d'une cadence, sous bail — le remplaçant des routes
-// `/api/cron/*`, qui répondent désormais 410.
+// `/api/cron/*`, rendues 410 le 23/09/2026 puis supprimées le 25/09/2026 (préparation de C12).
 //
 // POURQUOI CE FICHIER EXISTE. Rejouer un travail à la main était possible par
 // `/api/cron/{tick,hourly,daily}`, qui appelaient `travaux()` SANS prendre de

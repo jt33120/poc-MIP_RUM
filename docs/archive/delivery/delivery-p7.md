@@ -1,5 +1,7 @@
 # Livraison P7 — journal des sous-lots
 
+> **Archivé** (dans `docs/archive/delivery/` depuis le 23/09/2026) : journal de livraison des lots P5 à P8 (septembre 2026). L'état courant est dans [docs/RUM_PARITY_STATUS.md](../../RUM_PARITY_STATUS.md) ; les documents qu'il cite (`PLAN-CLAUDE-P5-P8.md`, spécifications) sont restés hors dépôt.
+
 Référence : [PLAN-CLAUDE-P5-P8.md](PLAN-CLAUDE-P5-P8.md) · [spec-rum-runtime-parity-p7.md](spec-rum-runtime-parity-p7.md).
 Base : `154936a` (P6 complet, v80), plus le correctif `origin/fix/rum-analytics-p6-6-plan-sans-fenetre` (PR #197)
 sans lequel deux tests de `tests/unit/dashboards.test.ts` échouent pour une raison étrangère à P7.

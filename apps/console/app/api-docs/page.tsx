@@ -83,9 +83,10 @@ export default async function ApiDocs() {
         title="API et MCP"
         sub={
           <>
-            Les agrégats RUM exposés de deux façons : en <strong>API REST lecture seule</strong> pour brancher un
+            Les agrégats RUM exposés de deux façons : en <strong>API REST de lecture</strong> pour brancher un
             tableau de bord partenaire, et en <strong>serveur MCP</strong> pour qu'un agent IA interroge le portail
-            en langage naturel. Aucune PII, agrégats techniques uniquement.
+            en langage naturel. Des agrégats, et des identifiants pseudonymes (visiteur, identité hachée) :
+            aucune adresse IP.
           </>
         }
       />
@@ -159,8 +160,8 @@ export default async function ApiDocs() {
               <CopyBlock code={commandeCli()} label="Copier" />
             </div>
             <p className="mt-1.5 text-xs text-ink-faint">
-              Le client garde alors l'en-tête et l'envoie à chaque appel. Le jeton reste chez vous : il ne transite
-              que vers la console, jamais vers un tiers.
+              Le client garde alors l'en-tête et l'envoie à chaque appel. Le jeton ne transite que par le serveur
+              MCP, qui le relaie à l'API v1 sans le conserver.
             </p>
           </div>
         </div>
@@ -296,7 +297,7 @@ export default async function ApiDocs() {
             <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
               <strong>stdio</strong> pour un poste de travail (Claude Desktop, un IDE) : le jeton vient de
               l'environnement. <strong>HTTP</strong> (Streamable HTTP, sans session) pour l'usage distant, déployé
-              sur Railway à côté de l'ingestion.
+              sur Railway à côté des travaux planifiés.
             </p>
           </div>
         </div>
@@ -322,9 +323,10 @@ export default async function ApiDocs() {
         <p className="mt-3 text-xs text-ink-faint">
           Ce que le serveur ne fait pas, et le dit au modèle : aucune écriture, trois fenêtres seulement
           (1h / 24h / 7d), et aucun total sur la liste des sessions (les groupes d’erreurs et l’Explorer
-          d’événements en fournissent un). Une app demandée hors périmètre n'est pas refusée
-          par l'API — elle est ramenée au périmètre du jeton ; l'outil le signale alors explicitement dans sa
-          réponse, pour qu'un chiffre d'une autre app ne passe jamais pour celui demandé.
+          d’événements en fournissent un). Une app demandée hors périmètre est refusée par l'API
+          (403), jamais remplacée par une autre ; et quand le détail d'un groupe d'erreurs ou d'une issue
+          porte une autre app que celle demandée, l'outil le signale explicitement, pour qu'un chiffre
+          d'une autre app ne passe jamais pour celui demandé.
         </p>
       </section>
 
@@ -371,8 +373,9 @@ export default async function ApiDocs() {
             <tr className="bg-panel2/40">
               <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-ink">POST /api/v1/deploys</td>
               <td className="px-4 py-2.5 text-xs text-ink-soft">
-                Marqueur de déploiement (intégration CI/CD), au jeton de CI « deploys:write » d&apos;une application.
-                Seule route en écriture — et la seule que le serveur MCP n&apos;expose pas.
+                Marqueur de déploiement (intégration CI/CD), au jeton de CI « deploys:write » d&apos;une application ;
+                un jeton d&apos;API y est encore accepté jusqu&apos;au 31/12/2026. Seule route en écriture, et le
+                serveur MCP ne l&apos;expose pas.
               </td>
             </tr>
           </tbody>

@@ -26,15 +26,19 @@
 
 ## 4. Obligations du Sous-traitant
 - Traiter sur **instruction documentée** du Responsable, et uniquement pour la finalité.
-- Garantir la **confidentialité** (personnel habilité, RBAC, secrets en coffre).
+- Garantir la **confidentialité** (personnel habilité, RBAC, secrets dans les variables protégées des hébergeurs, jamais en clair en base).
 - Mettre en œuvre les **mesures de sécurité** de [`CONFORMITE.md` §6](CONFORMITE.md)
   (RLS, chiffrement transport, SSO/RBAC, durcissement, journalisation).
-- **Localisation UE** : données hébergées en région UE (`eu-west-3`) ; pas de transfert
-  hors UE sans clauses contractuelles types et accord du Responsable.
+- **Localisation UE** : données hébergées et traitées en région UE — base Neon
+  (`aws-eu-central-1`, Francfort), console Vercel (`fra1`, Francfort), services Railway
+  (`europe-west4`, Amsterdam), trois sociétés de droit américain (cf.
+  [`CONFORMITE.md` §1](CONFORMITE.md)) ; pas de transfert hors UE sans clauses
+  contractuelles types et accord du Responsable.
 
 ## 5. Sous-traitance ultérieure
-- Sous-traitants autorisés listés dans [`CONFORMITE.md` §7](CONFORMITE.md) (Supabase,
-  Vercel option, assistant IA optionnel et désactivé par défaut).
+- Sous-traitants autorisés listés dans [`CONFORMITE.md` §7](CONFORMITE.md), reflet du
+  registre `SUBPROCESSORS` de `apps/console/lib/legal.ts` (à ce jour Neon, Vercel et
+  Railway ; aucun fournisseur de modèle d'IA depuis le 09/09/2026).
 - Information préalable du Responsable avant tout **changement** de sous-traitant, avec
   droit d'objection.
 

@@ -1,6 +1,6 @@
 # Les trajets de la donnée
 
-> Deux trajets suffisent à comprendre le backend : celui d'une **mesure**, du navigateur du visiteur à la base, et celui d'une **alerte**, de la base au destinataire. Chacun est décrit tel qu'il tourne au 24/09/2026, puis tel qu'il tournera une fois les services déployés. Vue d'ensemble : [overview.md](overview.md).
+> Deux trajets suffisent à comprendre le backend : celui d'une **mesure**, du navigateur du visiteur à la base, et celui d'une **alerte**, de la base au destinataire. Chacun est décrit tel que le code en production le fait (à l'arrêt du 24/09 au 01/10/2026 : base suspendue, [ADR-0014](adr/0014-base-gratuite.md)), puis tel qu'il tournera une fois les services créés. Vue d'ensemble : [overview.md](overview.md).
 
 ## 1. Le trajet d'une mesure
 
@@ -12,7 +12,7 @@ sequenceDiagram
   participant N as Navigateur (SDK web)
   participant V as Console Vercel<br/>/api/ingest/v1/traces
   participant B as Neon
-  N->>V: POST OTLP/HTTP JSON (≤ 1 Mio), en-têtes x-mip-*
+  N->>V: POST OTLP/HTTP JSON (≤ 2 Mo), en-têtes x-mip-*
   V->>V: lecture bornée du corps, CORS du registre d'apps, clé d'ingestion si exigée
   V->>V: aplatissement OTLP, scrub des données personnelles, identité RETIRÉE (secret vide sur Vercel)
   V->>B: transaction : verrou consultatif de l'application, barrière d'effacement, écritures
@@ -20,7 +20,7 @@ sequenceDiagram
   V-->>N: 200 partialSuccess
 ```
 
-Le relais vers le collector est livré (P3) et **éteint** : `platform_flag.ingest_relay_pct` vaut 0, et ni `CONSOLE_INGEST_RELAY_URL` ni `EDGE_PROXY_SECRET` ne sont posées sur Vercel.
+Le relais vers le collector est livré (P3) et **éteint** : ni `CONSOLE_INGEST_RELAY_URL` ni `EDGE_PROXY_SECRET` ne sont posées sur Vercel, et la table `platform_flag` (v87) n'existe pas encore en production — le pourcentage retombe sur son défaut, 0. Le collector lui-même n'est pas encore créé.
 
 ### Avec le relais : la console reçoit, le collector écrit
 
@@ -45,7 +45,7 @@ sequenceDiagram
 
 **Qui décide du repli.** Une réponse **signée** (`x-mip-collector: 1`) est celle du collector : elle est rendue telle quelle, sans repli, quel que soit son statut — lui seul sait ce qu'il a écrit. Une réponse **non signée** vient du routeur Railway :
 
-- 404, 405, 502, 504 ou erreur réseau : la requête n'a atteint aucun collector, **repli local** (la console écrit, identité retirée) ;
+- 404, 405, 502, 504 ou erreur réseau : la requête n'a atteint aucun collector, **repli local** (la console écrit, identité retirée) — sauf pour les logs, seuls non idempotents : un 502 ou 504 non signé, ou une connexion perdue après l'envoi, rend 503 + `retry-after` ;
 - délai de 8 s dépassé : **503 + `retry-after`**, sans repli (le collector a peut-être écrit).
 
 Un disjoncteur par instance coupe le relais 60 s après 5 échecs en 30 s. Le geste d'urgence est unique : `update platform_flag set value = '0' where key = 'ingest_relay_pct'`, effectif en 30 s. Mode d'emploi : [docs/operations/relais-ingestion.md](../operations/relais-ingestion.md).
@@ -89,26 +89,26 @@ sequenceDiagram
   L->>B: delivered / failed (rejeu 30 s × 2ⁿ, 5 fois) / dead / skipped + raison
 ```
 
-- **Qui décide, qui livre.** Le scheduler **décide** (règles, SLO, uptime) et met en file ; le notifier **livre**. Tant que `SCHEDULER_DELIVERY` vaut `on`, le tick livre aussi ; le notifier le remplace dans le même apply qui pose `off`.
+- **Qui décide, qui livre.** Le scheduler **décide** (règles, SLO, uptime) et met en file ; le notifier **livre**. Tant que `SCHEDULER_DELIVERY` vaut `on` (son défaut), le tick livre aussi ; le notifier le remplace dans le même apply qui pose `off`. Au 26/09, cet apply n'a pas eu lieu : le notifier n'existe pas, c'est le tick qui livre.
 - **Les nouvelles erreurs** n'attendent pas le scheduler : l'ingestion écrit une notification dans l'outbox des issues (`error_issue_notification`) à la seconde, et c'est la passe du notifier qui la route vers `route_alert`.
 - **Aucun double envoi** : chaque livraison est réservée ligne par ligne et marquée dans sa transaction ; deux livreurs (le scheduler et le notifier pendant la bascule, deux répliques) se partagent les lignes. Un rejeu après une réponse perdue porte le même `x-mip-delivery-id` (webhook) ou la même clé d'idempotence (Resend).
 - **Rien ne sort vers le réseau privé** : chaque webhook passe par `safe-fetch` (IP littérales, réseaux privés, `*.railway.internal`, métadonnées cloud refusés) ; une cible refusée est soldée `skipped`, jamais rejouée.
-- **Avant le 24/09/2026, aucun e-mail d'alerte n'était jamais parti** : sur Neon, `route_alert` (v50) soldait l'e-mail `skipped` en SQL. Depuis migration-v88, la ligne reste en file et le notifier l'envoie.
+- **Aucun e-mail d'alerte n'est encore jamais parti** : sur Neon, `route_alert` (v50) solde l'e-mail `skipped` en SQL. Avec migration-v88 (dans le dépôt, pas encore appliquée en production), la ligne reste en file et le notifier l'enverra.
 
 ### Latence d'une alerte, de bout en bout
 
-| Étape | Offre gratuite (aujourd'hui) | Offre payante (cible) |
+| Étape | Offre gratuite (réglages de l'IaC) | Offre payante (cible) |
 |---|---|---|
 | mesure écrite → décision | jusqu'à 15 min (tick) | jusqu'à 5 min |
 | décision → livraison | 45 s (passe alignée) | ≤ 15 s |
 | nouvelle erreur → livraison | jusqu'à 15 min | ≤ 15 s |
 
-La vitrine affiche la cadence **publiée** par le scheduler (`platform_flag.scheduler_tick_min`), pas une valeur écrite dans le code : [ADR-0014](adr/0014-base-gratuite.md).
+La vitrine affiche la cadence **publiée** par le scheduler (`platform_flag.scheduler_tick_min`, table de v87), pas une valeur écrite dans le code : [ADR-0014](adr/0014-base-gratuite.md).
 
 ## 3. Le trajet d'une lecture
 
 | Qui lit | Aujourd'hui | Cible |
 |---|---|---|
 | Opérateur (console) | le serveur Vercel interroge Neon directement (`apps/console/lib/queries*`) | la console appelle `console-api` (piste C) ; plus aucun accès à la base depuis Vercel à M4 |
-| Machine (partenaire, CI, front tiers) | API v1 : route de la console, `Authorization: Bearer` | service `api`, rôle base `mip_api` en lecture seule (P4) |
-| Agent IA (MCP) | `mcp` → API v1 de la console, avec le jeton de l'appelant | `mcp` → `api` par le réseau privé Railway |
+| Machine (partenaire, CI, front tiers) | API v1 : route de la console, `Authorization: Bearer` | service `api`, rôle base `mip_api` en lecture seule (P4 : code livré, service non créé) |
+| Agent IA (MCP) | `mcp` → API v1 de la console, avec le jeton de l'appelant | `mcp` → `api` par le réseau privé Railway (code livré, #294 ; attend le service `api`) |

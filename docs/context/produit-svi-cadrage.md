@@ -11,6 +11,18 @@ compétence télécom absente du dépôt. Le périmètre complet ayant été ret
 question n'est plus « faut-il y aller » mais **« comment y aller sans se mentir
 sur ce qu'on sait faire »**.*
 
+> **État au 26/09/2026.** Ce cadrage n'est pas révisé ; ce qui en est livré, vérifié
+> dans le code (`master`) : le modèle d'appel (tables `svi_*`,
+> `packages/db/sql/migration-v51.sql`, numérotée v48 dans le plan), la lecture du
+> vocabulaire `svi.*` par l'ingestion (`packages/backend/shared/otlp.mjs`) et les écrans
+> `/svi`, `/svi/appels`, livrés le 30/07/2026 (incréments I0 et I2 du
+> [plan d'implémentation](./produit-svi-plan-implementation.md)). Écart assumé à la
+> porte d'E-SVI-1 : pas de miroir dans `rum_span`, donc pas d'affichage dans la
+> cascade existante. Ces écrans sont **fermés** dans la console depuis le
+> 08/09/2026 (`apps/console/lib/capacites.ts:6`). Aucun adaptateur (E-SVI-2, E-SVI-5),
+> ni collecteur RTCP-XR, ni seuil MOS dans `THRESHOLDS` n'existe. Le préalable n° 4
+> (boucle d'alerte fermée par un canal réel) n'est pas établi en production.
+
 ---
 
 ## 1. La trouvaille qui change l'estimation

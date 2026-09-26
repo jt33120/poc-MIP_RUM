@@ -22,7 +22,7 @@ if (!base || !jeton) {
   process.stderr.write(
     "mcp: MIP_CONSOLE_URL et MIP_API_TOKEN sont requis.\n" +
       "  MIP_CONSOLE_URL  origine de la console, ex. https://mip-rum-console.vercel.app\n" +
-      "  MIP_API_TOKEN    jeton listé dans CONSOLE_API_TOKENS, ou jeton de lecture en base\n",
+      "  MIP_API_TOKEN    jeton listé dans CONSOLE_API_TOKENS (les jetons de lecture en base n'ouvrent pas l'API v1)\n",
   );
   process.exit(2);
 }

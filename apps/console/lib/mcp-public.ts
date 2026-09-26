@@ -87,7 +87,7 @@ export function configLocale(console_ = CONSOLE_ORIGINE): string {
 }
 
 /**
- * Deux appels pour vérifier soi-même, dans cet ordre : le second DOIT échouer.
+ * Trois appels pour vérifier soi-même, dans cet ordre : le troisième, sans jeton, DOIT échouer.
  * Un utilisateur qui ne teste que le cas passant ne saura pas si son serveur
  * est ouvert à tous.
  */

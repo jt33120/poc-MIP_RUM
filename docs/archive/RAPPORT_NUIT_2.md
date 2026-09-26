@@ -1,5 +1,7 @@
 # RAPPORT DE NUIT 2 — Sprint v0.3 (11/06/2026, GO « zéro limite »)
 
+> **Archivé** (dans `docs/archive/` depuis le 01/07/2026) : compte rendu de sprint du 11/06/2026, qui décrit la production d'alors (Supabase, fonctions Deno). Remplacé par [CHANGELOG.md](../../CHANGELOG.md) (§ v0.3) et [BUILD_LOG.md](../../BUILD_LOG.md) pour l'historique, par [docs/RUM_PARITY_STATUS.md](../RUM_PARITY_STATUS.md) et [docs/TOPOLOGIE_BACKEND.md](../TOPOLOGIE_BACKEND.md) pour l'état actuel.
+
 Verdict : **les 5 chantiers sont verts, déployés en prod, recette complète passée.** La liste « pas fait » de la nuit 1 est purgée, et 6 des limites « Phase 1+ » sont tombées.
 
 ## Livré cette nuit (et prouvé)

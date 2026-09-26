@@ -1,18 +1,20 @@
 # `console-api` — ce que la piste C doit porter
 
 > **Ré-inventaire C-R du 24/09/2026**, sur `master` après la refonte frontend et P0 à P6a. Les chiffres viennent de [inventaire.md](inventaire.md), **généré** depuis le code par `node scripts/dev/inventaire-console.mjs` : ils se recalculent, ils ne se recopient pas. Cible et découpage : [architecture](../overview.md), plan backend (piste C, C0 → C13).
+>
+> **Au 26/09/2026**, toute la piste est fusionnée (C0 → C13, puis la bascule, #325) ; `console-api` est déclaré dans l'IaC mais pas encore créé sur Railway, et la console sert encore tout elle-même. Les chiffres ci-dessous sont ceux de l'inventaire du 25/09.
 
 ## Ce qui atteint la base aujourd'hui
 
 | | Total | Atteignent la base |
 |---|---|---|
 | Écrans | 57 | **50** (51 au ré-inventaire) |
-| Fichiers d'actions serveur | 17 (53 actions) | **16** |
-| Routes | 54 | **47** |
-| Composants serveur | — | **14** (27 au ré-inventaire, avant les scissions ci-dessous) |
-| Layout racine | 1 | **oui** : projets, fuseau (C2 le remplace par `GET /v1/shell`) |
+| Fichiers d'actions serveur | 20 (57 actions) | **19** (16 sur 17 au ré-inventaire) |
+| Routes | 43 | **39** (47 sur 54 au ré-inventaire) |
+| Composants serveur | — | **10** (27 au ré-inventaire, avant les scissions ci-dessous) |
+| Layout racine | 1 | **oui** : projets, fuseau. La coquille a son opération (`console.shell`, `GET /v1/shell`, C2), mais le layout garde son chemin local jusqu'à la décommission (C12) |
 
-« Atteindre la base », c'est avoir `lib/db.ts` ou `pg` dans son graphe d'import **à l'exécution** (les `import type` ne comptent pas). La piste C doit amener ces quatre nombres à zéro (jalon M4).
+« Atteindre la base », c'est avoir `lib/db.ts` ou `pg` dans son graphe d'import **à l'exécution** (les `import type` ne comptent pas). La piste C doit amener ces nombres à zéro (jalon M4).
 
 **Le cliquet** : [`cliquet.json`](cliquet.json) liste ces entrées **nominativement**, et `tests/unit/inventaire-console.test.ts` le tient à chaque `pnpm test:unit`.
 - Une entrée **nouvelle** est refusée. Un écran branché sur la base pendant qu'un autre en est libéré ferait stagner le compte sans que rien ne le signale.
@@ -42,20 +44,20 @@ Le plan prévoyait ce cliquet en C0. Il est posé dès C-R, parce que le script 
    - un **fichier d'actions serveur importé pour être passé à un formulaire** : `app/alerts/actions.ts`, `app/dashboards/actions.ts`, `app/explorer/actions.ts`, `app/errors/[fingerprint]/actions.ts` — 7 composants (`ChannelsSection`, `RuleRow`, `SloStatusRow`, `ModeleCarte`, `WidgetCard`, `ActionsVue`, `ErrorTriage`). Le composant ne lit rien : c'est l'action qui écrit ;
    - un **composant qui lit vraiment**, 7 composants : `PanneauErreur`, `PanneauSession` et `RoutePanel` (les panneaux, qui lisent leurs sections), `ErrorStackCard` (la symbolication), et `Specs`, qui entraîne `Annexe` et `Landing` (la vitrine lit le dernier passage planifié). Leur lecture ira dans le loader de leur écran ; pour la vitrine, dans `console-api` (C0b) puis hors du cliquet une fois le repli local retiré.
 
-   Seule la **première famille** se libère sans attendre `console-api`, en scindant le module : ce sont les premiers pas du cliquet. La deuxième ne se libère que quand l'action elle-même passe par `console-api` (C6 → C9). Déplacer l'import vers l'écran ne ferait que maquiller le compte : l'écran atteint déjà la base.
+   Seule la **première famille** se libère sans attendre `console-api`, en scindant le module : ce sont les premiers pas du cliquet. La deuxième ne se libère que quand l'action n'a plus que `console-api` : les commandes sont faites (C6 → C10), mais les fichiers d'actions ne quittent le cliquet qu'à la décommission (C12), avec le chemin local. Déplacer l'import vers l'écran ne ferait que maquiller le compte : l'écran atteint déjà la base.
 3. **261 appels `lire()`**, pas 222. C'est l'unité de découpage des loaders : un écran rend un **résultat par section**.
 4. **54 routes**, pas 52. Leur destination (colonne « Destination » de l'inventaire) :
    - **25 vont au service `api`**, et cette destination est déjà livrée (#291, #292) : les lectures de l'API v1, `/api/rum/summary` et la documentation ;
    - **7 vont au `collector`** : les 3 routes d'ingestion (relais P3), les 2 de l'extension, les source maps et les marqueurs de déploiement ;
    - **16 vont à `console-api`** : l'identité, l'administration, l'export RGPD et celui des tableaux de bord, la relecture des rejeux, et les 5 écritures de l'API v1 (triage, commentaires, liens, vues) ;
-   - **4 sont à supprimer** : les trois cron (410 depuis P0) et `/api/metrics` ;
+   - **4 sont à supprimer** : les trois cron (410 depuis P0, retirés depuis la préparation de C12) et `/api/metrics` (encore là) ;
    - **1 reste sur Vercel**, en relais serveur (`/api/releases`, appelée par le navigateur) ; **1 va au `notifier`**, le crochet entrant des tickets.
 5. **Panneaux** : 5 types de `panel=` sont réellement ouverts (`route`, `error`, `event`, `session`, `noeud`), chacun par un seul écran.
    - `lib/view-state.ts` en déclare 3 de plus (`issue`, `trace`, `action`), qu'aucun écran n'ouvre ni n'écrit.
    - Ne pas les porter dans `console-api` avant qu'un écran s'en serve.
 6. **Audit** : trois fichiers d'actions écrivent **sans** audit : `app/dashboards/actions.ts` (11 actions), `app/explorer/actions.ts` (3) et `app/select/actions.ts` (1).
-   - La règle de C0, « toute route non-GET déclare une action d'audit ou une exemption », devra trancher pour chacun.
-   - Proposition : **exemption motivée** pour les objets personnels de l'espace de travail (tableaux de bord, vues, projet sélectionné), audit pour tout le reste.
+   - La règle de C0, « toute route non-GET déclare une action d'audit ou une exemption », a tranché en C6 (tableau plus bas) : les tableaux de bord sont audités (`dashboard.*`), leurs cartes et les vues enregistrées exemptées avec leur motif.
+   - `app/select/actions.ts` ne fait que poser le cookie du projet courant : aucune écriture en base.
 
 ## Le contrat de lecture, tel que le code l'impose
 
@@ -180,7 +182,7 @@ La remise est un registre du module client, dans l'onglet : une navigation côt�
 | exporter un visiteur | `admin`, `globale` | `privacy.visitor_export` | le document, ou `refus` (ancienne empreinte de terminal, visiteur inconnu) |
 | effacer un visiteur | `admin`, `globale` | `privacy.visitor_erase` | `efface`, `confirmation`, ou `refus` |
 
-- **L'identité brute n'entre que dans le CORPS** d'une recherche ou d'une confirmation, n'est hachée que dans la commande et n'en ressort jamais : ni dans une URL, ni dans l'audit, ni dans une décision. La clé de hachage est celle du processus qui exécute — la console jusqu'à la bascule, console-api ensuite ; `IDENTITY_HASH_SECRET` quitte alors Vercel (il y est vide aujourd'hui).
+- **L'identité brute n'entre que dans le CORPS** d'une recherche ou d'une confirmation, n'est hachée que dans la commande et n'en ressort jamais : ni dans une URL, ni dans l'audit, ni dans une décision. La clé de hachage est celle du processus qui exécute — la console jusqu'à la bascule, console-api ensuite ; `IDENTITY_HASH_SECRET` quitte alors Vercel (il y est vide aujourd'hui). `.railway/railway.ts` ne la donne pas encore à `console-api` : sans elle, la recherche y rend `indisponible`.
 - **« Toutes les applications »** (un visiteur) est à l'administrateur de la plateforme ; une application hors de la liste est `interdit`. Avant C10, un administrateur d'une liste exportait ou effaçait un visiteur sur TOUTES les applications, et l'écran lui proposait « toutes ».
 - **Chaque demande laisse sa ligne au journal, refus compris.** L'audit d'un effacement s'écrit DANS sa transaction (un crochet `apres` de `dsarErase` / `dsarIdentityErase`, avant le commit) : il n'existe que si l'effacement a eu lieu. Un refus s'écrit seul, `refus=<motif>` dans le détail.
 - **L'export est une commande** : divulguer un document de données personnelles s'inscrit au journal comme une écriture, refusé à la démonstration. La route de téléchargement (`/admin/privacy/export`, GET) l'exécute et rend le fichier ; un refus en 409 avec son motif.
@@ -208,11 +210,11 @@ Ce que les machines — l'extension publiée, les CI des clients, un outil de ti
 
 - **Le hook entrant des tickets** (`POST /api/webhooks/tickets/{id}`) est servi par le **notifier** (`/v1/webhooks/tickets/{id}`, sur son domaine) : le seul service qui détient déjà les secrets des tickets. Les contrôles, leur ordre et ce que la réponse tait vivent dans `@mip/backend/lib/integrations/tickets/webhook-entrant.mjs`, partagé. La console relaie la livraison **octet pour octet** (le HMAC de GitHub porte sur le corps brut ; seuls les en-têtes de la signature passent) quand `CONSOLE_TICKET_HOOK_URL` est posée ; toute réponse non signée `x-mip-notifier: 1` ou une panne réseau la font traiter localement — sûr, l'unicité de `(integration_id, delivery_id)` rend tout rejeu inoffensif. L'URL que GitHub appelle ne change pas. Après la mise en service : `TICKET_SECRET_KEY` quitte Vercel, puis rotation et rechiffrement des références `enc:v1`.
 - **Les relais purs** : `CONSOLE_INGEST_RELAY_STRICT=1` (collecte) et `CONSOLE_API_RELAY_STRICT=1` (lectures au jeton) suppriment le chemin local — le pourcentage est ignoré, et ce qui déclenchait un repli rend 503 + `retry-after`. Ils se posent après le soak ; ils permettent de retirer ensuite de Vercel le chemin d'écriture de la collecte (C12), `CONSOLE_API_TOKENS` et `XSOM_*`.
-- **`GET /api/releases`** (la barre de filtres) reste une route de la console — le navigateur l'appelle, console-api n'accepte aucune origine de navigateur — mais lit par un **chargeur** (`lib/chargeurs/releases.ts`, `screens.releases`) : depuis la bascule, `lireEcran` l'envoie à console-api et la route devient un relais serveur.
+- **`GET /api/releases`** (la barre de filtres) reste une route de la console — le navigateur l'appelle, console-api n'accepte aucune origine de navigateur — mais lit par un **chargeur** (`lib/chargeurs/releases.ts`, `screens.releases`) : depuis la bascule (#325), `lireEcran` l'envoie à console-api quand l'aiguillage le choisit, et la route devient alors un relais serveur.
 
 ## M4 — la preuve (C12), préparée
 
-La décommission elle-même — supprimer `lib/db.ts`, `lib/queries*`, retirer `pg` et `bcryptjs` des dépendances de la console, tourner le mot de passe de `neondb_owner` — suit la bascule vers console-api (après P6b). Ce qui est prêt dès maintenant, pour qu'elle soit mécanique :
+La décommission elle-même — supprimer `lib/db.ts`, `lib/queries*`, retirer `pg` et `bcryptjs` des dépendances de la console, tourner le mot de passe de `neondb_owner` — suit la montée de la bascule vers console-api et son rodage en mode strict. Ce qui est prêt dès maintenant, pour qu'elle soit mécanique :
 
 - **Le relevé des gardes** (`scripts/ci/console-sans-base.mjs`), joué en CI après le build de l'E2E, non bloquant : (1) les imports de `pg`, `bcryptjs`, `@mip/backend|db|analytics|control` dans `apps/console` (statiques, dynamiques, `require`, réexports ; un `import type` passe, il est effacé au build) ; (2) ce que le traçage du build embarque (`.nft.json`, `pg-protocol` dans le code serveur) — nécessaire parce que `pg` est aussi une dépendance de la racine ; (3) la présence de la garde d'environnement. **Ligne de base au 25/09 : 72 imports dans 37 fichiers, 97 fonctions serveur qui tracent `pg`.** La décommission (C12, après le rodage en mode strict) le passe en `--strict` : tant que la bascule garde son chemin local — le retour arrière —, la console importe encore ses chargeurs.
 - **La garde d'environnement** dans `apps/console/next.config.mjs` : avec `MIP_CONSOLE_SANS_BASE=1`, le build refuse de se faire si `DATABASE_URL`, `PG*`, `POSTGRES_*`, `NEON_*`, `IDENTITY_HASH_SECRET`, `TICKET_SECRET_KEY` ou `AUTH_SECRET` est présent. Inerte aujourd'hui.
@@ -235,9 +237,9 @@ migration-v93 crée les deux rôles de console-api, créés en SQL (jamais par l
 - **Le service** prend `CONSOLE_DATABASE_URL` et `IDENTITY_DATABASE_URL` ensemble (sinon refus de démarrer) ; l'identité a son propre pool. Sans elles, le propriétaire, comme aujourd'hui.
 - **Vérifié** : `scripts/ci/verify-db-roles-console.mjs` (droits réels dans les deux sens, par table et par colonne, fonctions, policies, bundle — toute relation nommée couverte, toute fonction retirée à PUBLIC qu'il appelle accordée) ; la **matrice d'autorisations tourne en CI sous les deux rôles** (`CONSOLE_API_AUTHZ_ROLES=1`), et les tests SQL de l'identité et du SSO aussi. Le premier passage a trouvé un droit manquant : l'upsert de `privacy_marquer_heures` sur `analytics_rollup_invalidation`.
 
-## La bascule (après P6b), telle qu'elle est faite
+## La bascule, telle qu'elle est faite
 
-Les écrans, la coquille et les écritures passent par `console-api` — ou restent servis par la console, session par session. Fusionnée **inerte** : tant que les trois variables Vercel de C0b ne sont pas posées, ou que les drapeaux sont à 0, rien ne change.
+Les écrans, la coquille et les écritures passent par `console-api` — ou restent servis par la console, session par session. Fusionnée **inerte** (#325, 25/09/2026) : tant que les trois variables Vercel de C0b ne sont pas posées, ou que les drapeaux sont à 0, rien ne change. Au 26/09, ni l'un ni l'autre : `console-api` n'est pas déployé, et la table des drapeaux (v87) n'est pas encore en production.
 
 **Qui sert** (`lib/aiguillage-console-api.ts`), dans cet ordre, le premier « non » gardant la console :
 
@@ -259,10 +261,10 @@ Les écrans, la coquille et les écritures passent par `console-api` — ou rest
 
 **Vérifié par** : `tests/unit/bascule-console-api.test.ts` (aiguillage, tirage stable, disjoncteur, sort de chaque échec, écriture jamais rejouée) ; `tests/unit/ecrans-operations.test.ts` (appariement opération ↔ chargeur, mutation vérifiée) ; **l'E2E tourne en mode strict** (`CONSOLE_API_STRICT=1`) : toute session ouverte par le formulaire de connexion lit et écrit par `console-api`, et le crawl des 57 écrans × 3 profils passe par des sessions de `console-api` (`tests/e2e/console-api.spec.ts` le prouve par les compteurs du service).
 
-## Ordre proposé pour libérer le cliquet
+## L'ordre suivi pour libérer le cliquet
 
 1. **Sans `console-api`** : scinder les modules mixtes (famille 1). **Fait** : 13 composants et un écran sortis du cliquet (27 → 14 composants, 51 → 50 écrans). C0 démarre sur une base plus petite.
-2. **C0** : fondations (`console-api`, session, pipeline, v90). Le cliquet ne bouge pas.
-3. **C2** : `GET /v1/shell`. Le layout racine sort du cliquet, ce qui est le plus gros gain unitaire : il pèse sur les 57 écrans.
-4. **C3 → C5** : les chargeurs des écrans, par lots (colonne « Lot » de l'inventaire ; colonne « Chargeur » pour l'avancement). Décision du 24/09 : `console-api` est mis en service **à la fin, après P6b** — d'ici là les écrans exécutent leur chargeur dans la console, et le cliquet ne descend que par ce qui sort des écrans (les panneaux déplacés dans un chargeur, par exemple). La bascule (fusionnée inerte, montée par drapeau) garde le chemin local pour le retour arrière : le cliquet descend d'un coup à la décommission (C12), quand ce chemin disparaît.
-5. **C6 → C10** : les écritures et le RGPD, en commandes (section ci-dessus) ; les fichiers d'actions et les composants qui les importent quittent le cliquet à la décommission, quand `executerCommande` n'a plus que le service. **C11** : les routes machine. **C12** : cliquet vide, gardes de build.
+2. **C0** : fondations (`console-api`, session, pipeline, v90). **Fait.** Le cliquet ne bouge pas.
+3. **C2** : `GET /v1/shell` (`console.shell`, `lib/coquille-ecran.ts`). **Fait**, mais le layout racine reste au cliquet : la coquille garde son chemin local jusqu'à C12. C'est là que tombera le plus gros gain unitaire : le layout pèse sur les 57 écrans.
+4. **C3 → C5** : les chargeurs des écrans, par lots (colonne « Lot » de l'inventaire ; colonne « Chargeur » pour l'avancement) — **faits** : 48 écrans servis par un chargeur. Décision du 24/09 : `console-api` est mis en service **à la fin, après P6b** — d'ici là les écrans exécutent leur chargeur dans la console, et le cliquet ne descend que par ce qui sort des écrans (les panneaux déplacés dans un chargeur, par exemple). La bascule (fusionnée inerte, montée par drapeau) garde le chemin local pour le retour arrière : le cliquet descend d'un coup à la décommission (C12), quand ce chemin disparaît.
+5. **C6 → C10** : les écritures et le RGPD, en commandes (section ci-dessus) — **faits** ; les fichiers d'actions et les composants qui les importent quittent le cliquet à la décommission, quand `executerCommande` n'a plus que le service. **C11** : les routes machine — **fait**. **C12** : préparation fusionnée (gardes en relevé) ; reste la décommission — cliquet vide, gardes en `--strict`.

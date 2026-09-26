@@ -1,6 +1,8 @@
-# Dossier POC — MIP RUM (Real User Monitoring souverain, OTel-native)
+# Dossier POC — MIP RUM (Real User Monitoring OTel-natif, données en UE)
 
-> Document de présentation produit + audit de scalabilité. État au 13/06/2026.
+> Document de présentation produit + audit de scalabilité. État au 13/06/2026 ; hébergement,
+> architecture et ce qui tourne en production corrigés au 26/09/2026. Les mesures et l'audit
+> de scalabilité (§7) gardent leur date.
 > Public : direction, commerce, et lecteurs techniques (chaque section a les deux niveaux).
 
 ---
@@ -16,8 +18,11 @@ Trois partis pris qui font la différence :
 
 - **OpenTelemetry-natif** : format standard ouvert de bout en bout → **zéro
   enfermement fournisseur**, compatible avec l'écosystème observabilité existant.
-- **Souverain UE** : hébergement Paris, **aucune adresse IP stockée**, géo par
-  fuseau horaire, scrubbing des données personnelles — RGPD by design.
+- **Données en UE** : base à Francfort, console à Francfort, services à Amsterdam — chez
+  trois sociétés de droit américain (Neon, Vercel, Railway) : la résidence est européenne,
+  la souveraineté n'est pas atteinte (cible : un hébergeur de droit européen,
+  `docs/CONFORMITE.md` §1). **Aucune adresse IP stockée**, pays déduit du fuseau horaire
+  (à défaut, de l'en-tête pays du CDN), scrubbing des données personnelles — RGPD by design.
 - **Zéro-touch possible** : on peut instrumenter un site **sans modifier son
   code** (injection JS via proxy/CDN/GTM).
 
@@ -30,13 +35,13 @@ Trois partis pris qui font la différence :
 | **SDK navigateur** | TypeScript, build IIFE (~quelques Ko), zéro dépendance runtime | Capte Core Web Vitals, erreurs JS, sessions, ressources, long tasks, breadcrumbs, appels API (spans `http.client`), replay |
 | **Replay** | `rrweb` (chargé en lazy, opt-in par app) | Reconstruction visuelle du parcours (instantanés DOM, pas de vidéo), masquage des saisies par défaut |
 | **Transport** | OTLP/HTTP JSON (OpenTelemetry Protocol), `navigator.sendBeacon` | Émission standard, survit à la fermeture d'onglet ; file de retry offline |
-| **Ingestion** | Edge Function **Deno** (Supabase) en prod ; miroir **Node** (`dev-server`) en local/CI | Parse l'OTLP → Postgres ; CORS, clé d'API, rate limit, garde-fous de taille, retries, logs structurés |
-| **Tracing backend** | Middleware **FastAPI/Starlette** (stdlib) **ou** Express **ou** agent **OpenTelemetry codeless** + Collector | Émet le span serveur `http.server`, corrélé au front par `trace_id` (W3C `traceparent`) |
-| **Stockage** | **PostgreSQL** (Supabase, région Paris) ; chemin **ClickHouse** prouvé (cf. §7) | Sessions, vitals, erreurs, spans, replay (bytea), synthétique |
-| **Console** | **Next.js 15** (App Router, React 19) sur Vercel, `recharts` | Dashboards temps réel (refresh 5 s), RBAC, lecture seule `console_ro` (TLS épinglé) |
-| **Alerting** | Règles SQL + `pg_net` (cloud) **ou** dispatcher Node (local), payload Slack | Webhooks sur seuils, rejeu borné avec backoff |
+| **Ingestion** | Route de la console **Next.js** sur **Vercel** en prod (`/api/ingest/v1/{traces,logs,replay}`), avec le parseur et le writer Node de `packages/backend` ; le collector Railway (`services/collector`) est écrit, pas déployé ; les fonctions Deno de Supabase ont été retirées le 23/09/2026 | Parse l'OTLP → Postgres ; CORS, clé d'API, rate limit, garde-fous de taille, retries, logs structurés |
+| **Tracing backend** | Middleware **FastAPI/Starlette** (stdlib) **ou** Express **ou** agent Node (`packages/agent-node`, patch de `node:http`) **ou** agent **OpenTelemetry codeless** + Collector | Émet le span serveur `http.server`, corrélé au front par `trace_id` (W3C `traceparent`) |
+| **Stockage** | **PostgreSQL** (Neon, offre gratuite, `aws-eu-central-1` Francfort) ; chemin **ClickHouse** prouvé en local (cf. §7) | Sessions, vitals, erreurs, spans, replay (bytea), synthétique |
+| **Console** | **Next.js 15** (App Router, React 19) sur Vercel (`fra1`), `recharts` | Dashboards temps réel (refresh 5 s), RBAC ; accès direct à la base (rôle `neondb_owner`, TLS vérifié par le magasin de certificats du système, `apps/console/lib/db.ts`). Le passage par le service `console-api` est écrit, pas branché |
+| **Alerting** | Règles SQL évaluées par le service **`scheduler`** (Railway, Amsterdam), qui livre aussi les webhooks ; `pg_net` et `pg_cron` sont refusés par Neon ; le service `notifier` est écrit, pas déployé | Webhooks sur seuils, rejeu borné avec backoff |
 | **Injection zéro-touch** | Cloudflare Worker (HTMLRewriter) / nginx `sub_filter` / tag GTM | Pose le SDK sans toucher au code du site |
-| **Assistant intégration** | Mistral (souverain, prioritaire) ou Anthropic, admin-only | Génère le code d'instrumentation pour une stack non couverte |
+| **Assistant intégration** | Retiré le 09/09/2026 (il appelait Mistral ou Anthropic) | Plus aucune donnée ne part vers un fournisseur de modèle |
 
 **Pipeline** : `navigateur → SDK → OTLP/HTTP → ingestion → Postgres → console`.
 Le tracing ajoute `middleware/agent backend → même endpoint OTLP → table rum_span`.
@@ -51,12 +56,12 @@ Le tracing ajoute `middleware/agent backend → même endpoint OTLP → table ru
 | **Score de santé** | Note /100 composite, facteurs dominants | 40 % vitals · 30 % erreurs · 20 % stabilité · 10 % anomalies 24 h |
 | **Détection d'anomalies** | Alertes auto de dégradation | z-score (|z|>3) du LCP p75 horaire vs moyenne 7 j glissants (vue SQL, sans ML externe) |
 | **Erreurs JS regroupées** | « 12 problèmes » triés par impact, pas 5 000 lignes | Fingerprint FNV-1a (type + message normalisé + 1er frame), URLs/UUID/nombres masqués |
-| **Sessions & replay** | Parcours réels, rejouables visuellement | Upsert `rum_session` (pays par timezone, jamais d'IP) + chunks `rrweb` gzip |
+| **Sessions & replay** | Parcours réels, rejouables visuellement | Upsert `rum_session` (pays estimé, adresse IP jamais stockée) + chunks `rrweb` gzip |
 | **Tracing front → back** | Décomposition réseau / serveur d'un appel, % corrélé | `traceparent` W3C propagé par le SDK, relu par le middleware/agent → join par `trace_id` |
 | **Alerting** | Notification Slack/Teams sur seuil | Règle (métrique/route/fenêtre/comparateur) → webhook, rejeu borné |
 | **Corrélation robot vs réel** | Écart monitoring synthétique ↔ utilisateurs réels | Vue `v_correlation` p75 robot vs RUM par route |
 | **Multi-tenant / RBAC** | Plusieurs apps, rôles admin/viewer scopés | Registre d'apps, login bcrypt+JWT httpOnly, `audit_log` |
-| **Onboarding client self-service** | Création d'app + clé + origines CORS à chaud | `/admin/customers`, CORS dynamique (≤ 60 s), wizard + assistant IA |
+| **Onboarding client self-service** | Création d'app + clé + origines CORS à chaud | `/admin/customers`, CORS dynamique (≤ 60 s), wizard (l'assistant IA a été retiré le 09/09/2026) |
 
 ---
 
@@ -96,10 +101,10 @@ couverture tracing reste à 0 %.
 |---|---|
 | **SDK mobile natif** (iOS/Android) | Web uniquement ; deux SDK à maintenir — Phase 3 |
 | **Tracing multi-saut / microservices** | Aujourd'hui **1 saut** (front→1 backend). Le multi-hop passe par le Collector OTel (l'archi l'accepte déjà) — chantier dédié |
-| **Spans base de données / requêtes SQL** | Pas de span DB ni propagation backend→backend |
+| **Spans base de données / requêtes SQL** | Un span par requête SQL avec l'agent Node seulement ; pas de propagation backend→backend |
 | **Branchement API DEM réelle (Ekara/mippoc)** | Corrélation prouvée sur seed/export ; interface `SyntheticSource` prête, brancher dès accès |
 | **ML avancé** | z-score statistique (assumé, explicable) ; saisonnalité/forecast = R&D |
-| **Multi-région / haute dispo / SLA** | Une seule région UE aujourd'hui |
+| **Multi-région / haute dispo / SLA** | Ni réplication ni bascule : un seul emplacement par composant (base et console à Francfort, services à Amsterdam) |
 | **Certifications (SOC2, ISO 27001, CSPN)** | Processus longs — décision MIP |
 | **Test de charge cloud réel** | ~4 000 events/s **en local** vérifiés ; le free tier sous vraie charge reste à éprouver |
 
@@ -144,7 +149,7 @@ Un nœud modeste absorbe **plusieurs clients de cette taille**.
 > est dans l'enveloppe ci-dessus, très loin du plafond technique de l'archi cible.**
 
 ### 7.2 Où le POC actuel (Postgres free tier) plie, et pourquoi
-Le POC stocke en **Postgres** (Supabase free tier, mono-région). Limites réelles :
+Le POC stocke en **Postgres** (Neon, offre gratuite, une seule région). Limites réelles :
 
 - **Requêtes qui scannent large** : `percentile_cont` (p75) et `count(distinct
   session_id)` trient en mémoire. Mesuré : la requête top-routes passe de **138 ms
@@ -155,7 +160,10 @@ Le POC stocke en **Postgres** (Supabase free tier, mono-région). Limites réell
 - **Rate limit** par défaut **600 req/min/app** (durable, partagé) — à relever pour
   un gros client (config, pas de refonte).
 - **Free tier & mono-région** : pas de SLA, pas de HA, charge cloud réelle non
-  encore éprouvée (limite #27).
+  encore éprouvée (limite #27). Le quota de calcul de l'offre gratuite (100 CU-h par
+  mois) a été dépassé le 24/09/2026 : le calcul est suspendu jusqu'au 01/10/2026, et tout
+  ce qui dépend de la base en production est à l'arrêt jusque-là
+  (`docs/architecture/adr/0014-base-gratuite.md`).
 
 **Conclusion** : Postgres convient au POC et aux petits/moyens sites. **Pour un gros
 compte, ce n'est pas l'architecture qui bloque — c'est le store de démo.**
@@ -177,7 +185,8 @@ ClickHouse (Apache-2.0, **auto-hébergeable** → argument souveraineté) a ét�
    changement client.
 3. Transposer le parser `flattenOtlp` en processor Collector / vues CH.
 4. Brancher la console sur CH (couche « dialecte » ~50 lignes, équivalences prouvées).
-5. Décommissionner la fonction serverless.
+5. Décommissionner le chemin d'ingestion actuel (au 13/06 une fonction serverless ;
+   aujourd'hui la route de la console, puis le collector une fois déployé).
 
 Pour le **multi-milliards** : Materialized View `AggregatingMergeTree`
 (`quantileTDigestState` par heure) + TTL 30 j — déjà documenté dans le schéma cible.
@@ -187,7 +196,7 @@ Pour le **multi-milliards** : Materialized View `AggregatingMergeTree`
 |---|---|---|
 | **Beaucoup de routes** | OK (templates `/x/:id`) | `LowCardinality` CH absorbe les routes répétées sans coût |
 | **Microservices backend** | 1 saut tracé | Agent OTel + Collector sur chaque service (propagation `trace_id` standard) |
-| **Spans DB / cache / file** | Non | Auto-instrumentation OTel (codeless) côté services |
+| **Spans DB / cache / file** | SQL avec l'agent Node ; cache et file : non | Auto-instrumentation OTel (codeless) côté services |
 | **Gros volume de replay** | PG bytea, caps 2 min/1 Mo, opt-in | Bascule **object storage** (S3 souverain), volumétrie indépendante du store métrique |
 | **Pics de charge** | Rate limit + batch | Rate limit relevable ; Collector tamponne et lisse les pics |
 | **HA / multi-région / SLA** | Mono-région | Réplication CH + Collector redondant — chantier infra |
@@ -209,9 +218,9 @@ Pour le **multi-milliards** : Materialized View `AggregatingMergeTree`
 
 | | |
 |---|---|
-| **Ce que c'est** | RUM + tracing **souverain, OTel-native**, instrumentable **sans toucher au code** (front) |
+| **Ce que c'est** | RUM + tracing **OTel-natif, données en UE**, instrumentable **sans toucher au code** (front) |
 | **Couvre** | Vitals réels, erreurs groupées, sessions+replay, tracing front→back, alertes, corrélation robot/réel, multi-tenant/RBAC |
-| **Ne couvre pas (encore)** | Mobile natif, multi-saut/DB spans, API DEM réelle, ML avancé, multi-région/HA, certifications |
+| **Ne couvre pas (encore)** | Mobile natif, multi-saut, spans SQL hors agent Node, API DEM réelle, ML avancé, multi-région/HA, certifications, hébergeur de droit européen |
 | **Scale petit→moyen** | Postgres actuel suffit |
 | **Scale grand compte** | Bascule **ClickHouse** (prouvée Δ=0, ×15 compact, ~88 k l/s, marge ×100 à 1 M pv/jour) — **migration invisible côté client** |
 | **Vrai facteur limitant** | Pas l'architecture : le **store de démo** + l'**infra de prod** (HA, multi-région, certifs) à financer |

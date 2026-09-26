@@ -40,7 +40,8 @@ La moitié RUM est inchangée. La section IA :
 Implémentation : `apps/console/lib/xsom-ai.ts` (`fetchAiSummary`, timeout 4 s, garde de
 forme, ne lève jamais) + `resolveAi` dans `apps/console/lib/queries-summary.ts`.
 Config runtime : `XSOM_AI_URL`, `XSOM_AI_TOKEN` (token `xsr_`), `XSOM_AI_TIMEOUT_MS`
-(défaut 4000), positionnés en Production **et** Preview sur `mip-rum-console`.
+(défaut 4000), positionnés en Production **et** Preview sur `mip-rum-console` (non revérifié
+le 26/09/2026 : les variables du projet Vercel n'étaient pas lisibles).
 
 ## Conséquences
 
@@ -61,6 +62,7 @@ qu'elle existe. Le **DROP dur** (tables/vue/fonctions + branches `ai_cost` de
 
 Conservé (feature RUM, hors périmètre IA) : le **copilote console** (`ai_briefing`,
 `lib/assistant*`, `lib/briefing`) qui résume le RUM avec un LLM — indépendant de `rum_ai`.
+Ce copilote a été retiré à son tour le 09/09/2026 (voir § État au 26/09/2026).
 
 ## Gates de bascule (avant merge/déploiement)
 
@@ -79,3 +81,23 @@ retrait endpoints IA + libs mortes + OpenAPI. 4. `C4` retrait métrique `ai_cost
 ingestion `gen_ai`. **[Gates A+B]** `C7` migration `v43` de dépréciation. `C8` docs (ce
 fichier + `RUM_READ_API.md` + `HANDOVER_UTI.md`, ce dernier hors dépôt —
 [DOCUMENTS-HORS-DEPOT.md](DOCUMENTS-HORS-DEPOT.md)).
+
+## État au 26/09/2026
+
+Relevé dans le code de `master` ; ce qui suit complète la décision, il ne la remplace pas.
+
+- **Le copilote console n'existe plus.** `lib/assistant*`, `lib/briefing` et le tutoriel ont
+  été retirés le 09/09/2026 (commit `0759b0e0`) ; Mistral et Anthropic sont sortis du registre
+  des sous-traitants le même jour (`docs/CONFORMITE.md` §7). La table `ai_briefing` reste
+  dans le schéma.
+- **Une page `/ai` existe de nouveau**, mais comme « espace partenaire » : elle lit la façade
+  xSOM (`fetchAiSummary`) et ne stocke rien (`apps/console/app/ai/page.tsx`, ajoutée le
+  23/07/2026). C'est une capacité fermée : ni la barre latérale ni l'URL ne l'ouvrent
+  (`apps/console/lib/capacites.ts:6`).
+- **Le DROP dur n'a pas eu lieu.** Il attend dans
+  `packages/db/sql/pending/migration-v44-drop-deprecated-ai.sql`, hors de la séquence
+  appliquée ; `rum_ai` figure toujours dans `apps/console/lib/dsar.ts` et dans les droits de
+  `migration-v93.sql`.
+- **La façade a un second hôte dans le code** : le service `api` (`services/api/server.mjs`,
+  variable `XSOM_AI_URL`) sert aussi `/api/rum/summary`. Il est déclaré dans
+  `.railway/railway.ts` mais pas créé sur Railway : en production, c'est la console qui répond.

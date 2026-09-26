@@ -1,5 +1,7 @@
 # RAPPORT v0.4 — Tracing distribué front→back (11/06/2026)
 
+> **Archivé** (dans `docs/archive/` depuis le 01/07/2026) : compte rendu de sprint du 11/06/2026, qui décrit la production d'alors (Supabase, fonctions Deno). Remplacé par [CHANGELOG.md](../../CHANGELOG.md) (§ v0.4) et [BUILD_LOG.md](../../BUILD_LOG.md) pour l'historique, par [docs/RUM_PARITY_STATUS.md](../RUM_PARITY_STATUS.md) et [docs/TOPOLOGIE_BACKEND.md](../TOPOLOGIE_BACKEND.md) pour l'état actuel.
+
 Verdict : **la chaîne complète est codée, testée et aux ¾ en prod.** Le navigateur trace chaque appel API (traceparent W3C), le backend FastAPI répond avec son temps serveur, la console les corrèle par trace_id. Il ne manque que le redémarrage du backend G-IT sur le VPS (clé SSH en cours).
 
 ## Livré (et prouvé)

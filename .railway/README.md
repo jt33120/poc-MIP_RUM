@@ -1,4 +1,31 @@
-# Railway configuration
+# Configuration Railway — `.railway/railway.ts`
+
+Ce que ce dossier décrit pour MIP RUM, au 26/09/2026. La suite du fichier, en
+anglais, est l'aide générique écrite par `railway config init`.
+
+- `.railway/railway.ts` déclare le projet `mip-rum-backend` : six services en
+  trois groupes — `collector` (1 · Collecte) ; `api`, `console-api`, `mcp`
+  (2 · Restitution) ; `scheduler`, `notifier` (3 · Traitements) —, tous en
+  `europe-west4-drams3a` (Amsterdam), construits depuis la branche `master`.
+- Sur Railway, seuls `scheduler` et `mcp` existent (relevé de l'API Railway du
+  26/09/2026). Les quatre autres naîtront au premier apply qui les porte, une
+  fois créées les variables partagées listées en tête de `railway.ts` : le plan
+  ne vérifie pas qu'elles existent.
+- Omettre une ressource ou une variable la **supprime** à l'apply. Les domaines
+  générés (`*.up.railway.app`) ne sont pas gérés ici : ils se créent à la main.
+- Plan et apply passent par le workflow « Railway IaC »
+  (`.github/workflows/railway-config.yml`) : plan commenté sur chaque PR qui
+  touche `.railway/`, `package.json` ou `pnpm-lock.yaml`, refus de toute
+  destruction sans le label `allow-destroy`, puis apply du plan épinglé après
+  fusion, sur approbation (environnement GitHub `railway-production`).
+- Le SDK `railway/iac` vient de la dépendance de développement `railway` du
+  `package.json` racine (`pnpm install`, pas `npm install`).
+- Mode d'emploi : [runbook](../docs/operations/runbook.md), § 2 ; décision :
+  [ADR-0007](../docs/architecture/adr/0007-iac-railway.md).
+
+---
+
+## Aide générique du CLI (générée par Railway, en anglais)
 
 This project defines its Railway infrastructure in code.
 

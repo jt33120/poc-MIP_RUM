@@ -261,7 +261,7 @@ describe("PS6 — autour de la console, et l'état de la chaîne", () => {
 
   it("accès programmatiques : les nombres de E1 et E2", () => {
     expect(texte).toContain(
-      `Une API publique en lecture (${FAMILLES_API_V1} familles de routes, description OpenAPI servie sur /api-docs) et un serveur MCP en lecture seule (${OUTILS_MCP} outils). Les jetons d'API ne donnent aucun droit d'écriture.`,
+      `Une API publique en lecture (${FAMILLES_API_V1} familles de routes, description OpenAPI servie sur /api-docs) et un serveur MCP en lecture seule (${OUTILS_MCP} outils). Les jetons d'API ne donnent aucun droit d'écriture, sauf celui de poser un marqueur de déploiement, jusqu'au 31/12/2026.`,
     );
   });
 

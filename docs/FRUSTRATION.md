@@ -19,9 +19,9 @@
 - **Cible** lisible (`formatClickLabel`, ≤ 80 c). **Opt-out** : `MIPRum.init({ frustration: false })`.
 - **Conservateur par conception** : sur une page très dynamique (animations, polling DOM), les dead clicks sont **sous-reportés** plutôt que faussement signalés. Pas de coordonnées, pas de capture de saisie.
 
-## Ingestion (`shared/otlp.mjs`)
+## Ingestion (`packages/backend/shared/otlp.mjs`)
 
-Le span `frustration` est mappé vers `rum_event` sous le **nom réservé** `frustration.<kind>`, `props = { target, count }`. `target` est **scrubbé** comme tout texte libre (`scrubProps`). `kind` hors {`rage`,`dead`,`error`} est rejeté ; `error` sans `action_id` valide l'est aussi.
+Le span `frustration` est mappé vers `rum_event` sous le **nom réservé** `frustration.<kind>`, `props = { target, count }`. `target` est **scrubbé** comme tout texte libre (`boundedEventProps`, qui applique `scrubText` à chaque chaîne). `kind` hors {`rage`,`dead`,`error`} est rejeté ; `error` sans `action_id` valide l'est aussi.
 
 ## Console (`/ux`, `lib/queries-frustration.ts`)
 

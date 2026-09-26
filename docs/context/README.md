@@ -9,6 +9,35 @@ recharge au début de chaque chantier, plutôt que de reconstruire l'état des l
 Date d'établissement : **29 juillet 2026**. Toute affirmation chiffrée ci-dessous
 est datée et sourcée (fichier du dépôt ou requête sur la base de production).
 
+> **État au 26/09/2026.** Ce dossier est une photographie du 29/07/2026 : ses
+> chiffres de production (spans, alertes, lignes de logs) n'ont pas été
+> re-mesurés, et ne peuvent pas l'être avant le 01/10/2026 (base Neon suspendue,
+> quota gratuit dépassé le 24/09). Ce qui a changé depuis, vérifié dans le code
+> (`master`) :
+>
+> - **Logs, SVI et supervision IA sont fermés dans la console** depuis le
+>   08/09/2026 : `/logs`, `/svi` et `/ai` affichent un accès fermé et n'exécutent
+>   aucune lecture (`apps/console/lib/capacites.ts:6`).
+> - **SVI n'est plus absent du code** : le modèle d'appel (`packages/db/sql/migration-v51.sql`)
+>   et les écrans `/svi`, `/svi/appels` (incréments I0 et I2 du
+>   [plan d'implémentation](./produit-svi-plan-implementation.md)) sont livrés
+>   depuis le 30/07/2026, puis fermés avec les deux autres. Aucun adaptateur de
+>   plateforme téléphonique n'existe.
+> - **Livraison des alertes** : depuis la migration v88 — dans le dépôt, pas encore
+>   appliquée en production, arrêtée à v86 —, `route_alert` ne fait que mettre en
+>   file ; le livreur (`packages/backend/lib/dispatch-alerts.mjs`) envoie, et
+>   l'e-mail part par Resend depuis le service `notifier`, qui n'est pas déployé.
+>   En production, aucun e-mail d'alerte n'est jamais parti
+>   (`services/notifier/README.md:15`). Qu'un canal réel ait été configuré depuis
+>   le 29/07 n'a pas été vérifié.
+> - **Isolation** : la migration v47 (29/07) remplace les politiques
+>   `using (true)` par des politiques scopées par locataire ; elles restent
+>   inertes tant que la console se connecte en propriétaire de la base, ce qui est
+>   toujours le cas ([MULTITENANT.md](../MULTITENANT.md)).
+> - Les défauts de conformité aux standards relevés dans la fiche RUM (contexte
+>   W3C, seuils LCP, `delta`, masquage du rejeu) sont corrigés dans le code : voir
+>   l'encadré de [produit-rum.md](./produit-rum.md).
+
 ---
 
 ## 1. Les trois produits
@@ -19,9 +48,10 @@ est datée et sourcée (fichier du dépôt ou requête sur la base de production
 | **Supervision IA** | Coût, latence, volumétrie et qualité des appels LLM | **xSOM AI Guard** (externe) | [produit-supervision-ia.md](./produit-supervision-ia.md) |
 | **Supervision Logs** | 3ᵉ signal OTel — journaux applicatifs corrélés aux traces | `mip-rum` | [produit-logs.md](./produit-logs.md) |
 
-Une quatrième fiche traite d'un domaine **adjacent, non couvert aujourd'hui**,
-sur lequel la question a été posée : [svi-supervision-vocale.md](./svi-supervision-vocale.md)
-(serveurs vocaux interactifs).
+Une quatrième fiche traite d'un domaine **adjacent, non couvert le 29/07/2026 au
+matin**, sur lequel la question a été posée : [svi-supervision-vocale.md](./svi-supervision-vocale.md)
+(serveurs vocaux interactifs). La décision prise le même jour a produit le
+[cadrage](./produit-svi-cadrage.md) et le [plan d'implémentation](./produit-svi-plan-implementation.md).
 
 ---
 
@@ -107,7 +137,7 @@ Les trois produits butent sur **le même mur, l'axe A5**.
 | … acquittées par un humain | **0** | `alert_event.acknowledged` |
 | Notifications effectivement livrées | **0** | `alert_delivery` (table vide) |
 | Canaux de notification configurés | **0** | `notify_channel` (table vide) |
-| Canal e-mail | **jamais livré, par construction** | `migration-v17.sql:172` → `'email non livré (canal payant non branché)'` |
+| Canal e-mail | **jamais livré, par construction** | `packages/db/sql/migration-v17.sql:172-173` → `'email non livré (canal payant non branché)'` |
 
 Ce tableau est le résumé le plus honnête du produit aujourd'hui : **la boucle de
 supervision n'est pas fermée.** 624 alertes de brûlage sur un unique SLO en
@@ -139,14 +169,17 @@ vide : l'alerte n'atteint personne. Le critère N3 n'est pas satisfait.
 
 **Les Logs ne sont pas passés N2, et la raison est structurelle**, pas un oubli de
 câblage. Le pipeline est correct de bout en bout (l'émetteur `agent-node` pose le
-`traceId` natif, `otlp.mjs:604` le lit). Ce qui manque, c'est l'ÉMISSION :
+`traceId` natif, `packages/backend/shared/otlp.mjs:1918` le lit). Ce qui manque, c'est l'ÉMISSION :
 `forwardLog` n'a que **deux** appelants dans toute la console —
 
-1. la connexion (`app/login/actions.ts`), une action serveur que `withServerTrace`
+1. la connexion (`apps/console/app/login/actions.ts`), une action serveur que `withServerTrace`
    n'enveloppe pas (il n'ouvre un contexte que sur présence d'un `traceparent`
-   entrant, `server-trace.ts:24`) : structurellement non corrélable ;
-2. le chemin d'erreur d'API (`lib/api/handle.ts`), tracé lui, mais **jamais
+   entrant, `apps/console/lib/server-trace.ts:23`) : structurellement non corrélable ;
+2. le chemin d'erreur d'API (`apps/console/lib/api/handle.ts`), tracé lui, mais **jamais
    déclenché** — zéro erreur d'API sur la période.
+
+*(Au 26/09/2026, un troisième appelant s'y ajoute : les lectures d'écran en échec,
+`apps/console/lib/lecture.ts:63`.)*
 
 D'où 654 lignes toutes `INFO`, une seule source, zéro corrélation. Le défaut de
 corrélation latent est corrigé (`traceFields()` alimente désormais `forwardLog`
@@ -168,7 +201,9 @@ c'est deux apps à traiter, pas une.
 **RLS activé, isolation absente.** 11 migrations activent `row level security`,
 mais les politiques sont en `using (true) with check (true)` : elles ferment
 l'accès anonyme, elles **ne filtrent pas par client**. L'isolation multi-tenant
-repose aujourd'hui uniquement sur le `where app_id = $1` du code applicatif.
+repose aujourd'hui uniquement sur le `where app_id = $1` du code applicatif. *(La migration v47,
+posée le même jour, scope ces politiques par locataire ; elles restent inertes :
+voir l'encadré en tête.)*
 
 **Fonctionnalités construites, jamais utilisées.** `deploy_marker` 0 ligne,
 `goal` 0, `sourcemap` 0, `syn_snapshot` 0, `dashboard` 1, `slo` 1,
@@ -181,8 +216,8 @@ comme tels lors d'une mise en production client.
 ## 6. Ce que ce dossier ne dit pas
 
 - **Le produit de supervision IA lui-même n'est pas auditable depuis ce dépôt.**
-  L'accès GitHub de cette session est restreint à `jt33120/mip-rum` ; le dépôt
-  `xsom-ai-guard` est hors périmètre. La fiche IA évalue donc **l'intégration** sur
+  L'accès GitHub de cette session est restreint à `jt33120/mip-rum` (dépôt renommé
+  depuis en `jt33120/poc-MIP_RUM`, public) ; le dépôt `xsom-ai-guard` est hors périmètre. La fiche IA évalue donc **l'intégration** sur
   preuves, et le **produit** sur son seul contrat public + un sondage réseau. Ses
   angles morts sont listés explicitement dans la fiche.
 - **Le positionnement marché** n'est pas repris ici : il fait l'objet de

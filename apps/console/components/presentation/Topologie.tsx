@@ -159,7 +159,8 @@ export function Topologie() {
           <p>
             Le collecteur est une route de la console : c&apos;est l&apos;adresse que visent les SDK. Le
             même parseur existe en service Node autonome (<code className={CODE}>services/collector/server.mjs</code>),
-            construit et démarré par la CI, pour un hébergement chez le client ; en production, il ne
+            construit et démarré par la CI ; le dépôt le déclare comme service Railway, pas encore
+            créé, et le relais de la console vers lui est livré éteint ; en production, il ne
             tourne nulle part : le service Railway <code className={CODE}>ingest</code>, qui
             l&apos;exécutait sans domaine public, a été supprimé le {INGEST_SUPPRIME_LE}.
           </p>

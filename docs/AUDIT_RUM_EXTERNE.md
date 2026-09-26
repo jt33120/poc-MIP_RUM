@@ -2,6 +2,50 @@
 
 **Date** : 09/09/2026. **Objet** : le POC `poc-MIP_RUM` au commit `59caea9`.
 
+## Suivi au 26/09/2026
+
+Le rapport ci-dessous est laissé tel qu'écrit le 09/09/2026 ; ce tableau dit ce que chaque
+finding est devenu. Une ligne « traité » renvoie au commit de `master` qui le cite et au
+code qui porte la correction ; « non cité » veut dire qu'aucun lot ne s'en réclame, pas qu'il
+est ouvert — son état n'a pas été revérifié ici, sauf quand la ligne donne une preuve.
+
+| Finding | État | Preuve |
+|---|---|---|
+| 1.1 | traité — lot 2 (`eea622ef`, 09/09) | `apps/console/lib/queries-errors.ts` (« finding 1.1 »), `tests/unit/erreurs-fenetre.test.ts` |
+| 1.2 | traité — lot 0 (`b39c0185`, 09/09) | `packages/db/sql/migration-v56.sql` |
+| 1.3 | traité — lot 1 (`d48c180b`, 09/09) | `packages/db/sql/migration-v57.sql`, `tests/unit/identite-visiteur.test.ts` |
+| 1.4 | partiel — lot 0 a corrigé l'affirmation, pas la durée | les spans restent fermés à leur instant d'ouverture (`realEmit`, `packages/rum-sdk/src/index.ts`) ; la vitrine le dit (« Elle n'est pas encore une CHRONOLOGIE », `apps/console/lib/specs.ts`) |
+| 1.5 | traité — lot 3 (`615f5cd6`, 09/09) | `packages/db/sql/migration-v58.sql` |
+| 1.6 | non cité | — |
+| 1.7 | traité — lot 0 (`b39c0185`) | `normalizeModulePath`, `packages/backend/shared/otlp.mjs` ; `migration-v56.sql` |
+| 1.8 | non cité | — |
+| 1.9 | traité — lot 0 (`b39c0185`) | `packages/db/sql/migration-v56.sql` |
+| 1.10 | traité — lot 0 (`b39c0185`) | `docs/CONFORMITE.md`, verrouillé par `tests/unit/conformite.test.ts` |
+| 1.11 | **ouvert** | l'identifiant de session et celui de visiteur sont écrits avant la barrière de consentement et ne sont pas purgés au refus (`packages/rum-sdk/src/session.ts`, commentaire « CE QUI N'EST PAS RÉGLÉ ICI » ; `docs/CONFORMITE.md` §3) |
+| 1.12 | traité — lot 0 (texte), puis P8.7 (migration-v85, provenance du pays) | `docs/CONFORMITE.md` §2 et §3.2 |
+| 1.13 | non cité | — |
+| 2.1 | traité — lot 4 (`ffa2a613`, 09/09) | `packages/rum-sdk/src/errors.ts`, `packages/db/sql/migration-v59.sql` |
+| 2.2 | traité — lot 4 | `packages/rum-sdk/src/retry.ts` |
+| 2.3 | traité — lot 4 | `packages/backend/lib/pg-ingest.mjs` (« Finding 2.3 ») |
+| 2.4 | traité — lot 3, puis lot 7 (`abbfe544`, 10/09) pour les percentiles | `migration-v58.sql`, `migration-v61.sql` ; les visiteurs uniques restent un comptage brut, déclaré par `sampling_notice` |
+| 2.5 | non cité | aucune gestion de `pageshow`, `persisted` ni `prerender` dans `packages/rum-sdk/src` (recherche du 26/09) |
+| 2.6 | traité — lots 5 et 6 (`1441dbdd`, 09/09) | `apps/console/lib/queries.ts` (« Finding 2.6 »), `migration-v62.sql` |
+| 2.7 | non cité | — |
+| 2.8 | traité — lots 5 et 6 | `apps/console/lib/fuseau.ts`, `migration-v60.sql`, `tests/unit/fuseau-cardinalite.test.ts` |
+| 2.9 | traité — lot 9 (`55eef328`, 10/09), **éteint par défaut** | `packages/backend/lib/ingest-differe.mjs`, `migration-v63.sql`, opt-in `INGEST_DEFERRED` |
+| 2.10 | traité — lots 5 et 6 (index), lot 7 (percentiles pré-agrégés) | `migration-v61.sql` |
+| 2.11 | non cité | le relais d'ingestion traite toujours les logs comme non idempotents (`IDEMPOTENTS`, `apps/console/lib/ingest-relay.ts`) |
+| 2.12 | non cité | — |
+| 2.13 | **ouvert** | le SDK décide toujours avec `/mobile\|tablet/i` et n'émet que `mobile` ou `desktop` (`packages/rum-sdk/src/index.ts`, attribut `mip.device_type`) |
+
+**Chemins cités.** Les citations `fichier:ligne` sont celles du commit `59caea9`, mais les
+chemins ont été réécrits mécaniquement le 23/09/2026 (P1, commits `e8f18a5a` et `6cf392e3`) :
+`packages/backend/lib/` s'appelait `apps/ingest/lib/`, `packages/backend/shared/` s'appelait
+`apps/ingest/supabase/functions/_shared/`, `packages/db/sql/` s'appelait `apps/ingest/sql/`,
+`packages/mcp-tools/` s'appelait `apps/mcp/`, et `labs/clickhouse/NOTES.md` s'appelait
+`infra/clickhouse.notes.md`. Pour relire une ligne citée, ouvrir l'ancien chemin au commit
+`59caea9` ; les numéros de ligne du code actuel ont bougé.
+
 ## D'où vient ce rapport, et ce qu'il vaut
 
 > Ce document a été produit par un **agent Claude** à qui l'on avait donné le rôle d'un ingénieur
@@ -1141,7 +1185,7 @@ Plus, immédiatement : `LIMIT 200` et suppression des sous-requêtes corrélées
 
 ## Ce qu'il ne faut pas faire dans cet ordre
 
-Ne pas commencer par ClickHouse. Le chemin est prouvé et le bench de `labs/clickhouse/NOTES.md`
+Ne pas commencer par ClickHouse. Le chemin est prouvé en local seulement (jamais déployé) et le bench de `labs/clickhouse/NOTES.md`
 est honnête, mais migrer un modèle qui compte des rapports au lieu de pages vues, qui mélange les
 fenêtres et qui ignore le poids d'échantillonnage ne ferait que **rendre les mêmes chiffres faux
 plus vite**. Les lots 0 à 3 fixent la sémantique ; la migration de moteur vient après.

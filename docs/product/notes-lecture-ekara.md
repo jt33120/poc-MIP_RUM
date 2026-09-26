@@ -1,9 +1,9 @@
 # IP-Label / Ekara — RUM et supervision unifiée : documentation et comparaison à notre console
-
+> **État au 26/09/2026.** Notes rédigées du 18 au 21/09/2026, avant la refonte de la console : le § 3 décrit la console d'avant les vagues 0 à 8, ses `fichier:ligne` ont bougé, et les notes voisines qu'il cite (`console-ecrans-1.md`…) sont hors du dépôt (encadré de [plan-frontend-dashboard.md](plan-frontend-dashboard.md)). La vitrine cite ce fichier par numéro de ligne (`apps/console/components/presentation/Positionnement.tsx`) : n'y ajouter ni n'y retirer aucune ligne.
 ## 0. Méthode, sources, et limites de fiabilité (à lire avant tout le reste)
 
 **Ce que j'ai utilisé.** Aucun accès direct à une capture d'écran du dashboard Ekara : le dossier fourni
-`/Users/juliantalou/Downloads/datadog screenshots and videos ` (avec l'espace final dans le nom, vérifié
+`datadog screenshots and videos ` (un dossier local, hors dépôt ; avec l'espace final dans le nom, vérifié
 par `ls`) ne contient QUE du contenu Datadog (9 fichiers : captures RUM/Error Tracking/Explorer + 2 vidéos),
 déjà exploité dans `console-ecrans-1.md`. Aucune capture IP-Label/Ekara n'a été trouvée dans mes recherches
 web (WebSearch ne renvoie pas d'URL d'image exploitable, WebFetch ne peut pas lire une image). **Tout ce qui

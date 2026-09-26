@@ -9,6 +9,11 @@ CC BY 4.0 exige.
 avant : le pays reste estimé d'après le fuseau horaire du terminal. Rien n'est
 bloqué, rien n'est retardé, rien n'échoue.
 
+**En production, il ne sert pas** (26/09/2026) : la collecte passe par la console
+sur Vercel, qui n'embarque pas la base, et le service `collector` qui la porte
+n'est pas encore créé ; son IaC pose `GEOIP_IP_SOURCE=none` jusqu'à la collecte
+directe (P6b.G). La base sert l'auto-hébergement ([infra/docker/](../../../infra/docker/README.md)).
+
 ## Déposer la base
 
 ```sh
@@ -39,7 +44,7 @@ modification d'un fichier est remise à zéro par toute construction d'image.
 | `GEOIP_DB_PATH` | *(vide)* | Chemin explicite d'une livraison (volume monté). Sinon, la plus récente de ce dossier. |
 | `GEOIP_MAX_AGE_DAYS` | `180` | Au-delà, la base est **refusée** : un pays périmé n'est pas une information, un pays inconnu en est une. |
 
-`GET /health` du service d'ingestion rend l'état réel : `geoip.etat`
+`GET /health` du `collector` rend l'état réel : `geoip.etat`
 (`actif` / `chargement` / `eteint`), `geoip.version`, `geoip.raison`.
 
 ## Format

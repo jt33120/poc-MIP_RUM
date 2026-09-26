@@ -161,7 +161,7 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
   {
     t: "Clé d'ingestion à rendre obligatoire",
     g: "bloquant",
-    d: "L'authentification par clé d'API existe application par application, mais le refus n'est pas encore le comportement par défaut. Le passage en fermé-par-défaut précède toute mise en service client.",
+    d: "L'authentification par clé d'API existe application par application, mais le refus n'est pas encore le comportement par défaut. Au relevé du 23/09/2026, six applications sur sept n'avaient aucune clé : il faut d'abord en provisionner une par application (l'outil est livré), sans quoi le refus couperait leur collecte. Le passage en fermé-par-défaut précède toute mise en service client.",
   },
   {
     t: "Filet d'isolation en base à activer",
@@ -186,7 +186,7 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
   {
     t: "Console non conteneurisée",
     g: "limite",
-    d: "Le backend a ses images (ingestion et serveur MCP), pas la console. L'argument « déployable chez vous » n'est donc pas livrable de bout en bout.",
+    d: "Le backend a ses images (une par service), pas la console. L'argument « déployable chez vous » n'est donc pas livrable de bout en bout.",
   },
   {
     t: "Aucune certification, identité légale à compléter",

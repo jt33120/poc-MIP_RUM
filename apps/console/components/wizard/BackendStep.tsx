@@ -25,7 +25,7 @@ export function BackendStep({
       <div className="grid gap-2">
         <details className="rounded border border-slate-200 px-3 py-2" open>
           <summary className="cursor-pointer text-xs font-medium text-slate-700">
-            FastAPI / Starlette (Python) — <span className="text-green-700">prouvé en prod chez G-IT</span>
+            FastAPI / Starlette (Python) — <span className="text-green-700">en production chez G-IT (v0.4), version servie testée en CI</span>
           </summary>
           <div className="mt-2 grid gap-2">
             <a
@@ -33,7 +33,7 @@ export function BackendStep({
               download
               className="w-fit rounded bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
             >
-              ⬇ mip_rum_middleware.py (232 lignes, stdlib pure)
+              ⬇ mip_rum_middleware.py (un fichier, stdlib pure)
             </a>
             <CopyBlock code={fastapiWiring} />
           </div>

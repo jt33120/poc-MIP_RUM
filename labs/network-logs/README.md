@@ -1,11 +1,13 @@
-# POC — logs réseau souverains (OTel → ClickHouse **vs** OpenSearch)
+# Expérience — logs réseau (OTel → ClickHouse **vs** OpenSearch)
 
 But : **se faire la main** sur une chaîne d'ingestion de logs réseau, avec des
 **données 100 % synthétiques** (aucune donnée client), et **comparer ClickHouse et
 OpenSearch** sur les mêmes logs (coût disque, compression, latence de requête).
 
-C'est la brique « logs » qui étend le backbone **OpenTelemetry souverain** de MIP :
-les logs sont le 3ᵉ signal OTel, à côté des traces/métriques déjà ingérées.
+**Expérience locale, jamais déployée, sans lien avec le produit** (état au 26/09/2026).
+Le signal logs du produit est ailleurs : la table `rum_log`, alimentée par la route
+`/api/ingest/v1/logs` de la console ([docs/context/produit-logs.md](../../docs/context/produit-logs.md)).
+Rien de ce qui suit n'y est relié.
 
 ```
 loadgen (syslog RFC5424) ─┐
@@ -13,9 +15,13 @@ OTLP externe (cloud/app) ─┤→  otel-collector  ─┬→  ClickHouse   → 
                           │   (passerelle)      └→  OpenSearch   →  OS Dashboards (:5601)
 ```
 
-> ⚠️ **Non exécuté en CI** (pas de Docker dans l'environnement de dev). Versions
+> ⚠️ **Non exécuté en CI**, et pas rejoué pour la relecture du 26/09/2026. Versions
 > **épinglées**. Les deux points « version-sensibles » sont les exporters du
 > collecteur (`clickhouse`, `opensearch`) — voir §« Si ça coince ».
+>
+> **Ports.** Le collecteur publie 4317/4318, comme le receveur local du produit
+> (`node services/collector/dev-server.mjs`, :4318) ; ClickHouse publie 8123/9000, comme
+> `labs/clickhouse/docker-compose.clickhouse.yml` (:8123). Arrêter ceux-ci avant de lancer ce labo.
 
 ---
 
@@ -100,19 +106,20 @@ time curl -s "http://localhost:9200/${IDX}/_search" -H 'content-type: applicatio
 ### 3. Extrapoler le coût
 `coût_stockage ≈ (octets/log) × (logs/jour) × rétention_jours`. Ajoute le CPU
 d'ingestion (négligeable ici, à re-mesurer à fort débit). Reporte les deux dans un
-tableau — c'est le livrable pour l'arbitrage (et l'AO Carrefour).
+tableau — c'est le livrable pour l'arbitrage.
 
 ---
 
-## Ce que ça dit pour la prod MIP
+## Ce que l'expérience suggère (rien n'est décidé)
 - **Passerelle unique = OTel Collector** : un seul point d'entrée pour syslog +
   OTLP + (bridge Splunk/ES/OpenSearch existant). Format ouvert, zéro proprio.
-- **Souveraineté** : tout self-hosté (ici Docker ; en prod **OVH** = hors Cloud
-  Act). Pas de SaaS US (Splunk/Datadog/Elastic Cloud).
+- **Hébergement** : tout est auto-hébergeable (ici Docker). Aucun hébergement de
+  production n'a été choisi pour des logs ; le produit, lui, tourne aujourd'hui chez des
+  hébergeurs de droit américain (Vercel, Neon, Railway).
 - **Store** : ClickHouse pour le coût/volume à grande échelle (tiering TTL + stockage
   objet froid) ; OpenSearch reste pertinent si l'exploitation le connaît déjà. Ce
   POC sert à trancher **avec vos chiffres**.
-- **Volumes** : monte `RATE` jusqu'à ton débit crête cible pour valider avant l'AO.
+- **Volumes** : monte `RATE` jusqu'à ton débit crête cible pour valider le dimensionnement.
 
 ## Si ça coince (points version-sensibles)
 - **Exporter `clickhouse`** : selon la version du collecteur, les clés (`ttl`,

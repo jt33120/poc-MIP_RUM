@@ -7,6 +7,15 @@
 
 *Établie le 29 juillet 2026.*
 
+> **État au 26/09/2026.** Le niveau N0 ci-dessus décrit le dépôt du 29/07/2026 au
+> matin. Depuis, dans le code (`master`) : le modèle d'appel
+> (`packages/db/sql/migration-v51.sql`), la branche `svi.*` de l'ingestion et les
+> écrans `/svi`, `/svi/appels` ont été livrés le 30/07/2026 (incréments I0 et I2 du
+> [plan d'implémentation](./produit-svi-plan-implementation.md)), puis **fermés**
+> dans la console le 08/09/2026 (`apps/console/lib/capacites.ts:6`). Il n'existe
+> toujours ni adaptateur de plateforme téléphonique, ni brique SIP, RTP ou RTCP : les
+> couches 1 et 2 du § 1 restent à N0.
+
 > **Note de lecture.** « SVI » désigne ici le *serveur vocal interactif* (IVR en
 > anglais). Si l'intention était « supervision du SI » au sens large, la réponse
 > est ailleurs : c'est exactement l'objet des trois fiches produit de ce dossier.
@@ -56,7 +65,9 @@ sur l'issue réelle de l'appel, pas seulement sur son déroulé.
 
 Recensement du dépôt : aucune brique SIP, RTP, RTCP, WebRTC ou téléphonie. Le module
 `uptime` (`supabase/functions/uptime/` (fonction Deno retirée en P1, lisible au tag `pre-reorg`), 1 sonde configurée, 2 657
-résultats) fait de la sonde HTTP — pas de l'appel de test.
+résultats) fait de la sonde HTTP — pas de l'appel de test. *(Au 26/09/2026, les
+sondes sont un travail planifié du `scheduler`, `packages/backend/jobs/planifie.mjs`,
+toujours en HTTP.)*
 
 **Niveau : N0.** Sans nuance.
 
@@ -139,10 +150,12 @@ identifiée, et le garder en réserve pour deux usages :*
   s'appuie sur une plateforme déjà construite.
 
 *Cette mise en file d'attente était conditionnée aux chantiers d'amélioration des
-produits existants, désormais livrés — dont la fermeture de la boucle d'alerte
+produits existants, désormais livrés dans le code — dont la fermeture de la boucle d'alerte
 ([README §4](./README.md#4-le-constat-transversal-et-il-est-unique)). Le premier
 argument reste d'actualité et se renforce : la thèse « nous mesurons l'expérience
 vécue, quel que soit le canal » devient un récit tenable plutôt qu'un slogan.*
+*(Note du 26/09/2026 : qu'une alerte ait été livrée à un humain en production n'est
+pas établi ; voir l'encadré du [README](./README.md).)*
 
 ---
 

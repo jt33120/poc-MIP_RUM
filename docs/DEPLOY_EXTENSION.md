@@ -2,14 +2,17 @@
 
 > **Le chemin principal est désormais dans la console** : à la création d'une app en
 > mode extension (`/select/new`), l'écran propose les deux voies directement —
-> **(A)** « Ajouter à Chrome » (dès la publication au Store) ou téléchargement du `.zip`
+> **(A)** « Ajouter à Chrome » (le bouton n'apparaît que si la variable `CHROME_STORE_URL`
+> est posée, donc après la publication au Store) ou téléchargement du `.zip`
 > + chargement « non empaqueté », et **(B)** une policy `ExtensionSettings` **pré-remplie**
-> (ID + domaines réels) à copier-coller dans GPO/Intune/Google Admin. Ce document reste
-> la **référence packaging avancé** (empaquetage `.crx` signé, `update.xml` Omaha) pour la
-> voie B.
+> (ID + domaines réels ; `update_url` vient de `EXTENSION_UPDATE_URL`, sinon un gabarit à
+> remplacer) à copier-coller dans GPO/Intune/Google Admin, plus la policy séparée de
+> nommage des postes (`3rdparty` → clé `poste`). Ce document reste la **référence packaging
+> avancé** (empaquetage `.crx` signé, `update.xml` Omaha) pour la voie B.
 >
-> POC interne, **non publié** sur le Chrome Web Store (cf. `docs/CADRAGE_EXTENSION.md`
-> §0 — le grand public est hors périmètre de ce POC, réservé à la Phase 2). Deux modes
+> POC interne, **non publié** sur le Chrome Web Store au 26/09/2026 (cf.
+> `docs/CADRAGE_EXTENSION.md` §0 — le grand public est hors périmètre de ce POC, réservé à la
+> Phase 2 ; le kit de soumission est prêt : `docs/CHROME_WEB_STORE.md`). Deux modes
 > de déploiement : sideload manuel (dev/QA) et policy d'entreprise (poste géré du client).
 >
 > **Régénérer le `.zip`** servi par la console (après un changement d'extension) :
@@ -63,14 +66,17 @@ Fichier `update.xml`, hébergé sur une URL accessible du parc client :
 <?xml version="1.0" encoding="UTF-8"?>
 <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
   <app appid="gglpcalhlkfhgipfmemfiedjomifefba">
-    <updatecheck codebase="https://<votre-hébergement>/mip-rum-extension.crx" version="0.1.0" />
+    <updatecheck codebase="https://<votre-hébergement>/mip-rum-extension.crx" version="0.4.3" />
   </app>
 </gupdate>
 ```
 
-À chaque nouvelle version : incrémenter `manifest.json.version`, ré-empaqueter, mettre
-à jour `version` dans `update.xml` — Chrome/Edge managés re-vérifient périodiquement et
-mettent à jour automatiquement (pas besoin de réinstaller).
+`version` est celle de `manifest.json` au moment de l'empaquetage (0.4.3 au 26/09/2026).
+Elle suit la version du SDK (`packages/rum-sdk/package.json`) : `check:sync`, rejoué en CI,
+échoue si le manifest ou `apps/extension/package.json` en diverge. À chaque nouvelle version
+de l'extension : ré-empaqueter, mettre à jour `version` dans `update.xml` — Chrome/Edge
+managés re-vérifient périodiquement et mettent à jour automatiquement (pas besoin de
+réinstaller).
 
 ### c. Policy `ExtensionSettings` (GPO / Google Admin / Intune)
 
@@ -108,14 +114,17 @@ autorise la **collecte**. Les deux sont nécessaires (défense en profondeur).
 - [ ] `.crx` empaqueté avec la clé privée du POC (ID stable vérifié)
 - [ ] `update.xml` hébergé et accessible depuis le parc client
 - [ ] Policy `ExtensionSettings` poussée (test sur un poste pilote avant déploiement large)
-- [ ] Popup vérifié sur le poste pilote : statut "MIP RUM observe : `<domaine>`"
+- [ ] Popup vérifié sur le poste pilote : le domaine, puis « MIP RUM observe ce domaine. »
 - [ ] Vérification console : nouvelles sessions avec `collection_source = 'extension'`
       pour l'app concernée (segment `source==extension`, cf. Ext-A)
+- [ ] Inventaire : le poste pilote apparaît dans `/admin/extension-installs` (sous son
+      libellé si la policy de nommage est poussée, sinon sous son identifiant d'installation)
 
 ## 4. Rollback
 
 - Retirer l'entrée `ExtensionSettings` (ou passer `installation_mode` à `removed`) —
   Chrome/Edge managés désinstallent au prochain cycle de policy.
 - Désactiver le domaine dans `/admin/extension-scope` (`active=false`) — coupe la
-  collecte immédiatement, sans attendre la désinstallation (défense en profondeur,
-  cf. §2.d).
+  collecte sous ~60 s (durée du cache de résolution du service worker,
+  `apps/extension/src/background.ts`), sans attendre la désinstallation (défense en
+  profondeur, cf. §2.d).

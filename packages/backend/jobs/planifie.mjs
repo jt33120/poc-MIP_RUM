@@ -24,8 +24,8 @@
 // UN SEUL DÉCLENCHEUR depuis le 23/09/2026 : le service `scheduler`, qui prend un
 // bail par cadence. Le cron GitHub et Vercel Cron passaient par `/api/cron/*`,
 // sans bail, et pouvaient lancer la même cadence au même instant ; ces routes
-// répondent 410 et le rejeu manuel passe par `services/scheduler/run-once.mjs`,
-// qui prend le même bail.
+// ont rendu 410 (23/09/2026) puis ont été supprimées (25/09/2026, préparation de C12), et le
+// rejeu manuel passe par `services/scheduler/run-once.mjs`, qui prend le même bail.
 //
 // L'idempotence des étapes reste exigée — un redéploiement qui chevauche, une
 // montée à deux répliques — avec des verrous de TRANSACTION seulement, puisque le

@@ -99,7 +99,7 @@ function messagePour(statut, corps) {
       }
       return `L'API MIP RUM est indisponible (503)${detail}. C'est une panne côté serveur, pas une erreur d'appel.`;
     case 401:
-      return `Jeton refusé par l'API MIP RUM${detail}. Ce n'est pas un problème de paramètre : réessayer la même requête donnera le même résultat. Le jeton doit figurer dans CONSOLE_API_TOKENS (la même valeur sur la console et le service api), ou parmi les jetons de lecture en base.`;
+      return `Jeton refusé par l'API MIP RUM${detail}. Ce n'est pas un problème de paramètre : réessayer la même requête donnera le même résultat. Le jeton doit figurer dans CONSOLE_API_TOKENS (la même valeur sur la console et le service api) ; les jetons de lecture créés dans la console n'ouvrent pas cette API.`;
     case 403:
       return `Accès refusé à cette ressource${detail}. Le jeton est valide mais son périmètre ne couvre pas l'app demandée — utiliser mip_rum_list_apps pour connaître les apps réellement accessibles.`;
     case 404:

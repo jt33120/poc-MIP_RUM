@@ -11,6 +11,12 @@ comme une promesse, et elle se découvre fausse chez le client.
 
 Dernière mise à jour : 18/09/2026, lot P7.5.
 
+> **Note du 26/09/2026.** Le tableau ci-dessous est l'état du 18/09 : il n'a pas
+> été réexécuté depuis. La CI a changé entre-temps (P1, 23/09/2026) : Node 24
+> (`.nvmrc`, `engines` du `package.json` racine) au lieu de 26, et PostgreSQL 17
+> au lieu de 15 (`.github/workflows/ci.yml`). Aucune version de React Native n'a
+> été exécutée davantage : la phrase de tête reste vraie.
+
 ---
 
 ## 1. Ce qui a été exécuté

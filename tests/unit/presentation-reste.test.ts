@@ -2,10 +2,14 @@
 // (apps/console/lib/presentation-reste.ts) disent ce que dit le relevé, ni moins ni plus.
 //
 // Que chaque source EXISTE est le contrôle n° 4 de couverture-site.test.ts. Ici, ce
-// que ce contrôle ne peut pas voir : que les textes réécrits au relevé du 23/09/2026
-// suivent leurs lignes. Chaque test pose d'abord le FAIT tel que le document l'écrit,
-// puis le texte : si un nouveau relevé change le fait, le test rougit sur le fait, et
-// quelqu'un relit le point au lieu de laisser la vitrine répéter l'ancien état.
+// que ce contrôle ne peut pas voir : que les textes réécrits suivent leurs sources.
+// Chaque test pose d'abord le FAIT tel que sa source l'écrit, puis le texte : si la
+// source change, le test rougit sur le fait, et quelqu'un relit le point au lieu de
+// laisser la vitrine répéter l'ancien état. Depuis la relecture du 26/09/2026, les
+// faits de R1, R2, R6 et R9 se lisent dans des fichiers du dépôt plus récents que le
+// document de couverture (relevé de production, CI, ADR, runbook).
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { capaciteParId, type Capacite } from "@/lib/couverture";
 import { POINTS_RESTE, lignesCitees } from "@/lib/presentation-reste";
@@ -21,6 +25,10 @@ function affiche(id: string): string {
   const p = point(id);
   return [p.titre, p.manque, p.debloque, p.decide].join(" ");
 }
+
+const RACINE = join(__dirname, "..", "..");
+const lire = (chemin: string) => readFileSync(join(RACINE, chemin), "utf8");
+const RELEVE_P0 = lire("docs/operations/releve-p0-2026-09-23.md");
 
 function ligne(id: string): Capacite {
   const c = capaciteParId(id);
@@ -50,9 +58,8 @@ describe("les dix points, dans l'ordre fixe du plan", () => {
     }
   });
 
-  it("R1 et R2 disent que leurs chiffres n'ont pas été recontrôlés, comme le document (:303-304, D9)", () => {
+  it("R2 dit que son chiffre n'a pas été recontrôlé, comme le document (D9)", () => {
     expect(ligne("D9").limite).toContain("n'ont pas été recontrôlés");
-    expect(point("R1").manque).toContain("(non recontrôlé)");
     expect(point("R2").manque).toContain("(chiffre non recontrôlé)");
   });
 });
@@ -72,47 +79,74 @@ describe("R10 — la base gratuite, une limite dite", () => {
   });
 });
 
-describe("relevé du 23/09/2026 : les points réécrits suivent leurs lignes", () => {
-  it("R2 suit D8 — v83 est appliquée, et c'est une déduction, pas une lecture de la base", () => {
+describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources", () => {
+  it("R1 suit le relevé de production lu en base — du trafic arrive, le « 17/09 » est faux", () => {
+    // Le fait : le relevé du 23/09 contredit la date reprise par le document.
+    expect(RELEVE_P0).toContain("**Faux au 23/09** : `gip-plateforme` a reçu 378 événements, le dernier à 13:01 le jour même");
+    expect(RELEVE_P0).toContain('"evenements":378,"dernier":"2026-09-23T13:01:49.972Z"');
+
+    const r1 = point("R1");
+    expect(r1.manque).toContain("le relevé lu en base le 23/09/2026 compte 378 événements pour l'application du client, le dernier reçu ce jour-là à 13:01 UTC");
+    expect(r1.manque).toContain("Aucun écran n'a été relu sur des données réellement ingérées");
+    // L'ancien état, que le relevé a rendu faux.
+    expect(affiche("R1")).not.toMatch(/17\/09\/2026 à 17:23|Aucune donnée n'a été ingérée/);
+    expect(r1.sources).toContain("docs/operations/releve-p0-2026-09-23.md:13");
+  });
+
+  it("R2 suit le registre `schema_migration`, lu en base — v83 n'est plus une déduction", () => {
     const d8 = ligne("D8");
     expect(d8.verdict).toBe("livre_non_deploye");
-    expect(d8.preuve).toContain("v83 appliquée en production");
-    expect(d8.preuve).toContain("déduit des journaux du runner, pas lu en base");
     expect(d8.limite).toContain("Aucun environnement ne lance l'outil");
+    expect(RELEVE_P0).toContain("**Lu en base** : v83 le 18/09 à 11:46");
+    expect(RELEVE_P0).toContain('{"filename":"migration-v83.sql","applied_at":"2026-09-18T11:46:47.212Z"');
 
     const r2 = point("R2");
-    expect(r2.manque).toContain("sa migration v83 est appliquée en production : c'est déduit des journaux de déploiement, pas lu en base");
+    expect(r2.manque).toContain("sa migration v83 est appliquée en production : le registre des migrations, lu en base le 23/09/2026, l'inscrit le 18/09/2026 à 11:46 UTC");
     expect(r2.manque).toContain("Aucun environnement ne lance l'outil");
-    // Ni l'ancien état, ni une certitude que le document n'a pas.
-    expect(affiche("R2")).not.toMatch(/non appliquée|n'est pas appliquée|appliquer la migration|vérifiée? en base/i);
-    // Ce qu'une reprise demanderait désormais (§ 12.2) : rien côté schéma, lancer l'outil.
+    // Ni l'ancien état, ni l'ancienne réserve, que le relevé a levée.
+    expect(affiche("R2")).not.toMatch(/non appliquée|n'est pas appliquée|appliquer la migration|déduit des journaux/i);
+    // Ce qu'une reprise demanderait (§ 12.2) : rien côté schéma, lancer l'outil.
     expect(r2.debloque).toContain("plus rien n'est à faire côté schéma");
   });
 
-  it("R9 suit F1 à F3 et D7 — la CI type la console, les SDK et l'agent Node, pas l'extension", () => {
-    expect(ligne("F1")).toMatchObject({ verdict: "livre_avec_defaut_connu" });
-    expect(ligne("F1").limite).toContain("échoue sur un dépôt fraîchement installé");
-    expect(ligne("F2").verdict).toBe("deploye_non_eprouve");
-    expect(ligne("F2").preuve).toContain("`@mip/rum-core`, `@mip/rum-sdk`, `@mip/rum-mobile` et `@mip/agent-node`");
-    expect(ligne("F2").limite).toContain("L'extension navigateur (`apps/extension`, en TypeScript) n'est **pas** typée par la CI");
-    expect(ligne("F3")).toMatchObject({ verdict: "livre_avec_defaut_connu" });
-    expect(ligne("F3").limite).toContain("les deux bancs de mesure ne tournent jamais en CI");
-    expect(ligne("F3").limite).toContain("est jouée par la CI depuis #213, et passe");
+  it("R9 suit la CI et le runbook — ce qui est fait au passé, la restauration jamais éprouvée", () => {
+    const ci = lire(".github/workflows/ci.yml");
+    expect(ci).toContain("pnpm --filter extension typecheck");
+    expect(ci).toContain("name: Construction depuis un dépôt propre");
+    expect(ci).toContain("name: Bancs de mesure (Explorer P6.6, /mobile P7.5)");
+    expect(ci).toContain("Aucun seuil de LATENCE");
+    expect(ci).toContain("Reste HORS typage, et c'est connu : le JavaScript du backend");
+    expect(lire("docs/operations/runbook.md")).toContain("**Procédure écrite le 24/09/2026, jamais éprouvée.**");
     expect(ligne("D7").verdict).toBe("non_commence");
 
     const r9 = point("R9");
-    expect(r9.manque).toContain("La construction échoue sur un dépôt fraîchement installé");
-    expect(r9.manque).toContain("la CI vérifie les types de la console, des SDK et de l'agent Node, mais pas ceux de l'extension navigateur");
-    expect(r9.manque).toContain("les deux bancs de mesure ne tournent jamais en CI");
-    expect(r9.manque).toContain("n'est ni écrite, ni éprouvée");
-    // Les deux phrases du plan que le relevé a rendues fausses.
-    expect(affiche("R9")).not.toMatch(/ne vérifie pas les types|rouge/i);
+    expect(r9.manque).toContain(
+      "la CI construit le dépôt depuis un clone propre, vérifie les types de l'extension navigateur et joue les deux bancs de mesure",
+    );
+    expect(r9.manque).toContain("cette procédure n'a jamais été éprouvée");
+    expect(r9.manque).toContain("sans seuil");
+    expect(r9.manque).toContain("le JavaScript du backend n'est typé par rien");
+    // Les phrases que la CI du 24/09 a rendues fausses.
+    expect(affiche("R9")).not.toMatch(
+      /ne vérifie pas les types|rouge|échoue sur un dépôt|ne tournent jamais en CI|n'est ni écrite|pas ceux de l'extension/i,
+    );
   });
 
-  it("R6 suit D14 — c'est la résolution par base IP→pays qui ne donne rien, pas le pays estimé", () => {
-    expect(ligne("D14").limite).toContain("Le GeoIP ne résout aucun pays sur le trafic actuel");
-    expect(point("R6").manque).toContain("Cette résolution ne donne donc aucun pays aujourd'hui.");
-    expect(point("R6").manque).not.toContain("Aucun pays n'est résolu");
+  it("R6 suit l'ADR 0005 — le relais transmet le pays seul, la résolution attend la collecte directe", () => {
+    expect(lire(".railway/railway.ts")).toContain('GEOIP_IP_SOURCE: "none"');
+    expect(lire("docs/architecture/adr/0005-relais-ingestion.md")).toContain("qui seule permet la géolocalisation par adresse");
+    const r6 = point("R6");
+    expect(r6.manque).toContain("ne lui transmettra que le pays posé par Vercel, jamais l'adresse");
+    expect(r6.manque).toContain("Cette résolution ne donne donc aucun pays aujourd'hui.");
+    expect(r6.manque).not.toContain("Aucun pays n'est résolu");
+    // Le choix est fait : l'ancien « aucun des deux n'est tranché » ne revient pas.
+    expect(affiche("R6")).not.toMatch(/n'est tranché|reste à déposer/);
+  });
+
+  it("R8 suit le même relevé — six applications sur sept sans clé d'ingestion", () => {
+    expect(RELEVE_P0).toContain("**Six applications sur sept n'ont aucune clé**");
+    expect(point("R8").manque).toContain("six applications sur sept n'en ont aucune");
+    expect(point("R8").debloque).toContain("provisionner une clé par application");
   });
 });
 
@@ -121,7 +155,9 @@ describe("les pastilles d'un point : les lignes du document qu'il cite", () => {
     const ids = (id: string) => lignesCitees(point(id)).map((c) => c.id);
     expect(ids("R5")).toEqual(["C1", "C2", "C3", "C4", "C9", "C10"]);
     expect(ids("R6")).toEqual(["D14"]);
-    expect(ids("R9")).toEqual(["F1", "F2", "F3", "D7"]);
+    // R9 : F1 à F3 ne sont plus citées depuis la relecture du 26/09 (ce qu'elles
+    // disaient manquer est fait) ; reste D7, la restauration.
+    expect(ids("R9")).toEqual(["D7"]);
     // R1 ne cite que des passages du document, R8 que des fichiers du dépôt.
     expect(ids("R1")).toEqual([]);
     expect(ids("R8")).toEqual([]);

@@ -1,7 +1,8 @@
-# OTel Collector — chemin de migration prod (PLAN §3.3, DoD §2.2.4).
-# Le SDK émet déjà de l'OTLP/HTTP JSON standard : pour passer en prod on-prem,
-# ce Collector REMPLACE la fonction serverless d'ingestion — zéro changement
-# côté SDK ni côté site instrumenté (il suffit de changer l'URL `endpoint`).
+# OTel Collector → ClickHouse — EXPÉRIENCE du labo ClickHouse, pas un chemin en
+# service (juin 2026, PLAN §3.3). Le SDK émet de l'OTLP/HTTP JSON standard : un
+# Collector pourrait remplacer le point d'entrée de collecte (aujourd'hui les routes
+# /api/ingest/v1/* de la console, demain le service `collector`) sans changement
+# côté SDK ni côté site instrumenté — il suffit de changer l'URL `endpoint`.
 #
 # Déploiement type chez le client (narratif CSPN/souveraineté) :
 #   [navigateurs] --OTLP/HTTP JSON--> [Collector on-prem] --> [ClickHouse on-prem]

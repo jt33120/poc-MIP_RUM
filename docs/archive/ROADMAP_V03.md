@@ -1,5 +1,7 @@
 # ROADMAP v0.3 — Sprint nuit 2 (11/06/2026, GO « zéro limite » de Julian)
 
+> **Archivé** (dans `docs/archive/` depuis le 01/07/2026) : plan de sprint écrit avant exécution. Ce qui a été livré est dans [CHANGELOG.md](../../CHANGELOG.md) (§ v0.3) ; l'état actuel est dans [docs/RUM_PARITY_STATUS.md](../RUM_PARITY_STATUS.md).
+
 Objectif : produit RUM **enterprise-grade vendable** (cible grands comptes type Carrefour/AXA).
 Traite TOUT le reste à faire de v0.2 + les limites « Phase 1+ » prouvables : session replay,
 alerting sortant (webhooks), RBAC/multi-utilisateurs, ClickHouse, géo, rate limit durable,
