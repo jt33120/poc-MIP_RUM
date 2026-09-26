@@ -29,7 +29,7 @@
 //   · METRICS_TOKEN              ≥ 32 caractères : sans lui, /ready et /metrics
 //                                répondent 404 et la fumée ne lit pas /ready ;
 //   · RESEND_API_KEY             clé Resend « Sending access » seule — APRÈS la
-//                                fusion de la PR de conformité Resend (#288) ;
+//                                fusion de la PR de conformité (#296, qui a repris #288) ;
 //   · ALERT_EMAIL_TEST_RECIPIENTS  les destinataires de test : une adresse
 //                                personnelle n'a rien à faire dans un dépôt public ;
 //   · WEBHOOK_SIGNING_SECRET     ≥ 32 caractères, signe les webhooks d'alerte ;
