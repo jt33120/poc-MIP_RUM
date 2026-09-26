@@ -2,7 +2,8 @@
 
 Consignes pour les agents de code (Codex, Claude Code…) et pour les humains qui
 relisent leur travail. Ce fichier dit ce qui casse si on l'ignore ; le reste est
-dans `docs/`. Tenu à jour au 26/09/2026.
+dans `docs/`. Tenu à jour au 26/09/2026 ; `tests/unit/agents-md.test.ts` vérifie que
+chaque chemin qu'il cite existe.
 
 ## Le dépôt en bref
 
@@ -27,7 +28,7 @@ L'état détaillé et la suite : `docs/architecture/overview.md`.
 |---|---|
 | `apps/console` | Console Next.js (Vercel) : écrans, API v1, routes d'ingestion, relais |
 | `apps/extension` | Extension navigateur (capteur MV3) |
-| `services/<x>` | Ce que Railway exécute : point d'entrée, `Dockerfile`, `README.md` |
+| `services/<x>` | Ce que Railway exécute : point d'entrée, `Dockerfile`, `README.md` (sauf `mcp`) |
 | `packages/backend`, `packages/db` | Pipeline d'ingestion, travaux, migrations (`packages/db/sql`) |
 | `packages/console-api`, `packages/console-contract` | Backend de la console et son contrat |
 | `packages/service-kit` | Configuration, sondes, arrêt propre, pool : communs aux services |
@@ -56,7 +57,7 @@ ordre et sur quelles bases.
 
 ## Ce qui casse la CI si on l'ignore
 
-- **Migrations** : `packages/db/sql/migration-vNN.sql`, la prochaine est **v94**.
+- **Migrations** : `packages/db/sql/migration-vNN.sql`, au numéro qui suit le plus haut.
   Additives et rejouables. Une migration fusionnée ne se modifie plus jamais
   (`scripts/ci/migrations-figees.mjs`). Seul le `scheduler` migre, à son
   pré-déploiement.
@@ -65,11 +66,13 @@ ordre et sur quelles bases.
   `docs/TOPOLOGIE_BACKEND.md`, `docs/API_CONSOLE.md`, `docs/INTEGRATION.md`,
   `docs/AUDIT_RUM_EXTERNE.md`, `docs/CONFORMITE.md`…). Avant de déplacer ou de
   réécrire un document : `git grep -n "<nom du fichier>"`.
-- **Fichiers générés** : zones du `README.md` (`node scripts/readme-sections.mjs`),
-  `apps/console/lib/couverture.generated.json` (`node scripts/couverture-extraire.mjs`),
-  `docs/architecture/console-api/inventaire.md` et `cliquet.json`
-  (`node scripts/dev/inventaire-console.mjs`), `docs/api/console-api.md`. Chaque
-  générateur a un mode `--verifier` ; un test échoue si le fichier versionné dérive.
+- **Fichiers générés** : zones du `README.md` (`node scripts/readme-sections.mjs`)
+  et `apps/console/lib/couverture.generated.json` (`node scripts/couverture-extraire.mjs`),
+  chacun avec un mode `--verifier` ; `docs/api/console-api.md`
+  (`MAJ_DOC_CONSOLE_API=1 pnpm vitest run tests/unit/console-api-doc.test.ts`). Un
+  test échoue si l'un des trois dérive. `docs/architecture/console-api/inventaire.md`
+  et `cliquet.json` se réécrivent par `node scripts/dev/inventaire-console.mjs` ;
+  seul le cliquet est gardé par un test (voir « Console sans base »).
 - **Conformité** : toute nouvelle sortie de données vers un tiers, ou tout
   changement d'hébergeur, met à jour `apps/console/lib/legal.ts` et
   `docs/CONFORMITE.md` dans la même modification (`tests/unit/conformite.test.ts`).
@@ -81,10 +84,15 @@ ordre et sur quelles bases.
   collector et du service `api`. Un changement de format d'un côté vaut pour l'autre.
 - **Bundles de service** : `services/api/build.mjs` et
   `services/console-api/build.mjs` refusent un bundle qui embarque la session de la
-  console (`lib/auth.ts`) ou un module `next/…` réel ; celui de `console-api`
+  console (`apps/console/lib/auth.ts`) ou un module `next/…` réel ; celui de `console-api`
   refuse aussi les écrans, les composants et React.
-- **Artefacts du SDK versionnés** (`apps/console/public/mip-rum*.js`, bundle de
-  l'extension) : reconstruits par `pnpm build:sdk`, la CI refuse la dérive.
+- **Artefacts du SDK versionnés** : `pnpm build:sdk` réécrit `mip-rum.js` dans
+  `apps/console/public/` et `apps/extension/vendor/` ; `mip-rum-replay.js` se copie
+  à la main de `packages/rum-sdk/dist/` vers `apps/console/public/`. La CI
+  (`apps/extension/scripts/check-sync.mjs`) refuse toute dérive, versions de
+  l'extension comprises. `apps/console/public/mip-rum-feedback.js` est une source,
+  pas un artefact. Les zips de `apps/console/public/downloads/` se refont par
+  `pnpm --filter ./apps/extension pack` (et `pack:store`) : rien ne les vérifie.
 
 ## Sécurité et exploitation
 
@@ -122,5 +130,5 @@ ordre et sur quelles bases.
 - `docs/operations/runbook.md` : exploitation, incidents, retours arrière.
 - `docs/operations/bascule-console-api.md`, `relais-ingestion.md`, `relais-api.md` :
   les bascules et leurs drapeaux.
-- `services/README.md` et le `README.md` de chaque service.
+- `services/README.md` et le `README.md` de chaque service (`mcp` : `docs/MCP.md`).
 - `docs/api/console-api.md` : les opérations de `console-api` (généré).
