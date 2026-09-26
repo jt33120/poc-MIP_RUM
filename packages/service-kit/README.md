@@ -4,7 +4,7 @@
 
 Du `.mjs` avec JSDoc. **Zéro dépendance** : `pg` est passé en paramètre, le reste vient de Node. Des fonctions, pas un framework : pas de routeur, pas de conteneur d'injection, pas de cycle de vie caché. Un service appelle ce dont il a besoin, dans l'ordre qu'il choisit, et la lecture de son point d'entrée suffit à savoir ce qu'il fait.
 
-Le kit met en œuvre les points 2 à 7 du **contrat de service** (plan backend, section « Contrat de service »).
+Le kit met en œuvre les points 2 à 7 du **contrat de service** (plan backend, section « Contrat de service » ; le plan n'est pas dans le dépôt, son découpage est repris dans [docs/architecture/overview.md](../../docs/architecture/overview.md)).
 
 ## Modules
 
@@ -35,7 +35,7 @@ Le kit met en œuvre les points 2 à 7 du **contrat de service** (plan backend, 
 
 Toute autre route va au `handler` (style `node:http`) ou au `fetch` (style Web) du service. Sans l'un ni l'autre (le scheduler), elle reçoit un 404.
 
-**Signature.** Option `responseHeaders` (`{ nom: valeur }`, validée au démarrage) : posée sur **chaque** réponse du service — routes, sondes, 404, 413, 500, et jusqu'aux 400/408/431 que Node rend seul (requête illisible, en-têtes trop gros, délais). Le collector y met `x-mip-collector: 1`, pour que son relais distingue ses réponses de celles du routeur Railway. Les en-têtes de la route s'y ajoutent, ils ne la remplacent pas.
+**Signature.** Option `responseHeaders` (`{ nom: valeur }`, validée au démarrage) : posée sur **chaque** réponse du service — routes, sondes, 404, 413, 500, et jusqu'aux 400/408/431 que Node rend seul (requête illisible, en-têtes trop gros, délais). Le collector y met `x-mip-collector: 1` (l'`api`, `x-mip-api: 1` ; le notifier, `x-mip-notifier: 1`), pour que le relais de la console distingue leurs réponses de celles du routeur Railway. Les en-têtes de la route s'y ajoutent, ils ne la remplacent pas.
 
 ## Variables d'environnement lues par le kit
 
@@ -44,7 +44,7 @@ Toute autre route va au `handler` (style `node:http`) ou au `fetch` (style Web) 
 | `PORT` | le service, via `COMMON_ENV` | 8080 | port d'écoute, imposé par Railway |
 | `LOG_LEVEL` | `log.mjs` | `info` | seuil du journal |
 | `METRICS_TOKEN` | le service, via `COMMON_ENV` (secret, ≥ 32 caractères) | aucun | jeton de `/ready` et `/metrics` ; absent : 404 |
-| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `lifecycle.mjs` | 10 hors Railway | budget entre SIGTERM et SIGKILL. **Défaut Railway : 0**, soit SIGKILL immédiat ; le kit prévient au démarrage s'il n'est pas posé sur Railway. À poser explicitement : 15 à 30. |
+| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `lifecycle.mjs` | 10 | budget entre SIGTERM et SIGKILL. **Défaut Railway : 0**, soit SIGKILL immédiat ; le kit prévient au démarrage s'il n'est pas posé sur Railway. À poser explicitement : 15 à 30. |
 | `RAILWAY_REPLICA_ID` | `log.mjs` | aucun | champ `replica` de chaque ligne |
 | `SERVICE_VERSION`, sinon `RAILWAY_GIT_COMMIT_SHA` (12 premiers caractères) | `log.mjs` | aucun | champ `version` de chaque ligne |
 | `RAILWAY_DEPLOYMENT_ID` | `lifecycle.mjs` | aucun | « on est sur Railway » : active l'avertissement de drainage |
@@ -137,7 +137,7 @@ startService({
 
 - `@mip/backend/shared/log.mjs` **réexporte** `createLogger` et `LOG_LEVELS` du kit : tous les services, le noyau, le migrateur et la console écrivent déjà avec ce journal. Rien n'a changé pour eux, sinon ce qu'il ajoute (version, réplique, contexte, pile complète) et ce qu'il retire (adresses IP, e-mails).
 - `@mip/backend/lib/serveur.mjs` **réexporte** `optionsSsl` : une seule décision TLS pour tout le dépôt.
-- `services/scheduler/worker.mjs` est le premier service câblé de bout en bout : `installLifecycle` (avant tout le reste), `defineConfig`, `createPool`, trois `startLoop` sur la grille de l'horloge (`nextDelay`) et `startService` sans route, `/ready` rendant la fraîcheur des cadences (P1, « scheduler sur le kit »). `run-once.mjs` prend son pool au kit. Les autres services suivent.
+- `services/scheduler/worker.mjs` est le premier service câblé de bout en bout : `installLifecycle` (avant tout le reste), `defineConfig`, `createPool`, trois `startLoop` sur la grille de l'horloge (`nextDelay`) et `startService` sans route, `/ready` rendant la fraîcheur des cadences (P1, « scheduler sur le kit »). `run-once.mjs` prend son pool au kit. `collector`, `notifier`, `api` et `console-api` sont câblés de la même façon ; `mcp` n'utilise pas le kit (un serveur `node:http` propre, sans base ni pool).
 
 ## Tests
 

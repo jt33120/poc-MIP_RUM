@@ -7,12 +7,12 @@
 | Groupe du canevas | 3 · Traitements |
 | Point d'entrée | `node services/notifier/worker.mjs` (câblage seul, sur `@mip/service-kit`) |
 | Logique | `@mip/backend/jobs/livreur.mjs` (la passe), `@mip/backend/lib/dispatch-alerts.mjs` (webhooks et e-mails), `@mip/backend/lib/net/resend.mjs`, `@mip/backend/lib/net/signature-webhook.mjs`, `@mip/backend/lib/integrations/tickets/dispatcher.mjs` |
-| Exposition | privée : aucun domaine généré, joignable par le réseau privé du projet |
+| Exposition | privée pour les sondes et la livraison ; **publique** pour le seul hook entrant des tickets (`POST /v1/webhooks/tickets/{id}`, C11), qui demande un domaine généré, à créer à la main (hors IaC) |
 | Rôle BDD | propriétaire (`DATABASE_URL`) ; pool de 2 (`PGPOOL_MAX`), `application_name = mip-notifier` |
 | Réplicas | 1 (deux seraient sûrs : voir « Sûreté multi-réplique ») |
 | Image | `services/notifier/Dockerfile` — ni `@mip/db`, ni base GeoIP |
 
-État au 24/09/2026 : **pas encore déployé**. En production, le scheduler livre à chaque tick (5 min), et aucun e-mail d'alerte n'est jamais parti (`route_alert` les soldait `skipped` avant migration-v88).
+État au 26/09/2026 : **pas encore créé** sur Railway — déclaré dans `.railway/railway.ts`, il attend ses variables partagées (`RESEND_API_KEY`, `ALERT_EMAIL_TEST_RECIPIENTS`, `WEBHOOK_SIGNING_SECRET`…) et un apply approuvé. En production, le scheduler livre à chaque tick (`SCHEDULER_DELIVERY` n'y est pas posée), et aucun e-mail d'alerte n'est jamais parti : `route_alert` les solde `skipped` tant que migration-v88 n'est pas appliquée (la production est à v86), et le scheduler n'a pas de clé Resend.
 
 ## Ce qu'il fait
 

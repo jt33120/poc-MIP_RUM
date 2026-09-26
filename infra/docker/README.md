@@ -1,22 +1,26 @@
-# Backend MIP RUM auto-hébergé (souverain, conteneurisé)
+# Backend MIP RUM auto-hébergé (conteneurisé, sur l'hébergement de son choix)
 
-Les **trois services Railway**, sur un poste ou un serveur, avec leurs **images de
-production** (`services/<x>/Dockerfile`). Objectif : maîtriser l'infra, tourner
-**hors Cloud Act** (sur ton hébergement / OVH), et disposer de **logs de
-conteneur** pour le dogfooding.
+Les **six services déclarés pour Railway** (`.railway/railway.ts`), sur un poste
+ou un serveur, avec leurs **images de production** (`services/<x>/Dockerfile`).
+Objectif : maîtriser l'infra, tourner hors des hébergeurs de droit américain
+(sur ton hébergement / OVH), et disposer de **logs de conteneur** pour le
+dogfooding. La console n'y est pas encore (voir « Ce que ce compose ne couvre
+pas »).
 
 ```
 navigateur / SDK ──(OTLP)──▶ collector ──▶ db (Postgres 17) ◀── migrate (one-shot)
                                                ▲
-                              scheduler ───────┘   (travaux planifiés)
+                  scheduler, notifier ─────────┤   (travaux planifiés, livraisons)
+                  api, console-api ────────────┘   (lecture v1, backend de la console)
 agent IA ──(MCP)──▶ mcp ──▶ API v1 de la console   (jamais la base)
 ```
 
-C'est **le même code et la même image** qu'en production : ce que ce compose
-démarre est, octet pour octet, ce que Railway construit depuis le même
-Dockerfile. `services/collector/server.mjs` câble le receveur de `@mip/backend`
-(`lib/receiver.mjs`) en vrai serveur HTTP (OTLP → Postgres) avec `/health`,
-`/ready`, rate-limit, vérif de clé d'API et arrêt propre.
+Ce compose construit **les mêmes Dockerfile** que Railway : ceux de `scheduler`
+et de `mcp`, en service en production, et ceux des quatre services déclarés
+mais pas encore créés (`collector`, `notifier`, `api`, `console-api`).
+`services/collector/server.mjs` câble le receveur de `@mip/backend`
+(`packages/backend/lib/receiver.mjs`) en vrai serveur HTTP (OTLP → Postgres)
+avec `/health`, `/live`, `/ready`, rate-limit, vérif de clé d'API et arrêt propre.
 
 ## Un profil par service
 
@@ -52,7 +56,7 @@ cd infra/docker
 cp .env.example .env                              # adapter les mots de passe hors local
 
 docker compose up -d --build --wait collector     # db → migrate → collector
-docker compose --profile tout up -d --build --wait   # les trois services
+docker compose --profile tout up -d --build --wait   # les six services
 docker compose ps -a                              # migrate « Exited (0) », les autres « healthy »
 ```
 
@@ -60,6 +64,8 @@ docker compose ps -a                              # migrate « Exited (0) », le
 - **Postgres** : `localhost:5433` (user `postgres`, db `mip_rum`)
 - **MCP** : `http://localhost:4322/mcp` (jeton porteur exigé ; il relaie l'API v1
   de `MIP_CONSOLE_URL`, par défaut la console du poste sur `:3000`)
+- **API v1** : `http://localhost:4323/api/v1` ; **console-api** : `http://localhost:4324`
+  (secret client exigé, sinon 404 ; ses deux secrets dans `.env`, ci-dessus)
 
 ### La base de développement seule
 
@@ -75,10 +81,12 @@ rejouer ne coûte rien : le second passage dit « migrations à jour », 0 appli
 ### Vérifier
 
 ```bash
-curl -s http://localhost:4318/health   # {"status":"ok","service":"ingest",…,"geoip":{…}}
-curl -s http://localhost:4318/ready    # {"status":"ready"} (la base répond)
+curl -s http://localhost:4318/health   # {"status":"ok","service":"collector",…,"geoip":{…}}
+curl -s http://localhost:4318/live     # processus seul, sans toucher la base
+# /ready et /metrics exigent METRICS_TOKEN (posé dans .env ; absent : 404)
+curl -s -H "authorization: Bearer $METRICS_TOKEN" http://localhost:4318/ready   # registre d'apps chargé
 curl -s http://localhost:4320/health   # scheduler : processus + base
-# fraîcheur de chaque cadence et arriéré de livraisons (METRICS_TOKEN posé dans .env)
+# fraîcheur de chaque cadence et arriéré de livraisons
 curl -s -H "authorization: Bearer $METRICS_TOKEN" http://localhost:4320/ready
 
 # envoyer un payload OTLP d'exemple -> attendu {"partialSuccess":{}}
@@ -114,7 +122,8 @@ LOG_LEVEL=debug docker compose up -d collector
 ## Brancher la console / le SDK dessus
 
 ```bash
-# SDK / console : endpoint d'ingestion
+# les extraits d'intégration que remet la console (pas son propre dogfooding,
+# qui poste toujours chez elle) : endpoint d'ingestion
 NEXT_PUBLIC_RUM_ENDPOINT=http://localhost:4318/v1/traces
 # console : la base du compose
 DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum
@@ -124,7 +133,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum
 
 - **Non-root** : chaque image tourne sous l'utilisateur `node` (uid 1000), et
   son code appartient à root — le processus ne peut pas le réécrire.
-- **Images épinglées par digest** (Node 24, `.nvmrc`), identiques pour les trois
+- **Images épinglées par digest** (Node 24, `.nvmrc`), identiques pour les six
   services ; chaque paquet posé est vérifié contre le lockfile à la construction
   (`scripts/ci/deploy-fidele.mjs`).
 - **`mcp` n'a ni `pg` ni `DATABASE_URL`**, et ne dépend ni de `db` ni de

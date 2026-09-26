@@ -15,6 +15,10 @@ https://mip-rum-console.vercel.app/api
 Côté client : `MIP_RUM_READ_URL=https://mip-rum-console.vercel.app/api` et
 `MIP_RUM_READ_TOKEN=<token>`. L'appel se fait sur `${MIP_RUM_READ_URL}/rum/summary`.
 
+La route est servie par la console (Vercel), `apps/console/app/api/rum/summary/route.ts`. Le
+service `api` de Railway (pas encore créé) embarque aussi cette route, mais la console ne la
+lui relaie pas : le relais de lecture ne concerne que `/api/v1`.
+
 ## Endpoint
 
 ```
@@ -26,8 +30,14 @@ Authorization: Bearer <token>
   être **non révoqué**, et son `app_id` doit **égaler** le paramètre `app` — sinon
   `401` (token invalide/révoqué) ou `403` (mauvaise app). Si `app` est omis, il est
   déduit du token.
-- **`window`** : `24h` | `7d` | `30d` (défaut `30d`).
-- **Rate-limit** : `RUM_READ_RATE_LIMIT` req/min/token (défaut 60) → `429` + `Retry-After`.
+- **`window`** : `24h` | `7d` | `30d` (défaut `30d` ; `7j` toléré, toute autre valeur vaut `30d`).
+- **Rate-limit** : `RUM_READ_RATE_LIMIT` req/min/token (défaut 60), par instance → `429` +
+  `Retry-After` ; la réponse porte `RateLimit-Remaining`.
+- Réponses `cache-control: no-store` ; erreurs `{ "error": "…" }`.
+
+Variables de la console (Vercel) : `RUM_READ_RATE_LIMIT` ; pour la section IA, `XSOM_AI_URL`,
+`XSOM_AI_TOKEN` et `XSOM_AI_TIMEOUT_MS` (défaut 4 000 ms, `apps/console/lib/xsom-ai.ts`).
+Sans les deux premières, `ai_status` vaut `"unavailable"`.
 
 ## Exemple d'appel
 
@@ -46,6 +56,8 @@ curl -s -H "Authorization: Bearer $MIP_RUM_READ_TOKEN" \
   "sessions": 92,               // sessions distinctes (bots exclus)
   "users": 17,                  // visiteurs distincts (visitor_id, tirage aléatoire du SDK)
   "unidentified_sessions": 4,   // sessions SANS identifiant de visiteur, donc hors de `users`
+  "sampling_notice": null,      // null sans échantillonnage ; sinon { min_sample_rate,
+                                // extrapolated[], not_corrected[], message } (voir plus bas)
   "page_views": 1971,
   "avg_load_ms": 1210,          // temps de chargement moyen (FCP), null si indispo
   "p75_lcp_ms": 1835,           // LCP p75, null si indispo
@@ -183,6 +195,12 @@ section « Non exposé » de `docs/API_CONSOLE.md`) — nous les ouvrons sur dem
 
 ## Notes techniques
 
+- **`sampling_notice`** (`noticeEchantillonnage`, `apps/console/lib/queries-summary.ts`) :
+  renseigné dès qu'une session de la fenêtre a été échantillonnée (`sampleRate < 1`).
+  `sessions`, `page_views`, `error_rate`, `p75_lcp_ms` et `p75_inp_ms` sont alors
+  **repondérés** par la probabilité d'inclusion de chaque session ; `users`, `avg_load_ms` et
+  `frustration_signals` ne le sont pas et portent sur l'échantillon seul (voir
+  [INTEGRATION.md](INTEGRATION.md), § 5).
 - **avg_load_ms** = moyenne du **First Contentful Paint** (perception de « la page
   s'affiche »). `p75_lcp_ms` / `p75_inp_ms` = percentiles des Core Web Vitals LCP / INP.
 - **error_rate** = part des sessions ayant au moins une erreur front.
@@ -197,7 +215,10 @@ section « Non exposé » de `docs/API_CONSOLE.md`) — nous les ouvrons sur dem
 
 ## Gestion des tokens (console admin)
 
-`/admin/read-tokens` (admin only) : générer un token pour un `app_id` (affiché **une
-seule fois** — seul le hash est stocké) et révoquer. Chaque action est tracée dans
-`audit_log`. Table : `read_tokens (token_hash, app_id, label, created_at, revoked_at)`
+`/admin/read-tokens` (administrateur de l'application du jeton, C9) : générer un token pour
+un `app_id` (affiché **une seule fois** — seul le hash est stocké) et révoquer. Les server
+actions appellent les commandes `creerJetonLecture` et `revoquerJetonLecture`
+(`apps/console/lib/commandes/raccordements.ts`) ; chaque action est tracée dans `audit_log`
+(`read_token.create`, `read_token.revoke`). Ces jetons ne valent que pour `/api/rum/summary` :
+ils n'ouvrent ni l'API v1 ni le serveur MCP. Table : `read_tokens (token_hash, app_id, label, created_at, revoked_at)`
 — cf. `packages/db/sql/migration-v26.sql`.

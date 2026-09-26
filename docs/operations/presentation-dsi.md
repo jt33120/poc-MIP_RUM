@@ -1,6 +1,8 @@
 # Présenter le backend à une DSI (P6b)
 
 > Pour la personne qui présente MIP RUM à une équipe technique (DSI, architectes), et pour celle qui la prépare. Ce document dit **quoi montrer, dans quel ordre, quoi répéter avant, et comment revenir en arrière** si quelque chose casse pendant la séance. Les gestes d'exploitation détaillés sont dans le [runbook](runbook.md).
+>
+> **Au 26/09/2026**, les parcours 3 à 5 et les exercices supposent des services qui ne sont pas encore créés (`collector`, `api`, `console-api`, `notifier`) et une base rétablie (suspendue jusqu'au 01/10) : ce qui tourne est dans l'[architecture, « État au 26/09/2026 »](../architecture/overview.md#état-au-26092026).
 
 ## 1. Ce qu'on montre, dans cet ordre
 
@@ -52,5 +54,5 @@ Le script réécrit l'historique d'un clone miroir (jamais celui du dépôt sour
 | L'API relayée échoue | `update platform_flag set value='0' where key='api_relay_pct'` | 30 s |
 | Un déploiement Railway casse un service | Railway → le service → Deployments → *Redeploy* du précédent | 1–2 min |
 | La console Vercel casse | Vercel → Deployments → *Instant Rollback* | < 1 min |
-| Les alertes partent en double ou pas du tout | `SCHEDULER_DELIVERY=on` sur le scheduler, notifier à 0 réplique | au tick suivant |
+| Les alertes partent en double ou pas du tout | `SCHEDULER_DELIVERY=on` sur le scheduler (IaC), notifier à 0 réplique | au déploiement suivant du scheduler |
 | La base ne répond plus (quota) | afficher la vitrine : l'état dégradé y est annoncé ([ADR-0014](../architecture/adr/0014-base-gratuite.md)) | — |

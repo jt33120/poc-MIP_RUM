@@ -16,9 +16,12 @@ déjà accordée, et que le site n'a pas déjà son propre SDK (`window.MIPRum`)
 
 **Le popup (`popup.html` / `src/popup.ts`)** est le SEUL endroit où l'extension passe
 d'un domaine « reconnu » à « observé » : `chrome.permissions.request()` exige un geste
-utilisateur (le clic sur l'icône). Le popup affiche toujours l'état courant et une
-**note de transparence** (ce qui est mesuré : Core Web Vitals + erreurs, anonyme, aucune
-PII/frappe/formulaire).
+utilisateur (le clic sur l'icône). Le popup affiche toujours l'état courant, un bouton
+« Activer sur ce domaine » ou « Retirer l'autorisation pour ce domaine », et une **note de
+transparence** (ce qui est mesuré : Core Web Vitals + erreurs ; aucune frappe clavier, aucun
+contenu de formulaire). La note dit aussi « anonyme » : c'est inexact, le SDK injecté émet
+l'identifiant de visiteur `mip.visitor_id`, un pseudonyme tiré au hasard et gardé dans le
+stockage local de la page (`docs/CONFORMITE.md` §2).
 
 ## Périmètre — ce que le mode extension couvre (et pas)
 
@@ -72,15 +75,26 @@ smoke-test et pour pointer une pré-prod).
 
 ## Inventaire de parc (Ext-D)
 
-Toutes les 6 h, le service worker déclare son installation à la console
-(`POST /api/extension/heartbeat`) : un UUID tiré au hasard au premier démarrage et
-gardé dans `chrome.storage.local` (clé `mip_install`), la version du manifest, et les
-`app_id` pour lesquels le SDK a réellement été injecté. **Jamais d'URL visitée.**
-L'inventaire se lit dans `/admin/extension-installs`.
+À l'installation et à chaque mise à jour, puis au fil des navigations au plus une fois
+toutes les 6 h (tout de suite quand le poste alimente une nouvelle application ; 15 min
+d'attente après un échec), le service worker déclare son installation à la console
+(`POST /api/extension/heartbeat`, `lib/install.ts`) : un UUID tiré au hasard au premier
+démarrage et gardé dans `chrome.storage.local` (clé `mip_install`), la version du manifest,
+le libellé du poste s'il vient de la policy (voir plus bas), et les `app_id` pour lesquels le
+SDK a réellement été injecté. **Jamais d'URL visitée.** L'inventaire se lit dans
+`/admin/extension-installs`.
 
 L'URL du battement est DÉRIVÉE de `mip_resolve_url` (`/resolve` → `/heartbeat`) : un
 override de pré-prod emmène le battement avec lui, au lieu de déclarer les postes de
 staging en production.
+
+**Côté serveur, aujourd'hui** : les deux routes (`/api/extension/resolve` et
+`/api/extension/heartbeat`) sont servies par la console, sur Vercel. Depuis C11, le
+collector (`services/collector`) sait servir les mêmes sous `/v1/extension/*`, et la console
+peut les lui relayer (`apps/console/lib/ingest-relay.ts`, drapeau `ingest_relay_pct`, 0 par
+défaut). C'est inerte tant que le relais n'est pas allumé et que le collector n'est pas créé
+sur Railway (au 26/09/2026, il ne l'est pas). L'extension n'a rien à changer le jour de la
+bascule : elle continue de viser la console.
 
 Le libellé lisible d'un poste vient de `chrome.storage.managed` (clé `poste`, déclarée
 dans `managed-schema.json`), donc de la policy d'entreprise du client — l'extension ne
@@ -104,6 +118,7 @@ cesse sous ~60 s (TTL du cache de résolution).
 Le déploiement large passe soit par le **Chrome Web Store** (compte développeur payant,
 non fourni), soit par **sideload/`.crx` + policy entreprise** (cf.
 `docs/DEPLOY_EXTENSION.md`). L'extension est **prête à publier** (manifest complet,
-icônes, packaging) ; il ne manque que le compte Store et la clé de signature côté
-organisation. Tant que ce n'est pas fourni, on reste en sideload/policy — sans faire
-croire à une publication.
+icônes, packaging, kit de soumission : `docs/CHROME_WEB_STORE.md`) ; il ne manque que le
+compte Store pour la première voie, la clé privée de signature (hors dépôt) pour empaqueter
+un `.crx` dans la seconde. Tant que ce n'est pas fourni, on reste en sideload/policy — sans
+faire croire à une publication.

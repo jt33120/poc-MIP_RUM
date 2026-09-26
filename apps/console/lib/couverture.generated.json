@@ -344,7 +344,7 @@
       "capacite": "Restaurer une sauvegarde sans ressusciter des données effacées",
       "verdict": "non_commence",
       "preuve": "— (rien dans le dépôt)",
-      "limite": "**La garantie d'effacement ne porte pas sur les sauvegardes.** Une restauration PITR antérieure à un effacement devrait rejouer les barrières avant de rouvrir lectures et ingestion ; cette procédure n'est ni écrite, ni éprouvée. C'est écrit tel quel dans `docs/CONFORMITE.md` § 3.1.",
+      "limite": "**La garantie d'effacement ne porte pas sur les sauvegardes.** Une restauration PITR antérieure à un effacement devrait rejouer les barrières avant de rouvrir lectures et ingestion ; au relevé, cette procédure n'était ni écrite, ni éprouvée, comme le dit `docs/CONFORMITE.md` § 3.1. **Depuis le relevé** (§ 13) : elle est écrite le 24/09/2026 (`docs/operations/runbook.md` § 8), **jamais éprouvée**, et sa partie « identités » reste manuelle. Le verdict attend un nouveau relevé.",
       "ligne": 190
     },
     {
@@ -352,7 +352,7 @@
       "famille": "Exploitation, vie privée et conformité",
       "capacite": "Préparer une reprise d'historique (plan, dry-run, vérification)",
       "verdict": "livre_non_deploye",
-      "preuve": "`scripts/backfill-rum.mjs` (6 sous-commandes, 4 reconstructions), `packages/backend/lib/backfills/` ; `tests/integration/backfill-idempotency-sql.test.ts` (52 tests, 52 verts le 23/09 avec la fenêtre v82→v83), `tests/unit/backfill-p82.test.ts` ; PR #208. Migration **v83 appliquée en production** le 18/09 — déduit des journaux du runner, pas lu en base ; le relevé du 18/09 la disait non appliquée (§ 12.2)",
+      "preuve": "`scripts/backfill-rum.mjs` (6 sous-commandes, 4 reconstructions), `packages/backend/lib/backfills/` ; `tests/integration/backfill-idempotency-sql.test.ts` (52 tests, 52 verts le 23/09 avec la fenêtre v82→v83), `tests/unit/backfill-p82.test.ts` ; PR #208. Migration **v83 appliquée en production** le 18/09 — déduit des journaux du runner, pas lu en base ; le relevé du 18/09 la disait non appliquée (§ 12.2). **Lu en base depuis** : le registre l'inscrit le 18/09 à 11:46 UTC (relevé de production du 23/09, § 13)",
       "limite": "**Aucun environnement ne lance l'outil** : c'est une ligne de commande, et son exécution en production a été écartée (`D9`). L'outil lit `BACKFILL_DATABASE_URL`, **jamais** `DATABASE_URL`. `--app all` est refusé. Aucun écran de console : le journal se lit par CLI et par SQL. La fenêtre de déploiement v82→v83 (3 de ses 52 tests) est jouée par la CI depuis #213.",
       "ligne": 191
     },
@@ -407,7 +407,7 @@
       "capacite": "Préciser le pays par une base IP→pays",
       "verdict": "deploye_non_eprouve",
       "preuve": "**PR #210 fusionnée le 18/09 à 12:52**, CI verte ; migration **v85 appliquée en production** (déduite du journal de pré-déploiement : `total 80 · appliquées 1`, la seule étant v84) ; `packages/backend/lib/geoip-db.mjs`, `shared/geoip.mjs`, `services/collector/Dockerfile` ; `tests/unit/geoip-db.test.ts` (193 l.), `tests/integration/geoip-v85-sql.test.ts`",
-      "limite": "**Le GeoIP ne résout aucun pays sur le trafic actuel, et la fusion n'y change rien.** La résolution est embarquée dans l'**image backend Railway**, qui ne reçoit aucun trafic : `ingest`, sans domaine public, a été supprimé le 21/09/2026 (§ 3) ; la route Vercel, qui reçoit tout le trafic, **n'appelle délibérément pas** la résolution locale — un commentaire du code l'explique — et ne pose que la provenance `cdn`. La base elle-même n'est pas versionnée : elle reste **à déposer**. Pays seulement : ni ville, ni région, ni coordonnées ; la base « City Lite » est refusée par le chargeur. **Aucun enrichissement rétrospectif n'est possible** : l'adresse des visites passées n'a jamais été stockée, et ce lot ne commence pas à la stocker.",
+      "limite": "**Le GeoIP ne résout aucun pays sur le trafic actuel, et la fusion n'y change rien.** La résolution est embarquée dans l'**image backend Railway**, qui ne reçoit aucun trafic : `ingest`, sans domaine public, a été supprimé le 21/09/2026 (§ 3) ; la route Vercel, qui reçoit tout le trafic, **n'appelle délibérément pas** la résolution locale — un commentaire du code l'explique — et ne pose que la provenance `cdn`. La base elle-même n'est pas versionnée : elle restait **à déposer** au relevé ; depuis, l'image du `collector` la télécharge à sa construction d'après un manifeste versionné (`scripts/fetch-geoip-db.mjs`), mais ce service n'est pas créé, et le chemin choisi le 24/09 (ADR-0005) ne s'en servira qu'en collecte directe (§ 13). Pays seulement : ni ville, ni région, ni coordonnées ; la base « City Lite » est refusée par le chargeur. **Aucun enrichissement rétrospectif n'est possible** : l'adresse des visites passées n'a jamais été stockée, et ce lot ne commence pas à la stocker.",
       "ligne": 197
     },
     {
@@ -416,7 +416,7 @@
       "capacite": "Lire par l'API publique v1",
       "verdict": "deploye_non_eprouve",
       "preuve": "`apps/console/app/api/v1/` — 18 familles de routes, enveloppe `{meta,data}` ; `tests/unit/api-v1-contract.test.ts`, OpenAPI servi par `/api-docs`",
-      "limite": "Les jetons `CONSOLE_API_TOKENS` sont **strictement en lecture** : aucun droit d'écriture, aucun droit d'upload, quelle que soit la route. Aucune de ces routes n'a été appelée sur de la donnée réellement ingérée.",
+      "limite": "Les jetons `CONSOLE_API_TOKENS` sont **en lecture**, à **une exception** près : `POST /api/v1/deploys`, qui enregistre un marqueur de déploiement, les accepte encore jusqu'au 31/12/2026 (`FIN_JETONS_HISTORIQUES`, `packages/backend/lib/deploiements.mjs`), annoncé comme ancien chemin — le jeton de CI `deploys:write` le remplace ; une session y est refusée (`apps/console/app/api/v1/deploys/route.ts`). Aucun droit d'upload. Aucune de ces routes n'a été appelée sur de la donnée réellement ingérée.",
       "ligne": 203
     },
     {
@@ -424,7 +424,7 @@
       "famille": "Surfaces d'accès",
       "capacite": "Lire par MCP",
       "verdict": "deploye_non_eprouve",
-      "preuve": "`packages/mcp-tools/lib/catalogue.mjs` — **16 outils**, recomptés le 23/09 (`mip_rum_list_apps` … `mip_rum_mobile_summary`) ; job CI `mcp-smoke` qui compare ce nombre en dur ; service Railway `mcp` (sur `6485f45` le 18/09, non relevé depuis), avec domaine public",
+      "preuve": "`packages/mcp-tools/lib/catalogue.mjs` — **16 outils**, recomptés le 23/09 (`mip_rum_list_apps` … `mip_rum_mobile_summary`) ; fumée `mcp` du workflow `docker-smoke`, qui compare ce nombre en dur ; service Railway `mcp` (sur `6485f45` le 18/09 ; sur `20261eb` au relevé du 26/09, § 13), avec domaine public",
       "limite": "Read-only par construction. Le catalogue n'expose **pas encore les dimensions** de P6 : les outils P4/P5 restent sur app, période et appareil.",
       "ligne": 204
     },
@@ -443,7 +443,7 @@
       "capacite": "Construire le dépôt de bout en bout",
       "verdict": "livre_avec_defaut_connu",
       "preuve": "`pnpm -r build` vert **après** `pnpm build:sdk` : les 12 projets de l'espace de travail, `apps/console` incluse (rejoué le 23/09)",
-      "limite": "**Défaut : `pnpm -r build` échoue sur un dépôt fraîchement installé** (§ 8.3) — rejoué le 23/09 sur un worktree neuf : même erreur. `apps/extension` ne déclare aucune dépendance d'espace de travail vers `@mip/rum-sdk` : rien n'ordonne les deux builds. La CI ne voit pas le défaut parce qu'elle construit les SDK d'abord.",
+      "limite": "**Défaut : `pnpm -r build` échoue sur un dépôt fraîchement installé** (§ 8.3) — rejoué le 23/09 sur un worktree neuf : même erreur. `apps/extension` ne déclare aucune dépendance d'espace de travail vers `@mip/rum-sdk` : rien n'ordonne les deux builds. La CI ne voit pas le défaut parce qu'elle construit les SDK d'abord. **Corrigé depuis le relevé** (#281, 24/09/2026) : `apps/extension/package.json` déclare `@mip/rum-sdk`, et le job « Construction depuis un dépôt propre » de `ci.yml` joue `pnpm -r build` sans `pnpm build:sdk` préalable, vert sur `09833f1` (§ 13). Le verdict attend un nouveau relevé.",
       "ligne": 211
     },
     {
@@ -452,7 +452,7 @@
       "capacite": "Vérifier les types",
       "verdict": "deploye_non_eprouve",
       "preuve": "étape « Typage des paquets publiés » de `.github/workflows/ci.yml` (PR #213, 18/09) : `tsc --noEmit` de `@mip/rum-core`, `@mip/rum-sdk`, `@mip/rum-mobile` et `@mip/agent-node`, puis `pnpm --filter console typecheck` (script posé par F00, #217) ; les cinq verts sur ce poste le 23/09, et l'étape verte dans le passage CI `35833662207` sur `8a5f3d1` (§ 12.3). L'échec de `replay.ts:242` est corrigé (§ 8.4)",
-      "limite": "L'extension navigateur (`apps/extension`, en TypeScript) n'est **pas** typée par la CI : verte à la main le 23/09, rien ne le garantit à sa prochaine modification. La vérification n'arrête une fusion que si l'on attend le verdict de la CI du commit de fusion (§ 7).",
+      "limite": "L'extension navigateur (`apps/extension`, en TypeScript) n'est **pas** typée par la CI : verte à la main le 23/09, rien ne le garantit à sa prochaine modification. La vérification n'arrête une fusion que si l'on attend le verdict de la CI du commit de fusion (§ 7). **Levé depuis le relevé** (#281, 24/09/2026) : l'étape « Typage des paquets publiés et de l'extension » joue aussi `pnpm --filter extension typecheck`, `@mip/console-contract` et `@mip/console-api`. Reste hors de tout typage le JavaScript du backend (`packages/backend`, `packages/db`, `packages/mcp-tools`, `services/*`), en `.mjs` sans `checkJs` (§ 13).",
       "ligne": 212
     },
     {
@@ -461,7 +461,7 @@
       "capacite": "Rejouer la recette SQL complète en CI",
       "verdict": "livre_avec_defaut_connu",
       "preuve": "job « E2E Playwright (Postgres service) » : `test:sql` (7 bases depuis #213), `test:isolation`, `test:alerting`, `test:svi` ; étapes vertes dans le passage CI `35833662207` sur `8a5f3d1` (§ 12.3)",
-      "limite": "**Défaut : les deux bancs de mesure ne tournent jamais en CI**, faute de `BENCH_DATABASE_URL`, absente de `ci.yml` (vérifié le 23/09) : `explorer-bench-p66` et `rum-mobile-bench-p75`, qui lisent une base préparée à part. Les temps publiés (`B9`) ne sont donc jamais revérifiés, et ce relevé ne les a pas rejoués. La fenêtre v82→v83, second trou du 18/09, est jouée par la CI depuis #213, et passe (§ 8.2).",
+      "limite": "**Défaut : les deux bancs de mesure ne tournent jamais en CI**, faute de `BENCH_DATABASE_URL`, absente de `ci.yml` (vérifié le 23/09) : `explorer-bench-p66` et `rum-mobile-bench-p75`, qui lisent une base préparée à part. Les temps publiés (`B9`) ne sont donc jamais revérifiés, et ce relevé ne les a pas rejoués. La fenêtre v82→v83, second trou du 18/09, est jouée par la CI depuis #213, et passe (§ 8.2). **Levé depuis le relevé** (#281, 24/09/2026) : le job « Bancs de mesure » de `ci.yml` pose `BENCH_DATABASE_URL`, sème une base jetable (`scripts/bench/semer-bancs.mjs`) et joue les deux bancs ; il échoue si l'index de v82 n'est plus choisi, **sans seuil de latence** — les temps sont imprimés, pas comparés. Vert sur `09833f1` (§ 13). Le verdict attend un nouveau relevé.",
       "ligne": 213
     }
   ]

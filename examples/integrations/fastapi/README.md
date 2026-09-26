@@ -18,11 +18,18 @@ risque, l'activation se fait au déploiement.
 ## Activation (variables d'environnement)
 
 ```ini
-MIP_RUM_ENDPOINT=https://<projet>.supabase.co/functions/v1/v1-traces
+MIP_RUM_ENDPOINT=https://mip-rum-console.vercel.app/api/ingest/v1/traces
 MIP_RUM_APP_ID=gip-plateforme
 MIP_RUM_API_KEY=            # optionnel (app sans clé : laisser vide)
 MIP_RUM_IGNORE=/health      # défaut : /health,/docs,/openapi.json,/favicon.ico
 ```
+
+L'adresse est celle de la route d'ingestion de la console en production
+(`apps/console/lib/ingest-endpoint.ts`) : le middleware poste tel quel sur
+`MIP_RUM_ENDPOINT`, sans rien y ajouter. En local, le receveur de
+`node services/collector/dev-server.mjs` écoute sur `http://localhost:4318/v1/traces`.
+La production qui écrit en base est à l'arrêt jusqu'au 01/10/2026 (base Neon
+suspendue) : d'ici là, un envoi vers la console n'est pas enregistré.
 
 ## Ce qui est collecté (et rien d'autre)
 

@@ -7,7 +7,7 @@ export const dynamic = "force-static";
 export const metadata = {
   title: "MIP RUM — Confidentialité de l'extension navigateur",
   description:
-    "Ce que le capteur navigateur MIP RUM mesure, comment, et vos droits. Données anonymes, stockées en UE (Francfort).",
+    "Ce que le capteur navigateur MIP RUM mesure, comment, et vos droits. Données pseudonymes, stockées en UE (Francfort).",
 };
 
 const UPDATED = "15 juillet 2026";
@@ -42,8 +42,10 @@ export default function ExtensionPrivacy() {
           (desktop/mobile), user-agent du navigateur.
         </li>
         <li>
-          <strong>Identifiant de session anonyme</strong> : un jeton aléatoire (haché), non rattaché à votre
-          identité, permettant de relier les pages d&apos;une même visite.
+          <strong>Identifiants pseudonymes</strong> : un identifiant de session et un identifiant de visiteur,
+          tirés au hasard et gardés dans le stockage local du navigateur, sans lien avec votre identité ni avec
+          le poste. Ils relient les pages d&apos;une visite, et les visites entre elles. C&apos;est un
+          pseudonyme, pas une donnée anonyme : vider le stockage local du site l&apos;efface.
         </li>
         <li>
           <strong>Pays approximatif</strong> déduit du <em>fuseau horaire</em> du navigateur — <strong>aucune
@@ -62,7 +64,7 @@ export default function ExtensionPrivacy() {
 
       <h2 className="mt-8 text-lg font-semibold">Ce qui n&apos;est PAS collecté</h2>
       <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
-        <li>Aucune donnée personnelle identifiante, aucun profil publicitaire.</li>
+        <li>Aucun nom, aucune adresse e-mail, aucun profil publicitaire.</li>
         <li>Aucune frappe clavier, aucun contenu de formulaire, aucun mot de passe.</li>
         <li>Aucun historique de navigation hors des domaines enregistrés et autorisés.</li>
         <li>
@@ -90,8 +92,8 @@ export default function ExtensionPrivacy() {
           <strong>Conservation</strong> : purge automatique après <strong>30 jours</strong> (TTL).
         </li>
         <li>
-          <strong>Droits RGPD</strong> (accès, effacement) : exerçables via MIP. Les données étant anonymisées,
-          l&apos;identification directe d&apos;une personne n&apos;est pas possible.
+          <strong>Droits RGPD</strong> (accès, effacement) : exerçables via MIP, à partir de l&apos;identifiant
+          de visiteur. Les données étant pseudonymes, MIP ne peut pas, seul, relier une mesure à une personne.
         </li>
         <li>
           <strong>Contrôle</strong> : vous activez et retirez l&apos;autorisation par domaine à tout moment depuis
@@ -130,8 +132,8 @@ export default function ExtensionPrivacy() {
       <p className="mt-3 text-sm leading-relaxed text-ink-soft">
         The « MIP RUM » browser extension measures web performance (Core Web Vitals) and technical JavaScript
         errors, only on domains explicitly registered by MIP and only after you grant permission per domain. It
-        collects anonymous performance data and an anonymous session token — <strong>no personal data, no
-        keystrokes, no form content, no IP address stored</strong>. Data is hosted in the EU, deleted after 30
+        collects performance data tied to random session and visitor identifiers (pseudonymous, not anonymous)
+        — <strong>no name, no email, no keystrokes, no form content, no IP address stored</strong>. Data is hosted in the EU, deleted after 30
         days, and never sold or used for advertising. You can revoke permission per domain at any time from the
         extension popup.
       </p>

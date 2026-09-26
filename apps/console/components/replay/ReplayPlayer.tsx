@@ -311,9 +311,10 @@ export default function ReplayPlayer({
         <div className="py-2" data-testid="replay-empty">
           <h3 className="text-sm font-bold tracking-tight">Aucun rejeu pour cette session</h3>
           <p className="mt-2 max-w-2xl text-sm text-ink-soft">
-            Le session replay est <strong>activé</strong>, mais aucun enregistrement n&apos;a été
-            capturé pour cette session — le plus souvent une session trop courte, un signal{" "}
-            <strong>DNT/GPC</strong> ou un consentement refusé, ou un navigateur sans{" "}
+            Aucun enregistrement n&apos;a été capturé pour cette session : le rejeu n&apos;est pas activé
+            dans le SDK de cette application (<code className="rounded bg-panel2 px-1">replay: true</code>), ou
+            la session était trop courte, ou le visiteur a émis un signal{" "}
+            <strong>DNT/GPC</strong> ou refusé son consentement, ou son navigateur n&apos;a pas{" "}
             <code className="rounded bg-panel2 px-1">CompressionStream</code>.
           </p>
           <p className="mt-3 max-w-2xl text-sm text-ink-soft">

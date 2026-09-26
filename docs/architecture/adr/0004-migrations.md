@@ -21,7 +21,7 @@ Le schéma s'est longtemps appliqué à la main, `psql -f` depuis un poste, pend
 ## Conséquences
 
 - Un `redeploy` Railway ne rejoue **pas** le pré-déploiement (vérifié le 18/09/2026) : seul un vrai déploiement, déclenché par un commit sur les chemins surveillés du scheduler, applique une migration.
-- Deux branches qui prennent le même numéro se découvrent à la fusion : la seconde renumérote. Les numéros à venir sont réservés dans le plan (v89 `mip_api`, v90 sessions de la console, v91 rôles).
+- Deux branches qui prennent le même numéro se découvrent à la fusion : la seconde renumérote. Le plan réservait v88 à `mip_api` et v91 aux rôles de la console ; la numérotation a glissé à chaque migration intercalée : v87 `platform_flag`, v88 livraison P5, v89 `mip_api`, v90 sessions de la console, v91 SSO, v92 privilège des jetons de CI, v93 rôles `mip_console` et `mip_identity`.
 - Le schéma ne peut plus être en retard sur le code, mais il peut être EN AVANCE : un code plus ancien doit tolérer une colonne en plus. C'est la règle 5.
 
 ## Écarté

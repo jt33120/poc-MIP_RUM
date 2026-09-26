@@ -8,13 +8,29 @@
 
 *Établie le 29 juillet 2026. Grille : [README.md](./README.md#2-grille-de-maturité-employée).*
 
+> **État au 26/09/2026.** Cette fiche est une photographie du 29/07/2026 ; le
+> sondage de l'API xSOM et le recensement de `rum_event` n'ont pas été refaits.
+> Vérifié ce jour dans le code (`master`) :
+>
+> - **L'espace partenaire `/ai` est fermé** depuis le 08/09/2026 (commit
+>   `78549a7c`, « Supervision IA, capacité fermée ») : la page affiche un accès
+>   fermé et n'appelle plus la façade xSOM (`apps/console/app/ai/page.tsx:20-30`,
+>   `apps/console/lib/capacites.ts:6`). La section IA de `GET /api/rum/summary`
+>   reste servie par la façade.
+> - Les commentaires obsolètes relevés au § 4 (A3) sont corrigés depuis le
+>   29/07/2026 (commit `9bff30b8`).
+> - `packages/db/sql/pending/migration-v44-drop-deprecated-ai.sql` est toujours en
+>   attente : `rum_ai` n'est pas supprimée.
+> - Aucune alerte IA ni sonde de la dépendance xSOM n'a été ajoutée côté MIP.
+
 ---
 
 ## 0. Périmètre d'évaluation et angle mort assumé
 
 Ce document évalue **ce que MIP RUM possède et expose** en matière de supervision IA.
 Il **n'audite pas** xSOM AI Guard : l'accès GitHub de cette session est restreint à
-`jt33120/mip-rum`, et le dépôt `xsom-ai-guard` est hors périmètre.
+`jt33120/mip-rum` (dépôt renommé depuis en `jt33120/poc-MIP_RUM`), et le dépôt
+`xsom-ai-guard` est hors périmètre.
 
 Les affirmations sur le service externe reposent donc uniquement sur :
 - le **contrat de lecture** consommé par notre façade (code du dépôt) ;
@@ -192,7 +208,8 @@ structurellement invérifiables et vides (§3.1), et deux commentaires du code
 décrivent encore un repli local qui n'existe plus depuis la scission —
 `lib/xsom-ai.ts:30` et `:52` mentionnent « retomber sur le local », de même que
 `queries-summary.ts:44-58` référence `rum_ai.operation` et la vue `v_ai_op_anomaly`,
-toutes deux dépréciées en v43.
+toutes deux dépréciées en v43. *(Corrigé le 29/07/2026, commit `9bff30b8` : plus
+aucune de ces mentions dans `apps/console/lib/`.)*
 
 ### A4 — Exploitation : **2 / 4**
 Une page partenaire (`/ai`), correctement identifiée « propulsé par xSOM », avec

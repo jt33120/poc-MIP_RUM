@@ -1,5 +1,7 @@
 # RAPPORT DE NUIT — Sprint v0.2 (10→11/06/2026)
 
+> **Archivé** (dans `docs/archive/` depuis le 01/07/2026) : compte rendu de sprint du 11/06/2026, qui décrit la production d'alors (Supabase, fonctions Deno). Remplacé par [CHANGELOG.md](../../CHANGELOG.md) (§ v0.2) et [BUILD_LOG.md](../../BUILD_LOG.md) pour l'historique, par [docs/RUM_PARITY_STATUS.md](../RUM_PARITY_STATUS.md) et [docs/TOPOLOGIE_BACKEND.md](../TOPOLOGIE_BACKEND.md) pour l'état actuel.
+
 Pour Julian, au réveil. Verdict : **les 4 phases du ROADMAP_V02 sont passées, tout est livré, testé et EN PROD.** Zéro chantier abandonné.
 
 ## Ce qui tourne ce matin (et qui ne tournait pas hier soir)
@@ -38,3 +40,5 @@ Pour Julian, au réveil. Verdict : **les 4 phases du ROADMAP_V02 sont passées, 
 3. **Point de midi** : la tâche planifiée `point-rum-uti-j1` tournera à 12 h sur le trafic réel de la matinée (BILAN_J1.md).
 
 Repo : https://github.com/jt33120/mip-rum (privé, CI verte). Détail technique complet par chantier : BUILD_LOG.md §v0.2.
+
+> **Note du 26/09/2026.** « privé » est faux : le dépôt est **public**. Vérifié ce jour par l'API GitHub (`"visibility": "public"`) ; il s'appelle désormais `jt33120/poc-MIP_RUM`, l'ancienne adresse `jt33120/mip-rum` y redirige. Les identifiants de la console restent hors dépôt (`.secrets-v02.local.md`, gitignoré).

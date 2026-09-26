@@ -7,12 +7,12 @@
 | Groupe du canevas | 1 · Collecte |
 | Point d'entrée | `node services/collector/server.mjs` (câblage seul, sur `@mip/service-kit`) |
 | Logique | `@mip/backend/lib/receiver.mjs` (`creerReceveur`), partagée avec les serveurs de développement |
-| Exposition | **publique**, domaine généré `*.up.railway.app` (P2 : lancement à blanc, aucun trafic tant que le relais de P3 n'est pas branché) |
+| Exposition | **publique**, domaine généré `*.up.railway.app`, à créer à la main après le premier déploiement (les domaines ne sont pas dans l'IaC) ; aucun trafic tant que le relais de P3 n'est pas allumé |
 | Rôle BDD | propriétaire (`DATABASE_URL`, moindre privilège après M4) ; pool de 8 par réplique (`PGPOOL_MAX`), `application_name = mip-collector`, attente de connexion 2 s |
 | Réplicas | 2 (voir « Sûreté multi-réplique ») |
 | Image | `services/collector/Dockerfile` — seule image à embarquer la base GeoIP |
 
-État au 24/09/2026 : le service n'est **pas encore déployé**. En production, la collecte passe par les routes de la console (`/api/ingest/v1/*`) ; P3 les fera relayer vers ce service.
+État au 26/09/2026 : le service n'est **pas encore créé** sur Railway — il est déclaré dans `.railway/railway.ts` et attend ses variables partagées et un apply approuvé. En production, la collecte passe par les routes de la console (`/api/ingest/v1/*`). Le relais de P3 vers ce service est livré dans la console (`apps/console/lib/ingest-relay.ts`) et éteint : drapeau `platform_flag.ingest_relay_pct` à 0, table créée par migration-v87, pas encore appliquée en production ([mode d'emploi](../../docs/operations/relais-ingestion.md)).
 
 ## Routes
 
@@ -55,7 +55,7 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `PORT` | non | 4318 | imposé par Railway |
 | `LOG_LEVEL` | non | `info` | |
 | `METRICS_TOKEN` | non (secret, ≥ 32 car.) | — | jeton de `/ready` et `/metrics` ; absent : 404 |
-| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non, **à poser** | 10 hors Railway, 0 sur Railway | délai SIGTERM → SIGKILL ; 15 visé |
+| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non, **à poser** | 10 pour le kit (qui avertit sur Railway) ; Railway, lui, draine 0 s par défaut | délai SIGTERM → SIGKILL ; 15 visé, posé par l'IaC |
 | `REQUIRE_API_KEY` | non | `false` | `true` : toute app inconnue, inactive ou **sans clé** prend 403. **Provisionner d'abord** (ci-dessous). Booléen strict : `ture` refuse le démarrage. |
 | `RATE_LIMIT_PER_MIN` | non | 600 | plafond par app et par minute (compteur durable en base) |
 | `IDENTITY_HASH_SECRET` | non (secret, ≥ 32 car.) | — | clé HMAC de `mip.identity.*`. Absente : l'identité est **retirée**, jamais stockée brute (`identity: "absente"`). |
@@ -64,6 +64,7 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `GEOIP_IP_SOURCE` | non | `none` | d'où lire l'adresse du trafic **direct** : `none`, `socket`, `railway`, `xff:<n>` |
 | `INGEST_DEFERRED` | non | `false` | acquitte **avant** d'écrire (table UNLOGGED, vidée par un arrêt brutal de Postgres) |
 | `INGEST_DRAIN_MS` | non | 250 | intervalle du drain de la file différée |
+| `GEOIP_DB_PATH`, `GEOIP_MAX_AGE_DAYS` | non | —, 180 | lues hors schéma par `packages/backend/lib/geoip-db.mjs`, seulement si `GEOIP_IP_SOURCE` n'est pas `none` : chemin explicite d'une livraison, âge maximal ([`packages/backend/data/README.md`](../../packages/backend/data/README.md)) |
 
 **L'empreinte d'identité.** Changer le secret casse la continuité de `user_id_hash` *en silence* : rien n'échoue, les HMAC sont simplement autres. L'empreinte rend ce changement bruyant. Elle se calcule sans que le secret passe par l'historique du shell ni par `ps` :
 
@@ -160,4 +161,4 @@ curl -s -H "authorization: Bearer $METRICS_TOKEN" localhost:4318/ready
 kill -TERM %1                                             # sortie 0, en quelques ms à vide
 ```
 
-Ou l'image, par son profil compose : `docker compose -f infra/docker/docker-compose.yml up -d --build --wait collector` (db → migrate → collector). Les serveurs de **développement** (`dev-server.mjs` :4318, `replay-dev-server.mjs` :4319) partagent le receveur, avec le tampon `/__recent` demandé pour l'E2E (et allumé seulement sous `MIP_E2E_TAMPON=1`, que posent `playwright.config.ts` et les `scripts/validate-*`) ; ils ne sont pas ce service.
+Ou l'image, par son profil compose : `docker compose -f infra/docker/docker-compose.yml up -d --build --wait collector` (db → migrate → collector). Les serveurs de **développement** (`dev-server.mjs` :4318, `replay-dev-server.mjs` :4319) partagent le receveur, avec le tampon `/__recent` demandé pour l'E2E (et allumé seulement sous `MIP_E2E_TAMPON=1`, que pose `playwright.config.ts`) ; ils ne sont pas ce service.

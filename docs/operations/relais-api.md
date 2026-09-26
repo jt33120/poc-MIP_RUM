@@ -9,17 +9,17 @@
 | `GET`/`HEAD` `/api/v1/…` avec `Authorization: Bearer <jeton>` | tirée au sort → service `api` |
 | `POST /api/v1/explorer/query` avec un jeton | tirée au sort → service `api` |
 | toute requête au **cookie de session** (les écrans de la console) | **console**, toujours : le service n'accepte pas les sessions |
-| toute écriture (triage, commentaires, liens, tickets, vues, marqueurs) | **console**, toujours |
+| toute écriture | jamais relayée au service `api`, qui n'en sert aucune. Il n'en reste qu'une dans l'API v1, le marqueur de déploiement (`POST /api/v1/deploys`, jeton de CI) : elle suit le relais d'**ingestion** vers le collector (C11). Les écritures au cookie (triage, commentaires, liens, tickets, vues) ont quitté l'API v1 en C7 pour des server actions |
 | `OPTIONS` (préflight, sans jeton) | console |
 
 Transmis : `authorization`, `accept`, `content-type`, `if-none-match`, `origin`, `x-request-id`. Jamais le cookie, jamais l'adresse du client.
 
 ## Prérequis, dans l'ordre
 
-1. Le service `api` déployé, domaine généré, `/health` à 200.
+1. Le service `api` créé et déployé (pas encore au 26/09/2026), domaine généré, `/health` à 200 ; la variable partagée `API_DATABASE_URL` posée (rôle `mip_api`, v89 : [runbook](runbook.md#le-rôle-de-lapi--mip_api)) ; la migration v87 appliquée (table `platform_flag`).
 2. `CONSOLE_API_TOKENS` et `CONSOLE_API_ALLOWED_ORIGINS` **identiques** sur la console et sur le service (variables partagées Railway) : c'est le service qui authentifie une lecture relayée.
 3. Le contrat de parité vert (`tests/contract/api-parity.test.ts`, en CI).
-4. **Conformité** : avant la première montée, les textes légaux disent que Railway sert aussi l'API de lecture (`lib/legal.ts`, `docs/CONFORMITE.md` § 7).
+4. **Conformité** : avant la première montée, les textes légaux disent que Railway sert aussi l'API de lecture (`lib/legal.ts`, `docs/CONFORMITE.md` § 7) — PR #296, ouverte au 26/09/2026.
 5. Sur Vercel : `CONSOLE_API_RELAY_URL=https://<domaine du service api>`.
 
 ## Monter, couper

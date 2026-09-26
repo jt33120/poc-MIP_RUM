@@ -12,7 +12,7 @@ Le serveur MCP est le seul service **pilotable par un modèle de langage**, donc
 
 1. **Rien à atteindre** : le service ne porte ni `pg`, ni `DATABASE_URL`, ni jeton propre. Il relaie le jeton de l'appelant vers l'API de lecture v1, qui applique déjà le cloisonnement par jeton (portée d'applications, lecture seule).
 2. **Vérifié par la construction** : l'image ne contient que la fermeture des dépendances de `@mip/service-mcp`, et la fumée Docker échoue si `pg` apparaît dans l'arbre déployé ou si le service dépend de la base.
-3. Cible : `mcp` appellera le service `api` par le réseau privé Railway (P4), au lieu de l'API v1 de la console.
+3. `mcp` appelle le service `api` par le réseau privé Railway dès que `MIP_API_HOST` est posé (code livré en P4, #294 ; hôte refusé s'il n'est pas en `*.railway.internal`). Tant que le service `api` n'existe pas, il appelle l'API v1 de la console (`MIP_CONSOLE_URL`).
 
 ## Conséquences
 

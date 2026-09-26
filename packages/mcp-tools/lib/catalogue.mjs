@@ -88,8 +88,8 @@ export const PARAMS = {
  * dans le chemin (encodé) au lieu d'aller dans la query string.
  *
  * `lecture: true` partout — les outils ne font que lire, et c'est délibéré :
- * `POST /api/v1/deploys` et les écritures du workflow des issues (triage,
- * commentaires, liens) existent mais ne sont PAS exposés en outil. Donner à un
+ * `POST /api/v1/deploys` existe mais n'est PAS exposé en outil (les écritures du
+ * workflow des issues ont quitté l'API v1 en C7). Donner à un
  * agent conversationnel de quoi écrire dans la base de production n'est pas un
  * oubli qu'on comble, c'est une décision qui se prend à froid.
  */

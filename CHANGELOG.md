@@ -1,8 +1,25 @@
 # CHANGELOG — MIP RUM
 
-Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
+Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md). Les entrées gardent les chemins de leur époque (`apps/ingest`, `apps/sync-synthetic`, `infra/clickhouse…`) : beaucoup n'existent plus depuis le remodelage P1 du 23/09/2026.
 
 Le README ne porte plus d'historique depuis le 23/09/2026 : il dit l'état relevé par le document de couverture ([docs/RUM_PARITY_STATUS.md](docs/RUM_PARITY_STATUS.md)). Les résumés v0.1 à v0.3 qu'il portait sont repris en tête de leur version, ci-dessous, tels qu'ils étaient écrits (« En bref, ex-README »).
+
+## Piste backend — P0 à P6b, C0 à C13 (entrée du 26/09/2026)
+
+Fusions du 23 au 25/09/2026, PR #279 à #326. Le CHANGELOG ne porte rien entre v0.14 et cette piste (PR #30 à #278) : cet historique-là est dans `git log` et dans [docs/archive/](docs/archive/). **Aucune de ces fusions n'a changé la forme de la production** : la console Vercel sert toujours écrans, collecte et API v1 ; Railway ne porte que `scheduler` et `mcp`. Tout ce qui suit est livré dans `master`, éteint ou pas encore déployé (état au 26/09/2026 : [README](README.md#en-production-et-ce-qui-attend)).
+
+- **P0 — stabiliser** (#279, 23/09) : un seul déclencheur des travaux planifiés, le `scheduler` (workflow cron GitHub et crons Vercel retirés, routes `/api/cron/*` en 410) ; seul déploiement du scheduler encore en service au 26/09.
+- **P1 — le dépôt prend la forme du backend** (#280, #281) : migrateur à chemin stable ; `apps/ingest` éclaté en `packages/backend`, `packages/db` et `services/collector`, `apps/mcp` devenu `packages/mcp-tools` ; `@mip/service-kit` ; une image par service ; CI sur Node 24 et PostgreSQL 17.
+- **P2, P3 — la collecte** (#282, #286, qui reprend #283) : le `collector` prêt à recevoir ; le relais d'ingestion console → collector, éteint (`platform_flag`, migration-v87). IaC du collector et du notifier : #284.
+- **P4 — l'API de lecture** (#291 à #295) : service `api` en lecture seule, relais de la console vers lui (éteint), rôle `mip_api` (v89), `mcp` → `api` par le réseau privé (inerte sans `MIP_API_HOST`), IaC de l'api.
+- **P5 — le notifier** (#287) : livreur unique, e-mails Resend en mode test, webhooks signés (v88).
+- **Base gratuite** (#289, #304) : après la suspension de Neon le 24/09 (quota de 100 CU-h dépassé), tick à 15 minutes par défaut, notifier aligné, la vitrine dit la limite (R10, ADR-0014).
+- **P6a, P6b — documentation** (#290, #324) : architecture, ADR, runbook ; ADR 0002, 0010, 0011, 0012 et le déroulé de présentation.
+- **Piste C — `console-api`, le backend de la console** : inventaire et cliquet (#297, #300) ; C0 (#298, #299, #301, #302 — sessions en base, v90 —, #303, #305) ; C1 identité, connexion, SSO (#306 à #308, v91) ; C2 à C5, la coquille et les écrans par chargeurs (#309 à #312) ; C6 à C10, les écritures, l'administration et le RGPD par commandes (#313 à #319) ; C11, routes machine sur le collector (v92) et hook des tickets sur le notifier (#320, #321) ; C12, préparation de la décommission (#322) ; C13, rôles `mip_console` et `mip_identity` (#323, v93).
+- **La bascule** (#325) : écrans, coquille et écritures par `console-api`, session par session, réglée par drapeaux (`console_api_ecrans_pct`, `console_api_commandes_pct`) et un mode strict — inerte à la fusion.
+- **Correctif** (#326) : l'hydratation de `/admin/composants` (le rejeu de React 19.3.0 dans le React de Next 15.5).
+- Fermées sans fusion : #285 et #288 (conformité), reprises par #296, ouverte au 26/09.
+- En production au 26/09/2026 : schéma à v86 ; v87 à v93 attendent le prochain déploiement réussi du scheduler, bloqué tant que Neon est suspendu (jusqu'au 01/10/2026).
 
 ## v0.14 — 2026-06-18 (P1 — auto-observabilité : /metrics + santé interne)
 

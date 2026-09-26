@@ -473,7 +473,7 @@ le client envoie.
 - **Best-effort** : émission asynchrone, hors chemin critique ; une erreur réseau
   ne casse jamais l'application. Le handler de crash **n'écrase pas** le
   comportement d'origine (redbox / remontée natif).
-- **Souverain** : OTLP/HTTP JSON, backend remplaçable, données en UE.
+- **Portable** : OTLP/HTTP JSON, backend remplaçable ; en production, données en UE chez des hébergeurs de droit américain (ce n'est pas une offre souveraine).
 
 ## Ce qui n'est PAS là
 

@@ -6,9 +6,13 @@
 > migration incrémentale. L'API réutilise la couche data existante (`lib/queries*.ts`,
 > `lib/health.ts`) — **aucune logique SQL dupliquée**.
 
-- **Base** : `/api/v1` (servie par la console Next.js).
-- **Lecture**, plus quelques écritures annoncées à part (section « Écritures ») : le marqueur de
-  déploiement de la CI et le workflow des issues, réservé à une session admin de la console.
+- **Base** : `/api/v1`, servie en production par la console Next.js (Vercel). Le service `api`
+  de Railway (`services/api`) sert les mêmes routes en lecture seule, mais n'est pas encore
+  créé ; la console peut lui relayer les lectures au jeton (relais éteint par défaut, voir
+  [DEPLOY_API.md](DEPLOY_API.md)).
+- **Lecture**, plus une seule écriture annoncée à part (section « Écritures ») : le marqueur de
+  déploiement de la CI. Les écritures de l'opérateur (workflow des issues, vues enregistrées)
+  ont quitté l'API le 25/09/2026 (C7).
 - **Format** : JSON UTF-8, enveloppe stable `{ meta, data }` (voir plus bas).
 - **Découverte** : `GET /api/v1` renvoie la liste des endpoints et des filtres.
 
@@ -36,7 +40,9 @@ Deux modes (le handler tranche, le middleware ne redirige pas `/api/v1`) :
      `no_app_access`. Une configuration incomplète ne vaut jamais « toutes les apps ».
 2. **Cookie de session** — le cookie JWT `mip_session` de la console. Respecte le
    **RBAC** existant : un `viewer` scopé ne voit que ses apps. Pratique pour un appel
-   depuis le navigateur d'un utilisateur déjà connecté à la console.
+   depuis le navigateur d'un utilisateur déjà connecté à la console. En production, c'est
+   le jeton HS256 signé par la console (`AUTH_SECRET`) ; le jeton ES256 de `console-api`
+   est déjà accepté par le code (`apps/console/lib/api/auth.ts`) mais pas encore émis.
 
 Sans authentification valide : **`401`** `{ "error": "..." }`.
 
@@ -56,14 +62,14 @@ Une origine listée reçoit `Access-Control-Allow-Origin` + `Access-Control-Allo
 |---|---|
 | `CONSOLE_API_TOKENS` | jetons d'accès machine (CSV). Vide = mode jeton désactivé. |
 | `CONSOLE_API_ALLOWED_ORIGINS` | origines CORS autorisées (CSV, ou `*`). Vide = same-origin. |
+| `CONSOLE_API_RATE_LIMIT` | requêtes par minute et par principal (défaut `120`, `0` = désactivé). |
 | `AUTH_SECRET` | secret JWT (déjà utilisé par la console) — pour le mode cookie. |
 | `DATABASE_URL` | base Postgres lue par les agrégats (déjà utilisé). |
-| `CRON_SECRET` | **retiré** : les routes `/api/cron/*` ont disparu (C12 ; 410 depuis le 23/09). Les travaux planifiés sont déclenchés par le service `scheduler`. À supprimer de Vercel. |
-| `OPENROUTER_API_KEY` | clé (lecture) du compte OpenRouter à surveiller — poll du solde. Absent = poll ignoré. |
-| `OPENROUTER_LOW_BALANCE` | seuil « bas » du solde (défaut `5`, unité native = USD). |
-| `OPENROUTER_CURRENCY` | libellé de devise affiché (défaut `USD`). |
-| `OPENROUTER_ALERT_COOLDOWN_HOURS` | anti-spam : re-rappel de l'alerte tant que bas (défaut `24`). |
-| `OPENROUTER_ACCOUNT_APP` | app à cibler pour le routage de l'alerte (défaut : canaux globaux). |
+| `CRON_SECRET` | **retiré** : les routes `/api/cron/*` répondaient 410 depuis le 23/09 et ont été supprimées le 25/09 (préparation de C12). Les travaux planifiés sont déclenchés par le service `scheduler`. À supprimer de Vercel. |
+| `OPENROUTER_*` | **retirées** avec la supervision IA (ADR-0001) : plus aucun code ne les lit. À supprimer de Vercel si elles y sont encore. |
+
+Le relais vers le service `api` (`CONSOLE_API_RELAY_URL`, `API_RELAY_PCT`,
+`CONSOLE_API_RELAY_STRICT`) est décrit dans [DEPLOY_API.md](DEPLOY_API.md).
 
 ---
 
@@ -130,13 +136,15 @@ ignoré en silence**.
 ```
 
 Erreurs : `{ "error": "message", "code": "…", "parameter": "…", "dimension": "…" }`
-avec le statut HTTP (`400`, `401`, `403`, `404`, `429`, `500`). Les `code` du contrat
-sont stables : `no_app_access`, `forbidden_app` (403) ; `invalid_range`,
+(`apiError`, `apps/console/lib/api/respond.ts` ; `code`, `parameter` et `dimension` seulement
+quand ils existent) avec le statut HTTP (`400`, `401`, `403`, `404`, `429`, `500` ; `413` et
+`503` sur l'Explorer ; `503` aussi quand une migration requise manque). Les `code` du contrat
+(`ContractErrorCode`, `apps/console/lib/query-contract.ts`) sont stables : `no_app_access`, `forbidden_app` (403) ; `invalid_range`,
 `range_conflict`, `range_too_long`, `range_in_future`, `invalid_filter`,
 `too_many_conditions`, `ambiguous_parameter`, `unsupported_dimension` (400).
 
-**Cache** : `Cache-Control: private, max-age=15`, `Vary: Origin, Authorization, Cookie`
-et un `ETag` faible lié au principal, au périmètre, à la plage, aux filtres et à la
+**Cache** : `Cache-Control: private, max-age=15`, `Vary: Authorization, Cookie` (précédé de
+`Origin` quand le CORS répond à une origine listée) et un `ETag` faible lié au principal, au périmètre, à la plage, aux filtres et à la
 donnée — une réponse calculée pour une app ou un jeton ne peut pas en servir un
 autre. Sur une fenêtre glissante (`period`), une donnée inchangée revalide en `304`.
 
@@ -431,33 +439,43 @@ quel dans `cursor` avec les mêmes filtres. `400` pour `status`, `source`, `rele
   connecteur ou d'un lien collé à la main.
 
 ### `GET /api/v1/sessions` — sessions récentes
-`data.sessions: SessionRow[]`.
+`data = { sessions: SessionRow[], page: { limit, offset } }` (`limit` 1..200, défaut 50 ; pas de
+`total`).
 
 ### `GET /api/v1/sessions/{id}` — détail d'une session
 `data = { meta: SessionMeta, timeline: TimelineItem[] }`. `404` si inconnue ou
 hors-scope (un `viewer` ne lit que ses apps).
 
 ### `GET /api/v1/events` — journal RUM unifié
-`data = { events: EventIndexRow[], page: { limit, offset } }`, trié de façon stable
-par `ts DESC, id DESC`. La projection ne contient que `app_id`, `session_id`, `ts`,
-route scrubbed, normalisée et plafonnée, `kind`, libellé source de taxonomie fermée et
-`source_span_id` OTLP hexadécimal : jamais de props,
-message/stack, URL brute, UA ou identité visiteur.
+`data = { events: EventIndexRow[], page: { limit, offset, next_cursor }, total, trend, facets: { names, attributes, values }, sampling_notice, enrichment }`
+(source de vérité : `EventExplorerResult` dans `apps/console/lib/queries-events.ts`, schéma
+`EventExplorer` de la spec OpenAPI). Journal trié de façon stable par `ts DESC, id DESC` ;
+`total`, `trend` et les facettes sont lus dans le même instantané `repeatable read`.
 
-- `kind` est optionnel et fermé à `pageview`, `vital`, `error`, `resource`, `longtask`,
-  `breadcrumb`, `event`, `span` ; toute autre valeur reçoit `400`.
-- `limit` est borné à `1..200` (défaut `100`) ; `offset` est borné à `10 000`.
+- Une ligne porte `app_id`, `session_id`, `ts`, la route scrubbed, normalisée et plafonnée,
+  `kind`, un libellé source de taxonomie fermée, `source_span_id` OTLP hexadécimal et
+  `device_type`. Pour un événement custom (`kind = event`), elle porte aussi `name`, `props`
+  et `context`, scrubbés et bornés à l'ingestion. Jamais de message/stack, d'URL brute, d'UA
+  ni d'identité visiteur.
+- Filtres communs du contrat (`app`, plage, `device`, dimensions, segment, bots, apps
+  internes), plus `kind` (fermé à `pageview`, `vital`, `error`, `resource`, `longtask`,
+  `breadcrumb`, `event`, `span`), `name` (nom exact d'un événement custom) et un filtre
+  d'attribut exact `attr_source` (`props` | `context`), `attr_key`, `attr_type`,
+  `attr_value` — clé top-level, jamais de JSONPath ni d'expression régulière. Une valeur
+  hors contrat reçoit `400`.
+- `limit` est borné à `1..200` (défaut `100`) ; `offset` est borné à `10 000` ;
+  `cursor` (renvoyé dans `page.next_cursor`) remplace l'offset.
 - `id` est un `bigint` PostgreSQL sérialisé en chaîne décimale (`int64`) afin de ne
   jamais perdre de précision côté JavaScript.
-- Le scope `app` est appliqué avant la requête : un viewer ou jeton scopé ne peut lire
-  qu'une app autorisée, même en demandant une autre valeur. Cette liste parcourt la
-  rétention disponible ; `period` et `device` ne la filtrent pas.
+- `sampling_notice` n'est renseigné que si une session de la population a été
+  échantillonnée : comptes observés, sans extrapolation.
+- `enrichment.available: false` avant migration-v68 (journal seul : ni tendance ni
+  facettes) ; avant migration-v65, la réponse est vide et le dit.
 
 La projection commence avec la migration v65 : aucun backfill historique n'est lancé
-automatiquement. Le collecteur actif est le chemin Node (`/api/ingest/v1/traces`).
-Le receiver Edge Supabase, conservé pour les installations historiques, applique lui
-aussi les écritures progressives v65/v66/v67 : table ou colonne optionnelle absente
-n'annule jamais les écritures sources du lot.
+automatiquement. En production, la collecte passe par la route Node de la console
+(`/api/ingest/v1/traces`) ; le service `collector` (Railway, pas encore créé) écrit par le
+même code (`packages/backend`). Le receiver Edge Supabase a été supprimé le 23/09/2026 (P1).
 
 ### `GET /api/v1/mobile/summary` — runtime React Native (P7.5)
 `data = { capabilities, declarations, sessions, js_errors, js_error_free_session_rate,
@@ -649,7 +667,8 @@ complet) et `query`, l'**AST canonique** rejouable qu'un tableau de bord enregis
 Trois routes qui ne portent pas d'agrégats, et qu'un client a pourtant besoin de connaître.
 
 ### `GET /api/v1/health` — liveness
-`data = { status, version }`. **Sans authentification** : un contrôle de vivacité qui exigerait
+Corps `{ status: "ok", service, version, generatedAt }`, **hors enveloppe** `{ meta, data }`,
+`Cache-Control: no-store`. **Sans authentification** : un contrôle de vivacité qui exigerait
 un jeton ne dirait rien à un superviseur qui n'en a pas. Ne touche pas la base — c'est
 délibéré : cette route doit répondre même quand la base est en panne, sinon elle mesure
 autre chose que ce qu'elle annonce.
@@ -694,8 +713,13 @@ Corps : `{ "app_id": "…", "version": "…", "env": "prod", "ts": "2026-09-25T1
 **Authentification (C11) : un jeton de CI de privilège `deploys:write`**, créé pour UNE application dans
 `/admin/sourcemaps` (un privilège par jeton : celui des source maps ne pose pas de marqueur), passé en
 `Authorization: Bearer msu_…`. Le collector sert la même route (`/v1/deploys`) avec les mêmes réponses. Un
-jeton `CONSOLE_API_TOKENS` est encore accepté **jusqu'au 31/12/2026** ; chacune de ses réponses le dit
-(`Deprecation: true`, `Sunset`, RFC 8594). Une session de la console est refusée (403).
+jeton `CONSOLE_API_TOKENS` est encore accepté **jusqu'au 31/12/2026** (`FIN_JETONS_HISTORIQUES`,
+`packages/backend/lib/deploiements.mjs`) ; chacune de ses réponses le dit (`Deprecation: true`, `Sunset`,
+RFC 8594). Une session de la console est refusée (403).
+
+État au 26/09/2026 : le privilège `deploys:write` arrive avec migration-v92, dans le dépôt mais **pas
+encore appliquée en production** (appliquée jusqu'à v86) ; le collector n'est pas encore créé. En
+production, un marqueur se pose donc aujourd'hui avec un jeton `CONSOLE_API_TOKENS`, sur la console.
 
 ---
 
@@ -703,8 +727,9 @@ jeton `CONSOLE_API_TOKENS` est encore accepté **jusqu'au 31/12/2026** ; chacune
 
 > Correspondance **graphe de la console → endpoint → champs à tracer**, pour rejouer
 > les visuels côté client (ex. plateforme UTI). Tous les champs ci-dessous sont dans
-> l'objet `data` de l'enveloppe. Les seuils Core Web Vitals 2026 : LCP bon < 2000 ms /
-> mauvais > 4000 ms · INP < 200 / > 500 · CLS < 0,1 / > 0,25.
+> l'objet `data` de l'enveloppe. Les seuils Core Web Vitals (web.dev, `THRESHOLDS` de
+> `apps/console/lib/rating.ts`) : LCP bon ≤ 2500 ms / mauvais > 4000 ms · INP ≤ 200 / > 500 ·
+> CLS ≤ 0,1 / > 0,25.
 
 | Graphe (page console) | Type conseillé | Endpoint | Champs (x → y) |
 |---|---|---|---|
@@ -738,7 +763,7 @@ il ne reste qu'à l'exposer). À nous signaler si UTI en a besoin :
 
 > Pour un **tableau de bord partenaire en un seul appel** (sans gérer 10 endpoints), voir
 > l'API `GET /rum/summary` (`docs/RUM_READ_API.md`) : elle agrège trafic, CWV, top routes,
-> top erreurs et coûts IA dans une seule réponse — c'est le point d'entrée recommandé pour
+> top erreurs et, par la façade xSOM AI Guard, les coûts IA dans une seule réponse — c'est le point d'entrée recommandé pour
 > UTI. Utiliser `/api/v1/*` seulement pour le détail (série LCP, heatmap, tracing, etc.).
 
 ---

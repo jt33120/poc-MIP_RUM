@@ -22,8 +22,14 @@
 // (« 24 cartes par tableau ») suit la ligne B6 : depuis F37, les sections comptent
 // dans la borne. K15 n'est pas dans le plan : ce relevé a fait passer
 // F2 (« Vérifier les types ») à « déployé, non éprouvé », et la règle veut alors une
-// carte pour elle. Elle est écrite depuis la ligne F2 et le § 8.4 du document, dans
-// la forme des autres.
+// carte pour elle. Elle était écrite depuis la ligne F2 et le § 8.4 du document.
+//
+// RELECTURE DU 26/09/2026. Deux puces disaient plus que le code : K15 (« l'extension
+// n'est pas typée par la CI » — elle l'est depuis le 24/09, PR #281) suit désormais
+// `.github/workflows/ci.yml`, dont elle reprend la limite restante (le JavaScript du
+// backend) ; la puce E1 de K14 (« strictement en lecture ») suit la route
+// `POST /api/v1/deploys`, qui accepte encore un jeton d'API jusqu'au 31/12/2026. Les
+// lignes F2 et E1 du document n'ont pas été relevées depuis le 23/09.
 //
 // SOURCES. `{ ligne }` = une ligne de capacité, par identifiant ; `{ passage }` = le
 // numéro d'une ligne du document hors des tables de capacités ; `{ fichier }` =
@@ -336,8 +342,11 @@ export const CARTES: readonly CarteCapacite[] = [
     limites: [
       {
         id: "E1",
+        // `app/api/v1/deploys/route.ts` : l'ancien chemin, un jeton de CONSOLE_API_TOKENS,
+        // pose encore un marqueur jusqu'à FIN_JETONS_HISTORIQUES (packages/backend/lib/
+        // deploiements.mjs).
         texte:
-          "Les jetons d'API sont strictement en lecture ; aucune route n'a été appelée sur des données réellement ingérées.",
+          "Les jetons d'API ne font que lire, sauf un marqueur de déploiement qu'ils peuvent encore poser jusqu'au 31/12/2026 ; aucune route n'a été appelée sur des données réellement ingérées.",
       },
       {
         id: "E2",
@@ -356,28 +365,23 @@ export const CARTES: readonly CarteCapacite[] = [
     id: "K15",
     titre: "Vérifier les types dans l'intégration continue",
     faitQuoi:
-      "L'intégration continue vérifie les types de quatre paquets (cœur commun, SDK web, paquet React Native, agent Node) et ceux de la console.",
-    // Deux réserves dans la ligne F2, gardées toutes deux : l'extension hors du
-    // contrôle, et une vérification qui n'arrête une fusion que si l'on attend son
-    // verdict (§ 7 du document). « Paquets publiés » n'est pas repris : le paquet
-    // React Native n'est pas publié (C9).
+      "L'intégration continue vérifie les types de six paquets (cœur commun, SDK web, paquet React Native, agent Node, contrat de la console, console-api), de la console et de l'extension navigateur.",
+    // Deux réserves : le JavaScript du backend hors du contrôle (l'extension y est
+    // entrée le 24/09, PR #281), et une vérification qui n'arrête une fusion que si
+    // l'on attend son verdict (§ 7 du document). « Paquets publiés » n'est pas
+    // repris : le paquet React Native n'est pas publié (C9).
     limites: [
       {
         id: "F2",
         texte:
-          "L'extension navigateur n'est pas typée par l'intégration continue : rien ne garantit ses types à sa prochaine modification ; et la vérification n'arrête une fusion que si l'on attend son verdict sur le commit de fusion.",
+          "Le JavaScript du backend (paquets et services en .mjs) n'est typé par rien ; et la vérification n'arrête une fusion que si l'on attend son verdict sur le commit de fusion.",
       },
     ],
-    // § 8.4 : « quatre paquets et la console », « seule l'extension […] n'est typée
-    // par aucun workflow » ; § 7 : attendre le verdict de la CI du commit de fusion ;
-    // l'étape « Typage des paquets publiés » de la CI.
-    sources: [
-      { ligne: "F2" },
-      { passage: 503 },
-      { passage: 504 },
-      { passage: 390 },
-      { fichier: ".github/workflows/ci.yml:70-76" },
-    ],
+    // § 7 : attendre le verdict de la CI du commit de fusion ; l'étape « Typage des
+    // paquets publiés et de l'extension » de la CI, et ce qu'elle laisse hors typage.
+    // Les passages :503-504 du § 8.4 (« seule l'extension […] n'est typée par aucun
+    // workflow ») ne sont plus cités : la CI les a rendus faux.
+    sources: [{ ligne: "F2" }, { passage: 390 }, { fichier: ".github/workflows/ci.yml:78-93" }],
   },
 ];
 

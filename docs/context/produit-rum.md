@@ -6,6 +6,23 @@
 
 *Établie le 29 juillet 2026. Grille : [README.md](./README.md#2-grille-de-maturité-employée).*
 
+> **État au 26/09/2026.** Cette fiche est une photographie du 29/07/2026 ; ses
+> chiffres de production (§ 3, § 5) n'ont pas été re-mesurés (base Neon suspendue
+> jusqu'au 01/10/2026, production à l'arrêt jusque-là). Vérifié ce jour dans le
+> code (`master`) :
+>
+> - **Corrigé** : le contexte de trace W3C (un `traceId` par page vue, commit
+>   `b950a898` du 29/07), les seuils LCP alignés sur web.dev et le champ `delta`
+>   transmis (même commit), le masquage du rejeu (texte et médias masqués par
+>   défaut depuis le 09/09, commit `0b3aa37e`). Détail sous chaque point du § 4.
+> - **Ingestion** : ce n'est plus une fonction Deno. En production, la route de
+>   la console `POST /api/ingest/v1/traces` (Vercel) reçoit les mesures, sur le
+>   receveur partagé `packages/backend/lib/receiver.mjs` (§ 2.2).
+> - **Image Docker** : les images de service (collector, scheduler, notifier, api,
+>   mcp, console-api) sont construites et démarrées par la CI `docker-smoke`,
+>   verte sur `09833f1b` le 25/09/2026. La console n'a pas encore d'image (§ 5, A6).
+> - **Livraison des alertes et isolation** : voir l'encadré du [README](./README.md).
+
 ---
 
 ## 1. Identité
@@ -29,9 +46,9 @@ module `uptime` existe mais reste marginal (1 sonde configurée).
 
 | Émetteur | Chemin | État |
 |---|---|---|
-| SDK web | `packages/rum-sdk/src/` — 21 modules | Complet, en production |
-| SDK mobile | `packages/rum-mobile/src/` (React Native) | Écrit, adoption inconnue |
-| Agent serveur Node | `packages/agent-node/src/` — HTTP + `pg` par hook `require` | Écrit, profondeur DB récente |
+| SDK web | `packages/rum-sdk/src/` — 21 modules (26 fichiers au 26/09/2026) | Complet, en production |
+| SDK mobile | `packages/rum-mobile/src/` (React Native) | Écrit, adoption inconnue (au 26/09/2026 : `livre_non_deploye`, jamais lancé dans une application React Native — [document de couverture](../RUM_PARITY_STATUS.md), `C1`) |
+| Agent serveur Node | `packages/agent-node/src/` — HTTP + `pg` par hook `require` | Écrit, profondeur DB récente (au 26/09/2026 : aucun service Node n'émet vers la production, document de couverture `C5`) |
 | Intégration Python | `examples/integrations/fastapi/mip_rum_middleware.py` | Écrite, testée unitairement |
 | Extension navigateur | `apps/extension/` | Déployable sans toucher au site cible |
 
@@ -44,14 +61,21 @@ point est une vraie maturité d'ingénierie, pas une case cochée.
 ### 2.2 Ingestion
 
 `POST /v1/traces` en OTLP/HTTP JSON, en double implémentation : une *edge function*
-Deno (`supabase/functions/v1-traces/` (fonction Deno retirée en P1, lisible au tag `pre-reorg`), actuellement en **v16** en
+Deno (`supabase/functions/v1-traces/` (fonction Deno retirée en P1, lisible au tag `pre-reorg`), alors en **v16** en
 production) et un jumeau Node portable (`dev-server.mjs`) pour l'auto-hébergement.
 Gardes en place : clé d'API (403), limitation de débit (429), taille de corps (413),
 séparation stricte 4xx/5xx, rejeu des écritures.
 
+*Au 26/09/2026 : il n'y a plus de fonction Deno. La production reçoit les mesures
+par la route de la console `POST /api/ingest/v1/traces` (Vercel,
+`apps/console/app/api/ingest/v1/traces/`), sur le receveur partagé
+`packages/backend/lib/receiver.mjs`. Le même receveur existe en service autonome
+(`services/collector/server.mjs`), qui ne tourne nulle part en production
+([TOPOLOGIE_BACKEND.md](../TOPOLOGIE_BACKEND.md)).*
+
 ### 2.3 Exploitation
 
-47 pages dans `apps/console/app/` : vue d'ensemble, pages, parcours, sessions et
+47 pages dans `apps/console/app/` (57 fichiers `page.tsx` au 26/09/2026) : vue d'ensemble, pages, parcours, sessions et
 détail de session avec rejeu, cascade de traces, erreurs et groupement par
 empreinte, corrélation, carte, prévision, objectifs, SLO, alertes, tableaux de bord,
 et une console d'administration complète (clients, usage, santé, confidentialité,
@@ -118,10 +142,14 @@ Aucun span client n'est donc rattachable à un autre, ni à la trace serveur. C'
 le défaut le plus structurant de la fiche : il rend **factuellement fausse** la
 promesse « OTel-native, donc réversible et corrélable ».
 
+*Corrigé le 29/07/2026 (commit `b950a898`, E0) : un `traceId` par page vue,
+partagé par tous les spans de la page, et le span d'appel API propage son
+`spanId` dans `traceparent` (`packages/rum-sdk/src/otel.ts:54-66`).*
+
 **③ Les seuils Core Web Vitals ne sont pas ceux de web.dev.** Trois fichiers portent
-la même valeur erronée pour le LCP — `packages/rum-sdk/src/vitals.ts:14`,
-`packages/backend/shared/otlp.mjs:13`,
-`apps/console/lib/rating.ts:6` :
+la même valeur erronée pour le LCP — `packages/rum-sdk/src/vitals.ts`,
+`packages/backend/shared/otlp.mjs`,
+`apps/console/lib/rating.ts` :
 
 ```ts
 LCP: [2000, 2500]   // référence web.dev : [2500, 4000]
@@ -133,10 +161,18 @@ FCP, TTFB) sont, eux, conformes. Par ailleurs le champ `delta` des Web Vitals n'
 pas transmis, ce qui empêche l'agrégation correcte des mesures successives d'une
 même métrique sur une même page.
 
+*Corrigé le 29/07/2026 (commit `b950a898`) : `LCP: [2500, 4000]` dans les trois
+copies (`packages/rum-sdk/src/vitals.ts:18`, `packages/backend/shared/otlp.mjs:24`,
+`apps/console/lib/rating.ts:11`), et `webvital.delta` est émis
+(`packages/rum-sdk/src/vitals.ts:52`).*
+
 **④ Le masquage du rejeu de session est en deçà du standard 2026.**
 `packages/rum-sdk/src/replay.ts:190` active `maskAllInputs: true` et une classe de
 blocage — mais pas le masquage du texte par défaut. Or « masqué par défaut » est
 devenu table-stakes chez tous les acteurs comparés.
+
+*Corrigé le 09/09/2026 (commit `0b3aa37e`) : le niveau par défaut `all` masque
+aussi le texte et les médias (`packages/rum-sdk/src/replay.ts:64-70`).*
 
 ---
 
@@ -182,10 +218,13 @@ score z, sévérités, sensibilité. Il produit des événements. Mais :
 | **0** acquittée | `alert_event.acknowledged` |
 | **0** notification livrée | `alert_delivery` vide |
 | **0** canal configuré | `notify_channel` vide |
-| L'e-mail n'est pas livrable par construction | `migration-v17.sql:172-175` |
+| L'e-mail n'est pas livrable par construction | `packages/db/sql/migration-v17.sql:172-175` |
 
 Le code de livraison existe (`net.http_post` pour *webhook* et Slack,
-`migration-v17.sql:178`) ; il n'a simplement jamais eu de destinataire. **Personne
+`packages/db/sql/migration-v17.sql:178`) ; il n'a simplement jamais eu de destinataire.
+*(Au 26/09/2026, pg_net n'existe plus — la base est sur Neon — et la livraison
+appartient au livreur `packages/backend/lib/dispatch-alerts.mjs` : voir l'encadré du
+[README](./README.md).)* **Personne
 n'a jamais été prévenu de quoi que ce soit par ce produit.**
 
 ### A6 — Industrialisation : **1 / 4**
@@ -194,6 +233,8 @@ autonome, pas de facturation, pas de SLA. L'image Docker d'auto-hébergement exi
 (`infra/docker/`) mais **n'a jamais été construite avec succès** : le workflow de
 vérification `docker-smoke.yml` a été écrit, la CI est bloquée depuis le 24 juillet,
 donc l'image reste **techniquement non prouvée**.
+*(Au 26/09/2026 : `docker-smoke` construit et démarre les six images de service,
+vert sur `09833f1b` le 25/09/2026 ; la console n'a pas d'image, c'est le lot C12b.)*
 
 ---
 

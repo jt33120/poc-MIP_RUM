@@ -22,17 +22,29 @@
 | `miprum_alerts_unacked` | Événements d'alerte non acquittés |
 | `miprum_alert_deliveries{status="queued\|failed\|dead"}` | Livraisons d'alerte par statut |
 | `miprum_metering_lag_hours` | Ancienneté du dernier métering (détecte un cron mort) |
+| `miprum_apps_route_capped` | Applications au plafond de cardinalité de route (migration-v62) |
+| `miprum_routes_max` | Plus grand nombre de routes distinctes retenues pour une application |
+| `miprum_ingest_backlog` | Lots débarqués en attente de drain (ingestion différée, migration-v63) |
+| `miprum_ingest_backlog_blocked` | Lots abandonnés après cinq échecs d'écriture |
+| `miprum_ingest_backlog_age_seconds` | Âge du plus vieux lot en attente de drain |
+
+Lecture en échec : l'endpoint répond **503** (`retry-after: 30`), jamais un instantané
+de zéros — le scrape échoue et Prometheus le voit (`up == 0`). Sans jeton valide : **401**.
 
 ## Console `/admin/health`
 
 Même snapshot (`internalHealth()`), en cartes : ingestion 5 min, alertes & livraison,
 tenants & retard de métering (seuils de couleur : > 26 h ambre, > 30 h rouge — le
-métering tourne à 3 h 05). **Admin only** (`requireAdmin`).
+métering, `meter_tenant_usage()`, tourne au passage quotidien du scheduler, 03:17 UTC,
+`packages/backend/jobs/cadence.mjs`). Réservé à l'administrateur de la plateforme
+(`chargerSante`, `apps/console/lib/chargeurs/administration.ts`). Lecture en échec :
+« Lecture en échec », pas de tuiles à zéro.
 
 ## Architecture
 
-- `lib/queries-health.ts` : `internalHealth()` — **un seul** aller-retour SQL, **fail-soft**
-  (snapshot à zéros si la base bronche → `/metrics` ne 500 jamais sur un hoquet).
+- `lib/queries-health.ts` : `internalHealth()` — **un seul** aller-retour SQL. Une lecture
+  en échec **lève** (F02) : elle rendait autrefois un instantané à zéros, le tableau d'un
+  système en parfaite santé affiché précisément quand la base ne répond plus.
 - `lib/metrics-format.ts` (**pur, testé**) : `HealthSnapshot` → `Metric[]` (`healthToMetrics`)
   → texte (`toPrometheus` : HELP/TYPE une fois par nom, labels échappés, échantillons
   null/non-finis omis).
@@ -47,6 +59,16 @@ En prouvant `/metrics`, on a constaté que `console_ro` n'avait **pas** de `SELE
 d'app de toute la console** et `/metrics` renverraient 0 sous `console_ro` sur un
 déploiement propre. `migration-v19` codifie ce SELECT (idempotent, nom identique au live
 → no-op sur la prod). Même famille que le finding #1 / v16.
+
+## Les services Railway
+
+Les services bâtis sur `packages/service-kit` (collector, api, console-api, scheduler,
+notifier — seul le scheduler est déployé en production au 26/09/2026) exposent leurs
+propres sondes : `/health`, `/live`, et, derrière un `METRICS_TOKEN` posé sur le
+service (404 sans jeton valide), `/ready` et `/metrics`. Détail :
+`packages/service-kit/README.md`. Le serveur MCP (`services/mcp/http.mjs`) n'est pas
+bâti sur le kit : il n'expose que `/health`. Ce document ne décrit que `/api/metrics`
+de la console.
 
 ## Configuration
 
@@ -68,4 +90,4 @@ vercel env add METRICS_TOKEN production   # openssl rand -hex 32
 ## Suivi (non bloquant)
 
 - SLO **interne** formel (réutiliser le moteur SLO de l'alerting mature, une fois #27 mergé).
-- Histogrammes de latence d'ingestion (nécessite d'instrumenter le temps de traitement edge).
+- Histogrammes de latence d'ingestion (nécessite d'instrumenter le temps de traitement de la route d'ingestion).

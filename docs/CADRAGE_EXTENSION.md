@@ -7,6 +7,16 @@
 > déploiement alternatif pour un client (poussée par politique d'entreprise, sans toucher
 > son front). **Un seul catalogue, deux capteurs.**
 
+> **Statut au 26/09/2026.** Cadrage du 09/07/2026 ; les quatre lots (Ext-A à Ext-D, §8) sont
+> livrés, et l'extension est en version 0.4.3 (`apps/extension/manifest.json`), toujours non
+> publiée sur le Chrome Web Store. Le code s'écarte du cadrage sur quelques points, signalés
+> en place : pas de `content_scripts` (le service worker injecte par `chrome.scripting`), cache
+> de résolution en mémoire, préséance vérifiée avant l'injection, popup à autorisation par
+> domaine plutôt qu'à interrupteur. L'ingestion n'est plus une edge function Supabase : c'est
+> la route de la console sur Vercel (`/api/ingest/v1/traces`). S'y ajoute un inventaire de parc
+> (battement `POST /api/extension/heartbeat`, écran `/admin/extension-installs`,
+> migration-v52) que ce cadrage ne prévoyait pas. État de référence : `apps/extension/README.md`.
+
 ---
 
 ## 0. Décisions de cadrage (verrouillées avec le PO le 2026-07-09)
@@ -47,7 +57,8 @@ hors de ce lot. Ce document chiffre le POC ; la Phase 2 est esquissée au §7.
 │                        │                            │
 └────────────────────────┼───────────────────────────┘
                           ▼
-        OTLP/HTTP  →  edge function v1-traces  →  Postgres
+        OTLP/HTTP  →  ingestion (au cadrage : edge function v1-traces ;
+                      aujourd'hui : /api/ingest/v1/traces de la console)  →  Postgres
                                                     (rum_session.collection_source = 'extension')
 ```
 
@@ -70,14 +81,17 @@ on ne duplique pas la colonne partout (une seule source de vérité, cohérent a
 
 ### 2.2 Comment la source arrive jusqu'à la base
 
-Le SDK émet déjà des attributs `mip.*` sur chaque span (cf. `realEmit` dans `index.ts:68`).
+Le SDK émet déjà des attributs `mip.*` sur chaque span (au cadrage, `realEmit` dans
+`index.ts:68` ; aujourd'hui, les attributs communs de `packages/rum-sdk/src/index.ts`, où
+`mip.collection_source` est posé).
 On ajoute **un attribut `mip.collection_source`**, posé une seule fois à l'init :
 
 - SDK classique (script posé par le dev) → l'attribut vaut `'sdk'` (défaut).
 - SDK chargé par l'extension → le point d'entrée extension passe une **nouvelle option de
   config** `collectionSource: 'extension'` (cf. §3.3), qui alimente cet attribut.
 
-L'edge function `v1-traces` (aplatissement OTLP → colonnes) écrit la valeur dans
+L'ingestion (aplatissement OTLP → colonnes : au cadrage l'edge function `v1-traces`,
+aujourd'hui `flattenOtlp` de `packages/backend/shared/otlp.mjs`) écrit la valeur dans
 `rum_session.collection_source` à la création de session. **Aucune migration de données
 existante** : tout ce qui existe déjà reste `'sdk'` (le défaut).
 
@@ -159,18 +173,23 @@ du `public/mip-rum.js` copié.
   `chrome.permissions`, ou pré-accordées par la policy entreprise — cf. §6).
 - `content_scripts` injecté en **MAIN world** (`"world": "MAIN"`, Chrome/Edge ≥ 111) : la page
   voit le SDK exactement comme un `<script>` classique, avec accès à `window`/`performance`.
+  *Livré autrement* : aucun `content_scripts` dans le manifest ; le service worker injecte
+  `vendor/mip-rum.js` par `chrome.scripting.executeScript({ world: "MAIN" })` (permission
+  `scripting`), et l'accès aux hôtes est demandé par origine (`optional_host_permissions`).
 - Service worker `background` pour la résolution domaine → app_id.
 
 ### 4.2 Service worker (résolution + préséance)
 
 1. À chaque navigation (`chrome.webNavigation` / `tabs.onUpdated`), lit le hostname.
 2. Interroge le registre (via l'API console — endpoint lecture cache-friendly, cf. §5), ou un
-   snapshot mis en cache (`chrome.storage.local`, TTL court).
+   snapshot mis en cache (`chrome.storage.local`, TTL court). *Livré* : cache en mémoire du
+   service worker, 60 s ; en cas de panne réseau, repli sur le dernier verdict connu.
 3. Si domaine **absent ou inactif** → **ne rien injecter** (aucun content script, aucune requête).
 4. Si présent → injecte le content script avec `{appId, endpoint, collectionSource:'extension'}`.
 5. **Préséance** : le content script vérifie `if (window.MIPRum) return;` **avant** de charger
    le SDK — si le site est déjà instrumenté (script dev présent), l'extension s'efface (anti
-   double-comptage, §2.4).
+   double-comptage, §2.4). *Livré* : c'est le service worker qui sonde `window.MIPRum` en MAIN
+   world avant d'injecter (`probeSdkPresent`, `decideInjection` dans `apps/extension/lib/scope.ts`).
 
 ### 4.3 Popup (transparence — exigence RGPD)
 
@@ -178,6 +197,11 @@ Un popup minimal, au ton/design de la console MIP :
 - État courant : **« MIP RUM observe : `app.client.fr` »** (ou « domaine non suivi »).
 - Toggle actif/inactif **local** (l'employé peut suspendre — traçabilité honnête).
 - Lien vers la politique de confidentialité MIP.
+
+*Livré* : l'état courant, un bouton « Activer sur ce domaine » (demande de permission) ou
+« Retirer l'autorisation pour ce domaine », et une note de transparence. Le lien du pied de
+popup mène à `/presentation`, pas à la politique de confidentialité de l'extension
+(`/extension-privacy`).
 
 > La transparence n'est pas cosmétique : une extension qui collecte sans l'indiquer est un
 > problème RGPD **et** un motif de rejet store (pour la Phase 2). On la construit dès le POC.
@@ -265,7 +289,8 @@ options, à trancher en Ext-B :
 ## 10. Ce qui est réutilisé (zéro réinvention)
 
 - **Moteur de collecte** : `packages/rum-sdk` entier, inchangé (nouveau point d'entrée seul).
-- **Pipeline d'ingestion** : edge function `v1-traces` + Postgres, +1 colonne.
+- **Pipeline d'ingestion** : edge function `v1-traces` + Postgres, +1 colonne (depuis, la
+  route d'ingestion de la console remplace l'edge function).
 - **Pattern migration** : `read_tokens` (v26), `goal` (v25).
 - **Pattern admin** : `/admin/read-tokens` (Server Actions + `requireAdmin` + `audit_log`).
 - **Segment engine** : `lib/segments.ts` (juste +1 colonne allowlistée).

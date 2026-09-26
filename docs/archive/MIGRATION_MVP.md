@@ -1,3 +1,5 @@
+> Archivé le 26/09/2026 : plan du 01/07/2026 pour la base Supabase `mip-rum-poc`, ses fonctions edge et `pg_cron` — la base a migré vers Neon les 13–14/08/2026 et le projet Supabase n'existe plus ; remplacé par [NEON_MIGRATION.md](../NEON_MIGRATION.md), le [runbook](../operations/runbook.md) et [TOPOLOGIE_BACKEND.md](../TOPOLOGIE_BACKEND.md).
+
 # Plan de migration & MVP — monitoring `uti-platform` (gip-plateforme)
 
 > État au 2026-07-01. But : rendre l'outil RUM **totalement opérationnel et sans
@@ -66,7 +68,7 @@ En 2 temps pour ne pas casser le flux actuel (snippet sans clé) :
    `gip-plateforme` (+ `demo-app`, `mip-rum-console` si on enforce globalement). Sans effet
    tant que l'enforcement est OFF.
 2. **Snippet uti** déployé avec la clé (`docs/SNIPPET_UTI.md`, document client hors dépôt :
-   voir [DOCUMENTS-HORS-DEPOT.md](DOCUMENTS-HORS-DEPOT.md)).
+   voir [DOCUMENTS-HORS-DEPOT.md](../DOCUMENTS-HORS-DEPOT.md)).
 3. **Vérif** : beacons `v1-traces` 200 portant la clé (nouvelles lignes en base).
 4. **Bascule** : passer la variable d'env de l'edge function `REQUIRE_API_KEY=true`
    (Supabase → Edge Functions → `v1-traces` → Secrets). À ce moment **toutes** les apps

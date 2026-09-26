@@ -1,6 +1,6 @@
 # ADR-0010 — `console-api` : un service, un pipeline, un seul client
 
-- **Statut** : acceptée ; code livré (C0 → C13), mise en service après P6b
+- **Statut** : acceptée ; code livré (C0 → C13, bascule #325) ; service déclaré dans l'IaC, pas encore créé sur Railway
 - **Date** : 2026-09-25
 - **Portée** : `services/console-api`, `@mip/console-api`, `@mip/console-contract`
 

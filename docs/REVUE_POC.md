@@ -6,6 +6,23 @@ concentrant sur la **qualité de code, la robustesse prod et l'expérience du PO
 Les éléments marqués ✅ sont **corrigés dans cette itération (v0.7)** ; les autres
 sont des recommandations priorisées.
 
+> **Relu le 26/09/2026.** Revue datée du 13/06/2026, conservée comme telle. Ce qui a changé
+> depuis dans ce qu'elle décrit :
+> - l'edge function Deno (Supabase) n'existe plus : retirée le 23/09/2026 (commit `0c878330`).
+>   En production, l'ingestion est la route de la console sur Vercel
+>   (`apps/console/app/api/ingest/v1/`), qui importe le parseur et le writer de
+>   `packages/backend` ; le receveur Node de ce paquet sert aussi le collector Railway
+>   (`services/collector`), écrit mais pas déployé. Les modules partagés (`log.mjs`,
+>   `retry.mjs`, `limits.mjs`, `cors.mjs`, `otlp.mjs`) sont dans `packages/backend/shared/` ;
+> - la base est passée de Supabase (Paris) à Neon (Francfort), où `pg_cron` et `pg_net` sont
+>   refusés : la purge et la livraison des alertes tournent dans le service `scheduler`
+>   (Railway, `packages/backend/jobs/planifie.mjs`) ;
+> - **R3 est corrigé** depuis le 09/09/2026 (finding 2.3 de `docs/AUDIT_RUM_EXTERNE.md`) :
+>   quand la base ne répond pas, le limiteur refuse au-delà d'un plafond de repli au lieu de
+>   tout laisser passer (`rateLimitedDurable`, `packages/backend/lib/pg-ingest.mjs`) ;
+> - le guide `TourGuide` a été retiré le 09/09/2026 ; le glossaire et les bulles d'aide
+>   (`lib/glossary.ts`, `InfoTip`, `GlossaryTip`) restent.
+
 ---
 
 ## 1. Appréciation générale
@@ -48,11 +65,12 @@ pour la prod ».
 ## 3. Défauts / risques restants (à arbitrer)
 
 > **R1, R2, R4, R5, R6, R7 et R8 sont désormais corrigés** (v0.7) — détails
-> §3bis → §3quinquies. Il ne reste que R3 (choix d'availability assumé).
+> §3bis → §3quinquies. Il restait R3 (choix d'availability assumé), corrigé à son tour le
+> 09/09/2026 (voir l'encadré en tête).
 
 | # | Observation | Pourquoi ça compte | Reco |
 |---|---|---|---|
-| R3 | **Rate limit durable = fail-open** : si `rate_check` échoue, on accepte. | Choix d'availability assumé (le pré-filtre mémoire protège encore), mais une panne DB prolongée lève toute limite. | OK pour le POC ; documenté. À envisager : fail-closed au-delà de N échecs consécutifs. |
+| R3 | **Rate limit durable = fail-open** : si `rate_check` échoue, on accepte. | Choix d'availability assumé (le pré-filtre mémoire protège encore), mais une panne DB prolongée lève toute limite. | OK pour le POC ; documenté. À envisager : fail-closed au-delà de N échecs consécutifs. **Corrigé le 09/09/2026** : repli fermé au-delà d'un plafond local. |
 
 ### 3bis. R1 + R2 — idempotence des écritures (corrigé en v0.7)
 
@@ -155,16 +173,20 @@ manques d'expérience** étaient criants pour un POC commercial — **traités i
    regrouper l'écriture edge dans **une seule RPC transactionnelle** (atomicité
    stricte + moins de latence réseau).
 2. **Test de charge cloud** réel (limite #27) pour calibrer rate limit, taille de
-   lot et le free tier Supabase.
+   lot et le free tier Supabase (Neon aujourd'hui). Toujours à faire au 26/09/2026 : le
+   banc du 24/09 (`docs/operations/banc-collecteur-2026-09-24.md`) est local.
 3. ✅ **Rétention/TTL** faite en v0.7 (`purge_rum` + pg_cron/`purge.mjs`, R8).
    Reste optionnel : exposer une **métrique de volumétrie**.
 
 **P1 — industrialisation**
 4. **Métriques de l'ingestion** (taux 4xx/5xx, `rejected`, p95 d'écriture,
    `_dropped` du middleware) exposées en `/metrics` ou via les logs structurés
-   désormais en place — l'outil doit se monitorer lui-même (limite #25).
-5. **Test de contrat de l'edge function** sous Deno (R6).
-6. **Rejeu des alertes `failed`** avec backoff (R5).
+   désormais en place — l'outil doit se monitorer lui-même (limite #25). Une route
+   `/api/metrics` (Prometheus) existe depuis le 18/06/2026 ; sa couverture de cette liste
+   n'est pas revérifiée ici.
+5. **Test de contrat de l'edge function** sous Deno (R6). Sans objet depuis le retrait de
+   l'edge function (23/09/2026).
+6. **Rejeu des alertes `failed`** avec backoff (R5). Fait en v0.7 (§3ter).
 
 **P2 — produit**
 7. Brancher la **source synthétique DEM réelle** (interface `SyntheticSource` prête).

@@ -1,8 +1,8 @@
 # Runbook — exploiter le backend MIP RUM
 
-> Ce qu'on fait, dans quel ordre, et comment on revient en arrière. Il remplace la partie exploitation de [DEPLOY.md](../../DEPLOY.md), en partie périmé (il décrit encore le service `ingest`, supprimé le 21/09/2026). L'architecture est dans [docs/architecture/](../architecture/overview.md), chaque service a son README au même gabarit (`services/<x>/README.md`).
+> Ce qu'on fait, dans quel ordre, et comment on revient en arrière. Il remplace la partie exploitation de [DEPLOY.md](../../DEPLOY.md) : pour exploiter, c'est ce document qui fait foi. L'architecture est dans [docs/architecture/](../architecture/overview.md), chaque service a son README au même gabarit (`services/<x>/README.md`).
 >
-> **Mode actuel : base sur l'offre gratuite de Neon, cadences ralenties** ([ADR-0014](../architecture/adr/0014-base-gratuite.md)). Calcul suspendu du 24/09 au 1er octobre 2026 (quota dépassé).
+> **Mode actuel : base sur l'offre gratuite de Neon, cadences ralenties** ([ADR-0014](../architecture/adr/0014-base-gratuite.md)). Calcul suspendu du 24/09 au 01/10/2026 (quota dépassé). Au 26/09, seuls `scheduler` et `mcp` sont déployés sur Railway ; migrations appliquées en production jusqu'à v86, v87 → v93 en attente ([état](../architecture/overview.md#état-au-26092026)).
 
 ## 1. Où regarder
 
@@ -10,10 +10,10 @@
 |---|---|
 | Le quota de la base tient-il ? | `NEON_API_KEY=… node scripts/ops/conso-neon.mjs` — calcul du mois, projection, stockage ; code 1 au-delà de 80 % projetés. **Premier réflexe quand la base refuse les connexions.** |
 | Que contient la production ? | `railway run --service scheduler node scripts/ops/releve-p0.mjs` — migrations, dernier événement par app, clés d'ingestion, tailles, cadence publiée, connexions (lecture seule) |
-| Journaux d'un service | `railway logs --service <scheduler\|mcp\|collector\|notifier> --lines 200` (build : `--build`) |
-| État d'un service | `curl https://<domaine>/live` (processus) · `/health` (processus + base — ne pas le sonder de l'extérieur, il réveille la base) · `/ready` et `/metrics` sous `Authorization: Bearer $METRICS_TOKEN` |
+| Journaux d'un service | `railway logs --service <scheduler\|mcp\|collector\|notifier> --lines 200` (build : `--build`) — `collector` et `notifier` une fois créés |
+| État d'un service | `curl https://<domaine>/live` (processus) · `/health` (processus + base — ne pas le sonder de l'extérieur, il réveille la base) · `/ready` et `/metrics` sous `Authorization: Bearer $METRICS_TOKEN` (le scheduler n'a pas de `METRICS_TOKEN` dans `.railway/railway.ts` : chez lui, les deux répondent 404) |
 | Déploiements Railway | `railway deployment list --service <nom>` |
-| Qui a fait quoi dans la console | table `audit_log` (écran `/admin/audit`) — **en ajout seul** depuis migration-v90 : un `update`, un `delete` ou un `truncate` y rend 42501. Rien ne l'efface, pas même l'effacement d'un client. |
+| Qui a fait quoi dans la console | table `audit_log` (écran `/admin/audit`) — **en ajout seul** une fois migration-v90 appliquée (pas encore en production au 26/09) : un `update`, un `delete` ou un `truncate` y rend alors 42501. Rien ne l'efface, pas même l'effacement d'un client. |
 | Déploiements et journaux Vercel | tableau de bord Vercel, projet `mip-rum-console` (ou le MCP Vercel) |
 | Les applies d'infrastructure | GitHub → Actions → « Railway IaC » (environnement `railway-production`, relecteur requis) |
 
@@ -54,7 +54,7 @@ Il prend **le même bail** que le worker : si le worker tient la cadence, il le 
 - **Cadences** : `SCHEDULER_TICK_MIN=15` et `NOTIFIER_INTERVAL_MS=900000` (passes alignées 45 s après le tick). Calcul et limites : [README du scheduler, « Base gratuite »](../../services/scheduler/README.md).
 - **Ce qui réveille la base** : chaque passage planifié, chaque beacon collecté, chaque écran de console ouvert (rafraîchi toutes les 5 s), chaque visite de la vitrine publique, chaque `/health`. Les supervisions externes visent **`/live`**.
 - **Quand `conso-neon.mjs` projette plus de 80 %** : ralentir (`SCHEDULER_TICK_MIN=30`, `NOTIFIER_INTERVAL_MS=1800000`), fermer les onglets de console ouverts, ou passer en offre payante.
-- **Quand le quota est dépassé** : tout ce qui touche la base échoue (« Your account or project has exceeded the quota ») jusqu'au 1er du mois suivant. Rien à réparer dans le code. Le 1er : `railway redeploy --service scheduler --from-source`, vérifier `migrations à jour` et un tick `fait` dans `/ready`, puis `node scripts/ops/conso-neon.mjs`.
+- **Quand le quota est dépassé** : tout ce qui touche la base échoue (« Your account or project has exceeded the quota ») jusqu'au 1er du mois suivant. Rien à réparer dans le code. Le 1er : d'abord rejouer les migrations en attente (v87 → v93 au 01/10/2026) sur la branche Neon `repetition-p0` — le migrateur de production, `node services/scheduler/migrate.mjs`, avec la chaîne de cette branche ; les rôles créés en SQL sont le point à vérifier ([ADR-0003](../architecture/adr/0003-roles-et-tenancy.md)) ; puis `railway redeploy --service scheduler --from-source`, vérifier `migrations à jour` (`appliquees=7`) et, dans le journal, un `travail terminé` du tick avec `ok: true` ; enfin `node scripts/ops/conso-neon.mjs`.
 - **Pour un vrai produit** : offre payante, `SCHEDULER_TICK_MIN=5`, `NOTIFIER_INTERVAL_MS=15000`.
 
 ## 6. Les secrets
@@ -76,7 +76,7 @@ Où ils vivent : [architecture, « Qui détient quel secret »](../architecture/
 
 ### Le rôle de l'API : `mip_api`
 
-migration-v89 crée `mip_api` **sans mot de passe** (`NOLOGIN`) : lecture seule, liste blanche ([ADR-0003](../architecture/adr/0003-roles-et-tenancy.md)). À faire **une fois**, après le pré-déploiement qui l'a appliquée — et d'abord sur la branche `repetition-p0`, v89 comprise, avant de fusionner v89 :
+migration-v89 crée `mip_api` **sans mot de passe** (`NOLOGIN`) : lecture seule, liste blanche ([ADR-0003](../architecture/adr/0003-roles-et-tenancy.md)). À faire **une fois**, après le pré-déploiement qui l'a appliquée — et d'abord sur la branche `repetition-p0`, v89 comprise, avant le déploiement du scheduler qui l'appliquera en production (v89 est fusionnée depuis le 24/09, #293) :
 
 1. Générer le mot de passe dans le gestionnaire (`openssl rand -base64 32` si besoin), jamais ailleurs.
 2. `psql` connecté en `neondb_owner`, puis :

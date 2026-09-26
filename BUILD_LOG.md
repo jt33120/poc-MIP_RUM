@@ -2,6 +2,8 @@
 
 Journal factuel du build, étape par étape. Matière du bilan client (PLAN §15).
 
+> **Note du 26/09/2026.** Journal historique, arrêté au 11/06/2026 (v0.5) et non réécrit : les chemins (`apps/ingest`, `apps/sync-synthetic`, `infra/…`), l'hébergement (Supabase, fonction Deno) et les scripts qu'il cite (`scripts/validate-*.mjs`, `docs/captures/`) sont ceux de l'époque, et beaucoup n'existent plus. L'état actuel : [README](README.md#en-production-et-ce-qui-attend), [docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md), [runbook](docs/operations/runbook.md) ; l'historique des versions : [CHANGELOG.md](CHANGELOG.md).
+
 Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docker 29.2.1, supabase CLI 2.67.1, vercel CLI 41.4.1. Pas de deno ni psql en local → Postgres via Docker, serveur d'ingestion dev en Node (la fonction Deno partage le même parser, cf. S2).
 
 ---
@@ -134,6 +136,8 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
 | 5 | On-prem-ready (narratif) | ✅ (infra/ : Collector + ClickHouse) |
 
 **Seule étape en attente** : S6 — déploiement cloud (secrets) + snippet collé sur `plateforme.groupement-it.com` par Julian (runbook : DEPLOY.md).
+
+> Note du 26/09/2026 : cette synthèse précède la fin de S6, faite le 10/06/2026 au soir (« S6 (fin) » ci-dessus : snippet en production, DoD 1 à 4 vérifiés en live).
 
 ## v0.2 — Sprint nuit 10→11/06/2026 (« une semaine boostée IA »)
 

@@ -31,7 +31,7 @@ Limites à respecter, elles ne sont pas contournables :
 - Le périmètre dépend du jeton. Une app hors périmètre est REFUSÉE (403) : appeler mip_rum_list_apps plutôt que deviner un slug. Sans app, la réponse couvre toutes les apps autorisées du jeton.
 - Le détail d'un groupe d'erreurs ou d'une issue porte l'app de la RESSOURCE, qui peut différer de celle demandée : l'outil le signale explicitement. Lire cet avertissement avant de conclure.
 - La liste des sessions est paginée sans total. Les groupes d'erreurs, les issues et l'Explorer d'événements fournissent un total filtré ; le détail d'un groupe d'erreurs et l'Explorer paginent par curseur opaque stable (data.page.next_cursor), les issues et leur détail par data.next_cursor.
-- Pas de données personnelles : les utilisateurs sont des empreintes anonymes.
+- Pas d'identité en clair : un utilisateur n'apparaît que sous un identifiant pseudonyme (empreinte HMAC), jamais nom, e-mail ni adresse IP.
 - Une question qu'aucun outil ne couvre se compose avec mip_rum_query_explorer : jeu de données, mesure, regroupement. Son catalogue est FERMÉ — un champ absent n'est pas mesurable, et le refus ne dit pas s'il existe ailleurs. Un dénombrement vide vaut 0, une moyenne ou un percentile sans échantillon vaut null, et une requête trop large échoue (503) sans rendre de chiffre : ne pas lire cet échec comme un zéro.
 
 Si un chiffre demandé n'est dans aucune réponse, le dire — ne pas l'estimer.`;

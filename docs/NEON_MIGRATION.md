@@ -1,5 +1,13 @@
 # Migration Supabase → Neon (13–14/08/2026)
 
+> **Document historique, relu le 26/09/2026.** Il raconte la migration du 13–14/08/2026 et reste cité
+> comme tel (`apps/console/lib/legal.ts`, `DEPLOY.md`). Trois choses ont changé depuis, et les sections
+> concernées le disent en place : la planification (§ 3.3) et la livraison des webhooks (§ 3.4) sont
+> passées au service Railway `scheduler` ([ADR-0008](architecture/adr/0008-scheduler-unique.md)) ; la base
+> est restée sur l'offre gratuite de Neon, dont le quota de calcul a été dépassé le 24/09/2026 — calcul
+> suspendu jusqu'au 01/10/2026 ([ADR-0014](architecture/adr/0014-base-gratuite.md)). L'exploitation
+> d'aujourd'hui est au [runbook](operations/runbook.md), la topologie à [TOPOLOGIE_BACKEND.md](TOPOLOGIE_BACKEND.md).
+
 > **État au 14/08/2026.** Le projet Supabase `mip-rum-poc`
 > (`nupxrdpsliqptqnjkmgw`) **n'existe plus** : son sous-domaine ne résout plus
 > (aucun enregistrement DNS) et l'API de gestion répond
@@ -66,7 +74,8 @@ changer dans son snippet (`endpoint`), et le replay suit tout seul.
 **Pas de réécriture de la logique** : les inserts et l'auth vivent dans
 `packages/backend/lib/pg-ingest.mjs`, importé à la fois par le dev-server Node et par
 les routes Next.js — une seule implémentation, dans le même esprit que
-`shared/otlp.mjs` pour le parsing. Les gardes de prod sont conservées à
+`packages/backend/shared/otlp.mjs` pour le parsing (le dev-server est aujourd'hui
+`services/collector/dev-server.mjs`). Les gardes de prod sont conservées à
 l'identique : 413 sur la taille, 403 sur la clé d'API, 429 sur le débit
 (compteur durable `rate_check`), séparation stricte 400 (requête fautive) /
 500 (incident rejouable), écriture idempotente (`on conflict do nothing`).
@@ -99,6 +108,7 @@ CORS.
 
 > Les points 3.3 (planification) et 3.4 (webhooks) sont **traités dans le
 > code** ; il reste à définir `CRON_SECRET` sur Vercel pour qu'ils tournent.
+> *(Au 14/08. Depuis le 25/09/2026, plus aucun code ne lit `CRON_SECRET` : voir § 3.3.)*
 
 ### 3.1 Mettre à jour le snippet chez le client (SEUL geste qui rétablit l'ingestion)
 
@@ -147,6 +157,13 @@ l'ancienne URL n'existe plus. Dans le `<head>` du site (repo `uti-platform`) :
   n'ont pas de clé — sinon 403 immédiat (durcissement E1-S1).
 
 ### 3.3 Planification — passée de `pg_cron` à Vercel Cron (fait)
+
+> **Remplacé.** Le service Railway `scheduler` est devenu le seul déclencheur des
+> travaux planifiés, sous un bail par cadence ([ADR-0008](architecture/adr/0008-scheduler-unique.md)).
+> Le 23/09/2026 (commit `be290595`), les routes `/api/cron/*` sont passées à 410 et
+> le workflow GitHub `cron.yml` et l'entrée `crons` de Vercel ont disparu ; les routes
+> ont été supprimées le 25/09 (commit `2aecc493`). Le rejeu manuel d'une cadence passe
+> par `services/scheduler/run-once.mjs`. Ce qui suit décrit l'état du 14/08.
 
 `pg_cron` existe sur Neon (v1.6) mais ne s'installe QUE dans la base `postgres`
 du projet, jamais dans `neondb` (`create extension pg_cron` y échoue :
@@ -202,6 +219,11 @@ jobs Vercel Cron. Une nouvelle erreur peut donc mettre jusqu'à 1 h à lever une
 alerte. Si c'est trop, les sortir dans leur propre route planifiée.
 
 ### 3.4 Webhooks d'alerte — `pg_net` remplacé par le dispatcher Node (fait)
+
+> **Depuis** : `dispatchOnce()` n'est plus appelé par une route de la console mais
+> par le `scheduler` en service, à chaque tick. Le code de `master` confie la
+> livraison au service `notifier` (`SCHEDULER_DELIVERY: "off"` dans `.railway/railway.ts`),
+> déclaré mais pas encore créé sur Railway (relevé du 26/09/2026).
 
 `create extension pg_net` est refusé sur Neon (*"not in the allowed extensions
 list"*) : les alertes qui postaient via `net.http_post` **ne pouvaient plus

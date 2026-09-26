@@ -242,7 +242,8 @@ export function creerReceveur(pool, opts = {}) {
   // Ingestion DIFFÉRÉE (migration-v63) : le lot est débarqué dans une table
   // UNLOGGED et écrit plus tard par un travailleur. ÉTEINTE par défaut — la
   // table est vidée par PostgreSQL après un arrêt brutal, donc ce compromis se
-  // choisit explicitement. Le gain mesuré est dans docs/BUILD_LOG.md.
+  // choisit explicitement. Le gain mesuré (scripts/bench-ingest.mjs) est dans
+  // docs/INTEGRATION.md, § « Ingestion différée ».
   const differe = opts.differe ?? env.INGEST_DEFERRED === "true";
 
   const auth = createPgAuth(pool, { requireApiKey, rateLimitPerMin, log });

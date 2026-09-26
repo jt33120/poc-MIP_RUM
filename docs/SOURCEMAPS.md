@@ -26,8 +26,11 @@ l'ingestion la tient pour **inconnue** (NULL, jamais tronquée) et l'upload rép
 envoyée pour une release que l'ingestion ne stocke pas ne serait jamais utilisée.
 
 ### 2. Créer un jeton de CI
-Console › **Administration › Source maps** › *Jetons de CI* (admin uniquement) :
-- un seul privilège, `sourcemaps:write`, sur **une** application ;
+Console › **Administration › Source maps** › *Jetons de CI* (administrateur de l'application) :
+- un seul privilège par jeton, sur **une** application : `sourcemaps:write` pour les maps. Le
+  second privilège, `deploys:write` (marqueur de déploiement, C11), n'a aucun droit d'upload ; il
+  exige migration-v92, pas encore appliquée en production au 26/09/2026 (la console refuse alors
+  sa création) ;
 - expiration de **1 à 90 jours** (30 par défaut) ;
 - le secret (`msu_<id>_<secret>`) n'est affiché **qu'une fois** ; la base n'en garde que le
   hash SHA-256, comparé en temps constant ;
@@ -44,14 +47,19 @@ Les jetons de lecture (`CONSOLE_API_TOKENS`, `read_tokens`) n'ont **aucun** droi
     MIP_SOURCEMAP_TOKEN: ${{ secrets.MIP_SOURCEMAP_TOKEN }}
   run: >
     node scripts/upload-sourcemaps.mjs --app gip-plateforme --release "$GITHUB_SHA"
-    --dir dist --url https://<ingest>/v1/sourcemaps
+    --dir dist --url https://mip-rum-console.vercel.app/api/sourcemaps
 ```
 `--url` est l'URL **complète** d'upload, sans endpoint deviné :
 
 | Port | URL | Corps | Map | Lots du CLI |
 |---|---|---|---|---|
-| Backend direct (Railway) | `https://<ingest>/v1/sourcemaps` | ≤ 20 Mio | ≤ 15 Mio | ≤ 20 Mio |
-| Console (Vercel) | `https://<console>/api/sourcemaps` | ≤ 4 Mio (plafond Vercel publié : 4,5 Mo) | ≤ 4 Mio en pratique | ≤ 3 Mio par défaut |
+| Console (Vercel) — **le seul en service au 26/09/2026** | `https://<console>/api/sourcemaps` | ≤ 4 Mio (plafond Vercel publié : 4,5 Mo) | ≤ 4 Mio en pratique | ≤ 3 Mio par défaut |
+| Backend direct : le service `collector` (Railway) — **pas encore créé** | `https://<collector>/v1/sourcemaps` | ≤ 20 Mio | ≤ 15 Mio | ≤ 20 Mio |
+
+Bornes : `LIMITES_UPLOAD`, `packages/backend/lib/sourcemap-upload.mjs`. Quand le relais d'ingestion
+de la console (`apps/console/lib/ingest-relay.ts`, drapeau `ingest_relay_pct`, à 0 par défaut)
+sera allumé, un upload **au jeton** reçu par la console pourra partir au collector ; les bornes
+restent celles du port console.
 
 Ce que fait le CLI, **avant** le premier envoi :
 - relie chaque bundle `.js/.mjs/.cjs` à sa map (commentaire `sourceMappingURL` relatif, sinon
@@ -141,7 +149,7 @@ lent · `409` conflit · `413` taille (la console indique le backend direct) · 
 
 ## Administration
 
-Page **`/admin/sourcemaps`** (admin) : choix de l'app, releases (fichiers, taille, dernière mise en
+Page **`/admin/sourcemaps`** (administrateur de l'application) : choix de l'app, releases (fichiers, taille, dernière mise en
 ligne), manifeste d'une release (fichier, taille, checksum, date et auteur, statut *validée*,
 *remplacée (auditée)*, *antérieure à v71*) et son empreinte, upload manuel (même contrat, 4 Mio),
 jetons de CI (création, secret affiché une fois, révocation). Ni contenu de map, ni hash, ni
@@ -163,7 +171,9 @@ client était cet écran.
 ## Symbolication à l'ingestion : bornes
 
 `writeRows` symbolise les erreurs **avant** sa transaction (lecture des maps hors verrou), sur les
-trois chemins d'écriture (receveur Railway, route Vercel, file différée). Bornes par défaut
+trois chemins d'écriture : la route d'ingestion de la console (Vercel, le seul en service au
+26/09/2026), le receveur du collector (`packages/backend/lib/receiver.mjs`, service pas encore
+créé) et sa file différée (`INGEST_DEFERRED`, éteinte par défaut). Bornes par défaut
 (`LIMITES_SYMBOLICATION`, `packages/backend/lib/error-symbolication.mjs`), à ajuster sur mesure :
 
 | Borne | Défaut | Au-delà |
@@ -204,7 +214,9 @@ après l'erreur est prise par l'ingestion sous 60 s, et par l'affichage immédia
   symbolise à l'affichage et répond `503` aux uploads ; le code antérieur à P5.4 qui écrit encore
   une map après v71 garde une empreinte juste (déclencheur).
 - Les maps ne contiennent pas de données d'utilisateur final : hors périmètre DSAR ; elles suivent
-  l'effacement d'une app. Le service Railway `ingest` expose `POST /v1/sourcemaps`.
+  l'effacement d'une app. `POST /v1/sourcemaps` est servi par le service `collector`
+  (`services/collector`), pas encore créé sur Railway ; l'ancien service `ingest`, qui l'exposait,
+  a été supprimé le 21/09/2026.
 
 ## Limites et suivis
 

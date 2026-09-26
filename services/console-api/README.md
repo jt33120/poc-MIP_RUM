@@ -8,11 +8,11 @@
 | Point d'entrée | `node services/console-api/dist/server.mjs`, construit par `node services/console-api/build.mjs` depuis `server.mjs` (câblage seul, sur `@mip/service-kit`) |
 | Logique | [`@mip/console-api`](../../packages/console-api) (pipeline, table des opérations, traitements) et [`@mip/console-contract`](../../packages/console-contract) (descripteurs, types, codes d'erreur), en TypeScript, compilés dans le bundle |
 | Exposition | public (domaine généré), **gardé par le secret client** : sans lui, tout répond 404. Vercel ne rejoint pas le réseau privé Railway |
-| Rôle BDD | propriétaire jusqu'à C13 (puis `mip_console` et `mip_identity`) ; pool de 8 par réplique, `application_name = mip-console-api` |
+| Rôle BDD | propriétaire (`DATABASE_URL`) tant que les deux rôles de C13 ne sont pas posés ; ensuite `mip_console` (`CONSOLE_DATABASE_URL`) et `mip_identity` (`IDENTITY_DATABASE_URL`, son propre pool, `application_name = mip-console-api-identite`) — migration-v93, pas encore en production. Pool de 8 par réplique par défaut (6 dans l'IaC), `application_name = mip-console-api` |
 | Réplicas | 2 (sans état ; le débit par principal est compté par réplique) |
-| Image | `services/console-api/Dockerfile` : `dist/server.mjs` et `pg`, aucune source de la console |
+| Image | `services/console-api/Dockerfile` : `dist/server.mjs` et `pg`. Le bundle embarque la couche de données de la console (`apps/console/lib`), jamais un écran, un composant ou ce qui tient une session de la console (garde du build) |
 
-État au 24/09/2026 : **pas encore déployé.** Trois opérations : la poignée de main, les clés publiques, l'état de la plateforme que lit la vitrine. La console sait l'appeler (`apps/console/lib/backend.ts`, C0b) **dès que ses trois variables sont posées sur Vercel** ; sans elles, elle lit la base comme avant. Le service **vérifie** déjà les sessions et résout les ressources du chemin (C0c) ; il les **ouvrira** en C1.
+État au 26/09/2026 : **pas encore créé** sur Railway — déclaré dans `.railway/railway.ts`, il attend ses variables partagées (`CONSOLE_API_CLIENT_SECRETS`, `SESSION_SIGNING_KEYS`…) et un apply approuvé. Le code livré : poignée de main, identité et sessions (C1), coquille et écrans (C2 → C5), écritures, administration et RGPD (C6 → C10), rôles de moindre privilège (C13) ; la table complète est dans [docs/api/console-api.md](../../docs/api/console-api.md). La console sait l'appeler (`apps/console/lib/backend.ts`, C0b) **dès que ses trois variables sont posées sur Vercel**, puis, pour une part des sessions, selon les drapeaux de la bascule (#325) ; sans elles, elle lit la base comme avant. L'E2E l'exerce déjà, en mode strict (`playwright.config.ts`).
 
 ## Un seul client, et comment il s'annonce
 
@@ -47,6 +47,7 @@ La table des opérations, leurs politiques et les codes d'erreur sont dans **[do
 | `CONSOLE_API_RATE_LIMIT` | non | appels par minute et par principal, par réplique (défaut 600 ; la console rejoue ses écrans toutes les 5 s) |
 | `DEMO_USER_APPS` | non | applications visibles en démo, séparées par des virgules. Vide : **pas de démo** (`POST /v1/auth/demo-sessions` → 404). Le rôle n'est pas réglable : une démo est `viewer` |
 | `DEMO_USER_EMAIL` | non | étiquette de la session de démo dans le journal (défaut `demo@mip-rum.local`) |
+| `IDENTITY_HASH_SECRET` | requise pour la recherche, l'export et l'effacement par identité métier (secret) | clé HMAC des identités, **la même** que le collector : les commandes RGPD de C10 (`apps/console/lib/commandes/vie-privee.ts`) hachent la saisie avec elle ; absente, le hachage ne rend rien. Lue hors du schéma de démarrage, et pas encore déclarée pour ce service dans `.railway/railway.ts` (26/09/2026) |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (secret), `OIDC_REDIRECT_URI`, `OIDC_TX_KEY` (secret, 32 octets base64url) | non, **tous ou aucun** | le SSO (C1c) ; une configuration partielle refuse le démarrage. Options : `OIDC_SCOPES`, `OIDC_ROLE_CLAIM`, `OIDC_ADMIN_VALUES`, `OIDC_APPS_CLAIM`, `OIDC_ALLOWED_DOMAINS`. Modèle et règles de lien : [docs/SSO.md](../../docs/SSO.md) |
 | `PGPOOL_MAX`, `PORT`, `LOG_LEVEL`, `METRICS_TOKEN`, `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non | voir le kit |
 
@@ -93,7 +94,7 @@ La garde du build n'accepte de la console que sa couche de données : ni écran 
 
 ## Sûreté multi-réplique
 
-Le service est sans état : chaque requête lit la base. Le débit par principal est compté par réplique : avec deux répliques, un principal peut atteindre le double de la limite. Les écritures (C6 et suivants) se feront chacune dans sa transaction, avec la ligne d'audit dans la même transaction.
+Le service est sans état : chaque requête lit la base. Le débit par principal est compté par réplique : avec deux répliques, un principal peut atteindre le double de la limite. Les écritures (C6 et suivants) se font chacune dans sa transaction, avec la ligne d'audit dans la même transaction.
 
 ## Modes de panne
 

@@ -8,9 +8,9 @@
 | Couche | Mécanisme |
 |---|---|
 | **Identité tenant** | `app_id` sur toute ligne de télémétrie (résolu à l'ingestion via `mip.app_id` resource ; ligne sans `app_id` **rejetée**). |
-| **Lecture console** | Toute requête filtre par `app_id`. **RBAC** : un `viewer` est scopé à une liste d'apps (`console_user.apps`) ; le middleware + la couche données rabattent toute app hors scope (jamais « toutes »). SSO : scope piloté par l'IdP (`OIDC_APPS_CLAIM`). |
+| **Lecture console** | Toute requête filtre par `app_id`. **RBAC** : un `viewer` est scopé à une liste d'apps (`console_user.apps`) ; le contrat de requête (`apps/console/lib/query-contract.ts`) **refuse** toute app hors périmètre — l'API v1 répond `403 forbidden_app` — et une liste vide n'ouvre rien (jamais « toutes »). SSO : scope piloté par l'IdP (`OIDC_APPS_CLAIM`). |
 | **Ingestion** | Clé d'API par app (hashée) ; rate-limit durable **par app** (`rate_check`). |
-| **Repos / secrets** | RLS activé, policies **scopées par tenant** (migration-v47) ; secrets hashés / en coffre. |
+| **Repos / secrets** | RLS activé, policies **scopées par tenant** (migration-v47), inertes tant que la console se connecte en propriétaire (voir plus bas) ; secrets hashés. |
 | **Effacement** | `erase_app_data(app_id)` isole et supprime tout un tenant (cf. `CONFORMITE.md`). |
 
 ## RLS par tenant (migration-v47) — ceinture, et pourquoi elle n'est pas encore bouclée
@@ -44,25 +44,36 @@ parent). GUC absente ⇒ tableau vide ⇒ **aucune ligne** : fail-closed, jamais
 *propriétaire* — or c'est l'identité d'exploitation dont les 10 fonctions
 `security definer` (alerting, purge, uptime, metering) ont besoin en inter-tenant.
 Sous FORCE et sans GUC, elles verraient zéro ligne et casseraient en silence : sans
-effet en prod Supabase (rôle `BYPASSRLS`), fatal en **self-host**.
+effet en production tant que tout se connecte en `neondb_owner` (`BYPASSRLS`), fatal en
+**self-host**.
 
-**Ce qui reste à faire pour que la ceinture serve (bascule d'exploitation).** Tant que
-la console se connecte avec un rôle `BYPASSRLS`, les policies sont **inertes** : v47 est
-une défense en profondeur, pas un remplacement du `WHERE app_id =`. Boucler exige :
-1. un identifiant `console_ro` dédié dans `DATABASE_URL` (rôle déjà présent, `LOGIN`,
-   sans `BYPASSRLS`) ;
-2. router les lectures scopées par `withTenant(appIds, …)` (`apps/console/lib/db.ts`),
-   qui pose la GUC en `set_local` — donc **dans une transaction**, faute de quoi le pool
-   `pg` ferait fuir la portée d'un tenant vers la requête suivante ;
-3. rejouer la non-régression complète de la console (certaines vues admin sont
-   volontairement inter-tenant et devront passer par le rôle d'exploitation).
+**Ce qui reste à faire pour que la ceinture serve.** En production (26/09/2026), la
+console Vercel et le scheduler se connectent en `neondb_owner`, propriétaire et
+`BYPASSRLS` : les policies sont **inertes**, v47 est une défense en profondeur, pas un
+remplacement du `WHERE app_id =`. La décision en vigueur est
+[ADR-0003](architecture/adr/0003-roles-et-tenancy.md) — elle **écarte** la bascule de la
+console sur `console_ro` envisagée ici à l'origine (il lit 80 tables sur 81 et n'écrit
+pas là où la console écrit ; il reste l'outil des tests d'isolation). À la place, un rôle
+par surface, créé en SQL :
+1. `mip_api` (migration-v89) pour le service `api`, en lecture seule ;
+2. `mip_console` et `mip_identity` (migration-v93) pour `console-api`
+   ([ADR-0012](architecture/adr/0012-roles-de-la-console.md)).
 
-**Les policies visent `TO console_ro`, pas PUBLIC.** `anon` et `authenticated` — les
-rôles de l'API PostgREST, exposée publiquement — portent des droits DML sur 18
-tables ; s'ils ne lisent rien, c'est parce qu'**aucune policy ne les vise** (RLS actif
-+ aucune policy applicable = zéro ligne). Une policy sans clause `TO` s'applique à
-PUBLIC et aurait remplacé ce « jamais autorisé » par un « autorisé si la GUC est
-posée ». Le test vérifie le cas hostile : portée **posée**, et pourtant zéro ligne.
+Ces migrations sont dans le dépôt, **pas encore appliquées en production** (appliquée
+jusqu'à v86), et les services qui s'en serviront ne sont pas encore créés. Même alors, les
+policies de `mip_api` sont `using (true)` : le cloisonnement reste le `WHERE app_id` de
+chaque requête, tant que les lectures ne posent pas `app.current_app_id` par
+`withTenant(appIds, …)` (`apps/console/lib/db.ts`, `set_config(…, true)` dans une
+transaction — aucun appelant aujourd'hui).
+
+**Les policies visent `TO console_ro`, pas PUBLIC.** À l'écriture de v47 (base Supabase),
+`anon` et `authenticated` — les rôles de l'API PostgREST, exposée publiquement — portaient
+des droits DML sur 18 tables ; s'ils ne lisaient rien, c'est parce qu'**aucune policy ne
+les visait** (RLS actif + aucune policy applicable = zéro ligne). Une policy sans clause
+`TO` s'applique à PUBLIC et aurait remplacé ce « jamais autorisé » par un « autorisé si la
+GUC est posée ». Sur Neon, ces rôles hérités de l'ère Supabase ne sont traités par les
+migrations que s'ils existent (`if exists … pg_roles`) ; la règle reste la bonne pour tout
+rôle futur. Le test vérifie le cas hostile : portée **posée**, et pourtant zéro ligne.
 
 **`console_ro` n'écrit plus partout (migration-v48).** Le rôle s'appelle « read only »
 et détenait `INSERT/UPDATE/DELETE` sur les 45 tables. Sans effet tant que la console
@@ -83,8 +94,10 @@ des fonctions `security definer`.
 
 - **`tenant_usage_daily(app_id, day, events, sessions, errors)`** : agrégat **durable**
   (sans FK → **survit à la purge** de télémétrie, donc l'historique de facturation reste).
-- **`meter_tenant_usage(day)`** : calcule la consommation d'un jour clos. Idempotent. Planifié
-  **quotidiennement à 3 h 05** (avant la purge de 3 h 17).
+- **`meter_tenant_usage(day)`** : calcule la consommation d'un jour clos. Idempotent. Lancé par
+  le service `scheduler` à son passage **quotidien de 03:17 UTC**, juste après
+  `purge_rum_tenants(30)` (`packages/backend/jobs/planifie.mjs`) : la purge ne touche que des
+  données de plus de 30 jours, la veille qu'il compte est intacte.
 - **Unité facturée `events`** : un **signal source stocké** — une ligne de pageviews, metrics,
   erreurs, ressources, longtasks, breadcrumbs, events ou spans. Les logs (`rum_log`) et les
   projections (`rum_event_index`, `rum_action`) n'y entrent pas.
@@ -93,7 +106,7 @@ des fonctions `security definer`.
   plus** — le span qui la porte est déjà compté, le log ne l'est pas. Elle est exclue de `events`
   et comptée dans **`errors`**, la somme des occurrences d'erreur. Une app qui n'envoie que des
   logs d'exception apparaît donc avec `events = 0` et ses `errors`.
-- **`v_tenant_usage_month`** : usage mensuel agrégé. Vue console : **`/admin/usage`** (admin).
+- **`v_tenant_usage_month`** : usage mensuel agrégé. Vue console : **`/admin/usage`** (admin, limité à ses applications).
 - Prouvé sur Postgres réel : `scripts/verify-tenant.mjs`.
 
 ## Quotas
@@ -112,7 +125,9 @@ commerciale** (plan/quota) ; le statut est prêt, le branchement hot-path reste 
 
 ## Suivi
 
-- **Bascule** de la console sur le rôle restreint `console_ro` + `withTenant()` — c'est
-  l'étape qui rend les policies de v47 actives (aujourd'hui posées mais inertes).
+- **Rôles par surface** (ADR-0003) : appliquer v89 et v93 en production, créer `api` et
+  `console-api`, puis poser la portée (`withTenant()`) dans les lectures — c'est l'étape qui
+  rendrait les policies actives (aujourd'hui posées mais inertes). La révocation de l'accès
+  direct de la console passe par la rotation du mot de passe de `neondb_owner` (C12).
 - Enforcement dur des quotas à l'ingestion (opt-in par app).
 - Export de facturation (CSV/API) depuis `v_tenant_usage_month`.

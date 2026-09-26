@@ -1,6 +1,8 @@
 # Bascule de la console vers console-api — mode d'emploi
 
 > Les écrans, la coquille et les écritures de la console passent par `console-api`, **session par session**, pour une part réglée en base. Code : `apps/console/lib/aiguillage-console-api.ts` (qui sert), `lib/ecran.ts` (les écrans), `lib/coquille-ecran.ts` (la coquille), `lib/commande.ts` (les écritures) ; service : [services/console-api/README.md](../../services/console-api/README.md) ; architecture : [docs/architecture/console-api/README.md](../architecture/console-api/README.md) (« La bascule »).
+>
+> **Au 26/09/2026 : fusionnée (#325), inerte.** `console-api` n'est pas encore créé sur Railway, ses variables Vercel ne sont pas posées, et la table des drapeaux (v87) n'est pas encore en production : la console sert tout.
 
 ## Qui sert quoi
 
@@ -16,8 +18,8 @@ Les routes que le navigateur appelle et qui lisent par un chargeur suivent les �
 
 ## Prérequis, dans l'ordre
 
-1. `console-api` déployé, domaine généré, `/health` à 200 ; les trois variables Vercel de C0b posées (`CONSOLE_API_URL`, `CONSOLE_API_CLIENT_SECRET`, `SESSION_PUBLIC_JWKS`) — la connexion passe alors par le service (C1) et les nouvelles sessions sont ES256.
-2. **Conformité** : les textes légaux disent que Railway sert aussi `console-api` (identité, écrans, écritures) — `lib/legal.ts`, `docs/CONFORMITE.md` § 7.
+1. Les migrations en attente appliquées en production, dont v87 (drapeaux) et v90 (sessions) ; la production s'arrête à v86 au 26/09. `console-api` déployé, domaine généré, `/health` à 200 ; les trois variables Vercel de C0b posées (`CONSOLE_API_URL`, `CONSOLE_API_CLIENT_SECRET`, `SESSION_PUBLIC_JWKS`) — la connexion passe alors par le service (C1) et les nouvelles sessions sont ES256.
+2. **Conformité** : les textes légaux disent que Railway sert aussi `console-api` (identité, écrans, écritures) — `lib/legal.ts`, `docs/CONFORMITE.md` § 7. C'est la PR #296, ouverte au 26/09/2026 : à fusionner et déployer avant la première montée.
 3. Vérifier à la main : se connecter, ouvrir trois écrans et un panneau, se déconnecter (drapeaux à 0 : c'est encore la console qui sert).
 
 ## Monter, couper

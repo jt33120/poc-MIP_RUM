@@ -1,5 +1,7 @@
 # MIP RUM — Plan de développement du POC
 
+> **Archivé** (dans `docs/archive/` depuis le 01/07/2026) : plan directeur du POC v0.1, écrit en juin 2026 et consommé par le build S0→S7. Il décrit une architecture révolue (Supabase, fonctions Deno). Remplacé par le [README](../../README.md) pour l'état, [docs/architecture/overview.md](../architecture/overview.md) pour l'architecture et [docs/RUM_PARITY_STATUS.md](../RUM_PARITY_STATUS.md) pour la couverture.
+
 **De :** Julian Talou
 **Objet :** Plan ultra-détaillé pour développer, déployer et tester un POC RUM (Real User Monitoring) OpenTelemetry-native, à instrumenter sur `https://plateforme.groupement-it.com`, puis à présenter au client.
 **Statut :** Plan de build (le code vient après, en Claude Code, avec le modèle **fable**).

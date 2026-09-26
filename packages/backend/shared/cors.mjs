@@ -1,6 +1,7 @@
-// CORS partagé — source UNIQUE pour l'edge function (Deno, prod) et le
-// dev-server (Node, local/CI), au même titre que otlp.mjs. Élimine par
-// construction la divergence des règles d'origine entre les deux chemins
+// CORS partagé — source UNIQUE pour toutes les portes de collecte (routes de la
+// console, receveur du collector et dev-server), au même titre que otlp.mjs.
+// Historiquement : l'edge function Deno (retirée le 23/09/2026) et le dev-server. Élimine par
+// construction la divergence des règles d'origine entre ces chemins
 // (revue R6), et applique la règle stricte (revue R7) : une origine NON
 // autorisée ne reçoit AUCUN en-tête Access-Control-Allow-Origin — plutôt que
 // de refléter une origine tierce du socle, comportement surprenant et inutile.

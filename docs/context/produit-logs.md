@@ -8,6 +8,27 @@
 
 *Établie le 29 juillet 2026. Grille : [README.md](./README.md#2-grille-de-maturité-employée).*
 
+> **État au 26/09/2026.** Cette fiche est une photographie du 29/07/2026 ; le
+> contenu de `rum_log` (§ 3) n'a pas été re-mesuré (base Neon suspendue jusqu'au
+> 01/10/2026). Vérifié ce jour dans le code (`master`) :
+>
+> - **L'écran `/logs` est fermé** depuis le 08/09/2026 (commit `a4bd4cab`) : il
+>   affiche un accès fermé et n'exécute aucune lecture (`apps/console/lib/capacites.ts:6`).
+>   Motif du commit : `rum_log` porte des journaux de serveur, pas une mesure de
+>   l'expérience vécue.
+> - **Le pont de journalisation existe** dans `agent-node` depuis le 29/07/2026
+>   (commit `73e4f74a`) : `console.*` part en OTLP vers `/v1/logs` avec `trace_id`,
+>   `span_id`, session et route injectés (`packages/agent-node/README.md`, § « Ce
+>   qu'il capte »). Aucun service Node n'émet vers la production (document de
+>   couverture, `C5`) : le critère de sortie n° 1 (§ 6) est rempli dans le code,
+>   le n° 2 (un premier log ERROR réel, corrélé) reste ouvert.
+> - **L'ingestion** n'est plus une fonction Deno : route de la console
+>   `apps/console/app/api/ingest/v1/logs/route.ts` en production, receveur partagé
+>   `packages/backend/lib/receiver.mjs` pour le service autonome. Les chemins du
+>   § 2 sont mis à jour.
+> - Pas d'index plein texte sur `body` : seuls les trois index de
+>   `packages/db/sql/migration-v29.sql:29-31` existent.
+
 ---
 
 ## 1. Identité
@@ -28,15 +49,15 @@ L'implémentation est sérieuse, et c'est ce qui rend le diagnostic frustrant.
 
 | Brique | Fichier | État |
 |---|---|---|
-| Endpoint d'ingestion | `supabase/functions/v1-logs/index.ts` (fonction Deno retirée en P1, lisible au tag `pre-reorg`) (188 l.) | Écrit, miroir exact de `v1-traces` |
-| Jumeau auto-hébergé | `services/collector/dev-server.mjs:271-299` | Écrit |
-| Parseur OTLP | `shared/otlp.mjs:543+` — `flattenOtlpLogs()` | Écrit, teste les `resourceLogs` sans app |
-| Schéma | `migration-v29.sql` — table `rum_log` + 3 index | Appliqué |
-| Rétention & DSAR | `migration-v30.sql` | Appliqué — purge, effacement app, effacement personne |
-| Détection d'anomalie | `migration-v37.sql` — vue `v_log_anomaly` (score z) | Appliqué |
-| Métrique d'alerte | `migration-v38.sql` + `queries-v2.ts:268` — `log_errors` | Appliqué |
+| Endpoint d'ingestion | `supabase/functions/v1-logs/index.ts` (fonction Deno retirée en P1, lisible au tag `pre-reorg`) (188 l.) ; au 26/09/2026, `apps/console/app/api/ingest/v1/logs/route.ts` | Écrit, miroir exact de `v1-traces` |
+| Jumeau auto-hébergé | au 29/07, `dev-server.mjs` ; au 26/09/2026, `packages/backend/lib/receiver.mjs:443` (servi par `services/collector/`) | Écrit |
+| Parseur OTLP | `packages/backend/shared/otlp.mjs:1865+` — `flattenOtlpLogs()` | Écrit, teste les `resourceLogs` sans app |
+| Schéma | `packages/db/sql/migration-v29.sql` — table `rum_log` + 3 index | Appliqué |
+| Rétention & DSAR | `packages/db/sql/migration-v30.sql` | Appliqué — purge, effacement app, effacement personne |
+| Détection d'anomalie | `packages/db/sql/migration-v37.sql` — vue `v_log_anomaly` (score z) | Appliqué |
+| Métrique d'alerte | `packages/db/sql/migration-v38.sql` + `apps/console/lib/alertes-metriques.ts:17` (au 29/07, `queries-v2.ts`) — `log_errors` | Appliqué |
 | Couche de requêtes | `apps/console/lib/queries-logs.ts` (154 l.) | Écrite |
-| Interface | `apps/console/app/logs/page.tsx` (264 l.) | Écrite |
+| Interface | `apps/console/app/logs/page.tsx` (264 l. ; 267 au 26/09/2026) | Écrite ; fermée depuis le 08/09/2026 |
 
 Le schéma est bien conçu : `severity_num` en `severityNumber` OTLP (INFO ≥ 9,
 WARN ≥ 13, ERROR ≥ 17), `body` nettoyé des PII et tronqué à 4000 caractères,
@@ -88,6 +109,10 @@ console vers `/v1/logs`. Il n'est appelé que de deux endroits :
 - `app/login/actions.ts:105` — une connexion réussie → les 597 lignes ;
 - `lib/api/handle.ts:100` — une erreur d'un endpoint `/api/v1` → **jamais déclenché**.
 
+*Au 26/09/2026 (98 lignes) : `apps/console/app/login/actions.ts:59`, `:65`, `:139`
+(connexion, y compris par console-api), `apps/console/lib/api/handle.ts:172`, et un
+troisième site, les lectures d'écran en échec (`apps/console/lib/lecture.ts:63`).*
+
 C'est du dogfooding honnête, et il a servi : il prouve que le pipeline fonctionne
 de bout en bout. Mais il ne constitue pas un produit.
 
@@ -105,7 +130,7 @@ Ce que le marché considère comme acquis en 2026 :
 |---|---|
 | Journalisation structurée (JSON, schéma de champs cohérent) | ✅ `attributes` JSONB + champs normalisés |
 | Corrélation automatique log ↔ trace par injection de contexte | ⚠️ colonnes prévues, **0 % renseignées** |
-| *Log Bridge API* / *appender* branché sur le logger existant de l'app | ❌ absent — aucun SDK n'expose de quoi émettre un log |
+| *Log Bridge API* / *appender* branché sur le logger existant de l'app | ❌ absent — aucun SDK n'expose de quoi émettre un log *(au 26/09/2026 : pont `console.*` dans `agent-node`, voir l'encadré)* |
 | Collecteur OTel comme point de collecte neutre | ❌ absent — ingestion directe uniquement |
 | Recherche plein texte et facettes sur les attributs | ❌ filtre de sévérité seulement |
 | Détection de motifs / regroupement de logs similaires | ❌ |
@@ -172,7 +197,7 @@ c'est l'émission — et l'émission est, de loin, la partie la moins coûteuse.
 
 1. **Un pont de journalisation dans au moins un SDK.** Le plus rentable est
    `agent-node` : il possède déjà un `AsyncLocalStorage` avec le contexte de requête
-   (`packages/agent-node/src/register.ts`), donc il peut injecter `trace_id` et
+   (`packages/agent-node/src/register.ts` au 29/07 ; `runtime.ts` au 26/09/2026), donc il peut injecter `trace_id` et
    `span_id` dans chaque log **sans effort supplémentaire**. C'est le seul endroit du
    dépôt où la corrélation est presque gratuite.
 2. **Un premier log ERROR réel en production**, corrélé à une trace, vérifié en base.

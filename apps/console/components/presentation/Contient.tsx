@@ -91,8 +91,10 @@ function Hebergement() {
  * Accès programmatiques : E1, E2 (RUM_PARITY_STATUS.md:203-204) ; les deux nombres
  * sont lus dans leurs cellules « Preuve », et tus s'ils n'y sont plus.
  * État de la chaîne : décomptes du relevé (§ 2 du document, lib/couverture.ts),
- * poids mesurés (lib/sdk-poids.ts), et réserves tirées des lignes F1 à F3 — chacune
- * gardée par le verdict qu'elle suppose (lib/presentation-contient.ts).
+ * poids mesurés (lib/sdk-poids.ts), et réserves de F2 et F3, relues dans la CI le
+ * 26/09/2026 — chacune gardée par le verdict qu'elle suppose (lib/presentation-contient.ts).
+ * Accès programmatiques : l'exception d'écriture est l'ancien chemin de
+ * `POST /api/v1/deploys` (app/api/v1/deploys/route.ts, FIN_JETONS_HISTORIQUES).
  * Stockage : banc ClickHouse local, labs/clickhouse/NOTES.md:7, :14-15, :25-26.
  */
 function Chaine() {
@@ -107,7 +109,8 @@ function Chaine() {
               {FAMILLES_API_V1 != null && <>{FAMILLES_API_V1} familles de routes, </>}
               description OpenAPI servie sur <code className={CODE}>/api-docs</code>) et un serveur MCP
               en lecture seule{OUTILS_MCP != null && <> ({OUTILS_MCP} outils)</>}. Les jetons
-              d&apos;API ne donnent aucun droit d&apos;écriture.
+              d&apos;API ne donnent aucun droit d&apos;écriture, sauf celui de poser un marqueur de
+              déploiement, jusqu&apos;au 31/12/2026.
             </p>
           </div>
           <div className="card p-5" data-testid="stockage">

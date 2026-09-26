@@ -13,6 +13,26 @@
 > l'arbitrage, la base la mieux notée étant amendée des idées à garder des autres
 > et des corrections exigées par les critiques.
 
+> **État au 26/09/2026.** Plan écrit le 29/07/2026. Livré dans le code (`master`)
+> le 30/07/2026 : **I0** — modèle d'appel dans `packages/db/sql/migration-v51.sql`
+> (numérotée v48 ci-dessous ; les numéros 48 à 50 ont été pris entre-temps), branche
+> `svi.*` de l'ingestion, générateur `scripts/gen-svi-traffic.mjs`, preuve
+> `scripts/verify-svi-modele.mjs` (`pnpm test:svi`, jouée par la CI), écrans
+> `/svi/appels` et `/svi/appels/[callId]` — et **I2** — page `/svi` au containment
+> net dominant (`apps/console/lib/svi-outcome.ts`, `svi-recall.ts`,
+> `queries-svi.ts`). Ces écrans sont **fermés** dans la console depuis le
+> 08/09/2026 (`apps/console/lib/capacites.ts:6`). **I1 et I3 à I7 ne sont pas
+> commencés** : aucun paquet `packages/svi-*`, pas de `lib/emodel.ts`. La purge de
+> rétention ne couvre pas les tables SVI (document de couverture, `D5`).
+>
+> Les « faits vérifiés » ci-dessous décrivent le dépôt du 29/07/2026, quand
+> l'ingestion de production était la fonction Deno `v1-traces` (PostgREST, sans
+> transaction). Elle est aujourd'hui la route de la console
+> `/api/ingest/v1/traces`, sur `packages/backend/lib/receiver.mjs` et
+> `pg-ingest.mjs` (Postgres direct) : les chemins `v1-traces/index.ts`,
+> `dev-server.mjs` et `shared/*.mjs` cités plus bas sont à relire avant tout
+> nouvel incrément.
+
 ---
 
 # Plan d'implémentation — Supervision SVI (mip-rum)
@@ -131,7 +151,7 @@ C'est l'angle mort commun aux trois designs. **Aucune source ne produit spontan�
 
 ### 2.3 P2 : la contrainte qui doit décider du pilote
 
-**Genesys Cloud et Amazon Connect ne donnent pas accès au flux RTCP.** La couche 2 n'est réalisable que chez un client qui exploite son propre SBC ou son IPBX. Or le cadrage interdit de communiquer avant E-SVI-4 (produit-svi-cadrage.md:280). Donc : **un pilote CCaaS pur verrouille le produit indéfiniment.** Ce lien entre préalable n°1 (pilote) et préalable n°3 (couche voix) n'est pas dans le cadrage ; il doit être tranché par le dirigeant avant le choix du pilote (§6, décision n°1).
+**Genesys Cloud et Amazon Connect ne donnent pas accès au flux RTCP.** La couche 2 n'est réalisable que chez un client qui exploite son propre SBC ou son IPBX. Or le cadrage interdit de communiquer avant E-SVI-4 (produit-svi-cadrage.md:292). Donc : **un pilote CCaaS pur verrouille le produit indéfiniment.** Ce lien entre préalable n°1 (pilote) et préalable n°3 (couche voix) n'est pas dans le cadrage ; il doit être tranché par le dirigeant avant le choix du pilote (§6, décision n°1).
 
 ### 2.4 L'adaptateur est un logiciel **on-premise, avec état** — nature de produit nouvelle
 
@@ -175,7 +195,7 @@ La contrainte « une seule touche par ligne » est du théâtre : `string_agg(dt
 -- migration-v48 — Supervision SVI : le modèle d'appel.
 --
 -- CONSTAT (29 juil. 2026). Le cadrage SVI laisse ouvert « svi_call ou extension de
--- rum_span » (produit-svi-cadrage.md:222). L'inventaire du dépôt tranche de fait :
+-- rum_span » (produit-svi-cadrage.md:234). L'inventaire du dépôt tranche de fait :
 -- rum_session modélise une VISITE (user_agent, device_type, is_bot, page_count
 -- incrémental, fusion de vues) ; rum_pageview est structuré par route/referrer/
 -- nav_type ; rum_span.duration_ms est NOT NULL et le writer d'ingestion fait
@@ -520,7 +540,7 @@ Une seule plateforme, celle du pilote. Genesys EventBridge (segments) **ou** Con
 3. **Achat des vecteurs de référence du modèle E.** G.107 est publique ; les `Ie_eff`/`Bpl` par codec vivent en G.113 annexe I, et les codecs wideband dominants n'y sont pas tous tabulés. Sans référence, la preuve d'I4 est un test des constantes par défaut — donc rien. Budget d'acquisition ou mission courte d'expert télécom (recommandation du cadrage §5) : c'est le préalable n°3.
 4. **Rétention 13 mois sur `svi_call`.** Choisie pour la comparaison annuelle, au-delà des 6 mois de référence CNIL (qui visent les enregistrements, pas les métadonnées). Toute fenêtre longue doit être justifiée par finalité dans l'en-tête de migration et dans le registre. Arbitrage à valider par le DPO du pilote, avec la clause de sous-traitance sur le DSAR délégué (§2.5).
 5. **Cible IPBX souverain ou entreprise CCaaS** (LAISSÉ DE CÔTÉ #4). Le plan ordonne l'IPBX en premier pour des raisons techniques (levée du préalable n°2, accès média) et pose I7 pour ne pas préempter. Mais le dialplan de démonstration, le vocabulaire des nœuds et les captures d'écran orienteront le discours : si la cible est CCaaS, il faut le dire avant I1.
-6. **Nom, prix, communication** (#2, #3, cadrage :280). Avant I4, le seul nom honnête est « analyse de parcours vocal », y compris en interne — le vocabulaire de démonstration devient le vocabulaire de vente sans qu'on s'en aperçoive.
+6. **Nom, prix, communication** (#2, #3, cadrage :292). Avant I4, le seul nom honnête est « analyse de parcours vocal », y compris en interne — le vocabulaire de démonstration devient le vocabulaire de vente sans qu'on s'en aperçoive.
 
 ### Risques ouverts, acceptés en connaissance de cause
 

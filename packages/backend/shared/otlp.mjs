@@ -1,5 +1,6 @@
 // Parser OTLP/HTTP JSON -> lignes SQL. JS pur, sans dépendance :
-// importé tel quel par le dev-server Node (local) et l'edge function Deno (prod).
+// importé tel quel par les routes d'ingestion de la console, le receveur du collector
+// et le dev-server (l'edge function Deno qui l'importait aussi est retirée depuis le 23/09/2026).
 // v0.3 : geo timezone->pays (attribut span mip.tz -> sessions[].geo_country).
 import { tzToCountry } from "./tz-country.mjs";
 // Scrub PII serveur (A2) : défense en profondeur, ne dépend pas du beforeSend client.

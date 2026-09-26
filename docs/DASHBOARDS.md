@@ -39,8 +39,9 @@ existantes** ou l'exécuteur de l'Explorer.
 - `query` est l'**AST canonique** de l'Explorer (`lib/analytics-schema.ts`), **sans app ni
   fenêtre** : elles appartiennent au tableau de bord qui affiche la carte. Un widget ne peut
   donc ni changer d'app, ni figer une fenêtre à l'insu de l'écran.
-- `visualization` : `value`, `toplist`, `timeseries` ou `table`. Les graphiques réutilisent
-  `LineTrend`, `StackedBars` et `RankBar` — **pas d'éditeur de formule libre**.
+- `visualization` : `value`, `toplist`, `timeseries` ou `table`. La carte réutilise le rendu
+  de l'Explorer (`components/explorer/ResultatAnalyse.tsx` : `KpiTile`, `RankBar`,
+  `StackedBars`, `ThresholdSeries`, `ImpactTable`) — **pas d'éditeur de formule libre**.
 - `filters` : conditions **propres à la carte**. Elles s'AJOUTENT aux filtres de l'écran
   (ET) ; elles ne remplacent rien. Les drapeaux robots / apps internes de l'AST ne peuvent
   que **restreindre** ceux de l'écran, jamais les rouvrir.
@@ -88,7 +89,9 @@ l'administrateur **de ses apps** : le rôle ne franchit pas la liste qu'on lui a
 visée ; le clone reçoit un nouvel identifiant, le cloneur pour propriétaire et la **même**
 app.
 
-**Révision et conflit.** Chaque écriture cite la révision affichée. Si la ligne a bougé,
+**Révision et conflit.** Les écritures passent par les server actions de l'écran
+(`app/dashboards/actions.ts`) et leurs commandes (`lib/commandes/tableaux.ts`). Chaque écriture
+cite la révision affichée. Si la ligne a bougé,
 rien n'est écrit et l'écran revient avec `?conflit=1` : la carte ajoutée dans un autre
 onglet n'est pas effacée.
 

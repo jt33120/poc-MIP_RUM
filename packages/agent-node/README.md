@@ -23,7 +23,7 @@ serveur bâti sur `http`/`https` — l'agent patche `http.Server`, pas le framew
 
 | Variable | Requis | Défaut | Rôle |
 | --- | --- | --- | --- |
-| `MIP_RUM_ENDPOINT` | ✅ | — | endpoint OTLP, ex. `https://<ingest>/v1/traces` |
+| `MIP_RUM_ENDPOINT` | ✅ | — | endpoint OTLP traces : la console (`https://mip-rum-console.vercel.app/api/ingest/v1/traces`) ou un collector (`https://<collector>/v1/traces`) |
 | `MIP_RUM_APP_ID` | ✅ | — | identifiant d'application |
 | `MIP_RUM_API_KEY` | — | — | clé d'API (attribut resource `mip.api_key`) |
 | `MIP_RUM_ENV` | — | `prod` | environnement (`deployment.environment.name`) |
@@ -32,7 +32,7 @@ serveur bâti sur `http`/`https` — l'agent patche `http.Server`, pas le framew
 | `MIP_RUM_DEBUG` | — | — | log si l'agent est désactivé (config absente) |
 | `MIP_RUM_LOGS` | — | `true` | pont de journalisation ; `false` pour le couper |
 | `MIP_RUM_LOG_LEVEL` | — | `warn` | plancher émis : `trace`/`debug`/`info`/`warn`/`error`/`fatal` |
-| `MIP_RUM_LOGS_ENDPOINT` | — | dérivé | forcer l'endpoint logs (sinon `v1-traces` → `v1-logs`) |
+| `MIP_RUM_LOGS_ENDPOINT` | — | dérivé | forcer l'endpoint logs (sinon `/v1/traces` → `/v1/logs`, et l'ancien `v1-traces` → `v1-logs`) |
 | `MIP_RUM_MAX_QUEUE` | — | `1000` | plafond de chaque file mémoire (spans, logs) |
 | `MIP_RUM_SHUTDOWN_MS` | — | `2000` | budget d'un flush d'arrêt (SIGTERM, `shutdown()`) |
 
@@ -232,5 +232,7 @@ connexion se ferme, sans statut HTTP inventé si aucune réponse n'est partie.
 - **Zéro dépendance** runtime (uniquement `node:*` + `fetch`, Node ≥ 18).
 - **Best-effort** : l'émission est asynchrone et hors chemin critique ; une erreur
   réseau ne casse jamais l'application instrumentée.
-- **Souverain** : même format OTLP/HTTP JSON que le reste de MIP, backend
-  remplaçable, aucune donnée hors UE.
+- **Portable** : même format OTLP/HTTP JSON que le reste de MIP, backend
+  remplaçable ; les données vont où pointe `MIP_RUM_ENDPOINT` (en production,
+  la console : données en UE, hébergeurs de droit américain — ce n'est pas une
+  offre souveraine).

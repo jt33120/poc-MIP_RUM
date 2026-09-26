@@ -20,7 +20,8 @@ import { CORE_VITALS } from "./rating";
 export const GRID_DAYS = 14;
 
 // Bascule lecture rollups (migration-v12 : pré-agrégat horaire mergeable). Activée
-// par RUM_USE_ROLLUPS=1 une fois les rollups peuplés (pg_cron / Supabase). Défaut :
+// par RUM_USE_ROLLUPS=1 : les rollups sont peuplés chaque heure par le scheduler
+// (`refresh_rum_rollups(26)`, cadence `horaire` de packages/backend/jobs/planifie.mjs). Défaut :
 // lignes brutes (comportement inchangé). Équivalence rollup == brut prouvée Δ=0
 // (scripts/verify-rollups.mjs). Ne concerne que les agrégats EXACTEMENT mergeables
 // (comptages : heatmap good/total, trafic) ; les p75 restent sur les lignes brutes.

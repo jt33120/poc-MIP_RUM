@@ -108,20 +108,25 @@ export const INFRA: GroupeInfra[] = [
     // de couverture (API Railway, le jour de la suppression d'`ingest`), lue dans la
     // même constante que la légende du chemin de la mesure : tests/unit/presentation-
     // topologie.test.ts vérifie qu'elle se lit dans les deux documents.
-    sous: `La collecte passe par la route de la console, sur Vercel. Projet Railway ${RAILWAY.projet}, environnement production : deux services, scheduler et mcp (relevé le ${TOPOLOGIE_RELEVEE.railway} par l'API Railway). Ni framework, ni serverless : du Node et du PostgreSQL, dans des images construites depuis ce dépôt.`,
+    // Les quatre autres services sont déclarés dans `.railway/railway.ts` (groupes
+    // 1 · Collecte, 2 · Restitution, 3 · Traitements) ; tant que l'opérateur n'a pas
+    // appliqué cette déclaration, ils n'existent pas sur Railway (relu le 26/09/2026).
+    sous: `La collecte passe par la route de la console, sur Vercel. Projet Railway ${RAILWAY.projet}, environnement production : deux services, scheduler et mcp (relevé le ${TOPOLOGIE_RELEVEE.railway} par l'API Railway). Le dépôt en déclare quatre autres — collector, api, console-api, notifier — qui ne sont pas encore créés : leur code est livré, il ne tourne pas. Ni framework, ni serverless : du Node et du PostgreSQL, dans des images construites depuis ce dépôt.`,
     lignes: [
       {
         k: "ingest",
         // Supprimé de Railway (INGEST_SUPPRIME_LE, docs/TOPOLOGIE_BACKEND.md) : aucun domaine
         // public ne pointait dessus, et son seul rôle réel — les migrations — était
-        // déjà repris par le scheduler. Le receveur reste dans le dépôt.
-        v: `Receveur OTLP autonome (services/collector/server.mjs), gardé pour l'hébergement chez le client et démarré par la CI. En production, le trafic passe par la route de la console ; le service Railway, qui n'avait aucun domaine public, a été supprimé le ${INGEST_SUPPRIME_LE}.`,
+        // déjà repris par le scheduler. Le receveur reste dans le dépôt, et revient
+        // comme service `collector` de `.railway/railway.ts`, que la console relaiera
+        // (lib/ingest-relay.ts, drapeau `ingest_relay_pct`, 0 par défaut — ADR 0005).
+        v: `Receveur OTLP autonome (services/collector/server.mjs), construit et démarré par la CI. Le dépôt le déclare comme service Railway collector, pas encore créé, et le relais de la console vers lui est livré éteint : en production, le trafic passe par la route de la console. L'ancien service Railway ingest, qui l'exécutait sans domaine public, a été supprimé le ${INGEST_SUPPRIME_LE}.`,
         s: "partiel",
         preuve: "services/collector/server.mjs",
       },
       {
         k: "scheduler",
-        v: `Lance les migrations au pré-déploiement — vérifié le ${MIGRATIONS_CONSTATEES.le} sur un vrai déploiement (${MIGRATIONS_CONSTATEES.deploiement} : « migrations à jour », aucune en attente ce jour-là). Puis les travaux planifiés : évaluation des alertes, SLO, sondes uptime, purge de rétention, comptage du volume. Bail d'exclusion en base (scheduler_lease) pour qu'une seule instance travaille à la fois.`,
+        v: `Seul migrateur : lance les migrations au pré-déploiement — vérifié le ${MIGRATIONS_CONSTATEES.le} sur un vrai déploiement (${MIGRATIONS_CONSTATEES.deploiement} : « migrations à jour », aucune en attente ce jour-là). Puis les travaux planifiés : évaluation des alertes, SLO, sondes uptime, purge de rétention, comptage du volume. Bail d'exclusion en base (scheduler_lease) pour qu'une seule instance travaille à la fois.`,
         s: "atteint",
         preuve: "services/scheduler/worker.mjs",
       },
@@ -133,7 +138,10 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "Images",
-        v: "Un Dockerfile par service (collector, scheduler, mcp), chacun avec sa commande de démarrage explicite, sur un Node épinglé par empreinte et sans droits root. Un test de CI démarre chaque image, et vérifie que « pg » est absent de celle du serveur MCP.",
+        // Six Dockerfiles (services/*/Dockerfile) ; .github/workflows/docker-smoke.yml
+        // les construit et les démarre tous, et vérifie l'uid et l'absence de `pg`
+        // dans l'image mcp.
+        v: "Un Dockerfile par service — collector, api, console-api, mcp, scheduler, notifier —, chacun avec sa commande de démarrage explicite, sur un Node épinglé par empreinte et sans droits root. Un test de CI construit et démarre chaque image, et vérifie que « pg » est absent de celle du serveur MCP. Seules les images du scheduler et de mcp tournent en production.",
         s: "atteint",
         preuve: "services/mcp/Dockerfile",
       },
@@ -198,7 +206,9 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "Conteneurisation",
-        v: "Le backend a ses images, pas la console. L'argument « déployable chez vous » n'est donc pas livrable de bout en bout.",
+        // Lot C12b (docs/architecture/console-api/README.md) : l'image de la console
+        // vient après le retrait de son accès à la base (C12), qui n'est pas fait.
+        v: "Le backend a ses images, pas la console. L'argument « déployable chez vous » n'est donc pas livrable de bout en bout. Une image de la console suppose d'abord de lui retirer son accès direct à la base : ni l'un ni l'autre n'est fait.",
         s: "manque",
       },
       {
@@ -209,7 +219,10 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "API et MCP",
-        v: "API v1 de lecture, jeton porteur scopé par application, spécification OpenAPI dont la liste des endpoints est DÉRIVÉE (l'annonce ne peut plus décrire une route qui n'existe pas).",
+        // Une écriture : POST /api/v1/deploys (app/api/v1/deploys/route.ts). Un jeton
+        // de CONSOLE_API_TOKENS vaut toutes les applications, ou celles qu'il nomme
+        // après « @ » (lib/api/auth.ts, parseTokenConfig).
+        v: "API v1 de lecture — sa seule écriture est le marqueur de déploiement qu'envoie une CI —, jeton porteur limitable à certaines applications, spécification OpenAPI dont la liste des endpoints est DÉRIVÉE (l'annonce ne peut plus décrire une route qui n'existe pas).",
         s: "atteint",
         preuve: "apps/console/lib/api/openapi.ts",
       },

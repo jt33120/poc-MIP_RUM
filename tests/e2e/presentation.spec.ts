@@ -323,8 +323,9 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
       await expect(point.locator("dt")).toHaveText(["Ce qui manque", "Ce qui le débloque", "Qui décide"]);
       for (const valeur of await point.locator("dd").all()) await expect(valeur).not.toBeEmpty();
     }
-    // Chiffres repris du document, qui dit ne pas les avoir recontrôlés : la mention est obligatoire.
-    await expect(points.nth(0)).toContainText("non recontrôlé");
+    // R1 : ses chiffres sont LUS EN BASE (relevé du 23/09/2026), la date est obligatoire.
+    // R2 : son chiffre est repris du document, qui dit ne pas l'avoir recontrôlé.
+    await expect(points.nth(0)).toContainText("lu en base le 23/09/2026");
     await expect(points.nth(1)).toContainText("non recontrôlé");
   });
 

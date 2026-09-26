@@ -1,6 +1,6 @@
 # ADR-0002 — La console devient une interface sans base, appuyée sur `console-api`
 
-- **Statut** : acceptée ; code livré (C0 → C13), mise en service après P6b
+- **Statut** : acceptée ; code livré (C0 → C13) et bascule fusionnée inerte (#325, 25/09/2026) ; `console-api` pas encore déployé
 - **Date** : 2026-09-25
 - **Portée** : la console Vercel (`apps/console`), `console-api`, la piste C du plan backend
 
@@ -8,14 +8,14 @@
 
 La console Next.js, sur Vercel, faisait tout : elle rendait les écrans, lisait et écrivait la base en propriétaire, tenait les sessions (HS256, `AUTH_SECRET`), hachait les identités, collectait les beacons, servait l'API de lecture. Une DSI qui ouvre le dépôt voit un monolithe hébergé sur une plateforme d'interface ; et chaque fonction Vercel détenait `DATABASE_URL` en propriétaire, avec `BYPASSRLS`.
 
-Relevé du 23/09 (ré-inventaire C-R, `docs/architecture/console-api/inventaire.md`) : **51 écrans sur 57** atteignaient la base par leur graphe d'import, 53 server actions écrivaient, 54 routes. La lecture ne se fait pas par `<Suspense>` mais par section (`lire()`) : un écran ne tombe jamais en bloc, et le contrat devait le garder.
+Relevé du 24/09 (ré-inventaire C-R, `docs/architecture/console-api/inventaire.md`) : **51 écrans sur 57** atteignaient la base par leur graphe d'import, 53 server actions écrivaient, 54 routes. La lecture ne se fait pas par `<Suspense>` mais par section (`lire()`) : un écran ne tombe jamais en bloc, et le contrat devait le garder.
 
 ## Décision
 
 1. **La console n'est plus qu'une interface.** Elle rend, et appelle un backend par HTTP, côté serveur. Plus de base, plus de secret d'identité (M4). Vercel ne garde que le secret client de `console-api`, la clé PUBLIQUE des sessions, et des valeurs non secrètes.
 2. **Un backend dédié, `console-api`**, distinct de l'API de lecture des machines (`api`) : `api` est la surface qu'un modèle de langage pilote par MCP ; elle reste en lecture seule, sans secret d'identité (ADR-0006). `console-api` porte l'identité, les écrans, les écritures, l'administration et le RGPD ([ADR-0010](0010-console-api.md)).
 3. **Le même code des deux côtés, par injection.** Un écran = un CHARGEUR (`apps/console/lib/chargeurs/`) ; une écriture = une COMMANDE (`lib/commandes/`), avec sa règle d'accès et son audit. La console les exécute aujourd'hui (`chargerEcran`, `executerCommande`) ; `console-api` embarque les mêmes (bundle esbuild, `services/console-api/{ecrans,commandes}.mjs`) et les sert sous les opérations du contrat (`@mip/console-contract`). Leur sortie traverse JSON des deux côtés (`Fil<T>`) : la page lit dès aujourd'hui la forme qu'elle recevra.
-4. **La bascule à la fin, en un point.** Décision du 24/09 : `console-api` est mis en service après P6b. D'ici là, rien ne change en production ; ensuite, une PR fait appeler le service par `chargerEcran` et `executerCommande` — et les écrans, les server actions, les composants quittent le cliquet sans changer d'une ligne.
+4. **La bascule à la fin, en un point.** Décision du 24/09 : `console-api` est mis en service après P6b. D'ici là, rien ne change en production. Cette PR est fusionnée (#325, inerte) : `chargerEcran` et `executerCommande` appellent le service, session par session, selon des drapeaux à 0 par défaut ([mode d'emploi](../../operations/bascule-console-api.md)). Les écrans, les server actions et les composants quitteront le cliquet sans changer d'une ligne à la décommission (C12), quand le chemin local — le retour arrière — disparaîtra.
 5. **Ce qui prouve M4** : le cliquet d'import (`tests/unit/inventaire-console.test.ts`), les trois gardes de C12 (`scripts/ci/console-sans-base.mjs` : imports, traçage du build, environnement — en relevé, puis `--strict`), la matrice d'autorisations qui joue chaque opération pour huit profils, sous les rôles de moindre privilège ([ADR-0012](0012-roles-de-la-console.md)).
 
 ## Conséquences
