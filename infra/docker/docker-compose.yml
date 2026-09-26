@@ -217,6 +217,10 @@ services:
       # démarrer et dit laquelle manque (infra/docker/README.md, « console-api »).
       CONSOLE_API_CLIENT_SECRETS: ${CONSOLE_API_CLIENT_SECRETS:-}
       SESSION_SIGNING_KEYS: ${SESSION_SIGNING_KEYS:-}
+      # Le MÊME secret que le collector (plus haut) : les commandes RGPD par
+      # identité hachent la valeur saisie avec lui. Vide : elles rendent
+      # « indisponible », le reste du service fonctionne.
+      IDENTITY_HASH_SECRET: ${IDENTITY_HASH_SECRET:-}
     depends_on: *apres-migration
     ports:
       # /v1/* sous secret client (x-mip-client) ; /health et /live publics ;
