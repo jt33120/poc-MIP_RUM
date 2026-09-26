@@ -29,7 +29,7 @@
 //   · METRICS_TOKEN              ≥ 32 caractères : sans lui, /ready et /metrics
 //                                répondent 404 et la fumée ne lit pas /ready ;
 //   · RESEND_API_KEY             clé Resend « Sending access » seule — APRÈS la
-//                                fusion de la PR de conformité Resend (#288) ;
+//                                fusion de la PR de conformité (#296, qui a repris #288) ;
 //   · ALERT_EMAIL_TEST_RECIPIENTS  les destinataires de test : une adresse
 //                                personnelle n'a rien à faire dans un dépôt public ;
 //   · WEBHOOK_SIGNING_SECRET     ≥ 32 caractères, signe les webhooks d'alerte ;
@@ -171,7 +171,7 @@ export default defineRailway((ctx) => {
 
   // ─── 1 · Collecte ──────────────────────────────────────────────────────────
   // P2 : LANCEMENT À BLANC. Le service se déploie, répond, et ne reçoit rien :
-  // les capteurs visent toujours la console, qui relaiera en P3. Aucun
+  // les capteurs visent la console, qui lui relaie ce que tire `ingest_relay_pct` (P3). Aucun
   // `preserve()` possible (règle 2) : chaque secret vient d'une variable
   // PARTAGÉE de l'environnement, qui doit exister AVANT l'apply. D'où l'ordre :
   // variables partagées → apply → vrai déploiement → domaine généré (à la main,
@@ -210,9 +210,9 @@ export default defineRailway((ctx) => {
       // Le pooler Neon, rôle propriétaire (moindre privilège après M4).
       DATABASE_URL: ctx.shared.DATABASE_URL,
       // Le secret NEUF d'identité (vide sur Vercel : aucun `user_id_hash`
-      // historique à préserver) et son empreinte. Tous deux PARTAGÉS : en C0,
-      // `console-api` devra hacher avec le MÊME secret, et l'empreinte rend
-      // bruyant tout écart (readiness refusée, identité retirée).
+      // historique à préserver) et son empreinte. Tous deux PARTAGÉS : `console-api`
+      // hache avec le MÊME secret (recherche et effacement RGPD par identité, C10),
+      // et l'empreinte rend bruyant tout écart ici (readiness refusée, identité retirée).
       IDENTITY_HASH_SECRET: ctx.shared.IDENTITY_HASH_SECRET,
       IDENTITY_HASH_FINGERPRINT: ctx.shared.IDENTITY_HASH_FINGERPRINT,
       // Le secret du relais de la console (bord de confiance `mip-edge/1`,
@@ -301,6 +301,12 @@ export default defineRailway((ctx) => {
       CONSOLE_API_CLIENT_SECRETS: ctx.shared.CONSOLE_API_CLIENT_SECRETS,
       SESSION_SIGNING_KEYS: ctx.shared.SESSION_SIGNING_KEYS,
       METRICS_TOKEN: ctx.shared.METRICS_TOKEN,
+      // Le secret d'identité du collector, LE MÊME : les commandes RGPD par
+      // identité (`lib/commandes/vie-privee.ts`) hachent la valeur saisie et
+      // cherchent ce HMAC en base. Sans lui, après la bascule, recherche, export
+      // et effacement par identité rendraient « indisponible » ; avec un autre
+      // secret, ils ne trouveraient rien — sans erreur.
+      IDENTITY_HASH_SECRET: ctx.shared.IDENTITY_HASH_SECRET,
       // Requêtes par minute et par principal. Le régime réel est un sondage :
       // `AutoRefresh` rejoue 12 rendus par minute et par onglet (README de la piste C).
       CONSOLE_API_RATE_LIMIT: "600",
