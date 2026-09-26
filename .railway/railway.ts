@@ -171,8 +171,7 @@ export default defineRailway((ctx) => {
 
   // ─── 1 · Collecte ──────────────────────────────────────────────────────────
   // P2 : LANCEMENT À BLANC. Le service se déploie, répond, et ne reçoit rien :
-  // les capteurs visent toujours la console, qui lui relaie une part des mesures
-  // quand `platform_flag.ingest_relay_pct` > 0 (P3, `lib/ingest-relay.ts`). Aucun
+  // les capteurs visent la console, qui lui relaie ce que tire `ingest_relay_pct` (P3). Aucun
   // `preserve()` possible (règle 2) : chaque secret vient d'une variable
   // PARTAGÉE de l'environnement, qui doit exister AVANT l'apply. D'où l'ordre :
   // variables partagées → apply → vrai déploiement → domaine généré (à la main,
