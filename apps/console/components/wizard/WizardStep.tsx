@@ -27,7 +27,9 @@ export function WizardStep({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    // `min-w-0` : l'étape est un élément de grille ; sans lui, elle prenait la largeur
+    // de son plus long bloc de code et portait la fiche client à 719 px sur 390.
+    <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
           {n}

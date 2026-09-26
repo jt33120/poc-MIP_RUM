@@ -38,9 +38,9 @@ test.describe("F46 — Détail de session : cascade et Web Vitals situés", () =
   let motDePasse = "";
   let debutAncienne = 0;
 
-  /** « 03/09 » : jour et mois UTC, comme la page. */
+  /** « 03/09 » : jour et mois de Paris (le fuseau d'affichage), comme la page. */
   const jj = (ms: number) =>
-    new Intl.DateTimeFormat("fr-FR", { timeZone: "UTC", day: "2-digit", month: "2-digit" }).format(new Date(ms));
+    new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit" }).format(new Date(ms));
   /** ISO UTC à la seconde, comme `fenetreDeSession`. */
   const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
@@ -174,7 +174,7 @@ test.describe("F46 — Détail de session : cascade et Web Vitals situés", () =
     await page.goto(adresse(ANCIENNE, "&tab=vitals"), { waitUntil: "domcontentloaded" });
     const figure = page.locator("#vitaux-lcp");
     const population = figure.getByTestId("vitaux-population");
-    await expect(population).toContainText(`du ${jj(debutAncienne - 7 * JOUR)} au ${jj(debutAncienne + JOUR)} (UTC)`);
+    await expect(population).toContainText(`du ${jj(debutAncienne - 7 * JOUR)} au ${jj(debutAncienne + JOUR)}`);
     await expect(population).toContainText("mesures LCP de /");
     await expect(population).toContainText("cette mesure comprise");
     // Preuve de fin : aucune fenêtre relative à aujourd'hui.

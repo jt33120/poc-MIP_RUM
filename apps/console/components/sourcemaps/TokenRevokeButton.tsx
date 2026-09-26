@@ -2,46 +2,48 @@
 // Révocation d'un jeton de CI (P5.4) : confirmation, server action (la commande
 // `revoquerJetonSourcemap`, C9), puis relecture serveur de la liste. La ligne reste
 // visible, marquée révoquée.
+//
+// La confirmation est l'encadré de la page (`ConfirmationDanger`), plus la boîte
+// `window.confirm()` du navigateur : même geste que les autres suppressions de la
+// console, la cible nommée, et rien à « accepter » à l'aveugle dans les tests.
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { revoquerJetonSourcemapAction } from "@/app/admin/sourcemaps/actions";
+import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
 
 export function TokenRevokeButton({ id, name, appId }: { id: string; name: string; appId: string }) {
   const router = useRouter();
-  const [etat, setEtat] = useState<"repos" | "envoi" | "echec">("repos");
+  const [echec, setEchec] = useState(false);
 
   async function revoquer() {
-    if (!window.confirm(`Révoquer le jeton « ${name} » ? La CI qui l'utilise ne pourra plus envoyer de source maps.`)) {
-      return;
-    }
-    setEtat("envoi");
+    setEchec(false);
     try {
       const res = await revoquerJetonSourcemapAction(appId, id);
       if (!res.ok) {
-        setEtat("echec");
+        setEchec(true);
         return;
       }
-      setEtat("repos");
       router.refresh();
     } catch {
-      setEtat("echec");
+      setEchec(true);
     }
   }
 
   return (
-    <span className="inline-flex items-center gap-2">
-      <button
-        type="button"
-        onClick={revoquer}
-        disabled={etat === "envoi"}
-        className="btn-ghost px-2 py-1 text-bad-ink"
-        aria-label={`Révoquer le jeton ${name}`}
-      >
-        {etat === "envoi" ? "Révocation…" : "Révoquer"}
-      </button>
-      {etat === "echec" && (
+    <span className="inline-flex items-start gap-2">
+      <ConfirmationDanger
+        libelle="Révoquer"
+        libelleAccessible={`Révoquer le jeton ${name}`}
+        question={`Révoquer le jeton ${entreGuillemets(name)}\u00a0?`}
+        consequence="La CI qui l’utilise ne pourra plus envoyer de source maps ; un jeton révoqué ne se rétablit pas."
+        confirmer="Révoquer le jeton"
+        enCours="Révocation…"
+        onConfirmer={revoquer}
+        classeDeclencheur="btn-ghost px-2 py-1 text-bad-ink"
+      />
+      {echec && (
         <span role="alert" className="text-xs text-bad-ink">
-          Échec : réessayer
+          Échec : réessayez.
         </span>
       )}
     </span>

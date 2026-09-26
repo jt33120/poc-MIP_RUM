@@ -31,7 +31,7 @@ import {
 } from "@/lib/breakdowns";
 import { etatLectureEchantillonnage } from "@/lib/echantillonnage";
 import { type SectionLue } from "@/lib/lecture";
-import { joursLocaux, libelleDeuxFuseaux } from "@/lib/fuseau";
+import { joursLocaux, libelleDeuxFuseaux, nomFuseau } from "@/lib/fuseau";
 import { formatDuVital, formater, VITAUX, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import { bucketStarts, hrefWithQuery, paramReader } from "@/lib/query-contract";
 import { grilleIso, isoSansMs } from "@/lib/series";
@@ -541,10 +541,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   };
   const lectureHero =
     modeSeries.kind === "release"
-      ? `p75 par seau ; orange = release ${modeSeries.relB}, gris pointillé = release ${modeSeries.relA}, même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte. Règle : ${releases.ok ? releases.regle : ""}.`
+      ? `p75 par tranche ; orange = release ${modeSeries.relB}, gris pointillé = release ${modeSeries.relA}, même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte. Règle : ${releases.ok ? releases.regle : ""}.`
       : modeSeries.kind === "prev"
-        ? `p75 par seau sur les zones Bon / À améliorer / Mauvais ; gris pointillé = ${referencePrev.replace(/^vs /, "")}, aligné par rang de seau. Un seau sous 30 mesures est un point creux ; un seau sans mesure, un trou ; un clic zoome sur le seau.`
-        : `p75 par seau sur les zones Bon / À améliorer / Mauvais. Un seau sous 30 mesures est un point creux ; un seau sans mesure, un trou ; un clic zoome sur le seau.${
+        ? `p75 par tranche sur les zones Bon / À améliorer / Mauvais ; gris pointillé = ${referencePrev.replace(/^vs /, "")}, aligné tranche à tranche. Une tranche sous 30 mesures est un point creux ; une tranche sans mesure, un trou ; un clic zoome sur la tranche.`
+        : `p75 par tranche sur les zones Bon / À améliorer / Mauvais. Une tranche sous 30 mesures est un point creux ; une tranche sans mesure, un trou ; un clic zoome sur la tranche.${
             comparaison.mode === "release" && !releases.ok
               ? ` Comparaison de releases indisponible : ${releases.raison}.`
               : prev && !deltasVitaux.deltas && deltasVitaux.note
@@ -555,7 +555,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // n'est pas celle de la plage choisie) et SA règle (RM4). `blocs.hero` éteint : rien.
   const lectureHeroP7 = !blocs.hero
     ? null
-    : `${phraseDatationP7} Fenêtre de cette datation : ${GRID_DAYS} jours complets, fuseau de l'app (${fuseau}), journée en cours exclue ; la plage choisie en haut ne s'y applique pas. Règle : ${REGLE_RUPTURE}.`;
+    : `${phraseDatationP7} Fenêtre de cette datation : ${GRID_DAYS} jours complets, fuseau de l'app (${nomFuseau(fuseau)}), journée en cours exclue ; la plage choisie en haut ne s'y applique pas. Règle : ${REGLE_RUPTURE}.`;
   // ─── Zone 6 — heures × route en angle mort (F13, F57) ───
   const etatAngle: EtatAngleMort | null = !blocs.angles
     ? null
@@ -959,7 +959,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                   <span data-testid="historique-fenetre">
                     {GRID_DAYS} jours fixes, indépendants de la période ; le jour en cours est incomplet
                   </span>
-                  <span>une case = une heure, fuseau de l&apos;app ({fuseau})</span>
+                  <span>une case = une heure, fuseau de l&apos;app ({nomFuseau(fuseau)})</span>
                   <span>légende : % de mesures Bon, pondéré (LCP ×2)</span>
                 </>
               }

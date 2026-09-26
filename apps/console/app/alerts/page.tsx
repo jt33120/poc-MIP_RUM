@@ -70,6 +70,7 @@ import {
   totalDeclenchements,
 } from "@/lib/alertes-ecran";
 import { ackEventAction, createRuleAction, evaluateNowAction } from "./actions";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 export const dynamic = "force-dynamic";
 
@@ -282,7 +283,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
             alternative={jours.length > 0 ? alternativeParJour(jours) : undefined}
             lecture={
               <>
-                Chaque barre compte les déclenchements d&apos;un jour UTC, empilés par sévérité (des
+                Chaque barre compte les déclenchements d&apos;un jour, empilés par sévérité (des
                 comptes s&apos;additionnent). Sous les barres, une piste par source : un marqueur = un
                 déclenchement, sa forme dit la livraison, son contour l&apos;acquittement.
               </>
@@ -295,7 +296,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                 series={SEVERITES_AFFICHEES.map((s) => ({ cle: s.cle, libelle: s.libelle, ton: s.ton }))}
                 format="count"
                 seauSecondes={JOUR_SECONDES}
-                fuseau="UTC"
+                fuseau={FUSEAU_AFFICHAGE}
                 hauteur={80}
                 ariaLabel={`Déclenchements par jour sur ${JOURS_DECLENCHEMENTS} jours, empilés par sévérité`}
               />

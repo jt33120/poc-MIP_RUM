@@ -30,6 +30,7 @@ import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { StackedBars, type SerieEmpilee } from "@/components/charts/StackedBars";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
+import { TableDefilante } from "@/components/TableDefilante";
 import { datasetDefinition, estAdditive, type ExplorerPlan } from "@/lib/analytics-schema";
 import type { CouverturePrecedente } from "@/lib/comparaison";
 import {
@@ -52,6 +53,7 @@ import {
   type ResolvedRange,
 } from "@/lib/query-contract";
 import { grilleIso, libelleSeauComplet, type Annotation, type PointSerie, type SerieDef } from "@/lib/series";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 /** La période de référence d'une comparaison `cmp=prev`, déjà lue par l'appelant. */
 export interface PrecedentResultat {
@@ -106,7 +108,7 @@ function uniteApres(format: FormatId, unite: string): string {
   return format === "count" || format === "ratio" ? ` ${unite}` : "";
 }
 
-/** La plage lue, en toutes lettres : « 24 h » ou « du 17/09 10:00 au 17/09 12:00 (UTC) ». */
+/** La plage lue, en toutes lettres : « 24 h » ou « du 17/09 10:00 au 17/09 12:00 » (heure de Paris). */
 function plageLue(meta: ExplorerMeta): string {
   const range: ResolvedRange = {
     from: meta.range.from,
@@ -114,7 +116,7 @@ function plageLue(meta: ExplorerMeta): string {
     preset: meta.range.preset as ResolvedRange["preset"],
     bucketSeconds: meta.range.bucket_seconds,
   };
-  return range.preset ? rangeLabel(range, "UTC") : `${rangeLabel(range, "UTC")} (UTC)`;
+  return rangeLabel(range, FUSEAU_AFFICHAGE);
 }
 
 /**
@@ -129,7 +131,7 @@ export function metaResultat(plan: ExplorerPlan, meta: ExplorerMeta, data: Explo
     `${nombre(data.samples)} ${UNITE_EFFECTIF}`,
     `fenêtre ${plageLue(meta)}`,
   ];
-  if (plan.visualization === "timeseries") morceaux.push(`seaux de ${bucketLabel(meta.range.bucket_seconds)} (UTC)`);
+  if (plan.visualization === "timeseries") morceaux.push(`tranches de ${bucketLabel(meta.range.bucket_seconds)}`);
   morceaux.push(meta.additive ? "agrégation additive" : "agrégation non additive");
   if (meta.approximate) morceaux.push("valeur approchée");
   morceaux.push(`source : ${meta.source === "rollup+raw" ? "agrégat + lignes" : "lignes brutes"}`);
@@ -273,7 +275,7 @@ function serieDuResultat({
   const seauSecondes = meta.range.bucket_seconds;
   const hauteur = taille === "page" ? 260 : 160;
   const titre = titreResultat(plan);
-  const ariaLabel = `${titre}, ${grille.length} seaux de ${bucketLabel(seauSecondes)} (UTC)`;
+  const ariaLabel = `${titre}, ${grille.length} tranches de ${bucketLabel(seauSecondes)}`;
   const libelleGroupe = (key: (string | null)[]) => (key.length ? libelleCle(key) : libelleMesure(plan));
 
   let dessin: ReactNode;
@@ -289,7 +291,7 @@ function serieDuResultat({
         annotations={annotations}
         annotationsIndisponibles={annotationsIndisponibles}
         seauSecondes={seauSecondes}
-        fuseau="UTC"
+        fuseau={FUSEAU_AFFICHAGE}
         zoomHref={hrefs.zoom}
         hauteur={hauteur}
         ariaLabel={ariaLabel}
@@ -337,7 +339,7 @@ function serieDuResultat({
         annotations={annotations}
         annotationsIndisponibles={annotationsIndisponibles}
         seauSecondes={seauSecondes}
-        fuseau="UTC"
+        fuseau={FUSEAU_AFFICHAGE}
         zoomHref={hrefs.zoom}
         hauteur={hauteur}
         ariaLabel={ariaLabel}
@@ -345,7 +347,7 @@ function serieDuResultat({
     );
   }
 
-  // Alternative : une ligne par seau de la grille, mêmes valeurs que le dessin,
+  // Alternative : une ligne par tranche de la grille, mêmes valeurs que le dessin,
   // effectif compris pour une mesure non additive (P10).
   const parT = new Map(points.map((p) => [Date.parse(p.t), p]));
   const colonnesSeries = groupes.flatMap((g) => (additive ? [libelleGroupe(g.key)] : [libelleGroupe(g.key), `n (${libelleGroupe(g.key)})`]));
@@ -360,12 +362,12 @@ function serieDuResultat({
     return typeof v === "number" ? v : 0;
   };
   const alternative: AlternativeTexte = {
-    legende: `${titre} — ${grille.length} seaux de ${bucketLabel(seauSecondes)}, heures UTC`,
-    colonnes: ["Seau (UTC)", ...colonnesSeries, ...colonnesRef],
+    legende: `${titre} — ${grille.length} tranches de ${bucketLabel(seauSecondes)}`,
+    colonnes: ["Période", ...colonnesSeries, ...colonnesRef],
     lignes: grille.map((t) => {
       const p = parT.get(Date.parse(t));
       return [
-        libelleSeauComplet(t, seauSecondes, "UTC"),
+        libelleSeauComplet(t, seauSecondes, FUSEAU_AFFICHAGE),
         ...groupes.flatMap((g) => (additive ? [valeur(p, g.cle)] : [valeur(p, g.cle), effectif(p, g.effectif)])),
         ...(reference ? (additive ? [valeur(p, "ref")] : [valeur(p, "ref"), effectif(p, "nref")]) : []),
       ];
@@ -450,8 +452,9 @@ function Journal({ plan, data, hrefs }: { plan: ExplorerPlan; data: ExplorerData
   const colonnes = datasetDefinition(plan.dataset).rows;
   return (
     <>
-      {/* `relative` : la légende `sr-only` (position: absolute) reste dans ce conteneur défilant (piège 16). */}
-      <div className="relative overflow-x-auto">
+      {/* Défilement signalé ; la zone de TableDefilante est `relative` : la légende
+          `sr-only` (position: absolute) reste dans le conteneur défilant (piège 16). */}
+      <TableDefilante label="Journal des lignes">
         <table className="w-full min-w-table text-sm">
           <caption className="sr-only">Journal des lignes correspondant à la requête, ordonnées par date</caption>
           <thead className="bg-panel2">
@@ -485,7 +488,7 @@ function Journal({ plan, data, hrefs }: { plan: ExplorerPlan; data: ExplorerData
             ))}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
       {hrefs.suivant && (
         <nav className="mt-3 flex justify-end text-sm" aria-label="Pagination du journal">
           <Link

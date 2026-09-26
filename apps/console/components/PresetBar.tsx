@@ -14,11 +14,14 @@
 // d'affichage restent. La vue active est celle dont l'URL porte exactement les
 // paramètres ; elle est marquée `aria-current`.
 //
-// À 390 px la rangée défile horizontalement ; un dégradé à droite indique qu'il
-// reste des vues hors champ.
+// À 390 px la rangée défile horizontalement ; un dégradé et un chevron, du côté
+// où il en reste, indiquent les vues hors champ. Le dégradé seul se lisait comme
+// un libellé tronqué (« Dernie… » contre « Enregistrer la vue », recette du 26/09).
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ICON_PATHS, Icon } from "@/components/icons";
+import { useDebordementHorizontal } from "@/components/TableDefilante";
 import {
   EVENEMENT_SEGMENTS,
   ajouterSegment,
@@ -38,7 +41,6 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
   const sp = useSearchParams();
   const [enregistrees, setEnregistrees] = useState<SavedSegment[]>([]);
   const [saisie, setSaisie] = useState<string | null>(null);
-  const [deborde, setDeborde] = useState(false);
   const rangee = useRef<HTMLDivElement>(null);
 
   // localStorage n'est lu qu'au montage client ; l'autre barre prévient quand elle écrit.
@@ -53,23 +55,11 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
     };
   }, []);
 
-  // Indicateur de débordement : il reste des vues à droite de la zone visible.
-  useEffect(() => {
-    const el = rangee.current;
-    if (!el) return;
-    const mesurer = () => setDeborde(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
-    mesurer();
-    el.addEventListener("scroll", mesurer, { passive: true });
-    const observateur = typeof ResizeObserver !== "undefined" ? new ResizeObserver(mesurer) : null;
-    observateur?.observe(el);
-    return () => {
-      el.removeEventListener("scroll", mesurer);
-      observateur?.disconnect();
-    };
-  }, [vues, enregistrees]);
-
   const courants = useMemo(() => new URLSearchParams(sp.toString()), [sp]);
   const toutes = useMemo(() => [...vues, ...vuesPersonnelles(enregistrees)], [vues, enregistrees]);
+  // Vues hors champ, de chaque côté ; `toutes` relance l'observation quand la liste
+  // change (une vue enregistrée ajoute une pastille que l'observateur doit suivre).
+  const { gauche, droite } = useDebordementHorizontal(rangee, toutes);
   const actuelle = vueActuelle(courants);
 
   const estActive = (vue: VuePrereglee) =>
@@ -133,12 +123,23 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
             );
           })}
         </div>
-        {deborde && (
+        {gauche && (
+          <span
+            aria-hidden="true"
+            data-testid="preset-deborde-gauche"
+            className="pointer-events-none absolute inset-y-0 left-0 flex w-10 items-center justify-start bg-gradient-to-r from-app via-app/90 to-transparent text-ink-soft"
+          >
+            <Icon paths={ICON_PATHS.chevronLeft} className="h-4 w-4" />
+          </span>
+        )}
+        {droite && (
           <span
             aria-hidden="true"
             data-testid="preset-deborde"
-            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-app to-transparent"
-          />
+            className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-end bg-gradient-to-l from-app via-app/90 to-transparent text-ink-soft"
+          >
+            <Icon paths={ICON_PATHS.chevronRight} className="h-4 w-4" />
+          </span>
         )}
       </div>
 

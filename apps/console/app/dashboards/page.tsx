@@ -18,6 +18,7 @@ import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice, FiltersNotAppliedNote } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { ModeleCarte } from "@/components/dashboards/ModeleCarte";
+import { TableDefilante } from "@/components/TableDefilante";
 import { fmtDate } from "@/lib/format";
 import { type SearchParams } from "@/lib/filters";
 import { chargerTableaux } from "@/lib/chargeurs/tableaux";
@@ -105,14 +106,15 @@ export default async function Dashboards({
 
       {/* ----- W-D2 : tableaux du périmètre ----- */}
       <h2 className="mb-2 text-sm font-semibold text-ink">Tableaux de ce périmètre</h2>
-      {/* `overflow-x-auto` : la colonne « Propriétaire » (P6.5) fait cinq colonnes,
-          qui ne tiennent pas à 390 px. Les masquer cacherait qui possède quoi. */}
-      {/* `relative` : la légende `sr-only` (position: absolute) reste dans ce conteneur
-          défilant au lieu d'élargir la page à 390 px (piège 16). */}
-      <div className="card relative mb-6 overflow-x-auto">
-        <table className="w-full text-sm" data-testid="tableaux-perimetre">
+      {/* Défiler, de façon signalée : la colonne « Propriétaire » (P6.5) fait cinq
+          colonnes, qui ne tiennent pas à 390 px. Les masquer cacherait qui possède
+          quoi. `min-w-[40rem]` : sans largeur plancher, le tableau s'écrasait au lieu
+          de défiler (« Mini-site de démo » sur 4 lignes, « Mise à jour » invisible —
+          recette 26/09). La zone de TableDefilante reste `relative` (piège 16). */}
+      <TableDefilante className="card mb-6" label="Tableaux de ce périmètre">
+        <table className="w-full min-w-[40rem] text-sm" data-testid="tableaux-perimetre">
           <caption className="sr-only">Tableaux de bord lisibles dans ce périmètre</caption>
-          <thead>
+          <thead className="whitespace-nowrap">
             <tr>
               <th scope="col" className="th text-left">Nom</th>
               <th scope="col" className="th text-left">App</th>
@@ -160,7 +162,7 @@ export default async function Dashboards({
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
 
       {/* ----- W-D3 : création d'un tableau vide ----- */}
       {peutCreer ? (

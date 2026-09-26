@@ -55,22 +55,22 @@ describe("containmentReading", () => {
   it("nomme le net, l'écart au brut et la base de calcul", () => {
     const r = containment(c({ closed: 100, contained: 100, recalled: 30 }));
     const t = containmentReading(r, 100);
-    expect(t).toContain("70.0 %");
+    expect(t).toContain("70,0\u00a0%");
     expect(t).toContain("100 appels clos");
-    expect(t).toContain("30.0 point(s) de moins");
-    expect(t).toContain("100.0 %");
+    expect(t).toContain("30,0\u00a0points de moins");
+    expect(t).toContain("100,0\u00a0%");
   });
 
   it("mentionne explicitement la borne supérieure quand des appels ne sont pas vérifiables", () => {
     const r = containment(c({ closed: 50, contained: 40, recalled: 5, unevaluable: 12 }));
     const t = containmentReading(r, 50);
     expect(t).toContain("borne supérieure");
-    expect(t).toContain("12 appel(s)");
+    expect(t).toContain("12\u00a0appels résolus");
   });
 
   it("n'invente pas d'écart quand il n'y en a pas", () => {
     const r = containment(c({ closed: 10, contained: 5 }));
-    expect(containmentReading(r, 10)).not.toContain("point(s) de moins");
+    expect(containmentReading(r, 10)).not.toContain("de moins que le taux apparent");
   });
 
   it("dit qu'il n'est pas calculable plutôt que d'afficher 0 %", () => {

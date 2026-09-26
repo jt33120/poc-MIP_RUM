@@ -17,6 +17,7 @@
 import { MENTION_ETAPE } from "@mip/backend/lib/integrations/tickets/adapter.mjs";
 import type { TicketApercu, TicketIntegration, TicketLivraison } from "@/lib/queries-ticket-integrations";
 import { IssueTicketForm } from "@/components/errors/IssueWorkflowForms";
+import { TableDefilante } from "@/components/TableDefilante";
 import type { IssueRecord } from "@/lib/error-issues";
 import { fmtDate } from "@/lib/format";
 
@@ -131,7 +132,8 @@ export function IssueTicketCard({
         {deliveries.length === 0 ? (
           <p className="mt-2 text-sm text-ink-faint">Aucune demande pour cette issue.</p>
         ) : (
-          <div className="mt-2 overflow-x-auto">
+          // 70 rem : le tableau défile sur petit écran, de façon signalée.
+          <TableDefilante className="mt-2" label="Demandes de ticket">
             <table className="w-full min-w-table text-sm" data-testid="issue-ticket-livraisons">
               <caption className="mb-2 text-left text-xs text-ink-faint">
                 Demandes de ticket de cette issue, la plus récente d&apos;abord
@@ -175,7 +177,7 @@ export function IssueTicketCard({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableDefilante>
         )}
       </div>
     </section>

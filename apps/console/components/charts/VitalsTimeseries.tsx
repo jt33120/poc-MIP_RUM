@@ -34,6 +34,7 @@ export function VitalsTimeseries({
   annotations,
   annotationsIndisponibles,
   ariaLabel,
+  debutCollecte,
 }: {
   vital: VitalName;
   grille: string[];
@@ -44,8 +45,10 @@ export function VitalsTimeseries({
   zoomHref?: string;
   annotations?: Annotation[];
   annotationsIndisponibles?: string;
-  /** Défaut : « <vital> p75 par seau de <largeur>, N seaux, 3 zones de seuil ». */
+  /** Défaut : « <vital> p75 par tranche de <largeur>, N tranches, 3 zones de seuil ». */
   ariaLabel?: string;
+  /** Début de la collecte (ISO), s'il est connu : voir `ThresholdSeries`. */
+  debutCollecte?: string;
 }) {
   const avecEffectif = points.some((p) => p.n != null);
   return (
@@ -61,9 +64,10 @@ export function VitalsTimeseries({
       zoomHref={zoomHref}
       annotations={annotations}
       annotationsIndisponibles={annotationsIndisponibles}
+      debutCollecte={debutCollecte}
       ariaLabel={
         ariaLabel ??
-        `${vital} p75 par seau de ${bucketLabel(seauSecondes)}, ${grille.length} seaux, 3 zones de seuil (Bon, À améliorer, Mauvais)`
+        `${vital} p75 par tranche de ${bucketLabel(seauSecondes)}, ${grille.length} tranches, 3 zones de seuil (Bon, À améliorer, Mauvais)`
       }
     />
   );

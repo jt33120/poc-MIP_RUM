@@ -11,6 +11,7 @@
 // de la MÊME page sans elle ; une puce qui ne se retire pas n'est pas un lien —
 // elle ne fait pas croire à un geste qui n'existe pas.
 import Link from "next/link";
+import { nomFuseau } from "@/lib/fuseau-local";
 
 export function PopulationBar({
   puces,
@@ -21,7 +22,7 @@ export function PopulationBar({
   puces: { libelle: string; retirerHref?: string }[];
   /** Plage résolue, en toutes lettres (« 24 h », « du 17/09 10:00 au 17/09 12:00 »). */
   plage: string;
-  /** Fuseau des axes de figure — « UTC » pour les seaux du contrat (V6). */
+  /** Fuseau des axes de figure (`FUSEAU_AFFICHAGE`), écrit par son nom : « heure de Paris ». */
   fuseau: string;
 }) {
   return (
@@ -41,7 +42,7 @@ export function PopulationBar({
         ·
       </span>
       <span className="shrink-0" data-testid="population-fuseau">
-        axes en {fuseau}
+        axes : {nomFuseau(fuseau)}
       </span>
       {puces.map(({ libelle, retirerHref }) => (
         <span key={libelle} className="flex min-w-0 items-center">

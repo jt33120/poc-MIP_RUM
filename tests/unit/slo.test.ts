@@ -48,8 +48,8 @@ describe("F63 — comptesSlo (SL1, SL2, SL2b, SL2c)", () => {
 
   it("atteinte négative (error_rate) : consommé ≥ 100 % mais « non interprétable », compté à part, jamais épuisé", () => {
     // 300 occurrences pour 200 pages vues sur la fenêtre, objectif 99 % : atteinte
-    // 1 − 300/200 = −0,5 ; slo_status() rend consommé = min(1,5 / 0,01 × 100, 999) = 999.
-    const erreurs = { attainment: -0.5, burned_pct: 999, fast_burn: true };
+    // 1 − 300/200 = −0,5 ; slo_status() rend consommé = 1,5 / 0,01 × 100 = 15 000 (non plafonné depuis v94).
+    const erreurs = { attainment: -0.5, burned_pct: 15_000, fast_burn: true };
     const c = comptesSlo([erreurs, { attainment: 0.6, burned_pct: 800, fast_burn: false }]);
     expect(c.epuises).toBe(1);
     expect(c.nonInterpretables).toBe(1);
@@ -63,7 +63,7 @@ describe("F63 — comptesSlo (SL1, SL2, SL2b, SL2c)", () => {
 describe("F63 — textes et liens d'un SLO", () => {
   it("métrique en clair : la formule, pas l'identifiant", () => {
     expect(metriqueEnClair("LCP")).toBe("Part des mesures LCP notées Bon");
-    expect(metriqueEnClair("error_rate")).toBe("1 − occurrences d'erreurs par page vue");
+    expect(metriqueEnClair("error_rate")).toBe("1 − occurrences d'erreurs navigateur par page vue");
   });
 
   it("raison : aucune mesure sur la fenêtre ; atteinte négative non interprétable ; sinon rien", () => {

@@ -20,7 +20,7 @@ import { isIssueId, issueDetail, resolveIssue } from "../error-issues";
 import { errorSearchParams } from "../error-view";
 import { analyserFiltres } from "../filtres-ecran";
 import { listDeploys } from "../queries-deploys";
-import { errorScopeFor, parseErrorCursor, parseOccurrencesPage, partSessionsTouchees, scopeApps } from "../queries-errors";
+import { errorScopeFor, parseErrorCursor, parseOccurrencesPage, partSessionsTouchees, releasesDeLIssue, scopeApps } from "../queries-errors";
 import { apercuTicket, integrationsUtilisables, livraisonsTicket } from "../queries-ticket-integrations";
 import { UnsupportedFilterError } from "../query-compiler";
 import { section, type Chargeur } from "./commun";
@@ -48,7 +48,7 @@ export const chargerIssue = (async (principal, sp, { id = "" }) => {
   const admin = principal?.role === "admin" && !principal.demo;
   // La part divise par des sessions avec VUE : un filtre que les pages vues ne
   // portent pas (`service`) la refuse — un refus de contrat pour CETTE phrase (V10).
-  const [detail, part, deploys] = await Promise.all([
+  const [detail, part, deploys, versions] = await Promise.all([
     issueDetail(issue, f, { limit: parseOccurrencesPage(url).limit, cursor }),
     section<PartGroupe>(async () => {
       try {
@@ -59,6 +59,12 @@ export const chargerIssue = (async (principal, sp, { id = "" }) => {
       }
     }),
     section(() => listDeploys({ ...ecran.filters, app: issue.app_id }, 20)),
+    // Toutes les releases de l'issue, de la plus récente à la plus ancienne (recette du
+    // 26/09/2026 : première et dernière occurrence dans le temps ne disaient rien de
+    // la release la plus récente touchée).
+    section(() =>
+      releasesDeLIssue({ app_id: issue.app_id, issue_id: issue.id, first_release: issue.first_release, first_seen: issue.first_seen }),
+    ),
   ]);
   // Workflow P5.6 : null avant migration-v73. Un curseur d'historique illisible rend la page la plus récente.
   // Les adresses des comptes (acteurs, assignés) ne sont lues que pour un admin.
@@ -88,6 +94,7 @@ export const chargerIssue = (async (principal, sp, { id = "" }) => {
     detail,
     part,
     deploys,
+    versions,
     admin,
     workflow,
     activite,

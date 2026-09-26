@@ -25,6 +25,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { OngletsInteractions } from "@/components/perf/OngletsInteractions";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import { annotationsDeploiements } from "@/lib/annotations";
 import type { SearchParams } from "@/lib/filters";
 import { type SectionLue } from "@/lib/lecture";
@@ -55,6 +56,8 @@ import { hrefWithQuery, paramReader, type AnalyticsQuery } from "@/lib/query-con
 import { RATING_CLASS, RATING_HEX, rating2026 } from "@/lib/rating";
 import { ecartP75 } from "@/lib/stats/incertitude";
 import { ecrirePanel, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { RangeeKpi } from "@/components/charts/RangeeKpi";
 
 export const dynamic = "force-dynamic";
 
@@ -99,6 +102,13 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
   const couvSignaux = ecran.couvSignaux ?? undefined;
   const couvInp = ecran.couvInp ?? undefined;
   const reference = prev ? referencePeriodePrecedente(query.range) : undefined;
+  // Couvertures de la période précédente de la rangée, dites UNE fois au-dessus d'elle.
+  const couverturesRangee = reference
+    ? [
+        totauxPrec === null ? undefined : !totauxPrec.ok ? PRECEDENTE_EN_ECHEC : couvSignaux,
+        vitauxPrec === null ? undefined : !vitauxPrec.ok ? PRECEDENTE_EN_ECHEC : couvInp,
+      ]
+    : [];
 
   // Liens de l'écran vers lui-même : ils ne changent qu'un réglage d'affichage.
   const brut = new URLSearchParams(
@@ -154,7 +164,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
       {/* ── Zone 2 : tuiles (§ 5.4.2). Population : sessions dont le capteur émet. ── */}
       <SectionErreur titre="Signaux de frustration et INP">
         <section aria-label={`Signaux de frustration et INP sur ${label}`} className="mb-4" data-testid="kpi-interactions">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <RangeeKpi couvertures={couverturesRangee} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {!totaux.ok ? (
               <div className="col-span-2 lg:col-span-3">
                 <EchecLecture compact titre="Signaux de frustration" />
@@ -195,7 +205,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
                 href="#elements-inp"
               />
             )}
-          </div>
+          </RangeeKpi>
           <div className="mt-2 space-y-1 text-xs text-ink-soft">
             {capteur?.etat && !capteur.masquer && <EtatSurface etat={capteur.etat} compact />}
             <p>
@@ -493,16 +503,16 @@ function SerieInp({
         <>
           <span>{formater("count", mesures)} mesures INP</span>
           <span>{label}</span>
-          <span>seaux de {seau} (UTC)</span>
+          <span>tranches de {seau}</span>
         </>
       }
-      lecture="L'INP p75 du seau, sur les bandes Bon / À améliorer / Mauvais de web.dev (seuils lus dans le code, jamais recopiés). Un seau sans interaction mesurée est un trou, pas un zéro. Un clic sur un seau zoome sur sa plage ; les traits verticaux sont les déploiements."
+      lecture="L'INP p75 de chaque tranche, sur les bandes Bon / À améliorer / Mauvais de web.dev (seuils lus dans le code, jamais recopiés). Une tranche sans interaction mesurée est un trou, pas un zéro. Un clic sur une tranche zoome sur sa plage ; les traits verticaux sont les déploiements."
       alternative={
         mesures > 0
           ? {
-              legende: `INP p75 par seau de ${seau} (UTC)`,
-              colonnes: ["Seau (UTC)", "INP p75", "Mesures"],
-              lignes: points.map((p) => [libelleSeauComplet(p.t, seauSecondes, "UTC"), formater("ms", p.p75), p.n]),
+              legende: `INP p75 par tranche de ${seau}`,
+              colonnes: ["Période", "INP p75", "Mesures"],
+              lignes: points.map((p) => [libelleSeauComplet(p.t, seauSecondes, FUSEAU_AFFICHAGE), formater("ms", p.p75), p.n]),
             }
           : undefined
       }
@@ -516,10 +526,10 @@ function SerieInp({
         annotations={annotations.annotations}
         annotationsIndisponibles={annotations.indisponible ?? undefined}
         seauSecondes={seauSecondes}
-        fuseau="UTC"
+        fuseau={FUSEAU_AFFICHAGE}
         zoomHref={zoom}
         hauteur={240}
-        ariaLabel={`INP p75 par seau de ${seau}, ${label}`}
+        ariaLabel={`INP p75 par tranche de ${seau}, ${label}`}
       />
     </Figure>
   );
@@ -566,9 +576,10 @@ function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof
         etiquettes={ETIQUETTES_INP}
         ariaLabel={`Éléments responsables de l'INP : ${pts.length} éléments, nombre d'interactions × INP p75, ${label}`}
       />
-      {/* `relative` sur le conteneur défilant : sans ancêtre positionné, le `sr-only`
-          de la légende (position: absolute) se place par rapport à la PAGE et l'élargit. */}
-      <div className="relative mt-4 overflow-x-auto" data-testid="table-elements-inp">
+      {/* Défilement signalé. La zone de TableDefilante est `relative` : sans ancêtre
+          positionné, le `sr-only` de la légende (position: absolute) se place par
+          rapport à la PAGE et l'élargit. */}
+      <TableDefilante className="mt-4" testId="table-elements-inp" label="Éléments responsables de l'INP">
         <table className="w-full text-sm">
           <caption className="sr-only">Éléments responsables de l&apos;INP sur {label}</caption>
           <thead className="bg-panel2">
@@ -586,17 +597,18 @@ function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof
                   {o.target}
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums text-ink-soft">{o.n.toLocaleString("fr-FR")}</td>
-                <td className="px-4 py-2 text-right">
+                {/* `whitespace-nowrap` : « 320 ms » se coupait sur deux lignes. */}
+                <td className="whitespace-nowrap px-4 py-2 text-right">
                   <InpCell v={o.p75} />
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="whitespace-nowrap px-4 py-2 text-right">
                   <InpCell v={o.worst} />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
     </Figure>
   );
 }

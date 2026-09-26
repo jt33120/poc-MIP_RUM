@@ -304,7 +304,7 @@ test.describe("F42 — Sessions : priorité et table", () => {
     await expect(page.getByTestId("sessions-suivantes")).toBeVisible();
     // Aucune colonne ne montre un `visitor_id` (V9) — ni ailleurs dans la page.
     expect(await page.content()).not.toContain(VISITEUR_F42);
-    for (const c of ["Dernière activité (UTC)", "Durée observée", "Pays estimé", "Capteur", "Occurrences d'erreur", "Frustration", "Rejeu"]) {
+    for (const c of ["Dernière activité", "Durée observée", "Pays estimé", "Capteur", "Occurrences d'erreur", "Frustration", "Rejeu"]) {
       await expect(table.locator("thead")).toContainText(c);
     }
     // La page suivante reprend APRÈS le curseur : les identifiants de la première

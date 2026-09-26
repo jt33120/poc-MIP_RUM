@@ -1,6 +1,8 @@
 import { motifDeRefus } from "@mip/backend/lib/net/safe-fetch.mjs";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
+import { TableDefilante } from "@/components/TableDefilante";
 import { chargerSondes } from "@/lib/chargeurs/sondes";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
@@ -62,13 +64,17 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
             Nom
             <input name="name" required placeholder="Accueil prod" className="field mt-1 block w-44" />
           </label>
-          <label className="text-xs font-medium text-ink-soft">
+          {/* Champs bornés à la carte (`min-w-0 max-w-full`) : la liste des
+              applications prend la largeur de son plus long libellé (« Console MIP RUM
+              (dogfooding) (mip-rum-console) ») et portait la page à 417 px sur 390.
+              `sm:w-72` : même largeur que l'URL, au lieu de 380 px contre 176. */}
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
             URL
-            <input name="url" required placeholder="https://exemple.fr/health" className="field mt-1 block w-72" />
+            <input name="url" required placeholder="https://exemple.fr/health" className="field mt-1 block w-72 max-w-full" />
           </label>
-          <label className="text-xs font-medium text-ink-soft">
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
             App
-            <select name="app" required defaultValue="" className="field mt-1 block">
+            <select name="app" required defaultValue="" className="field mt-1 block w-full max-w-full sm:w-72">
               <option value="" disabled>
                 choisir…
               </option>
@@ -94,7 +100,9 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
         </form>
       </div>
 
-      <div className="card overflow-hidden">
+      {/* Défilant et signalé : `overflow-hidden` coupait « Dernière sonde » et les
+          actions à 390 px (recette 26/09). */}
+      <TableDefilante className="card" label="Sondes">
         <table className="w-full text-sm">
           <thead className="bg-panel2">
             <tr>
@@ -144,7 +152,8 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
                     {c.last_checked_at ? fmtDate(c.last_checked_at) : "en attente"}
                   </td>
                   <td className="px-4 py-2">
-                    <div className="flex items-center gap-1">
+                    {/* `items-start` : la confirmation dépliée sous « Supprimer » n'étire pas « Désactiver ». */}
+                    <div className="flex items-start gap-1">
                       <form action={toggleUptimeCheckAction}>
                         <input type="hidden" name="id" value={c.id} />
                         <input type="hidden" name="app" value={c.app_id} />
@@ -156,12 +165,20 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
                           {c.enabled ? "Désactiver" : "Réactiver"}
                         </button>
                       </form>
+                      {/* La suppression emporte l'historique des vérifications (cascade) : confirmée. */}
                       <form action={deleteUptimeCheckAction}>
                         <input type="hidden" name="id" value={c.id} />
                         <input type="hidden" name="app" value={c.app_id} />
-                        <button type="submit" className="btn-ghost px-2 py-1 text-xs text-bad-ink">
-                          Supprimer
-                        </button>
+                        <ConfirmationDanger
+                          libelle="Supprimer"
+                          libelleAccessible={`Supprimer la sonde ${c.name}`}
+                          question={`Supprimer la sonde ${entreGuillemets(c.name)}\u00a0?`}
+                          consequence="Ses vérifications passées seront effacées avec elle et elle ne déclenchera plus d’alerte."
+                          confirmer="Supprimer la sonde"
+                          enCours="Suppression…"
+                          classeDeclencheur="btn-ghost px-2 py-1 text-xs text-bad-ink"
+                          testid={`supprimer-sonde-${c.id}`}
+                        />
                       </form>
                     </div>
                   </td>
@@ -177,7 +194,7 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
     </div>
   );
 }

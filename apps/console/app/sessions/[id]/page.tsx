@@ -43,6 +43,7 @@ import { RecitSession } from "@/components/sessions/RecitSession";
 import { TabLink } from "@/components/sessions/TabLink";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import { Deroule } from "@/components/sessions/Deroule";
 import { Cascade, texteDuree } from "@/components/charts/Cascade";
 import { DistributionSeuils, alternativeDistribution, bacsDeHistogramme } from "@/components/charts/DistributionSeuils";
@@ -622,14 +623,17 @@ function OngletTable({
           <EtatSurface compact etat={{ kind: "partiel", raison: `chronologie tronquée à ${LIMITE_CHRONOLOGIE} événements : la table n'en montre que le début` }} />
         </div>
       )}
-      {/* `relative` OBLIGATOIRE : la légende et l'en-tête « Lien » sont `sr-only`
-          (position absolue). Sans ancêtre positionné, ils se plaçaient par rapport à
-          la PAGE, à leur position dans la table large, et l'élargissaient (575 px à
-          390 px, e2e « aucun débordement »). */}
+      {/* Défilement signalé (TableDefilante). Sa zone est `relative`, ce qui reste
+          OBLIGATOIRE : la légende et l'en-tête « Lien » sont `sr-only` (position
+          absolue). Sans ancêtre positionné, ils se plaçaient par rapport à la PAGE, à
+          leur position dans la table large, et l'élargissaient (575 px à 390 px, e2e
+          « aucun débordement »). */}
       {vide ? (
         <p className="py-8 text-center text-sm text-ink-soft">{vide}</p>
       ) : (
-        <div className="relative overflow-x-auto">{children}</div>
+        // Nom distinct de la section (déjà nommée `titre`) : deux régions homonymes
+        // rendraient ambiguë toute recherche par nom.
+        <TableDefilante label={`${titre} (tableau)`}>{children}</TableDefilante>
       )}
     </section>
   );
@@ -889,7 +893,7 @@ function FigureSituation({
   const { route, fenetre, histo, plafond, plafondLibelle, percentiles, pctsLus } = situation;
   if (!histo.ok) return <Figure titre={titre} id={id} etat={{ kind: "erreur", titre }} />;
 
-  const periode = `${libelleFenetre(fenetre.from, fenetre.to)} (UTC)`;
+  const periode = libelleFenetre(fenetre.from, fenetre.to);
   const instant = new Date(pire.pire.ts).getTime();
   const inclusion = robot
     ? "session classée robot : ses mesures en sont exclues"

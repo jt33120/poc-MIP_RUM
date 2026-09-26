@@ -59,7 +59,8 @@ describe("F18 — TuilesErreurs", () => {
     const html = renderToStaticMarkup(<TuilesErreurs {...BASE} />);
     expect(html.match(/data-testid="kpi-tile"/g)).toHaveLength(4);
     const texte = rendu();
-    expect(texte).toContain("Occurrences 77");
+    // La méthode est derrière l'aide « ? » du libellé (son texte reste dans la bulle).
+    expect(texte).toMatch(/Occurrences (somme des occurrences : une erreur répétée compte chaque fois )?77/);
     expect(texte).toContain("Groupes apparus sur la période 6");
     expect(texte).toContain("Part des sessions touchées 10,0");
     expect(texte).toContain("6 sessions avec vue et au moins une erreur, sur 60 sessions avec au moins une vue");

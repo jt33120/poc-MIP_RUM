@@ -16,6 +16,7 @@ import { purgeRetryQueue, replayRetryQueue } from "./retry";
 import { createSampler, decideMode, loadMode, storeMode } from "./sampling";
 import { readPrivacySignals, signalsOptOut } from "./privacy";
 import { getOrCreateSession, rotateSession, touchSession, type Session } from "./session";
+import { decisionIdentite, marqueIdentite } from "./identite-session";
 import type {
   AddErrorOptions,
   ErrorCategory,
@@ -24,7 +25,7 @@ import type {
 } from "./types";
 import { initNavTiming } from "./navtiming";
 import { initVitals } from "./vitals";
-import { applyBeforeSend } from "@mip/rum-core";
+import { applyBeforeSend, validateIdentity } from "@mip/rum-core";
 import {
   boundedName,
   eventContext,
@@ -39,6 +40,10 @@ export type { EventContext, EventMeta, IdentityInput } from "./event-context";
 
 let session: Session | null = null;
 let initialized = false;
+// Identités métier en cours, BRUTES et en mémoire seulement : elles ne sont jamais
+// persistées ni émises telles quelles hors de l'enveloppe (HMAC côté serveur). Seule
+// leur marque (./identite-session.ts) accompagne la session dans le stockage.
+let identites: { user: string | null; account: string | null } = { user: null, account: null };
 // appId de la session courante, lu par le widget d'avis (MIPRum.appId()) pour
 // cloisonner sa période de silence PAR APPLICATION. Renseigné avant toute
 // sortie anticipée d'init() : deux apps du même navigateur ne doivent pas se
@@ -173,7 +178,7 @@ export function init(cfg: MIPRumConfig): void {
   }
   // Échantillonnage intelligent (A1) : décision par session, persistée pour
   // rester stable au fil des pageviews/reloads. "off" => on ne collecte rien.
-  session = getOrCreateSession();
+  session = reconcilierIdentites(getOrCreateSession());
   const mode0 = loadMode(session.sessionId) ?? decideMode(cfg);
   storeMode(session.sessionId, mode0);
   if (mode0 === "off") {
@@ -622,28 +627,71 @@ export function clearGlobalContext(): void { eventContext.setGlobal({}); }
 
 export function getGlobalContext(): Readonly<EventContext> { return eventContext.getGlobal(); }
 
+/**
+ * Au démarrage, les identités posées AVANT `init()` rencontrent la session reprise :
+ * même identité → rien ; session anonyme → rattachement ; autre identité → nouvelle
+ * session, avant tout événement. Une identité encore vide n'est PAS une déconnexion :
+ * l'application ne l'a simplement pas encore reposée sur cette page.
+ */
+function reconcilierIdentites(s: Session): Session {
+  const marques = { ...s.identites };
+  let rotation = false;
+  for (const genre of ["user", "account"] as const) {
+    const id = identites[genre];
+    if (id === null) continue;
+    const apres = marqueIdentite(s.sessionId, genre, id);
+    const decision = decisionIdentite(s.identites?.[genre], apres);
+    if (decision === "rotation") rotation = true;
+    else if (decision === "rattacher") marques[genre] = apres;
+  }
+  if (rotation) return rotateSession(s.visitorId, identites);
+  s.identites = marques;
+  touchSession(s);
+  return s;
+}
+
+/**
+ * Une identité métier change (ou est reposée). La session ne tourne que si elle
+ * portait une AUTRE identité, ou si l'identité est effacée alors qu'elle en portait
+ * une : reposer la même identité à chaque page d'une application multipage ne
+ * fragmente plus la visite (recette du 26/09/2026), et une identité posée sur une
+ * session anonyme s'y rattache. Règle et raison : ./identite-session.ts.
+ */
+function appliquerIdentite(genre: "user" | "account", id: string | null): void {
+  identites = { ...identites, [genre]: id };
+  if (!initialized || !session) return; // init() rattachera
+  const apres = marqueIdentite(session.sessionId, genre, id);
+  const decision = decisionIdentite(session.identites?.[genre], apres);
+  if (decision === "rien") return;
+  if (decision === "rattacher") {
+    session.identites = { ...session.identites, [genre]: apres };
+    touchSession(session);
+    return;
+  }
+  drainErrors?.();
+  resetErrors?.();
+  causalActions?.close();
+  flushReplayBoundary();
+  session = rotateSession(session.visitorId, identites);
+}
+
 /** Définit ou efface l'identité utilisateur métier. L'identifiant brut reste en mémoire. */
 export function setUser(user: string | IdentityInput | null): void {
-  if (eventContext.setUser(user) && initialized && session) {
-    drainErrors?.();
-    resetErrors?.();
-    causalActions?.close();
-    flushReplayBoundary();
-    session = rotateSession(session.visitorId);
-  }
+  const valide = validateIdentity(user);
+  // Une entrée refusée ne change rien — surtout pas une « déconnexion ».
+  if (valide === undefined) return;
+  eventContext.setUser(user);
+  appliquerIdentite("user", valide === null ? null : valide.id);
 }
 
 export function clearUser(): void { setUser(null); }
 
 /** Définit ou efface l'identité compte métier. L'identifiant brut reste en mémoire. */
 export function setAccount(account: string | IdentityInput | null): void {
-  if (eventContext.setAccount(account) && initialized && session) {
-    drainErrors?.();
-    resetErrors?.();
-    causalActions?.close();
-    flushReplayBoundary();
-    session = rotateSession(session.visitorId);
-  }
+  const valide = validateIdentity(account);
+  if (valide === undefined) return;
+  eventContext.setAccount(account);
+  appliquerIdentite("account", valide === null ? null : valide.id);
 }
 
 export function clearAccount(): void { setAccount(null); }

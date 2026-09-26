@@ -202,6 +202,7 @@ import type { ElementCascade, MarqueurCascade, PisteCascade, TonCascade } from "
 import type { VitalName } from "./fmt-ids";
 import { CORE_VITALS } from "./rating";
 import { LIMITE_CHRONOLOGIE, ancreEvenement } from "./recit-session";
+import { fmtJour } from "./format";
 import { isoSansMs } from "./series";
 import { statutAppel } from "./session-detail";
 
@@ -222,12 +223,15 @@ export function fenetreDeSession(startedAtMs: number, nowMs: number): { from: st
   };
 }
 
-/** « 03/09 » : jour et mois d'un instant, en UTC. */
+/**
+ * « 03/09 » : jour et mois d'un instant, heure de Paris (le fuseau d'affichage). Le
+ * nom `jourMoisUtc` est historique (V6) ; il est gardé pour ses appelants.
+ */
 export function jourMoisUtc(instant: string | number): string {
-  return new Intl.DateTimeFormat("fr-FR", { timeZone: "UTC", day: "2-digit", month: "2-digit" }).format(new Date(instant));
+  return fmtJour(instant);
 }
 
-/** « du 03/09 au 11/09 » : les bornes d'une fenêtre, jour et mois en UTC (`to` est exclu). */
+/** « du 03/09 au 11/09 » : les bornes d'une fenêtre, jour et mois de Paris (`to` est exclu). */
 export function libelleFenetre(from: string, to: string): string {
   return `du ${jourMoisUtc(from)} au ${jourMoisUtc(to)}`;
 }

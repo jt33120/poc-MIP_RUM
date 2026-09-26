@@ -21,6 +21,7 @@ import { sqlContext } from "./query-sql";
 import { CORE_VITALS } from "./rating";
 import { intervalleWilson, texteIntervalle } from "./stats/incertitude";
 import { healthLabel, type HealthFactor, type AnomalyRow, type Health } from "./health-libelles";
+import { pluriel } from "./format";
 // Ce que l'affichage lit — libellés, classes, `Health`, `dominantFactors` — vit
 // dans `health-libelles.ts`, SANS la base ; réexporté ici.
 export * from "./health-libelles";
@@ -134,8 +135,8 @@ export function facteurAnomalies(entree: {
   return {
     ...base,
     detail: entree.anomalies
-      ? `${entree.anomalies} anomalie(s), -${PENALTY_PER_ANOMALY} pt(s) chacune`
-      : `aucune anomalie détectée sur ${entree.eligibles} route(s) testable(s)`,
+      ? `${pluriel(entree.anomalies, "anomalie")}, −${pluriel(PENALTY_PER_ANOMALY, "point")} chacune`
+      : `aucune anomalie détectée sur ${pluriel(entree.eligibles, "route testable", "routes testables")}`,
     earned: round1(10 * ratio),
   };
 }
@@ -166,7 +167,7 @@ export function facteurErreurs(entree: {
   const base = { key: "errors" as const, label: "Erreurs navigateur", max: 30 };
   const horsCompte =
     entree.restreint && (entree.sansSource ?? 0) > 0
-      ? ` ; ${formater("count", entree.sansSource ?? 0)} occurrence(s) sans source déclarée, non comptée(s)`
+      ? ` ; ${pluriel(entree.sansSource ?? 0, "occurrence sans source déclarée, non comptée", "occurrences sans source déclarée, non comptées")}`
       : "";
   if (!(entree.pageviews > 0)) {
     // Pas de `raisonNull` : la jauge écrit « n/a », et le détail (visible) dit pourquoi.
@@ -177,7 +178,7 @@ export function facteurErreurs(entree: {
   return {
     ...base,
     detail:
-      `${formater("count", entree.occurrences)} occurrence(s) pour ${formater("count", entree.pageviews)} page(s) vue(s) (${pour100})` +
+      `${pluriel(entree.occurrences, "occurrence")} pour ${pluriel(entree.pageviews, "page vue", "pages vues")} (${pour100})` +
       (entree.restreint ? horsCompte : " — toutes sources : colonne de source absente"),
     earned: round1(30 * ratio),
   };
@@ -308,7 +309,7 @@ export async function healthScore(f: Filters): Promise<Health> {
           ? "aucune session active"
           : // P*.1 : la part de sessions sans erreur porte son intervalle de Wilson.
             [
-              `${c.clean_sessions}/${c.sessions} session(s) active(s) sans erreur`,
+              `${c.clean_sessions} sur ${pluriel(c.sessions, "session active", "sessions actives")} sans erreur`,
               texteIntervalle(intervalleWilson(c.clean_sessions, c.sessions), (x) => `${Math.round(x * 100)} %`),
             ]
               .filter(Boolean)

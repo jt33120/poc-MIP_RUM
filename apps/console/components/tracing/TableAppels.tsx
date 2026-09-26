@@ -9,6 +9,7 @@
 // rapports, sur sa propre échelle (`ShareBar`), jamais des millisecondes.
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { TableDefilante } from "@/components/TableDefilante";
 import { ShareBar } from "./ShareBar";
 import { formater } from "@/lib/fmt-ids";
 import type { ApiCallDecomposition } from "@/lib/queries-tracing";
@@ -75,9 +76,22 @@ function Ligne({ a, hrefTraces }: { a: ApiCallDecomposition; hrefTraces: string 
   );
 }
 
-function Table({ lignes, hrefTraces, testId }: { lignes: ApiCallDecomposition[]; hrefTraces: (a: Appel) => string; testId?: string }) {
+function Table({
+  lignes,
+  hrefTraces,
+  testId,
+  label,
+}: {
+  lignes: ApiCallDecomposition[];
+  hrefTraces: (a: Appel) => string;
+  testId?: string;
+  /** Nom de la zone défilante : distinct pour chacune des deux tables de l'écran. */
+  label: string;
+}) {
   return (
-    <div className="relative overflow-x-auto">
+    // Neuf colonnes : le défilement est signalé (ombre, consigne) et la zone reste
+    // `relative` pour les `sr-only` (voir l'en-tête « Traces »).
+    <TableDefilante label={label}>
       <table className="w-full text-sm" data-testid={testId}>
         <Entete />
         <tbody>
@@ -86,7 +100,7 @@ function Table({ lignes, hrefTraces, testId }: { lignes: ApiCallDecomposition[];
           ))}
         </tbody>
       </table>
-    </div>
+    </TableDefilante>
   );
 }
 
@@ -110,13 +124,13 @@ export function TableAppels({
   const reste = appels.slice(visibles);
   return (
     <div className="flex flex-col gap-2">
-      <Table lignes={tete} hrefTraces={hrefTraces} testId="api-calls" />
+      <Table lignes={tete} hrefTraces={hrefTraces} testId="api-calls" label="Tous les appels API" />
       {reste.length > 0 && (
         <details className="group" data-testid="appels-suivants">
           <summary className="cursor-pointer select-none px-1 py-2 text-xs font-medium text-ink-soft hover:text-ink">
             Voir les {formater("count", appels.length)} appels ({formater("count", reste.length)} de plus)
           </summary>
-          <Table lignes={reste} hrefTraces={hrefTraces} />
+          <Table lignes={reste} hrefTraces={hrefTraces} label="Appels suivants" />
         </details>
       )}
     </div>

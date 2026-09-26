@@ -451,7 +451,7 @@ test.describe("F36 — tableau de bord : cartes", () => {
     const population = page.getByTestId("population-bar");
     await expect(population).toBeVisible();
     await expect(population).toContainText("Robots exclus");
-    await expect(population).toContainText("axes en UTC");
+    await expect(population).toContainText("axes : heure de Paris");
     // La release du contexte est une condition : elle est écrite ET retirable.
     await expect(population.getByTestId("population-puce").filter({ hasText: RELEASE })).toBeVisible();
 
@@ -708,7 +708,7 @@ test.describe("F37 — tableau de bord : sections", () => {
     // barre de filtres, rendue par `release=` du contexte) retire un réglage de VUE,
     // légitime en démo — l'ancienne expression le comptait comme une écriture.
     await expect(
-      page.getByRole("button", { name: /^(Ajouter une section|Monter|Descendre|Retirer —|Retirer la section)/ }),
+      page.getByRole("button", { name: /^(Ajouter une section|Monter|Descendre|Retirer la carte|Retirer la section)/ }),
     ).toHaveCount(0);
   });
 

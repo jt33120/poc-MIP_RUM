@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ECRANS } from "@mip/console-contract";
 import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { PageHeader } from "@/components/PageHeader";
+import { TableDefilante } from "@/components/TableDefilante";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import { fmtDate } from "@/lib/format";
@@ -37,7 +38,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
     return (
       <CapaciteFermee
         titre="Logs"
-        sujet="Signal LOGS d'OpenTelemetry, alimenté par le serveur et non par le navigateur."
+        sujet="Les journaux envoyés par vos serveurs, et non par le navigateur des visiteurs."
       />
     );
   }
@@ -45,7 +46,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
   // Le chargeur (`lib/chargeurs/logs.ts`) lit les entrées, les comptes, le volume et les anomalies.
   const ecran = await chargerEcran(ECRANS.logs, chargerLogs, (await searchParams) ?? {});
   if (ecran.etat === "fermee") {
-    return <CapaciteFermee titre="Logs" sujet="Signal LOGS d'OpenTelemetry, alimenté par le serveur et non par le navigateur." />;
+    return <CapaciteFermee titre="Logs" sujet="Les journaux envoyés par vos serveurs, et non par le navigateur des visiteurs." />;
   }
   if (ecran.etat === "refus") return <FilterProblemNotice title="Logs" problem={ecran.problem} />;
   const { level, rows, counts, volume, anomalies, byRoute, periode } = ecran;
@@ -156,7 +157,9 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
         })}
       </div>
 
-      <div className="card overflow-hidden">
+      {/* Défilant et signalé : `overflow-hidden` coupait Route et Corrélation (les
+          liens vers la session et la trace) sur petit écran. */}
+      <TableDefilante className="card" label="Derniers logs">
         <table className="w-full text-sm">
           <thead className="bg-panel2">
             <tr>
@@ -224,7 +227,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
 
       {/* Routes les plus bruyantes — métrique dérivée des logs (d'où vient le bruit). */}
       {byRoute.length > 0 && (
@@ -232,7 +235,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
           <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
             Routes les plus bruyantes · {periode}
           </h2>
-          <div className="card overflow-hidden">
+          <TableDefilante className="card" label="Routes les plus bruyantes">
             <table className="w-full text-sm">
               <thead className="bg-panel2">
                 <tr>
@@ -259,7 +262,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableDefilante>
         </div>
       )}
     </div>

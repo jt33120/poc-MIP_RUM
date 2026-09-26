@@ -18,9 +18,16 @@
 // marque « échantillon faible », et `onglets` qui remplace la liste par défaut (un
 // écran peut proposer une dimension hors `BREAKDOWN_DIMENSIONS`, comme le capteur
 // de `/sessions`). `BasculeTri` et `OngletsDecoupage` servent aussi `ImpactTable`.
+//
+// BARRES COMPARABLES (recette du 26/09/2026) : chaque ligne est une grille aux
+// colonnes FIXES (libellé, piste, valeur, détails). La piste était en `flex-1`, sa
+// largeur dépendait du texte des colonnes voisines, et une barre plus longue ne
+// voulait plus dire une valeur plus grande.
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { TableDefilante } from "@/components/TableDefilante";
 import type { BreakdownTab } from "@/lib/breakdowns";
+import { accord } from "@/lib/format";
 import { SEUIL_ECHANTILLON_FAIBLE } from "@/lib/impact";
 
 export interface BreakdownCell {
@@ -65,8 +72,10 @@ export interface OptionTri {
 
 /**
  * Bascule de tri : des LIENS (l'ordre vit dans l'URL, `tri=`), l'ordre courant marqué
- * `aria-current`. Un ordre indisponible reste visible, barré, avec sa raison en
- * `title` ET en texte lu (un `title` seul n'est pas annoncé partout).
+ * `aria-current`. Un ordre indisponible reste visible, GRISÉ (bordure pointillée,
+ * texte pâle) avec sa raison en `title` ET en texte lu (un `title` seul n'est pas
+ * annoncé partout). Jamais barré : la recette du 26/09/2026 a lu « Impact » barré
+ * comme une option supprimée, pas comme une option à venir.
  */
 export function BasculeTri({ courant, options }: { courant: string; options: OptionTri[] }) {
   return (
@@ -98,7 +107,7 @@ export function BasculeTri({ courant, options }: { courant: string; options: Opt
             aria-disabled="true"
             title={o.raison}
             data-testid={`tri-${o.id}`}
-            className="cursor-not-allowed rounded-md border border-line/60 px-2 py-0.5 font-medium text-ink-soft line-through"
+            className="cursor-help rounded-md border border-dashed border-line px-2 py-0.5 font-medium text-ink-faint"
           >
             {o.libelle}
             {o.raison && <span className="sr-only"> — indisponible : {o.raison}</span>}
@@ -109,7 +118,7 @@ export function BasculeTri({ courant, options }: { courant: string; options: Opt
   );
 }
 
-/** Onglets de dimension : lien si disponible, barré avec sa raison sinon. */
+/** Onglets de dimension : lien si disponible, grisé avec sa raison en infobulle sinon (jamais barré). */
 export function OngletsDecoupage({ titre, onglets }: { titre: string; onglets: OngletDecoupage[] }) {
   return (
     <nav aria-label={`Découper ${titre.toLowerCase()} par`} className="mb-3 flex flex-wrap gap-1">
@@ -135,7 +144,7 @@ export function OngletsDecoupage({ titre, onglets }: { titre: string; onglets: O
             data-testid={`breakdown-tab-${tab.dimension}`}
             aria-disabled="true"
             title={tab.reason ?? undefined}
-            className="cursor-not-allowed rounded-md border border-line/60 bg-panel2/50 px-2.5 py-1 text-xs font-medium text-ink-soft line-through"
+            className="cursor-help rounded-md border border-dashed border-line bg-panel2/50 px-2.5 py-1 text-xs font-medium text-ink-faint"
           >
             {tab.label}
           </span>
@@ -206,7 +215,8 @@ export function Breakdown({
   /** En-tête de la colonne d'écart. */
   ecartLibelle?: string;
 }) {
-  const max = Math.max(1, ...items.map((item) => item.value ?? 0));
+  // Base 100 % : la plus grande valeur (plus « au moins 1 », qui écrasait les parts et les CLS).
+  const max = Math.max(0, ...items.map((item) => item.value ?? 0)) || 1;
   const liste = onglets ?? tabs;
   const indisponibles = liste.filter((tab) => !tab.available && tab.reason);
   const avecEcart = items.some((item) => item.ecart !== undefined);
@@ -259,12 +269,12 @@ export function Breakdown({
                   aria-label={`${item.description}${item.echantillonFaible ? ", échantillon faible" : ""} — ouvrir le détail`}
                   data-testid="breakdown-row"
                   data-faible={item.echantillonFaible ? "1" : undefined}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                  className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:grid-cols-[10rem_12rem_6rem_minmax(0,1fr)] lg:grid-cols-[12rem_16rem_6rem_minmax(0,1fr)]"
                 >
-                  <span className="min-w-0 basis-full truncate font-mono text-xs text-ink sm:basis-44" title={item.label}>
+                  <span className="col-span-2 min-w-0 truncate font-mono text-xs text-ink sm:col-span-1" title={item.label}>
                     {item.label}
                   </span>
-                  <span className="relative h-5 min-w-24 flex-1 overflow-hidden rounded bg-panel2">
+                  <span className="relative col-start-1 h-5 min-w-0 overflow-hidden rounded bg-panel2 sm:col-start-2">
                     {item.value !== null && (
                       <span
                         aria-hidden="true"
@@ -272,15 +282,12 @@ export function Breakdown({
                         style={{ width: `${Math.max(2, (item.value / max) * 100)}%` }}
                       />
                     )}
-                    {/* Pastille sous la valeur, comme RankBar (F01) : quand la barre remplit
-                        la piste, le texte se posait sur l'orange (3,3:1 en sombre). */}
-                    <span className="absolute inset-y-0 right-2 flex items-center">
-                      <span className="rounded bg-panel/90 px-1 text-xs font-semibold tabular-nums text-ink">
-                        {item.display}
-                      </span>
-                    </span>
                   </span>
-                  <span className="flex min-w-0 basis-full flex-wrap items-center gap-x-3 gap-y-0.5 text-xs tabular-nums text-ink-soft sm:basis-auto sm:shrink-0">
+                  {/* La valeur à côté de la piste, pas dessus : elle ne cache plus le bout de la barre. */}
+                  <span className="col-start-2 text-right text-xs font-semibold tabular-nums text-ink sm:col-start-3">
+                    {item.display}
+                  </span>
+                  <span className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs tabular-nums text-ink-soft sm:col-span-1 sm:col-start-4">
                     {item.cells.map((cell) => (
                       <span key={cell.label}>
                         <span className="text-ink-soft">{cell.label} </span>
@@ -304,10 +311,11 @@ export function Breakdown({
             <summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
               Alternative textuelle du découpage
             </summary>
-            <div className="relative overflow-x-auto">
+            {/* Défilement signalé ; la zone reste `relative` pour la légende `sr-only`. */}
+            <TableDefilante label="Alternative textuelle du découpage">
               <table className="mt-2 w-full">
                 <caption className="sr-only">
-                  {title} — {items.length.toLocaleString("fr-FR")} groupe(s) affiché(s) sur{" "}
+                  {title} — {items.length.toLocaleString("fr-FR")} {accord(items.length, "groupe affiché", "groupes affichés")} sur{" "}
                   {groups.toLocaleString("fr-FR")}
                   {tri ? `, classés par ${LIBELLES_TRI[tri].toLowerCase()}` : ""}
                 </caption>
@@ -356,12 +364,12 @@ export function Breakdown({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableDefilante>
           </details>
 
           {truncated && (
             <p className="mt-2 text-xs text-ink-soft" data-testid="breakdown-tronque">
-              {groups.toLocaleString("fr-FR")} groupe(s) sur la fenêtre — les {items.length.toLocaleString("fr-FR")}{" "}
+              {groups.toLocaleString("fr-FR")} {accord(groups, "groupe")} sur la fenêtre — les {items.length.toLocaleString("fr-FR")}{" "}
               plus fournis sont affichés{tri === "gravite" ? ", classés par gravité" : ""}. Les autres ne sont ni
               repliés dans un groupe « Autres », ni ajoutés : additionner des p75 n&apos;a pas de sens.
             </p>

@@ -23,6 +23,8 @@ import type { SectionLue } from "@/lib/lecture";
 import { bucketLabel } from "@/lib/query-contract";
 import { libelleSeauComplet, type Annotation, type PointSerie, type SerieDef } from "@/lib/series";
 import { pointsCharge, pointsRelease, pointsVital, serieVide, sommeLue, type SeauVital } from "@/lib/vue-ensemble";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { pluriel } from "@/lib/format";
 
 /** Ce que les séries comparent : rien, la période précédente, ou deux releases (§ 3.2). */
 export type ModeSeries =
@@ -46,7 +48,7 @@ interface Commun {
 }
 
 const somme = (valeurs: number[]) => valeurs.reduce((a, b) => a + b, 0);
-const ligneSeau = (t: string, seau: number) => libelleSeauComplet(t, seau, "UTC");
+const ligneSeau = (t: string, seau: number) => libelleSeauComplet(t, seau, FUSEAU_AFFICHAGE);
 
 // ─────────────────────────────── Zone 5 — hero ───────────────────────────────
 
@@ -79,8 +81,8 @@ function petitMultiple(l: LectureVital, mode: ModeSeries, c: Commun) {
       ? { kind: "vide", population: `mesure ${l.vital} sur ces deux releases`, plage: c.plage }
       : undefined;
     const alternative: AlternativeTexte = {
-      legende: `${nom} par seau de ${seau}, release ${mode.relB} face à ${mode.relA} (UTC)`,
-      colonnes: ["Seau (UTC)", `${mode.relB} p75`, `${mode.relB} mesures`, `${mode.relA} p75`, `${mode.relA} mesures`],
+      legende: `${nom} par tranche de ${seau}, release ${mode.relB} face à ${mode.relA}`,
+      colonnes: ["Période", `${mode.relB} p75`, `${mode.relB} mesures`, `${mode.relA} p75`, `${mode.relA} mesures`],
       lignes: points.map((p) => [ligneSeau(p.t, c.seauSecondes), formater(format, p.b), p.nb, formater(format, p.a), p.na]),
     };
     const n = somme(points.map((p) => p.nb));
@@ -96,8 +98,8 @@ function petitMultiple(l: LectureVital, mode: ModeSeries, c: Commun) {
     ? { kind: "vide", population: `mesure ${l.vital}`, plage: c.plage }
     : undefined;
   const alternative: AlternativeTexte = {
-    legende: `${nom} par seau de ${seau} (UTC)`,
-    colonnes: ["Seau (UTC)", "p75", "Mesures", ...(precedent ? ["Période précédente (même rang)"] : [])],
+    legende: `${nom} par tranche de ${seau}`,
+    colonnes: ["Période", "p75", "Mesures", ...(precedent ? ["Période précédente (même rang)"] : [])],
     lignes: points.map((p) => [
       ligneSeau(p.t, c.seauSecondes),
       formater(format, p.p75),
@@ -145,10 +147,10 @@ export function HeroCwv({
               etat={m.etat}
               meta={
                 <>
-                  <span>p75 par seau de {seau}</span>
-                  <span>{commun.grille.length} seaux</span>
+                  <span>p75 par tranche de {seau}</span>
+                  <span>{commun.grille.length} tranches</span>
                   {m.ok && <span>{m.meta}</span>}
-                  <span>{commun.plage}, UTC</span>
+                  <span>{commun.plage}</span>
                 </>
               }
               alternative={m.ok ? m.alternative : undefined}
@@ -161,7 +163,7 @@ export function HeroCwv({
                   format={formatDuVital(l.vital)}
                   vital={l.vital}
                   seauSecondes={commun.seauSecondes}
-                  fuseau="UTC"
+                  fuseau={FUSEAU_AFFICHAGE}
                   zoomHref={commun.zoomHref}
                   annotations={commun.annotations.annotations}
                   annotationsIndisponibles={commun.annotations.indisponible ?? undefined}
@@ -169,7 +171,7 @@ export function HeroCwv({
                   // premier seulement (un arrêt de tabulation chacun, pas trois).
                   legendeAnnotations={i === 0}
                   hauteur={200}
-                  ariaLabel={`${l.vital} p75 par seau de ${seau}, ${commun.grille.length} seaux, 3 zones de seuil (Bon, À améliorer, Mauvais)${
+                  ariaLabel={`${l.vital} p75 par tranche de ${seau}, ${commun.grille.length} seaux, 3 zones de seuil (Bon, À améliorer, Mauvais)${
                     m.series.length > 1 ? `, comparé à ${m.series[1].libelle.toLowerCase()}` : ""
                   }`}
                 />
@@ -228,7 +230,7 @@ export function ChargeErreursLcp({
   // CP14 : les occurrences sans source déclarée ne sont pas au panneau (2), et c'est dit.
   const noteSansSource =
     lectures.erreurs.ok && lectures.erreurs.data.restreint && (totalSansSource ?? 0) > 0
-      ? `${formater("count", totalSansSource)} occurrence(s) sans source déclarée, non comptée(s)`
+      ? `${pluriel(totalSansSource ?? 0, "occurrence sans source déclarée, non comptée", "occurrences sans source déclarée, non comptées")}`
       : null;
   const compte = (n: number | null, unite: string) => (n === null ? `${unite} : non lu` : `${formater("count", n)} ${unite}`);
   // Sans la colonne de source (v69), le numérateur porte toutes les sources : le titre le dit.
@@ -243,7 +245,7 @@ export function ChargeErreursLcp({
     annotationsIndisponibles: commun.annotations.indisponible ?? undefined,
     legendeAnnotations: liste,
   });
-  const partage = { grille: commun.grille, seauSecondes: commun.seauSecondes, fuseau: "UTC", zoomHref: commun.zoomHref, synchro, hauteur: 110 };
+  const partage = { grille: commun.grille, seauSecondes: commun.seauSecondes, fuseau: FUSEAU_AFFICHAGE, zoomHref: commun.zoomHref, synchro, hauteur: 110 };
 
   return (
     <Figure
@@ -253,12 +255,12 @@ export function ChargeErreursLcp({
       meta={
         <>
           <span>seau de {seau}</span>
-          <span>{commun.grille.length} seaux</span>
+          <span>{commun.grille.length} tranches</span>
           <span>{compte(totalVues, "pages vues")}</span>
           <span>{compte(totalErreurs, "occurrences navigateur")}</span>
           <span>{compte(totalLcp, "mesures LCP")}</span>
           {precedentNonLu && <span>période précédente : non lue</span>}
-          <span>{commun.plage}, UTC</span>
+          <span>{commun.plage}</span>
         </>
       }
       lecture={
@@ -267,16 +269,16 @@ export function ChargeErreursLcp({
           Trois panneaux, un axe chacun, la même heure alignée sur les trois : aucune grandeur n&apos;est lue sur
           l&apos;échelle d&apos;une autre.{" "}
           {precedent
-            ? "La série grise pointillée du LCP est la période précédente, alignée par rang de seau ; les comptes se comparent dans les tuiles."
+            ? "La série grise pointillée du LCP est la période précédente, alignée tranche à tranche ; les comptes se comparent dans les tuiles."
             : mode.kind === "release"
               ? "La comparaison de releases se lit dans « Core Web Vitals dans le temps » ; ici, toute la population."
               : null}
         </>
       }
       alternative={{
-        legende: `Pages vues, occurrences d'erreurs et LCP p75 par seau de ${seau} (UTC)`,
+        legende: `Pages vues, occurrences d'erreurs et LCP p75 par tranche de ${seau}`,
         colonnes: [
-          "Seau (UTC)",
+          "Période",
           "Chargements",
           "Changements de route SPA",
           ...(avecInconnu ? ["Type inconnu"] : []),
@@ -299,7 +301,7 @@ export function ChargeErreursLcp({
       <div className="flex min-w-0 flex-col gap-3" data-testid="charge-panneaux">
         <Panneau titre="Pages vues : chargements et changements de route SPA" id="vues">
           {!lectures.vues.ok ? (
-            <EchecLecture compact titre="Pages vues par seau" />
+            <EchecLecture compact titre="Pages vues par tranche" />
           ) : totalVues === 0 ? (
             <EtatSurface compact etat={{ kind: "vide", population: "page vue", plage: commun.plage }} />
           ) : (
@@ -314,13 +316,13 @@ export function ChargeErreursLcp({
                 ...(avecInconnu ? [{ cle: "inconnu", libelle: "Type de navigation inconnu", categorieIndex: 2 }] : []),
               ]}
               format="count"
-              ariaLabel={`Pages vues par seau de ${seau}, chargements et changements de route SPA empilés, ${commun.grille.length} seaux`}
+              ariaLabel={`Pages vues par tranche de ${seau}, chargements et changements de route SPA empilés, ${commun.grille.length} seaux`}
             />
           )}
         </Panneau>
         <Panneau titre={titreErreurs} id="erreurs">
           {!lectures.erreurs.ok ? (
-            <EchecLecture compact titre="Occurrences d'erreurs par seau" />
+            <EchecLecture compact titre="Occurrences d'erreurs par tranche" />
           ) : totalErreurs === 0 ? (
             <EtatSurface
               compact
@@ -338,7 +340,7 @@ export function ChargeErreursLcp({
               points={lignes}
               series={[{ cle: "erreurs", libelle: titreErreurs, role: "categorie", categorieIndex: 3, forme: "barres", additive: true }]}
               format="count"
-              ariaLabel={`${titreErreurs} par seau de ${seau}, ${commun.grille.length} seaux`}
+              ariaLabel={`${titreErreurs} par tranche de ${seau}, ${commun.grille.length} seaux`}
             />
           )}
           {noteSansSource && totalErreurs !== 0 && (
@@ -349,7 +351,7 @@ export function ChargeErreursLcp({
         </Panneau>
         <Panneau titre="LCP p75" id="lcp">
           {!lectures.lcp.ok ? (
-            <EchecLecture compact titre="LCP p75 par seau" />
+            <EchecLecture compact titre="LCP p75 par tranche" />
           ) : totalLcp === 0 ? (
             <EtatSurface compact etat={{ kind: "vide", population: "mesure LCP", plage: commun.plage }} />
           ) : (
@@ -363,7 +365,7 @@ export function ChargeErreursLcp({
               ]}
               format="ms"
               vital="LCP"
-              ariaLabel={`LCP p75 par seau de ${seau}, ${commun.grille.length} seaux, 3 zones de seuil (Bon, À améliorer, Mauvais)`}
+              ariaLabel={`LCP p75 par tranche de ${seau}, ${commun.grille.length} seaux, 3 zones de seuil (Bon, À améliorer, Mauvais)`}
             />
           )}
         </Panneau>

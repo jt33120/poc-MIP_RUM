@@ -319,7 +319,7 @@ describe("ResultatAnalyse — Série (W-E5)", () => {
       series: [{ start: seau(0), end: seau(1), key: [], value: 2000, samples: 50 }],
     });
     expect(html).toContain('data-testid="alternative"');
-    expect(texte(html)).toContain("Seau (UTC)");
+    expect(texte(html)).toContain("Période");
   });
 });
 

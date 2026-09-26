@@ -19,8 +19,9 @@ export function PageHeader({
   /** Clé de glossaire : ajoute une bulle d'aide « ? » à côté du titre. */
   help?: GlossaryId;
   /** Catégorie de navigation (surtitre et couleur, § 2.4) : `perf`, `robot`,
-   *  `usages`, `fiabilite`, `explorer` ou `ai`. Absent : celle qui range la route
-   *  courante dans la navigation, « perf » à défaut. */
+   *  `usages`, `fiabilite`, `explorer`, `ai`, ou une zone hors RUM (`admin`,
+   *  `integrations`, `logs`, `svi`). Absent : celle qui range la route courante
+   *  dans la navigation (`surtitreDe`), « perf » à défaut. */
   domain?: PageDomain;
   children?: React.ReactNode;
 }) {
@@ -28,10 +29,13 @@ export function PageHeader({
     <div className="mb-6 flex flex-wrap items-start gap-3">
       <div className="min-w-0">
         <SurtitreDomaine domain={domain} />
-        <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-ink">
-          {title}
+        {/* La bulle d'aide est la SŒUR du titre, pas son enfant : dans le h1, son
+            texte faisait partie du nom du titre (« SatisfactionSatisfactionTechnique
+            Ce que… » à la lecture d'écran, recette du 26/09/2026). */}
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold tracking-tight text-ink">{title}</h1>
           {help && <GlossaryTip id={help} />}
-        </h1>
+        </div>
         {sub && <p className="mt-1 text-sm text-ink-soft">{sub}</p>}
       </div>
       {/* Les actions PASSENT À LA LIGNE plutôt que de déborder. `shrink-0` les

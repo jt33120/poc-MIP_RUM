@@ -51,6 +51,7 @@ import {
   TOUCHES_MIN_TEST,
   TOUCHES_VALEUR_MIN,
 } from "@/lib/stats/surrepresentation";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 /** Part lue pour le groupe, ou le refus du contrat (un filtre que les vues ne portent pas). */
 export type PartGroupe = { lu: PartSessionsTouchees } | { refus: string };
@@ -397,15 +398,15 @@ export function OccurrencesDansLeTemps({
       id="detail-erreur-temps"
       meta={
         <>
-          <span>seau de {bucketLabel}</span>
+          <span>tranches de {bucketLabel}</span>
           <span>{compte(total)} occurrences sur {plage}</span>
         </>
       }
-      lecture="Barres : un compte discret. Un seau sans occurrence vaut zéro, et la barre le dit — une ligne l'aurait interpolé. Même fenêtre que l'écran : le panneau n'a pas de plage à lui."
+      lecture="Barres : un compte discret. Une tranche sans occurrence vaut zéro, et la barre le dit — une ligne l'aurait interpolé. Même fenêtre que l'écran : le panneau n'a pas de plage à lui."
       alternative={{
-        legende: `Occurrences par seau de ${bucketLabel} sur ${plage}`,
-        colonnes: ["Seau (UTC)", "Occurrences"],
-        lignes: grille.map((t, i) => [libelleSeauComplet(t, seauSecondes, "UTC"), valeurs[i]]),
+        legende: `Occurrences par tranche de ${bucketLabel} sur ${plage}`,
+        colonnes: ["Période", "Occurrences"],
+        lignes: grille.map((t, i) => [libelleSeauComplet(t, seauSecondes, FUSEAU_AFFICHAGE), valeurs[i]]),
       }}
     >
       <ThresholdSeries
@@ -414,12 +415,12 @@ export function OccurrencesDansLeTemps({
         series={series}
         format="count"
         seauSecondes={seauSecondes}
-        fuseau="UTC"
+        fuseau={FUSEAU_AFFICHAGE}
         hauteur={180}
         annotations={annotations}
         annotationsIndisponibles={annotationsIndisponibles}
         zoomHref={zoomHref}
-        ariaLabel={`Occurrences de ce groupe par seau de ${bucketLabel} sur ${plage}`}
+        ariaLabel={`Occurrences de ce groupe par tranche de ${bucketLabel} sur ${plage}`}
       />
     </Figure>
   );

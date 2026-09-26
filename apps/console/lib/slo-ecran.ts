@@ -1,13 +1,18 @@
 // Écran /slo (F63, plan § 5.18) : ce que la page tire de `slo_status()`, sans accès
 // base. Module pur, testé (tests/unit/slo.test.ts).
 //
-// CE QUE CALCULE VRAIMENT `slo_status()` (migration-v64) — et que l'écran écrit :
+// CE QUE CALCULE VRAIMENT `slo_status()` (migration-v94, après v64) — et que l'écran écrit :
 //   - un vital : part des mesures notées Bon sur `window_days` jours glissants
 //     jusqu'à MAINTENANT, sans filtre de population ;
-//   - `error_rate` : 1 − occurrences d'erreurs / pages vues. Pas une part de pages
-//     sans erreur : dès qu'il y a plus d'occurrences que de pages vues, l'atteinte
-//     devient NÉGATIVE, et n'est pas interprétable ;
-//   - consommé = (1 − atteinte) / (1 − objectif) × 100, borné à [0, 999] ;
+//   - `error_rate` : 1 − occurrences d'erreurs NAVIGATEUR (sources `browser_*`,
+//     la définition de la Vue d'ensemble) / pages vues. Pas une part de pages sans
+//     erreur (aucune occurrence n'est rattachée à SA page) : dès qu'il y a plus
+//     d'occurrences que de pages vues, l'atteinte devient NÉGATIVE, et n'est pas
+//     interprétable. Avant v94, le numérateur comptait aussi les exceptions serveur
+//     et mobiles, sans page vue en face (recette du 26/09/2026) ;
+//   - consommé = (1 − atteinte) / (1 − objectif) × 100, jamais négatif. Plus de
+//     plafond depuis v94 : « 999 % » s'affichait pour 1 233 %, une borne lue comme
+//     une valeur ;
 //   - burn rapide : 1 − atteinte sur la DERNIÈRE HEURE ≥ 14,4 × budget ; `null` sans
 //     mesure sur l'heure. Une seule fenêtre : sensible aux pics courts.
 // Un SLO sans aucune mesure rend `attainment = null` : ni tenu ni manqué (V3).
@@ -21,7 +26,7 @@ import type { AlertFiringRow } from "./queries-v2";
 const VITAUX: readonly string[] = ["LCP", "INP", "CLS", "FCP", "TTFB"];
 
 export const FORMULE_SLO =
-  "LCP, INP, CLS, FCP, TTFB : part des mesures notées Bon sur la fenêtre. error_rate : 1 − occurrences d'erreurs ÷ pages vues sur la fenêtre (négatif s'il y a plus d'occurrences que de pages vues).";
+  "LCP, INP, CLS, FCP, TTFB : part des mesures notées Bon sur la fenêtre. Taux d'erreur : 1 − occurrences d'erreurs navigateur ÷ pages vues sur la fenêtre, comme la Vue d'ensemble (négatif s'il y a plus d'occurrences que de pages vues) ; ce n'est pas une part de pages.";
 
 /** Facteur du burn rapide de `slo_status()` (migration-v64) ; origine non documentée dans le dépôt. */
 export const FACTEUR_BURN_RAPIDE = 14.4;
@@ -29,7 +34,7 @@ export const FACTEUR_BURN_RAPIDE = 14.4;
 /** La métrique en clair : sa formule, pas son identifiant (« Taux d'erreur JS » disparaît). */
 export function metriqueEnClair(metric: string): string {
   if (VITAUX.includes(metric)) return `Part des mesures ${metric} notées Bon`;
-  if (metric === "error_rate") return "1 − occurrences d'erreurs par page vue";
+  if (metric === "error_rate") return "1 − occurrences d'erreurs navigateur par page vue";
   return metric;
 }
 
@@ -65,7 +70,7 @@ export function hrefCreerAlerte(s: Pick<SloStatusRow, "metric" | "route">): stri
 
 /** « LCP · /checkout · 28 j · objectif 95,0 % » : ce que mesure une barre. */
 export function detailSlo(s: Pick<SloStatusRow, "metric" | "route" | "window_days" | "objective">): string {
-  const metrique = s.metric === "error_rate" ? "erreurs par page vue" : s.metric;
+  const metrique = s.metric === "error_rate" ? "erreurs navigateur par page vue" : s.metric;
   return `${metrique} · ${s.route ?? "toutes routes"} · ${s.window_days} j · objectif ${formater("pct", s.objective)}`;
 }
 
@@ -99,7 +104,7 @@ export interface ComptesSlo {
   epuises: number;
   /**
    * Atteinte négative (`error_rate` : plus d'occurrences que de pages vues). Son
-   * `burned_pct` est ≥ 100 (borné à 999), mais il ne mesure rien : compté À PART,
+   * `burned_pct` est ≥ 100, mais il ne mesure rien : compté À PART,
    * jamais dans « Budget épuisé » — la barre de la même page le dit « non interprétable ».
    */
   nonInterpretables: number;

@@ -46,7 +46,7 @@ describe("DistributionSeuils", () => {
     );
     for (const r of ["p50", "p75", "p95"]) expect(html).toContain(`data-repere="${r}"`);
     expect(texte(html)).toContain("p75 2,9 s");
-    expect(texte(html)).toContain("9 mesure(s) ≥ 6,0 s");
+    expect(texte(html)).toContain("9 mesures ≥ 6,0 s");
     // Une barre à cheval sur 2,5 s (bac 2 400-2 700) est coupée en deux morceaux.
     expect(texte(html).match(/2,4 s – 2,7 s : /g)).toHaveLength(2);
     expect(html).toContain('data-testid="alternative"');

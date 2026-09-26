@@ -41,15 +41,17 @@ import {
 } from "@/lib/cohorts";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import { APPAREILS, chargerRetention, FENETRE_DEFAUT, FENETRES, fenetreDeRetention } from "@/lib/chargeurs/retention";
+import { APPAREILS, chargerRetention, fenetreDeRetention } from "@/lib/chargeurs/retention";
 import { chargerEcran } from "@/lib/ecran";
 import { hrefWithQuery } from "@/lib/query-contract";
+import { fmtJour } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-// Lundi de la cohorte, lu en UTC : les semaines sont des semaines UTC, et un
-// serveur à l'ouest de Greenwich afficherait sinon le dimanche.
-const fmtSemaine = (d: Date) => d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
+// Lundi de la cohorte, écrit dans le fuseau d'affichage (heure de Paris) : le lundi
+// 00:00 UTC d'une cohorte y est encore un lundi. Sans fuseau fixé, un serveur à
+// l'ouest de Greenwich afficherait le dimanche.
+const fmtSemaine = (d: Date) => fmtJour(d);
 const nombre = (n: number) => n.toLocaleString("fr-FR");
 /** Un taux en pourcentage pour la courbe (0..100, une décimale) ; `null` reste un trou. */
 const enPct = (t: number | null) => (t === null ? null : Math.round(t * 1000) / 10);
@@ -89,9 +91,10 @@ export default async function Retention({ searchParams }: { searchParams: Promis
 
   // `weeks` est un réglage de l'écran (§ 3.1) : une valeur hors des fenêtres
   // proposées est ignorée ET signalée, jamais appliquée à moitié.
-  const { weeks, ignore } = fenetreDeRetention(sp);
+  // Seules les fenêtres que l'historique conservé remplit sont proposées.
+  const { weeks, ignore, disponibles, defaut, jours } = fenetreDeRetention(sp);
   /** La fenêtre retenue, telle qu'un lien la reporte (le défaut ne s'écrit pas). */
-  const weeksParam = weeks === FENETRE_DEFAUT ? null : String(weeks);
+  const weeksParam = weeks === defaut ? null : String(weeks);
   const semaineCourante = indexSemaine(Date.now());
   // Toute condition d'appareil, `device=` OU segment (`seg=v2:device:is_null`…) :
   // une condition de segment se cumulerait avec chaque série et la viderait.
@@ -109,10 +112,10 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   const selecteur = (
     <nav aria-label="Fenêtre de rétention" className="relative flex min-w-0 max-w-full items-center gap-1.5 overflow-x-auto py-0.5 text-xs">
       <span className="shrink-0 text-ink-soft">Fenêtre :</span>
-      {FENETRES.map((w) => (
+      {disponibles.map((w) => (
         <Link
           key={w}
-          href={hrefWithQuery("/retention", ecran.query, { weeks: w === FENETRE_DEFAUT ? null : String(w) })}
+          href={hrefWithQuery("/retention", ecran.query, { weeks: w === defaut ? null : String(w) })}
           aria-current={w === weeks ? "true" : undefined}
           data-testid="retention-fenetre"
           className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
@@ -122,6 +125,9 @@ export default async function Retention({ searchParams }: { searchParams: Promis
           {w} sem.
         </Link>
       ))}
+      <span className="shrink-0 text-ink-faint" data-testid="retention-historique">
+        historique conservé : {jours} jours
+      </span>
     </nav>
   );
 
@@ -189,7 +195,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                   etat={colonnes <= 1 ? { kind: "partiel", raison: "une seule semaine observée : pas encore de recul" } : undefined}
                   meta={
                     <>
-                      <span>{weeks} semaines, semaines UTC</span>
+                      <span>{weeks} semaines</span>
                       <span>moyenne pondérée par la taille des cohortes dont la semaine est complète ; semaine en cours exclue</span>
                     </>
                   }
@@ -205,7 +211,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                     valueName="Rétention"
                     valueUnit="%"
                     domain={[0, 100]}
-                    ariaLabel={`Rétention pondérée par semaine depuis l'arrivée, de S+0 à S+${Math.max(0, colonnes - 1)}, fenêtre de ${weeks} semaines UTC ; un point sans cohorte complète est un trou`}
+                    ariaLabel={`Rétention pondérée par semaine depuis l'arrivée, de S+0 à S+${Math.max(0, colonnes - 1)}, fenêtre de ${weeks} semaines ; un point sans cohorte complète est un trou`}
                   />
                 </Figure>
               </SectionErreur>
@@ -262,7 +268,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                             valueUnit="%"
                             domain={[0, 100]}
                             series={APPAREILS.map((a) => ({ cle: a.cle, libelle: a.libelle, role: "categorie" as const }))}
-                            ariaLabel={`Rétention pondérée par appareil (${APPAREILS.map((a) => a.libelle.toLowerCase()).join(", ")}) et par semaine depuis l'arrivée, fenêtre de ${weeks} semaines UTC`}
+                            ariaLabel={`Rétention pondérée par appareil (${APPAREILS.map((a) => a.libelle.toLowerCase()).join(", ")}) et par semaine depuis l'arrivée, fenêtre de ${weeks} semaines`}
                           />
                           <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
                             {APPAREILS.map((a, i) => (
@@ -295,12 +301,12 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                   <span>
                     {nombre(rows.length)} cohorte{rows.length > 1 ? "s" : ""}, {nombre(totalVisiteurs)} visiteurs identifiés
                   </span>
-                  <span>semaines UTC, étiquetées par leur lundi</span>
+                  <span>semaines étiquetées par leur lundi</span>
                 </>
               }
               lecture={
                 <>
-                  Cohorte = première semaine d&apos;activité <strong>dans la fenêtre lue</strong> (au plus 30 jours
+                  Cohorte = première semaine d&apos;activité <strong>dans la fenêtre lue</strong> (au plus {jours} jours
                   conservés), pas première visite absolue. S+0 est la semaine de la cohorte (100 %) ; les cases vides
                   sont des semaines encore à venir pour une cohorte récente (matrice triangulaire). Moins de 10
                   visiteurs : effectif faible.

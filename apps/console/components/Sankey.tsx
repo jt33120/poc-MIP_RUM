@@ -30,6 +30,10 @@ const X0 = MARGIN; // bord droit des nœuds source = X0 + NODE_W
 const X1 = W - MARGIN - NODE_W; // bord gauche des nœuds cible
 const RX0 = X0 + NODE_W;
 const XM = (RX0 + X1) / 2;
+/** Bande d'en-tête « Depuis » / « Vers », au-dessus des nœuds. */
+const ENTETE = 18;
+/** Caractères d'un libellé de nœud (police mono 11) qui tiennent dans la marge de 150 unités. */
+const CARACTERES_LIBELLE = 21;
 
 /**
  * Où mènent les nœuds et les rubans. Calculé par l'appelant (§ 0.3 : un lien
@@ -47,8 +51,15 @@ export interface LiensSankey {
   ancrer?: (route: string) => string;
 }
 
-function trunc(s: string, n = 22): string {
-  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+/**
+ * Coupe AU MILIEU : le début et la fin d'une route l'identifient (« /partners/…/documents »).
+ * Coupée à la fin, « /partners/:id » et « /partners/:id/documents » se confondaient ;
+ * coupée par le bord du dessin, la route perdait son début (« ners/:id/documen… »).
+ */
+export function tronquerMilieu(s: string, n: number): string {
+  if (s.length <= n) return s;
+  const tete = Math.ceil((n - 1) / 2);
+  return `${s.slice(0, tete)}…${s.slice(s.length - (n - 1 - tete))}`;
 }
 
 const compte = (n: number) => n.toLocaleString("fr-FR");
@@ -56,8 +67,14 @@ const compte = (n: number) => n.toLocaleString("fr-FR");
 /** « 128 passages » / « 1 passage » : le total d'un nœud, accordé. */
 const passages = (n: number) => `${compte(n)} ${n > 1 ? "passages" : "passage"}`;
 
-/** Le libellé d'un nœud : sa route et son total, jamais l'un sans l'autre. */
-const libelleNoeud = (route: string, total: number) => `${trunc(route)} · ${compte(total)}`;
+/**
+ * Le libellé d'un nœud : sa route et son total, jamais l'un sans l'autre. La route
+ * est coupée pour que le TOTAL tienne dans la marge (il sortait du dessin à droite).
+ */
+export function libelleNoeud(route: string, total: number): string {
+  const suffixe = ` · ${compte(total)}`;
+  return `${tronquerMilieu(route, Math.max(8, CARACTERES_LIBELLE - suffixe.length))}${suffixe}`;
+}
 
 /** Un texte, ou ce même texte cliquable — sans forcer un lien là où il n'y en a pas. */
 function PeutEtreLien({ href, title, children }: { href?: string; title: string; children: ReactNode }) {
@@ -95,10 +112,10 @@ export function Sankey({
   const cliquable = Boolean(liens.sessions || liens.pages || liens.ancrer);
 
   const lignes: ReactNode[][] = model.links.map((l) => [
-    <PeutEtreLien key={`de-${l.from}`} href={liens.pages?.(l.from)} title={`Ouvrir /pages : ${l.from}`}>
+    <PeutEtreLien key={`de-${l.from}`} href={liens.pages?.(l.from)} title={`Ouvrir ${l.from} dans Pages`}>
       {l.from}
     </PeutEtreLien>,
-    <PeutEtreLien key={`vers-${l.to}`} href={liens.pages?.(l.to)} title={`Ouvrir /pages : ${l.to}`}>
+    <PeutEtreLien key={`vers-${l.to}`} href={liens.pages?.(l.to)} title={`Ouvrir ${l.to} dans Pages`}>
       {l.to}
     </PeutEtreLien>,
     <PeutEtreLien
@@ -126,11 +143,19 @@ export function Sankey({
             Sans lien, le dessin est une image ; avec des liens, c'est un groupe —
             un `role="img"` masquerait les rubans et les nœuds cliquables (RankBar). */}
         <svg
-          viewBox={`0 0 ${W} ${H}`}
+          viewBox={`0 0 ${W} ${H + ENTETE}`}
           className="w-full min-w-[560px]"
           role={cliquable ? "group" : "img"}
           aria-label={legende}
         >
+          {/* En-têtes de colonnes : le sens du flux se lit sans légende. */}
+          <text x={X0 + NODE_W} y={11} textAnchor="end" fontSize={11} fontWeight={600} className="fill-ink-soft">
+            Depuis
+          </text>
+          <text x={X1} y={11} textAnchor="start" fontSize={11} fontWeight={600} className="fill-ink-soft">
+            Vers
+          </text>
+          <g transform={`translate(0 ${ENTETE})`}>
           {/* rubans (dessinés avant les nœuds pour passer dessous) */}
           {model.links.map((l) => {
             const sy0 = y(l.sy0);
@@ -170,8 +195,8 @@ export function Sankey({
               const ancrage = gauche ? liens.ancrer?.(n.route) : undefined;
               const href = ancrage ?? liens.pages?.(n.route);
               const titre = ancrage
-                ? `Ancrer le flux à partir de ${n.route} (${passages(n.total)}) — ouvrir /pages depuis l'alternative`
-                : `Ouvrir /pages : ${n.route} (${passages(n.total)})`;
+                ? `Ancrer le flux à partir de ${n.route} (${passages(n.total)}) — la page de la route s'ouvre depuis l'alternative textuelle`
+                : `Ouvrir ${n.route} dans Pages (${passages(n.total)})`;
               const contenu = (
                 <>
                   <title>{titre}</title>
@@ -198,6 +223,7 @@ export function Sankey({
               );
             }),
           )}
+          </g>
         </svg>
       </div>
       {alternative && (

@@ -17,9 +17,20 @@
 //
 // Les bacs ne sont pas cliquables : le contrat ne filtre pas sur une valeur de
 // mesure (§ 3.3). L'alternative textuelle le rappelle.
+//
+// ÉTIQUETTES SANS CHEVAUCHEMENT (recette du 26/09/2026). Les repères avaient chacun
+// leur ligne, mais le trait d'un repère traversait l'étiquette du suivant (« p50
+// 56 ms » sous « p75 92 ms ») et l'axe CLS écrivait « 0,000,100 » (deux graduations
+// au même endroit). Les étiquettes des repères sont désormais rangées AU-DESSUS du
+// tracé, sur le moins de rangées possible (`rangerEtiquettes`), et les traits
+// partent du haut du tracé : aucun ne traverse un texte. Les graduations de l'axe
+// partagent une unité et une précision, et celle qui n'a pas la place est omise.
 import { TableAlternative, type AlternativeTexte } from "./Figure";
 import { EtatSurface } from "../states/EtatSurface";
+import { etendueCentree, etiquettesAxeLisibles, largeurTexte, rangerEtiquettes } from "@/lib/etiquettes";
 import { formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
+import { pluriel } from "@/lib/format";
+import { etiquettesGraduations } from "@/lib/graduations";
 import { RATING_HEX, SERIE } from "@/lib/palette";
 import { RATING_LABEL, THRESHOLDS, rating2026, texteSeuils, type Rating } from "@/lib/rating";
 
@@ -86,6 +97,7 @@ const DEBORD = 22; // largeur de la barre « ≥ plafond »
 const ECART = 6; // espace avant elle
 const LIGNE = 9; // hauteur d'une ligne d'étiquettes de repère
 const JOINT = 0.5; // espace entre deux barres voisines
+const POLICE = 8; // corps des étiquettes (unités du viewBox)
 
 /** Zones de seuil sur [0, +∞) : [debut, fin, verdict]. */
 function zones(vital: VitalName): [number, number, Rating][] {
@@ -150,13 +162,9 @@ export function DistributionSeuils({
   const max = Math.max(1, ...bacs.map((b) => b.n));
   const fmt = (v: number | null) => formater(formatDuVital(vital), v);
 
-  const lignesReperes = (valeurMarquee ? 1 : 0) + 3;
-  const HAUT = lignesReperes * LIGNE + 4;
   const largeurAxe = W - DEBORD - ECART;
   const x = (v: number) => (Math.min(Math.max(v, 0), plafond) / plafond) * largeurAxe;
   const xDebord = largeurAxe + ECART;
-  const hauteurUtile = H - BAS - HAUT;
-  const hauteur = (c: number) => (c / max) * hauteurUtile;
   const yBas = H - BAS;
 
   // Zone de la barre « ≥ plafond » : une seule si toutes ses valeurs y tombent.
@@ -174,6 +182,31 @@ export function DistributionSeuils({
   if (pc?.p75 != null) reperes.push({ cle: "p75", valeur: pc.p75, libelle: `p75 ${fmt(pc.p75)}`, epaisseur: 1.5 });
   if (pc?.p50 != null) reperes.push({ cle: "p50", valeur: pc.p50, libelle: `p50 ${fmt(pc.p50)}`, dash: "1 2", epaisseur: 1 });
 
+  // Étiquettes des repères, centrées sur leur trait et gardées dans le cadre, rangées
+  // sur le moins de rangées possible : la hauteur réservée suit le nombre de rangées.
+  const textes = reperes.map((r) => (r.valeur >= plafond ? `${r.libelle} (≥ plafond)` : r.libelle));
+  const etendues = reperes.map((r, i) => etendueCentree(position(r.valeur), largeurTexte(textes[i], POLICE), 0, W));
+  const rangees = rangerEtiquettes(etendues, Math.max(reperes.length, 1), 3);
+  const nbRangees = Math.max(1, ...rangees.map((r) => r + 1));
+  const HAUT = nbRangees * LIGNE + 4;
+  const hauteurUtile = H - BAS - HAUT;
+  const hauteur = (c: number) => (c / max) * hauteurUtile;
+
+  // Graduations de l'axe : 0, les seuils sous le plafond, le plafond — une seule unité,
+  // une seule précision, et celles qui se chevaucheraient sont omises.
+  const valeursAxe = [0, ...THRESHOLDS[vital].filter((t) => t > 0 && t < plafond), plafond];
+  const textesAxe = etiquettesGraduations(valeursAxe, formatDuVital(vital)).map((t, i) =>
+    i === valeursAxe.length - 1 ? `≥ ${t}` : t,
+  );
+  const etenduesAxe = valeursAxe.map((v, i) => {
+    const l = largeurTexte(textesAxe[i], POLICE);
+    const px = i === valeursAxe.length - 1 ? W : x(v);
+    if (i === 0) return { debut: 0, fin: l };
+    if (i === valeursAxe.length - 1) return { debut: W - l, fin: W };
+    return { debut: px - l / 2, fin: px + l / 2 };
+  });
+  const axeLisible = new Set(etiquettesAxeLisibles(etenduesAxe, 3));
+
   const aria = `Distribution ${vital} : ${n.toLocaleString("fr-FR")} mesures${
     pc ? `, p50 ${fmt(pc.p50)}, p75 ${fmt(pc.p75)}, p95 ${fmt(pc.p95)}` : ", percentiles non calculables"
   }${nDebord > 0 ? `, ${nDebord.toLocaleString("fr-FR")} au-delà de ${fmt(plafond)}` : ""}`;
@@ -184,7 +217,18 @@ export function DistributionSeuils({
         {/* Zones pleines en fond (P2) : la zone se lit même là où il n'y a pas de barre. */}
         {zones(vital).map(([de, a, r]) =>
           de < plafond ? (
-            <rect key={r} x={x(de)} y={HAUT} width={x(Math.min(a, plafond)) - x(de)} height={hauteurUtile} fill={RATING_HEX[r]} opacity={0.07} />
+            // `zone-seuil` : opacité relevée en thème sombre (app/globals.css), où 7 %
+            // rendait « À améliorer » et « Mauvais » presque invisibles.
+            <rect
+              key={r}
+              x={x(de)}
+              y={HAUT}
+              width={x(Math.min(a, plafond)) - x(de)}
+              height={hauteurUtile}
+              fill={RATING_HEX[r]}
+              opacity={0.07}
+              className="zone-seuil"
+            />
           ) : null,
         )}
 
@@ -199,7 +243,7 @@ export function DistributionSeuils({
               const x1 = x(Math.min(b.fin, a, plafond));
               return (
                 <rect key={`${i}-${r}`} x={x0 + JOINT / 2} y={yBas - h} width={Math.max(x1 - x0 - JOINT, JOINT)} height={h} fill={RATING_HEX[r]} opacity={0.85}>
-                  <title>{`${borne(vital, b.debut)} – ${borne(vital, b.fin)} : ${b.n.toLocaleString("fr-FR")} mesure(s)`}</title>
+                  <title>{`${borne(vital, b.debut)} – ${borne(vital, b.fin)} : ${pluriel(b.n, "mesure")}`}</title>
                 </rect>
               );
             });
@@ -215,7 +259,7 @@ export function DistributionSeuils({
           opacity={zoneDebord ? 0.85 : 0.35}
           className={zoneDebord ? undefined : "text-ink-soft"}
         >
-          <title>{`≥ ${fmt(plafond)} : ${nDebord.toLocaleString("fr-FR")} mesure(s)`}</title>
+          <title>{`≥ ${fmt(plafond)} : ${pluriel(nDebord, "mesure")}`}</title>
         </rect>
         <line x1={0} x2={W} y1={yBas + 0.5} y2={yBas + 0.5} stroke="currentColor" strokeWidth={0.5} className="text-line" />
 
@@ -234,59 +278,63 @@ export function DistributionSeuils({
           </rect>
         )}
 
-        {/* Repères : un trait par percentile, étiquettes sur des lignes distinctes. */}
+        {/* Repères : le trait dans le tracé, l'étiquette au-dessus, centrée sur lui, sur
+            sa rangée. Un trait ne traverse plus l'étiquette d'un autre repère. */}
         {reperes.map((r, i) => {
           const px = position(r.valeur);
-          const yTexte = (i + 1) * LIGNE - 1;
-          const aDroite = px > W * 0.62;
+          const rangee = rangees[i];
           return (
             <g key={r.cle} className="text-ink" data-repere={r.cle}>
               <line
                 x1={px}
                 x2={px}
-                y1={yTexte + 2}
+                y1={HAUT - 2}
                 y2={yBas}
                 stroke={r.couleur ?? "currentColor"}
                 strokeWidth={r.epaisseur}
                 strokeDasharray={r.dash}
               />
-              <text
-                x={aDroite ? px - 2 : px + 2}
-                y={yTexte}
-                fontSize={8}
-                fill="currentColor"
-                textAnchor={aDroite ? "end" : "start"}
-              >
-                {r.valeur >= plafond ? `${r.libelle} (≥ plafond)` : r.libelle}
-              </text>
+              {rangee >= 0 && (
+                <text x={etendues[i].centre} y={(rangee + 1) * LIGNE - 1} fontSize={POLICE} fill="currentColor" textAnchor="middle">
+                  {textes[i]}
+                </text>
+              )}
             </g>
           );
         })}
 
-        {/* Axe : 0, les deux seuils, le plafond. */}
-        {[0, ...THRESHOLDS[vital].filter((t) => t < plafond)].map((t, i) => (
-          <text
-            key={t}
-            x={x(t)}
-            y={H - 4}
-            fontSize={8}
-            fill="currentColor"
-            textAnchor={i === 0 ? "start" : "middle"}
-            className="text-ink-soft"
-          >
-            {fmt(t)}
-          </text>
-        ))}
-        <text x={W} y={H - 4} fontSize={8} fill="currentColor" textAnchor="end" className="text-ink-soft">
-          {`≥ ${fmt(plafond)}`}
-        </text>
+        {/* Axe : 0, les seuils, le plafond — ceux qui ont la place. */}
+        {valeursAxe.map((t, i) =>
+          axeLisible.has(i) ? (
+            <text
+              key={`${t}-${i}`}
+              x={i === valeursAxe.length - 1 ? W : x(t)}
+              y={H - 4}
+              fontSize={POLICE}
+              fill="currentColor"
+              textAnchor={i === 0 ? "start" : i === valeursAxe.length - 1 ? "end" : "middle"}
+              className="text-ink-soft"
+            >
+              {textesAxe[i]}
+            </text>
+          ) : null,
+        )}
       </svg>
 
       <p className="mt-2 text-[11px] leading-relaxed text-ink-soft" data-testid="distribution-legende">
         Couleur = zone de seuil de chaque mesure ({texteSeuils(vital)}) ; une barre à cheval sur un seuil est coupée au
-        seuil. Ce n&apos;est pas un verdict : seul le p75 en porte un. Dernière barre : {nDebord.toLocaleString("fr-FR")}{" "}
-        mesure(s) ≥ {fmt(plafond)}
-        {plafondLibelle ? ` (${plafondLibelle})` : " (plafond d'affichage)"}. Repères : p50 pointillé, p75 plein, p95 tirets
+        seuil. Ce n&apos;est pas un verdict : seul le p75 en porte un. Dernière barre : {pluriel(nDebord, "mesure")} ≥{" "}
+        {fmt(plafond)}
+        {plafondLibelle ? ` (${plafondLibelle})` : " (plafond d'affichage)"}. Repères :{" "}
+        {pc
+          ? [
+              pc.p50 != null ? `p50 ${fmt(pc.p50)} (pointillé)` : null,
+              pc.p75 != null ? `p75 ${fmt(pc.p75)} (trait plein)` : null,
+              pc.p95 != null ? `p95 ${fmt(pc.p95)} (tirets)` : null,
+            ]
+              .filter(Boolean)
+              .join(", ")
+          : "p50 pointillé, p75 plein, p95 tirets"}
         {valeurMarquee ? `, ${valeurMarquee.libelle} en orange` : ""}.
         {!pc && <strong className="font-medium text-ink"> Percentiles non calculables.</strong>}
       </p>

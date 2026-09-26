@@ -4,13 +4,16 @@ import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  ADMINISTRATION,
   CATEGORIES,
   DOMAINE_DE_CATEGORIE,
   activeCategory,
   domaineDe,
   hrefMatches,
+  lienAdministrationActif,
   ongletActif,
   sousOnglets,
+  surtitreDe,
 } from "../../apps/console/components/nav-items";
 
 const APP_DIR = join(__dirname, "..", "..", "apps", "console", "app");
@@ -165,5 +168,48 @@ describe("domaineDe (surtitre de PageHeader, § 2.4)", () => {
 
   it("une clé de domaine par catégorie ouverte", () => {
     expect(Object.keys(DOMAINE_DE_CATEGORIE).sort()).toEqual(ouvertes().map((c) => c.href).sort());
+  });
+});
+
+// Recette du 26/09/2026 : hors des cinq catégories RUM, le surtitre retombait sur
+// « Performance » (administration, API et MCP, Logs, SVI, IA), et le bloc
+// Administration n'avait pas d'état actif.
+describe("surtitreDe — le surtitre suit la sidebar, y compris hors RUM", () => {
+  it.each([
+    ["/", "perf"],
+    ["/tracing/abc", "robot"],
+    ["/admin/users", "admin"],
+    ["/admin/customers/demo-app", "admin"],
+    ["/api-docs", "integrations"],
+    ["/logs", "logs"],
+    ["/svi", "svi"],
+    ["/svi/appels/42", "svi"],
+    ["/ai", "ai"],
+  ])("%s → %s", (chemin, domaine) => {
+    expect(surtitreDe(chemin)).toBe(domaine);
+  });
+
+  it("un chemin inconnu : null (le composant retombe sur son défaut)", () => {
+    expect(surtitreDe("/select")).toBeNull();
+    expect(surtitreDe("/administrateur")).toBeNull();
+  });
+});
+
+describe("ADMINISTRATION — le bloc de la sidebar", () => {
+  it("chaque entrée a une route réelle et une icône qui lui est propre", () => {
+    for (const l of ADMINISTRATION) {
+      const dossier = join(APP_DIR, ...l.href.split("/").filter(Boolean));
+      expect(statSync(dossier).isDirectory(), l.href).toBe(true);
+    }
+    const icones = ADMINISTRATION.map((l) => l.icon);
+    expect(new Set(icones).size).toBe(icones.length);
+    const principales = new Set(CATEGORIES.map((c) => c.icon));
+    expect(icones.filter((i) => principales.has(i))).toEqual([]);
+  });
+
+  it("l'entrée active est celle du chemin, sous-pages comprises", () => {
+    expect(lienAdministrationActif("/admin/customers/demo-app")?.href).toBe("/admin/customers");
+    expect(lienAdministrationActif("/admin/users")?.href).toBe("/admin/users");
+    expect(lienAdministrationActif("/")).toBeUndefined();
   });
 });

@@ -18,6 +18,8 @@
 // durée n'est pas finie, et leur nombre de vues peut encore augmenter.
 
 /** En dessous, rien n'est affiché : un taux sur quelques sessions se lit comme du bruit. */
+import { pluriel } from "./format";
+
 export const ENGAGEMENT_MIN_SESSIONS = 30;
 
 /** Une session vue dans les N dernières minutes de la fenêtre est réputée encore active. */
@@ -58,7 +60,7 @@ export function engagementSuffisant(stats: EngagementStats): boolean {
 
 /** Ce qui manque, dit à l'écran plutôt qu'un chiffre affiché sans base (vouvoyé, F41). */
 export function engagementRaison(stats: EngagementStats): string {
-  return `${stats.sessions_with_view.toLocaleString("fr-FR")} session(s) avec au moins une page vue sur la fenêtre : il en faut ${ENGAGEMENT_MIN_SESSIONS} pour qu'une durée médiane et un taux de session à une vue veuillent dire quelque chose. Élargissez la période.`;
+  return `${pluriel(stats.sessions_with_view, "session")} avec au moins une page vue sur la fenêtre : il en faut ${ENGAGEMENT_MIN_SESSIONS} pour qu'une durée médiane et un taux de session à une vue veuillent dire quelque chose. Élargissez la période.`;
 }
 
 /** Part des sessions encore actives, pour nuancer la durée affichée ; null sans population. */

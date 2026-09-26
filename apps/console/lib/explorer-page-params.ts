@@ -52,6 +52,8 @@ import {
   type ResolvedRange,
 } from "./query-contract";
 import { estVital, formatDuVital, type FormatId, type VitalName } from "./fmt-ids";
+import { fmtPlage } from "./format";
+import { nomFuseau } from "./fuseau-local";
 import { CORE_VITALS } from "./rating";
 
 /** Paramètres propres à l'écran : tout le reste appartient au contrat commun. */
@@ -519,20 +521,14 @@ export function titreResultat(plan: ExplorerPlan): string {
 
 /**
  * Référence d'une comparaison à la période précédente, écrite en clair (P4, § 3.12) :
- * « vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC) ». Les bornes sont celles
- * de `previousRange`, en UTC — le fuseau des fenêtres du contrat (V6).
+ * « vs 24 h précédentes (20/09 14:00 → 21/09 14:00) ». Les bornes sont celles de
+ * `previousRange`, écrites dans le fuseau d'affichage (heure de Paris, nommé dans la
+ * barre du haut) ; les fenêtres du contrat, elles, restent en UTC.
  */
 export function referencePrecedente(range: ResolvedRange): string {
   const precedente = previousRange(range);
-  const fmt = new Intl.DateTimeFormat("fr-FR", {
-    timeZone: "UTC",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
   const duree = range.preset ? `${PRESET_LABELS[range.preset]} précédentes` : "période précédente";
-  return `vs ${duree} (${fmt.format(new Date(precedente.from))} → ${fmt.format(new Date(precedente.to))} UTC)`;
+  return `vs ${duree} (${fmtPlage(precedente.from, precedente.to)})`;
 }
 
 /**
@@ -752,8 +748,8 @@ export function planDeRepartition(
 /**
  * W-B1 — la population lue, en toutes lettres : apps effectives, appareil, chaque
  * condition de filtre, robots et apps internes, puis le fuseau dans lequel les
- * lectures à découpe locale rendent leurs jours (R-T). La PLAGE et le fuseau
- * d'axe (UTC) ne sont pas dans cette liste : ce sont les props dédiées `plage` et
+ * lectures à découpe locale rendent leurs jours (R-T), NOMMÉ (« heure de Paris »).
+ * La PLAGE et le fuseau d'axe ne sont pas dans cette liste : ce sont les props dédiées `plage` et
  * `fuseau` de `PopulationBar` (§ 4.2), qui ne les écrit donc pas deux fois.
  *
  * Sans aucune condition, la liste dit « Tous les visiteurs · Robots exclus » : une
@@ -767,7 +763,7 @@ export function resumePopulation(query: AnalyticsQuery, timeZone: string): strin
   for (const { condition } of conditions) puces.push(libelleCondition(condition));
   puces.push(query.filters.includeBots ? "Robots inclus" : "Robots exclus");
   if (query.filters.includeInternal) puces.push("Applications internes incluses");
-  puces.push(`Jours et heures locales lus en ${timeZone}`);
+  puces.push(`Jours et heures : ${nomFuseau(timeZone)}`);
   return puces;
 }
 

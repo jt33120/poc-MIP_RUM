@@ -46,8 +46,10 @@ import {
   apiHealth,
   atRisk,
   carteAffichee,
+  comptesARisque,
   layoutGraph,
   pageHealth,
+  texteARisque,
   texteRegleSanteApi,
   texteSanteNoeud,
   texteTendance,
@@ -61,6 +63,7 @@ import { type MapNodeRow } from "@/lib/queries-map";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
 import { grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, lireEtatDeVue, ligneIgnoree } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 export const dynamic = "force-dynamic";
 
@@ -148,6 +151,10 @@ export default async function ExperienceMapPage({
   const masquees = affichee.masquees.front + affichee.masquees.back;
 
   const aRisque = tous.filter((n) => n.risk);
+  // Pages et services comptés à part ; sans tendance conclue, « non conclu » plutôt
+  // qu'un zéro qui affirmerait l'absence de hausse (recette du 26/09/2026).
+  const risques = comptesARisque(tous);
+  const bandeauRisque = texteARisque(risques.pages, risques.services);
   const plusSollicite = [...back].sort((a, b) => b.calls - a.calls)[0] ?? null;
   const appelsTotal = tous.reduce((s, n) => s + n.calls, 0);
   // Un seul classement, lu par la table ET par le parcours du panneau (↑ / ↓) :
@@ -225,9 +232,12 @@ export default async function ExperienceMapPage({
             />
             <KpiTile
               label="Services à risque"
-              valeur={aRisque.length}
+              valeur={risques.conclues.services > 0 ? risques.services : null}
+              raisonNull="non conclu : aucune tendance mesurable, la première moitié de la plage ne porte pas d'appel à comparer"
               format="count"
-              lecture="volume en hausse ET santé dégradée ; une santé inconnue n'est pas une dégradation observée"
+              lecture={`volume en hausse ET santé dégradée, services serveur seulement${
+                risques.pages > 0 ? ` ; pages concernées à part : ${formater("count", risques.pages)}` : ""
+              } ; une santé inconnue n'est pas une dégradation observée`}
               href="#services-classes"
             />
             <KpiLibelle
@@ -323,11 +333,9 @@ export default async function ExperienceMapPage({
                     {CAP_COLONNE} par colonne détaillés) : leurs liens y arrivent, ils ne sont plus jetés.
                   </p>
                 )}
-                {aRisque.length > 0 && (
+                {bandeauRisque && (
                   <p className="mt-2 text-xs text-ink-soft" data-testid="carte-a-risque">
-                    <strong className="font-semibold text-ink">
-                      {formater("count", aRisque.length)} route(s) en hausse à surveiller
-                    </strong>{" "}
+                    <strong className="font-semibold text-ink">{bandeauRisque}</strong>{" "}
                     — volume qui grimpe et santé déjà dégradée : {aRisque.slice(0, 4).map((n) => n.route).join(", ")}
                     {aRisque.length > 4 && "…"}
                   </p>
@@ -656,7 +664,7 @@ function PanneauNoeud({
 
         <section>
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Latence p75 par seau de {bucketLabel}
+            Latence p75 par tranche de {bucketLabel}
           </h3>
           {serie == null || !serie.ok ? (
             <EchecLecture titre="Série du nœud" compact />
@@ -677,17 +685,17 @@ function PanneauNoeud({
                 format="ms"
                 faibleSous={5}
                 seauSecondes={seauSecondes}
-                fuseau="UTC"
+                fuseau={FUSEAU_AFFICHAGE}
                 zoomHref={zoom}
                 hauteur={180}
-                ariaLabel={`Latence p75 et volume d'appels de ${panneau.route} par seau de ${bucketLabel}, ${plage}`}
+                ariaLabel={`Latence p75 et volume d'appels de ${panneau.route} par tranche de ${bucketLabel}, ${plage}`}
               />
               <TableAlternative
                 alternative={{
-                  legende: `Latence p75 et appels de ${panneau.route} par seau de ${bucketLabel} (UTC), ${plage}`,
-                  colonnes: ["Seau (UTC)", "Latence p75", "Appels"],
+                  legende: `Latence p75 et appels de ${panneau.route} par tranche de ${bucketLabel}, ${plage}`,
+                  colonnes: ["Période", "Latence p75", "Appels"],
                   lignes: serie.data.map((p) => [
-                    libelleSeauComplet(p.t, seauSecondes, "UTC"),
+                    libelleSeauComplet(p.t, seauSecondes, FUSEAU_AFFICHAGE),
                     formater("ms", p.p75),
                     formater("count", p.appels),
                   ]),

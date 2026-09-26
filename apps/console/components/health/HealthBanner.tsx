@@ -12,6 +12,7 @@ import Link from "next/link";
 import { GlossaryTip } from "@/components/GlossaryTip";
 import { dominantFactors, type Health, type HealthFactor, HEALTH_CLASS, type HealthLabel } from "@/lib/health-libelles";
 import { RATING_HEX } from "@/lib/palette";
+import { pluriel } from "@/lib/format";
 
 const RING_STROKE: Record<HealthLabel, string> = {
   Excellent: RATING_HEX.good,
@@ -194,7 +195,7 @@ export function HealthBanner({
                   className="mt-1.5 block w-fit rounded-full border border-bad/30 bg-bad/10 px-2.5 py-0.5 text-xs font-semibold text-bad-ink transition hover:bg-bad/20"
                   data-testid="anomaly-badge"
                 >
-                  {health.anomalies.length} anomalie(s) détectée(s)
+                  {pluriel(health.anomalies.length, "anomalie détectée", "anomalies détectées")}
                 </a>
               )}
             </div>
@@ -251,7 +252,7 @@ export function HealthBanner({
               className="mt-2 block w-fit rounded-full border border-bad/30 bg-bad/10 px-2.5 py-0.5 text-xs font-semibold text-bad-ink transition hover:bg-bad/20"
               data-testid="anomaly-badge"
             >
-              {health.anomalies.length} anomalie(s) détectée(s)
+              {pluriel(health.anomalies.length, "anomalie détectée", "anomalies détectées")}
             </a>
           )}
         </div>

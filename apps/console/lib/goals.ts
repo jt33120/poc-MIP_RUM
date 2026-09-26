@@ -78,6 +78,30 @@ export function meilleurObjectif<T extends { rate: number | null; conversions: n
 }
 
 /**
+ * Les objectifs au taux PLUS HAUT que le meilleur, écartés pour échantillon faible.
+ * La tuile « Meilleur taux 82,2 % » côtoyait un objectif à 97,0 % sans dire pourquoi
+ * il n'était pas retenu (recette du 26/09/2026) : ce qui est écarté se dit.
+ */
+export function ecartesPlusHauts<T extends { rate: number | null; conversions: number; sessions: number; name: string }>(
+  rows: readonly T[],
+  meilleur: T | null,
+): T[] {
+  if (!meilleur || meilleur.rate == null) return [];
+  return classerObjectifs(rows).filter(
+    (g) => g !== meilleur && g.rate != null && g.rate > meilleur.rate! && echantillonFaibleObjectif(g.conversions, g.sessions),
+  );
+}
+
+/** « Recherche partenaire (97,0 %) écarté : échantillon faible » ; `undefined` sans écart. */
+export function texteEcartes(ecartes: readonly { rate: number | null; name: string }[]): string | undefined {
+  if (ecartes.length === 0) return undefined;
+  const pct = (v: number | null) => (v == null ? "—" : `${(v * 100).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}\u00a0%`);
+  const noms = ecartes.slice(0, 2).map((g) => `${g.name} (${pct(g.rate)})`).join(", ");
+  const reste = ecartes.length > 2 ? ` et ${ecartes.length - 2} autre${ecartes.length - 2 > 1 ? "s" : ""}` : "";
+  return `${noms}${reste} ${ecartes.length > 1 ? "écartés" : "écarté"} : échantillon faible`;
+}
+
+/**
  * L'effectif d'un taux tel que `KpiTile.couverture` le reçoit. La tuile marque
  * « échantillon faible » quand `n < faibleSous`, un seuil sur les SESSIONS ; pour
  * une proportion, la règle porte sur les deux côtés (`echantillonFaibleObjectif` :
@@ -109,7 +133,7 @@ export function formaterPoints(pt: number): string {
 
 /** Appareils de la table des sessions, dans l'ordre d'affichage ; `null` = « Inconnu » (V3). */
 export const APPAREILS: readonly string[] = ["desktop", "mobile", "tablet"];
-export const LIBELLE_APPAREIL: Record<string, string> = { desktop: "Desktop", mobile: "Mobile", tablet: "Tablette" };
+export const LIBELLE_APPAREIL: Record<string, string> = { desktop: "Ordinateur", mobile: "Mobile", tablet: "Tablette" };
 export const APPAREIL_INCONNU = "Inconnu";
 
 export interface LigneAppareil {

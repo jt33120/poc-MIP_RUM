@@ -1,5 +1,6 @@
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { TableDefilante } from "@/components/TableDefilante";
 import { chargerAudit } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { fmtDate } from "@/lib/format";
@@ -18,7 +19,9 @@ export default async function AdminAudit() {
         title="Audit"
         sub="100 dernières actions sensibles (logins, gestion des utilisateurs, seed)"
       />
-      <div className="card overflow-hidden">
+      {/* Défilant et signalé : à 390 px, `overflow-hidden` coupait la colonne
+          Détail sans aucun moyen de l'atteindre (recette 26/09). */}
+      <TableDefilante className="card" label="Journal d'audit">
         <table className="w-full text-sm" data-testid="audit-table">
           <thead className="bg-panel2">
             <tr>
@@ -32,7 +35,9 @@ export default async function AdminAudit() {
             {rows.map((r) => (
               <tr key={r.id} className="transition hover:bg-panel2/60">
                 <td className="whitespace-nowrap px-4 py-2 text-xs tabular-nums text-ink-soft">{fmtDate(r.ts)}</td>
-                <td className="px-4 py-2 font-mono text-xs">{r.user_email ?? "—"}</td>
+                {/* Une adresse ne se coupe pas au tiret (« julian@mip- / rum.local ») :
+                    le tableau défile, il a la place. */}
+                <td className="whitespace-nowrap px-4 py-2 font-mono text-xs">{r.user_email ?? "—"}</td>
                 <td className="px-4 py-2">
                   <span className="rounded bg-panel2 px-2 py-0.5 text-xs font-medium text-ink-soft">
                     {r.action}
@@ -50,7 +55,7 @@ export default async function AdminAudit() {
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
     </div>
   );
 }

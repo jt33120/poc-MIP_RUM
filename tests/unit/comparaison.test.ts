@@ -94,18 +94,18 @@ describe("règle 1 — rétention", () => {
 });
 
 describe("règle 2 — début de collecte", () => {
-  it("première mesure d'hier sous period=7d → partielle, date écrite en UTC", () => {
+  it("première mesure d'hier sous period=7d → partielle, date écrite à l'heure de Paris", () => {
     const hier = new Date("2026-09-21T08:30:00Z");
     expect(evaluer(requete("period=7d"), METRIQUE, hier)).toEqual({
       etat: "partielle",
-      raison: "mesures de performance collectées depuis le 21/09 08:30 UTC seulement",
+      raison: "mesures de performance collectées depuis le 21/09 à 10:30 seulement",
     });
   });
 
-  it("colonne ajoutée par une migration : c'est elle qui est nommée", () => {
+  it("colonne ajoutée par une migration : c'est elle qui est nommée, par son libellé", () => {
     const source: Source = { table: "rum_pageview", colonneTemps: "started_at", colonneRequise: "release", additive: true };
     expect(evaluer(requete("period=7d"), source, new Date("2026-09-20T00:00:00Z")).raison).toBe(
-      "champ « release » collecté depuis le 20/09 00:00 UTC seulement",
+      "donnée « version de l'application » collectée depuis le 20/09 à 02:00 seulement",
     );
   });
 
@@ -228,7 +228,7 @@ describe("sourcesSousFiltres — colonne requise dérivée des filtres actifs", 
     const [, navigateur] = sourcesSousFiltres(q, METRIQUE);
     expect(evaluer(q, navigateur, new Date("2026-09-20T00:00:00Z"))).toEqual({
       etat: "partielle",
-      raison: "champ « browser » collecté depuis le 20/09 00:00 UTC seulement",
+      raison: "donnée « navigateur » collectée depuis le 20/09 à 02:00 seulement",
     });
   });
 });

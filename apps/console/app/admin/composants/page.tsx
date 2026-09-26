@@ -10,6 +10,7 @@
 // Pas sous `app/demo` : cette route est l'accès de démonstration.
 import type { ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { TableDefilante } from "@/components/TableDefilante";
 import { DeltaBadge, HeroStat } from "@/components/SupervisionHero";
 import { VitalCard } from "@/components/VitalCard";
 import { Donut } from "@/components/charts/Donut";
@@ -151,7 +152,8 @@ export default async function VitrineComposants() {
       />
 
       <Section id="formats" titre="Formats nommés" sous="lib/fmt-ids.ts : un identifiant en chaîne, jamais une fonction ; null → « — ».">
-        <div className="card overflow-x-auto">
+        {/* Défilement signalé ; la zone est `relative` pour la légende `sr-only`. */}
+        <TableDefilante className="card" label="Formats nommés">
           <table className="w-full min-w-max text-sm">
             <caption className="sr-only">Rendu de chaque format pour une valeur d&apos;exemple</caption>
             <thead className="bg-panel2">
@@ -181,7 +183,7 @@ export default async function VitrineComposants() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       </Section>
 
       <Section

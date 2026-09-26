@@ -12,6 +12,31 @@
 export const FUSEAU_DEFAUT = "Europe/Paris";
 
 /**
+ * Le fuseau dans lequel la console ÉCRIT toutes ses heures : listes, axes,
+ * infobulles, références de comparaison.
+ *
+ * POURQUOI UN SEUL. La recette du 26/09/2026 a relevé trois fuseaux à l'écran :
+ * l'UTC des graphiques et des tuiles, l'heure locale du navigateur (non dite) dans
+ * les listes, et des horodatages ISO bruts. La même erreur s'affichait à 14:03 sur
+ * un écran et à 12:03 sur l'autre. Les fenêtres du contrat restent en UTC (c'est
+ * leur format d'échange) ; seul l'AFFICHAGE est ramené ici, et nommé une fois dans
+ * la barre du haut (« heure de Paris »). Paris est à un nombre entier d'heures
+ * d'UTC : un seau horaire garde des bornes rondes une fois converti.
+ */
+export const FUSEAU_AFFICHAGE = FUSEAU_DEFAUT;
+
+/**
+ * Le nom d'un fuseau tel qu'une phrase l'écrit : « heure de Paris » plutôt que
+ * l'identifiant IANA « Europe/Paris », qu'aucun lecteur n'emploie. Un fuseau sans
+ * nom usuel garde son identifiant : mieux vaut un nom technique qu'un faux nom.
+ */
+export function nomFuseau(tz: string): string {
+  if (tz === "Europe/Paris") return "heure de Paris";
+  if (tz === "UTC" || tz === "Etc/UTC") return "UTC";
+  return tz;
+}
+
+/**
  * Le fuseau est-il connu de Node (ICU) ? Postgres en accepte que la bibliothèque de
  * dates de Node ignore : `Intl.DateTimeFormat` lèverait alors hors de toute lecture,
  * et `/` planterait dès qu'une plage personnalisée s'afficherait (revue de vague 3).
@@ -146,19 +171,24 @@ function plageMurale(debut: number, fin: number, sansDate = false): string {
 }
 
 /**
- * Une plage UTC écrite dans les DEUX fuseaux, pour l'écran d'arrivée d'un lien :
- * « 10/09 09:00-10:00 Europe/Paris (07:00-08:00 UTC) » ;
- * « 10/09 00:00-24:00 Europe/Paris (09/09 22:00 - 10/09 22:00 UTC) ».
- * La date UTC n'est répétée que si elle diffère de la date locale.
+ * Une plage UTC écrite dans le fuseau de l'application, pour l'écran d'arrivée
+ * d'un lien : « 10/09 09:00-10:00 (heure de Paris) ».
+ *
+ * Quand ce fuseau n'est pas celui de l'affichage (une application réglée sur un
+ * autre fuseau), la plage est AUSSI écrite dans le fuseau d'affichage, celui de
+ * tout le reste de l'écran : « 10/09 09:00-10:00 America/New_York (10/09
+ * 15:00-16:00, heure de Paris) ». Avant la recette du 26/09/2026, cette seconde
+ * lecture était toujours en UTC — un troisième fuseau à l'écran.
  */
 export function libelleDeuxFuseaux(from: string, to: string, tz: string): string {
   const debut = Date.parse(from);
   const fin = Date.parse(to);
   if (!Number.isFinite(debut) || !Number.isFinite(fin)) throw new RangeError(`plage illisible : ${from} → ${to}`);
   const local = plageMurale(murale(debut, tz), murale(fin, tz));
-  if (tz === "UTC" || tz === "Etc/UTC") return `${local} UTC`;
-  const memeDate = clef(debut) === clef(murale(debut, tz));
-  return `${local} ${tz} (${plageMurale(debut, fin, memeDate)} UTC)`;
+  if (tz === FUSEAU_AFFICHAGE) return `${local} (${nomFuseau(tz)})`;
+  const memeDate = clef(murale(debut, FUSEAU_AFFICHAGE)) === clef(murale(debut, tz));
+  const affichage = plageMurale(murale(debut, FUSEAU_AFFICHAGE), murale(fin, FUSEAU_AFFICHAGE), memeDate);
+  return `${local} ${nomFuseau(tz)} (${affichage}, ${nomFuseau(FUSEAU_AFFICHAGE)})`;
 }
 
 /**

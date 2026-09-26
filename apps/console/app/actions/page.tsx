@@ -30,6 +30,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { OngletsInteractions } from "@/components/perf/OngletsInteractions";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import { breakdownDrillHref, refusDesSessions, sessionsDeLaRoute, type LienSessionsRoute } from "@/lib/breakdowns";
 import { chargerActions } from "@/lib/chargeurs/actions";
 import { type CouverturePrecedente } from "@/lib/comparaison";
@@ -191,7 +192,9 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
         {!lignes.ok ? (
           <EchecLecture titre="Table des actions" />
         ) : lignes.data.length ? (
-          <div className="card relative overflow-x-auto" data-testid="table-actions">
+          // Défilement SIGNALÉ : à 390 px, seules Action et Route se voyaient, tous les
+          // chiffres hors champ sans le moindre indice (recette 26/09).
+          <TableDefilante className="card" testId="table-actions" label="Table des actions">
             <table className="w-full min-w-table table-fixed text-sm">
               <caption className="caption-top px-4 pt-3 text-left text-xs text-ink-soft">
                 Actions de {label}, classées par erreurs liées. {PHRASE_CUMUL}
@@ -254,7 +257,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableDefilante>
         ) : (
           <EtatSurface etat={{ kind: "vide", population: "action causale", plage: label }} />
         )}

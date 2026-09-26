@@ -54,6 +54,7 @@ import {
   PLAN_SESSIONS_COMMENCEES,
   PLAN_VISITEURS_DISTINCTS,
   REPARTITION_LIMITE,
+  cleSession,
   type RepartitionSessions,
 } from "@/lib/queries-sessions";
 import { retentionDays } from "@/lib/queries-explorer";
@@ -198,6 +199,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     couvErreurs,
     couvVisiteurs,
     panneauLu,
+    signaux,
   } = d;
 
   const engagement = engagementLu.ok ? engagementLu.data : null;
@@ -720,7 +722,21 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
             )}
             <div className="mt-3">
               <SessionsTable
-                lignes={page.map((s) => ({ ...s, frustration: null, rejeu: null }))}
+                // Frustration et rejeu LUS pour les lignes affichées (recette du 26/09/2026 :
+                // forcés à « — », ils disaient « pas de rejeu » de 140 sessions qui en avaient
+                // un). Lecture en échec, ou session mobile sans capteur : « — », jamais « 0 ».
+                lignes={page.map((s) => {
+                  const lu = signaux.ok ? signaux.data[cleSession(s)] : undefined;
+                  return { ...s, frustration: lu ? lu.frustration : null, rejeu: lu ? lu.rejeu : null };
+                })}
+                rejeuHrefs={Object.fromEntries(
+                  page
+                    .filter((s) => signaux.ok && signaux.data[cleSession(s)]?.rejeu === true)
+                    .map((s) => [
+                      s.session_id,
+                      hrefWithQuery(`/sessions/${encodeURIComponent(s.session_id)}`, query, { tab: "replay" }),
+                    ]),
+                )}
                 // Une ligne ouvre le panneau (F43) ; la page de session est à un clic,
                 // « Ouvrir en page » dans l'en-tête du panneau.
                 panelHrefs={Object.fromEntries(page.map((s) => [s.session_id, lienPanneau(s.session_id)]))}

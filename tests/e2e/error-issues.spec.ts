@@ -286,15 +286,17 @@ test("F21 — détail d'une issue : les blocs 2 à 7 du détail d'un groupe, la 
   await expect(page.getByTestId("issue-state")).toBeVisible();
 });
 
-test("F21 — versions touchées d'une issue : celles qu'elle persiste, hors fenêtre et hors filtres", async ({ page }) => {
+test("F21 — versions touchées d'une issue : toutes ses releases, hors fenêtre et hors filtres", async ({ page }) => {
   await login(page);
-  // I1 est apparue il y a 3 jours en 1.0.0 ; sur 24 h, toutes ses occurrences portent 1.1.0.
+  // I1 est apparue il y a 3 jours en 1.0.0 (release PERSISTÉE : ses lignes de l'époque
+  // ne sont plus en base) ; sur 24 h, toutes ses occurrences portent 1.1.0. Depuis la
+  // recette du 26/09/2026, le bloc lit les releases de ses lignes, de la plus récente
+  // à la plus ancienne, et garde la release persistée de la première occurrence.
   await page.goto(`${CONSOLE}/errors/issues/${I1}?app=${A}&period=24h`);
   const versions = page.getByTestId("versions-touchees");
-  await expect(versions).toHaveAttribute("data-portee", "issue");
   await expect(versions.getByTestId("premiere-release")).toContainText("1.0.0");
   await expect(versions.getByTestId("derniere-release")).toContainText("1.1.0");
-  await expect(versions).toContainText("ni la fenêtre ni les filtres de l'écran ne s'y appliquent");
+  await expect(versions).toContainText("depuis toujours, hors fenêtre");
   // La fenêtre, elle, ne voit que 1.1.0 : la première version ne vient pas d'elle.
   await expect(page.locator("#detail-erreur-commun").getByTestId("repli-release")).not.toContainText("1.0.0");
 

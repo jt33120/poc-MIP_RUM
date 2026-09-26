@@ -240,6 +240,65 @@ export const ICON_PATHS = {
       <circle cx="12" cy="12" r="3" />
     </>
   ),
+  // Icônes propres au bloc Administration (recette du 26/09/2026) : ses entrées
+  // reprenaient celles de la navigation principale (Uptime = Fiabilité,
+  // Consommation = Performance…), et l'œil associait deux écrans sans rapport.
+  // immeuble — Clients (applications)
+  building: (
+    <>
+      <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
+      <path d="M6 12H4a2 2 0 0 0-2 2v8h4" />
+      <path d="M18 9h2a2 2 0 0 1 2 2v11h-4" />
+      <path d="M10 6h4M10 10h4M10 14h4M10 18h4" />
+    </>
+  ),
+  // clé — jetons de lecture
+  key: (
+    <>
+      <circle cx="7.5" cy="15.5" r="5.5" />
+      <path d="m21 2-9.6 9.6" />
+      <path d="m15.5 7.5 3 3L22 7l-3-3" />
+    </>
+  ),
+  // pièce de puzzle — extension navigateur
+  puzzle: (
+    <path d="M19.44 15.44a2 2 0 1 0 0-2.88l-1.44-1.44V7a1 1 0 0 0-1-1h-4.12l-1.44-1.44a2 2 0 1 0-2.88 0L7 6H4a1 1 0 0 0-1 1v4.12l1.44 1.44a2 2 0 1 1 0 2.88L3 16.88V20a1 1 0 0 0 1 1h4.12l1.44-1.44a2 2 0 1 1 2.88 0L13.88 21H17a1 1 0 0 0 1-1v-4.12Z" />
+  ),
+  // écran — postes équipés
+  monitor: (
+    <>
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </>
+  ),
+  // carte avec code — source maps
+  fileCode: (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="m10 13-2 2 2 2M14 13l2 2-2 2" />
+    </>
+  ),
+  // signal — disponibilité (uptime)
+  signal: (
+    <>
+      <path d="M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16" />
+    </>
+  ),
+  // barres — consommation
+  barChart: (
+    <>
+      <path d="M3 3v18h18" />
+      <path d="M7 16v-3M12 16V8M17 16v-6" />
+    </>
+  ),
+  // cœur tracé — santé interne
+  heartPulse: (
+    <>
+      <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+      <path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27" />
+    </>
+  ),
   // œil barré — masquer le mot de passe
   eyeOff: (
     <>

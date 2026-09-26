@@ -1,5 +1,6 @@
 // Section canaux de notification : liste + création (webhook/slack/email) par sévérité.
 import { ALERT_SEVERITIES, CHANNEL_KINDS } from "@/lib/alerting";
+import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
 import { createChannelAction, deleteChannelAction, toggleChannelAction } from "@/app/alerts/actions";
 import { LockedBadge } from "@/components/LockedBadge";
@@ -130,15 +131,21 @@ export function ChannelsSection({
                   {c.active ? "Désactiver" : "Activer"}
                 </button>
               </form>
+              {/* Supprimer un canal fait taire ses alertes sans bruit : confirmé. L'encadré
+                  flotte sous le bouton plutôt que d'agrandir la carte et d'en déplacer les éléments. */}
               <form action={deleteChannelAction}>
                 <input type="hidden" name="id" value={c.id} />
-                <button
-                  type="submit"
-                  data-testid={`delete-channel-${c.id}`}
-                  className="rounded-lg bg-bad-fond px-3 py-1.5 text-xs font-medium text-white transition hover:bg-bad-fond/90"
-                >
-                  Supprimer
-                </button>
+                <ConfirmationDanger
+                  libelle="Supprimer"
+                  libelleAccessible={`Supprimer le canal ${c.target}`}
+                  question={`Supprimer le canal ${entreGuillemets(c.target)}\u00a0?`}
+                  consequence="Les alertes ne seront plus envoyées vers cette destination ; il faudra la déclarer de nouveau pour les y recevoir."
+                  confirmer="Supprimer le canal"
+                  enCours="Suppression…"
+                  flottant
+                  classeDeclencheur="rounded-lg border border-bad/40 bg-panel px-3 py-1.5 text-xs font-medium text-bad-ink transition hover:bg-bad/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bad/40"
+                  testid={`delete-channel-${c.id}`}
+                />
               </form>
             </div>
             )}

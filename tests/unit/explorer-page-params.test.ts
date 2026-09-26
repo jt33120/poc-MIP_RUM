@@ -386,9 +386,9 @@ describe("F32 — vitalDeVerdict (règle R-V) et libellés du résultat", () => 
 
   it("la référence de cmp=prev écrit la plage précédente en clair, en UTC", () => {
     const q = requete("app=demo&period=24h");
-    expect(f32ReferencePrecedente(q.range)).toBe("vs 24 h précédentes (15/09 12:00 → 16/09 12:00 UTC)");
+    expect(f32ReferencePrecedente(q.range)).toBe("vs 24 h précédentes (15/09 14:00 → 16/09 14:00)");
     const perso = requete("app=demo&from=2026-09-17T08:00:00Z&to=2026-09-17T10:00:00Z");
-    expect(f32ReferencePrecedente(perso.range)).toBe("vs période précédente (17/09 06:00 → 17/09 08:00 UTC)");
+    expect(f32ReferencePrecedente(perso.range)).toBe("vs période précédente (17/09 08:00 → 17/09 10:00)");
   });
 });
 
@@ -598,7 +598,7 @@ describe("F36 — résumé de la population lue (W-B1)", () => {
     expect(puces[0]).toBe("Apps : demo-app");
     expect(puces.join(" · ")).toContain("Tous les visiteurs · Robots exclus");
     // Le fuseau des découpes locales est dit : un jour n'est pas le même partout (R-T).
-    expect(puces.at(-1)).toBe("Jours et heures locales lus en Europe/Paris");
+    expect(puces.at(-1)).toBe("Jours et heures : heure de Paris");
     // La plage et le fuseau d'axe sont les props dédiées de `PopulationBar` : pas ici.
     expect(puces.join(" · ")).not.toContain("24 h");
   });

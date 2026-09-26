@@ -65,7 +65,7 @@ export interface ExperienceContext {
  *
  * `sessions` (commencées) et `frustration` (signaux datés par `e.ts`, toutes sessions)
  * ne sont PAS les deux termes d'un même taux : deux populations. L'écran n'en lit
- * que `lcp_p75` ; le taux « pour 1 000 sessions » vient de
+ * que `lcp_p75` ; le taux « par session » vient de
  * `frustrationSessionsCommencees` (F26, revue).
  */
 export async function experienceContext(f: FiltersLike): Promise<ExperienceContext> {
@@ -102,7 +102,7 @@ export interface FrustrationSessionsCommencees {
 }
 
 /**
- * « Frustration pour 1 000 sessions » (F26, revue) : numérateur et dénominateur sur
+ * « Signaux de frustration par session » (F26, revue) : numérateur et dénominateur sur
  * LA MÊME population, même patron que `erreursParSessionCommencee` (B39).
  *
  * Le taux d'avant divisait des signaux datés par `e.ts` — de TOUTES les sessions,

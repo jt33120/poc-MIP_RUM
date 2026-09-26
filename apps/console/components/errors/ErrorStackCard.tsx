@@ -24,7 +24,10 @@ export function ErrorStackCard({
   const deminified = symbolication?.symbolication_status === "resolved" && !!symbolication.stack_symbolicated;
 
   return (
-    <div className="card mb-6 overflow-hidden">
+    // `overflow-hidden` n'est là que pour les coins arrondis : les `<pre>` défilent
+    // eux-mêmes. `min-w-0` : dans une grille, une longue ligne de pile n'élargit pas
+    // la colonne (et donc la page) — c'est le `<pre>` qui défile.
+    <div className="card mb-6 min-w-0 overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
         Stack du dernier exemplaire ({last ? fmtDate(last.ts) : "—"})
         {deminified && (
@@ -63,7 +66,7 @@ export function ErrorStackCard({
       </div>
       <SymbolicationNotice symbolication={symbolication} release={last?.release ?? null} />
       {/* terminal navy permanent : lisible dans les deux thèmes */}
-      <pre className="overflow-x-auto bg-navy-950 p-4 text-xs leading-relaxed text-slate-200">
+      <pre className="max-w-full overflow-x-auto bg-navy-950 p-4 text-xs leading-relaxed text-slate-200">
         {(deminified ? symbolication?.stack_symbolicated : last?.stack) ?? last?.message ?? "(pas de stack capturée)"}
       </pre>
       {deminified && last?.stack && (
@@ -71,7 +74,7 @@ export function ErrorStackCard({
           <summary className="cursor-pointer px-4 py-2 text-xs text-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
             Stack brute (minifiée)
           </summary>
-          <pre className="overflow-x-auto bg-navy-950 p-4 text-xs leading-relaxed text-slate-300">{last.stack}</pre>
+          <pre className="max-w-full overflow-x-auto bg-navy-950 p-4 text-xs leading-relaxed text-slate-300">{last.stack}</pre>
         </details>
       )}
       {contexte && <CodeContextBlock context={contexte} />}
@@ -120,7 +123,7 @@ function CodeContextBlock({ context }: { context: CodeContext }) {
       <figcaption className="break-all px-4 py-2 font-mono text-xs text-ink-soft">
         {context.source}:{context.line} <span className="font-sans text-ink-faint">· visible par les admins</span>
       </figcaption>
-      <pre className="relative overflow-x-auto bg-navy-950 py-3 text-xs leading-relaxed text-slate-300">
+      <pre className="relative max-w-full overflow-x-auto bg-navy-950 py-3 text-xs leading-relaxed text-slate-300">
         {context.lines.map((ligne, i) => {
           const numero = context.start + i;
           const courante = numero === context.line;

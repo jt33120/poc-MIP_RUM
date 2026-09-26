@@ -20,6 +20,7 @@ import {
   moveWidgetAction,
   removeWidgetAction,
 } from "@/app/dashboards/actions";
+import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { RANGE_PRESETS, serializeSegments, type AnalyticsQuery } from "@/lib/query-contract";
 import { widgetQueryJson, type Widget } from "@/lib/dashboards";
@@ -150,15 +151,22 @@ export function WidgetCard({
                 ↓
               </button>
             </form>
+            {/* Retirer se confirme (recette 26/09) : le ✕ collé aux flèches partait
+                en un clic et emportait la carte et ses réglages. L'encadré flotte
+                sous le ✕ pour ne pas bousculer l'en-tête de la carte. */}
             <form action={removeWidgetAction}>
               {champsCommuns}
-              <button
-                type="submit"
-                aria-label={`Retirer — ${position}`}
-                className="btn-ghost px-2 py-1 text-bad-ink"
-              >
-                ✕
-              </button>
+              <ConfirmationDanger
+                libelle="✕"
+                libelleAccessible={`Retirer la carte ${entreGuillemets(widget.title)} — ${position}`}
+                question={`Retirer la carte ${entreGuillemets(widget.title)} de ce tableau de bord\u00a0?`}
+                consequence="La carte et ses réglages seront perdus : pour la retrouver, il faudra l’ajouter de nouveau."
+                confirmer="Retirer la carte"
+                enCours="Retrait…"
+                flottant
+                classeDeclencheur="btn-ghost px-2 py-1 text-bad-ink"
+                testid={`widget-${index}-retirer`}
+              />
             </form>
           </div>
         )}

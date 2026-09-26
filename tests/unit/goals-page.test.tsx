@@ -108,10 +108,10 @@ describe("/goals — hero et table", () => {
     // P*.1 conservé : l'intervalle en mots, par ligne de la table.
     expect(html).toContain('data-testid="goal-intervalle"');
     expect(t).toMatch(/entre 45,1\s% et 54,9\s% \(95 %\)/);
-    // La colonne dit « sessions », la dernière conversion est datée en UTC.
+    // La colonne dit « sessions », la dernière conversion est datée à l'heure de Paris.
     expect(t).toContain("Conversions (sessions)");
     expect(t).toContain("200 sur 400");
-    expect(t).toMatch(/22\/09,? 12:34 UTC/);
+    expect(t).toMatch(/22\/09,? 14:34/);
     // Une seule app lue : pas de colonne App dans la table des objectifs.
     expect(texte(tableObjectifs(html))).toMatch(/Objectif Condition Conversions \(sessions\)/);
   });
@@ -162,7 +162,7 @@ describe("/goals — par appareil (G4)", () => {
     const html = await rendre();
     const bloc = html.slice(html.indexOf('data-testid="conversion-appareils"'));
     const t = texte(bloc);
-    expect(t).toMatch(/Desktop 10 sessions 40,0\s% \(\+15,0 pt\)/);
+    expect(t).toMatch(/Ordinateur 10 sessions 40,0\s% \(\+15,0 pt\)/);
     expect(t).toMatch(/Mobile 6 sessions 16,7\s% \(−8,3 pt\)/);
     expect(t).toMatch(/Tablette 0 session —/);
     expect(t).toMatch(/Inconnu 4 sessions 0,0\s% \(−25,0 pt\)/);

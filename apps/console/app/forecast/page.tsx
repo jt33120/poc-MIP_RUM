@@ -52,7 +52,7 @@ import {
   type Tendance,
 } from "@/lib/forecast";
 import { liensDesJours } from "@/lib/forecast-liens";
-import { bornesJourLocal } from "@/lib/fuseau-local";
+import { bornesJourLocal, nomFuseau } from "@/lib/fuseau-local";
 import { instantDe, jourDans } from "@/lib/series";
 import {
   JOURS_VALIDES_REQUIS_RUPTURE,
@@ -74,6 +74,7 @@ import { ratioPour100 } from "@/lib/perf-domain";
 import { GRID_DAYS } from "@/lib/queries-grid";
 import { hrefWithQuery } from "@/lib/query-contract";
 import { THRESHOLDS } from "@/lib/rating";
+import { BandeauComparaison, MASQUE_SILENCE_REPETE } from "@/components/charts/RangeeKpi";
 
 export const dynamic = "force-dynamic";
 
@@ -247,7 +248,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
 
       {/* 1 — Bandeau de fenêtre fixe : la plage du haut ne s'applique pas, et on le dit avec les dates. */}
       <p role="note" data-testid="fenetre-fixe" className="-mt-2 mb-5 rounded-lg border border-line bg-panel2/60 px-4 py-2 text-xs text-ink-soft">
-        {GRID_DAYS} jours complets, du {jjmm(jours[0])} au {dateDernier}, fuseau de l&apos;app ({fuseau}) ; la plage
+        {GRID_DAYS} jours complets, du {jjmm(jours[0])} au {dateDernier}, fuseau de l&apos;app ({nomFuseau(fuseau)}) ; la plage
         choisie en haut ne s&apos;applique pas ; la journée en cours est exclue.
       </p>
 
@@ -271,7 +272,12 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
       </section>
 
       {/* 3 — Chiffres du dernier jour complet, contre le même jour de la semaine précédente. */}
-      <section aria-label="Dernier jour complet" className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* La référence incomplète est dite UNE fois, au-dessus des tuiles. */}
+      <BandeauComparaison couvertures={semainePrecedente >= 0 ? [couvLcp, couvRatio, couvVues] : []} />
+      <section
+        aria-label="Dernier jour complet"
+        className={`mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3 ${MASQUE_SILENCE_REPETE}`}
+      >
         {kpi(
           !lcpLu.ok ? (
             <EchecLecture titre="LCP p75, dernier jour complet" compact />
@@ -301,7 +307,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               format="pour100"
               sensMeilleur="bas"
               raisonNull="aucune page vue ce jour-là"
-              lecture="Inclut les erreurs sans page vue (backend) : le ratio peut dépasser 100."
+              methode="Inclut les erreurs sans page vue (backend) : le ratio peut dépasser 100."
               couverture={{ n: vues[dernier] ?? 0, unite: "pages vues", faibleSous: MESURES_MIN_JOUR }}
               precedent={semainePrecedente >= 0 ? (ratios[semainePrecedente] ?? null) : undefined}
               reference={referenceJ7}
@@ -369,7 +375,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               {datation.ok && datation.rupture
                 ? "Le trait vertical « Rupture » marque le premier jour du nouveau niveau ; il ouvre la Vue d'ensemble sur ce jour."
                 : ""}{" "}
-              Un point ouvre la Vue d&apos;ensemble sur ce jour (bornes converties en UTC).
+              Un point ouvre la Vue d&apos;ensemble sur ce jour.
             </>
           }
           alternative={

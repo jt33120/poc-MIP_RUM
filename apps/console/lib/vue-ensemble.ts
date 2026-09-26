@@ -5,6 +5,7 @@
 import type { ImpactLigne } from "@/components/ImpactTable";
 import type { Constat } from "@/components/InsightStrip";
 import { formater } from "./fmt-ids";
+import { fmtDate, fmtPlage, pluriel } from "./format";
 import { classerParGravite, ecartALaReference, estFaible } from "./impact";
 import type { AnomalyRow } from "./health";
 import type { AlertFiringRow } from "./queries-v2";
@@ -14,14 +15,6 @@ import type { AnalyticsQuery, ResolvedRange } from "./query-contract";
 
 // ─────────────────────────────── Références (§ 3.12) ───────────────────────────────
 
-const JJMM_HHMM = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
 
 const NOM_PRECEDENTE: Record<string, string> = {
   "1h": "heure précédente",
@@ -31,7 +24,7 @@ const NOM_PRECEDENTE: Record<string, string> = {
 
 /**
  * Référence d'un écart `cmp=prev`, écrite EN TOUTES LETTRES à côté du delta (P4,
- * § 3.12) : « vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC) ». La plage est
+ * § 3.12) : « vs 24 h précédentes (20/09 14:00 → 21/09 14:00) », heure de Paris. La plage est
  * celle de `previousRange` : même durée, immédiatement avant.
  */
 export function referencePrecedente(range: Pick<ResolvedRange, "from" | "to" | "preset">): string {
@@ -39,7 +32,7 @@ export function referencePrecedente(range: Pick<ResolvedRange, "from" | "to" | "
   const to = Date.parse(range.to);
   const debut = new Date(from - (to - from));
   const nom = (range.preset && NOM_PRECEDENTE[range.preset]) ?? "période précédente";
-  return `vs ${nom} (${JJMM_HHMM.format(debut)} → ${JJMM_HHMM.format(new Date(from))} UTC)`;
+  return `vs ${nom} (${fmtPlage(debut, from)})`;
 }
 
 /** Référence d'un écart `cmp=release` : même fenêtre, la release A (§ 3.12). */
@@ -63,11 +56,11 @@ export function lectureErreursPour100(e: {
 }): string {
   if (!e.restreint) return "toutes sources : inclut les erreurs serveur sans page vue (colonne de source absente)";
   const exclues = [
-    e.sansSource > 0 ? `${formater("count", e.sansSource)} occurrence(s) sans source déclarée` : null,
-    e.serveur > 0 ? `${formater("count", e.serveur)} occurrence(s) hors navigateur (serveur, mobile)` : null,
+    e.sansSource > 0 ? `${pluriel(e.sansSource, "occurrence")} sans source déclarée` : null,
+    e.serveur > 0 ? `${pluriel(e.serveur, "occurrence")} hors navigateur (serveur, mobile)` : null,
   ].filter((x): x is string => x !== null);
   return exclues.length
-    ? `erreurs navigateur seulement ; ${exclues.join(" et ")} non comptée(s)`
+    ? `erreurs navigateur seulement ; ${exclues.join(" et ")} non ${e.sansSource + e.serveur < 2 ? "comptée" : "comptées"}`
     : "erreurs navigateur seulement";
 }
 
@@ -408,10 +401,9 @@ export interface ConstatsCalcules {
 
 const pct = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v} %`);
 
-/** « 22/09 14:00 UTC » */
+/** « 22/09 14:00 », heure de Paris (le fuseau d'affichage, nommé dans la barre du haut). */
 function horodatage(ts: Date | string): string {
-  const d = ts instanceof Date ? ts : new Date(ts);
-  return `${JJMM_HHMM.format(d)} UTC`;
+  return fmtDate(ts);
 }
 
 function constatDeploiement(
@@ -447,7 +439,7 @@ function constatsAlertes(
     return [
       {
         type: "alerte",
-        titre: `${formater("count", alertes.n)} alerte(s) non acquittée(s)`,
+        titre: `${pluriel(alertes.n, "alerte non acquittée", "alertes non acquittées")}`,
         regle: REGLE_ALERTES,
         href: liens.alertes,
       },
@@ -475,8 +467,8 @@ function constatsAlertes(
       type: "alerte",
       titre:
         nommees.length > 0
-          ? `et ${formater("count", reste)} autre(s) alerte(s) non acquittée(s)`
-          : `${formater("count", reste)} alerte(s) non acquittée(s)`,
+          ? `et ${pluriel(reste, "autre alerte non acquittée", "autres alertes non acquittées")}`
+          : `${pluriel(reste, "alerte non acquittée", "alertes non acquittées")}`,
       regle: REGLE_ALERTES,
       href: liens.alertes,
     });
@@ -531,7 +523,7 @@ export function constatsVueEnsemble(e: EntreesConstats, liens: LiensConstats): C
       const nom = g.sample_message ?? g.error_type ?? `empreinte ${g.fingerprint.slice(0, 8)}`;
       constats.push({
         type: "regression",
-        titre: `Erreur réapparue : ${nom} (${formater("count", g.occurrences)} occurrence(s) sur la période)`,
+        titre: `Erreur réapparue : ${nom} (${pluriel(g.occurrences, "occurrence")} sur la période)`,
         regle: REGLE_REGRESSION,
         href: liens.erreur(g),
       });
@@ -540,7 +532,7 @@ export function constatsVueEnsemble(e: EntreesConstats, liens: LiensConstats): C
     if (reste > 0) {
       constats.push({
         type: "regression",
-        titre: `et ${formater("count", reste)} autre(s) groupe(s) d'erreurs régressé(s)`,
+        titre: `et ${pluriel(reste, "autre groupe d'erreurs régressé", "autres groupes d'erreurs régressés")}`,
         regle: REGLE_REGRESSION,
         href: liens.regresses,
       });

@@ -153,6 +153,40 @@ export const CATEGORIES: NavCategory[] = [
   { href: "/api-docs", label: "API et MCP", icon: "grid", domain: "neutral" },
 ];
 
+/**
+ * Le bloc Administration de la sidebar (admin seulement). Déclaré ICI, à côté des
+ * catégories, pour que la sidebar et le surtitre des pages lisent la même liste :
+ * rendu en dur dans le layout, il n'avait ni état actif ni `aria-current`, et ses
+ * icônes reprenaient celles de la navigation principale (recette du 26/09/2026).
+ * `seulementSi` : entrée conditionnelle, que le layout décide (connecteurs de
+ * tickets : seulement quand un fournisseur est branché).
+ */
+export type LienAdministration = { href: string; label: string; icon: IconName; seulementSi?: "tickets" };
+
+export const ADMINISTRATION: readonly LienAdministration[] = [
+  { href: "/admin/customers", label: "Clients", icon: "building" },
+  { href: "/admin/users", label: "Utilisateurs", icon: "user" },
+  { href: "/admin/privacy", label: "Vie privée · DSAR", icon: "shield" },
+  { href: "/admin/read-tokens", label: "Tokens de lecture", icon: "key" },
+  { href: "/admin/sourcemaps", label: "Source maps", icon: "fileCode" },
+  { href: "/admin/ticket-integrations", label: "Connecteurs de tickets", icon: "bell", seulementSi: "tickets" },
+  { href: "/admin/extension-scope", label: "Extension navigateur", icon: "puzzle" },
+  { href: "/admin/extension-installs", label: "Postes équipés", icon: "monitor" },
+  { href: "/admin/uptime", label: "Uptime", icon: "signal" },
+  { href: "/admin/audit", label: "Audit", icon: "list" },
+  { href: "/admin/usage", label: "Consommation", icon: "barChart" },
+  { href: "/admin/health", label: "Santé interne", icon: "heartPulse" },
+];
+
+/** Entrée d'administration active pour ce chemin (préfixe le plus long), ou undefined. */
+export function lienAdministrationActif(pathname: string): LienAdministration | undefined {
+  let best: LienAdministration | undefined;
+  for (const l of ADMINISTRATION) {
+    if (hrefMatches(l.href, pathname) && (!best || l.href.length > best.href.length)) best = l;
+  }
+  return best;
+}
+
 /** Clé de domaine d'en-tête (`PageHeader.domain`, § 2.4) de chaque catégorie RUM,
  *  indexée par sa landing. Une page sans `domain` explicite prend celle-ci. */
 export const DOMAINE_DE_CATEGORIE = {
@@ -169,6 +203,35 @@ export function domaineDe(pathname: string): DomaineRum | null {
   const c = activeCategory(pathname);
   if (!c) return null;
   return (DOMAINE_DE_CATEGORIE as Record<string, DomaineRum>)[c.href] ?? null;
+}
+
+/**
+ * Surtitres HORS des cinq catégories RUM. Avant la recette du 26/09/2026, tout
+ * écran qui n'y était pas rangé retombait sur « Performance » : l'administration,
+ * « API et MCP », et les trois écrans fermés (Logs, Supervision SVI, Supervision
+ * IA), alors que la sidebar les range ailleurs.
+ */
+export type DomaineHorsRum = "admin" | "integrations" | "logs" | "svi" | "ai";
+
+const DOMAINES_HORS_RUM: readonly (readonly [string, DomaineHorsRum])[] = [
+  ["/admin", "admin"],
+  ["/api-docs", "integrations"],
+  ["/logs", "logs"],
+  ["/svi", "svi"],
+  ["/ai", "ai"],
+];
+
+/**
+ * Surtitre d'un chemin : le domaine de sa catégorie RUM, sinon celui de sa zone
+ * (administration, intégrations, écrans fermés), sinon null (repli du composant).
+ */
+export function surtitreDe(pathname: string): DomaineRum | DomaineHorsRum | null {
+  const rum = domaineDe(pathname);
+  if (rum) return rum;
+  for (const [prefixe, domaine] of DOMAINES_HORS_RUM) {
+    if (hrefMatches(prefixe, pathname)) return domaine;
+  }
+  return null;
 }
 
 /** Sous-onglets RENDUS par la barre : les liens `sousOnglet: false` en sont retirés. */

@@ -141,8 +141,8 @@ describe("F42 — durée, parcours, dimensions", () => {
     expect(valeurOuInconnu("mobile")).toBe("mobile");
   });
 
-  it("les instants sont datés en UTC (V6), et un instant illisible rend « — »", () => {
-    expect(instantUtc(new Date(T0))).toBe("21/09 14:00");
+  it("les instants sont datés à l'heure de Paris, et un instant illisible rend « — »", () => {
+    expect(instantUtc(new Date(T0))).toBe("21/09 16:00");
     expect(instantUtc(null)).toBe("—");
     expect(instantUtc("pas une date")).toBe("—");
   });

@@ -121,12 +121,15 @@ export function ContrastBars({
                 aria-label={`${dimensionLibelle} ${l.valeur} : ${pct(l.partTouches)} des ${populationTouchee} (${l.nTouches.toLocaleString(
                   "fr-FR",
                 )}), ${pct(l.partBase)} de la base (${l.nBase.toLocaleString("fr-FR")}), ${texteRapport(r)} — filtrer`}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                // Colonnes FIXES : la piste a la même largeur sur toutes les lignes, quelle que
+                // soit la longueur du texte voisin (recette du 26/09/2026 : en `flex-1`, deux
+                // parts égales n'avaient pas la même longueur de barre).
+                className="grid grid-cols-1 items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:grid-cols-[10rem_12rem_minmax(0,1fr)] lg:grid-cols-[12rem_16rem_minmax(0,1fr)]"
               >
-                <span className="min-w-0 basis-full truncate text-xs font-medium text-ink sm:basis-40" title={l.valeur}>
+                <span className="min-w-0 truncate text-xs font-medium text-ink" title={l.valeur}>
                   {l.valeur}
                 </span>
-                <span className="flex min-w-24 flex-1 flex-col gap-0.5" aria-hidden="true">
+                <span className="flex min-w-0 flex-col gap-0.5" aria-hidden="true">
                   <span className="relative h-2.5 overflow-hidden rounded bg-panel2">
                     <span className="absolute inset-y-0 left-0 rounded" style={{ width: largeur(l.partTouches), backgroundColor: SERIE.principale }} />
                   </span>
@@ -134,7 +137,7 @@ export function ContrastBars({
                     <span className="absolute inset-y-0 left-0 rounded" style={{ width: largeur(l.partBase), backgroundColor: SERIE.reference }} />
                   </span>
                 </span>
-                <span className="flex min-w-0 basis-full flex-wrap items-center gap-x-3 text-xs tabular-nums text-ink-soft sm:basis-auto">
+                <span className="flex min-w-0 flex-wrap items-center gap-x-3 text-xs tabular-nums text-ink-soft">
                   <span>
                     touchés <span className="text-ink">{pct(l.partTouches)}</span> ({l.nTouches.toLocaleString("fr-FR")})
                   </span>

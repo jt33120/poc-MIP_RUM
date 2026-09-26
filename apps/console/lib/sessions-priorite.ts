@@ -16,7 +16,7 @@
 // Les occurrences d'erreur d'une session viennent de `SessionRow.err_count`, qui
 // est un `sum(occurrences)` (`listSessions`, `lib/queries.ts`) : V1 est tenu à la
 // source, et le libellé de la colonne dit « Occurrences d'erreur ».
-import { browserFromUA } from "./format";
+import { browserFromUA, fmtDate } from "./format";
 import type { SessionRow } from "./queries";
 
 /** Texte du hero tant que `sessionsAPrioriser` (B30, § 6.3) n'est pas livrée. */
@@ -158,19 +158,14 @@ export function valeurOuInconnu(v: string | null | undefined): string {
   return texte ? texte : "Inconnu";
 }
 
-const DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-/** Instant daté en UTC (V6) : la fenêtre de l'écran est UTC, ses lignes aussi. */
+/**
+ * Instant daté dans le fuseau d'affichage (heure de Paris, nommé dans la barre du
+ * haut). Le nom `instantUtc` est historique (V6 : tout était en UTC) : il est gardé
+ * parce que la liste des sessions l'importe, et elle relève d'un autre lot.
+ */
 export function instantUtc(d: Date | string | null | undefined): string {
   if (d == null) return "—";
-  const ms = new Date(d).getTime();
-  return Number.isFinite(ms) ? DATE_UTC.format(ms) : "—";
+  return fmtDate(d);
 }
 
 /**

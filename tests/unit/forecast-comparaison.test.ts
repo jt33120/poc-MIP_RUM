@@ -21,7 +21,7 @@ const base = {
 describe("couvertureJourReference", () => {
   it("collecte commencée à 18 h locale le jour de référence : partielle, date écrite", () => {
     const c = couvertureJourReference({ ...base, debut: new Date("2026-09-14T16:00:00Z") });
-    expect(c).toEqual({ etat: "partielle", raison: "pages vues collectées depuis le 14/09 16:00 UTC seulement", n: 820 });
+    expect(c).toEqual({ etat: "partielle", raison: "pages vues collectées depuis le 14/09 à 18:00 seulement", n: 820 });
   });
 
   it("collecte commencée la veille à 23:30 locale : le jour de référence est complet", () => {

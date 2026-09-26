@@ -11,15 +11,8 @@ import Link from "next/link";
 import type { SlowTrace } from "@/lib/queries-tracing";
 import { hrefWithQuery, type AnalyticsQuery } from "@/lib/query-contract";
 import { formater } from "@/lib/fmt-ids";
+import { fmtInstant } from "@/lib/format";
 
-const HEURE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-});
 
 /** Instant de l'appel en millisecondes epoch : le `at` du rejeu (`app/sessions/[id]/page.tsx`). */
 export function instantAppelMs(ts: Date | string): number {
@@ -38,7 +31,7 @@ export function SlowRow({ t, query }: { t: SlowTrace; query: AnalyticsQuery }) {
   return (
     <tr className="border-t border-line/60 transition hover:bg-panel2/60" data-testid="trace-lente" data-appel={`${t.method} ${t.url}`}>
       <td className="sticky left-0 bg-panel px-4 py-3 text-xs tabular-nums text-ink-soft">
-        {HEURE_UTC.format(new Date(t.ts))} UTC
+        {fmtInstant(t.ts, { secondes: true, sansA: true })}
       </td>
       <td className="max-w-[18rem] px-4 py-3 font-mono text-xs">
         {/* `span=` : une trace de page vue porte tous ses appels (E0) ; le détail

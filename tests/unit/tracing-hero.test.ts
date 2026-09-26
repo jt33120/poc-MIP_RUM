@@ -73,7 +73,7 @@ describe("lignesHero — T6", () => {
 
   it("part serveur mesurée : ShareBar sur 0-100 % et sa définition (médiane, appels suivis sur n)", () => {
     const html = rendre(lignesHero([appel()], OPTIONS).lignes[0].sub);
-    expect(html).toContain("42% serveur");
+    expect(html).toContain("42\u00a0% serveur");
     expect(html).toContain("width:42%");
     expect(html).toContain("médiane, 120 appels suivis sur 150");
     expect(html).toContain("150 appels");

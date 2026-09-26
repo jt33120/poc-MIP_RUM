@@ -41,7 +41,7 @@ describe("HealthHeatmap — une case ouvre SON heure, en instants UTC", () => {
     const html = rendu([{ day: "2026-07-15", hour: 9, good_w: 7, total_w: 8 }]);
     expect(liens(html)).toEqual(["/?app=demo&from=2026-07-15T07:00:00Z&to=2026-07-15T08:00:00Z"]);
     // L'annonce dit les deux fuseaux et la valeur exacte.
-    expect(decode(html)).toContain("15/07 09:00-10:00 Europe/Paris (07:00-08:00 UTC) : 87,5");
+    expect(decode(html)).toContain("15/07 09:00-10:00 (heure de Paris) : 87,5");
   });
 
   it("gabarit déjà encodé par URLSearchParams (%7Bfrom%7D) : même lien", () => {
@@ -109,7 +109,7 @@ describe("HealthHeatmap — alternative textuelle et heures ouvrées", () => {
     const alternative = decode(html).split('data-testid="alternative"')[1] ?? "";
     expect(alternative).toContain("66,7");
     expect(alternative).toContain("—");
-    expect(alternative).toContain("Europe/Paris");
+    expect(alternative).toContain("heure de Paris");
   });
 
   it("heures ouvrées : lundi-vendredi, 8 h-19 h seulement", () => {

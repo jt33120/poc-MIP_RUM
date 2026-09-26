@@ -11,7 +11,7 @@ import { isBot } from "./bots.mjs";
 // P5.3 : identité déterministe des exceptions dérivées d'un span ou d'un log.
 import { sha256Hex } from "./sha256.mjs";
 // P5.5 : clé de regroupement déclarée, hachée dans le périmètre de l'app.
-import { overrideHash } from "./error-normalize.mjs";
+import { DOCUMENT_INTEGRE, estUrlDePage, overrideHash } from "./error-normalize.mjs";
 // P6.1 : navigateur/système/appareil de la session, env/service/release bornés
 // et recopiés sur chaque événement.
 import { boundedDimension, boundedRelease, clientDimensions } from "./dimensions.mjs";
@@ -488,8 +488,12 @@ const RE_HASH_FICHIER = /([._-])[0-9a-f]{8,}(?=\.[a-z0-9]+$)/i;
 /** Un segment de chemin entièrement hexadécimal : un identifiant de build. */
 const RE_SEGMENT_HEX = /^[0-9a-f]{8,}$/i;
 
+// Script intégré à la page : sa frame porte l'URL de la PAGE, remplacée par
+// `DOCUMENT_INTEGRE` (règle et limites dans error-normalize.mjs, partagées avec la v2).
+
 /** Chemin d'un module, débarrassé de ce qui change à chaque déploiement. */
 export function normalizeModulePath(url) {
+  if (estUrlDePage(url)) return DOCUMENT_INTEGRE;
   let chemin = String(url ?? "");
   // Origine et protocole : `https://app.fr/a/b.js` -> `/a/b.js`. Le repli couvre
   // les URL relatives et les schémas non http (extension, blob, eval).

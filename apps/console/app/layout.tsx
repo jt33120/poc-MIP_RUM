@@ -7,6 +7,7 @@ import { CoquilleGarde } from "@/components/CoquilleGarde";
 import { GlobalFilters } from "@/components/GlobalFilters";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { Nav } from "@/components/Nav";
+import { NavAdministration } from "@/components/NavAdministration";
 import { SegmentBar } from "@/components/SegmentBar";
 import { SubNav } from "@/components/SubNav";
 import { EtatSurface } from "@/components/states/EtatSurface";
@@ -18,7 +19,7 @@ import { DashboardSettings } from "@/components/DashboardSettings";
 import { CATALOGUES, lireChoix } from "@/lib/dashboard-blocs";
 import { reglerBlocsAction } from "./actions-dashboard";
 import { chargerCoquilleEcran } from "@/lib/coquille-ecran";
-import { FUSEAU_DEFAUT } from "@/lib/fuseau";
+import { FUSEAU_AFFICHAGE, FUSEAU_DEFAUT, nomFuseau } from "@/lib/fuseau";
 import { describeProject, selectedProjectId } from "@/lib/project";
 import "./globals.css";
 
@@ -56,7 +57,12 @@ function rumInitScript(host: string | null): string {
 }
 
 // Configuration du widget d'avis, posée AVANT son chargement (il la lit au montage).
-const FEEDBACK_CONFIG = `window.MIPRumFeedback=Object.assign({compactBelow:768},window.MIPRumFeedback);`;
+// Pastille discrète à toutes les largeurs : le lanceur orange « Votre avis ? », de
+// la couleur des boutons principaux, masquait un contenu sur presque chaque écran
+// (recette du 26/09/2026). Absent avant la connexion et sur la vitrine : un
+// visiteur n'a encore rien vécu de la console à noter. `exceptPaths` est suivi à
+// chaque navigation, SPA comprise.
+const FEEDBACK_CONFIG = `window.MIPRumFeedback=Object.assign({compact:true,discreet:true,exceptPaths:["/login","/presentation"]},window.MIPRumFeedback);`;
 
 /** Marque produit : pictogramme pouls sur carré orange MIP + wordmark. */
 function BrandMark() {
@@ -104,6 +110,23 @@ function ProjectSwitcher({ name, appId }: { name: string; appId: string }) {
   );
 }
 
+/** Place de la carte projet quand aucun projet n'est choisi : même hauteur que
+ *  `ProjectSwitcher`, pour que la navigation ne se décale pas. */
+function SansProjet() {
+  return (
+    <Link
+      href="/select"
+      className="group mb-6 block rounded-xl border border-dashed border-line bg-panel2 p-3 transition hover:border-perf/40"
+    >
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
+        <span className="h-1.5 w-1.5 rounded-full bg-ink-faint" />
+        Projet
+      </div>
+      <div className="mt-1 truncate text-sm font-semibold text-ink-soft group-hover:text-ink">Choisir un projet</div>
+    </Link>
+  );
+}
+
 /** Le capteur, identique sur les trois coquilles. Extrait pour qu'aucune branche
  *  ne puisse l'oublier : c'est précisément ce qui laissait la vitrine, le login et
  *  le choix de projet — tout le premier contact d'un visiteur — hors mesure, sur un
@@ -115,8 +138,8 @@ function Capteur({ init }: { init: string }) {
       <script dangerouslySetInnerHTML={{ __html: init }} />
       {/* dogfooding : la console collecte son propre ressenti (widget feedback
           -> track 'feedback' -> rum_event, app mip-rum-console) pour peupler
-          sa page Expérience. Chargé après l'init RUM. Sous 768 px, le lanceur
-          est replié en pastille : son libellé masquait le contenu du coin. */}
+          sa page Expérience. Chargé après l'init RUM. Lanceur replié en pastille
+          discrète à toutes les largeurs (voir FEEDBACK_CONFIG). */}
       <script dangerouslySetInnerHTML={{ __html: FEEDBACK_CONFIG }} />
       <script src="/mip-rum-feedback.js" defer />
     </>
@@ -224,8 +247,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <div className="mb-6 px-1 pt-1">
               <BrandMark />
             </div>
-            {currentProject && (
+            {/* La carte projet OCCUPE TOUJOURS sa place : absente sur les écrans
+                d'administration (trans-projets, sans projet choisi), elle faisait
+                sauter toute la navigation d'environ 90 px d'un écran à l'autre
+                (recette du 26/09/2026). */}
+            {currentProject ? (
               <ProjectSwitcher name={currentProject.name} appId={currentProject.app_id} />
+            ) : (
+              <SansProjet />
             )}
             <Suspense>
               {/* La roue vit dans la sidebar, contre « Performance » : c'est ce
@@ -239,33 +268,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
                   Administration
                 </div>
-                <nav className="flex flex-col gap-0.5">
-                  {[
-                    { href: "/admin/customers", label: "Clients", icon: "users" as const },
-                    { href: "/admin/users", label: "Utilisateurs", icon: "user" as const },
-                    { href: "/admin/privacy", label: "Vie privée · DSAR", icon: "shield" as const },
-                    { href: "/admin/read-tokens", label: "Tokens de lecture", icon: "trace" as const },
-                    { href: "/admin/sourcemaps", label: "Source maps", icon: "list" as const },
-                    ...(tickets
-                      ? [{ href: "/admin/ticket-integrations", label: "Connecteurs de tickets", icon: "bell" as const }]
-                      : []),
-                    { href: "/admin/extension-scope", label: "Extension navigateur", icon: "compass" as const },
-                    { href: "/admin/extension-installs", label: "Postes équipés", icon: "grid" as const },
-                    { href: "/admin/uptime", label: "Uptime", icon: "target" as const },
-                    { href: "/admin/audit", label: "Audit", icon: "list" as const },
-                    { href: "/admin/usage", label: "Consommation", icon: "gauge" as const },
-                    { href: "/admin/health", label: "Santé interne", icon: "activity" as const },
-                  ].map((it) => (
-                    <Link
-                      key={it.href}
-                      href={it.href}
-                      className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink"
-                    >
-                      <Icon paths={ICON_PATHS[it.icon]} className="h-4 w-4 text-ink-faint" />
-                      {it.label}
-                    </Link>
-                  ))}
-                </nav>
+                <NavAdministration tickets={Boolean(tickets)} />
               </div>
             )}
             <div className="mt-auto pt-6">
@@ -347,6 +350,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <GlobalFilters schema={schema} timeZones={timeZones} defaultTimeZone={FUSEAU_DEFAUT} />
               </Suspense>
               <div className="ml-auto flex items-center gap-3">
+                {/* Le fuseau de TOUTES les heures de la console, dit une fois ici
+                    plutôt qu'à côté de chaque heure (recette du 26/09/2026 : UTC,
+                    heure locale non dite et ISO brut se côtoyaient). */}
+                <span
+                  className="hidden whitespace-nowrap text-[11px] font-medium text-ink-faint sm:inline"
+                  title="Toutes les heures de la console sont écrites dans ce fuseau."
+                  data-testid="fuseau-affichage"
+                >
+                  {/* « Heure de Paris » : le nom du fuseau, capitalisé en tête de libellé. */}
+                  {nomFuseau(FUSEAU_AFFICHAGE).replace(/^./, (c) => c.toUpperCase())}
+                </span>
                 {/* AutoRefresh re-fetch les server components toutes les 5 s, sauf
                     sur les routes à lecture explicite (SANS_RAFRAICHISSEMENT, § 3.11) :
                     il rend lui-même la pastille, « LIVE · 5 s » ou « Lu à … ». */}
@@ -374,9 +388,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Suspense>
               <SegmentBar schema={schema} />
             </Suspense>
-            {/* Réserve basse de 72 px à toutes les largeurs : le widget « Votre
-                avis ? », fixé à 20 px du coin bas-droit, recouvrait le bas de
-                l'écran (les KPI des Alertes, les dernières lignes des tables). */}
+            {/* Réserve basse de 72 px à toutes les largeurs : la pastille d'avis
+                (36 px, fixée à 20 px du coin bas-droit) ne recouvre jamais la fin
+                de l'écran (les KPI des Alertes, les dernières lignes des tables). */}
             <main className="min-w-0 flex-1 px-4 pb-[72px] pt-4 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">{children}</main>
           </div>
         </div>

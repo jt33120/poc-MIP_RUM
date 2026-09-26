@@ -21,6 +21,7 @@ import { BREAKDOWN_DIMENSIONS, breakdownDrillHref, groupLabel, type BreakdownDim
 import type { CouverturePrecedente, SourceComparaison } from "./comparaison";
 import { dimensionSupport, type DimensionSchema } from "./query-compiler";
 import { formater } from "./fmt-ids";
+import { fmtPlage } from "./format";
 import type { ErreursParSessionCommencee } from "./queries-sessions";
 
 // ─────────────────────────────── Comparaison ─────────────────────────────────
@@ -31,24 +32,14 @@ const DUREES_PRESET: Record<NonNullable<ResolvedRange["preset"]>, string> = {
   "7d": "7 jours précédents",
 };
 
-function jourHeureUtc(iso: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    timeZone: "UTC",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(iso));
-}
-
 /**
  * Référence d'un delta `cmp=prev`, écrite en toutes lettres à côté du chiffre
- * (§ 3.12, P4) : « vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC) ». La plage
- * datée est celle de la période PRÉCÉDENTE, pas la fenêtre lue.
+ * (§ 3.12, P4) : « vs 24 h précédentes (20/09 14:00 → 21/09 14:00) », heure de
+ * Paris. La plage datée est celle de la période PRÉCÉDENTE, pas la fenêtre lue.
  */
 export function referencePrecedente(precedente: ResolvedRange): string {
   const duree = precedente.preset ? DUREES_PRESET[precedente.preset] : "période précédente";
-  return `vs ${duree} (${jourHeureUtc(precedente.from)} → ${jourHeureUtc(precedente.to)} UTC)`;
+  return `vs ${duree} (${fmtPlage(precedente.from, precedente.to)})`;
 }
 
 /**

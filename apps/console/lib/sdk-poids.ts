@@ -14,13 +14,17 @@
 // écrire ici — une fois.
 
 /** Bundle cœur publié (apps/console/public/mip-rum.js), gzip. Mesuré. */
-export const SDK_GZIP_KO = 22.0;
+export const SDK_GZIP_KO = 22.6;
 /** Budget que packages/rum-sdk/build.mjs refuse de dépasser. */
 export const SDK_BUDGET_KO = 35;
 /** Bundle rejeu (rrweb), chargé À LA DEMANDE et seulement si le rejeu est activé. */
 export const REPLAY_GZIP_KO = 56.7;
-/** Widget d'avis, chargé à la demande lui aussi. */
-export const FEEDBACK_GZIP_KO = 7.6;
+/**
+ * Widget d'avis, chargé à la demande lui aussi. 8,2 (et non la mesure macOS de
+ * 8,3) depuis les options `compact`, `discreet` et `exceptPaths` du 26/09/2026 :
+ * la valeur la plus proche des deux compresseurs, macOS et le runner Linux.
+ */
+export const FEEDBACK_GZIP_KO = 8.2;
 
 /** Un nombre écrit à la française : 12.6 -> « 12,6 ». */
 export function koTexte(ko: number): string {

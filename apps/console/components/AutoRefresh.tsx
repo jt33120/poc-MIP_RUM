@@ -1,12 +1,9 @@
 "use client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
+import { estFermee } from "@/lib/capacites";
+import { fmtHeure } from "@/lib/format";
 import { sansRafraichissement } from "@/lib/surfaces";
-
-/** « 14:03:27 » en UTC : l'heure de lecture se dit dans le fuseau des fenêtres (V6). */
-function heureUtc(d: Date): string {
-  return d.toISOString().slice(11, 19);
-}
 
 /**
  * Effet « live » : re-fetch des server components toutes les 5 s (PLAN §9.2), et
@@ -26,6 +23,9 @@ export function AutoRefresh({ intervalMs = 5000 }: { intervalMs?: number }) {
   const pathname = usePathname();
   const sp = useSearchParams();
   const aLaDemande = sansRafraichissement(pathname);
+  // Écran d'une capacité fermée : il n'y a rien à relire, et « LIVE · 5 s »
+  // au-dessus d'une page sans donnée annonçait un flux qui n'existe pas.
+  const ferme = estFermee(pathname ?? "");
   const [pending, startTransition] = useTransition();
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
@@ -39,7 +39,7 @@ export function AutoRefresh({ intervalMs = 5000 }: { intervalMs?: number }) {
   }, [pending, pathname, requete]);
 
   useEffect(() => {
-    if (aLaDemande) return;
+    if (aLaDemande || ferme) return;
     const tick = () => {
       if (document.visibilityState !== "visible" || pendingRef.current) return;
       startTransition(() => router.refresh());
@@ -53,7 +53,9 @@ export function AutoRefresh({ intervalMs = 5000 }: { intervalMs?: number }) {
       clearInterval(id);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [router, intervalMs, aLaDemande]);
+  }, [router, intervalMs, aLaDemande, ferme]);
+
+  if (ferme) return null;
 
   if (!aLaDemande) {
     return (
@@ -76,7 +78,7 @@ export function AutoRefresh({ intervalMs = 5000 }: { intervalMs?: number }) {
       data-mode="demande"
     >
       <span className="min-w-0 truncate" title="Cet écran n'est relu que sur demande : le résultat ne change pas sous le curseur.">
-        Lecture à la demande{lu && <span className="hidden sm:inline"> · Lu à {heureUtc(lu)} UTC</span>}
+        Lecture à la demande{lu && <span className="hidden sm:inline"> · Lu à {fmtHeure(lu, { secondes: true })}</span>}
       </span>
       <button
         type="button"

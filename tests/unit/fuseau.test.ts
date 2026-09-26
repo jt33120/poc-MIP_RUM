@@ -108,21 +108,24 @@ describe("bornesJourLocal — un point quotidien", () => {
   });
 });
 
-describe("libelleDeuxFuseaux — l'écran d'arrivée dit les deux fuseaux", () => {
-  it("une heure : date locale, heures locales, heures UTC", () => {
+describe("libelleDeuxFuseaux — l'écran d'arrivée dit la plage dans le fuseau d'affichage", () => {
+  it("une heure, fuseau d'affichage : un seul libellé, fuseau nommé", () => {
     const { from, to } = bornesHeureLocale("2026-09-10", 9, PARIS);
-    expect(libelleDeuxFuseaux(from, to, PARIS)).toBe("10/09 09:00-10:00 Europe/Paris (07:00-08:00 UTC)");
+    expect(libelleDeuxFuseaux(from, to, PARIS)).toBe("10/09 09:00-10:00 (heure de Paris)");
   });
 
-  it("un jour : « 00:00-24:00 », et les dates UTC quand elles diffèrent", () => {
+  it("un jour : « 00:00-24:00 »", () => {
     const { from, to } = bornesJourLocal("2026-09-10", PARIS);
-    expect(libelleDeuxFuseaux(from, to, PARIS)).toBe(
-      "10/09 00:00-24:00 Europe/Paris (09/09 22:00 - 10/09 22:00 UTC)",
-    );
+    expect(libelleDeuxFuseaux(from, to, PARIS)).toBe("10/09 00:00-24:00 (heure de Paris)");
   });
 
-  it("en UTC, un seul libellé", () => {
-    expect(libelleDeuxFuseaux("2026-09-10T07:00:00Z", "2026-09-10T08:00:00Z", "UTC")).toBe("10/09 07:00-08:00 UTC");
+  it("une application dans un autre fuseau : sa plage, puis celle de l'affichage", () => {
+    expect(libelleDeuxFuseaux("2026-09-10T07:00:00Z", "2026-09-10T08:00:00Z", "UTC")).toBe(
+      "10/09 07:00-08:00 UTC (09:00-10:00, heure de Paris)",
+    );
+    expect(libelleDeuxFuseaux("2026-09-09T22:00:00Z", "2026-09-10T22:00:00Z", "UTC")).toBe(
+      "09/09 22:00 - 10/09 22:00 UTC (10/09 00:00-24:00, heure de Paris)",
+    );
   });
 });
 

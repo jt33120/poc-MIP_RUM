@@ -49,7 +49,7 @@ describe("FriseEtats", () => {
     const c = caseDe(html, "incident");
     expect(c).toContain('data-forme="haute"');
     expect(c).toContain("×");
-    expect(texte(html)).toContain("22/09 01:00 → 02:00 UTC : incident — premier chargement 4,2 s · 3");
+    expect(texte(html)).toContain("22/09 03:00 → 04:00 (heure de Paris) : incident — premier chargement 4,2 s · 3");
   });
 
   it("absent : case sans remplissage plein (hachures seulement)", () => {
@@ -77,7 +77,7 @@ describe("FriseEtats", () => {
     const detail = html.split('data-couche="groupe"')[0];
     expect(detail.match(/tabindex="0"/g)).toHaveLength(1);
     expect(detail.match(/data-case=""/g)).toHaveLength(6);
-    expect(detail).toContain('aria-label="22/09 00:00 → 01:00 UTC : ok — premier chargement 820 ms · 3"');
+    expect(detail).toContain('aria-label="22/09 02:00 → 03:00 (heure de Paris) : ok — premier chargement 820 ms · 3"');
     expect(html).toContain('data-testid="alternative"');
   });
 
@@ -94,7 +94,7 @@ describe("FriseEtats", () => {
     expect(groupes[0].def.cle).toBe("incident");
     expect(groupes[1].def.cle).toBe("warn");
     expect(groupes[0].secondes).toBe(3 * 3600);
-    expect(groupes[0].detail).toContain("pire état des 3 seaux");
+    expect(groupes[0].detail).toContain("pire état des 3 tranches");
     expect(html).toContain('data-testid="frise-etats-regroupee"');
     // Le seuil de la requête de conteneur : 6 seaux × 2 px + marges (56 + 16).
     expect(html).toContain("@container (max-width:83.98px)");

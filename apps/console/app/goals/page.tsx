@@ -14,12 +14,14 @@
 //     et les tuiles restent neutres.
 import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { CadreEtat } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import { breakdownDrillHref } from "@/lib/breakdowns";
 import { type CouverturePrecedente } from "@/lib/comparaison";
 import type { SearchParams } from "@/lib/filters";
@@ -34,6 +36,8 @@ import {
   libelleCondition,
   lignesAppareils,
   meilleurObjectif,
+  ecartesPlusHauts,
+  texteEcartes,
 } from "@/lib/goals";
 import { chargerGoals } from "@/lib/chargeurs/goals";
 import { chargerEcran } from "@/lib/ecran";
@@ -42,6 +46,8 @@ import { hrefWithQuery, paramReader, previousRange, rangeLabel } from "@/lib/que
 import { intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
 import { lireComparaison } from "@/lib/view-state";
 import { createGoalAction, deleteGoalAction, toggleGoalAction } from "./actions";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { fmtDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -62,13 +68,6 @@ function tauxEtDemiLargeur(g: GoalConversionLue): string {
   return `${pct(g.rate)} ± ${demi} pt`;
 }
 
-const FORMAT_DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
 
 export default async function Goals({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
@@ -134,7 +133,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
             total={rep.total}
             rows={rows}
             precedent={lecturePrev.ok ? (lecturePrev.data?.total ?? undefined) : null}
-            reference={prev ? `vs période précédente (${rangeLabel({ ...previousRange(query.range), preset: null }, "UTC")} UTC)` : undefined}
+            reference={prev ? `vs période précédente (${rangeLabel({ ...previousRange(query.range), preset: null }, FUSEAU_AFFICHAGE)})` : undefined}
             couverture={
               !prev
                 ? undefined
@@ -256,6 +255,8 @@ function RangeeKpi({
   // départage d'abord) ; à défaut, le premier taux connu, qui porte alors
   // « échantillon faible » selon la MÊME règle que le hero et la table.
   const best = meilleurObjectif(rows);
+  // Un objectif au taux plus haut, écarté pour échantillon faible, se dit sous la tuile.
+  const ecartes = texteEcartes(ecartesPlusHauts(rows, best));
   return (
     <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3">
       <KpiTile
@@ -282,7 +283,7 @@ function RangeeKpi({
         raisonNull={rows.length === 0 ? "aucun objectif actif" : "aucune session sur la fenêtre : taux non calculables"}
         intervalle={best ? (intervalleWilson(best.conversions, best.sessions) ?? undefined) : undefined}
         couverture={best ? couvertureTaux(best.conversions, best.sessions) : undefined}
-        lecture={best?.name}
+        lecture={best ? (ecartes ? `${best.name} — ${ecartes}` : best.name) : undefined}
       />
     </div>
   );
@@ -350,7 +351,9 @@ function PetitsMultiples({
 function TableObjectifs({ rows, plusieursApps, isAdmin }: { rows: GoalConversionLue[]; plusieursApps: boolean; isAdmin: boolean }) {
   return (
     <>
-      <div className="card overflow-x-auto">
+      {/* Défilement signalé : à 390 px, Taux et Dernière conversion étaient hors
+          champ sans aucun indice (recette 26/09). */}
+      <TableDefilante className="card" label="Objectifs">
         <table className="w-full min-w-[40rem] text-sm">
           <caption className="caption-top px-4 pt-3 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
             Objectifs
@@ -409,7 +412,7 @@ function TableObjectifs({ rows, plusieursApps, isAdmin }: { rows: GoalConversion
                   )}
                 </td>
                 <td className="px-4 py-2 text-xs tabular-nums text-ink-soft">
-                  {g.derniere ? `${FORMAT_DATE_UTC.format(new Date(g.derniere))} UTC` : "—"}
+                  {g.derniere ? fmtDate(g.derniere) : "—"}
                 </td>
               </tr>
             ))}
@@ -422,7 +425,7 @@ function TableObjectifs({ rows, plusieursApps, isAdmin }: { rows: GoalConversion
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
       <p className="mt-2 text-xs text-ink-soft">
         « Conversions » compte des sessions, pas des événements. Aucun lien vers les sessions converties : l&apos;objectif
         n&apos;est pas une dimension de filtre de la console.
@@ -445,9 +448,11 @@ function Gestion({
     <>
       <div className="card mb-6 p-4">
         <form action={createGoalAction} className="flex flex-wrap items-end gap-3" data-testid="create-goal">
-          <label className="text-xs font-medium text-ink-soft">
+          {/* Bornée à la carte : la liste prend la largeur de son plus long nom
+              d'application, et un nom long élargissait la page sur mobile. */}
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
             App
-            <select name="app" className="field mt-1 block" required defaultValue={appParDefaut ?? ""}>
+            <select name="app" className="field mt-1 block w-full max-w-full" required defaultValue={appParDefaut ?? ""}>
               <option value="" disabled>
                 choisir…
               </option>
@@ -486,7 +491,8 @@ function Gestion({
         </form>
       </div>
 
-      <div className="card overflow-x-auto">
+      {/* Défilement signalé : Statut était coupé (« act ») et les actions invisibles. */}
+      <TableDefilante className="card" label="Gestion des objectifs">
         <table className="w-full min-w-[36rem] text-sm">
           <thead className="bg-panel2">
             <tr>
@@ -511,7 +517,7 @@ function Gestion({
                   </span>
                 </td>
                 <td className="px-4 py-2">
-                  <div className="flex gap-2">
+                  <div className="flex items-start gap-2">
                     <form action={toggleGoalAction}>
                       <input type="hidden" name="id" value={g.id} />
                       <input type="hidden" name="app" value={g.app_id} />
@@ -520,12 +526,19 @@ function Gestion({
                         {g.active ? "Désactiver" : "Activer"}
                       </button>
                     </form>
+                    {/* Supprimer efface la définition (désactiver, lui, se défait) : confirmé. */}
                     <form action={deleteGoalAction}>
                       <input type="hidden" name="id" value={g.id} />
                       <input type="hidden" name="app" value={g.app_id} />
-                      <button type="submit" className="btn-ghost px-2 py-1 text-bad-ink">
-                        Supprimer
-                      </button>
+                      <ConfirmationDanger
+                        libelle="Supprimer"
+                        libelleAccessible={`Supprimer l’objectif ${g.name}`}
+                        question={`Supprimer l’objectif ${entreGuillemets(g.name)}\u00a0?`}
+                        consequence="Sa définition sera effacée et il disparaîtra des conversions ; les données collectées, elles, restent."
+                        confirmer="Supprimer l’objectif"
+                        enCours="Suppression…"
+                        testid={`supprimer-objectif-${g.id}`}
+                      />
                     </form>
                   </div>
                 </td>
@@ -540,7 +553,7 @@ function Gestion({
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
     </>
   );
 }

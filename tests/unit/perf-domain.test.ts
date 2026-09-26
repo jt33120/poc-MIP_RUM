@@ -257,16 +257,16 @@ describe("F18 — libelleGroupeErreur", () => {
 });
 
 describe("F18 — referencePeriodePrecedente", () => {
-  it("24 h : la plage précédente, datée en UTC", () => {
+  it("24 h : la plage précédente, datée à l'heure de Paris", () => {
     expect(
       referencePeriodePrecedente({ from: "2026-09-21T14:00:00.000Z", to: "2026-09-22T14:00:00.000Z", preset: "24h" }),
-    ).toBe("vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC)");
+    ).toBe("vs 24 h précédentes (20/09 16:00 → 21/09 16:00)");
   });
 
   it("plage personnalisée : « période précédente », même durée, juste avant", () => {
     expect(
       referencePeriodePrecedente({ from: "2026-09-22T10:00:00.000Z", to: "2026-09-22T12:00:00.000Z", preset: null }),
-    ).toBe("vs période précédente (22/09 08:00 → 22/09 10:00 UTC)");
+    ).toBe("vs période précédente (22/09 10:00 → 22/09 12:00)");
   });
 });
 
@@ -457,11 +457,11 @@ describe("F14 — Pages : classement des routes et tuiles", () => {
     expect(pagesF14.ecartAEnsemblePages(null, 2500, "LCP")).toEqual({ valeur: null, affichage: "écart non calculable" });
   });
 
-  it("référence `cmp=prev` datée en UTC et accordée", () => {
+  it("référence `cmp=prev` datée à l'heure de Paris et accordée", () => {
     const range = { from: "2026-09-21T14:00:00.000Z", to: "2026-09-22T14:00:00.000Z", preset: "24h" as const, bucketSeconds: 3600 };
-    expect(pagesF14.referencePrecedentePages(range)).toBe("vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC)");
+    expect(pagesF14.referencePrecedentePages(range)).toBe("vs 24 h précédentes (20/09 16:00 → 21/09 16:00)");
     expect(pagesF14.referencePrecedentePages({ ...range, from: "2026-09-15T14:00:00.000Z", preset: "7d" })).toMatch(/^vs 7 j précédents \(/);
-    expect(pagesF14.referencePrecedentePages({ ...range, preset: null })).toMatch(/^vs période précédente \(20\/09 14:00/);
+    expect(pagesF14.referencePrecedentePages({ ...range, preset: null })).toMatch(/^vs période précédente \(20\/09 16:00/);
   });
 
   it("écart de p75 entre releases : établi seulement si les intervalles sont disjoints, libellé par la release", () => {

@@ -12,6 +12,7 @@ import { KpiTile } from "@/components/charts/KpiTile";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { formater } from "@/lib/fmt-ids";
+import { pluriel } from "@/lib/format";
 
 export const LIBELLE_ANGLE_MORT = "Heures × route en angle mort";
 
@@ -54,7 +55,7 @@ export function TuileAngleMort({
             <Link href={etat.pire.href} className="font-medium text-perf underline-offset-2 hover:underline">
               {etat.pire.route}
             </Link>
-            , {formater("count", etat.pire.heures)} heure(s)
+            , {pluriel(etat.pire.heures, "heure")}
           </p>
         )}
       </div>

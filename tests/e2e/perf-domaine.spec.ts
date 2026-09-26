@@ -523,7 +523,7 @@ test.describe("F18 — Erreurs : KPI, hero, répartition", () => {
     await page.goto(`${consoleUrl}/errors?app=${APP}`);
     const hero = page.locator("#hero-erreurs");
     await hero.scrollIntoViewIfNeeded();
-    // Les entrées de SÉRIES : la légende ajoute « seau en cours (barre pâle) » quand
+    // Les entrées de SÉRIES : la légende ajoute « heure en cours (incomplète) » quand
     // le dernier seau de la fenêtre glissante n'est pas fini (le cas sous `period=24h`).
     // Ce n'est pas une série : elle n'entre pas dans le compte des ≤ 5.
     const legende = hero.getByTestId("legende-serie").locator("li:not([data-testid=legende-seau-en-cours])");
@@ -794,7 +794,7 @@ test.describe("F26 — Satisfaction", () => {
     await expect(commentaire).not.toContainText("%");
 
     // Chaque verbatim porte sa date ; aucun score composite.
-    await expect(page.locator("#verbatims")).toContainText(/\d{2}\/\d{2} \d{2}:\d{2} UTC/);
+    await expect(page.locator("#verbatims")).toContainText(/\d{2}\/\d{2} \d{2}:\d{2}/);
     await expect(page.getByText("/100")).toHaveCount(0);
   });
 
@@ -1181,8 +1181,8 @@ test.describe("F16 — Pages : tâches longues et ressources", () => {
     expect(seauxP75).toBe(seauxComptes);
     // Le marqueur de déploiement est posé sur les DEUX panneaux (P9).
     await expect(figure.getByTestId("annotations")).toHaveCount(2);
-    // Le p75 par seau n'est plus seulement dans la table repliée : il a son panneau.
-    await expect(figure).toContainText("Blocage p75 par seau");
+    // Le p75 par tranche n'est plus seulement dans la table repliée : il a son panneau.
+    await expect(figure).toContainText("Blocage p75 par tranche");
     await expect(figure).toContainText("Aucun cumul de durées");
   });
 
@@ -1299,7 +1299,7 @@ test.describe("F23 — Interactions : INP et scripts", () => {
     // Le marqueur de déploiement est posé sur la série (P9).
     await expect(figure.getByTestId("annotations")).toHaveCount(1);
     await figure.getByTestId("alternative").locator("summary").click();
-    await expect(figure.getByTestId("alternative")).toContainText("Seau (UTC)");
+    await expect(figure.getByTestId("alternative")).toContainText("Période");
     await expect(figure).toContainText("mesures INP");
   });
 

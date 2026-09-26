@@ -28,17 +28,22 @@ import {
   YAxis,
 } from "recharts";
 import { formater, type FormatId } from "@/lib/fmt-ids";
+import { graduationsY } from "@/lib/graduations";
 import { SEVERITE, categorie } from "@/lib/palette";
 import {
   MAX_SERIES,
   SERIE_MARGES,
-  formaterAxe,
+  echelleY,
+  estJour,
+  graduationsTemps,
   hrefZoom,
+  libellePeriodeEnCours,
   libelleSeau,
   libelleSeauComplet,
   nombreOuNull,
   placerAnnotations,
   preparerPoints,
+  premiereDonneeTardive,
   type Annotation,
   type LignePreparee,
   type PointSerie,
@@ -46,8 +51,13 @@ import {
 import {
   CoucheAnnotations,
   LegendeAnnotations,
+  MotifEnCours,
+  NoteCollecteRecente,
+  PaveEnCours,
   PointsIgnores,
   SeriesEcartees,
+  formateurGraduations,
+  margeHauteAnnotations,
   useIdSvg,
   useSeauEnCours,
 } from "./ThresholdSeries";
@@ -76,6 +86,8 @@ interface FormeAncienne {
 export interface SerieEmpilee {
   cle: string;
   libelle: string;
+  /** Texte entier quand `libelle` est abrégé (message d'erreur) : infobulle de la légende. */
+  libelleComplet?: string;
   /** Couleur CATEGORIELLE. */
   categorieIndex?: number;
   /** Sévérités d'alerte (palette SEVERITE), toujours doublées d'un motif. */
@@ -106,6 +118,14 @@ interface FormeGrille {
   synchro?: string;
   /** Défaut true. Panneaux empilés : un seul panneau liste les annotations en liens (un arrêt de tabulation chacune). Ajout F04. */
   legendeAnnotations?: boolean;
+  /**
+   * Instant ISO du début de la collecte, s'il est connu (voir `ThresholdSeries`) :
+   * quand seuls les deux derniers seaux ont des données, la figure le dit au lieu de
+   * dessiner une barre isolée sur 24 h vides.
+   */
+  debutCollecte?: string;
+  /** Défaut true. Panneaux empilés : un seul panneau porte la note « Collecte commencée… ». */
+  noteCollecte?: boolean;
 }
 
 export type StackedBarsProps = FormeAncienne | FormeGrille;
@@ -218,7 +238,9 @@ function InfobulleEmpilee({
           <span className="tabular-nums">{formater(format, total)}</span>
         </p>
       )}
-      {enCours && label === dernier && <p className="text-ink-soft">seau en cours</p>}
+      {enCours && label === dernier && (
+        <p className="text-ink-soft">{libellePeriodeEnCours(seauSecondes, estJour(label))}</p>
+      )}
     </div>
   );
 }
@@ -237,9 +259,12 @@ function BarresSurGrille({
   ariaLabel,
   synchro,
   legendeAnnotations = true,
+  debutCollecte,
+  noteCollecte = true,
 }: FormeGrille) {
   const router = useRouter();
   const prefixe = useIdSvg("motif");
+  const prefixeEnCours = useIdSvg("en-cours");
   const { enCours, maintenant } = useSeauEnCours(grille, seauSecondes, fuseau);
   const { dessinees, ecartees } = useMemo(() => dessinerSeries(series, prefixe), [series, prefixe]);
   const prep = useMemo(
@@ -252,25 +277,51 @@ function BarresSurGrille({
       ),
     [grille, points, dessinees, enCours],
   );
-  const haut = useMemo(() => {
-    let max = 0;
-    for (const l of prep.lignes) max = Math.max(max, dessinees.reduce((a, s) => a + Math.max(nombreOuNull(l[s.cle]) ?? 0, 0), 0));
-    return max > 0 ? max * 1.1 : 1;
-  }, [prep.lignes, dessinees]);
+  // Haut de l'axe : la plus haute PILE, arrondie à un pas rond (0-100-200-300, plus
+  // 0-70-140-278) ; l'axe part de 0, c'est un compte.
+  const echelle = useMemo(
+    () =>
+      echelleY(
+        prep.lignes,
+        dessinees.map((s) => ({ cle: s.cle, libelle: s.libelle, role: "categorie" as const })),
+        format,
+        { empile: true },
+      ),
+    [prep.lignes, dessinees, format],
+  );
+  const haut = echelle.haut;
+  const etiquetteY = useMemo(() => formateurGraduations(echelle.valeurs, format), [echelle.valeurs, format]);
+  const graduationsX = useMemo(() => graduationsTemps(grille, seauSecondes, fuseau), [grille, seauSecondes, fuseau]);
+  const premier = useMemo(
+    () => premiereDonneeTardive(prep.lignes, dessinees.map((s) => s.cle)),
+    [prep.lignes, dessinees],
+  );
   const placees = useMemo(
     () => placerAnnotations(annotations ?? [], grille, seauSecondes, fuseau),
     [annotations, grille, seauSecondes, fuseau],
   );
   const dernier = grille[grille.length - 1];
   const indexEnCours = enCours ? grille.length - 1 : -1;
+  const idEnCours = (i: number) => `${prefixeEnCours}-${i}`;
 
   return (
-    <div className="min-w-0" data-testid="stacked-bars" data-seaux={grille.length}>
+    <div
+      className="min-w-0"
+      data-testid="stacked-bars"
+      data-seaux={grille.length}
+      data-collecte-recente={premier !== null ? "" : undefined}
+    >
+      {premier !== null && noteCollecte && (
+        <NoteCollecteRecente grille={grille} premier={premier} seauSecondes={seauSecondes} debutCollecte={debutCollecte} />
+      )}
       {/* Motifs définis hors du graphique : la légende (rendue au serveur) s'en sert aussi. */}
       <svg width={0} height={0} aria-hidden="true" className="absolute">
         <defs>
           {dessinees.map((s) => (
             <Motif key={s.motifId} s={s} />
+          ))}
+          {dessinees.map((s, i) => (
+            <MotifEnCours key={idEnCours(i)} id={idEnCours(i)} couleur={s.couleur} />
           ))}
         </defs>
       </svg>
@@ -279,7 +330,7 @@ function BarresSurGrille({
           <BarChart
             data={prep.lignes}
             syncId={synchro}
-            margin={{ top: placees.length > 0 ? 20 : 8, right: SERIE_MARGES.droite, bottom: 0, left: 0 }}
+            margin={{ top: margeHauteAnnotations(placees.length), right: SERIE_MARGES.droite, bottom: 0, left: 0 }}
             onClick={(etat) => {
               if (!zoomHref || !etat || typeof etat.activeLabel !== "string") return;
               const href = hrefZoom(zoomHref, etat.activeLabel, seauSecondes, maintenant ?? Date.now());
@@ -291,20 +342,23 @@ function BarresSurGrille({
               dataKey="t"
               fontSize={11}
               tickLine={false}
-              interval="preserveStartEnd"
+              ticks={graduationsX}
+              // Pas régulier sur des heures rondes, même à 390 px (voir ThresholdSeries).
+              interval="equidistantPreserveStart"
               minTickGap={12}
               tickFormatter={(t: string) => libelleSeau(t, seauSecondes, fuseau)}
             />
             <YAxis
               type="number"
               domain={[0, haut]}
+              ticks={echelle.valeurs}
+              interval={0}
               allowDataOverflow
               width={SERIE_MARGES.gauche}
               fontSize={11}
               tickLine={false}
               axisLine={false}
-              allowDecimals={format !== "count"}
-              tickFormatter={(v: number) => formaterAxe(format, v)}
+              tickFormatter={etiquetteY}
             />
             <Tooltip
               isAnimationActive={false}
@@ -343,12 +397,22 @@ function BarresSurGrille({
                     : undefined
                 }
               >
-                {prep.lignes.map((_l, k) => (
-                  <Cell key={k} fillOpacity={k === indexEnCours ? 0.45 : 1} />
-                ))}
+                {/* La barre en cours est pleine et hachurée, cernée de sa couleur : à 45 %
+                    d'opacité, elle passait pour un espace réservé, et se fondait dans le
+                    fond nuit en thème sombre (bleu nuit, violet foncé) alors que sa
+                    pastille de légende restait vive. */}
+                {prep.lignes.map((_l, k) =>
+                  k === indexEnCours ? (
+                    <Cell key={k} fill={`url(#${idEnCours(i)})`} stroke={s.couleur} strokeWidth={1} data-en-cours="" />
+                  ) : (
+                    <Cell key={k} />
+                  ),
+                )}
               </Bar>
             ))}
-            <Customized component={<CoucheAnnotations placees={placees} grille={grille} onAller={(href) => router.push(href)} />} />
+            <Customized
+              component={<CoucheAnnotations placees={placees} grille={grille} fuseau={fuseau} onAller={(href) => router.push(href)} />}
+            />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -357,21 +421,23 @@ function BarresSurGrille({
         {dessinees.map((s) => (
           <li key={s.cle} className="flex min-w-0 items-center gap-1.5">
             <PaveMotif s={s} />
+            {/* Le libellé passe à la ligne, jamais tronqué ; le texte entier (message
+                d'erreur abrégé par l'appelant) reste en infobulle. */}
             {s.href ? (
-              <Link href={s.href} className="min-w-0 break-words text-perf underline-offset-2 hover:underline">
+              <Link href={s.href} title={s.libelleComplet ?? s.libelle} className="min-w-0 break-words text-perf underline-offset-2 hover:underline">
                 {s.libelle}
               </Link>
             ) : (
-              <span className="min-w-0 break-words">{s.libelle}</span>
+              <span className="min-w-0 break-words" title={s.libelleComplet ?? s.libelle}>
+                {s.libelle}
+              </span>
             )}
           </li>
         ))}
-        {enCours && (
+        {enCours && dessinees.length > 0 && (
           <li className="flex items-center gap-1.5" data-testid="legende-seau-en-cours">
-            <svg width={12} height={10} aria-hidden="true" className="shrink-0">
-              <rect x={0.5} y={0.5} width={11} height={9} rx={2} fill="rgb(var(--c-ink-soft))" fillOpacity={0.3} />
-            </svg>
-            seau en cours (barre pâle)
+            <PaveEnCours id={idEnCours(0)} />
+            {libellePeriodeEnCours(seauSecondes, estJour(dernier ?? ""))}
           </li>
         )}
       </ul>
@@ -385,13 +451,29 @@ function BarresSurGrille({
 }
 
 // L'ancienne forme, inchangée (retirée par F69).
+// Seul ajout : des graduations y rondes à partir de 0 (recette du 26/09/2026).
 function BarresAnciennes({ data, xKey, series, height = 260, yUnit = "", showLegend = true }: FormeAncienne) {
+  const plusHaute = Math.max(
+    0,
+    ...data.map((d) => series.reduce((a, s) => a + Math.max(typeof d[s.key] === "number" ? (d[s.key] as number) : 0, 0), 0)),
+  );
+  const echelle = graduationsY(plusHaute, { entier: true });
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey={xKey} fontSize={11} tickLine={false} interval="preserveStartEnd" />
-        <YAxis fontSize={11} width={44} tickLine={false} axisLine={false} unit={yUnit} allowDecimals={false} />
+        <XAxis dataKey={xKey} fontSize={11} tickLine={false} interval="equidistantPreserveStart" />
+        <YAxis
+          fontSize={11}
+          width={44}
+          tickLine={false}
+          axisLine={false}
+          unit={yUnit}
+          domain={[0, echelle.haut]}
+          ticks={echelle.valeurs}
+          interval={0}
+          tickFormatter={(v: number) => v.toLocaleString("fr-FR")}
+        />
         <Tooltip
           formatter={(v: number, name) => [v.toLocaleString("fr-FR"), name]}
           contentStyle={{ fontSize: 12 }}

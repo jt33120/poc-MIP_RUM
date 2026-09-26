@@ -21,7 +21,7 @@ import { errorGroupHref, errorsHref, fmtCount, issueHref, issueListHref } from "
 import { INPUT_CLASS } from "@/components/forms/Field";
 import type { IssueEntry, IssueListFilters, IssueListResult } from "@/lib/error-issues";
 import { ISSUE_STATUSES, ISSUE_STATUS_LABELS } from "@/lib/issues-libelles";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, pluriel } from "@/lib/format";
 import { ERROR_SOURCES, ERROR_SOURCE_LABELS } from "@/lib/erreurs-sources";
 import type { ErrorFilters, ErrorTrendPoint } from "@/lib/queries-errors";
 
@@ -158,7 +158,7 @@ export function IssueList({
 
       {coverage.occurrences_legacy > 0 && (
         <p role="note" className="mb-6 rounded-lg border border-line bg-panel2 px-4 py-3 text-sm text-ink-soft" data-testid="issue-coverage">
-          {coverage.occurrences_legacy.toLocaleString("fr-FR")} occurrence(s) restent dans des groupes historiques
+          {pluriel(coverage.occurrences_legacy, "occurrence reste", "occurrences restent")} dans des groupes historiques
           qu&apos;aucune issue ne reprend seule : antérieures au regroupement v2, d&apos;une application où il n&apos;est pas
           actif, ou d&apos;une signature répartie sur plusieurs issues.
         </p>
@@ -302,7 +302,7 @@ function IssueRow({
         <Sparkline
           valeurs={entry.series ?? trend.map(() => 0)}
           max={echelle}
-          label={`${entry.occurrences.toLocaleString("fr-FR")} occurrence(s) sur ${label}`}
+          label={`${pluriel(entry.occurrences, "occurrence")} sur ${label}`}
         />
       </CelluleGroupe>
       <CelluleGroupe libelle="Première vue" className="text-ink-soft sm:whitespace-nowrap">

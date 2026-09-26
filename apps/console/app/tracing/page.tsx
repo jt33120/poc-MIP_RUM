@@ -27,6 +27,7 @@ import { RankBar } from "@/components/charts/RankBar";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { CadreEtat, EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import { DeployPanel } from "@/components/tracing/DeployPanel";
 import { SlowRow } from "@/components/tracing/SlowRow";
 import { TableAppels } from "@/components/tracing/TableAppels";
@@ -44,6 +45,9 @@ import { grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
 import { ancreAppel, lireAppel, type Appel } from "@/lib/tracing-ancres";
 import { APPELS_HERO, fragmentVers, libelleAppel, lignesHero, texteDecomposition } from "@/lib/tracing-hero";
 import { gabaritZoom, ligneIgnoree, lireComparaison } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { fmtPlage } from "@/lib/format";
+import { RangeeKpi } from "@/components/charts/RangeeKpi";
 
 export const dynamic = "force-dynamic";
 
@@ -53,18 +57,10 @@ const APPELS_MAX = 50;
 // Période précédente (`cmp=prev`) : un compte d'appels est sensible au retard
 // d'ingestion, une durée ou une part ne l'est pas (§ 3.2, règle 3).
 
-const JJMM_HHMM_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-/** « vs période précédente (20/09 14:00 → 21/09 14:00 UTC) » : la référence écrite en toutes lettres (P4). */
+/** « vs période précédente (20/09 14:00 → 21/09 14:00) », heure de Paris : la référence écrite en toutes lettres (P4). */
 function referencePrecedente(query: AnalyticsQuery): string {
   const p = previousRange(query.range);
-  return `vs période précédente (${JJMM_HHMM_UTC.format(new Date(p.from))} → ${JJMM_HHMM_UTC.format(new Date(p.to))} UTC)`;
+  return `vs période précédente (${fmtPlage(p.from, p.to)})`;
 }
 
 /** La couverture d'une tuile : la première source incomplète gagne ; `n` = effectif de la période précédente. */
@@ -259,7 +255,10 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
         {!c ? (
           <EchecLecture titre="Chiffres clés des appels API" />
         ) : (
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+          <RangeeKpi
+            couvertures={[couvT(couvAppels, p?.total ?? null), couvT(couvDurees, p?.total ?? null)]}
+            className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5"
+          >
             <KpiTile
               label="Appels API vus du navigateur"
               valeur={c.total}
@@ -276,7 +275,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
               format="pct"
               raisonNull="aucun appel API sur la plage"
               couverture={{ n: c.total, unite: "appels" }}
-              lecture="Un appel sans jumeau serveur n'a pas pu être décomposé : middleware absent ou appel vers un tiers."
+              methode="Un appel sans jumeau serveur n'a pas pu être décomposé : middleware absent ou appel vers un tiers."
             />
             <KpiTile
               label="Durée p75 vue du navigateur"
@@ -297,7 +296,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
               sensMeilleur="bas"
               raisonNull="aucun appel suivi jusqu'au serveur sur la plage"
               couverture={{ n: c.correlated, unite: "appels suivis" }}
-              lecture="Porte sur les seuls appels suivis : ce n'est pas la même population que la durée vue du navigateur."
+              methode="Porte sur les seuls appels suivis : ce n'est pas la même population que la durée vue du navigateur."
               precedent={precedent(p?.back_p75)}
               reference={refTuile}
               couverturePrecedente={couvT(couvDurees, p?.correlated ?? null)}
@@ -309,13 +308,13 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
               sensMeilleur="bas"
               raisonNull="aucun appel API sur la plage"
               couverture={{ n: c.total, unite: "appels" }}
-              lecture="Échec : statut ≥ 400, ou 0 (coupure réseau, requête annulée)."
+              methode="Échec : statut ≥ 400, ou 0 (coupure réseau, requête annulée)."
               href={lienEcran(sp, {}, "#appels")}
               precedent={prev ? (p ? part(p.err, p.total) : null) : undefined}
               reference={refTuile}
               couverturePrecedente={couvT(couvDurees, p?.total ?? null)}
             />
-          </div>
+          </RangeeKpi>
         )}
       </section>
 
@@ -385,7 +384,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                 serie.ok ? (
                   <>
                     <span>{plage}</span>
-                    <span>seau de {ecran.bucketLabel} (UTC)</span>
+                    <span>par tranche de {ecran.bucketLabel}</span>
                     <span>{formater("count", appelsLus)} appels</span>
                     {prev && !precParRang && <span>période précédente non lue</span>}
                   </>
@@ -395,10 +394,10 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
               alternative={
                 serie.ok && appelsLus > 0
                   ? {
-                      legende: "p75 navigateur et p75 serveur (appels suivis) par seau",
-                      colonnes: ["Seau", "Navigateur · p75", "Serveur · p75", "Appels", ...(precParRang ? ["Période précédente"] : [])],
+                      legende: "p75 navigateur et p75 serveur (appels suivis) par tranche de temps",
+                      colonnes: ["Période", "Navigateur · p75", "Serveur · p75", "Appels", ...(precParRang ? ["Période précédente"] : [])],
                       lignes: serie.data.map((s, i) => [
-                        libelleSeauComplet(grille[i] ?? s.t, query.range.bucketSeconds, "UTC"),
+                        libelleSeauComplet(grille[i] ?? s.t, query.range.bucketSeconds, FUSEAU_AFFICHAGE),
                         formater("ms", s.front_p75),
                         formater("ms", s.back_p75),
                         s.n,
@@ -418,9 +417,9 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                   annotations={annotationsT7}
                   annotationsIndisponibles={annotationsAbsentesT7}
                   seauSecondes={query.range.bucketSeconds}
-                  fuseau="UTC"
+                  fuseau={FUSEAU_AFFICHAGE}
                   zoomHref={zoom}
-                  ariaLabel={`Latence p75 des appels API par seau de ${ecran.bucketLabel}, navigateur et serveur, ${plage}`}
+                  ariaLabel={`Latence p75 des appels API par tranche de ${ecran.bucketLabel}, navigateur et serveur, ${plage}`}
                 />
               ) : (
                 <Vide>Aucun appel API instrumenté sur {plage}.</Vide>
@@ -453,11 +452,12 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
             {appel ? `Aucune trace de ${libelleAppel(appel)} sur la plage.` : "Aucune trace sur la plage."}
           </Vide>
         ) : (
-          <div className="relative overflow-x-auto">
+          // Défilement signalé : sept colonnes ne tiennent pas à 390 px.
+          <TableDefilante label="Traces les plus lentes">
             <table className="w-full text-sm" data-testid="traces-lentes">
               <thead className="bg-panel2">
                 <tr>
-                  <th scope="col" className="th sticky left-0 z-10 whitespace-nowrap bg-panel2">Heure (UTC)</th>
+                  <th scope="col" className="th sticky left-0 z-10 whitespace-nowrap bg-panel2">Heure</th>
                   <th scope="col" className="th">Appel</th>
                   <th scope="col" className="th">Statut</th>
                   <th scope="col" className="th">Navigateur</th>
@@ -472,7 +472,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableDefilante>
         )}
       </SectionTable>
 
@@ -530,7 +530,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
         ) : routes.data.length === 0 ? (
           <Vide>Aucun span serveur reçu : middleware non déployé ou trafic nul.</Vide>
         ) : (
-          <div className="relative overflow-x-auto">
+          <TableDefilante label="Routes serveur">
             <table className="w-full text-sm" data-testid="back-routes">
               <thead className="bg-panel2">
                 <tr>
@@ -567,7 +567,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableDefilante>
         )}
       </SectionTable>
 

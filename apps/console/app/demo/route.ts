@@ -70,11 +70,13 @@ export async function GET(req: Request): Promise<NextResponse> {
     maxAge: SESSION_HOURS * 3600,
   });
 
-  const h = await headers();
-  const ip = (h.get("x-forwarded-for")?.split(",")[0] ?? "unknown").trim();
+  // JAMAIS L'IP DU VISITEUR. La vitrine promet qu'aucune adresse IP n'est stockée,
+  // sous aucune forme ; la branche console-api ne la journalise pas non plus (elle
+  // ne sert qu'au débit, compté puis oublié). Le journal garde ce qui a été ouvert
+  // — le périmètre de la démo —, pas qui l'a ouvert.
   await q(`insert into audit_log (user_email, action, detail) values ($1, 'demo_session', $2)`, [
     demo.email,
-    JSON.stringify({ ip, apps: demo.apps }),
+    JSON.stringify({ apps: demo.apps }),
   ]).catch(() => {
     /* best-effort : le journal ne doit pas décider de l'accès */
   });

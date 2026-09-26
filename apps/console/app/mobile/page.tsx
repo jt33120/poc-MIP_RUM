@@ -84,6 +84,9 @@ import { annotationsDeploiementsCohorte } from "@/lib/mobile-capabilities";
 import { PLAN_SESSIONS_COMMENCEES } from "@/lib/queries-sessions";
 import { bucketStarts } from "@/lib/query-contract";
 import { gabaritZoom } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { fmtInstant } from "@/lib/format";
+import { RangeeKpi } from "@/components/charts/RangeeKpi";
 
 export const dynamic = "force-dynamic";
 
@@ -99,15 +102,8 @@ const BADGE: Record<CapabilityStatus["state"], string> = {
 /** Les trois capacités qu'aucune version du SDK JavaScript n'observe (P8.5). */
 const NATIVES: readonly MobileCapability[] = ["native_crashes", "anr", "native_start"];
 
-const DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-const dateUtc = (iso: string) => `${DATE_UTC.format(new Date(iso))} UTC`;
+// Heure de Paris, comme toute la console (le nom `dateUtc` est historique).
+const dateUtc = (iso: string) => fmtInstant(iso, { annee: true, sansA: true });
 const nombre = (n: number) => n.toLocaleString("fr-FR");
 
 /** W-M1 : l'angle mort, écrit AVANT le premier chiffre. */
@@ -153,7 +149,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
 
   const precedente = prev ? previousRange(query.range) : null;
   const reference = precedente
-    ? `vs période précédente (${rangeLabel({ ...precedente, preset: null }, "UTC")} UTC)`
+    ? `vs période précédente (${rangeLabel({ ...precedente, preset: null }, FUSEAU_AFFICHAGE)})`
     : undefined;
 
   const schemaLu = d.schema;
@@ -275,7 +271,11 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
       : null;
 
   const tuiles = (
-    <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="mobile-kpi">
+    <RangeeKpi
+      couvertures={prev ? [couvSessions, couvErreurs] : []}
+      className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      testId="mobile-kpi"
+    >
       <div className="grid min-w-0" data-testid="mobile-sessions">
         <KpiTile
           label="Sessions React Native commencées"
@@ -367,7 +367,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             .join(" ")}
         />
       </div>
-    </div>
+    </RangeeKpi>
   );
 
   // ── Zones ──

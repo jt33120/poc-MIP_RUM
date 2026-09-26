@@ -282,7 +282,7 @@ test("blocages : la série, son alternative textuelle et le lien vers la session
   await page.goto(`${BASE}/pages?app=${APP_ID}&period=24h`);
 
   const blocages = page.getByTestId("longtasks");
-  await expect(blocages).toContainText("Long Animation Frames");
+  await expect(blocages).toContainText("Trames longues (LoAF)");
   await expect(blocages).toContainText("recalculerTotal");
   // Aucun cumul de durées présenté comme du temps utilisateur.
   await expect(blocages).toContainText("Aucun cumul de durées");

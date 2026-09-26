@@ -42,6 +42,7 @@ import {
   type SavedSegment,
 } from "@/lib/query-contract";
 import { conditionAvailability, dimensionAvailability, surfaceFor } from "@/lib/surfaces";
+import { pluriel } from "@/lib/format";
 
 const OPERATORS: { key: FilterOperator; label: string }[] = [
   { key: "eq", label: "=" },
@@ -222,11 +223,16 @@ export function SegmentBar({ schema }: { schema: string[] }) {
             className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${
               availability.available
                 ? "border-perf/30 bg-perf/10 text-perf"
-                : "border-warn/40 bg-warn/10 text-ink-soft line-through decoration-warn/60"
+                : // Jamais barré : un segment barré se lit « retiré » (voir GlobalFilters).
+                  "border-dashed border-warn/60 bg-warn/10 text-ink-soft"
             }`}
           >
             {describeCondition(condition)}
-            {!availability.available && <span className="sr-only">— non appliqué sur cet écran : {availability.reason}</span>}
+            {!availability.available && (
+              <span className="text-[10px] font-normal text-warn-ink">
+                (non appliqué)<span className="sr-only"> sur cet écran : {availability.reason}</span>
+              </span>
+            )}
             <button
               type="button"
               onClick={() => apply(conditions.filter((_, j) => j !== i))}
@@ -343,7 +349,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
       <div className="ml-auto flex flex-wrap items-center gap-1.5">
         {dropped > 0 && (
           <span role="status" className="text-[11px] text-ink-faint" data-testid="segment-saved-dropped">
-            {dropped} segment(s) enregistré(s) illisible(s) écarté(s)
+            {pluriel(dropped, "segment enregistré illisible écarté", "segments enregistrés illisibles écartés")}
           </span>
         )}
         {isAllApps && (

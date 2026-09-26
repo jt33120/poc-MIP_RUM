@@ -312,7 +312,7 @@ test.describe("F32 — représentations du résultat", () => {
     await page.goto(`${baseF32}&period=24h&measure=rows:count&viz=value&cmp=prev&run=1`);
     const delta = page.locator("#explorer-resultat").getByTestId("delta");
     await expect(delta).toBeVisible({ timeout: 15_000 });
-    await expect(delta).toContainText(/vs 24 h précédentes \(\d\d\/\d\d \d\d:\d\d → \d\d\/\d\d \d\d:\d\d UTC\)/);
+    await expect(delta).toContainText(/vs 24 h précédentes \(\d\d\/\d\d \d\d:\d\d → \d\d\/\d\d \d\d:\d\d\)/);
     // 12 mesures contre 8 la veille : +50 %.
     await expect(delta).toContainText("+50 %");
   });

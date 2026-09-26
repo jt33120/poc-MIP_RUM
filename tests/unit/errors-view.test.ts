@@ -117,9 +117,9 @@ describe("chiffres affichés", () => {
     expect(fmtCount(null)).toBe("Inconnu");
     expect(fmtCount(0)).toBe("0");
     expect(fmtCoverage(null)).toBe("Inconnue");
-    expect(fmtCoverage(0)).toBe("0 %");
-    expect(fmtCoverage(1)).toBe("100 %");
-    expect(fmtCoverage(45 / 47)).toBe("95,7 %");
+    expect(fmtCoverage(0)).toBe("0\u00a0%");
+    expect(fmtCoverage(1)).toBe("100\u00a0%");
+    expect(fmtCoverage(45 / 47)).toBe("95,7\u00a0%");
   });
 });
 

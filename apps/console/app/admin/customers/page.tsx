@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ECRANS_ADMIN } from "@mip/console-contract";
+import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
 import { FormulaireSecret } from "@/components/secret/SecretUnique";
+import { TableDefilante } from "@/components/TableDefilante";
 import { chargerClients } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
@@ -112,9 +114,11 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
       </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      {/* Défilant et signalé : à 390 px, `overflow-hidden` rendait Statut, Clé API,
+          Sessions et les actions (Guide, Désactiver) inaccessibles (recette 26/09). */}
+      <TableDefilante className="rounded-lg border border-slate-200 bg-white shadow-sm" label="Applications">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="whitespace-nowrap bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2">App</th>
               <th className="px-4 py-2">Client</th>
@@ -154,7 +158,8 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
                   </span>
                 </td>
                 <td className="px-4 py-2">
-                  <div className="flex gap-2">
+                  {/* `items-start` : la confirmation se déplie sous « Désactiver » sans étirer « Guide ». */}
+                  <div className="flex items-start gap-2">
                     <Link
                       href={`/admin/customers/${c.app_id}`}
                       className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
@@ -164,12 +169,26 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
                     <form action={toggleAppAction}>
                       <input type="hidden" name="app_id" value={c.app_id} />
                       <input type="hidden" name="active" value={c.active ? "false" : "true"} />
-                      <button
-                        type="submit"
-                        className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-                      >
-                        {c.active ? "Désactiver" : "Activer"}
-                      </button>
+                      {/* Désactiver est confirmé (ses données peuvent être refusées) ;
+                          réactiver ne coupe rien et part d'un clic. */}
+                      {c.active ? (
+                        <ConfirmationDanger
+                          libelle="Désactiver"
+                          libelleAccessible={`Désactiver l’application ${c.name}`}
+                          question={`Désactiver l’application ${entreGuillemets(c.name)}\u00a0?`}
+                          consequence="Ses données seront refusées jusqu’à sa réactivation, dès lors que la collecte exige une clé d’API."
+                          confirmer="Désactiver l’application"
+                          enCours="Désactivation…"
+                          testid={`desactiver-${c.app_id}`}
+                        />
+                      ) : (
+                        <button
+                          type="submit"
+                          className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                        >
+                          Activer
+                        </button>
+                      )}
                     </form>
                   </div>
                 </td>
@@ -184,7 +203,7 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
     </div>
   );
 }

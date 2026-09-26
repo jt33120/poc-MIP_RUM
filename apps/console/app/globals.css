@@ -99,6 +99,14 @@
   --c-bad: 220 38 38;
   --c-bad-ink: 185 28 28;
   --c-accent-ink: 163 79 0; /* orange de texte : 5,9:1 sur blanc */
+  /* Échelle séquentielle (heatmap de santé) : cinq paliers d'une teinte, du plus
+     proche du fond (intensité faible) au plus contrasté. Ce sont les paliers
+     `PALIERS_SEQUENTIELLE` de lib/palette.ts. */
+  --c-seq-0: 224 231 255;
+  --c-seq-1: 165 180 252;
+  --c-seq-2: 129 140 248;
+  --c-seq-3: 99 102 241;
+  --c-seq-4: 67 56 202;
   color-scheme: light;
 }
 
@@ -119,6 +127,14 @@
   --c-bad: 248 113 113;
   --c-bad-ink: 252 165 165;
   --c-accent-ink: 251 188 100;
+  /* Échelle séquentielle INVERSÉE en luminance : sur le fond nuit, le palier pâle
+     du thème clair était le plus contrasté — les cases faibles criaient, les bonnes
+     s'effaçaient (recette du 26/09/2026). Ici, l'intensité croît avec le contraste. */
+  --c-seq-0: 49 46 129;
+  --c-seq-1: 55 48 163;
+  --c-seq-2: 79 70 229;
+  --c-seq-3: 129 140 248;
+  --c-seq-4: 199 210 254;
   color-scheme: dark;
 }
 
@@ -203,6 +219,17 @@
 }
 .recharts-legend-item-text {
   color: rgb(var(--c-ink-soft)) !important;
+}
+
+/* Bandes de seuil Bon / À améliorer / Mauvais en thème sombre (ThresholdSeries,
+   ScatterPlot, DistributionSeuils, Sparkline). À 8 %, opacité juste sur fond blanc,
+   « À améliorer » se confondait avec le fond nuit (recette du 26/09/2026). Une règle
+   CSS l'emporte sur l'attribut de présentation `fill-opacity` / `opacity`. */
+.dark .bande-seuil .recharts-reference-area-rect {
+  fill-opacity: 0.2;
+}
+.dark .zone-seuil {
+  opacity: 0.2;
 }
 
 /* player rrweb : cadre accordé au thème */

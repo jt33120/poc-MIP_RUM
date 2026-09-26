@@ -40,6 +40,8 @@ import { RATING_LABEL, rating2026 } from "@/lib/rating";
 import { grilleIso, libelleSeauComplet } from "@/lib/series";
 import { pointsRelease } from "@/lib/vue-ensemble";
 import type { Fil } from "@mip/console-contract";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { pluriel } from "@/lib/format";
 
 /** Ressources lentes montrées dans le panneau (§ 5.2.3). */
 const RESSOURCES_PANNEAU = 3;
@@ -241,23 +243,23 @@ function SerieRoute({
       id="figure-route-serie"
       meta={
         <>
-          <span>p75 par seau de {largeur}</span>
+          <span>p75 par tranche de {largeur}</span>
           <span>{formater("count", mesures)} mesures</span>
-          <span>{plage}, UTC</span>
+          <span>{plage}</span>
           {!serieEnsemble.ok && <span>référence de l&apos;ensemble non lue</span>}
         </>
       }
       lecture={
         <>
-          Trait plein : cette route. Pointillé gris : l&apos;ensemble des routes de la population filtrée, mêmes seaux.
-          Un seau sans mesure est un trou, jamais un zéro.
+          Trait plein : cette route. Pointillé gris : l&apos;ensemble des routes de la population filtrée, mêmes tranches.
+          Une tranche sans mesure est un trou, jamais un zéro.
         </>
       }
       alternative={{
-        legende: `${titre} : p75 par seau de ${largeur} sur ${plage} (UTC), face au p75 de l'ensemble des routes`,
-        colonnes: ["Seau (UTC)", "p75 de la route", "Mesures", "p75 de l'ensemble", "Mesures de l'ensemble"],
+        legende: `${titre} : p75 par tranche de ${largeur} sur ${plage}, face au p75 de l'ensemble des routes`,
+        colonnes: ["Période", "p75 de la route", "Mesures", "p75 de l'ensemble", "Mesures de l'ensemble"],
         lignes: points.map((p) => [
-          libelleSeauComplet(p.t, seau, "UTC"),
+          libelleSeauComplet(p.t, seau, FUSEAU_AFFICHAGE),
           formater(fmt, p.b),
           p.nb,
           formater(fmt, p.a),
@@ -277,9 +279,9 @@ function SerieRoute({
         format={fmt}
         vital={vital}
         seauSecondes={seau}
-        fuseau="UTC"
+        fuseau={FUSEAU_AFFICHAGE}
         hauteur={180}
-        ariaLabel={`${vital} p75 de ${route} par seau de ${largeur}, ${grille.length} seaux, 3 zones de seuil (Bon, À améliorer, Mauvais), comparé au p75 de l'ensemble des routes`}
+        ariaLabel={`${vital} p75 de ${route} par tranche de ${largeur}, ${grille.length} tranches, 3 zones de seuil (Bon, À améliorer, Mauvais), comparé au p75 de l'ensemble des routes`}
       />
     </Figure>
   );
@@ -519,7 +521,7 @@ function ErreursRoute({ lecture, plage, href }: { lecture: SectionLue<{ groups: 
       <p className="mt-2 text-xs text-ink-soft">
         {lecture.data.total > groupes.length
           ? `${formater("count", groupes.length)} groupes sur ${formater("count", lecture.data.total)} sur ${plage}.`
-          : `${formater("count", groupes.length)} groupe(s) sur ${plage}.`}
+          : `${pluriel(groupes.length, "groupe")} sur ${plage}.`}
       </p>
       <Link href={href} className={`${LIEN_BLOC} mt-2`} data-testid="panneau-route-erreurs-lien">
         Toutes les erreurs de cette route

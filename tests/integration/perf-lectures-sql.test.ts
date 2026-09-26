@@ -1187,7 +1187,7 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
 
     it("aucune occurrence ne déclare de version → null, jamais une version devinée", async () => {
       const r = await lib20.releasesDuGroupe({ app_id: APP_F20, fingerprint: "f20fp-sansrel" }, f20());
-      expect(r).toEqual({ premiere: null, derniere: null, distinctes: 0 });
+      expect(r).toEqual({ premiere: null, derniere: null, distinctes: 0, parRelease: [] });
     });
 
     it("l'app du groupe borne la lecture : la même empreinte dans une autre app n'y entre pas", async () => {
@@ -1207,9 +1207,9 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
       expect(vu.derniere?.release).toBe("9.9.9");
       // Une app hors du périmètre d'un viewer : rien, jamais un repli sur toutes les apps.
       const refuse = await lib20.releasesDuGroupe(refA, f20("", viewerB));
-      expect(refuse).toEqual({ premiere: null, derniere: null, distinctes: 0 });
+      expect(refuse).toEqual({ premiere: null, derniere: null, distinctes: 0, parRelease: [] });
       const vide = lib20.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${APP_F20}`)));
-      expect(await lib20.releasesDuGroupe(refA, vide)).toEqual({ premiere: null, derniere: null, distinctes: 0 });
+      expect(await lib20.releasesDuGroupe(refA, vide)).toEqual({ premiere: null, derniere: null, distinctes: 0, parRelease: [] });
     });
   });
 

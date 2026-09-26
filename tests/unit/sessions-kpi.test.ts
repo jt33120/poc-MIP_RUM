@@ -61,14 +61,14 @@ function requete(qs = ""): AnalyticsQuery {
 }
 
 describe("referencePrecedente", () => {
-  it("nomme la durée ET date la période précédente, en UTC", () => {
+  it("nomme la durée ET date la période précédente, heure de Paris", () => {
     const precedente = previousRange({
       from: "2026-09-20T14:00:00.000Z",
       to: "2026-09-21T14:00:00.000Z",
       preset: "24h",
       bucketSeconds: 3600,
     });
-    expect(referencePrecedente(precedente)).toBe("vs 24 h précédentes (19/09 14:00 → 20/09 14:00 UTC)");
+    expect(referencePrecedente(precedente)).toBe("vs 24 h précédentes (19/09 16:00 → 20/09 16:00)");
   });
 
   it("plage personnalisée : « période précédente », jamais une durée de preset", () => {
@@ -78,7 +78,7 @@ describe("referencePrecedente", () => {
       preset: null,
       bucketSeconds: 300,
     });
-    expect(texte).toBe("vs période précédente (10/09 08:00 → 10/09 10:00 UTC)");
+    expect(texte).toBe("vs période précédente (10/09 10:00 → 10/09 12:00)");
   });
 });
 
@@ -236,7 +236,7 @@ describe("revue F41 — visiteurs : couverture et seaux sans identifiant", () =>
       retentionJours: 30,
     });
     expect(couverture.etat).toBe("partielle");
-    expect(couverture.raison).toContain("« visitor_id »");
+    expect(couverture.raison).toContain("« identifiant de visiteur »");
   });
 
   it("seau : 0 session → 0 (vrai zéro) ; sessions toutes sans identifiant → trou ; sinon les visiteurs identifiés", () => {

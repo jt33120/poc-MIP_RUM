@@ -26,6 +26,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { SloRow } from "@/components/slo/SloStatusRow";
 import { CadreEtat } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import { TousEteints } from "@/components/TousEteints";
 import { chargerSlo, JOURS_ALERTES_SLO as JOURS_ALERTES } from "@/lib/chargeurs/slo";
 import { avecBlocs, chargerEcran } from "@/lib/ecran";
@@ -33,6 +34,7 @@ import type { SearchParams } from "@/lib/filters";
 import { SLO_METRICS } from "@/lib/queries-v2";
 import { alertesParSlo, comptesSlo, FACTEUR_BURN_RAPIDE, FORMULE_SLO, lignesBudget, metriqueEnClair } from "@/lib/slo-ecran";
 import { createSloAction } from "../alerts/actions";
+import { fmtHeure } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +49,9 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
   const ecran = await chargerEcran(ECRANS.slo, chargerSlo, await avecBlocs(sp, "/slo"));
   if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const f = { app: ecran.appFiltre };
-  const { blocs, admin, statuts, slos, apps, declenchements, luA } = ecran;
+  // `luA` du chargeur est une heure UTC déjà écrite : l'instantané est daté ICI, dans
+  // le fuseau d'affichage (heure de Paris), à quelques millisecondes de la lecture.
+  const { blocs, admin, statuts, slos, apps, declenchements } = ecran;
 
   const lignes = statuts.ok ? lignesBudget(statuts.data) : [];
   const comptes = statuts.ok ? comptesSlo(statuts.data) : null;
@@ -129,7 +133,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                 id="budget"
                 meta={
                   <span>
-                    instantané calculé à {luA} UTC ; chaque SLO sur sa fenêtre glissante jusqu&apos;à maintenant
+                    instantané calculé à {fmtHeure(Date.now(), { secondes: true })} ; chaque SLO sur sa fenêtre glissante jusqu&apos;à maintenant
                   </span>
                 }
                 etat={!statuts.ok ? { kind: "erreur", titre: "Budget d'erreur consommé, par SLO" } : undefined}
@@ -184,7 +188,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
               id="definitions"
               meta={
                 <span>
-                  alertes : déclenchements des {JOURS_ALERTES} derniers jours calendaires UTC, jour en cours compris
+                  alertes : déclenchements des {JOURS_ALERTES} derniers jours calendaires, jour en cours compris
                   {declenchements.ok && declenchements.data?.tronque ? " (plafond atteint : comptes partiels)" : ""}
                 </span>
               }
@@ -197,10 +201,11 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                 </div>
               )}
               {listeSlo.length > 0 ? (
-                <div className="relative overflow-x-auto">
-                  {/* `relative` : les `sr-only` de la table (légende, en-tête « Actions ») sont en
-                      position absolue ; sans ancêtre positionné, ils se plaçaient par rapport à
-                      la PAGE et l'élargissaient à 1 232 px sur une fenêtre de 390 (piège 16). */}
+                // Défilement SIGNALÉ (TableDefilante, dont la zone reste `relative` pour
+                // les `sr-only` — piège 16) : même à 1 440 px, onze colonnes ne tiennent
+                // pas, et « Alertes sur 7 j », « Actif » et les actions restaient cachées
+                // derrière un défilement que rien n'annonçait (recette 26/09).
+                <TableDefilante label="Définitions et état des SLO">
                   <table className="w-full min-w-max text-sm" data-testid="table-slo">
                     <caption className="sr-only">Définitions et état des SLO, actifs et désactivés</caption>
                     <thead className="bg-panel2">
@@ -254,7 +259,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TableDefilante>
               ) : (
                 <p className="py-4 text-center text-sm text-ink-soft">
                   {admin && blocs.creation

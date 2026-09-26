@@ -12,9 +12,10 @@
 // d'un résultat. Le bloc décide donc lui-même de son affichage, plutôt que de
 // faire porter la condition à l'écran qui l'appelle.
 import { GlossaryTip } from "@/components/GlossaryTip";
+import { TableDefilante } from "@/components/TableDefilante";
 import { comparable, ecartPoints, tauxErreur, versionReference } from "@/lib/deploys-verdict";
 import type { ComparaisonVersions } from "@/lib/queries-deploys";
-import { fmtVital } from "@/lib/format";
+import { fmtVital, fmtPct, fmtNombre } from "@/lib/format";
 import { RATING_CLASS, rating2026 } from "@/lib/rating";
 import { ecartProportions, intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
 
@@ -49,7 +50,9 @@ export function VersionsTable({
         Comparaison par version
         <GlossaryTip id="rum" />
       </h2>
-      <div className="card overflow-hidden">
+      {/* Défilant et signalé : `overflow-hidden` coupait « Sessions avec erreur »,
+          la colonne qui porte l'écart, sur petit écran. */}
+      <TableDefilante className="card" label="Comparaison par version">
         <table className="w-full text-sm">
           <thead className="bg-panel2">
             <tr>
@@ -67,7 +70,7 @@ export function VersionsTable({
               // P*.1 : Wilson sur la part de sessions en erreur, Newcombe sur l'écart
               // à la référence. Un numérateur au-delà des sessions (erreurs et vues
               // comptées sur deux tables) n'a pas d'intervalle, et le dit.
-              const intervalle = texteIntervalle(intervalleWilson(r.sessionsEnErreur, r.sessions), (v) => `${(v * 100).toFixed(1)} %`);
+              const intervalle = texteIntervalle(intervalleWilson(r.sessionsEnErreur, r.sessions), (v) => fmtPct(v));
               const etabli =
                 ecart == null ? null : ecartProportions(r.sessionsEnErreur, r.sessions, ref.sessionsEnErreur, ref.sessions);
               return (
@@ -94,7 +97,7 @@ export function VersionsTable({
                       <span className="text-ink-faint">—</span>
                     ) : (
                       <>
-                        <span className="text-ink">{(taux * 100).toFixed(1)} %</span>
+                        <span className="text-ink">{fmtPct(taux)}</span>
                         {ecart != null && Math.abs(ecart) >= 0.1 && (
                           // P*.1 : la couleur SEULEMENT pour un écart établi. Non établi
                           // (Newcombe contient 0) ou non testable (`ecartProportions` rend
@@ -107,7 +110,7 @@ export function VersionsTable({
                               data-testid="version-ecart-etabli"
                             >
                               {ecart > 0 ? "+" : ""}
-                              {ecart.toFixed(1)} pt
+                              {fmtNombre(ecart, 1)}{"\u00a0"}pt
                             </span>
                           ) : (
                             <span
@@ -116,7 +119,7 @@ export function VersionsTable({
                               data-testid="version-ecart-non-etabli"
                             >
                               {ecart > 0 ? "+" : ""}
-                              {ecart.toFixed(1)} pt · {etabli ? "non établi" : "non testable"}
+                              {fmtNombre(ecart, 1)}{"\u00a0"}pt · {etabli ? "non établi" : "non testable"}
                             </span>
                           )
                         )}
@@ -133,7 +136,7 @@ export function VersionsTable({
             })}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
       {/* La limite est dite SOUS le tableau, pas ailleurs : c'est là qu'on lit
           l'écart, donc là qu'il faut savoir ce qu'il mélange. */}
       <p className="mt-2 text-xs leading-relaxed text-ink-faint">

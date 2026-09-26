@@ -21,6 +21,7 @@ import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { ActionsVue } from "@/components/explorer/ActionsVue";
 import { ModelesDepart } from "@/components/explorer/ModelesDepart";
+import { TableDefilante } from "@/components/TableDefilante";
 import { chargerVues } from "@/lib/chargeurs/vues";
 import { chargerEcran } from "@/lib/ecran";
 import { fmtDate } from "@/lib/format";
@@ -99,16 +100,26 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
         </p>
       )}
 
-      {result.kind === "ok" && (
-        // `overflow-x-auto` et non `overflow-hidden` : à 390 px, six colonnes dont
-        // un champ de saisie ne tiennent pas. Les MASQUER rendrait le renommage
-        // inatteignable ; les faire défiler le garde accessible.
-        // `relative` : la légende et les libellés `sr-only` (position: absolute) restent
-        // dans ce conteneur défilant au lieu d'élargir la page (piège 16).
-        <div className="card relative overflow-x-auto">
-          <table className="w-full text-sm">
+      {/* Liste vide : le message seul. Dans une ligne du tableau à six colonnes, il se
+          coupait à 390 px (« dans l' ») sous des en-têtes écrasés (recette 26/09). */}
+      {result.kind === "ok" && !result.value.length && (
+        <p role="status" className="card px-4 py-8 text-center text-sm text-ink-soft">
+          Aucune vue enregistrée — en composer une dans l’Explorer, puis l’enregistrer.
+        </p>
+      )}
+
+      {result.kind === "ok" && result.value.length > 0 && (
+        // Défiler et non masquer : à 390 px, six colonnes dont un champ de saisie ne
+        // tiennent pas. Les MASQUER rendrait le renommage inatteignable ; les faire
+        // défiler — de façon signalée — le garde accessible. La zone de
+        // TableDefilante reste `relative` : les `sr-only` ne sortent pas (piège 16).
+        // `min-w-[48rem]` : sans largeur plancher, le tableau s'écrasait au lieu de
+        // défiler (« Ce qu'elle mesure » sur trois lignes).
+        <TableDefilante className="card" label="Mes vues">
+          <table className="w-full min-w-[48rem] text-sm">
             <caption className="sr-only">Vues enregistrées lisibles par ce compte</caption>
-            <thead>
+            {/* En-têtes sur une ligne : « Mise à jour » se coupait en « MIS / JOU ». */}
+            <thead className="whitespace-nowrap">
               <tr>
                 <th scope="col" className="th text-left">Nom</th>
                 <th scope="col" className="th text-left">Ce qu’elle mesure</th>
@@ -155,16 +166,9 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
                   </tr>
                 );
               })}
-              {!result.value.length && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-ink-soft">
-                    Aucune vue enregistrée — en composer une dans l’Explorer, puis l’enregistrer.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       )}
     </div>
   );

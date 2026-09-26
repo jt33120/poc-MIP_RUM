@@ -23,6 +23,7 @@ import { PHRASE_FENETRE } from "../components/ReleaseCompare";
 // chargeur de l'écran (`lib/chargeurs/alertes.ts`) lit aussi.
 export { JOURS_DECLENCHEMENTS, PLAFOND_DECLENCHEMENTS, PLAFOND_FLUX } from "./alerting";
 import { JOURS_DECLENCHEMENTS } from "./alerting";
+import { pluriel } from "./format";
 
 /** Pourquoi le délai d'acquittement n'est pas affiché (B50). */
 export const MOTIF_MTTA =
@@ -110,8 +111,8 @@ export function totalDeclenchements(parJour: readonly Pick<AlertDayRow, "n">[]):
 export function alternativeParJour(parJour: readonly AlertDayRow[]) {
   const points = pointsParJour(parJour);
   return {
-    legende: `Déclenchements par jour UTC et par sévérité, sur ${JOURS_DECLENCHEMENTS} jours fixes.`,
-    colonnes: ["Jour (UTC)", ...SEVERITES_AFFICHEES.map((s) => s.libelle), "Total"],
+    legende: `Déclenchements par jour et par sévérité, sur ${JOURS_DECLENCHEMENTS} jours fixes.`,
+    colonnes: ["Jour", ...SEVERITES_AFFICHEES.map((s) => s.libelle), "Total"],
     lignes: points.map((p) => {
       const valeurs = SEVERITES_AFFICHEES.map((s) => Number(p[s.cle]) || 0);
       return [
@@ -227,9 +228,22 @@ export function libelleDeRegle(r: Pick<AlertRuleRow, "metric" | "route">): strin
   return `${metricLabel(r.metric)}${r.route ? ` · ${r.route}` : ""}`;
 }
 
+/**
+ * Le seuil d'une règle dans l'unité de SA métrique. `formater("count")` arrondissait
+ * à l'entier : le seuil 0,1 d'un taux d'erreur s'affichait « > 0 », une règle qui
+ * semblait se déclencher à la première erreur (recette du 26/09/2026). Un taux
+ * s'écrit en pour cent, un CLS avec ses trois décimales, le reste sans perdre ses
+ * décimales.
+ */
+export function seuilDeRegle(metric: string, seuil: number): string {
+  if (metric === "error_rate") return formater("pct", seuil);
+  if (metric === "CLS") return formater("cls", seuil);
+  return Number.isFinite(seuil) ? seuil.toLocaleString("fr-FR", { maximumFractionDigits: 3 }) : "—";
+}
+
 /** Ce que la règle évalue, en une phrase : mode, seuil ou sensibilité, fenêtre, env. */
 export function reglageDeRegle(
-  r: Pick<AlertRuleRow, "mode" | "comparator" | "threshold" | "sensitivity" | "window_minutes" | "severity" | "env">,
+  r: Pick<AlertRuleRow, "metric" | "mode" | "comparator" | "threshold" | "sensitivity" | "window_minutes" | "severity" | "env">,
 ): string {
   // B52 : une règle de release compare deux p75 ; son seuil est une hausse EN POUR
   // CENT (décimales gardées : « +12,5 % » n'est pas « +13 % »), et la phrase du
@@ -240,7 +254,7 @@ export function reglageDeRegle(
   const declenche =
     r.mode === "baseline"
       ? `écart à l'habitude au-delà de ${formater("count", r.sensitivity)} sigma`
-      : `${r.comparator} ${formater("count", r.threshold)}`;
+      : `${r.comparator} ${seuilDeRegle(r.metric, r.threshold)}`;
   const env = r.env ? ` · env ${r.env}` : "";
   return `${ruleModeLabel(r.mode)} : ${declenche} sur ${formater("count", r.window_minutes)} min · sévérité ${r.severity}${env}`;
 }
@@ -267,14 +281,14 @@ export function etatLivraison(e: Pick<AlertEventRow, "delivered" | "pending">): 
     return {
       etat: "livree",
       libelle: `livrée ×${formater("count", e.delivered)}`,
-      detail: `${e.delivered} notification(s) livrée(s) — code 2xx confirmé`,
+      detail: `${pluriel(e.delivered, "notification livrée", "notifications livrées")} — code 2xx confirmé`,
     };
   }
   if (e.pending > 0) {
     return {
       etat: "en_attente",
       libelle: `en attente ×${formater("count", e.pending)}`,
-      detail: `${e.pending} notification(s) transmise(s), résultat pas encore confirmé`,
+      detail: `${pluriel(e.pending, "notification transmise", "notifications transmises")}, résultat pas encore confirmé`,
     };
   }
   return { etat: "non_livree", libelle: "non livrée", detail: "Aucune notification n'est partie pour cette alerte" };

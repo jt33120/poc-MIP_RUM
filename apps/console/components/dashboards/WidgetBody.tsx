@@ -17,6 +17,7 @@
 // et la carte écrit pourquoi.
 import Link from "next/link";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
+import { TableDefilante } from "@/components/TableDefilante";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
@@ -92,7 +93,8 @@ export function WidgetBody({ data, query }: { data: WidgetData; query: Analytics
       {/* Table v1 conservée (W-B10) : une cible de frustration est un texte long,
           qu'un classement en barres tronquerait. */}
       {!data.trafic && !data.routes && !data.erreurs && data.columns?.length ? (
-        <div className="relative overflow-x-auto">
+        // Défilement signalé : une carte de tableau de bord est étroite.
+        <TableDefilante label="Données de la carte">
           <table className="w-full text-sm">
             <thead>
               <tr>
@@ -115,7 +117,7 @@ export function WidgetBody({ data, query }: { data: WidgetData; query: Analytics
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       ) : null}
 
       {data.sansVerdict && (

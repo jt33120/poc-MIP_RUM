@@ -13,6 +13,7 @@
 // Un compte d'erreurs n'a pas de seuil publié (R-S) : aucune couleur de verdict,
 // une couleur catégorielle.
 import { useId } from "react";
+import { bucketLabel } from "@/lib/query-contract";
 import type { Annotation, PointSerie } from "@/lib/series";
 import { StackedBars } from "./StackedBars";
 import { ThresholdSeries } from "./ThresholdSeries";
@@ -35,6 +36,7 @@ export function TrafficTimeseries({
   zoomHref,
   annotations,
   annotationsIndisponibles,
+  debutCollecte,
 }: {
   grille: string[];
   points: TrafficPoint[];
@@ -46,9 +48,13 @@ export function TrafficTimeseries({
   zoomHref?: string;
   annotations?: Annotation[];
   annotationsIndisponibles?: string;
+  /** Début de la collecte (ISO), s'il est connu : voir `ThresholdSeries`. */
+  debutCollecte?: string;
 }) {
   const synchro = `trafic-${useId()}`;
   const lignes: PointSerie[] = points;
+  // « par tranche de 1 h, 24 tranches » : le mot « seau » (bucket) ne se lit plus.
+  const decoupe = `par tranche de ${bucketLabel(seauSecondes)}, ${grille.length} tranches`;
   return (
     <div className="flex min-w-0 flex-col gap-3" data-testid="traffic-timeseries">
       <div className="min-w-0">
@@ -65,7 +71,8 @@ export function TrafficTimeseries({
           annotations={annotations}
           legendeAnnotations={false}
           synchro={synchro}
-          ariaLabel={`Pages vues par seau, ${grille.length} seaux`}
+          debutCollecte={debutCollecte}
+          ariaLabel={`Pages vues ${decoupe}`}
         />
       </div>
       <div className="min-w-0">
@@ -82,7 +89,9 @@ export function TrafficTimeseries({
           annotations={annotations}
           annotationsIndisponibles={annotationsIndisponibles}
           synchro={synchro}
-          ariaLabel={`${libelleErreurs} par seau, ${grille.length} seaux`}
+          debutCollecte={debutCollecte}
+          noteCollecte={false}
+          ariaLabel={`${libelleErreurs} ${decoupe}`}
         />
       </div>
     </div>

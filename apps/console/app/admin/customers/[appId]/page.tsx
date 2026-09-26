@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { ECRANS_ADMIN } from "@mip/console-contract";
+import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
 import { FormulaireSecret, SecretAffiche } from "@/components/secret/SecretUnique";
 import { BackendStep } from "@/components/wizard/BackendStep";
 import { SnippetStep } from "@/components/wizard/SnippetStep";
@@ -116,14 +117,18 @@ export default async function CustomerWizard({ params }: { params: Promise<{ app
                 Mettre à jour
               </button>
             </form>
+            {/* Régénérer invalide la clé posée chez le client : confirmé, et laissé
+                ici plutôt qu'en bas de page — la nouvelle clé s'affiche en tête. */}
             <FormulaireSecret action={rotateKeyAction}>
               <input type="hidden" name="app_id" value={appId} />
-              <button
-                type="submit"
-                className="rounded border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
-              >
-                Régénérer la clé d&apos;API (l&apos;ancienne cesse de fonctionner)
-              </button>
+              <ConfirmationDanger
+                libelle="Régénérer la clé d’API"
+                question={`Régénérer la clé d’API de ${entreGuillemets(customer.name)}\u00a0?`}
+                consequence="L’ancienne clé cessera aussitôt de fonctionner : il faudra poser la nouvelle, affichée une seule fois, sur le site du client."
+                confirmer="Régénérer la clé"
+                enCours="Régénération…"
+                testid="regenerer-cle"
+              />
             </FormulaireSecret>
           </div>
         </WizardStep>

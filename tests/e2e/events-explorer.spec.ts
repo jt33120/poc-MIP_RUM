@@ -82,7 +82,7 @@ test("Journal : filtre typé, échantillonnage, clavier, cartes à 390 px et pag
   const table = page.getByTestId("journal-table");
   const carte = table.getByTestId("journal-ligne").first();
   await expect(carte.getByRole("link", { name: "checkout", exact: true })).toBeVisible();
-  await expect(carte.getByText(/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} UTC/)).toBeVisible();
+  await expect(carte.getByText(/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}/)).toBeVisible();
   await expect(carte.getByText("/checkout-b", { exact: true })).toBeVisible();
   await expect(carte.getByRole("link", { name: /p4-e2e/ })).toBeVisible();
   // Colonne promue (clé sur 100 % des lignes de la page), libellée dans la carte.

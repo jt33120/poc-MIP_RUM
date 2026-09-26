@@ -23,16 +23,16 @@ import {
 const espaces = (s: string) => s.replace(/[\u00a0\u202f]/g, " ");
 
 describe("referencePrecedente (§ 3.12)", () => {
-  it("24 h : « vs 24 h précédentes (JJ/MM HH:MM → JJ/MM HH:MM UTC) »", () => {
+  it("24 h : « vs 24 h précédentes (JJ/MM HH:MM → JJ/MM HH:MM) », heure de Paris", () => {
     expect(
       referencePrecedente({ from: "2026-09-21T14:00:00Z", to: "2026-09-22T14:00:00Z", preset: "24h" }),
-    ).toBe("vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC)");
+    ).toBe("vs 24 h précédentes (20/09 16:00 → 21/09 16:00)");
   });
 
   it("plage personnalisée : « période précédente », même durée juste avant", () => {
     expect(
       referencePrecedente({ from: "2026-09-10T08:00:00Z", to: "2026-09-10T10:00:00Z", preset: null }),
-    ).toBe("vs période précédente (10/09 06:00 → 10/09 08:00 UTC)");
+    ).toBe("vs période précédente (10/09 08:00 → 10/09 10:00)");
   });
 
   it("release : même fenêtre", () => {
@@ -44,7 +44,7 @@ describe("lectureErreursPour100 (CP14)", () => {
   it("ne cite que ce qui est laissé de côté, et seulement s'il existe", () => {
     expect(lectureErreursPour100({ restreint: true, sansSource: 0, serveur: 0 })).toBe("erreurs navigateur seulement");
     expect(espaces(lectureErreursPour100({ restreint: true, sansSource: 3, serveur: 5 }))).toBe(
-      "erreurs navigateur seulement ; 3 occurrence(s) sans source déclarée et 5 occurrence(s) hors navigateur (serveur, mobile) non comptée(s)",
+      "erreurs navigateur seulement ; 3 occurrences sans source déclarée et 5 occurrences hors navigateur (serveur, mobile) non comptées",
     );
   });
 
@@ -179,7 +179,7 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
   it("anomalie : titre chiffré, règle z > 3, lien vers la route et l'heure", () => {
     const r = constatsVueEnsemble(entrees({ anomalies: { ok: true, data: { lignes: [ANOMALIE], filtrees: false } } }), LIENS);
     expect(r.constats).toHaveLength(1);
-    expect(espaces(r.constats[0].titre)).toBe("LCP /checkout : 4,8 s à 22/09 14:00 UTC (moyenne 7 j : 2,1 s)");
+    expect(espaces(r.constats[0].titre)).toBe("LCP /checkout : 4,8 s à 22/09 16:00 (moyenne 7 j : 2,1 s)");
     expect(r.constats[0].regle).toContain("> 3 sur la moyenne horaire des 7 derniers jours");
     expect(r.constats[0].href).toContain("/pages?route=%2Fcheckout");
   });
@@ -214,7 +214,7 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
     expect(ALERTES_PAR_EVENEMENT).toBe(true);
     const r = constatsVueEnsemble(entrees({ alertes: { ok: true, data: { mode: "compte", n: 4 } } }), LIENS);
     expect(r.constats).toEqual([
-      expect.objectContaining({ type: "alerte", titre: "4 alerte(s) non acquittée(s)", href: "/alerts?app=a" }),
+      expect.objectContaining({ type: "alerte", titre: "4\u00a0alertes non acquittées", href: "/alerts?app=a" }),
     ]);
   });
 
@@ -227,7 +227,7 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
       "/alerts?app=a&evt=4",
       "/alerts?app=a",
     ]);
-    expect(r.constats[3].titre).toBe("et 2 autre(s) alerte(s) non acquittée(s)");
+    expect(espaces(r.constats[3].titre)).toBe("et 2 autres alertes non acquittées");
   });
 
   it("le reste se compte sur le TOTAL non acquitté, pas sur les seules lignes du jour (F67)", () => {
@@ -238,8 +238,8 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
       LIENS,
     );
     expect(r.constats.map((c) => c.titre)).toEqual([
-      "LCP p75 · /checkout — déclenchée le 22/09 12:00 UTC",
-      "et 3 autre(s) alerte(s) non acquittée(s)",
+      "LCP p75 · /checkout — déclenchée le 22/09 14:00",
+      "et 3\u00a0autres alertes non acquittées",
     ]);
     expect(r.constats[1].href).toBe("/alerts?app=a");
   });
@@ -252,7 +252,7 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
       entrees({ alertes: { ok: true, data: { mode: "evenements", lignes: [], total: 3 } } }),
       LIENS,
     );
-    expect(r.constats.map((c) => c.titre)).toEqual(["3 alerte(s) non acquittée(s)"]);
+    expect(r.constats.map((c) => c.titre)).toEqual(["3\u00a0alertes non acquittées"]);
     expect(r.constats[0].href).toBe("/alerts?app=a");
   });
 
@@ -288,9 +288,9 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
     }));
     const r = constatsVueEnsemble(entrees({ regresses: { ok: true, data: groupes } }), LIENS);
     expect(r.constats).toHaveLength(6);
-    expect(r.constats[0].titre).toBe("Erreur réapparue : empreinte fp0 (1 occurrence(s) sur la période)");
+    expect(espaces(r.constats[0].titre)).toBe("Erreur réapparue : empreinte fp0 (1 occurrence sur la période)");
     expect(r.constats[0].href).toBe("/errors?panel=error%3Afp0");
-    expect(r.constats[5]).toMatchObject({ titre: "et 2 autre(s) groupe(s) d'erreurs régressé(s)", href: "/errors?statut=regressed" });
+    expect(r.constats[5]).toMatchObject({ titre: "et 2\u00a0autres groupes d'erreurs régressés", href: "/errors?statut=regressed" });
   });
 
   it("une source illisible est nommée, les autres constats restent", () => {

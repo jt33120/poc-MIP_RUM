@@ -6,6 +6,7 @@
 // 100 vues » sur une période sans vue, ou « 0 % de sessions touchées » sur une base
 // vide, se liraient comme une bonne nouvelle.
 import { queryOf, type FiltersLike } from "./filters";
+import { fmtPlage } from "./format";
 import { intersectQuery, type Dimension } from "./query-contract";
 
 /** Une valeur, ou `null` avec la phrase qui le dit (la `raisonNull` d'une tuile). */
@@ -243,21 +244,14 @@ const PRECEDENTE_PAR_PRESET: Record<string, string> = {
 
 /**
  * Référence écrite d'une tuile en `cmp=prev` (§ 3.12) : « vs 24 h précédentes
- * (20/09 14:00 → 21/09 14:00 UTC) ». La plage précédente est DATÉE : un delta
+ * (20/09 14:00 → 21/09 14:00) », heure de Paris. La plage précédente est DATÉE : un delta
  * sans période nommée ne dit pas à quoi il se compare (P4).
  */
 export function referencePeriodePrecedente(range: { from: string; to: string; preset: string | null }): string {
   const debut = Date.parse(range.from);
   const duree = Date.parse(range.to) - debut;
-  const fmt = new Intl.DateTimeFormat("fr-FR", {
-    timeZone: "UTC",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
   const tete = (range.preset && PRECEDENTE_PAR_PRESET[range.preset]) || "vs période précédente";
-  return `${tete} (${fmt.format(new Date(debut - duree))} → ${fmt.format(new Date(debut))} UTC)`;
+  return `${tete} (${fmtPlage(debut - duree, debut)})`;
 }
 
 // ─────────────────────────────── Interactions (F22) ───────────────────────────────
@@ -499,13 +493,6 @@ export function ecartAEnsemblePages(
   return { valeur: ecart, affichage: `${signe}${formater(formatDuVital(vital), Math.abs(ecart))} vs ensemble` };
 }
 
-const FORMAT_REFERENCE_PAGES = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
 
 /** La période précédente nommée, accordée : « 1 h précédente », « 24 h précédentes », « 7 j précédents ». */
 const PERIODE_PRECEDENTE_PAGES: Record<string, string> = {
@@ -515,14 +502,14 @@ const PERIODE_PRECEDENTE_PAGES: Record<string, string> = {
 };
 
 /**
- * Référence d'une tuile en `cmp=prev` (§ 3.12), en toutes lettres et datée en UTC :
- * « vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC) ». Une plage personnalisée
+ * Référence d'une tuile en `cmp=prev` (§ 3.12), en toutes lettres et datée, heure
+ * de Paris : « vs 24 h précédentes (20/09 14:00 → 21/09 14:00) ». Une plage personnalisée
  * dit « période précédente » avec ses bornes.
  */
 export function referencePrecedentePages(range: ResolvedRange): string {
   const p = previousRange(range);
   const nom = (range.preset && PERIODE_PRECEDENTE_PAGES[range.preset]) || "période précédente";
-  return `vs ${nom} (${FORMAT_REFERENCE_PAGES.format(new Date(p.from))} → ${FORMAT_REFERENCE_PAGES.format(new Date(p.to))} UTC)`;
+  return `vs ${nom} (${fmtPlage(p.from, p.to)})`;
 }
 
 /**

@@ -17,8 +17,10 @@
 // AUCUNE FONCTION EN PROP : tous les liens sont calculés par la page et passés en
 // dictionnaires indexés par identifiant (ou par route).
 import Link from "next/link";
+import { TableDefilante } from "@/components/TableDefilante";
 import { formater } from "@/lib/fmt-ids";
 import { geoSourceLabel } from "@/lib/geo";
+import { pluriel } from "@/lib/format";
 import {
   SIGNAUX_A_CREER,
   dureeObservee,
@@ -216,7 +218,7 @@ function Carte(props: SessionsTableProps & { s: LigneSessions }) {
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <LienSession s={s} panelHrefs={panelHrefs} pageHrefs={pageHrefs} ouvert={estOuverte} />
         <span className="text-xs tabular-nums text-ink-faint">
-          {instantUtc(s.last_seen_at)} UTC · {formater("s-auto", dureeObservee(s))}
+          {instantUtc(s.last_seen_at)} · {formater("s-auto", dureeObservee(s))}
         </span>
         <span className="ml-auto text-xs text-ink-soft">{capteur(s.collection_source)}</span>
       </div>
@@ -229,12 +231,12 @@ function Carte(props: SessionsTableProps & { s: LigneSessions }) {
         <span>·</span>
         <Pays pays={s.geo_country} source={s.geo_source} />
         <span>·</span>
-        <span className="tabular-nums">{formater("count", s.page_count)} page(s)</span>
+        <span className="tabular-nums">{pluriel(s.page_count, "page")}</span>
       </div>
       <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <Parcours routes={s.routes} hrefs={routeHrefs} />
         <span className="tabular-nums text-ink-soft">
-          {formater("count", s.err_count)} occurrence(s) d&apos;erreur
+          {pluriel(s.err_count, "occurrence")} d&apos;erreur
         </span>
         <span className="tabular-nums text-ink-soft">
           Frustration : <Frustration n={s.frustration} />
@@ -249,8 +251,8 @@ function Carte(props: SessionsTableProps & { s: LigneSessions }) {
 
 const COLONNES = [
   "Session",
-  "Dernière activité (UTC)",
-  "Début (UTC)",
+  "Dernière activité",
+  "Début",
   "Durée observée",
   "Appareil",
   "Navigateur",
@@ -276,10 +278,12 @@ export function SessionsTable(props: SessionsTableProps) {
   }
   return (
     <div className="min-w-0">
-      {/* Table à partir de `sm` ; le conteneur défilant porte `relative` — un
-          `sr-only` (position absolue) sans ancêtre positionné se placerait par
-          rapport à la PAGE et l'élargirait (vécu en vague 5). */}
-      <div className="relative hidden overflow-x-auto sm:block">
+      {/* Table à partir de `sm`, dans une zone défilante SIGNALÉE (recette 26/09 :
+          à 1 440 px, Parcours, Erreurs, Frustration et Rejeu étaient hors champ sans
+          barre visible). La zone porte `relative` — un `sr-only` (position absolue)
+          sans ancêtre positionné se placerait par rapport à la PAGE et l'élargirait
+          (vécu en vague 5). */}
+      <TableDefilante className="hidden sm:block" label="Sessions">
         <table className="w-full text-left text-sm" data-testid="sessions-table">
           <thead className="bg-panel2">
             <tr>
@@ -296,7 +300,7 @@ export function SessionsTable(props: SessionsTableProps) {
             ))}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
 
       {/* 390 px : cartes de trois lignes, pas de table défilante à treize colonnes. */}
       <ul className="min-w-0 sm:hidden" data-testid="sessions-cartes">
@@ -314,7 +318,7 @@ export function SessionsTable(props: SessionsTableProps) {
 
       <nav className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm" aria-label="Pagination des sessions">
         <span className="min-w-0 text-xs text-ink-faint">
-          {formater("count", lignes.length)} session(s) affichée(s) · pagination par clé stable (dernière activité,
+          {pluriel(lignes.length, "session affichée", "sessions affichées")} · pagination par clé stable (dernière activité,
           identifiant) : aucune ligne n&apos;est répétée ni sautée entre deux pages.
         </span>
         <span className="flex gap-4">

@@ -209,7 +209,7 @@ describe("F64 — RuleRow : l'état d'abord, l'écriture seulement pour un admin
     expect(html).toContain("Données insuffisantes");
     expect(html).toContain("moins de 4 fenêtres comparables");
     expect(html).toContain("seuil : > 2 500 sur 15 min");
-    expect(html).toContain("2 non acquittée(s)");
+    expect(html).toContain("2 non acquittées");
   });
 
   it("l'ancre `regle-<id>` existe : la frise et les tuiles y mènent", () => {

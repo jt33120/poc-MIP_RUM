@@ -24,6 +24,7 @@ import { useId, type ReactNode } from "react";
 import { TableAlternative } from "./Figure";
 import { FriseEtatsClavier } from "./FriseEtatsClavier";
 import { SERIE_MARGES, hrefZoom, libelleSeauComplet } from "@/lib/series";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 export interface EtatDef {
   /** "ok" | "warn" | "incident" | "inconnu" | "absent". */
@@ -134,7 +135,7 @@ export function regrouperCases(placees: CasePlacee[], k = REGROUPEMENT): CasePla
       x: bloc[0].x,
       largeur: bloc.reduce((s, c) => s + c.largeur, 0),
       def: pire.def,
-      detail: `pire état des ${bloc.length} seaux ; ${bloc.map((c) => c.def.libelle).join(", ")}`,
+      detail: `pire état des ${bloc.length} tranches ; ${bloc.map((c) => c.def.libelle).join(", ")}`,
     });
   }
   return groupes;
@@ -142,7 +143,7 @@ export function regrouperCases(placees: CasePlacee[], k = REGROUPEMENT): CasePla
 
 /** Libellé complet d'une case : heure UTC, état en toutes lettres, détail. */
 export function libelleCase(c: CasePlacee): string {
-  return `${libelleSeauComplet(c.t, c.secondes, "UTC")} : ${c.def.libelle} — ${c.detail}`;
+  return `${libelleSeauComplet(c.t, c.secondes, FUSEAU_AFFICHAGE)} : ${c.def.libelle} — ${c.detail}`;
 }
 
 /** Le dessin d'un état, dans une case de `hauteur` px. */
@@ -272,16 +273,16 @@ export function FriseEtats({
         ))}
         {groupees && (
           <li className="fe-groupe" data-testid="frise-etats-regroupee">
-            cases regroupées par {REGROUPEMENT} seaux : pire état du groupe
+            cases regroupées par {REGROUPEMENT} tranches : pire état du groupe
           </li>
         )}
       </ul>
 
       <TableAlternative
         alternative={{
-          legende: `${ariaLabel} — un seau par ligne (UTC).`,
-          colonnes: ["Seau (UTC)", "État", "Détail"],
-          lignes: placees.map((c) => [libelleSeauComplet(c.t, c.secondes, "UTC"), c.def.libelle, c.detail]),
+          legende: `${ariaLabel} — une tranche par ligne.`,
+          colonnes: ["Période", "État", "Détail"],
+          lignes: placees.map((c) => [libelleSeauComplet(c.t, c.secondes, FUSEAU_AFFICHAGE), c.def.libelle, c.detail]),
         }}
       />
     </div>

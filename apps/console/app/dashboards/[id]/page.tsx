@@ -35,11 +35,13 @@ import { PrintButton } from "./PrintButton";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { WidgetCard } from "@/components/dashboards/WidgetCard";
+import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
 // F36 — barre de population (W-B1) et réglages d'affichage de l'écran (§ 3.1).
 import { PopulationBar } from "@/components/PopulationBar";
 import { resumePopulation, retraitsDePopulation } from "@/lib/explorer-page-params";
 import { paramReader, rangeLabel } from "@/lib/query-contract";
 import { lireComparaison } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 export const dynamic = "force-dynamic";
 
@@ -233,7 +235,7 @@ export default async function D({
         <PrintButton />
       </PageHeader>
 
-      <PopulationBar puces={puces} plage={rangeLabel(populationQuery.range, timeZone)} fuseau="UTC" />
+      <PopulationBar puces={puces} plage={rangeLabel(populationQuery.range, timeZone)} fuseau={FUSEAU_AFFICHAGE} />
 
       {reglages.ignores.map((ligne) => (
         <p key={ligne} role="note" className="mb-4 text-xs text-ink-soft">
@@ -528,15 +530,17 @@ export default async function D({
           </form>
 
           {/* Supprimer */}
+          {/* La suppression efface la ligne (aucune corbeille) : elle se confirme. */}
           <form action={deleteDashboardAction}>
             <input type="hidden" name="id" value={dash.id} />
-            <button
-              type="submit"
-              data-testid="delete-dashboard"
-              className="rounded-lg bg-bad-fond px-3 py-1.5 text-xs font-medium text-white transition hover:bg-bad-fond/90"
-            >
-              Supprimer ce tableau de bord
-            </button>
+            <ConfirmationDanger
+              libelle="Supprimer ce tableau de bord"
+              question={`Supprimer le tableau de bord ${entreGuillemets(dash.name)}\u00a0?`}
+              consequence="Ses cartes et ses sections seront effacées définitivement ; les données collectées, elles, restent."
+              confirmer="Supprimer le tableau de bord"
+              enCours="Suppression…"
+              testid="delete-dashboard"
+            />
           </form>
         </div>
       </details>}

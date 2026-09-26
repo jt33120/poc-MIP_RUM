@@ -193,7 +193,7 @@ export function VitalCard({
         <div className="mt-2">
           <Sparkline
             valeurs={serie}
-            label={`${name} p75, évolution sur ${serie.length} seaux, ${periodLabel}`}
+            label={`${name} p75, évolution sur ${serie.length} tranches, ${periodLabel}`}
             seuils={THRESHOLDS[name]}
           />
         </div>

@@ -25,6 +25,7 @@ import { classerParGravite, SEUIL_ECHANTILLON_FAIBLE } from "@/lib/impact";
 import { texteRaisonTaux } from "@/lib/mobile-capabilities";
 import type { MobileParRelease, MobileReleaseRow } from "@/lib/queries-mobile";
 import { intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
+import { fmtDate } from "@/lib/format";
 
 export type TriStabilite = "fourni" | "gravite" | "volume";
 
@@ -41,13 +42,6 @@ export const libelleLigne = (l: Pick<MobileReleaseRow, "release" | "app_id">, av
 /** Lien d'une ligne : l'écran filtré sur la release, et sur son app quand plusieurs sont lues. */
 export type HrefDeRelease = (release: string | null, app: string) => string;
 
-const DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
 
 const nombre = (n: number) => n.toLocaleString("fr-FR");
 
@@ -104,7 +98,7 @@ export function lignesStabilite(
           affichage: `${formater("ms", l.demarrage_froid_p75_ms)} (n = ${nombre(l.demarrage_froid_n)})`,
           n: l.demarrage_froid_n,
         },
-        { cle: "premiere", valeur: Date.parse(l.premiere_session), affichage: `${DATE_UTC.format(new Date(l.premiere_session))} UTC` },
+        { cle: "premiere", valeur: Date.parse(l.premiere_session), affichage: fmtDate(l.premiere_session) },
       ],
       intervalle,
       echantillonFaible: l.sessions < SEUIL_ECHANTILLON_FAIBLE,

@@ -17,6 +17,7 @@
 import Link from "next/link";
 import { deleteSloAction, toggleSloAction } from "@/app/alerts/actions";
 import { pctBudget, statutBudget } from "@/components/charts/BudgetBars";
+import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
 import { formater } from "@/lib/fmt-ids";
 import type { SloRaw, SloStatusRow as SloStatusData } from "@/lib/queries-alerting";
 import { hrefCreerAlerte, metriqueEnClair } from "@/lib/slo-ecran";
@@ -110,7 +111,7 @@ export function SloRow({
       <td className={`${TD} text-ink-soft`}>{raw.active ? "actif" : "désactivé"}</td>
       {admin && (
         <td className={TD}>
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className="flex flex-wrap items-start justify-end gap-2">
             <Link
               href={hrefCreerAlerte(raw)}
               className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink"
@@ -129,16 +130,20 @@ export function SloRow({
                 {raw.active ? "Désactiver" : "Activer"}
               </button>
             </form>
+            {/* La suppression emporte l'historique des déclenchements (cascade) : confirmée. */}
             <form action={deleteSloAction}>
               <input type="hidden" name="id" value={raw.id} />
               <input type="hidden" name="app" value={raw.app_id} />
-              <button
-                type="submit"
-                data-testid={`delete-slo-${raw.id}`}
-                className="rounded-lg bg-bad-fond px-3 py-1.5 text-xs font-medium text-white transition hover:bg-bad-fond/90"
-              >
-                Supprimer
-              </button>
+              <ConfirmationDanger
+                libelle="Supprimer"
+                libelleAccessible={`Supprimer le SLO ${raw.name}`}
+                question={`Supprimer le SLO ${entreGuillemets(raw.name)}\u00a0?`}
+                consequence="Son suivi et l’historique de ses déclenchements seront effacés définitivement."
+                confirmer="Supprimer le SLO"
+                enCours="Suppression…"
+                classeDeclencheur="rounded-lg border border-bad/40 bg-panel px-3 py-1.5 text-xs font-medium text-bad-ink transition hover:bg-bad/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bad/40"
+                testid={`delete-slo-${raw.id}`}
+              />
             </form>
           </div>
         </td>

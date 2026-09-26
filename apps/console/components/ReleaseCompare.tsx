@@ -21,11 +21,13 @@
 // et le verdict statistique viendra de P*.5 (`verdict`).
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { TableDefilante } from "@/components/TableDefilante";
 import { formater, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import type { VersionRow, VersionSource } from "@/lib/queries-deploys";
 import { relativeChange } from "@/lib/query-contract";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
 import type { Intervalle } from "@/lib/stats/types";
+import { fmtInstant } from "@/lib/format";
 
 export type { Intervalle };
 
@@ -151,7 +153,7 @@ function EnTete({ role, stats, href }: { role: "A" | "B"; stats: ReleaseStats; h
       </Link>
       {stats.premiereVue && (
         <span className="block text-[11px] text-ink-soft">
-          vue depuis le {new Date(stats.premiereVue).toISOString().slice(0, 16).replace("T", " ")} UTC
+          vue depuis le {fmtInstant(stats.premiereVue, { annee: true })}
         </span>
       )}
     </div>
@@ -197,7 +199,9 @@ export function ReleaseCompare({
         </p>
       )}
 
-      <div className="mt-3 overflow-x-auto">
+      {/* Défilement signalé sous 20 rem ; la zone est `relative`, la légende
+          `sr-only` (position absolue) ne peut plus élargir la page. */}
+      <TableDefilante className="mt-3" label="Comparaison des deux releases">
         <table className="w-full min-w-[20rem] text-sm">
           <caption className="sr-only">
             Release {b.release} comparée à {a.release}, {plage}
@@ -254,7 +258,7 @@ export function ReleaseCompare({
             })}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
 
       <p className="mt-3 text-xs text-ink-soft" role="note" data-testid="release-phrase">
         Comparaison sur la {PHRASE_FENETRE}.

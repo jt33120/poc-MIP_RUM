@@ -34,7 +34,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { graduationsY } from "@/lib/graduations";
 import { SERIE, styleDeRole, type RoleSerie } from "@/lib/palette";
+
+const NBSP = String.fromCharCode(0xa0);
+
+/** Valeur lisible avec son unité : « 34,7 % » (virgule, espace insécable), jamais « 34.666 % ». */
+function avecUnite(v: number, unite: string): string {
+  return `${v.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}${unite.replace(/^ /, NBSP)}`;
+}
 
 export interface LineTrendPoint {
   label: string;
@@ -100,6 +108,15 @@ export function LineTrend({
   });
   const marge = { top: 8, right: 8, bottom: 0, left: 0 };
   const hauteurCourbe = hasVolume ? Math.max(120, height - HAUTEUR_VOLUME) : height;
+  // Graduations rondes depuis 0 (recette du 26/09/2026) : le domaine imposé (« 0 à 100 »
+  // pour un %) ou le maximum des courbes, arrondi à un pas rond. Un domaine qui ne part
+  // pas de 0 garde la graduation de recharts.
+  const valeurs = data
+    .flatMap((d) => (lignes ? lignes.map((s) => d[s.cle]) : [d.value]))
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  const gradCourbe = !domain || domain[0] === 0 ? graduationsY(domain ? domain[1] : Math.max(0, ...valeurs)) : null;
+  const volumes = data.map((d) => d.volume).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  const gradVolume = graduationsY(Math.max(0, ...volumes), { entier: true });
 
   return (
     <div className="min-w-0" data-testid="line-trend">
@@ -107,10 +124,23 @@ export function LineTrend({
         <ResponsiveContainer width="100%" height={hauteurCourbe}>
           <ComposedChart data={data} margin={marge} syncId={hasVolume ? synchro : undefined}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="label" fontSize={11} tickLine={false} interval="preserveStartEnd" />
-            <YAxis fontSize={11} width={LARGEUR_AXE_Y} tickLine={false} axisLine={false} unit={valueUnit} domain={domain} />
+            <XAxis dataKey="label" fontSize={11} tickLine={false} interval="equidistantPreserveStart" />
+            {gradCourbe ? (
+              <YAxis
+                fontSize={11}
+                width={LARGEUR_AXE_Y}
+                tickLine={false}
+                axisLine={false}
+                domain={[0, gradCourbe.haut]}
+                ticks={gradCourbe.valeurs}
+                interval={0}
+                tickFormatter={(v: number) => avecUnite(v, valueUnit)}
+              />
+            ) : (
+              <YAxis fontSize={11} width={LARGEUR_AXE_Y} tickLine={false} axisLine={false} unit={valueUnit} domain={domain} />
+            )}
             <Tooltip
-              formatter={(val: number, name) => [val == null ? "—" : `${val}${valueUnit}`, name]}
+              formatter={(val: number, name) => [val == null ? "—" : avecUnite(val, valueUnit), name]}
               contentStyle={{ fontSize: 12 }}
             />
             {/* Avec un panneau de volume, une barre CACHÉE met l'axe x en bandes, comme
@@ -157,8 +187,11 @@ export function LineTrend({
                 width={LARGEUR_AXE_Y}
                 tickLine={false}
                 axisLine={false}
-                allowDecimals={false}
-                tickCount={3}
+                domain={[0, gradVolume.haut]}
+                // Deux graduations (0 et le haut rond) : le panneau ne fait que 56 px.
+                ticks={[0, gradVolume.haut]}
+                interval={0}
+                tickFormatter={(v: number) => v.toLocaleString("fr-FR")}
               />
               <Tooltip
                 formatter={(val: number) => [val == null ? "—" : val.toLocaleString("fr-FR"), volumeName]}

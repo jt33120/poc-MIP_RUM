@@ -2,6 +2,7 @@
 // chacune avec SES propres horodatage, release, source et liens vérifiés dans la
 // même app, puis la pagination par curseur. Rendu serveur.
 import Link from "next/link";
+import { TableDefilante } from "@/components/TableDefilante";
 import { occurrenceHrefs, type OccurrenceHrefs } from "@/lib/error-view";
 import { fmtDate } from "@/lib/format";
 import { ERROR_SOURCE_LABELS } from "@/lib/erreurs-sources";
@@ -34,8 +35,11 @@ export function ErrorOccurrences({
         Occurrences ({occurrences.length} affichées)
       </h2>
       {occurrences.length ? (
-        // `relative` : sans ancêtre positionné, un `.sr-only` échappe au défilement et élargit la page.
-        <div className="relative overflow-x-auto">
+        // Défilement SIGNALÉ : à 390 px, le tableau s'arrêtait après « Route » et les
+        // liens Session / Replay / Trace restaient hors champ sans indice (recette 26/09).
+        // Le nom de la zone ne commence pas par « Occurrences ( » : c'est la section
+        // qui porte ce nom-là, et les recettes la visent par lui.
+        <TableDefilante label="Tableau des occurrences">
           <table className="w-full min-w-table text-sm">
             <caption className="sr-only">{caption}</caption>
             <thead className="bg-panel2">
@@ -97,7 +101,7 @@ export function ErrorOccurrences({
               })}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       ) : (
         <p className="px-4 py-8 text-center text-sm text-ink-faint">
           Aucune occurrence sur cette période avec ces filtres

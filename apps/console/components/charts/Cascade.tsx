@@ -32,6 +32,7 @@ import type { CSSProperties } from "react";
 import { EtatSurface } from "../states/EtatSurface";
 import { TableAlternative } from "./Figure";
 import { formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
+import { etiquettesGraduations, graduationsAxe } from "@/lib/graduations";
 import { RATING_BAR, RATING_LABEL, rating2026, type Rating } from "@/lib/rating";
 
 /** Sévérité d'un élément — jamais un statut (un 404 attendu n'est pas « rouge » par nature). */
@@ -236,22 +237,27 @@ function EtiquettesReperes({ reperes }: { reperes: Repere[] }) {
   );
 }
 
-/** Graduations de l'axe : 0, ½, fin ; les quarts à partir de 640 px. */
-function Axe({ echelle, libelleColonne }: { echelle: number; libelleColonne: string }) {
-  const graduations = [0, 0.25, 0.5, 0.75, 1];
+/**
+ * Graduations de l'axe : un pas ROND (« 0, 2, 4, 6, 8, 10 ms »), une seule unité ;
+ * sous 640 px, une sur deux (la première et la dernière toujours). Les quarts de
+ * l'échelle brute écrivaient « 0 ms, 2 ms, 5 ms, 7 ms, 9 ms » (recette du 26/09/2026).
+ */
+function Axe({ echelle, graduations, libelleColonne }: { echelle: number; graduations: number[]; libelleColonne: string }) {
+  const textes = etiquettesGraduations(graduations, echelle >= 60_000 ? "s-auto" : "ms");
+  const dernier = graduations.length - 1;
   return (
     <div className={`${RANGEE} border-b border-line pb-1.5 text-[11px] font-semibold text-ink-soft`}>
       <span className={`${COL_LIBELLE} uppercase tracking-wider`}>{libelleColonne}</span>
       <div className="relative h-4 min-w-0 flex-1 tabular-nums">
-        {graduations.map((g) => (
+        {graduations.map((g, i) => (
           <span
             key={g}
-            className={`absolute top-0 whitespace-nowrap font-medium ${g === 0 ? "left-0" : g === 1 ? "right-0" : "-translate-x-1/2"} ${
-              g === 0.25 || g === 0.75 ? "hidden sm:block" : ""
+            className={`absolute top-0 whitespace-nowrap font-medium ${i === 0 ? "left-0" : i === dernier ? "right-0" : "-translate-x-1/2"} ${
+              i % 2 === 1 && i !== dernier ? "hidden sm:block" : ""
             }`}
-            style={g === 0 || g === 1 ? undefined : { left: pos(g * 100) }}
+            style={i === 0 || i === dernier ? undefined : { left: pos(pct(g, echelle)) }}
           >
-            {texteDuree(g * echelle)}
+            {textes[i]}
           </span>
         ))}
       </div>
@@ -340,7 +346,9 @@ export function Cascade({
   // L'axe couvre au moins `totalMs`, et tout ce qu'on lui donne : un élément qui
   // déborderait serait coupé sans le dire.
   const fins = elements.map((e) => finiOuZero(e.debutMs) + finiOuZero(e.dureeMs ?? 0));
-  const echelle = Math.max(finiOuZero(totalMs), ...fins, ...marqueurs.map((m) => finiOuZero(m.t)), 1);
+  const etendue = Math.max(finiOuZero(totalMs), ...fins, ...marqueurs.map((m) => finiOuZero(m.t)), 1);
+  // L'axe va jusqu'au pas rond qui couvre tout : des graduations régulières et lisibles.
+  const { haut: echelle, valeurs: graduations } = graduationsAxe(etendue, etendue >= 60_000 ? "s-auto" : "ms");
   const reperes = [...marqueurs].sort((a, b) => a.t - b.t).map((m) => lireRepere(m, echelle));
   const ordre = ordonnerCascade(elements);
 
@@ -417,7 +425,7 @@ export function Cascade({
       {!reduite && (
         <div className="relative">
           {!apercu && <EtiquettesReperes reperes={reperes} />}
-          <Axe echelle={echelle} libelleColonne="Élément" />
+          <Axe echelle={echelle} graduations={graduations} libelleColonne="Élément" />
           <div className="relative">
             <ol data-testid="cascade-elements" aria-label="Éléments, dans l'ordre chronologique">
               {ordre.map(({ element: e, profondeur }) => {

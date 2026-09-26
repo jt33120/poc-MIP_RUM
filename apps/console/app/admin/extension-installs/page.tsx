@@ -7,6 +7,7 @@
 // identifiant d'installation, et c'est le comportement voulu (cf. migration-v52).
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { TableDefilante } from "@/components/TableDefilante";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { chargerPostes } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
@@ -88,7 +89,8 @@ export default async function ExtensionInstalls() {
           </p>
         </div>
       ) : (
-        <div className="card overflow-x-auto">
+        // Huit colonnes, dont l'action « Retirer » en dernier : défilement signalé.
+        <TableDefilante className="card" label="Postes équipés">
           <table className="w-full text-sm">
             <thead className="bg-panel2">
               <tr>
@@ -158,7 +160,7 @@ export default async function ExtensionInstalls() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       )}
 
       {/* Ce que l'écran ne dit pas — à lire avant de s'en servir comme d'un

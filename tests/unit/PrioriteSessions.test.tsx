@@ -70,9 +70,9 @@ describe("PrioriteSessions — chaque ligne porte sa raison", () => {
     expect(t).toContain("1 appel POST /api/panier en 500");
   });
 
-  it("le début est daté en UTC et la durée observée est affichée", () => {
+  it("le début est daté à l'heure de Paris et la durée observée est affichée", () => {
     const t = texte(rendu([ligne("s1")]));
-    expect(t).toContain("21/09 14:00 UTC");
+    expect(t).toContain("21/09 16:00 ·");
     expect(t).toContain("5 min");
   });
 

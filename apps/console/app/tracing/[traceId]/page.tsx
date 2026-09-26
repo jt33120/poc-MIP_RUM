@@ -24,6 +24,7 @@ import { Cascade, texteDuree, type ElementCascade, type PisteCascade, type TonCa
 import { Figure } from "@/components/charts/Figure";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import { CopierTrace } from "@/components/tracing/CopierTrace";
 import { formater } from "@/lib/fmt-ids";
 import { appelDeLaTrace, chargerTrace, premier as first } from "@/lib/chargeurs/trace";
@@ -304,11 +305,11 @@ export default async function TraceDetail({
       {/* TD5 — table des segments : les lignes de la cascade, avec statut et app. */}
       <section className="card mt-6 min-w-0 p-4 sm:p-5" data-testid="table-segments">
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Segments</h2>
-        {/* `relative` : la légende est `sr-only`, donc en position ABSOLUE ; sans
-            ancêtre positionné, elle se placerait par rapport à la page et la
-            pousserait quand la table est plus large que l'écran (piège constaté
-            sur la table des appels de /tracing). */}
-        <div className="relative overflow-x-auto">
+        {/* Défilement signalé. La zone de TableDefilante reste `relative` : la légende
+            est `sr-only`, donc en position ABSOLUE ; sans ancêtre positionné, elle se
+            placerait par rapport à la page et la pousserait quand la table est plus
+            large que l'écran (piège constaté sur la table des appels de /tracing). */}
+        <TableDefilante label="Segments de la trace">
           <table className="w-full text-sm">
             <caption className="sr-only">Segments de la trace, dans l&apos;ordre de leur début</caption>
             <thead className="bg-panel2">
@@ -338,7 +339,7 @@ export default async function TraceDetail({
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       </section>
     </div>
   );

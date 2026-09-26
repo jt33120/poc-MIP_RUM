@@ -1,6 +1,8 @@
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
 import { FormulaireSecret, SecretAffiche } from "@/components/secret/SecretUnique";
+import { TableDefilante } from "@/components/TableDefilante";
 import { chargerJetonsLecture } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
@@ -48,9 +50,11 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
       <div className="card mb-8 p-4">
         <h2 className="mb-3 text-sm font-semibold text-ink-soft">Générer un token</h2>
         <FormulaireSecret action={createReadTokenAction} className="flex flex-wrap items-end gap-3" testid="create-read-token">
-          <label className="text-xs font-medium text-ink-soft">
+          {/* `min-w-0 max-w-full` + `w-full` : la liste prend la largeur de son plus
+              long libellé et portait la page à 417 px sur 390 ; elle se borne à la carte. */}
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
             App
-            <select name="app" required defaultValue="" className="field mt-1 block">
+            <select name="app" required defaultValue="" className="field mt-1 block w-full max-w-full">
               <option value="" disabled>
                 choisir…
               </option>
@@ -71,7 +75,8 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
         </FormulaireSecret>
       </div>
 
-      <div className="card overflow-hidden">
+      {/* Défilant et signalé : `overflow-hidden` coupait Statut et Actions à 390 px. */}
+      <TableDefilante className="card" label="Jetons de lecture">
         <table className="w-full text-sm">
           <thead className="bg-panel2">
             <tr>
@@ -104,9 +109,17 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
                     <form action={revokeReadTokenAction}>
                       <input type="hidden" name="id" value={t.id} />
                       <input type="hidden" name="app" value={t.app_id} />
-                      <button type="submit" className="btn-ghost px-2 py-1 text-bad-ink">
-                        Révoquer
-                      </button>
+                      {/* Une révocation ne se défait pas : confirmée, le jeton nommé. */}
+                      <ConfirmationDanger
+                        libelle="Révoquer"
+                        libelleAccessible={`Révoquer le jeton de lecture ${t.label ?? t.app_id}`}
+                        question={`Révoquer le jeton de lecture ${t.label ? entreGuillemets(t.label) : "sans libellé"} de ${t.app_id}\u00a0?`}
+                        consequence="Les outils qui l’utilisent ne pourront plus lire les données de cette application ; un jeton révoqué ne se rétablit pas."
+                        confirmer="Révoquer le jeton"
+                        enCours="Révocation…"
+                        classeDeclencheur="btn-ghost px-2 py-1 text-bad-ink"
+                        testid={`revoquer-jeton-${t.id}`}
+                      />
                     </form>
                   )}
                 </td>
@@ -121,7 +134,7 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
     </div>
   );
 }

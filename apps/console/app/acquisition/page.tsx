@@ -31,6 +31,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import {
   CHANNELS,
   LIBELLE_CANAL,
@@ -58,6 +59,7 @@ import { libelleSeauComplet } from "@/lib/series";
 import { referencePrecedente } from "@/lib/sessions-kpi";
 import { ecartProportions } from "@/lib/stats/incertitude";
 import { gabaritZoom } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 export const dynamic = "force-dynamic";
 
@@ -267,7 +269,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
         <SerieCanaux
           serie={serie}
           query={query}
-          meta={meta(`seau de ${ecran.bucketLabel} (UTC)`)}
+          meta={meta(`tranches de ${ecran.bucketLabel}`)}
           dansPhrase={dansPhrase}
           plafond={auPlafond}
           zoomHref={gabaritZoom(hrefWithQuery("/acquisition", query, { period: null, from: "{from}", to: "{to}" }), sp)}
@@ -386,7 +388,9 @@ const lienSessions = (query: AnalyticsQuery, route: string) => hrefWithQuery("/s
 function TableEntrees({ rep, query }: { rep: AcquisitionReport; query: AnalyticsQuery }) {
   return (
     <>
-      <div className="relative hidden overflow-x-auto sm:block" data-testid="acquisition-entrees-table">
+      {/* Entre `sm` et 40 rem, le tableau défile : c'est signalé (TableDefilante,
+          dont la zone reste `relative` pour la légende `sr-only`). */}
+      <TableDefilante className="hidden sm:block" testId="acquisition-entrees-table" label="Pages d'entrée par canal">
         <table className="w-full min-w-[40rem] text-sm">
           <caption className="sr-only">Pages d&apos;entrée par canal : route, sessions par canal, total</caption>
           <thead>
@@ -424,7 +428,7 @@ function TableEntrees({ rep, query }: { rep: AcquisitionReport; query: Analytics
             ))}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
       <div className="space-y-2 sm:hidden" data-testid="acquisition-entrees-liste">
         {CHANNELS.map((c) => {
           const lignes = rep.entrees.filter((e) => e.parCanal[c] > 0).sort((a, b) => b.parCanal[c] - a.parCanal[c]);
@@ -559,16 +563,16 @@ function SerieCanaux({
       titre={titre}
       meta={meta}
       etat={total === 0 ? { kind: "vide", population: "session", plage: dansPhrase } : undefined}
-      lecture={`Chaque session compte une fois, dans le seau de sa 1re vue ; la pile d'un seau vaut ses sessions entrées. Un clic sur un seau restreint l'écran à ce seau.${
+      lecture={`Chaque session compte une fois, dans la tranche de sa 1re vue ; la pile d'une tranche vaut ses sessions entrées. Un clic sur une tranche restreint l'écran à cette tranche.${
         plafond
           ? ` Plafond atteint : la série porte sur les mêmes ${PLAFOND_TEXTE} premières sessions que les canaux (par application, puis par identifiant).`
           : ""
       }`}
       alternative={{
-        legende: "Sessions entrées par canal et par seau (UTC)",
-        colonnes: ["Seau", ...CHANNELS.map((c) => LIBELLE_CANAL[c]), "Total"],
+        legende: "Sessions entrées par canal et par tranche de temps",
+        colonnes: ["Période", ...CHANNELS.map((c) => LIBELLE_CANAL[c]), "Total"],
         lignes: points.map((p) => [
-          libelleSeauComplet(p.t, seau, "UTC"),
+          libelleSeauComplet(p.t, seau, FUSEAU_AFFICHAGE),
           ...CHANNELS.map((c) => p.canaux[c]),
           CHANNELS.reduce((t, c) => t + p.canaux[c], 0),
         ]),
@@ -580,9 +584,9 @@ function SerieCanaux({
         series={CHANNELS.map((c) => ({ cle: c, libelle: LIBELLE_CANAL[c], categorieIndex: INDEX_CANAL[c] }))}
         format="count"
         seauSecondes={seau}
-        fuseau="UTC"
+        fuseau={FUSEAU_AFFICHAGE}
         zoomHref={zoomHref}
-        ariaLabel={`Sessions entrées par canal, par seau, ${dansPhrase}`}
+        ariaLabel={`Sessions entrées par canal, par tranche de temps, ${dansPhrase}`}
       />
     </Figure>
   );

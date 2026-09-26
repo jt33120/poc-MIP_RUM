@@ -8,7 +8,7 @@
 // toutes lettres ce que la règle surveille (métrique, route, env), comment elle se
 // déclenche (mode, seuil ou sensibilité, fenêtre), et ce que la dernière évaluation
 // a trouvé — `no_data` avec sa raison, jamais confondu avec « normale ».
-import { fmtDate } from "@/lib/format";
+import { fmtDate, accord } from "@/lib/format";
 import { libelleDeRegle, reglageDeRegle } from "@/lib/alertes-ecran";
 import { type AlertRuleRow, type RuleState } from "@/lib/queries-v2";
 import { toggleRuleAction, updateRuleAction } from "@/app/alerts/actions";
@@ -80,7 +80,7 @@ export function RuleRow({
         <RuleEvaluation rule={rule} />
         {rule.unacked > 0 && (
           <span className="shrink-0 rounded-full bg-bad/10 px-2 py-0.5 text-xs font-bold text-bad-ink">
-            {rule.unacked} non acquittée(s)
+            {rule.unacked} non {accord(rule.unacked, "acquittée", "acquittées")}
           </span>
         )}
         <span

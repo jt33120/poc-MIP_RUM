@@ -64,7 +64,9 @@ describe("TableRoutes — colonne « Concordance robot ↔ réel »", () => {
 
   it("le conteneur défilant reste positionné (un `sr-only` ne doit pas élargir la page)", () => {
     const html = renderToStaticMarkup(<TableRoutes lignes={[BASE]} avecApp />);
-    expect(html).toContain('class="relative overflow-x-auto"');
+    // La zone défilante de TableDefilante : `relative`, puis `overflow-x-auto`
+    // (suivi des classes de focus clavier).
+    expect(html).toMatch(/role="region"[^>]*class="relative overflow-x-auto[ "]/);
     expect(html).toContain("Liens");
   });
 });

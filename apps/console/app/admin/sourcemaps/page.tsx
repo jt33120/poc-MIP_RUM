@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { TableDefilante } from "@/components/TableDefilante";
+import { CopyBlock } from "@/components/CopyBlock";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { SourcemapUploadForm } from "@/components/sourcemaps/SourcemapUploadForm";
 import { TokenCreateForm } from "@/components/sourcemaps/TokenCreateForm";
@@ -144,7 +146,7 @@ function Releases({ app, releases, courante }: { app: string; releases: Sourcema
         Releases
       </h2>
       {releases.length ? (
-        <div className="relative overflow-x-auto">
+        <TableDefilante label="Releases">
           <table className="w-full text-sm">
             <caption className="sr-only">Releases de {app} portant des source maps, la plus récente d&apos;abord</caption>
             <thead className="bg-panel2">
@@ -174,7 +176,7 @@ function Releases({ app, releases, courante }: { app: string; releases: Sourcema
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       ) : (
         <p className="px-4 py-8 text-center text-sm text-ink-faint">Aucune source map pour cette application.</p>
       )}
@@ -208,7 +210,7 @@ function Manifeste({ release, manifest }: { release: string; manifest: ReleaseMa
         </dl>
       </div>
       {manifest.files.length > 0 && (
-        <div className="relative overflow-x-auto">
+        <TableDefilante label="Fichiers de la release">
           <table className="w-full text-sm">
             <caption className="sr-only">Fichiers de la release {release}, par nom</caption>
             <thead className="bg-panel2">
@@ -243,7 +245,7 @@ function Manifeste({ release, manifest }: { release: string; manifest: ReleaseMa
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       )}
     </section>
   );
@@ -259,15 +261,18 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
         <p className="mb-3 text-xs text-ink-soft">
           Un privilège par jeton sur {app} : <code className="chip-mono">sourcemaps:write</code> (source maps) ou{" "}
           <code className="chip-mono">deploys:write</code> (marqueur de déploiement, <code className="chip-mono">POST /api/v1/deploys</code>),
-          expiration de 1 à 90 jours. Rotation : créer un nouveau jeton, basculer la CI, révoquer l&apos;ancien. En CI :{" "}
-          <code className="chip-mono break-all">
-            node scripts/upload-sourcemaps.mjs --app {app} --release RELEASE --dir dist --url URL_UPLOAD
-          </code>
+          expiration de 1 à 90 jours. Rotation : créer un nouveau jeton, basculer la CI, révoquer l&apos;ancien. En CI :
         </p>
+        {/* Bloc copiable qui défile, plutôt qu'un `break-all` en ligne : la commande
+            se coupait au milieu des mots (« n / ode », « --di / r ») et ne se
+            copiait qu'à la main (recette 26/09). */}
+        <div className="mb-3 min-w-0">
+          <CopyBlock code={`node scripts/upload-sourcemaps.mjs --app ${app} --release RELEASE --dir dist --url URL_UPLOAD`} />
+        </div>
         <TokenCreateForm appId={app} />
       </div>
       {tokens.length ? (
-        <div className="relative overflow-x-auto">
+        <TableDefilante label="Jetons de CI">
           <table className="w-full text-sm">
             <caption className="sr-only">Jetons de CI de {app}, actifs d&apos;abord</caption>
             <thead className="bg-panel2">
@@ -316,7 +321,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
               })}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       ) : (
         <p className="px-4 py-6 text-center text-sm text-ink-faint">Aucun jeton de CI pour cette application.</p>
       )}

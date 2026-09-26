@@ -101,16 +101,19 @@ test("la période globale est affichée désactivée avec sa raison ; la fenêtr
   await expect(periode).toHaveAttribute("title", /La rétention se lit sur un nombre de semaines/);
   await expect(periode.getByRole("button", { name: "24 h" })).toBeDisabled();
 
+  // Recette du 26/09/2026 : seules les fenêtres que l'historique conservé remplit
+  // sont proposées. 30 jours (défaut, sans RETENTION_DAYS) : 4 semaines, par défaut.
   const fenetres = page.getByTestId("retention-fenetre");
-  await expect(fenetres).toHaveText(["4 sem.", "8 sem.", "12 sem.", "26 sem."]);
-  await expect(fenetres.filter({ hasText: "8 sem." })).toHaveAttribute("aria-current", "true");
-  await fenetres.filter({ hasText: "4 sem." }).click();
-  await page.waitForURL((u) => u.searchParams.get("weeks") === "4", { timeout: 15_000 });
-  await expect(page.getByTestId("retention-fenetre").filter({ hasText: "4 sem." })).toHaveAttribute("aria-current", "true");
+  await expect(fenetres).toHaveText(["4 sem."]);
+  await expect(fenetres.filter({ hasText: "4 sem." })).toHaveAttribute("aria-current", "true");
+  await expect(page.getByTestId("retention-historique")).toContainText("30 jours");
 
-  // Une fenêtre hors des quatre proposées est ignorée ET dite.
+  // Une fenêtre hors de celles proposées est ignorée ET dite — 26 semaines comprises,
+  // que 30 jours d'historique ne rempliraient pas.
   await page.goto(`${consoleUrl}/retention?app=${APP_F49}&weeks=5`);
   await expect(page.getByTestId("reglage-ignore")).toContainText("weeks=5");
+  await page.goto(`${consoleUrl}/retention?app=${APP_F49}&weeks=26`);
+  await expect(page.getByTestId("reglage-ignore")).toContainText("weeks=26");
 });
 
 test("tuiles : S+1 sur les seules cohortes complètes, S+4 sans recul → « — », jamais 0", async ({ page }) => {
@@ -146,7 +149,7 @@ test("matrice : chaque case écrit « n / taille », la semaine en cours est hac
   // F54 (§ 3.9) : ce sont des images NOMMÉES, et chacune garde son alternative textuelle.
   await expect(page.locator('#retention-courbe [role="img"]').first()).toHaveAttribute(
     "aria-label",
-    /^Rétention pondérée par semaine depuis l'arrivée, de S\+0 à S\+2, fenêtre de 8 semaines UTC/,
+    /^Rétention pondérée par semaine depuis l'arrivée, de S\+0 à S\+2, fenêtre de 4 semaines/,
   );
   await expect(page.locator('#retention-appareils [role="img"]').first()).toHaveAttribute(
     "aria-label",

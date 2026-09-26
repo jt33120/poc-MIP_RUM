@@ -64,7 +64,7 @@ import { ecrireSerie, libelleSerie } from "@/lib/correlation-serie";
 import { explorerHref } from "@/lib/explorer-page-params";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import { fmtLatency } from "@/lib/format";
+import { fmtLatency, fmtInstant } from "@/lib/format";
 import { chargerCorrelation } from "@/lib/chargeurs/correlation";
 import { chargerEcran } from "@/lib/ecran";
 import { RATING_HEX } from "@/lib/palette";
@@ -74,6 +74,7 @@ import { EFFECTIF_MIN_HEURE } from "@/lib/queries-v2";
 import { RATING_LABEL, THRESHOLDS } from "@/lib/rating";
 import { alignerSeaux, libelleSeauComplet, type PointSerie, type SerieDef } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, lireComparaison, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 export const dynamic = "force-dynamic";
 
@@ -102,7 +103,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
   const comparaison = lireComparaison("/correlation", lecteur).valeur;
   const prev = comparaison.mode === "prev";
   const rangePrec = previousRange(query.range);
-  const reference = `vs période précédente (${rangeLabel({ ...rangePrec, preset: null }, "UTC")} UTC)`;
+  const reference = `vs période précédente (${rangeLabel({ ...rangePrec, preset: null }, FUSEAU_AFFICHAGE)})`;
 
   // Liens qui restent sur l'écran : contrat canonique + réglages de vue de l'URL
   // (comparaison, releases), jamais le panneau ni le curseur.
@@ -361,7 +362,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
             valeur={ageDernier}
             format="s-auto"
             raisonNull={fraicheurs.ok ? "Aucun passage du robot sur la plage" : "lecture en échec"}
-            lecture={plusRecent ? `le ${plusRecent.toISOString().replace(/\.\d{3}Z$/, "Z")} (UTC), compté à la fin de la plage` : undefined}
+            lecture={plusRecent ? `le ${fmtInstant(plusRecent)}, compté à la fin de la plage` : undefined}
           />
         </div>
       </SectionErreur>
@@ -391,7 +392,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                   aide="robotVsReal"
                   meta={
                     <>
-                      <span>seau d&apos;une heure, UTC</span>
+                      <span>par heure</span>
                       <span>{plage}</span>
                     </>
                   }
@@ -411,10 +412,10 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                           : undefined
                   }
                   alternative={{
-                    legende: `Réel · LCP p75 par heure — ${libelleChoisi ?? ""}, un seau par ligne (UTC)`,
-                    colonnes: ["Heure (UTC)", "Réel · LCP p75", "Mesures LCP"],
+                    legende: `Réel · LCP p75 par heure — ${libelleChoisi ?? ""}, une tranche par ligne`,
+                    colonnes: ["Heure", "Réel · LCP p75", "Mesures LCP"],
                     lignes: points.map((p) => [
-                      libelleSeauComplet(p.t, 3600, "UTC"),
+                      libelleSeauComplet(p.t, 3600, FUSEAU_AFFICHAGE),
                       typeof p.reel === "number" ? fmtLatency(p.reel) : null,
                       typeof p.n === "number" ? p.n : null,
                     ]),
@@ -461,7 +462,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                         etat={{
                           kind: "partiel",
                           raison:
-                            "Seaux horaires : les 300 dernières heures de la plage sont affichées (plafond de points du contrat). La matrice et les angles morts portent sur toute la plage.",
+                            "Tranches horaires : les 300 dernières heures de la plage sont affichées (plafond de points du contrat). La matrice et les angles morts portent sur toute la plage.",
                         }}
                         compact
                       />
@@ -484,7 +485,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                     vital="LCP"
                     faibleSous={EFFECTIF_MIN_HEURE}
                     seauSecondes={3600}
-                    fuseau="UTC"
+                    fuseau={FUSEAU_AFFICHAGE}
                     annotations={annotationsHero}
                     annotationsIndisponibles={annotationsAbsentes}
                     zoomHref={zoomHref}

@@ -107,13 +107,13 @@ afterEach(() => consoleError.mockRestore());
 describe("/map — la série du panneau porte son alternative (F54, § 3.9)", () => {
   it("image nommée, puis une ligne d'alternative par seau lu ; un seau sans appel : « — » et 0", async () => {
     const html = panneau(await rendre({ panel: PANNEAU }));
-    expect(html).toContain('role="img" aria-label="Latence p75 et volume d&#x27;appels de /api/r12 par seau de 6 h, 7 j"');
+    expect(html).toContain('role="img" aria-label="Latence p75 et volume d&#x27;appels de /api/r12 par tranche de 6 h, 7 j"');
 
     const alternative = html.slice(html.indexOf('data-testid="alternative"'));
     expect(html).toContain('data-testid="alternative"');
-    expect(texte(alternative)).toContain("Latence p75 et appels de /api/r12 par seau de 6 h (UTC), 7 j");
+    expect(texte(alternative)).toContain("Latence p75 et appels de /api/r12 par tranche de 6 h, 7 j");
     const entetes = [...alternative.matchAll(/<th scope="col"[^>]*>([^<]*)<\/th>/g)].map((m) => m[1]);
-    expect(entetes).toEqual(["Seau (UTC)", "Latence p75", "Appels"]);
+    expect(entetes).toEqual(["Période", "Latence p75", "Appels"]);
     const lignes = alternative.slice(0, alternative.indexOf("</tbody>")).split("<tr").slice(2);
     expect(lignes).toHaveLength(2);
     expect(texte(lignes[0])).toMatch(/240\s?ms/);

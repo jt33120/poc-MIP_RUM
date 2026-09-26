@@ -28,6 +28,7 @@ import { formater } from "@/lib/fmt-ids";
 import type { ExplorerResult } from "@/lib/queries-explorer";
 import { bucketLabel, rangeLabel, type ResolvedRange } from "@/lib/query-contract";
 import { libelleSeauComplet, type PointSerie, type SerieDef } from "@/lib/series";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 /**
  * Ce qu'une lecture de contexte a donné. `budget` n'est pas une panne : c'est une
@@ -47,7 +48,7 @@ function plageLue(resultat: ExplorerResult): string {
     preset: resultat.meta.range.preset as ResolvedRange["preset"],
     bucketSeconds: resultat.meta.range.bucket_seconds,
   };
-  return range.preset ? rangeLabel(range, "UTC") : `${rangeLabel(range, "UTC")} (UTC)`;
+  return rangeLabel(range, FUSEAU_AFFICHAGE);
 }
 
 /** Les morceaux de méta (W-E8), rendus comme ceux de la figure principale. */
@@ -143,15 +144,15 @@ export function VolumeResultat({
   const seauSecondes = meta.range.bucket_seconds;
   const cle = groupes[0]?.cle ?? "s0";
   const series: SerieDef[] = [{ cle, libelle: unite, role: "principale", forme: "barres", additive: true }];
-  const ariaLabel = `${titre} : ${unite} par seau, ${grille.length} seaux de ${bucketLabel(seauSecondes)} (UTC)`;
+  const ariaLabel = `${titre} : ${unite} par tranche, ${grille.length} tranches de ${bucketLabel(seauSecondes)}`;
   // Un dénombrement : un seau sans ligne vaut réellement 0 — ce n'est pas un trou.
   const parT = new Map(points.map((p: PointSerie) => [Date.parse(p.t), p]));
   const alternative: AlternativeTexte = {
-    legende: `${titre} — ${grille.length} seaux de ${bucketLabel(seauSecondes)}, heures UTC`,
-    colonnes: ["Seau (UTC)", unite],
+    legende: `${titre} — ${grille.length} tranches de ${bucketLabel(seauSecondes)}`,
+    colonnes: ["Période", unite],
     lignes: grille.map((t) => {
       const valeur = parT.get(Date.parse(t))?.[cle];
-      return [libelleSeauComplet(t, seauSecondes, "UTC"), formater("count", typeof valeur === "number" ? valeur : 0)];
+      return [libelleSeauComplet(t, seauSecondes, FUSEAU_AFFICHAGE), formater("count", typeof valeur === "number" ? valeur : 0)];
     }),
   };
 
@@ -169,7 +170,7 @@ export function VolumeResultat({
         series={series}
         format="count"
         seauSecondes={seauSecondes}
-        fuseau="UTC"
+        fuseau={FUSEAU_AFFICHAGE}
         zoomHref={zoomHref}
         hauteur={120}
         ariaLabel={ariaLabel}
@@ -228,7 +229,7 @@ function Onglets({ onglets }: { onglets: OngletRepartition[] }) {
               aria-describedby={onglet.raison ? raisonId(onglet.dimension) : undefined}
               title={onglet.raison ?? undefined}
               data-testid={`repartition-tab-${onglet.dimension}`}
-              className="cursor-not-allowed rounded-md border border-line/60 bg-panel2/50 px-2.5 py-1 text-xs font-medium text-ink-soft line-through focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+              className="cursor-help rounded-md border border-dashed border-line bg-panel2/50 px-2.5 py-1 text-xs font-medium text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
             >
               {onglet.label}
             </span>

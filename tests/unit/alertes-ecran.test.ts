@@ -124,7 +124,7 @@ describe("F64 — barres par jour (A5 haut)", () => {
 
   it("l'alternative textuelle a une ligne par jour et un total par ligne", () => {
     const a = alternativeParJour(jours);
-    expect(a.colonnes).toEqual(["Jour (UTC)", "Critique", "Avertissement", "Information", "Total"]);
+    expect(a.colonnes).toEqual(["Jour", "Critique", "Avertissement", "Information", "Total"]);
     expect(a.lignes).toHaveLength(2);
     expect(a.lignes[0][0]).toBe("2026-09-20");
     expect(a.lignes[1][4]).toBe("3");
@@ -154,6 +154,17 @@ describe("F64 — état d'une règle (A7, frise)", () => {
     expect(sansFine(reglageDeRegle(regle({ mode: "baseline", env: "prod" })))).toBe(
       "anomalie (baseline) : écart à l'habitude au-delà de 3 sigma sur 15 min · sévérité warning · env prod",
     );
+  });
+
+  // Recette du 26/09/2026 : la règle « Taux d'erreur JS » (seuil 0,1 en base)
+  // s'affichait « seuil : > 0 » — `formater("count")` arrondissait un taux à l'entier.
+  it("le seuil s'écrit dans l'unité de sa métrique : un taux en pour cent, jamais arrondi à 0", () => {
+    const sansFine = (texte: string) => texte.replace(/[\u202f\u00a0]/g, " ");
+    const taux = sansFine(reglageDeRegle(regle({ metric: "error_rate", route: null, threshold: 0.1, window_minutes: 60 })));
+    expect(taux).toContain("> 10,0 %");
+    expect(taux).not.toMatch(/> 0 /);
+    expect(sansFine(reglageDeRegle(regle({ metric: "CLS", threshold: 0.1 })))).toContain("> 0,100");
+    expect(sansFine(reglageDeRegle(regle({ metric: "log_errors", threshold: 2.5 })))).toContain("> 2,5");
   });
 });
 

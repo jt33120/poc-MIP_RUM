@@ -101,7 +101,8 @@ export const chargerAudit = (async (principal) => {
 export const chargerConsommation = (async (principal) => {
   const g = garde(principal);
   if (g.etat !== "admin") return g;
-  return { etat: "ok", lignes: (await monthlyUsage()).filter((r) => g.dans(r.app_id)) } as const;
+  const conso = await monthlyUsage();
+  return { etat: "ok", lignes: conso.lignes.filter((r) => g.dans(r.app_id)), comptage: conso.comptage } as const;
 }) satisfies Chargeur<unknown>;
 
 /** Les applications clientes (`/admin/customers`) ; créer n'est proposé qu'à la plateforme. */

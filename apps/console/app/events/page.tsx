@@ -48,6 +48,8 @@ import {
 import { bucketStarts, hrefWithQuery, paramReader, queryToSearchParams, type AnalyticsQuery } from "@/lib/query-contract";
 import { alignerSeaux, grilleIso, libelleSeauComplet } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, ligneIgnoree, lireEtatDeVue } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { fmtInstant } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -59,31 +61,12 @@ type EventIndexRow = Fil<LigneJournalBrute>;
 const TITRE = "Journal";
 
 
-const DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hourCycle: "h23",
-});
-const DATE_UTC_COMPLETE = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hourCycle: "h23",
-});
-
-/** Instant d'un événement, en UTC (le fuseau des seaux du contrat) ; illisible → « — ». */
+/**
+ * Instant d'un événement, heure de Paris (le fuseau d'affichage, nommé dans la barre
+ * du haut) ; illisible → « — ». Le nom `dateUtc` est historique.
+ */
 function dateUtc(d: Date | string, complete = false): string {
-  const ms = new Date(d).getTime();
-  if (!Number.isFinite(ms)) return "—";
-  return complete ? `${DATE_UTC_COMPLETE.format(ms)} UTC` : DATE_UTC.format(ms);
+  return fmtInstant(d, { secondes: true, annee: complete, sansA: true });
 }
 
 function nomEvenement(e: EventIndexRow): string {
@@ -426,15 +409,15 @@ function ResultatJournal({
                     {total === null ? "total non calculé" : `${formater("count", total)} événements`}
                   </span>
                   <span>{label}</span>
-                  <span>seaux de {bucketLabel} (UTC)</span>
+                  <span>tranches de {bucketLabel}</span>
                   <span>journal indexé depuis la migration v65, sans rattrapage : les événements antérieurs n&apos;y sont pas</span>
                 </>
               }
-              lecture="Chaque barre compte les événements du résultat dans son seau, filtres compris ; un seau vide vaut 0. Un clic sur une barre zoome sur sa plage."
+              lecture="Chaque barre compte les événements du résultat dans sa tranche, filtres compris ; une tranche vide vaut 0. Un clic sur une barre zoome sur sa plage."
               alternative={{
-                legende: `Événements du résultat par seau de ${bucketLabel}`,
-                colonnes: ["Seau (UTC)", "Événements"],
-                lignes: points.map((p) => [libelleSeauComplet(p.t, range.bucketSeconds, "UTC"), p.n]),
+                legende: `Événements du résultat par tranche de ${bucketLabel}`,
+                colonnes: ["Période", "Événements"],
+                lignes: points.map((p) => [libelleSeauComplet(p.t, range.bucketSeconds, FUSEAU_AFFICHAGE), p.n]),
               }}
             >
               <ThresholdSeries
@@ -445,10 +428,10 @@ function ResultatJournal({
                 annotations={annotations.annotations}
                 annotationsIndisponibles={annotations.indisponible ?? undefined}
                 seauSecondes={range.bucketSeconds}
-                fuseau="UTC"
+                fuseau={FUSEAU_AFFICHAGE}
                 zoomHref={zoom}
                 hauteur={180}
-                ariaLabel={`Événements du résultat par seau de ${bucketLabel}, ${label}`}
+                ariaLabel={`Événements du résultat par tranche de ${bucketLabel}, ${label}`}
               />
             </Figure>
           </SectionErreur>
@@ -667,7 +650,7 @@ function TableJournal({
               Session
             </th>
             <th scope="col" className="th">
-              Date (UTC)
+              Date
             </th>
             {colonnes.map((c) => (
               <th key={`${c.source}.${c.cle}`} scope="col" className="th" title={`présente sur ${c.presence} ligne(s) de la page`}>
@@ -700,7 +683,7 @@ function TableJournal({
                     {nomEvenement(e)}
                   </Link>
                   <div className="mt-1 break-all font-mono text-[11px] text-ink-soft">{e.app_id}</div>
-                  <div className="mt-1 text-xs text-ink-soft sm:hidden">{dateUtc(e.ts)} UTC</div>
+                  <div className="mt-1 text-xs text-ink-soft sm:hidden">{dateUtc(e.ts)}</div>
                 </td>
                 <Cellule libelle="Route">
                   <span className="block min-w-0 truncate font-mono text-ink-soft sm:whitespace-normal sm:break-all">

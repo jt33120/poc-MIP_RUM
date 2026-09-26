@@ -55,8 +55,8 @@ describe("SessionsTable — colonnes et valeurs", () => {
   it("porte les treize colonnes du plan, dont « Pays estimé » et sa provenance", () => {
     const html = rendu([ligne("s1")]);
     for (const c of [
-      "Dernière activité (UTC)",
-      "Début (UTC)",
+      "Dernière activité",
+      "Début",
       "Durée observée",
       "Appareil",
       "Navigateur",
@@ -80,9 +80,9 @@ describe("SessionsTable — colonnes et valeurs", () => {
     expect(texte(html)).not.toContain("0123456789abcdef …");
   });
 
-  it("les instants sont en UTC et la durée observée est mise en forme", () => {
+  it("les instants sont à l'heure de Paris et la durée observée est mise en forme", () => {
     const t = texte(rendu([ligne("s1")]));
-    expect(t).toContain("21/09 14:00");
+    expect(t).toContain("21/09 16:00");
     expect(t).toContain("10 min");
   });
 
@@ -120,8 +120,10 @@ describe("SessionsTable — mises en page, liens et vide", () => {
     const html = rendu([ligne("s1")]);
     expect(html).toContain('data-testid="sessions-table"');
     expect(html).toContain('data-testid="sessions-cartes"');
-    // Un `sr-only` vit dans le conteneur défilant : il doit avoir un ancêtre positionné.
-    expect(html).toContain('class="relative hidden overflow-x-auto sm:block"');
+    // Le cadre de TableDefilante n'apparaît qu'à partir de `sm` ; un `sr-only` vit
+    // dans sa zone défilante, qui doit donc être positionnée.
+    expect(html).toContain('class="relative overflow-hidden hidden sm:block"');
+    expect(html).toMatch(/role="region" aria-label="Sessions"[^>]*class="relative overflow-x-auto[ "]/);
   });
 
   it("sans href de panneau (F43 absent), la ligne mène à la page de session", () => {

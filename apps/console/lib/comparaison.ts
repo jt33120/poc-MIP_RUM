@@ -17,6 +17,7 @@
 import { q } from "./db";
 import { DEBUT_SAMPLE_RATE } from "./echantillonnage";
 import { filtersOfQuery, type FiltersLike } from "./filters";
+import { fmtInstant } from "./format";
 import { couvertureRetention, retentionDays } from "./queries-explorer";
 import { SANS_RELEASE, type VersionRow } from "./queries-deploys";
 import { DATASETS, DATASET_REGISTRY, compileScope } from "./query-compiler";
@@ -134,18 +135,34 @@ export function sourcesSousFiltres(query: AnalyticsQuery, source: SourceComparai
   return sorties;
 }
 
-/** Nom du signal dans une raison : la colonne requise quand il y en a une. */
-function libelleSignal(source: SourceComparaison): string {
-  return source.colonneRequise ? `champ « ${source.colonneRequise} » collecté` : SOURCES[source.table].libelle;
-}
+/**
+ * Nom d'une colonne récente tel qu'un utilisateur le lit. La raison écrivait le nom
+ * de la colonne (« champ « runtime » collecté… ») : un nom de schéma à l'écran,
+ * relevé par la recette du 26/09/2026. Une colonne absente de la liste garde un
+ * libellé générique plutôt que son nom.
+ */
+const LIBELLES_COLONNES: Record<string, string> = {
+  browser: "navigateur",
+  os: "système",
+  release: "version de l'application",
+  env: "environnement",
+  service: "service",
+  geo_source: "provenance du pays",
+  runtime: "type d'application (web ou mobile)",
+  browser_version: "version du navigateur",
+  os_version: "version du système",
+  net_type: "type de réseau",
+  sample_rate: "taux d'échantillonnage",
+  visitor_id: "identifiant de visiteur",
+  error_source: "origine de l'erreur",
+};
 
-const FORMAT_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
+/** Nom du signal dans une raison : la donnée requise quand il y en a une. */
+function libelleSignal(source: SourceComparaison): string {
+  if (!source.colonneRequise) return SOURCES[source.table].libelle;
+  const libelle = LIBELLES_COLONNES[source.colonneRequise];
+  return libelle ? `donnée « ${libelle} » collectée` : "donnée filtrée collectée";
+}
 
 /**
  * Début de collecte d'un signal : `min(colonneTemps)` de la table sur les apps du
@@ -204,7 +221,8 @@ export function evaluerCouverture({ query, source, debut, nowMs, retentionJours 
     return { etat: "partielle", raison: "aucune donnée collectée sur le périmètre" };
   }
   if (debut !== "echec" && debut.getTime() > Date.parse(precedente.from)) {
-    return { etat: "partielle", raison: `${libelleSignal(source)} depuis le ${FORMAT_UTC.format(debut)} UTC seulement` };
+    // Heure de Paris, comme toute la console (le fuseau est nommé dans la barre du haut).
+    return { etat: "partielle", raison: `${libelleSignal(source)} depuis le ${fmtInstant(debut)} seulement` };
   }
 
   const to = Date.parse(query.range.to);

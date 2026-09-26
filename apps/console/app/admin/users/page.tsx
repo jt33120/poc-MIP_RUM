@@ -1,6 +1,9 @@
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { ConfirmationDanger } from "@/components/ConfirmationDanger";
 import { FormulaireSecret, SecretAffiche } from "@/components/secret/SecretUnique";
+import { getUser } from "@/lib/auth";
+import { TableDefilante } from "@/components/TableDefilante";
 import { chargerComptes } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
@@ -22,6 +25,10 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
   // Le chargeur (`lib/chargeurs/administration.ts`) : l'administrateur de la plateforme seul (C9).
   const { comptes: users } = accesAdmin(await chargerEcran(ECRANS_ADMIN.comptes, chargerComptes, {}));
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : null;
+  // Le compte connecté : sa ligne ne propose pas de se désactiver soi-même. Le
+  // principal est déjà mémorisé pour ce rendu (le layout l'a lu) : aucun appel de plus.
+  const moi = (await getUser())?.email.toLowerCase() ?? null;
+  const soi = (email: string) => email.toLowerCase() === moi;
   // arrivée depuis le wizard client : préremplit un viewer scopé sur l'app
   const prefillApp = typeof sp.app === "string" ? sp.app : null;
 
@@ -75,14 +82,15 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
               <option value="admin">admin</option>
             </select>
           </label>
-          <label className="text-xs font-medium text-ink-soft">
+          {/* Borné à la carte : 288 px fixes ne tiennent pas sur les petits écrans. */}
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
             Apps autorisées
             <input
               name="apps"
               type="text"
               defaultValue={prefillApp ?? undefined}
               placeholder="vide = toutes · ex : demo-app, gip-plateforme"
-              className="field mt-1 block w-72"
+              className="field mt-1 block w-72 max-w-full"
             />
           </label>
           <button type="submit" className="btn-accent">
@@ -91,7 +99,9 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
         </FormulaireSecret>
       </div>
 
-      <div className="card overflow-hidden">
+      {/* Défilant et signalé : `overflow-hidden` coupait « Dernier login » et les
+          actions — impossible de désactiver ou de réinitialiser un compte à 390 px. */}
+      <TableDefilante className="card" label="Utilisateurs">
         <table className="w-full text-sm">
           <thead className="bg-panel2">
             <tr>
@@ -106,7 +116,8 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
           <tbody className="divide-y divide-line/60">
             {users.map((u) => (
               <tr key={u.email} className="transition hover:bg-panel2/60">
-                <td className="px-4 py-2 font-mono text-xs">{u.email}</td>
+                {/* Une adresse ne se coupe pas au tiret : le tableau défile, il a la place. */}
+                <td className="whitespace-nowrap px-4 py-2 font-mono text-xs">{u.email}</td>
                 <td className="px-4 py-2">
                   <span
                     className={`rounded px-2 py-0.5 text-xs font-medium ${
@@ -136,19 +147,44 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
                   {u.last_login_at ? fmtDate(u.last_login_at) : "jamais"}
                 </td>
                 <td className="px-4 py-2">
-                  <div className="flex gap-2">
+                  {/* `items-start` : une confirmation dépliée n'étire pas le bouton voisin. */}
+                  <div className="flex items-start gap-2">
                     <form action={toggleUserAction} data-testid={`toggle-${u.email}`}>
                       <input type="hidden" name="email" value={u.email} />
                       <input type="hidden" name="active" value={u.active ? "false" : "true"} />
-                      <button type="submit" className="btn-ghost px-2 py-1">
-                        {u.active ? "Désactiver" : "Activer"}
-                      </button>
+                      {/* Désactiver se confirme ; sur SA propre ligne, le bouton reste
+                          visible mais grisé, avec la raison — la commande refuse de
+                          toute façon (`soi_meme`), mieux vaut ne pas proposer le geste.
+                          Réactiver ne coupe rien et part d'un clic. */}
+                      {u.active ? (
+                        <ConfirmationDanger
+                          libelle="Désactiver"
+                          libelleAccessible={`Désactiver le compte ${u.email}`}
+                          question={`Désactiver le compte ${u.email}\u00a0?`}
+                          consequence="La connexion par mot de passe lui sera refusée jusqu’à sa réactivation."
+                          confirmer="Désactiver le compte"
+                          enCours="Désactivation…"
+                          desactive={soi(u.email)}
+                          raisonDesactive={soi(u.email) ? "Vous ne pouvez pas désactiver votre propre compte." : undefined}
+                          testid={`desactiver-${u.email}`}
+                        />
+                      ) : (
+                        <button type="submit" className="btn-ghost px-2 py-1">
+                          Activer
+                        </button>
+                      )}
                     </form>
                     <FormulaireSecret action={resetPasswordAction} testid={`reset-${u.email}`}>
                       <input type="hidden" name="email" value={u.email} />
-                      <button type="submit" className="btn-ghost px-2 py-1">
-                        Reset mdp
-                      </button>
+                      <ConfirmationDanger
+                        libelle="Réinitialiser le mot de passe"
+                        libelleAccessible={`Réinitialiser le mot de passe de ${u.email}`}
+                        question={`Réinitialiser le mot de passe de ${u.email}\u00a0?`}
+                        consequence="L’actuel cessera aussitôt de fonctionner ; le nouveau s’affichera une seule fois, en haut de cette page."
+                        confirmer="Réinitialiser le mot de passe"
+                        enCours="Réinitialisation…"
+                        testid={`reinitialiser-${u.email}`}
+                      />
                     </FormulaireSecret>
                   </div>
                 </td>
@@ -163,7 +199,7 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { ExtensionActivationGuide } from "@/components/ExtensionActivationGuide";
 import { PageHeader } from "@/components/PageHeader";
+import { TableDefilante } from "@/components/TableDefilante";
 import { chargerDomaines } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
@@ -53,9 +54,12 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
               className="field mt-1 block w-56"
             />
           </label>
-          <label className="text-xs font-medium text-ink-soft">
+          {/* `min-w-0 max-w-full` + `w-full` : la liste prend la largeur de son plus
+              long libellé (« Console MIP RUM (dogfooding) (mip-rum-console) ») et
+              portait la page à 417 px sur 390 ; elle se borne désormais à la carte. */}
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
             App
-            <select name="app" required defaultValue="" className="field mt-1 block">
+            <select name="app" required defaultValue="" className="field mt-1 block w-full max-w-full">
               <option value="" disabled>
                 choisir…
               </option>
@@ -72,7 +76,8 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
         </form>
       </div>
 
-      <div className="card overflow-hidden">
+      {/* Défilant et signalé : `overflow-hidden` coupait Statut et Actions à 390 px. */}
+      <TableDefilante className="card" label="Domaines enregistrés">
         <table className="w-full text-sm">
           <thead className="bg-panel2">
             <tr>
@@ -124,7 +129,7 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
     </div>
   );
 }

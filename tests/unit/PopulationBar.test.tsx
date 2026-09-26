@@ -31,7 +31,7 @@ describe("PopulationBar", () => {
     const lu = texte(html);
     expect(lu).toContain("Population lue");
     expect(lu).toContain("24 h");
-    expect(lu).toContain("axes en UTC");
+    expect(lu).toContain("axes : UTC");
     expect(lu).toContain("Toutes les apps autorisées");
     expect(lu).toContain("Robots exclus");
     // Aucune puce n'est retirable ici : aucun lien n'est rendu.

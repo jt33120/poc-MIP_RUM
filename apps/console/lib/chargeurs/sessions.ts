@@ -16,7 +16,9 @@ import {
   observedVisitorsTrend,
   repartitionSessions,
   samplingSessions,
+  signauxDesSessions,
   visiteursDistincts,
+  type SignauxSession,
 } from "../queries-sessions";
 import { paramReader } from "../query-contract";
 import { dimensionSchema } from "../query-schema";
@@ -83,6 +85,19 @@ export const chargerSessions = (async (principal, sp) => {
   const disponibles = DIMENSIONS_REPARTITION.filter((d) => disponibiliteRepartition(d, schema).available);
   const dimension: DimensionRepartition | null = blocs.repartition ? lireRepartition(url.get(BREAKDOWN_PARAM), disponibles) : null;
 
+  // Une ligne de plus que la page : c'est ainsi qu'on sait s'il en reste, sans
+  // compter toute la population à chaque affichage.
+  const listeLue = liste
+    ? section(() => listSessions(f, { limit: SESSION_PAGE_SIZE + 1, cursor: curseur ?? null, search: recherche ?? null }))
+    : sansSection([]);
+  // Frustration et rejeu des lignes AFFICHÉES (recette du 26/09/2026 : ces colonnes
+  // étaient forcées à « — »). Une section à part : leur échec laisse la liste lisible.
+  const signauxLus = listeLue.then((l) =>
+    l.ok && l.data.length > 0
+      ? section(() => signauxDesSessions(l.data.slice(0, SESSION_PAGE_SIZE)))
+      : sansSection<Record<string, SignauxSession>>({}),
+  );
+
   // Chaque bloc a SA section (F02, § 3.8) : un bloc en échec dit « Lecture en
   // échec » et les autres restent affichés.
   const [
@@ -105,12 +120,9 @@ export const chargerSessions = (async (principal, sp) => {
     couvErreurs,
     couvVisiteurs,
     panneauLu,
+    signaux,
   ] = await Promise.all([
-    // Une ligne de plus que la page : c'est ainsi qu'on sait s'il en reste, sans
-    // compter toute la population à chaque affichage.
-    liste
-      ? section(() => listSessions(f, { limit: SESSION_PAGE_SIZE + 1, cursor: curseur ?? null, search: recherche ?? null }))
-      : sansSection([]),
+    listeLue,
     blocs.resume ? section(() => visitStats(f)) : sansSection(null),
     // Sparkline de la tuile, sessions sans identifiant et panneaux du volume : une lecture.
     section(() => observedVisitorsTrend(f)),
@@ -134,6 +146,7 @@ export const chargerSessions = (async (principal, sp) => {
     // Panneau (F43) : lu en même temps que l'écran, garde comprise — rien de la
     // session n'est lu si son app n'est pas dans ce que l'écran lit.
     idPanneau ? lirePanneauSession(idPanneau, query.scope.effectiveApps) : Promise.resolve(null),
+    signauxLus,
   ]);
 
   return {
@@ -161,5 +174,6 @@ export const chargerSessions = (async (principal, sp) => {
     couvErreurs,
     couvVisiteurs,
     panneauLu,
+    signaux,
   } as const;
 }) satisfies Chargeur<unknown>;

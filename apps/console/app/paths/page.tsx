@@ -29,6 +29,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { chargerPaths, etapesDeLEntonnoir, TOP_BORDS, TOP_TRANSITIONS } from "@/lib/chargeurs/paths";
@@ -397,7 +398,8 @@ function TableBords({
   lcp: Map<string, LcpDeRoute> | null;
 }) {
   return (
-    <div className="relative -mx-1 overflow-x-auto px-1">
+    // Défilement signalé sous 30 rem ; la zone reste `relative` pour la légende `sr-only`.
+    <TableDefilante label={titre}>
       <table className="w-full min-w-[30rem] text-sm">
         <caption className="sr-only">
           {titre} : route, sessions, part de toutes les sessions, sessions à une vue, LCP p75 de la route
@@ -427,9 +429,12 @@ function TableBords({
             const mesure = lcp?.get(r.route) ?? null;
             return (
               <tr key={r.route} className="border-b border-line/60 last:border-0">
-                <th scope="row" className="max-w-0 py-1.5 pr-3 font-normal">
+                <th scope="row" className="w-2/5 min-w-[10rem] max-w-0 py-1.5 pr-3 font-normal">
                   {/* `truncate` ne coupe qu'un élément `block` : une route longue sans
-                      espace élargirait la page à 390 px. */}
+                      espace élargirait la page à 390 px. `max-w-0` seul réduisait la
+                      colonne à rien (« /par… », recette 26/09) : `w-2/5 min-w-[10rem]`
+                      lui garde 40 % de la table, et jamais moins d'une vingtaine de
+                      caractères. */}
                   <Link
                     href={lienSessions(query, r.route)}
                     className="block truncate font-mono text-xs text-ink hover:text-accent hover:underline"
@@ -472,6 +477,6 @@ function TableBords({
           })}
         </tbody>
       </table>
-    </div>
+    </TableDefilante>
   );
 }

@@ -19,9 +19,10 @@
 //
 // DEUX SOURCES PROPRES À L'ISSUE, dites à l'écran. La part des sessions touchées
 // compte les lignes DE L'ISSUE (`partSessionsTouchees` sur une `IssueRef`, même
-// rattachement qu'`issueDetail`) ; les versions touchées sont celles que l'issue
-// persiste (`first_release`, `last_release`), que ni la fenêtre ni les filtres ne
-// bornent.
+// rattachement qu'`issueDetail`) ; les versions touchées sont TOUTES les releases
+// de ses lignes, de la plus récente à la plus ancienne (`releasesDeLIssue`), que ni
+// la fenêtre ni les filtres ne bornent — plus les releases de sa première et de sa
+// dernière occurrence dans le temps (recette du 26/09/2026).
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
@@ -36,7 +37,6 @@ import {
   VersionsTouchees,
   comptesTouches,
   porteeOccurrences,
-  versionsDeLIssue,
 } from "@/components/errors/DetailErreur";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
@@ -47,6 +47,7 @@ import { IssueActivitySection, IssueTriageCard } from "@/components/errors/Issue
 import { IssueTicketCard } from "@/components/errors/IssueTickets";
 import { errorGroupHref, errorSearchParams, errorsHref, issueHref } from "@/lib/error-view";
 import { SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import { annotationsDeploiements } from "@/lib/annotations";
 import { ISSUE_STATUS_LABELS, type IssueDetailResult } from "@/lib/error-issues";
 import type { SearchParams } from "@/lib/filters";
@@ -97,7 +98,7 @@ export default async function IssuePage({
     );
   }
 
-  const { label, bucketLabel, query, cursor, detail, part, deploys, admin, workflow, activite, activiteCurseur, pile, livraisons } = d;
+  const { label, bucketLabel, query, cursor, detail, part, deploys, versions, admin, workflow, activite, activiteCurseur, pile, livraisons } = d;
   const { range } = query;
   const url = errorSearchParams(sp);
   const { impact, trend, last_sample: last, occurrences, sampling, enrichment } = detail;
@@ -178,7 +179,7 @@ export default async function IssuePage({
 
       {/* ── Bloc 3 : versions touchées, celles que l'issue persiste ── */}
       <SectionErreur titre="Versions touchées">
-        <VersionsTouchees issue={versionsDeLIssue(issue)} />
+        <VersionsTouchees releases={versions} />
       </SectionErreur>
 
       {/* ── Bloc 4 : occurrences dans le temps ── */}
@@ -278,7 +279,9 @@ function IssueState({ detail, f }: { detail: IssueDetailResult; f: ErrorFilters 
         </p>
       )}
       {groupes.length > 0 && (
-        <div className="mt-4 overflow-x-auto">
+        // Défilement signalé : « Statut au rattachement » était coupé à 390 px sans
+        // indice (recette 26/09).
+        <TableDefilante className="mt-4" label="Groupes historiques repris">
           <table className="w-full min-w-table text-sm" data-testid="issue-legacy-groups">
             <caption className="mb-2 text-left text-xs text-ink-faint">
               Groupes historiques repris ({groupes.length})
@@ -314,7 +317,7 @@ function IssueState({ detail, f }: { detail: IssueDetailResult; f: ErrorFilters 
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       )}
     </section>
   );

@@ -115,8 +115,9 @@ export function Sparkline({
           y={(hauteur - g.bandeBon).toFixed(1)}
           width={largeur}
           height={g.bandeBon.toFixed(1)}
-          className="fill-good"
-          fillOpacity={0.14}
+          // `zone-seuil` : opacité relevée en thème sombre (app/globals.css).
+          className="fill-good zone-seuil"
+          opacity={0.14}
           data-bande="bon"
         />
       )}

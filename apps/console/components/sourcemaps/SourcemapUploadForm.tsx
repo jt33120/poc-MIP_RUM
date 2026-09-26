@@ -10,6 +10,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { INPUT_CLASS } from "@/components/forms/Field";
+import { pluriel } from "@/lib/format";
 
 const LIMITE_CONSOLE = 4 * 1024 * 1024;
 
@@ -108,7 +109,8 @@ export function SourcemapUploadForm({ appId, release }: { appId: string; release
       </form>
       {resultat?.kind === "succes" && (
         <p role="status" className="mt-3 text-sm text-ink-soft">
-          {resultat.created} créée(s), {resultat.unchanged} inchangée(s), {resultat.replaced} remplacée(s). Empreinte du
+          {pluriel(resultat.created, "créée", "créées")}, {pluriel(resultat.unchanged, "inchangée", "inchangées")},{" "}
+          {pluriel(resultat.replaced, "remplacée", "remplacées")}. Empreinte du
           manifeste : <code className="chip-mono break-all">{resultat.fingerprint}</code>
         </p>
       )}

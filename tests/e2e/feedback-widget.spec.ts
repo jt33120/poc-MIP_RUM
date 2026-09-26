@@ -276,3 +276,30 @@ test("le widget ne soumet pas un formulaire de l'application hôte", async ({ pa
     { score: 4, comment: "dans un form hôte", route: "/dashboard" },
   ]);
 });
+
+// Options du 26/09/2026 (la console s'applique ce widget à elle-même) : sans elles,
+// rien ne change pour un client ; avec elles, une pastille discrète, absente des
+// chemins exclus.
+test("compact + discreet : pastille « 💬 » sans libellé visible, nom accessible et infobulle gardés", async ({ page }) => {
+  await mount(page, { compact: true, discreet: true });
+  const lanceur = page.locator(OPEN);
+  await expect(lanceur).toHaveText("💬");
+  await expect(lanceur).toHaveAttribute("title", "Votre avis ?");
+  const boite = await lanceur.boundingBox();
+  expect(boite!.width).toBeLessThanOrEqual(40);
+  // Toujours utilisable : il ouvre le panneau.
+  await lanceur.click();
+  await expect(page.locator('[data-mip-rum-ui="feedback-panel"]')).toBeVisible();
+});
+
+test("exceptPaths : absent sur un chemin exclu, présent ailleurs (préfixe de segment)", async ({ page }) => {
+  await page.goto("http://localhost:8080/dashboard", { waitUntil: "load" });
+  await page.evaluate(() => {
+    (window as any).MIPRumFeedback = { exceptPaths: ["/dashboard"] };
+  });
+  await page.addScriptTag({ url: "/mip-rum-feedback.js" });
+  await expect(page.locator('[data-mip-rum-ui="feedback-button"]')).toBeHidden();
+  // Navigation SPA vers un chemin non exclu : le lanceur réapparaît.
+  await page.evaluate(() => history.pushState({}, "", "/dashboard-bis"));
+  await expect(page.locator(OPEN)).toBeVisible();
+});

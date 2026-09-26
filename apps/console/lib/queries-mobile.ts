@@ -24,6 +24,7 @@ import { bucketExpr, bucketSeriesSql } from "./query-compiler";
 import { conditionsOf, type AnalyticsQuery, type FilterCondition } from "./query-contract";
 import { dimensionSchema } from "./query-schema";
 import type { DeployRow } from "./queries-deploys";
+import { cheminAppelSql } from "./queries-tracing";
 import {
   ERROR_FREE_REASONS,
   RAISON_SANS_RUNTIME,
@@ -569,14 +570,16 @@ async function lireEcrans(lire: Lecture, query: AnalyticsQuery, schema: MobileSc
  * `front`), y compris vers une origine à laquelle il ne propage AUCUN en-tête :
  * mesurer la latence d'un tiers n'expose rien à ce tiers. L'origine est retirée
  * du chemin affiché, comme sur l'écran de tracing — deux environnements du même
- * service ne doivent pas produire deux lignes.
+ * service ne doivent pas produire deux lignes — et ses identifiants sont normalisés
+ * par la MÊME expression (`cheminAppelSql`) : un appel par identifiant faisait une
+ * ligne par identifiant (recette du 26/09/2026).
  */
 async function lireRequetes(lire: Lecture, query: AnalyticsQuery, schema: MobileSchema): Promise<MobileResource[]> {
   const base = cohorte(query, schema);
   const perimetre = compileScope(query, "sp.app_id", base.bind);
   return lire<MobileResource>(
     `with ${base.cte}
-     select regexp_replace(coalesce(sp.url, ''), '^https?://[^/]+', '') as path,
+     select ${cheminAppelSql("sp.url")} as path,
             sp.method,
             count(*)::int as calls,
             percentile_cont(0.75) within group (order by sp.duration_ms)::float8 as p75_ms,

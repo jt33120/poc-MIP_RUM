@@ -224,7 +224,7 @@ test("vitrine : chaque composant de séries et ses états", async ({ page }) => 
   await expect(series.locator(".recharts-reference-area.bande-bon").first()).toBeVisible();
   await expect(series.getByTestId("seuil-hors-echelle").filter({ hasText: "4,0" })).toHaveText(/seuil Mauvais à 4,0\ss, hors échelle/);
   await expect(series.getByTestId("series-non-tracees")).toContainText("1 série non tracée");
-  await expect(series.getByTestId("points-hors-grille")).toContainText("1 point hors de la grille");
+  await expect(series.getByTestId("points-hors-grille")).toContainText("1 point hors des tranches du graphique");
   await expect(series.getByText(/Annotations non affichées : déploiements non affichés/)).toBeVisible();
   await expect(series.getByTestId("legende-faible-effectif").first()).toContainText("moins de 30 mesures");
   // La grille horaire de la vitrine finit à l'heure en cours : son dernier seau est « en cours ».

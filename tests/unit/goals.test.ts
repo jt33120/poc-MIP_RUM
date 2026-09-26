@@ -1,6 +1,7 @@
 // Objectifs — matching + taux de conversion. Logique pure.
 import { describe, expect, it } from "vitest";
 import { conversionRate, goalMatches } from "../../apps/console/lib/goals";
+import { ecartesPlusHauts, meilleurObjectif as meilleur, texteEcartes } from "../../apps/console/lib/goals";
 import {
   classerObjectifs,
   couvertureTaux,
@@ -105,7 +106,7 @@ describe("lignesAppareils (G4)", () => {
     { goal_id: 2, device: "desktop", conversions: 5, sessions: 5 },
   ];
   it("desktop, mobile, tablette, autres types, puis « Inconnu » : toujours, dans cet ordre", () => {
-    expect(lignesAppareils(1, lignes).map((l) => l.libelle)).toEqual(["Desktop", "Mobile", "Tablette", "tv", "Inconnu"]);
+    expect(lignesAppareils(1, lignes).map((l) => l.libelle)).toEqual(["Ordinateur", "Mobile", "Tablette", "tv", "Inconnu"]);
   });
   it("un appareil sans session garde sa ligne, sans taux (jamais « 0 % »)", () => {
     const [desktop, mobile, , , inconnu] = lignesAppareils(1, lignes);
@@ -155,5 +156,24 @@ describe("tuile « Meilleur taux » : même règle que le hero et la table", () 
     // Tous faibles : le premier taux connu, qui portera « échantillon faible ».
     expect(meilleurObjectif([g("Inconnu", 0, 0), g("Rare", 9, 30)])?.name).toBe("Rare");
     expect(meilleurObjectif([g("Inconnu", 0, 0)])).toBeNull();
+  });
+});
+
+// Recette du 26/09/2026 : « Meilleur taux 82,2 % » à côté de « Recherche partenaire »
+// à 97,0 %, écarté pour échantillon faible sans que la tuile le dise.
+describe("meilleur taux — l'objectif plus haut écarté se dit", () => {
+  const g = (name: string, conversions: number, sessions: number) => ({ name, conversions, sessions, rate: conversions / sessions });
+  const lignes = [g("Recherche partenaire", 162, 167), g("Fiche consultée", 139, 169), g("Contact", 40, 169)];
+
+  it("le meilleur est l'objectif à échantillon suffisant ; celui à 97 % est écarté, et nommé", () => {
+    const best = meilleur(lignes);
+    expect(best?.name).toBe("Fiche consultée");
+    const ecartes = ecartesPlusHauts(lignes, best);
+    expect(ecartes.map((e) => e.name)).toEqual(["Recherche partenaire"]);
+    expect(texteEcartes(ecartes)?.replace(/ /g, " ")).toBe("Recherche partenaire (97,0 %) écarté : échantillon faible");
+  });
+
+  it("rien d'écarté : aucune mention", () => {
+    expect(texteEcartes(ecartesPlusHauts([g("A", 60, 100)], meilleur([g("A", 60, 100)])))).toBeUndefined();
   });
 });

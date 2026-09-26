@@ -80,6 +80,9 @@ const bloc = (html: string, id: string) => {
 };
 
 beforeEach(() => {
+  // Un historique de 200 jours : les quatre fenêtres (jusqu'à 26 semaines) sont
+  // couvertes. Le cas d'un historique de 30 jours a son propre test, plus bas.
+  process.env.RETENTION_DAYS = "200";
   for (const m of [retentionCohorts, samplingSessions, pageFilters]) m.mockReset();
   pageFilters.mockResolvedValue(ecran());
   // Trois cohortes : il y a deux semaines, la semaine dernière, cette semaine.
@@ -91,7 +94,7 @@ describe("/retention — les courbes sont des images nommées (F54, § 3.9)", ()
   it("« Courbe de rétention » : role=img, nom paramétré par la fenêtre et les semaines observées, alternative gardée", async () => {
     const courbe = bloc(await rendre(), "retention-courbe");
     expect(courbe).toContain(
-      'role="img" aria-label="Rétention pondérée par semaine depuis l&#x27;arrivée, de S+0 à S+2, fenêtre de 8 semaines UTC ; un point sans cohorte complète est un trou"',
+      'role="img" aria-label="Rétention pondérée par semaine depuis l&#x27;arrivée, de S+0 à S+2, fenêtre de 8 semaines ; un point sans cohorte complète est un trou"',
     );
     expect(courbe).toContain('data-testid="alternative"');
   });
@@ -99,7 +102,7 @@ describe("/retention — les courbes sont des images nommées (F54, § 3.9)", ()
   it("« Par appareil » : role=img nommé par ses trois séries et la fenêtre choisie", async () => {
     const appareils = bloc(await rendre({ weeks: "12" }), "retention-appareils");
     expect(appareils).toContain(
-      'role="img" aria-label="Rétention pondérée par appareil (ordinateurs, mobiles, tablettes) et par semaine depuis l&#x27;arrivée, fenêtre de 12 semaines UTC"',
+      'role="img" aria-label="Rétention pondérée par appareil (ordinateurs, mobiles, tablettes) et par semaine depuis l&#x27;arrivée, fenêtre de 12 semaines"',
     );
     expect(appareils).toContain('data-testid="alternative"');
   });
@@ -151,5 +154,34 @@ describe("/retention — « Par appareil » sous une condition d'appareil porté
     expect(appareils).not.toContain('data-testid="retention-deja-filtre"');
     expect(appareils).toContain('data-testid="retention-appareil-lien"');
     expect(retentionCohorts).toHaveBeenCalledTimes(4);
+  });
+});
+
+// Recette du 26/09/2026 : le sélecteur proposait 12 et 26 semaines alors que 30 jours
+// seulement sont conservés — des fenêtres qui ne pouvaient rien montrer de plus que 4.
+describe("/retention — les fenêtres proposées suivent l'historique conservé", () => {
+  const fenetres = (html: string) =>
+    [...html.matchAll(/data-testid="retention-fenetre"[^>]*>([^<]+)</g)].map((m) => m[1].trim());
+
+  it("30 jours conservés : seule la fenêtre de 4 semaines est proposée, et elle est la fenêtre par défaut", async () => {
+    process.env.RETENTION_DAYS = "30";
+    const html = await rendre();
+    expect(fenetres(html)).toEqual(["4 sem."]);
+    expect(html).toContain("historique conservé : 30 jours");
+    expect(bloc(html, "retention-courbe")).toContain("fenêtre de 4 semaines");
+  });
+
+  it("une fenêtre au-delà de l'historique est ignorée ET dite, avec les fenêtres réellement proposées", async () => {
+    process.env.RETENTION_DAYS = "30";
+    const html = await rendre({ weeks: "26" });
+    expect(html).toContain("weeks=26 (fenêtres proposées : 4 semaines, 30 jours d&#x27;historique conservés)");
+  });
+
+  it("200 jours conservés : les quatre fenêtres, 8 semaines par défaut", async () => {
+    const { fenetresDisponibles, fenetreParDefaut } = await import("@/lib/chargeurs/retention");
+    expect(fenetresDisponibles(200)).toEqual([4, 8, 12, 26]);
+    expect(fenetreParDefaut(fenetresDisponibles(200))).toBe(8);
+    expect(fenetresDisponibles(60)).toEqual([4, 8]);
+    expect(fenetresDisponibles(10)).toEqual([4]);
   });
 });

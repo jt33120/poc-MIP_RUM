@@ -12,6 +12,7 @@
 import { notFound } from "next/navigation";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { TableDefilante } from "@/components/TableDefilante";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { chargerConnecteurs } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
@@ -148,7 +149,8 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
         </p>
       </div>
 
-      <div className="card overflow-x-auto">
+      {/* 70 rem, les actions en dernière colonne : défilement signalé. */}
+      <TableDefilante className="card" label="Connecteurs configurés">
         <table className="w-full min-w-table text-sm" data-testid="tickets-liste">
           <caption className="px-4 pt-4 text-left text-xs text-ink-faint">
             Connecteurs configurés ({integrations.length})
@@ -228,7 +230,7 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
 
       <p className="mt-4 text-xs text-ink-faint">
         URL de webhook à déclarer chez le fournisseur :{" "}

@@ -55,11 +55,30 @@ describe("ImpactTable", () => {
   it("échantillon faible écrit ; pilote inconnu : « — » et aucune barre", () => {
     expect(html.match(/échantillon faible/g)?.length).toBeGreaterThanOrEqual(2);
     // Deux barres pour trois lignes : la ligne sans pilote n'en a pas.
-    expect(html.match(/aria-hidden="true" class="absolute inset-y-0 left-0 rounded bg-accent\/70"/g)).toHaveLength(2);
+    expect(html.match(/data-barre=""/g)).toHaveLength(2);
   });
 
   it("verdict écrit à côté de la teinte, seulement pour une mesure qui porte `vital`", () => {
-    expect(texte(html)).toContain("4100 ms Mauvais");
+    // La colonne « LCP p75 » double la valeur classée : elle n'est pas répétée, son
+    // verdict passe sur la valeur (et la barre prend la teinte du verdict).
+    expect(texte(html)).toContain("4,1 s Mauvais");
+    expect(texte(html)).not.toContain("LCP p75 4100 ms");
+    expect(html).toContain("bg-bad opacity-80");
+  });
+
+  it("pistes de largeur FIXE : une grille à colonnes, plus de `flex-1` qui dépend du texte voisin", () => {
+    expect(html).toContain("sm:grid-cols-[10rem_12rem_6rem_minmax(0,1fr)]");
+    expect(html).not.toContain("flex-1");
+    // L'alternative garde toutes les colonnes, doublon compris.
+    const alternative = html.split('data-testid="alternative"')[1] ?? "";
+    expect(texte(alternative)).toContain("4100 ms (Mauvais)");
+  });
+
+  it("colonnePilote = null : aucune colonne n'est retirée", () => {
+    const tout = renderToStaticMarkup(
+      <ImpactTable {...BASE} tri="gravite" reference={null} referenceRaison="—" lignes={[LIGNE("/a", 900, 40)]} colonnePilote={null} />,
+    );
+    expect(texte(tout)).toContain("LCP p75 900 ms");
   });
 
   it("le tri impact indisponible dit sa raison (B2), sans lien", () => {

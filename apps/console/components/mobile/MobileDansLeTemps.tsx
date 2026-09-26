@@ -27,6 +27,8 @@ import { pointsMobileTemps, type CapabilityState } from "@/lib/mobile-capabiliti
 import type { MobileSerie } from "@/lib/queries-mobile";
 import { bucketLabel } from "@/lib/query-contract";
 import { grilleIso, libelleSeauComplet, type Annotation, type PointSerie } from "@/lib/series";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { pluriel } from "@/lib/format";
 
 export const TITRE_TEMPS = "Sessions et erreurs JS dans le temps";
 const PANNEAU_SESSIONS = "Sessions React Native commencées";
@@ -105,7 +107,7 @@ export function MobileDansLeTemps({
   const dessinErreurs = !nonCollecte && totalOccurrences !== null && totalOccurrences > 0;
   const lignes: PointSerie[] = points.map((p) => ({ t: p.t, sessions: p.sessions, occurrences: nonCollecte ? null : p.occurrences }));
   const synchro = "mobile-temps";
-  const partage = { grille, seauSecondes, fuseau: "UTC", zoomHref, synchro, hauteur: 120, annotations };
+  const partage = { grille, seauSecondes, fuseau: FUSEAU_AFFICHAGE, zoomHref, synchro, hauteur: 120, annotations };
 
   return (
     <Figure
@@ -115,7 +117,7 @@ export function MobileDansLeTemps({
       meta={
         <>
           <span>seau de {seau}</span>
-          <span>{grille.length} seaux</span>
+          <span>{grille.length} tranches</span>
           <span>{formater("count", totalSessions)} sessions commencées</span>
           <span>
             {nonCollecte
@@ -124,25 +126,25 @@ export function MobileDansLeTemps({
                 ? "occurrences d'erreurs JS : non lues"
                 : `${formater("count", occurrencesAffichees)} occurrences d'erreurs JS`}
           </span>
-          {ignores > 0 && <span>{ignores} seau(x) hors grille écarté(s)</span>}
-          <span>{plage}, UTC</span>
+          {ignores > 0 && <span>{pluriel(ignores, "tranche hors plage écartée", "tranches hors plage écartées")}</span>}
+          <span>{plage}</span>
         </>
       }
       lecture={
         <>
           Les mêmes sessions que les tuiles : la cohorte React Native (runtime déclaré, jamais déduit), sessions
-          commencées dans chaque seau ; les occurrences sont la somme des erreurs JavaScript de ces sessions, datées
-          à leur réception. La somme des seaux est la tuile. Deux panneaux, un axe chacun : aucune grandeur ne se lit
+          commencées dans chaque tranche ; les occurrences sont la somme des erreurs JavaScript de ces sessions, datées
+          à leur réception. La somme des tranches est la tuile. Deux panneaux, un axe chacun : aucune grandeur ne se lit
           sur l&apos;échelle de l&apos;autre.
           {explorer &&
             " L'Explorer rejoue le panneau des sessions (runtime = react_native) ; les erreurs JavaScript n'y sont pas isolables, faute de dimension de source d'erreur."}
         </>
       }
       alternative={{
-        legende: `Sessions React Native commencées et occurrences d'erreurs JS par seau de ${seau} (UTC)`,
-        colonnes: ["Seau (UTC)", PANNEAU_SESSIONS, PANNEAU_ERREURS],
+        legende: `Sessions React Native commencées et occurrences d'erreurs JS par tranche de ${seau}`,
+        colonnes: ["Période", PANNEAU_SESSIONS, PANNEAU_ERREURS],
         lignes: points.map((p) => [
-          libelleSeauComplet(p.t, seauSecondes, "UTC"),
+          libelleSeauComplet(p.t, seauSecondes, FUSEAU_AFFICHAGE),
           p.sessions,
           nonCollecte ? null : p.occurrences,
         ]),
@@ -158,7 +160,7 @@ export function MobileDansLeTemps({
             annotationsIndisponibles={annotationsIndisponibles ?? undefined}
             // Les déploiements ne sont listés en liens qu'une fois : sous le dernier panneau dessiné.
             legendeAnnotations={!dessinErreurs}
-            ariaLabel={`${PANNEAU_SESSIONS} par seau de ${seau}, ${grille.length} seaux`}
+            ariaLabel={`${PANNEAU_SESSIONS} par tranche de ${seau}, ${grille.length} seaux`}
           />
         </Panneau>
         <Panneau titre={PANNEAU_ERREURS} id="erreurs">
@@ -187,7 +189,7 @@ export function MobileDansLeTemps({
               format="count"
               annotationsIndisponibles={annotationsIndisponibles ?? undefined}
               legendeAnnotations
-              ariaLabel={`${PANNEAU_ERREURS} par seau de ${seau}, ${grille.length} seaux`}
+              ariaLabel={`${PANNEAU_ERREURS} par tranche de ${seau}, ${grille.length} seaux`}
             />
           )}
           {dessinErreurs && capaciteJs === "unknown" && (

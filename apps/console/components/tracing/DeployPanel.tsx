@@ -13,6 +13,7 @@ import { EtatSurface } from "@/components/states/EtatSurface";
 import { formater } from "@/lib/fmt-ids";
 import type { DeployRow } from "@/lib/queries-deploys";
 import { verdictDeploiement, type DeployImpact } from "@/lib/deploys-verdict";
+import { fmtDate } from "@/lib/format";
 
 /** Règle du verdict, écrite telle quelle (§ 3.2, `assessRegression` ratio 1,2). */
 export const REGLE_DEPLOIEMENT = "+20 % ou plus, ±2 h, filtres de population non appliqués";
@@ -20,17 +21,10 @@ export const REGLE_DEPLOIEMENT = "+20 % ou plus, ±2 h, filtres de population no
 /** Texte de l'état « non collecté » : ce qui manque, et le geste qui le fournit. */
 export const MANQUE_DEPLOIEMENT = "aucun déploiement déclaré : POST /api/v1/deploys depuis la CI";
 
-// Heure en UTC, écrite : une heure sans fuseau se lirait dans celui du lecteur.
-const HEURE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
+// Heure de Paris : le fuseau d'affichage de toute la console, nommé une fois dans
+// la barre du haut (une heure sans fuseau fixé se lirait dans celui du serveur).
 function quand(ts: Date | string): string {
-  return `${HEURE_UTC.format(new Date(ts))} UTC`;
+  return fmtDate(ts);
 }
 
 const TON = {
