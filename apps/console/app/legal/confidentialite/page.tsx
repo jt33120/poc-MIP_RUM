@@ -1,105 +1,130 @@
-import { LegalShell, LegalSection } from "@/components/legal/LegalShell";
-import { ORG, SUBPROCESSORS } from "@/lib/legal";
+import { LegalShell, LegalSection, LienLegal } from "@/components/legal/LegalShell";
+import { TableauSousTraitants } from "@/components/legal/SousTraitants";
+import {
+  CONSERVATION_MESURES,
+  DATA_SOURCES,
+  DPA,
+  IDENTIFIANTS_PSEUDONYMES,
+  IDENTITE_CLIENT,
+  ORG,
+  PAYS_ESTIME,
+} from "@/lib/legal";
 
 export const dynamic = "force-static";
 export const metadata = { title: "MIP RUM — Politique de confidentialité" };
 
+// Toutes les phrases qui décrivent la donnée (identifiants, pays, conservation,
+// sous-traitants, DPA) viennent de lib/legal.ts, comme dans la politique de
+// l'extension : la recette du 26/09/2026 lisait ici « identifiant de session
+// anonyme » et « mesures anonymisées », là « pseudonyme, pas une donnée anonyme ».
+// Ce n'est pas le même régime RGPD ; le vocabulaire est désormais celui du code.
 export default function Confidentialite() {
   return (
     <LegalShell
       title="Politique de confidentialité"
       intro={
         <p>
-          Cette politique décrit le traitement des données dans le cadre du service {ORG.produit}. Elle complète,
-          pour le capteur navigateur, la <a href="/extension-privacy" className="text-accent-ink underline-offset-2 hover:underline">politique dédiée à l'extension</a>.
+          Cette politique décrit le traitement des données dans le cadre du service {ORG.produit}. Pour le capteur
+          installé dans le navigateur, elle est complétée par la{" "}
+          <LienLegal href="/extension-privacy">politique de l&apos;extension</LienLegal>.
         </p>
       }
     >
       <LegalSection n="1" title="Responsable de traitement et sous-traitant">
         <p>
-          Pour les données de mesure collectées sur les sites des clients, {ORG.raisonSociale} agit en qualité de{" "}
-          <strong>sous-traitant</strong> pour le compte du client (responsable de traitement) — cf. l&apos;accord de
-          traitement (DPA), conclu séparément. Pour les
-          données des comptes de la console, {ORG.raisonSociale} agit en qualité de{" "}
+          Pour les mesures collectées sur les sites des clients, {ORG.raisonSociale} agit en qualité de{" "}
+          <strong>sous-traitant</strong> pour le compte du client, responsable de traitement, dans le cadre de {DPA}.
+          Pour les données des comptes de la console, {ORG.raisonSociale} agit en qualité de{" "}
           <strong>responsable de traitement</strong>.
         </p>
       </LegalSection>
 
       <LegalSection n="2" title="Données traitées">
         <p>
-          <strong>Mesures RUM</strong> : indicateurs de performance (Core Web Vitals), erreurs techniques
-          (message, type, pile, source sans chaîne de requête), route/URL, type d'appareil, user-agent, identifiant
-          de session anonyme (haché), pays déduit du fuseau horaire — <strong>aucune adresse IP stockée, aucune
-          donnée directement identifiante</strong>.
+          <strong>Mesures</strong>&nbsp;:
         </p>
+        <ul className="list-disc space-y-1 pl-5">
+          <li>indicateurs de performance (Core Web Vitals)&nbsp;;</li>
+          <li>erreurs techniques (message, type, pile d&apos;appel, fichier source sans chaîne de requête)&nbsp;;</li>
+          <li>route ou adresse de page normalisée, type d&apos;appareil, user-agent du navigateur&nbsp;;</li>
+          <li>
+            <strong>identifiants pseudonymes</strong>&nbsp;: {IDENTIFIANTS_PSEUDONYMES}&nbsp;;
+          </li>
+          <li>{IDENTITE_CLIENT}&nbsp;;</li>
+          <li>
+            <strong>pays estimé</strong>&nbsp;: {PAYS_ESTIME}.
+          </li>
+        </ul>
         <p>
-          <strong>Comptes console</strong> : adresse e-mail, rôle, journaux d'accès (audit). <strong>Assistance IA</strong>{" "}
-          (si activée) : uniquement des signaux agrégés, sans donnée personnelle.
+          <strong>Aucune adresse IP n&apos;est stockée</strong>, sous aucune forme, et aucune donnée directement
+          identifiante n&apos;est conservée en clair.
+        </p>
+        {DATA_SOURCES.map((d) => (
+          <p key={d.name}>
+            Le pays peut être résolu localement à partir de l&apos;adresse, avec la base {d.name} (
+            <a href={d.url} className="text-accent-ink underline-offset-2 hover:underline" rel="noopener noreferrer">
+              {d.attribution}
+            </a>
+            , licence {d.licence})&nbsp;: aucune adresse n&apos;est transmise à son éditeur, qui n&apos;est pas un
+            sous-traitant.
+          </p>
+        ))}
+        <p>
+          <strong>Comptes de la console</strong>&nbsp;: adresse e-mail, rôle, applications autorisées, journal des
+          actions sensibles. <strong>Alertes</strong>&nbsp;: adresse e-mail des opérateurs destinataires et texte de
+          l&apos;alerte.
         </p>
       </LegalSection>
 
       <LegalSection n="3" title="Finalités et bases légales">
         <ul className="list-disc space-y-1 pl-5">
-          <li>Mesurer et améliorer la performance et la fiabilité des sites (exécution du contrat / intérêt légitime du client).</li>
+          <li>
+            Mesurer et améliorer la performance et la fiabilité des sites (exécution du contrat, intérêt légitime du
+            client).
+          </li>
           <li>Gérer les accès et la sécurité de la console (exécution du contrat, obligation de sécurité).</li>
-          <li>Émettre des alertes et rapports (exécution du contrat).</li>
+          <li>Émettre des alertes et des rapports (exécution du contrat).</li>
         </ul>
         <p>Les données ne sont ni vendues, ni utilisées à des fins publicitaires.</p>
       </LegalSection>
 
       <LegalSection n="4" title="Destinataires et sous-traitants ultérieurs">
-        <p>Les données peuvent être traitées par les sous-traitants suivants&nbsp;:</p>
-        <div className="overflow-x-auto">
-          <table className="mt-1 w-full text-left text-xs">
-            <thead className="text-ink-faint">
-              <tr>
-                <th className="py-1 pr-4 font-semibold">Sous-traitant</th>
-                <th className="py-1 pr-4 font-semibold">Rôle</th>
-                <th className="py-1 font-semibold">Localisation</th>
-              </tr>
-            </thead>
-            <tbody className="text-ink-soft">
-              {SUBPROCESSORS.map((s) => (
-                <tr key={s.name} className="border-t border-line">
-                  <td className="py-1.5 pr-4">{s.name}</td>
-                  <td className="py-1.5 pr-4">{s.role}</td>
-                  <td className="py-1.5">{s.location}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <p>Les données sont traitées par les sous-traitants suivants&nbsp;:</p>
+        <TableauSousTraitants />
       </LegalSection>
 
-      <LegalSection n="5" title="Transferts hors Union européenne">
+      <LegalSection n="5" title="Transferts hors de l'Union européenne">
         <p>
-          Les données de mesure sont hébergées dans l'UE. Certains prestataires techniques (ex. hébergement de
-          l'application) peuvent relever d'un groupe établi hors UE&nbsp;; les transferts éventuels sont encadrés par
-          les garanties appropriées (clauses contractuelles types). {"["}À préciser selon la configuration retenue.{"]"}
+          Les sous-traitants ci-dessus sont des sociétés de droit américain&nbsp;; le tableau indique où chacun traite
+          les données. Les transferts vers un pays tiers, et l&apos;accès éventuel depuis l&apos;extérieur de
+          l&apos;Union européenne, sont encadrés par les garanties qui y figurent.
         </p>
       </LegalSection>
 
       <LegalSection n="6" title="Durée de conservation">
         <p>
-          Mesures RUM : suppression automatique après <strong>30 jours</strong> (TTL). Comptes et journaux : durée
-          de la relation contractuelle, puis archivage/suppression selon les obligations légales.
+          Mesures&nbsp;: suppression automatique après {CONSERVATION_MESURES}. Comptes et journaux&nbsp;: durée de la
+          relation contractuelle, puis archivage ou suppression selon les obligations légales.
         </p>
       </LegalSection>
 
       <LegalSection n="7" title="Vos droits">
         <p>
-          Conformément au RGPD, les personnes concernées disposent des droits d'accès, de rectification,
-          d'effacement, de limitation et d'opposition. Les mesures RUM étant anonymisées, l'identification directe
-          d'une personne n'est en principe pas possible. Les demandes s'exercent auprès du responsable de traitement
-          (le client pour les données RUM), avec l'assistance de {ORG.raisonSociale}. Contact : {ORG.dpo}.
+          Conformément au RGPD, les personnes concernées disposent des droits d&apos;accès, de rectification,
+          d&apos;effacement, de limitation et d&apos;opposition. Les mesures étant pseudonymisées, l&apos;identification
+          directe d&apos;une personne n&apos;est en principe pas possible&nbsp;; une demande peut porter sur
+          l&apos;identifiant de visiteur. Les demandes s&apos;exercent auprès du responsable de traitement (le client,
+          pour les mesures), avec l&apos;assistance de {ORG.raisonSociale}. Contact&nbsp;: {ORG.dpo}.
         </p>
         <p>Une réclamation peut être introduite auprès de la CNIL.</p>
       </LegalSection>
 
-      <LegalSection n="8" title="Cookies">
+      <LegalSection n="8" title="Cookies et stockage local">
         <p>
-          La console utilise un cookie strictement nécessaire à l'authentification (cookie de session). Le capteur
-          RUM n'utilise pas de cookie publicitaire.
+          La console n&apos;utilise que des cookies nécessaires à son fonctionnement&nbsp;: la session
+          d&apos;authentification, le projet affiché et la date de la connexion précédente. Aucun n&apos;est
+          publicitaire ni partagé avec un tiers. Le capteur de mesure ne dépose aucun cookie&nbsp;: ses identifiants
+          pseudonymes sont gardés dans le stockage local du navigateur.
         </p>
       </LegalSection>
     </LegalShell>

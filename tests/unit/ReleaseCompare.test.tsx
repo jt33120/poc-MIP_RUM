@@ -7,6 +7,7 @@ import {
   PHRASE_FENETRE,
   ReleaseCompare,
   SANS_SESSION,
+  ecrireEcart,
   tauxSessionsEnErreur,
   type ReleaseStats,
 } from "@/components/ReleaseCompare";
@@ -51,6 +52,33 @@ describe("ReleaseCompare", () => {
   it("une release sans session le dit", () => {
     const t = rendre(A, { release: "1.5.0", sessions: 0, lcp_p75: null, inp_p75: null, sessionsEnErreur: null });
     expect(t).toContain(SANS_SESSION);
+  });
+
+  it("l'écart d'un taux s'écrit en points, pas en pourcentage relatif (recette du 26/09/2026)", () => {
+    expect(ecrireEcart(0.435, 0.636, "pct")).toBe("+20,1\u00a0pts");
+    expect(ecrireEcart(0.2, 0.19, "pct")).toBe("−1\u00a0pt");
+    expect(ecrireEcart(null, 0.5, "pct")).toBe("—");
+    // A : 5 %, B : 10 % → +5 points, et non « +100 % ».
+    const t = rendre(A, B);
+    expect(t).toContain("+5 pts");
+    expect(t).not.toContain("+100 %");
+  });
+
+  it("le verdict INP suit l'intervalle, comme la tuile : incertain, il n'est pas affirmé", () => {
+    const b: ReleaseStats = {
+      ...B,
+      inp_p75: 304,
+      intervalles: { INP: { bas: 150, haut: 320, niveau: 0.95, methode: "quantile_normal" }, LCP: { bas: 2550, haut: 2700, niveau: 0.95, methode: "quantile_normal" } },
+    };
+    const t = rendre(A, b);
+    expect(t).toContain("verdict incertain : entre Bon et À améliorer");
+    // Le LCP, dont l'intervalle reste dans « À améliorer », garde son verdict.
+    expect(t).toMatch(/2,6\s?s À améliorer/);
+  });
+
+  it("un intervalle non lu ne laisse pas affirmer le verdict", () => {
+    const t = rendre(A, { ...B, intervalles: {} });
+    expect(t).toContain("verdict non établi (intervalle non lu)");
   });
 
   it("taux de sessions en erreur : null sans dénominateur, jamais 0 %", () => {

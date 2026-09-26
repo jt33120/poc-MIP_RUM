@@ -1,7 +1,8 @@
 // Vérifie le provisioning JIT du SSO/OIDC (route /api/auth/oidc/callback) sur
 // Postgres réel : (1) 1re connexion SSO = compte viewer créé avec password_hash
 // sentinelle 'sso:oidc' ; (2) rôle/apps de l'IdP font autorité s'ils sont fournis ;
-// (3) sinon le rôle géré dans la console est PRÉSERVÉ. Réplique la logique TS du
+// (3) sinon le rôle géré dans la console est PRÉSERVÉ ; (4) un compte DÉSACTIVÉ n'est
+// jamais réactivé par l'IdP (refus, aucune écriture). Réplique la logique TS du
 // callback (calcul role/apps + upsert), pour garantir le comportement sans IdP.
 //
 // Usage : pg_virtualenv node scripts/verify-oidc-jit.mjs
@@ -21,16 +22,19 @@ create table if not exists audit_log (
 // Réplique de la logique JIT du callback (role/apps puis upsert).
 async function jitLogin(c, mapped) {
   const { rows: [existing] } = await c.query(
-    "select role, apps from console_user where email = $1", [mapped.email]);
+    "select role, apps, active from console_user where email = $1", [mapped.email]);
+  if (existing && existing.active !== true) return { refuse: true };
   const role = mapped.role ?? existing?.role ?? "viewer";
   const apps = mapped.appsProvided ? mapped.apps : (existing?.apps ?? null);
-  await c.query(
+  const { rows } = await c.query(
     `insert into console_user (email, password_hash, role, apps, active, last_login_at)
      values ($1, 'sso:oidc', $2, $3, true, now())
      on conflict (email) do update
-       set role = $2, apps = $3, active = true, last_login_at = now()`,
+       set role = $2, apps = $3, last_login_at = now()
+       where console_user.active
+     returning email`,
     [mapped.email, role, apps]);
-  return { role, apps };
+  return rows.length ? { role, apps } : { refuse: true };
 }
 
 const get = async (c, email) =>
@@ -68,7 +72,14 @@ async function main() {
   u = await get(c, "scoped@mip.fr");
   assert("rôle de l'IdP fait autorité (viewer → admin)", u.role === "admin");
 
-  // 4) audit : aucune écriture ici (le callback logge séparément) — on vérifie juste l'idempotence
+  // 4) un compte désactivé dans la console n'est pas rouvert par l'IdP
+  await c.query("update console_user set active = false where email = 'scoped@mip.fr'");
+  const r = await jitLogin(c, { email: "scoped@mip.fr", role: "admin", apps: null, appsProvided: false });
+  u = await get(c, "scoped@mip.fr");
+  assert("compte désactivé : connexion SSO refusée", r.refuse === true);
+  assert("compte désactivé : reste désactivé", u.active === false);
+
+  // 5) audit : aucune écriture ici (le callback logge séparément) — on vérifie juste l'idempotence
   const { rows: [{ n }] } = await c.query("select count(*)::int n from console_user");
   assert("2 comptes créés (pas de doublon malgré les re-logins)", n === 2);
 

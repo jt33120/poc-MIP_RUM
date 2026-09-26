@@ -1,14 +1,23 @@
-// Dernière partie de la vitrine — « Le détail, ligne par ligne » (plan § 8.2, PS11).
+// Dernière partie du dossier technique — « Le détail, ligne par ligne » (plan § 8.2, PS11).
 //
 // Deux blocs, dans cet ordre.
 //
-// 1. LE DOCUMENT DE COUVERTURE, TEL QUEL : toutes ses capacités, une famille par
-//    `<details>` (les titres « ### 4.x » du document), colonnes « # · Capacité ·
-//    Verdict · Limite ». Tout vient de lib/couverture.ts, l'extraction versionnée du
-//    document : aucune ligne, aucun verdict, aucun décompte n'est écrit ici, et un
-//    nouveau relevé change l'annexe au build suivant. Les cellules sont du Markdown
-//    brut ; lib/markdown-en-ligne.ts en lit le code, le gras et l'italique, et le
-//    rendu ne produit que des éléments React — jamais de HTML injecté.
+// 1. LE REGISTRE DES CAPACITÉS : toutes les lignes du document de couverture, une
+//    famille par `<details>` (les titres « ### 4.x » du document), colonnes « # ·
+//    Capacité · Verdict · Sa limite ». Identifiants, capacités, verdicts et familles
+//    viennent de lib/couverture.ts, l'extraction versionnée du document : aucune
+//    ligne, aucun verdict, aucun décompte n'est écrit ici, et un nouveau relevé change
+//    le registre au build suivant. Le nom d'une capacité est du Markdown brut ;
+//    lib/markdown-en-ligne.ts en lit le code, le gras et l'italique, et le rendu ne
+//    produit que des éléments React — jamais de HTML injecté.
+//
+//    LA LIMITE N'EST PLUS RECOPIÉE (recette du 26/09/2026). La cellule « Limite » du
+//    document est une note de travail : chemins du code, variables d'environnement,
+//    noms de tables, codes de vague — illisible pour un visiteur, et parfois en
+//    retard sur le code (F1 à F3). Chaque ligne renvoie à l'endroit de cette page qui
+//    dit sa limite en français courant, et que les tests confrontent au document : la
+//    carte de « Ce qu'il sait faire » qui la porte, ou le point de « Ce qui reste »
+//    qui la cite. Une ligne sans renvoi fait échouer tests/unit/Annexe.test.tsx.
 //
 // 2. LES SPECS (Specs.tsx), sous une frontière <Suspense> : c'est la seule partie
 //    de la page qui lit la base (l'état du planificateur). Le reste de la page part
@@ -29,9 +38,29 @@
 import { Fragment, Suspense } from "react";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { Partie } from "@/components/presentation/Partie";
+import { ancreDuPoint, idCarte } from "@/components/presentation/SaitFaire";
 import { Specs } from "@/components/presentation/Specs";
 import { RELEVE, VERDICT_LABEL, parFamille, type Capacite } from "@/lib/couverture";
 import { lireEnLigne, type Noeud } from "@/lib/markdown-en-ligne";
+import { POINTS_RESTE } from "@/lib/presentation-reste";
+import { CARTES } from "@/lib/presentation-sait-faire";
+
+/**
+ * Lignes que « Ce qui reste » traite sans les citer en source : F1 (construire le
+ * dépôt) et F3 (les bancs en CI). Leurs défauts sont levés depuis le 24/09/2026, et
+ * R9 le dit (« Une chaîne de livraison qui dit vrai ») ; il ne les cite plus parce
+ * que ce qu'elles disaient manquer est fait (lib/presentation-reste.ts).
+ */
+const TRAITEES_PAR: Readonly<Record<string, string>> = { F1: "R9", F3: "R9" };
+
+/** Où cette page dit la limite d'une ligne du registre, en français courant ; `null` si nulle part. */
+export function renvoiLimite(id: string): { href: string; libelle: string } | null {
+  const carte = CARTES.find((c) => c.limites.some((l) => l.id === id));
+  if (carte) return { href: `#${idCarte(carte.id)}`, libelle: `Ce qu'il sait faire : « ${carte.titre} »` };
+  const point = POINTS_RESTE.find((p) => p.sources.includes(id)) ?? POINTS_RESTE.find((p) => p.id === TRAITEES_PAR[id]);
+  if (point) return { href: `#${ancreDuPoint(point.id)}`, libelle: `Ce qui reste : « ${point.titre} »` };
+  return null;
+}
 
 /** Le Markdown en ligne d'une cellule, rendu en éléments : du texte que React échappe. */
 function Rendu({ noeuds }: { noeuds: Noeud[] }) {
@@ -81,7 +110,7 @@ function TableFamille({ famille, capacites }: { famille: string; capacites: Capa
       role="table"
       className="block w-full border-t border-line text-left text-[13px] leading-relaxed lg:table lg:table-fixed lg:border-collapse"
     >
-      <caption className="sr-only">{famille} : chaque capacité, son verdict et sa limite</caption>
+      <caption className="sr-only">{famille} : chaque capacité, son verdict et où lire sa limite</caption>
       <thead role="rowgroup" className="sr-only lg:not-sr-only">
         {/* `text-left` sur chaque en-tête : le navigateur centre un <th> par une règle
             qui lui est propre, que l'alignement hérité de la table ne corrige pas. */}
@@ -100,12 +129,14 @@ function TableFamille({ famille, capacites }: { famille: string; capacites: Capa
             Verdict
           </th>
           <th role="columnheader" scope="col" className="py-2.5 pl-3 pr-5 text-left font-semibold">
-            Limite
+            Sa limite
           </th>
         </tr>
       </thead>
       <tbody role="rowgroup" className="block divide-y divide-line lg:table-row-group">
-        {capacites.map((c) => (
+        {capacites.map((c) => {
+          const renvoi = renvoiLimite(c.id);
+          return (
           <tr
             key={c.id}
             role="row"
@@ -139,12 +170,22 @@ function TableFamille({ famille, capacites }: { famille: string; capacites: Capa
                 aria-hidden="true"
                 className="mr-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-soft lg:hidden"
               >
-                Limite
+                Sa limite
               </span>
-              <Cellule source={c.limite} />
+              {renvoi ? (
+                <a
+                  href={renvoi.href}
+                  className="rounded-sm text-ink underline decoration-line underline-offset-2 transition hover:decoration-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                >
+                  {renvoi.libelle}
+                </a>
+              ) : (
+                "Non détaillée sur cette page"
+              )}
             </td>
           </tr>
-        ))}
+          );
+        })}
       </tbody>
     </table>
   );
@@ -220,8 +261,8 @@ export function Annexe() {
       id="detail"
       chapeau={
         <>
-          Le document de couverture du {RELEVE}, tel quel : une ligne par capacité, son verdict et
-          sa limite.
+          Le registre des capacités au {RELEVE} : une ligne par capacité, son verdict, et où cette
+          page dit sa limite. Puis les spécifications techniques.
         </>
       }
     >

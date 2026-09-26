@@ -14,7 +14,7 @@ import type { PartGroupe } from "@/components/errors/DetailErreur";
 import { legacyIssueTargets } from "../error-issues";
 import { errorSearchParams } from "../error-view";
 import { analyserFiltres } from "../filtres-ecran";
-import { fmtDate } from "../format";
+import { fmtDate, pluriel } from "../format";
 import { listDeploys } from "../queries-deploys";
 import {
   errorGroupDetail,
@@ -79,7 +79,7 @@ export const chargerErreur = (async (principal, sp, { fingerprint = "" }) => {
         recherche.kind === "ambiguous"
           ? recherche.candidates.map((c) => ({
               app_id: c.app_id,
-              detail: `${c.occurrences.toLocaleString("fr-FR")} occurrence(s) · dernière vue ${fmtDate(c.last_seen)}`,
+              detail: `${pluriel(c.occurrences, "occurrence")} · dernière vue ${fmtDate(c.last_seen)}`,
             }))
           : [{ app_id: recherche.ref.app_id, detail: null }];
       return { etat: "choix_app", fingerprint, f, absentFrom: f.app, choices } as const;

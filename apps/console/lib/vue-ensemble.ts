@@ -314,7 +314,7 @@ export function heuresAngleMort(cellules: readonly { robot: string; reel: string
 
 /** La règle d'un angle mort, écrite avec la borne de `lib/rating.ts` (jamais recopiée). */
 export function regleAngleMort(borneBon: number): string {
-  return `Robot à l'état ok ET LCP p75 réel au-dessus de ${formater("ms", borneBon)} (borne Bon de lib/rating.ts) sur la même heure et la même route.`;
+  return `Robot à l'état ok et LCP p75 réel au-dessus de ${formater("ms", borneBon)} (seuil Bon du LCP) sur la même heure et la même route.`;
 }
 
 // ─────────────────────────────── Constats (§ 5.1.2, zone 4) ───────────────────────────────

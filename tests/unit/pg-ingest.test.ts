@@ -42,9 +42,56 @@ function fakePool(
 }
 
 describe("createPgAuth.checkApiKey", () => {
-  it("requireApiKey=false : jamais de rejet (défaut CI/local)", async () => {
+  it("requireApiKey=false : app inconnue acceptée, sans clé (défaut CI/local)", async () => {
     const auth = createPgAuth(fakePool([]) as never, { requireApiKey: false });
     expect(await auth.checkApiKey("whatever", null)).toBeNull();
+  });
+
+  // Recette du 26/09/2026 : la production tourne en REQUIRE_API_KEY=false, et le
+  // bouton « Désactiver » de l'administration promet que la collecte s'arrête.
+  // Le contrôle de `active` était derrière le court-circuit de `requireApiKey` :
+  // une application désactivée continuait d'écrire.
+  it("requireApiKey=false : une application DÉSACTIVÉE est refusée quand même", async () => {
+    const pool = fakePool([
+      { app_id: "coupee", api_key_hash: null, active: false, allowed_origins: [] },
+      { app_id: "ouverte", api_key_hash: null, active: true, allowed_origins: [] },
+    ]);
+    const auth = createPgAuth(pool as never, { requireApiKey: false });
+    expect(await auth.checkApiKey("coupee", null)).toMatch(/inactive app: coupee/);
+    // Une clé juste ne rouvre pas une application coupée.
+    expect(await auth.checkApiKey("coupee", "n-importe-quoi")).toMatch(/inactive app: coupee/);
+    expect(await auth.checkApiKey("ouverte", null)).toBeNull();
+    expect(await auth.checkApiKey("inconnue", null)).toBeNull();
+  });
+
+  it("la désactivation prend effet au rechargement du registre (60 s au plus), sans lecture de plus", async () => {
+    let t = 0;
+    let active = true;
+    let lectures = 0;
+    // Une COPIE des lignes à chaque lecture, comme `pg` : le cache ne voit donc
+    // la désactivation qu'en relisant la table.
+    const pool = {
+      async query(sql: string) {
+        if (!sql.includes("app_registry")) throw new Error(`unexpected sql: ${sql}`);
+        lectures++;
+        return { rows: [{ app_id: "app1", api_key_hash: null, active, allowed_origins: [] }] };
+      },
+    };
+    const auth = createPgAuth(pool as never, { requireApiKey: false, now: () => t });
+    expect(await auth.checkApiKey("app1", null)).toBeNull();
+    active = false;
+    t = 59_999;
+    expect(await auth.checkApiKey("app1", null)).toBeNull();
+    expect(lectures).toBe(1);
+    t = 60_000;
+    expect(await auth.checkApiKey("app1", null)).toMatch(/inactive app: app1/);
+    expect(lectures).toBe(2);
+  });
+
+  it("registre JAMAIS chargé : fail-open, même pour une application qu'on croirait coupée", async () => {
+    const pool = fakePool([], { registryError: true });
+    const auth = createPgAuth(pool as never, { requireApiKey: false });
+    expect(await auth.checkApiKey("coupee", null)).toBeNull();
   });
 
   it("clé valide acceptée", async () => {
@@ -69,7 +116,7 @@ describe("createPgAuth.checkApiKey", () => {
     ]);
     const auth = createPgAuth(pool as never, { requireApiKey: true });
     expect(await auth.checkApiKey("ghost", "k")).toMatch(/unknown or inactive/);
-    expect(await auth.checkApiKey("off", "k")).toMatch(/unknown or inactive/);
+    expect(await auth.checkApiKey("off", "k")).toMatch(/inactive app: off/);
   });
 
   it("E1-S1 : sous REQUIRE_API_KEY, une app SANS clé est REJETÉE (plus de keyless)", async () => {

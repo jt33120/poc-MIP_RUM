@@ -1,5 +1,9 @@
 // Tableaux de bord — liste (§ 5.24). Rendu serveur.
 //
+// ORDRE DE LA PAGE (recette du 26/09/2026) : les tableaux du périmètre d'abord, la
+// création juste dessous, puis les modèles fournis, repliables — ils ne passent en
+// tête que lorsqu'il n'existe encore aucun tableau.
+//
 // F35 — L'ÉCRAN N'EST PLUS VIDE À LA PREMIÈRE VISITE. Il répond à « Quelles cartes
 // surveiller ensemble ? » par les tableaux du périmètre ET par quatre modèles prêts
 // à cloner (Performance, Erreurs, Usages, Releases ; `lib/dashboard-templates.ts`).
@@ -7,7 +11,7 @@
 //
 // CE QUE LA TABLE DIT DE CHAQUE TABLEAU (W-D2) : son app par son NOM (pas son
 // identifiant), son propriétaire, et le TYPE de ses cartes en puces (« Valeur × 3 »,
-// « v1 : Trafic ») plutôt qu'un nombre — un nombre ne dit pas ce qu'on y lira.
+// « Trafic ») plutôt qu'un nombre — un nombre ne dit pas ce qu'on y lira.
 //
 // LES ÉCRITURES NE SONT PROPOSÉES QU'À QUI PEUT ÉCRIRE (V9). Sans app où créer, ou
 // en session de démonstration, ni « Cloner » ni formulaire de création ne sont
@@ -19,7 +23,7 @@ import { FilterProblemNotice, FiltersNotAppliedNote } from "@/components/FilterP
 import { PageHeader } from "@/components/PageHeader";
 import { ModeleCarte } from "@/components/dashboards/ModeleCarte";
 import { TableDefilante } from "@/components/TableDefilante";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, pluriel } from "@/lib/format";
 import { type SearchParams } from "@/lib/filters";
 import { chargerTableaux } from "@/lib/chargeurs/tableaux";
 import { chargerEcran } from "@/lib/ecran";
@@ -35,7 +39,7 @@ const REFUS_CREATION: Record<string, { champ: "name" | "app_id" | "modele"; text
   "nom-vide": { champ: "name", texte: "Le nom est vide : rien n’a été créé." },
   refus: {
     champ: "app_id",
-    texte: "Création refusée : cette app n’est pas dans votre périmètre d’écriture. Rien n’a été créé.",
+    texte: "Création refusée : cette application n’est pas dans votre périmètre d’écriture. Rien n’a été créé.",
   },
   "modele-inconnu": { champ: "modele", texte: "Modèle inconnu : rien n’a été cloné." },
 };
@@ -77,15 +81,160 @@ export default async function Dashboards({
         </p>
       )}
 
-      {/* ----- W-D1 : modèles fournis ----- */}
-      <section aria-labelledby="modeles-tableaux-titre" className="mb-6" data-testid="modeles-tableaux">
-        <h2 id="modeles-tableaux-titre" className="mb-1 text-sm font-semibold text-ink">
-          Modèles fournis
+      {/* ----- W-D2 : tableaux du périmètre, EN PREMIER (recette du 26/09/2026) : les
+          quatre modèles et leurs boutons orange occupaient le haut de page, et les
+          tableaux de l'utilisateur venaient dessous (vers 1 300 px à 390 px). ----- */}
+      <section aria-labelledby="tableaux-titre" className="mb-8">
+        <h2 id="tableaux-titre" className="mb-2 text-sm font-semibold text-ink">
+          Tableaux de ce périmètre
         </h2>
-        <p className="mb-3 text-xs text-ink-soft">
-          Chaque modèle est une suite d’analyses de l’Explorer rangées par question. Le cloner crée un tableau à vous,
-          dans l’app choisie ; aucun chiffre n’est lu avant de l’ouvrir.
-        </p>
+        {dashboards.length === 0 ? (
+          // Liste vide : le message seul, sans en-têtes de tableau à faire défiler.
+          <p role="status" className="card mb-3 px-4 py-6 text-center text-sm text-ink-soft">
+            Aucun tableau de bord dans ce périmètre : créez-en un, ou partez d’un modèle ci-dessous.
+          </p>
+        ) : (
+          // Défiler, de façon signalée : la colonne « Propriétaire » (P6.5) fait cinq
+          // colonnes, qui ne tiennent pas à 390 px. Les masquer cacherait qui possède
+          // quoi. `min-w-[40rem]` : sans largeur plancher, le tableau s'écrasait au
+          // lieu de défiler (« Mini-site de démo » sur 4 lignes, « Mise à jour »
+          // invisible — recette 26/09). La zone de TableDefilante reste `relative`.
+          <TableDefilante className="card mb-3" label="Tableaux de ce périmètre">
+            <table className="w-full min-w-[40rem] text-sm" data-testid="tableaux-perimetre">
+              <caption className="sr-only">Tableaux de bord lisibles dans ce périmètre</caption>
+              <thead className="whitespace-nowrap">
+                <tr>
+                  <th scope="col" className="th text-left">Nom</th>
+                  <th scope="col" className="th text-left">Application</th>
+                  <th scope="col" className="th text-left">Propriétaire</th>
+                  <th scope="col" className="th text-left">Cartes</th>
+                  <th scope="col" className="th text-right">Mise à jour</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboards.map((d) => (
+                  <tr key={d.id} className="border-t border-line align-top hover:bg-panel2">
+                    <td className="px-3 py-2 font-medium">
+                      <Link href={hrefWithQuery(`/dashboards/${d.id}`, ecran.query)} className="text-accent hover:underline">
+                        {d.name}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 text-ink-soft" data-testid="tableau-app">
+                      {d.app ?? "toutes les applications"}
+                    </td>
+                    <td className="px-3 py-2 text-ink-soft">{d.proprietaire}</td>
+                    <td className="px-3 py-2">
+                      {/* F37 : un titre de section n'est pas une carte — ni compté, ni en puce. */}
+                      {d.cartes === 0 ? (
+                        <span className="text-xs text-ink-soft">aucune carte</span>
+                      ) : (
+                        <ul className="flex min-w-48 flex-wrap gap-1" aria-label={pluriel(d.cartes, "carte")}>
+                          {d.puces.map((p) => (
+                            <li key={p.libelle} className="rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-soft">
+                              {p.libelle}
+                              {p.n > 1 ? ` × ${p.n}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs tabular-nums text-ink-soft">{fmtDate(d.updated_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableDefilante>
+        )}
+
+        {/* ----- W-D3 : création d'un tableau vide, juste sous la liste (elle était
+            repliée tout en bas, après les modèles) ----- */}
+        {peutCreer ? (
+          <details className="card" open={!dashboards.length || (refus !== undefined && refus.champ !== "modele")}>
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-accent transition hover:text-ink">
+              + Nouveau tableau de bord
+            </summary>
+            <form
+              action={createDashboardAction}
+              data-testid="creer-tableau"
+              className="flex flex-wrap items-start gap-3 border-t border-line p-4"
+            >
+              <input type="hidden" name="ctx" value={ctx} />
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
+                Nom
+                <input
+                  name="name"
+                  required
+                  placeholder="Mon tableau de bord"
+                  aria-invalid={refus?.champ === "name" ? true : undefined}
+                  aria-describedby={refus?.champ === "name" ? "creation-erreur-nom" : undefined}
+                  className={`${INPUT_CLASS} w-56 max-w-full`}
+                />
+                {refus?.champ === "name" && (
+                  <span id="creation-erreur-nom" role="alert" data-testid="creation-refus" className="text-xs font-medium text-bad-ink">
+                    {refus.texte}
+                  </span>
+                )}
+              </label>
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
+                Application
+                <select
+                  name="app_id"
+                  defaultValue={ecran.appFiltre ?? ""}
+                  aria-invalid={refus?.champ === "app_id" ? true : undefined}
+                  aria-describedby={refus?.champ === "app_id" ? "creation-erreur-app" : undefined}
+                  className={`${INPUT_CLASS} max-w-full`}
+                >
+                  {canCreateGlobal && <option value="">Toutes les applications</option>}
+                  {appsCreables.map((a) => (
+                    <option key={a.app_id} value={a.app_id}>
+                      {a.name || a.app_id}
+                    </option>
+                  ))}
+                </select>
+                {refus?.champ === "app_id" && (
+                  <span id="creation-erreur-app" role="alert" data-testid="creation-refus" className="max-w-xs text-xs font-medium text-bad-ink">
+                    {refus.texte}
+                  </span>
+                )}
+              </label>
+              <button type="submit" data-testid="create-dashboard" className="btn-accent self-end">
+                Créer
+              </button>
+            </form>
+          </details>
+        ) : (
+          <p className="text-xs text-ink-soft" data-testid="creation-indisponible">
+            {ecran.demo ? "Session de démonstration : lecture seule." : "Création réservée aux comptes autorisés sur une application."}
+          </p>
+        )}
+      </section>
+
+      {/* ----- W-D1 : modèles fournis, APRÈS les tableaux, repliables : ouverts d'office
+          tant que le périmètre n'a aucun tableau (ils sont alors le point de départ),
+          repliés ensuite (ils ne font plus que suggérer). ----- */}
+      <details
+        className="group/modeles min-w-0"
+        data-testid="modeles-tableaux"
+        open={!dashboards.length || refus?.champ === "modele"}
+      >
+        <summary className="mb-3 cursor-pointer list-none rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf [&::-webkit-details-marker]:hidden">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 12 12"
+              className="h-3 w-3 shrink-0 fill-current text-ink-soft transition-transform group-open/modeles:rotate-90 motion-reduce:transition-none"
+            >
+              <path d="M4 2l5 4-5 4z" />
+            </svg>
+            Modèles fournis
+            <span className="rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink-soft">
+              {MODELES_TABLEAUX.length}
+            </span>
+          </h2>
+          <span className="mt-0.5 block pl-5 text-xs text-ink-soft">
+            Des tableaux prêts à l’emploi : cloner un modèle en crée une copie à vous, dans l’application choisie.
+          </span>
+        </summary>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {MODELES_TABLEAUX.map((m) => (
             <ModeleCarte
@@ -102,128 +251,7 @@ export default async function Dashboards({
             />
           ))}
         </div>
-      </section>
-
-      {/* ----- W-D2 : tableaux du périmètre ----- */}
-      <h2 className="mb-2 text-sm font-semibold text-ink">Tableaux de ce périmètre</h2>
-      {/* Défiler, de façon signalée : la colonne « Propriétaire » (P6.5) fait cinq
-          colonnes, qui ne tiennent pas à 390 px. Les masquer cacherait qui possède
-          quoi. `min-w-[40rem]` : sans largeur plancher, le tableau s'écrasait au lieu
-          de défiler (« Mini-site de démo » sur 4 lignes, « Mise à jour » invisible —
-          recette 26/09). La zone de TableDefilante reste `relative` (piège 16). */}
-      <TableDefilante className="card mb-6" label="Tableaux de ce périmètre">
-        <table className="w-full min-w-[40rem] text-sm" data-testid="tableaux-perimetre">
-          <caption className="sr-only">Tableaux de bord lisibles dans ce périmètre</caption>
-          <thead className="whitespace-nowrap">
-            <tr>
-              <th scope="col" className="th text-left">Nom</th>
-              <th scope="col" className="th text-left">App</th>
-              <th scope="col" className="th text-left">Propriétaire</th>
-              <th scope="col" className="th text-left">Cartes</th>
-              <th scope="col" className="th text-right">Mise à jour</th>
-            </tr>
-          </thead>
-          <tbody>
-            {dashboards.map((d) => (
-              <tr key={d.id} className="border-t border-line align-top hover:bg-panel2">
-                <td className="px-3 py-2 font-medium">
-                  <Link href={hrefWithQuery(`/dashboards/${d.id}`, ecran.query)} className="text-accent hover:underline">
-                    {d.name}
-                  </Link>
-                </td>
-                <td className="px-3 py-2 text-ink-soft" data-testid="tableau-app">
-                  {d.app ?? "toutes les apps"}
-                </td>
-                <td className="px-3 py-2 text-ink-soft">{d.proprietaire}</td>
-                <td className="px-3 py-2">
-                  {/* F37 : un titre de section n'est pas une carte — ni compté, ni en puce. */}
-                  {d.cartes === 0 ? (
-                    <span className="text-xs text-ink-soft">aucune carte</span>
-                  ) : (
-                    <ul className="flex min-w-48 flex-wrap gap-1" aria-label={`${d.cartes} cartes`}>
-                      {d.puces.map((p) => (
-                        <li key={p.libelle} className="rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-soft">
-                          {p.libelle}
-                          {p.n > 1 ? ` × ${p.n}` : ""}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right text-xs tabular-nums text-ink-soft">{fmtDate(d.updated_at)}</td>
-              </tr>
-            ))}
-            {!dashboards.length && (
-              <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-sm text-ink-soft">
-                  Aucun tableau de bord dans ce périmètre. Cloner un modèle ci-dessus, ou en créer un vide.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </TableDefilante>
-
-      {/* ----- W-D3 : création d'un tableau vide ----- */}
-      {peutCreer ? (
-        <details className="card" open={!dashboards.length || (refus !== undefined && refus.champ !== "modele")}>
-          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-soft transition hover:text-ink">
-            + Nouveau tableau de bord
-          </summary>
-          <form
-            action={createDashboardAction}
-            data-testid="creer-tableau"
-            className="flex flex-wrap items-start gap-3 border-t border-line p-4"
-          >
-            <input type="hidden" name="ctx" value={ctx} />
-            <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-              Nom
-              <input
-                name="name"
-                required
-                placeholder="Mon tableau de bord"
-                aria-invalid={refus?.champ === "name" ? true : undefined}
-                aria-describedby={refus?.champ === "name" ? "creation-erreur-nom" : undefined}
-                className={`${INPUT_CLASS} w-56 max-w-full`}
-              />
-              {refus?.champ === "name" && (
-                <span id="creation-erreur-nom" role="alert" data-testid="creation-refus" className="text-xs font-medium text-bad-ink">
-                  {refus.texte}
-                </span>
-              )}
-            </label>
-            <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-              App
-              <select
-                name="app_id"
-                defaultValue={ecran.appFiltre ?? ""}
-                aria-invalid={refus?.champ === "app_id" ? true : undefined}
-                aria-describedby={refus?.champ === "app_id" ? "creation-erreur-app" : undefined}
-                className={`${INPUT_CLASS} max-w-full`}
-              >
-                {canCreateGlobal && <option value="">(toutes apps)</option>}
-                {appsCreables.map((a) => (
-                  <option key={a.app_id} value={a.app_id}>
-                    {a.name || a.app_id}
-                  </option>
-                ))}
-              </select>
-              {refus?.champ === "app_id" && (
-                <span id="creation-erreur-app" role="alert" data-testid="creation-refus" className="max-w-xs text-xs font-medium text-bad-ink">
-                  {refus.texte}
-                </span>
-              )}
-            </label>
-            <button type="submit" data-testid="create-dashboard" className="btn-accent self-end">
-              Créer
-            </button>
-          </form>
-        </details>
-      ) : (
-        <p className="text-xs text-ink-soft" data-testid="creation-indisponible">
-          {ecran.demo ? "Session de démonstration : lecture seule." : "Création réservée aux comptes autorisés sur une app."}
-        </p>
-      )}
+      </details>
     </div>
   );
 }

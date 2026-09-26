@@ -56,7 +56,7 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `LOG_LEVEL` | non | `info` | |
 | `METRICS_TOKEN` | non (secret, ≥ 32 car.) | — | jeton de `/ready` et `/metrics` ; absent : 404 |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non, **à poser** | 10 pour le kit (qui avertit sur Railway) ; Railway, lui, draine 0 s par défaut | délai SIGTERM → SIGKILL ; 15 visé, posé par l'IaC |
-| `REQUIRE_API_KEY` | non | `false` | `true` : toute app inconnue, inactive ou **sans clé** prend 403. **Provisionner d'abord** (ci-dessous). Booléen strict : `ture` refuse le démarrage. |
+| `REQUIRE_API_KEY` | non | `false` | `true` : toute app inconnue ou **sans clé** prend 403. Une app **inactive** prend 403 quel que soit ce réglage. **Provisionner d'abord** (ci-dessous). Booléen strict : `ture` refuse le démarrage. |
 | `RATE_LIMIT_PER_MIN` | non | 600 | plafond par app et par minute (compteur durable en base) |
 | `IDENTITY_HASH_SECRET` | non (secret, ≥ 32 car.) | — | clé HMAC de `mip.identity.*`. Absente : l'identité est **retirée**, jamais stockée brute (`identity: "absente"`). |
 | `IDENTITY_HASH_FINGERPRINT` | **oui dès que le secret est posé** | — | empreinte du secret (12 hex). Absente avec le secret : refus de démarrer. Discordante : l'identité est retirée, `/ready` refusé, erreur au journal. |

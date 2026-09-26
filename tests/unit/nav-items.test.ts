@@ -103,7 +103,7 @@ describe("CATEGORIES (§ 2.2)", () => {
     expect(libelles["/goals"]).toBe("Conversions");
     expect(libelles["/forecast"]).toBe("Tendances");
     expect(libelles["/events"]).toBe("Journal");
-    expect(libelles["/correlation"]).toBe("Corrélation synthétique ↔ RUM");
+    expect(libelles["/correlation"]).toBe("Robot et réel");
   });
 
   it("aucune route ne change d'adresse : chaque lien mène à une page existante", () => {

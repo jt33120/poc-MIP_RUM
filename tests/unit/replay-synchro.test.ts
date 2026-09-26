@@ -115,11 +115,11 @@ describe("F47 — barre, annonces, segments ignorés", () => {
 
   it("« à l'instant de l'erreur » seulement si une erreur tombe à cet instant (à la seconde près)", () => {
     const reperes = [{ t: 5_000, ton: "erreur" as const, libelle: "TypeError" }];
-    expect(messagePosition("url", 5_400, reperes, 0)).toBe("Replay positionné à l'instant de l'erreur");
+    expect(messagePosition("url", 5_400, reperes, 0)).toBe("Rejeu positionné à l'instant de l'erreur");
     // Un lien venu d'une trace n'est pas une erreur.
-    expect(messagePosition("url", 9_000, reperes, 0)).toMatch(/^Replay positionné à l'instant demandé \(\+9/);
-    expect(messagePosition("ligne", 9_000, reperes, 0)).toMatch(/^Replay positionné sur la ligne choisie \(\+9/);
-    expect(messagePosition("marqueur", 5_000, reperes, 0)).toMatch(/^Replay positionné sur le repère choisi/);
+    expect(messagePosition("url", 9_000, reperes, 0)).toMatch(/^Rejeu positionné à l'instant demandé \(\+9/);
+    expect(messagePosition("ligne", 9_000, reperes, 0)).toMatch(/^Rejeu positionné sur la ligne choisie \(\+9/);
+    expect(messagePosition("marqueur", 5_000, reperes, 0)).toMatch(/^Rejeu positionné sur le repère choisi/);
   });
 
   it("`ignores` : un entier positif, sinon 0 ; le texte s'accorde", () => {

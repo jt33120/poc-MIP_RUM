@@ -5,7 +5,7 @@
 //     `positioned`, source `ligne`) et la ligne devient `aria-current="time"` ;
 //   - un clic sur un repère de la barre place la tête ; le lien d'instant d'une ligne
 //     place la tête SANS recharger et garde `?at=` dans l'adresse ;
-//   - `?tab=replay&at=<erreur>` : « Replay positionné à l'instant de l'erreur » ;
+//   - `?tab=replay&at=<erreur>` : « Rejeu positionné à l'instant de l'erreur » ;
 //   - l'en-tête de couverture est écrit (2 minutes, 1 Mo, masquage par défaut) ; un
 //     segment illisible est DIT (B36) ; vitesses 1× / 2× / 4× et saut d'inactivité ;
 //   - une lecture en échec propose « Réessayer », qui relit ;
@@ -183,7 +183,7 @@ test.describe("F47 — Détail de session : rejeu synchronisé", () => {
     const position = page.getByTestId("replay-offset");
     await expect(position).toHaveAttribute("data-offset-state", "positioned");
     await expect(position).toHaveAttribute("data-offset-source", "ligne");
-    await expect(position).toContainText("Replay positionné sur la ligne choisie");
+    await expect(position).toContainText("Rejeu positionné sur la ligne choisie");
     await expect(ligneErreur(page)).toHaveAttribute("aria-current", "time");
   });
 
@@ -211,12 +211,12 @@ test.describe("F47 — Détail de session : rejeu synchronisé", () => {
     await expect(page.getByTestId("replay-player")).toHaveAttribute("data-state", "ready");
   });
 
-  test("?tab=replay&at=<erreur> : « Replay positionné à l'instant de l'erreur »", async ({ page }) => {
+  test("?tab=replay&at=<erreur> : « Rejeu positionné à l'instant de l'erreur »", async ({ page }) => {
     await connexion(page);
     await page.goto(adresse(`&tab=replay&at=${ERREUR}`), { waitUntil: "domcontentloaded" });
     await lecteurPret(page);
     await expect(page.getByTestId("replay-offset")).toHaveAttribute("data-offset-state", "positioned");
-    await expect(page.getByText("Replay positionné à l'instant de l'erreur")).toBeVisible();
+    await expect(page.getByText("Rejeu positionné à l'instant de l'erreur")).toBeVisible();
   });
 
   test("lecture en échec : « Réessayer » relit les segments", async ({ page }) => {

@@ -132,8 +132,8 @@ test("onboarding : créer un client -> clé one-shot -> snippet -> données reç
   await expect(snippetBlock).toContainText("COLLE_ICI_LA_CLE_API");
   await expect(snippetBlock).not.toContainText(key);
 
-  // checklist : tout en attente, badge « intégration en cours »
-  await expect(page.getByTestId("live-badge")).toContainText("intégration en cours");
+  // checklist : tout en attente, badge « Intégration en cours »
+  await expect(page.getByTestId("live-badge")).toContainText("Intégration en cours");
 
   // recharge sans le token : la clé n'est plus affichable (one-shot)
   await page.goto(page.url());
@@ -168,18 +168,23 @@ test("onboarding : créer un client -> clé one-shot -> snippet -> données reç
 
   // 5. la checklist passe au vert (snippet + trafic => live)
   await page.goto(`http://localhost:3000/admin/customers/${APP_ID}`);
-  await expect(page.getByTestId("live-badge")).toContainText("live");
+  await expect(page.getByTestId("live-badge")).toContainText("Données reçues");
   const checklist = page.getByTestId("onboarding-checklist");
   await expect(checklist).toContainText("Premières Web Vitals reçues");
-  await expect(checklist.locator("text=✅").first()).toBeVisible();
+  // L'état « fait » se lit par une icône et un mot, plus par un émoji (recette du 26/09/2026).
+  await expect(checklist.locator('[data-etat="done"]').first()).toBeVisible();
 });
 
-test("onboarding : lien « accès client » préremplit le viewer scopé", async ({ page }) => {
+test("onboarding : lien « accès client » préremplit le compte en lecture seule", async ({ page }) => {
   await loginConsole(page);
   await page.goto(`http://localhost:3000/admin/customers/${APP_ID}`);
-  await page.getByRole("link", { name: /compte viewer/i }).click();
+  await page.getByRole("link", { name: /compte en lecture seule/i }).click();
   await page.waitForURL((u) => u.pathname === "/admin/users");
-  await expect(page.locator('input[name="apps"]')).toHaveValue(APP_ID);
+  // Les applications se choisissent (recette du 26/09/2026) : celle de la fiche est
+  // cochée, et la portée « certaines applications » retenue — jamais « toutes ».
+  await expect(page.locator(`input[name="apps"][value="${APP_ID}"]`)).toBeChecked();
+  await expect(page.locator('input[name="portee"][value="liste"]')).toBeChecked();
+  await expect(page.locator('input[name="portee"][value="toutes"]')).not.toBeChecked();
 });
 
 // Recette du 26/09/2026 (revues E et F) : les gestes qui ne se défont pas se

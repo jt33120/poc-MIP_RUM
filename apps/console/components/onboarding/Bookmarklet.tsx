@@ -1,8 +1,9 @@
 "use client";
-// Bouton « bookmarklet » à glisser dans la barre de favoris. React refuse de
-// rendre un href `javascript:` (sécurité) — on le pose donc impérativement via
-// ref, ce qui préserve le drag-to-bookmark. Un clic dans l'app est neutralisé
-// (le bookmarklet n'a de sens que collé dans un favori et lancé sur le site cible).
+// Bouton « favori de test » (bookmarklet) à glisser dans la barre de favoris. React
+// refuse de rendre un href `javascript:` (sécurité) — on le pose donc impérativement
+// via ref, ce qui préserve le glisser-déposer vers les favoris. Un clic dans l'app
+// est neutralisé (le favori n'a de sens que lancé sur le site cible). Son libellé
+// devient le nom du favori : court, sans émoji (recette du 26/09/2026).
 import { useEffect, useRef, useState } from "react";
 
 export function Bookmarklet({ code, label }: { code: string; label: string }) {
@@ -33,9 +34,9 @@ export function Bookmarklet({ code, label }: { code: string; label: string }) {
         title="Glissez-moi dans votre barre de favoris"
         className="btn-accent cursor-grab select-none"
       >
-        📊 Monitorer ce site
+        MIP RUM · mesurer cette page
       </a>
-      <span className="text-xs text-ink-faint">← glissez ce bouton dans votre barre de favoris</span>
+      <span className="text-xs text-ink-soft">← glissez ce bouton dans votre barre de favoris</span>
       <button type="button" onClick={copy} className="btn-ghost">
         {copied ? "Copié ✓" : "Copier le code"}
       </button>

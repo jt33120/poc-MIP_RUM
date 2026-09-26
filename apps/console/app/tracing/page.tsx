@@ -42,8 +42,8 @@ import { chargerTracing } from "@/lib/chargeurs/tracing";
 import { chargerEcran } from "@/lib/ecran";
 import { bucketStarts, hrefWithQuery, paramReader, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
 import { grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
-import { ancreAppel, lireAppel, type Appel } from "@/lib/tracing-ancres";
-import { APPELS_HERO, fragmentVers, libelleAppel, lignesHero, texteDecomposition } from "@/lib/tracing-hero";
+import { TRACES_PAR_APPEL, ancreAppel, lireAppel, type Appel } from "@/lib/tracing-ancres";
+import { APPELS_HERO, fragmentVers, libelleAppel, lignesHero, texteDecomposition, tracesParAppel } from "@/lib/tracing-hero";
 import { gabaritZoom, ligneIgnoree, lireComparaison } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { fmtPlage } from "@/lib/format";
@@ -296,7 +296,10 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
               sensMeilleur="bas"
               raisonNull="aucun appel suivi jusqu'au serveur sur la plage"
               couverture={{ n: c.correlated, unite: "appels suivis" }}
-              methode="Porte sur les seuls appels suivis : ce n'est pas la même population que la durée vue du navigateur."
+              // Dit sous le chiffre, pas seulement derrière « ? » : un p75 serveur au-dessus
+              // du p75 navigateur semblait impossible (recette du 26/09/2026).
+              lecture="autre population que la tuile navigateur : il peut la dépasser"
+              methode="Porte sur les seuls appels suivis jusqu'au serveur : ce n'est pas la même population que la durée vue du navigateur, qui compte aussi les appels sans réponse serveur retrouvée (tiers, middleware absent)."
               precedent={precedent(p?.back_p75)}
               reference={refTuile}
               couverturePrecedente={couvT(couvDurees, p?.correlated ?? null)}
@@ -436,6 +439,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
         meta={
           <>
             <span>20 appels les plus longs de la plage ({plage})</span>
+            {!appel && <span>{TRACES_PAR_APPEL} traces au plus par appel</span>}
             <span>serveur et trajet calculés trace par trace</span>
             {appel && (
               <Link href={sansFiltreAppel} className="text-perf underline-offset-2 hover:underline" data-testid="retirer-appel">
@@ -467,9 +471,23 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                 </tr>
               </thead>
               <tbody>
-                {lentes.data.map((t) => (
-                  <SlowRow key={t.span_id} t={t} query={query} />
-                ))}
+                {tracesParAppel(lentes.data, appel ? Infinity : TRACES_PAR_APPEL).map((l) =>
+                  l.kind === "trace" ? (
+                    <SlowRow key={l.trace.span_id} t={l.trace} query={query} />
+                  ) : (
+                    <tr key={`reste-${l.appel.method} ${l.appel.url}`} className="border-t border-line/60" data-testid="traces-repliees">
+                      <td colSpan={7} className="px-4 py-2 text-xs text-ink-soft">
+                        {/* Le reste est compté sur TOUTE la plage (`traces_appel`, lu en SQL), plus
+                            seulement parmi les 20 lues. */}
+                        {l.n === 1 ? "Une autre trace" : `${formater("count", l.n)} autres traces`} de{" "}
+                        <span className="font-mono">{libelleAppel(l.appel)}</span> sur la période :{" "}
+                        <Link href={hrefTraces(l.appel)} className="font-medium text-perf underline-offset-2 hover:underline">
+                          voir ses traces les plus lentes
+                        </Link>
+                      </td>
+                    </tr>
+                  ),
+                )}
               </tbody>
             </table>
           </TableDefilante>

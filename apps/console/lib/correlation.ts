@@ -112,11 +112,13 @@ export const LIBELLE_ETAT_ROBOT: Record<string, string> = {
 
 /**
  * États de la frise robot (CR7-b) : la FORME porte l'état (hauteur, glyphe,
- * contour, hachures), la couleur ne fait que doubler. `ok` est neutre : un robot
- * « ok » n'est pas un verdict « Bon » (R-S), rien ici ne se lit comme un seuil.
+ * contour, hachures), la couleur ne fait que doubler. `ok` est en vert : gris, il
+ * ne se reliait pas au vert qui dit « tout va bien » partout ailleurs (recette du
+ * 26/09/2026). Ce n'est pas pour autant un verdict « Bon » sur une mesure : la frise
+ * n'a ni bande ni échelle de valeur.
  */
 export const ETATS_FRISE_ROBOT: EtatDef[] = [
-  { cle: "ok", libelle: LIBELLE_ETAT_ROBOT.ok, forme: "basse", ton: "neutre" },
+  { cle: "ok", libelle: LIBELLE_ETAT_ROBOT.ok, forme: "basse", ton: "good" },
   { cle: "warn", libelle: LIBELLE_ETAT_ROBOT.warn, forme: "moyenne", glyphe: "!", ton: "warn" },
   { cle: "incident", libelle: LIBELLE_ETAT_ROBOT.incident, forme: "haute", glyphe: "×", ton: "bad" },
   { cle: "inconnu", libelle: LIBELLE_ETAT_ROBOT.inconnu, forme: "contour", ton: "vide" },
@@ -171,8 +173,8 @@ export function heuresAngleMort(cellules: readonly CelluleConcordance[]): number
  */
 export function regleAngleMort(effectifMin: number): string {
   return (
-    `Robot à l'état ok ET LCP p75 réel au-dessus de ${fmtBorne("LCP", THRESHOLDS.LCP[0])} ` +
-    `(borne Bon de lib/rating.ts) sur la même heure et la même route, heures d'au moins ${effectifMin} mesures.`
+    `Robot à l'état ok et LCP p75 réel au-dessus de ${fmtBorne("LCP", THRESHOLDS.LCP[0])} ` +
+    `(seuil Bon du LCP) sur la même heure et la même route, heures d'au moins ${effectifMin} mesures.`
   );
 }
 

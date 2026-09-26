@@ -31,7 +31,7 @@ import type { SearchParams } from "@/lib/filters";
 import { type SectionLue } from "@/lib/lecture";
 import { chargerUx } from "@/lib/chargeurs/ux";
 import { chargerEcran } from "@/lib/ecran";
-import { decouperUrlScript, fmtVital } from "@/lib/format";
+import { accord, decouperUrlScript, fmtVital, pluriel } from "@/lib/format";
 import { formater } from "@/lib/fmt-ids";
 import { libelleSeauComplet } from "@/lib/series";
 import { pointsVital } from "@/lib/vue-ensemble";
@@ -64,7 +64,21 @@ export const dynamic = "force-dynamic";
 /** Question de l'écran (P1, § 5.4). */
 const QUESTION = "Quels gestes échouent, restent sans réponse ou font attendre ?";
 
-const LIBELLES_SIGNAL: Record<TypeSignal, string> = { rage: "Rage clicks", dead: "Dead clicks", error: "Error clicks" };
+// En français (recette du 26/09/2026 : « Rage clicks », « Dead clicks » à l'écran), et
+// les MÊMES mots que le détail de session et la Satisfaction : « sans réaction ».
+const LIBELLES_SIGNAL: Record<TypeSignal, string> = {
+  rage: "Clics de rage",
+  dead: "Clics sans réaction",
+  error: "Clics suivis d'erreur",
+};
+/** Le même signal, au singulier, pour « au moins un clic de rage ». */
+const SIGNAL_SINGULIER: Record<TypeSignal, string> = {
+  rage: "clic de rage",
+  dead: "clic sans réaction",
+  error: "clic suivi d'erreur",
+};
+/** Colonnes du classement : courtes, la tuile porte le nom complet. */
+const COLONNES_SIGNAL = ["De rage", "Sans réaction", "Suivis d'erreur"] as const;
 
 /**
  * Sélecteurs étiquetés dans le nuage (§ 5.4.2) : les cinq points les plus hauts, ceux
@@ -222,7 +236,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
       {/* ── Zone 3 : règles de détection, repliées à une ligne ── */}
       <details className="card mb-6 px-4 py-3 text-sm" data-testid="regles-detection">
         <summary className="cursor-pointer select-none font-medium text-ink">
-          Règles de détection : rage, dead et error clicks (constantes du SDK)
+          Règles de détection des clics de rage, sans réaction et suivis d&apos;erreur (réglages du capteur)
         </summary>
         <ul className="mt-2 space-y-1 text-ink-soft">
           {reglesFrustration().map((r) => (
@@ -418,7 +432,7 @@ function HeroRoutes({
         )}
       </nav>
       <ImpactTable
-        titre={`${titre} — part des sessions de la route avec au moins un ${type ? LIBELLES_SIGNAL[type].toLowerCase().replace(/s$/, "") : "signal"}`}
+        titre={`${titre} — part des sessions de la route avec au moins un ${type ? SIGNAL_SINGULIER[type] : "signal"}`}
         tri={tri}
         triHref={{
           gravite: hrefUx({ tri: null }),
@@ -435,18 +449,19 @@ function HeroRoutes({
                 libelle: "Ensemble (toutes routes)",
                 valeurs: {
                   pilote: formater("pct", ensemble.taux),
-                  touchees: `${formater("count", ensemble.touchees)} sur ${formater("count", ensemble.couples)} couples session × route`,
+                  // Une session compte une fois PAR ROUTE vue : la somme n'est pas un nombre de sessions.
+                  touchees: `${formater("count", ensemble.touchees)} sur ${formater("count", ensemble.couples)} (une session comptée par route vue)`,
                 },
               }
         }
         referenceRaison={`aucune session avec vue sur ${label}`}
         lignes={impactLignes}
-        colonnes={["Rage", "Dead", "Error", "Sessions touchées"]}
+        colonnes={[...COLONNES_SIGNAL, "Sessions touchées"]}
         unitePilote="pct"
         volumeLibelle="Sessions de la route"
         groupes={lignes.length}
         tronque={false}
-        notice={`Route normalisée au moment de la vue. Population : sessions dont le capteur émet des signaux de frustration, ${label}. « Ensemble » = sessions touchées sur la route / sessions qui l'ont vue, sommées sur toutes les routes (mêmes couples session × route que les lignes).${type ? ` Le classement ne retient que les ${signaux} ; les colonnes Rage, Dead et Error comptent tous les signaux de la route.` : ""}${faibles > 0 ? ` ${faibles} route(s) vue(s) par moins de 30 sessions, rangée(s) en fin.` : ""}`}
+        notice={`Route normalisée au moment de la vue. Population : sessions dont le capteur émet des signaux de frustration, ${label}. « Ensemble » = sessions touchées sur la route / sessions qui l'ont vue, sommées sur toutes les routes, comme les lignes.${type ? ` Le classement ne retient que les ${signaux} ; les colonnes de clics comptent tous les signaux de la route.` : ""}${faibles > 0 ? ` ${pluriel(faibles, "route vue", "routes vues")} par moins de 30 sessions, ${accord(faibles, "rangée", "rangées")} en fin.` : ""}`}
       />
       <p className="mt-2 text-xs text-ink-soft">
         Les {signaux} eux-mêmes, route par route :{" "}
@@ -584,16 +599,18 @@ function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof
           <caption className="sr-only">Éléments responsables de l&apos;INP sur {label}</caption>
           <thead className="bg-panel2">
             <tr>
-              <th scope="col" className="th">Élément (interactionTarget)</th>
+              <th scope="col" className="th">Élément cliqué</th>
               <th scope="col" className="th text-right">Interactions</th>
-              <th scope="col" className="th text-right">INP p75</th>
-              <th scope="col" className="th text-right">Pire</th>
+              <th scope="col" className="th whitespace-nowrap text-right">INP p75</th>
+              <th scope="col" className="th whitespace-nowrap text-right">Pire</th>
             </tr>
           </thead>
           <tbody>
             {inp.data.map((o) => (
               <tr key={o.target} className="border-t border-line/60">
-                <td className="max-w-xs truncate px-4 py-2 font-mono text-xs text-ink" title={o.target}>
+                {/* Plus étroite sous 640 px : à 390 px, le sélecteur poussait hors de l'écran
+                    les deux seuls chiffres utiles, INP p75 et « Pire ». */}
+                <td className="max-w-[9rem] truncate px-4 py-2 font-mono text-xs text-ink sm:max-w-xs" title={o.target}>
                   {o.target}
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums text-ink-soft">{o.n.toLocaleString("fr-FR")}</td>
@@ -627,20 +644,34 @@ function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof
  * blocage cumulé. Les barres portent la série principale, rien d'autre.
  */
 function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<ScriptBloquant[]>; label: string }) {
-  const titre = "Scripts qui bloquent le fil principal (Long Animation Frames)";
+  const titre = "Scripts qui bloquent le fil principal (trames longues)";
   if (!scripts.ok) return <Figure titre={titre} id="scripts-bloquants" etat={{ kind: "erreur", titre }} />;
 
   const lignes: RankDatum[] = scripts.data.map((s) => {
     // Nom de fichier en évidence, hôte en sous-texte : une troncature de fin n'aurait
     // montré que le préfixe, identique pour tous les scripts du même site. L'URL
     // entière et la fonction restent en infobulle de la ligne.
+    //
+    // Un script INTÉGRÉ à la page n'a pas de fichier : son URL est celle de la page,
+    // et son « nom de fichier » était le dernier segment du chemin (« 42 »,
+    // « partners »). Il se nomme alors par sa fonction, la page en second (recette
+    // du 26/09/2026).
     const { fichier, hote } = decouperUrlScript(s.url);
+    const integre = !/\.[a-z0-9]{1,6}$/i.test(fichier);
+    const chemin = (() => {
+      try {
+        return new URL(s.url ?? "").pathname;
+      } catch {
+        return s.url ?? "";
+      }
+    })();
+    const trames = `${pluriel(s.n, "trame")} · pire ${formater("ms", s.worstMs)}`;
     return {
-      label: fichier,
+      label: integre ? s.quoi : `${fichier} · ${s.quoi}`,
       value: s.totalMs,
       display: formater("ms", s.totalMs),
       title: `${s.url} — ${s.quoi}`,
-      sub: `${hote ? `${hote} · ` : ""}${s.quoi} · ${formater("count", s.n)} frames · pire ${formater("ms", s.worstMs)}`,
+      sub: integre ? `script intégré à la page ${chemin} · ${trames}` : `${hote ? `${hote} · ` : ""}${trames}`,
     };
   });
 
@@ -650,22 +681,22 @@ function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<ScriptBloqua
       id="scripts-bloquants"
       meta={
         <>
-          <span>{formater("count", scripts.data.length)} couples script × fonction, 20 au plus</span>
+          <span>{pluriel(scripts.data.length, "paire script et fonction", "paires script et fonction")}, 20 au plus</span>
           <span>{label}</span>
           <span>classement par blocage cumulé</span>
         </>
       }
       etat={
         lignes.length === 0
-          ? { kind: "vide", population: "frame bloquante attribuée à un script", plage: label }
+          ? { kind: "vide", population: "trame bloquante attribuée à un script", plage: label }
           : undefined
       }
       lecture={
         <>
           Classé par blocage <strong>cumulé</strong>, pas par pire cas : un script qui bloque 400 ms une fois est un
           incident, un script qui bloque 60 ms à chaque frappe est le problème — et c&apos;est le second qui décide de
-          l&apos;INP. Un cumul de visiteurs différents n&apos;est le temps vécu de personne. L&apos;API Long Animation
-          Frames n&apos;existe que sur Chromium : les visiteurs Safari et Firefox n&apos;en produisent pas, et une
+          l&apos;INP. Un cumul de visiteurs différents n&apos;est le temps vécu de personne. La mesure des trames
+          longues n&apos;existe que sur Chromium : les visiteurs Safari et Firefox n&apos;en produisent pas, et une
           absence de ligne ne veut donc pas dire qu&apos;ils n&apos;attendent pas.
         </>
       }
@@ -673,7 +704,7 @@ function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<ScriptBloqua
         lignes.length > 0
           ? {
               legende: `Blocage attribué par script et par fonction, ${label}`,
-              colonnes: ["Script", "Fonction / invocation", "Frames", "Blocage cumulé", "Pire"],
+              colonnes: ["Script", "Fonction / invocation", "Trames", "Blocage cumulé", "Pire"],
               lignes: scripts.data.map((s) => [
                 s.url,
                 s.quoi,

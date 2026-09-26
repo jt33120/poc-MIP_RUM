@@ -228,6 +228,12 @@
 .dark .bande-seuil .recharts-reference-area-rect {
   fill-opacity: 0.2;
 }
+/* « À améliorer » : l'ambre à 20 % sur le fond nuit donnait un brun qui se confondait
+   avec le fond, quand le vert restait lisible (recette du 26/09/2026). Relevé à 32 %,
+   il se lit comme une bande, à contraste comparable au vert. */
+.dark .bande-seuil.bande-ameliorer .recharts-reference-area-rect {
+  fill-opacity: 0.32;
+}
 .dark .zone-seuil {
   opacity: 0.2;
 }

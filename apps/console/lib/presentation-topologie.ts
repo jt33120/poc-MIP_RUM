@@ -62,9 +62,14 @@ export const HEBERGEURS = {
  */
 export const DROIT_HEBERGEURS = "américain";
 
-/** « Francfort, Allemagne (fra1) » ; la phrase entière si elle ne se découpe plus. */
+/**
+ * « Francfort, Allemagne » ; la phrase entière si elle ne se découpe plus. Le code de
+ * région de l'hébergeur (« fra1 ») n'est pas dans le tableau de la présentation, lu par
+ * une DSI (recette du 26/09/2026) : il reste dans l'alternative du chemin de la mesure,
+ * au dossier technique, pour qui veut le vérifier.
+ */
 export function lieuTexte(h: Hebergeur): string {
-  return h.lieu ? `${h.lieu.ville}, ${h.lieu.pays} (${h.lieu.region})` : h.phrase;
+  return h.lieu ? `${h.lieu.ville}, ${h.lieu.pays}` : h.phrase;
 }
 
 /** « Neon (sur AWS) », « Vercel Inc. ». */

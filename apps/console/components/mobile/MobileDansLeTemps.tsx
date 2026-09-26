@@ -35,7 +35,7 @@ const PANNEAU_SESSIONS = "Sessions React Native commencées";
 const PANNEAU_ERREURS = "Occurrences d'erreurs JS";
 
 /** Sous un état « Inconnu » de la capacité, la tuile le dit ; le panneau aussi. */
-export const NOTE_CAPACITE_INCONNUE = "Capacité non déclarée par le SDK : 0 ne prouve pas l'absence d'erreur.";
+export const NOTE_CAPACITE_INCONNUE = "Collecte des erreurs non déclarée par le capteur : 0 ne prouve pas l'absence d'erreur.";
 
 function Panneau({ titre, id, children }: { titre: string; id: string; children: ReactNode }) {
   return (
@@ -116,8 +116,8 @@ export function MobileDansLeTemps({
       explorer={explorer}
       meta={
         <>
-          <span>seau de {seau}</span>
-          <span>{grille.length} tranches</span>
+          <span>tranches de {seau}</span>
+          <span>{pluriel(grille.length, "tranche")}</span>
           <span>{formater("count", totalSessions)} sessions commencées</span>
           <span>
             {nonCollecte
@@ -132,12 +132,11 @@ export function MobileDansLeTemps({
       }
       lecture={
         <>
-          Les mêmes sessions que les tuiles : la cohorte React Native (runtime déclaré, jamais déduit), sessions
-          commencées dans chaque tranche ; les occurrences sont la somme des erreurs JavaScript de ces sessions, datées
-          à leur réception. La somme des tranches est la tuile. Deux panneaux, un axe chacun : aucune grandeur ne se lit
-          sur l&apos;échelle de l&apos;autre.
-          {explorer &&
-            " L'Explorer rejoue le panneau des sessions (runtime = react_native) ; les erreurs JavaScript n'y sont pas isolables, faute de dimension de source d'erreur."}
+          {/* « runtime = react_native », « dimension de source d'erreur » : des noms de
+              champ, retirés du texte (recette du 26/09/2026). */}
+          Les mêmes sessions que les tuiles : les sessions React Native commencées dans chaque tranche, et les erreurs
+          JavaScript de ces sessions, datées à leur réception. Additionnées, les tranches donnent les tuiles.
+          {explorer && " L'Explorer rouvre le panneau des sessions ; les erreurs JavaScript ne s'y isolent pas."}
         </>
       }
       alternative={{
@@ -160,7 +159,7 @@ export function MobileDansLeTemps({
             annotationsIndisponibles={annotationsIndisponibles ?? undefined}
             // Les déploiements ne sont listés en liens qu'une fois : sous le dernier panneau dessiné.
             legendeAnnotations={!dessinErreurs}
-            ariaLabel={`${PANNEAU_SESSIONS} par tranche de ${seau}, ${grille.length} seaux`}
+            ariaLabel={`${PANNEAU_SESSIONS} par tranche de ${seau}, ${pluriel(grille.length, "tranche")}`}
           />
         </Panneau>
         <Panneau titre={PANNEAU_ERREURS} id="erreurs">
@@ -189,7 +188,7 @@ export function MobileDansLeTemps({
               format="count"
               annotationsIndisponibles={annotationsIndisponibles ?? undefined}
               legendeAnnotations
-              ariaLabel={`${PANNEAU_ERREURS} par tranche de ${seau}, ${grille.length} seaux`}
+              ariaLabel={`${PANNEAU_ERREURS} par tranche de ${seau}, ${pluriel(grille.length, "tranche")}`}
             />
           )}
           {dessinErreurs && capaciteJs === "unknown" && (

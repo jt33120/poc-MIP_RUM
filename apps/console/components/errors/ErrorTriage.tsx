@@ -1,21 +1,7 @@
 import { setErrorStatusAction } from "@/app/errors/[fingerprint]/actions";
+import { STATUT_GROUPE } from "@/components/errors/ErrorBadges";
 import { fmtDate } from "@/lib/format";
 import type { ErrorStatus } from "@/lib/queries-v2";
-
-const STATUS_META: Record<ErrorStatus, { label: string; cls: string }> = {
-  open: {
-    label: "Ouverte",
-    cls: "border-bad/30 bg-bad/10 text-bad-ink",
-  },
-  resolved: {
-    label: "Résolue",
-    cls: "border-good/30 bg-good/10 text-good-ink",
-  },
-  ignored: {
-    label: "Ignorée",
-    cls: "border-line bg-panel2 text-ink-soft",
-  },
-};
 
 function StatusButton({
   appId,
@@ -52,6 +38,9 @@ function StatusButton({
 /** Barre de triage d'un groupe d'erreurs : statut courant, alerte de régression,
  *  date de résolution, et boutons de transition (résolu / ignoré / rouvrir).
  *
+ *  En TÊTE de la page du groupe (recette du 26/09/2026), dans les couleurs de statut
+ *  de la liste (`STATUT_GROUPE`) : « Ouvert » n'est plus rouge comme une gravité.
+ *
  *  V9 (F20) : pour un viewer, un compte de démonstration ou un jeton API, les
  *  boutons ne sont pas RENDUS — plutôt que rendus puis refusés par l'action. */
 export function ErrorTriage({
@@ -70,21 +59,21 @@ export function ErrorTriage({
   resolvedAt?: Date | string | null;
   lectureSeule?: boolean;
 }) {
-  const meta = STATUS_META[status];
+  const meta = STATUT_GROUPE[status];
   return (
-    <div className="card mb-6 flex flex-wrap items-center gap-3 p-4" data-testid="error-triage">
+    <div className="card mb-4 flex flex-wrap items-center gap-3 px-4 py-3" data-testid="error-triage">
       <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Statut</span>
-      <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${meta.cls}`} data-testid="error-status">
-        {meta.label}
+      <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${meta.classes}`} data-testid="error-status">
+        {meta.libelle}
       </span>
       {regressed && (
         <span className="rounded-full border border-warn/50 bg-warn/10 px-2.5 py-0.5 text-xs font-bold text-warn-ink">
-          ⚠ Régression — réapparue après résolution
+          ⚠ Régressé — revu après résolution
         </span>
       )}
       {resolvedAt && (
         <span className="text-xs text-ink-soft" data-testid="error-resolue-le">
-          Résolue le {fmtDate(resolvedAt)}
+          Résolu le {fmtDate(resolvedAt)}
         </span>
       )}
       <div className="ml-auto flex flex-wrap gap-2">

@@ -21,6 +21,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { chargerSvi } from "@/lib/chargeurs/svi";
 import { chargerEcran } from "@/lib/ecran";
+import { pluriel } from "@/lib/format";
 import { fmtDuration, journeyCoverage } from "@/lib/svi-outcome";
 import { containment, containmentReading } from "@/lib/svi-recall";
 
@@ -123,8 +124,8 @@ export default async function VueEnsembleSvi({
           data={sorties.map((s) => ({
             label: s.exit_node,
             value: s.total,
-            display: `${s.total} appel(s)`,
-            title: `${s.abandoned} abandon(s), ${s.transferred} transfert(s)`,
+            display: pluriel(s.total, "appel"),
+            title: `${pluriel(s.abandoned, "abandon")}, ${pluriel(s.transferred, "transfert")}`,
             segments: [
               { value: s.abandoned, color: COULEURS.abandoned, label: "abandonnés" },
               { value: s.transferred, color: COULEURS.transferred, label: "transférés" },

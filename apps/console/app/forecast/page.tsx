@@ -47,6 +47,7 @@ import {
   cleJour,
   echeanceLcp,
   pointsTendance,
+  premiereTendancePossible,
   projectAt,
   tendance,
   type Tendance,
@@ -75,6 +76,7 @@ import { GRID_DAYS } from "@/lib/queries-grid";
 import { hrefWithQuery } from "@/lib/query-contract";
 import { THRESHOLDS } from "@/lib/rating";
 import { BandeauComparaison, MASQUE_SILENCE_REPETE } from "@/components/charts/RangeeKpi";
+import { Methode as MethodeRepliee } from "@/components/perf/Methode";
 
 export const dynamic = "force-dynamic";
 
@@ -109,14 +111,17 @@ function Methode() {
         Méthode
       </summary>
       <p className="mt-2 leading-relaxed text-ink-soft">
-        Droite des moindres carrés sur les jours d&apos;au moins {MESURES_MIN_JOUR} mesures ; bande = ± 1 écart type des
-        résidus ; échéance écrite seulement si la pente sur {GRID_DAYS} jours dépasse {K_BRUIT} écarts types ; aucune
-        saisonnalité ; ce n&apos;est pas une prévision. Au moins {JOURS_VALIDES_REQUIS} jours valides sont requis pour
-        tracer une droite. Les journées sont découpées dans le fuseau de l&apos;application ; la journée en cours est
-        exclue. Aucun seuil publié n&apos;existe pour le ratio d&apos;erreurs ni pour le trafic : ils se lisent sans verdict.
+        Droite des moindres carrés sur les jours d&apos;au moins {MESURES_MIN_JOUR} mesures (un jour en dessous est un
+        point creux, exclu de l&apos;ajustement), tracée sur les {GRID_DAYS} jours pour voir si elle colle aux points ;
+        bande = ± 1 écart type des résidus ; échéance écrite seulement si la pente sur {GRID_DAYS} jours dépasse{" "}
+        {K_BRUIT} écarts types ; aucune saisonnalité ; ce n&apos;est pas une prévision. Au moins {JOURS_VALIDES_REQUIS}{" "}
+        jours valides sont requis pour tracer une droite. Les journées sont découpées dans le fuseau de
+        l&apos;application ; la journée en cours est exclue. Aucun seuil publié n&apos;existe pour le ratio
+        d&apos;erreurs ni pour le trafic : ils se lisent sans verdict ; le trafic n&apos;a pas de droite, une droite
+        sur {GRID_DAYS} jours lirait le cycle de la semaine comme une tendance.
       </p>
       <p className="mt-2 leading-relaxed text-ink-soft">
-        Datation d&apos;une rupture (P*.7) : test de Pettitt, non paramétrique, une seule rupture —{" "}
+        Datation d&apos;une rupture : test de Pettitt, non paramétrique, une seule rupture —{" "}
         <code>U</code> cumulé des signes, <code>K = max |U|</code>, <code>p ≈ 2·exp(−6K²/(n³+n²))</code>, retenue sous{" "}
         {formaterP(SEUIL_P_RUPTURE)}. Un jour n&apos;entre dans ce test qu&apos;au-dessus de {MESURES_MIN_JOUR_RUPTURE} mesures (minimum
         d&apos;une p75), et il en faut {JOURS_VALIDES_REQUIS_RUPTURE} ; à {JOURS_VALIDES_REQUIS_RUPTURE} jours, même une marche
@@ -203,6 +208,14 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
   const dateDernier = jjmm(jours[dernier]);
   const aucuneMesureLcp = lcpLu.ok && mesures.every((n) => n === 0);
   const aucuneVue = traficLu.ok && vues.every((v) => v === 0);
+  // Rien sur les quatorze jours (collecte commencée aujourd'hui, ou app muette) : UN
+  // état vide pour l'écran, avec la date où il servira, au lieu de trois panneaux vides
+  // qui répétaient chacun leur message et la méthode d'un graphique absent.
+  const toutVide = aucuneMesureLcp && aucuneVue;
+  const premiereTendance = premiereTendancePossible(jours[dernier], tLcp.joursValides);
+  const phrasePremiereTendance = premiereTendance
+    ? `Premières tendances au plus tôt le ${jjmm(premiereTendance)} : il faut ${JOURS_VALIDES_REQUIS} journées complètes d'au moins ${MESURES_MIN_JOUR} mesures LCP.`
+    : null;
 
   const etatHero: Etat | undefined = !lcpLu.ok
     ? { kind: "erreur", titre: "LCP p75 quotidien" }
@@ -264,16 +277,23 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
             ))}
           </ul>
         )}
-        {peutEcrire && lcpLu.ok && (
+        {lcpLu.ok && tLcp.etat === "insuffisante" && phrasePremiereTendance && (
+          <p className="mt-1 text-sm text-ink" data-testid="premiere-tendance">
+            {phrasePremiereTendance}
+          </p>
+        )}
+        {/* Proposée seulement quand une tendance est calculée : sans elle, la synthèse
+            dit qu'elle ne sait rien, et l'alerte arrivait comme une conclusion. */}
+        {peutEcrire && lcpLu.ok && tLcp.etat !== "insuffisante" && (
           <Link href={lienAlerte} className="mt-2 inline-block text-xs font-medium text-perf underline-offset-2 hover:underline">
-            Créer une alerte sur ce seuil ({LCP_BON_TEXTE})
+            Créer une alerte LCP &gt; {LCP_BON_TEXTE}
           </Link>
         )}
       </section>
 
       {/* 3 — Chiffres du dernier jour complet, contre le même jour de la semaine précédente. */}
       {/* La référence incomplète est dite UNE fois, au-dessus des tuiles. */}
-      <BandeauComparaison couvertures={semainePrecedente >= 0 ? [couvLcp, couvRatio, couvVues] : []} />
+      <BandeauComparaison couvertures={semainePrecedente >= 0 && !toutVide ? [couvLcp, couvRatio, couvVues] : []} />
       <section
         aria-label="Dernier jour complet"
         className={`mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3 ${MASQUE_SILENCE_REPETE}`}
@@ -322,7 +342,10 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
           ) : (
             <KpiTile
               label={`Pages vues, dernier jour complet (${dateDernier})`}
-              valeur={vues[dernier] ?? 0}
+              // Aucune page vue sur 14 jours : « — » et sa raison, comme les deux autres
+              // tuiles, jamais un « 0 » qui se lirait comme une journée mesurée.
+              valeur={aucuneVue ? null : (vues[dernier] ?? 0)}
+              raisonNull={`aucune page vue sur les ${GRID_DAYS} derniers jours complets`}
               format="count"
               sensMeilleur="neutre"
               precedent={semainePrecedente >= 0 ? (vues[semainePrecedente] ?? null) : undefined}
@@ -333,7 +356,21 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
         )}
       </section>
 
+      {toutVide && (
+        <div className="mb-6" data-testid="tendances-vides">
+          <EtatSurface
+            etat={{
+              kind: "vide",
+              population: "mesure",
+              plage: `les ${GRID_DAYS} derniers jours complets`,
+              borne: phrasePremiereTendance ?? undefined,
+            }}
+          />
+        </div>
+      )}
+
       {/* 4 — Hero (TE5) : 14 jours observés, droite ajustée, projection si la pente dépasse le bruit. */}
+      {!toutVide && (
       <SectionErreur titre="LCP p75 quotidien et sa tendance">
         <Figure
           titre="LCP p75 quotidien et sa tendance"
@@ -344,7 +381,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
             etatHero ? undefined : (
               <>
                 <span>
-                  {GRID_DAYS} jours complets ({fuseau})
+                  {GRID_DAYS} jours complets ({nomFuseau(fuseau)})
                 </span>
                 <span>
                   {tLcp.joursValides} jour{tLcp.joursValides > 1 ? "s" : ""} d&apos;au moins {MESURES_MIN_JOUR} mesures
@@ -364,9 +401,10 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
             )
           }
           lecture={
+            etatHero ? undefined : (
             <>
-              Points creux : moins de {MESURES_MIN_JOUR} mesures, exclus de l&apos;ajustement. Droite grise : moindres
-              carrés sur les jours valides, tracée sur les {GRID_DAYS} jours pour voir si elle colle aux points.
+              Points creux : moins de {MESURES_MIN_JOUR} mesures.
+              {tLcp.fit ? " Droite grise : la droite ajustée (voir « Méthode »)." : ""}
               {tLcp.etat === "significative"
                 ? ` Pointillé : projection sur ${HORIZON_JOURS} jours dans une bande de ± 1 écart type des résidus.`
                 : tLcp.etat === "bruit"
@@ -377,6 +415,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
                 : ""}{" "}
               Un point ouvre la Vue d&apos;ensemble sur ce jour.
             </>
+            )
           }
           alternative={
             etatHero
@@ -398,13 +437,11 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
         >
           <div className="flex flex-col gap-3">
             {tLcp.etat === "insuffisante" && (
-              <EtatSurface
-                etat={{
-                  kind: "partiel",
-                  raison: `tendance non calculée : ${JOURS_VALIDES_REQUIS} jours mesurés requis, ${tLcp.joursValides} disponibles`,
-                }}
-                compact
-              />
+              // Une information, pas un avertissement : la série est juste trop courte.
+              <p className="text-xs text-ink-soft" data-testid="tendance-insuffisante">
+                Tendance non calculée : {JOURS_VALIDES_REQUIS} jours mesurés requis, {tLcp.joursValides} disponibles.
+                {phrasePremiereTendance ? ` ${phrasePremiereTendance}` : ""}
+              </p>
             )}
             {tLcp.etat === "bruit" && (
               <p className="text-xs text-ink-soft" data-testid="tendance-bruit">
@@ -414,16 +451,19 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
             )}
             {/* P*.7 — « depuis quand ? » : la datation, ou son refus chiffré. La réserve
                 d'interprétation est écrite ICI, jamais par le module (RM5). */}
-            <p className="min-w-0 text-xs text-ink-soft" data-testid="datation-rupture">
+            <div className="min-w-0 text-xs text-ink-soft" data-testid="datation-rupture">
               {phraseDatation}
               {ruptureDeploiement && " Coïncidence de date, pas une cause établie."}
               {datation.ok &&
                 datation.rupture &&
                 tLcp.etat === "significative" &&
-                " La tendance est par ailleurs établie sur la même fenêtre : une dérive régulière sépare la série aussi nettement qu'une marche, la date est donc un point de bascule et non la preuve d'un saut."}{" "}
-              {/* La règle reste en `ink-soft` : sous 18 px, `ink-faint` ne passe pas le contraste (§ 3.9). */}
-              <span>Règle : {REGLE_RUPTURE}.</span>
-            </p>
+                " La tendance est par ailleurs établie sur la même fenêtre : une dérive régulière sépare la série aussi nettement qu'une marche, la date est donc un point de bascule et non la preuve d'un saut."}
+              {/* La règle reste à côté du résultat (RM4), mais repliée : elle passait
+                  avant l'information (recette du 26/09/2026). */}
+              <MethodeRepliee titre="Règle de la datation" className="mt-1">
+                {REGLE_RUPTURE}.
+              </MethodeRepliee>
+            </div>
             <ThresholdSeries
               grille={hero.grille}
               points={hero.points}
@@ -441,8 +481,10 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
           </div>
         </Figure>
       </SectionErreur>
+      )}
 
       {/* 5 — Deux petits multiples, sans seuil ni échéance. */}
+      {!toutVide && (
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <SectionErreur titre="Occurrences d'erreurs pour 100 pages vues">
           <Figure
@@ -452,12 +494,16 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
             meta={
               etatRatio ? undefined : (
                 <>
-                  <span>par jour, {fuseau}</span>
+                  <span>par jour, {nomFuseau(fuseau)}</span>
                   <span>{texteTendance(tRatio, "pour100")}</span>
                 </>
               )
             }
-            lecture="Aucun seuil n'est publié pour ce ratio : ni verdict, ni échéance. Droite tracée seulement si la pente dépasse le bruit. Points creux : moins de 30 pages vues. Un point ouvre les erreurs de ce jour."
+            lecture={
+              etatRatio
+                ? undefined
+                : "Aucun seuil n'est publié pour ce ratio : ni verdict, ni échéance. Droite tracée seulement si la pente dépasse le bruit. Points creux : moins de 30 pages vues. Un point ouvre les erreurs de ce jour."
+            }
             alternative={
               etatRatio
                 ? undefined
@@ -494,12 +540,16 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
             meta={
               etatVues ? undefined : (
                 <>
-                  <span>par jour, {fuseau}</span>
+                  <span>par jour, {nomFuseau(fuseau)}</span>
                   <span>repère J−7 sur les 7 derniers jours</span>
                 </>
               )
             }
-            lecture="Pas de droite : sur 14 jours, une droite lirait le cycle de la semaine comme une tendance. Chaque jour se compare au même jour de la semaine précédente. Une barre ouvre la Vue d'ensemble sur ce jour."
+            lecture={
+              etatVues
+                ? undefined
+                : "Pas de droite (voir « Méthode »). Chaque jour se compare au même jour de la semaine précédente. Une barre ouvre la Vue d'ensemble sur ce jour."
+            }
             alternative={
               etatVues
                 ? undefined
@@ -527,6 +577,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
           </Figure>
         </SectionErreur>
       </div>
+      )}
 
       {/* 6 — Méthode (TE8). */}
       <Methode />

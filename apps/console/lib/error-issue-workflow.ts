@@ -437,7 +437,7 @@ async function muter<T>(ctx: MutationContext, app: string, expectedRevision: str
     );
     if (!issue) return { kind: "not_found" };
     if (issue.revision !== expectedRevision) {
-      return { kind: "conflict", error: "l'issue a été modifiée depuis sa lecture : recharger", revision: issue.revision };
+      return { kind: "conflict", error: "ce groupe a été modifié depuis sa lecture : rechargez-le", revision: issue.revision };
     }
     return mutation(client, issue, acteur.id);
   });
@@ -562,7 +562,7 @@ export async function linkIssue(
        returning id::text as id`,
       [issue.app_id, issue.id, request.url, request.label, actorId],
     );
-    if (!ticket) return { kind: "duplicate", error: "ce lien est déjà attaché à l'issue" };
+    if (!ticket) return { kind: "duplicate", error: "ce lien est déjà attaché à ce groupe" };
     const { rows: [cree] } = await client.query<{ id: string }>(
       `insert into error_issue_activity (app_id, issue_id, kind, actor_kind, actor_user_id, ticket_id)
        values ($1, $2, 'link', 'user', $3, $4) returning id::text as id`,

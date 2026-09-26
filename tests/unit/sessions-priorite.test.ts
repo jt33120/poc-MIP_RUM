@@ -101,7 +101,7 @@ describe("F42 — raisonEcrite", () => {
         frustration: [{ kind: "dead", cible: "", n: 1 }],
         api: [{ methode: "GET", chemin: "/api/stock", statut: null }],
       }),
-    ).toEqual(["1 occurrence de type inconnu", "1 clic mort sur une cible inconnue", "1 appel GET /api/stock sans statut lu"]);
+    ).toEqual(["1 occurrence de type inconnu", "1 clic sans réaction sur une cible inconnue", "1 appel GET /api/stock sans statut lu"]);
   });
 
   it("aucun signal : aucun fragment (la ligne le dira elle-même)", () => {

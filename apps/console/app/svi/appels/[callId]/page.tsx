@@ -53,8 +53,8 @@ export default async function FicheAppel({
   if (estFermee("/svi")) {
     return (
       <CapaciteFermee
-        titre="Supervision SVI"
-        sujet="Supervision du serveur vocal interactif."
+        titre="Appel SVI"
+        sujet="Le déroulé d'un appel : menus, saisies, attente, transfert et raccroché."
         identifiant={identifiant}
       />
     );
@@ -64,7 +64,13 @@ export default async function FicheAppel({
   // d'une autre app est introuvable, pas « interdit ». On ne révèle pas son existence.
   const ecran = await chargerEcran(ECRANS.sviAppel, chargerSviAppel, (await searchParams) ?? {}, { callId });
   if (ecran.etat === "fermee") {
-    return <CapaciteFermee titre="Supervision SVI" sujet="Supervision du serveur vocal interactif." identifiant={identifiant} />;
+    return (
+      <CapaciteFermee
+        titre="Appel SVI"
+        sujet="Le déroulé d'un appel : menus, saisies, attente, transfert et raccroché."
+        identifiant={identifiant}
+      />
+    );
   }
   if (ecran.etat === "refus") return <FilterProblemNotice title="Appel SVI" problem={ecran.problem} />;
   if (ecran.etat === "introuvable") notFound();

@@ -295,11 +295,17 @@ const filtres = (over: Partial<FiltersLike> = {}): FiltersLike => ({
   });
 
   describe("slowTraces(f, { appel }) — T9", () => {
-    it("sans filtre : les 20 plus lents de A, sans robot ni autre tenant", async () => {
+    // Recette du 26/09/2026 : trois traces par appel AU PLUS, posé en SQL — les 30
+    // « GET /api/volume » ne remplissent plus la liste. A : médiane 2, trajet 3, skew 1,
+    // volume 3 (sur 30) = 9 lignes.
+    it("sans filtre : au plus trois traces par appel, sans robot ni autre tenant", async () => {
       const lignes = await lib.slowTraces(filtres());
-      expect(lignes).toHaveLength(20);
+      expect(lignes).toHaveLength(9);
       expect(lignes[0].front_ms).toBe(1000);
       expect(lignes.some((l) => l.url === "/api/bot" || l.front_ms === 2000)).toBe(false);
+      const volume = lignes.filter((l) => l.url === "/api/volume");
+      expect(volume).toHaveLength(3);
+      expect(volume.every((l) => l.traces_appel === 30)).toBe(true);
     });
 
     it("avec `appel` : seulement cet appel, trajet par trace, non suivi → null", async () => {
@@ -399,7 +405,8 @@ const filtres = (over: Partial<FiltersLike> = {}): FiltersLike => ({
       const { couverturePrecedente } = await import("../../apps/console/lib/comparaison");
       const couverture = await couverturePrecedente(queryOf(filtres()), { table: "rum_span", colonneTemps: "ts", additive: true });
       expect(couverture.etat).toBe("partielle");
-      expect(couverture.raison).toMatch(/^appels tracés collectés depuis le \d{2}\/\d{2} \d{2}:\d{2} UTC seulement$/);
+      // Heure de Paris depuis la recette du 26/09/2026 (`fmtInstant`), plus « UTC ».
+      expect(couverture.raison).toMatch(/^appels tracés collectés depuis le \d{2}\/\d{2} à \d{2}:\d{2} seulement$/);
     });
 
     it("apps = [] : aucune donnée sur le périmètre, jamais « complète »", async () => {

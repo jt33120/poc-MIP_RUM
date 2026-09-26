@@ -309,8 +309,9 @@ describe("4 — chaque point de « Ce qui reste » cite une source qui existe", 
   });
 });
 
-// Fichiers dont le texte est la vitrine : ses composants, ses contenus, la page
-// elle-même et lib/specs.ts, qui fournit l'essentiel du texte public des Specs.
+// Fichiers dont le texte est la vitrine : ses composants, ses contenus, les deux pages
+// (la présentation et son dossier technique) et lib/specs.ts, qui fournit l'essentiel
+// du texte public des Specs.
 function fichiersVitrine(): string[] {
   const presentation = readdirSync(join(CONSOLE, "components/presentation"))
     .filter((f) => f.endsWith(".tsx"))
@@ -323,6 +324,7 @@ function fichiersVitrine(): string[] {
     ...libs,
     "apps/console/components/AddClientCarousel.tsx",
     "apps/console/app/presentation/page.tsx",
+    "apps/console/app/presentation/dossier/page.tsx",
     "apps/console/lib/specs.ts",
   ];
 }

@@ -137,6 +137,13 @@ describe("domaine y et bandes", () => {
     expect(txt(b.horsEchelle)).toBe("seuil Mauvais à 4,0 s, hors échelle");
   });
 
+  it("tout le domaine est « Bon » : les DEUX bornes sont dites hors échelle", () => {
+    const b = bandesSeuils("LCP", 125);
+    expect(b.bon).toEqual({ y1: 0, y2: 125 });
+    expect(b.ameliorer).toBeNull();
+    expect(txt(b.horsEchelle)).toBe("seuil À améliorer à 2,5 s et seuil Mauvais à 4,0 s, hors échelle");
+  });
+
   it("CLS : borne formatée sans unité", () => {
     expect(txt(bandesSeuils("CLS", 0.2).horsEchelle)).toBe("seuil Mauvais à 0,250, hors échelle");
   });

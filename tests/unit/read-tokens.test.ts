@@ -1,6 +1,13 @@
-// Tokens de lecture — hash déterministe, génération, fenêtre. Logique pure.
+// Jetons de lecture — hash déterministe, génération, fenêtre, validité. Logique pure.
 import { describe, expect, it } from "vitest";
-import { generateToken, hashToken, parseWindow } from "../../apps/console/lib/read-tokens";
+import {
+  generateToken,
+  hashToken,
+  parseWindow,
+  VALIDITE_LECTURE_DEFAUT_JOURS,
+  VALIDITES_LECTURE_JOURS,
+  validiteLecture,
+} from "../../apps/console/lib/read-tokens";
 
 describe("hashToken", () => {
   it("sha256 hex déterministe (vecteur connu)", () => {
@@ -30,5 +37,22 @@ describe("parseWindow", () => {
     expect(parseWindow("30d")).toEqual({ key: "30d", interval: "30 days" });
     expect(parseWindow(null).key).toBe("30d");
     expect(parseWindow("bidon").key).toBe("30d");
+  });
+});
+
+describe("validiteLecture (recette du 26/09/2026 : un jeton de lecture a une échéance)", () => {
+  it("absente : la durée par défaut, jamais « sans fin »", () => {
+    expect(validiteLecture(undefined)).toBe(VALIDITE_LECTURE_DEFAUT_JOURS);
+    expect(validiteLecture("")).toBe(VALIDITE_LECTURE_DEFAUT_JOURS);
+    expect(VALIDITES_LECTURE_JOURS).toContain(VALIDITE_LECTURE_DEFAUT_JOURS);
+  });
+
+  it("de 1 à 365 jours entiers ; le reste est refusé", () => {
+    expect(validiteLecture("30")).toBe(30);
+    expect(validiteLecture(365)).toBe(365);
+    expect(validiteLecture("0")).toBeNull();
+    expect(validiteLecture("366")).toBeNull();
+    expect(validiteLecture("7.5")).toBeNull();
+    expect(validiteLecture("-3")).toBeNull();
   });
 });

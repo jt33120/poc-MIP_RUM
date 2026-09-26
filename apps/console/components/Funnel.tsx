@@ -163,7 +163,8 @@ export function FunnelChart({
                 <span data-testid="taux-depart">
                   <strong className="font-semibold text-ink">{taux(s.convFromStart)}</strong> {LIBELLE_DEPART}
                 </span>
-                {s.ord > 1 && (
+                {/* Une perte nulle ne s'écrit pas : « −0 session » en rouge alarmait pour rien (recette du 26/09/2026). */}
+                {s.ord > 1 && s.dropoff > 0 && (
                   <span className="text-bad-ink" title="sessions perdues depuis l'étape précédente">
                     −{compte(s.dropoff)} {s.dropoff > 1 ? "sessions" : "session"}
                   </span>

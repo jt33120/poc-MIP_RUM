@@ -267,7 +267,8 @@ test("ressources : l'avertissement de seuil et le partage première/tierce parti
   await page.goto(`${BASE}/pages?app=${APP_ID}&period=24h`);
 
   const seuil = page.getByTestId("ressources-seuil");
-  await expect(seuil).toContainText("Ressources collectées selon seuil SDK");
+  await expect(seuil).toContainText("Ressources retenues par le capteur");
+  await expect(seuil).toContainText("seuil du SDK");
 
   const ressources = page.getByTestId("ressources");
   await expect(ressources).toContainText("Première partie");

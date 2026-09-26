@@ -16,13 +16,26 @@
 // SVG rendu serveur, sans animation : le dessin s'étire sur la largeur disponible
 // (`preserveAspectRatio="none"`), des cases de quelques pixels à 390 px.
 import { TableAlternative } from "@/components/charts/Figure";
-import { CAPACITES, RELEVE, SHA, VERDICTS, VERDICT_LABEL, type Verdict } from "@/lib/couverture";
+import { CAPACITES, RELEVE, VERDICTS, VERDICT_LABEL, type Verdict } from "@/lib/couverture";
 import { categorie } from "@/lib/palette";
 import { repartitionCouverture } from "@/lib/presentation-sait-faire";
 
 /** La teinte d'un verdict : son rang dans le vocabulaire du document, stable d'un relevé à l'autre. */
 export function couleurVerdict(verdict: Verdict): string {
   return categorie(VERDICTS.indexOf(verdict));
+}
+
+/**
+ * Les verdicts dessinés en teinte pâle. La palette catégorielle a deux paires proches
+ * — ciel et cyan, pierre et ardoise —, que la recette du 26/09/2026 confondait, en
+ * sombre surtout : « non retenue » avec « déployées », « non commencées » avec
+ * « bloquées ». Pâlir le second de chaque paire les sépare sans sortir de la palette.
+ */
+const PALES: ReadonlySet<Verdict> = new Set<Verdict>(["non_retenu", "non_commence"]);
+
+/** Opacité d'une case ou d'une pastille de légende. */
+export function opaciteVerdict(verdict: Verdict): number {
+  return PALES.has(verdict) ? 0.45 : 1;
 }
 
 // Géométrie, en unités du viewBox.
@@ -54,9 +67,8 @@ export function CouvertureBarre() {
   return (
     <figure data-testid="couverture-barre" className="card mt-8 min-w-0 p-4 sm:p-5">
       <figcaption className="text-sm leading-relaxed text-ink-soft">
-        <span className="font-semibold text-ink">Les {total} capacités du document de couverture</span>,
-        relevé du {RELEVE} sur <code className="font-mono text-[13px] text-ink">{SHA}</code> : une case par
-        capacité, groupées par verdict.
+        <span className="font-semibold text-ink">Les {total} capacités du registre</span>, relevé du{" "}
+        {RELEVE} : une case par capacité, groupées par verdict.
       </figcaption>
       <svg
         role="img"
@@ -66,7 +78,16 @@ export function CouvertureBarre() {
         className="mt-4 block h-6 w-full"
       >
         {cases.map((c, i) => (
-          <rect key={i} x={c.x} y={0} width={CASE} height={HAUTEUR} rx={1.5} fill={couleurVerdict(c.verdict)} />
+          <rect
+            key={i}
+            x={c.x}
+            y={0}
+            width={CASE}
+            height={HAUTEUR}
+            rx={1.5}
+            fill={couleurVerdict(c.verdict)}
+            fillOpacity={opaciteVerdict(c.verdict)}
+          />
         ))}
       </svg>
       <ul data-testid="couverture-legende" className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-ink-soft">
@@ -75,7 +96,7 @@ export function CouvertureBarre() {
             <span
               aria-hidden
               className="h-2.5 w-2.5 shrink-0 rounded-sm"
-              style={{ backgroundColor: couleurVerdict(p.verdict) }}
+              style={{ backgroundColor: couleurVerdict(p.verdict), opacity: opaciteVerdict(p.verdict) }}
             />
             <span>
               <strong className="font-semibold tabular-nums text-ink">{p.nombre}</strong> {p.libelle}
@@ -85,7 +106,7 @@ export function CouvertureBarre() {
       </ul>
       <TableAlternative
         alternative={{
-          legende: `Capacités du document de couverture par verdict, relevé du ${RELEVE} sur ${SHA}`,
+          legende: `Capacités du registre par verdict, relevé du ${RELEVE}`,
           colonnes: ["Verdict", "Capacités"],
           lignes: parts.map((p) => [VERDICT_LABEL[p.verdict], p.nombre]),
         }}

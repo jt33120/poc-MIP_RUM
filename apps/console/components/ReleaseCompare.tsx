@@ -19,15 +19,23 @@
 // le taux de sessions en erreur n'a pas de seuil publié : aucune couleur (R-S). Un
 // écart n'est pas coloré non plus — « plus haut » n'est « pire » qu'avec une règle,
 // et le verdict statistique viendra de P*.5 (`verdict`).
+//
+// Recette du 26/09/2026 : le même INP de 304 ms était « verdict incertain » sur la
+// tuile et « À améliorer » ici. Le verdict passe donc par la même règle que la tuile
+// (`lireVital`) : affirmé seulement s'il tient sur tout l'intervalle à 95 % de la
+// release. Et l'écart d'un TAUX s'écrit en points : « +46 % » sur 43,5 % → 63,6 %
+// se lisait comme une hausse de 46 points.
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { TableDefilante } from "@/components/TableDefilante";
 import { formater, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import type { VersionRow, VersionSource } from "@/lib/queries-deploys";
 import { relativeChange } from "@/lib/query-contract";
-import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
+import { RATING_CLASS, RATING_LABEL } from "@/lib/rating";
+import type { IntervalleP75 } from "@/lib/stats/incertitude";
 import type { Intervalle } from "@/lib/stats/types";
 import { fmtInstant } from "@/lib/format";
+import { lireVital, texteVerdict } from "@/lib/vital-lecture";
 
 export type { Intervalle };
 
@@ -42,6 +50,13 @@ export interface ReleaseStats {
   sessionsEnErreur: number | null;
   /** ISO. */
   premiereVue?: string | null;
+  /**
+   * Intervalles à 95 % des p75 de la release (P*.1), lus comme ceux des tuiles.
+   * Fournis, le verdict n'est affirmé que s'il tient sur tout l'intervalle ; un
+   * vital fourni sans intervalle n'a pas de verdict. Absents (appelant qui ne les
+   * lit pas), le verdict suit la seule p75, comme une tuile sans intervalle.
+   */
+  intervalles?: Partial<Record<VitalName, IntervalleP75>>;
 }
 
 export interface VerdictRelease {
@@ -88,8 +103,18 @@ const VERDICT: Record<VerdictRelease["etat"], string> = {
 
 const NBSP = String.fromCharCode(0xa0);
 
-/** Écart relatif de B à A, écrit avec son signe ; incalculable → « — ». */
-function ecrireEcart(a: number | null, b: number | null): string {
+/**
+ * Écart de B à A, écrit avec son signe ; incalculable → « — ». Un taux (format
+ * `pct`) s'écarte en POINTS : 43,5 % → 63,6 % fait « +20,1 pts », pas « +46,4 % ».
+ * Toute autre mesure, en écart relatif.
+ */
+export function ecrireEcart(a: number | null, b: number | null, format: FormatId = "count"): string {
+  if (format === "pct") {
+    if (a == null || b == null || !Number.isFinite(a) || !Number.isFinite(b)) return "—";
+    const pts = Math.round((b - a) * 1000) / 10;
+    if (pts === 0) return `±0${NBSP}pt`;
+    return `${pts > 0 ? "+" : "−"}${Math.abs(pts).toLocaleString("fr-FR")}${NBSP}${Math.abs(pts) < 2 ? "pt" : "pts"}`;
+  }
   const e = relativeChange(b, a);
   if (e == null) return "—";
   const pct = Math.round(e * 1000) / 10;
@@ -126,15 +151,35 @@ const MESURES: Mesure[] = [
   },
 ];
 
+/**
+ * Le verdict d'une p75 de release, par la règle de la tuile (`lireVital`) : avec
+ * les intervalles lus, un vital sans le sien n'est pas jugé (« non calculable »).
+ */
+export function verdictRelease(vital: VitalName, v: number, stats: ReleaseStats) {
+  const intervalle = stats.intervalles
+    ? (stats.intervalles[vital] ?? { indisponible: "intervalle non lu" })
+    : undefined;
+  return lireVital(vital, v, stats.sessions ?? 0, intervalle).verdict;
+}
+
 function Valeur({ mesure, stats }: { mesure: Mesure; stats: ReleaseStats }) {
   const v = mesure.lire(stats) ?? null;
-  const verdict = mesure.vital && v != null ? rating2026(mesure.vital, v) : null;
+  const verdict = mesure.vital && v != null ? verdictRelease(mesure.vital, v, stats) : null;
   return (
     <div className="min-w-0">
       <span className="font-semibold tabular-nums text-ink">{formater(mesure.format, v)}</span>
-      {verdict && (
-        <span className={`ml-1.5 rounded border px-1 py-px text-[11px] font-medium ${RATING_CLASS[verdict]}`}>
-          {RATING_LABEL[verdict]}
+      {verdict?.kind === "etabli" && (
+        <span
+          className={`ml-1.5 rounded border px-1 py-px text-[11px] font-medium ${RATING_CLASS[verdict.rating]}`}
+          data-testid="release-verdict-vital"
+        >
+          {RATING_LABEL[verdict.rating]}
+        </span>
+      )}
+      {verdict && verdict.kind !== "etabli" && (
+        // Comme la tuile : un verdict qui ne tient pas sur tout l'intervalle n'a pas de couleur.
+        <span className="block text-[11px] text-ink-soft" data-testid="release-verdict-vital">
+          {texteVerdict(verdict)}
         </span>
       )}
       <span className="block text-[11px] text-ink-soft">{mesure.effectif(stats)}</span>
@@ -252,7 +297,7 @@ export function ReleaseCompare({
                       )}
                     </td>
                   ))}
-                  <td className="py-2 text-right tabular-nums text-ink-soft">{ecrireEcart(va, vb)}</td>
+                  <td className="py-2 text-right tabular-nums text-ink-soft">{ecrireEcart(va, vb, mesure.format)}</td>
                 </tr>
               );
             })}

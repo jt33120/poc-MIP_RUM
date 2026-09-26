@@ -35,8 +35,12 @@ export interface EtatDef {
   forme: "basse" | "moyenne" | "haute" | "contour" | "hachure";
   /** « ! » pour warn, « × » pour incident. */
   glyphe?: string;
-  /** Couleur, jamais seule porteuse du sens. */
-  ton: "neutre" | "warn" | "bad" | "vide";
+  /**
+   * Couleur, jamais seule porteuse du sens. `good` : l'état nominal d'un robot
+   * (« ok ») — gris, il ne se lisait pas comme le vert qui dit « tout va bien »
+   * partout ailleurs dans la console (recette du 26/09/2026).
+   */
+  ton: "good" | "neutre" | "warn" | "bad" | "vide";
 }
 
 export interface CaseEtat {
@@ -67,6 +71,7 @@ export const REGROUPEMENT = 3;
 const GLYPHE_SOUS_PX = 9;
 
 const TEINTE: Record<EtatDef["ton"], string> = {
+  good: "text-good",
   neutre: "text-ink-soft",
   warn: "text-warn",
   bad: "text-bad",
@@ -93,7 +98,7 @@ function definition(etats: EtatDef[], cle: string): EtatDef {
 
 /** Rang de gravité, pour le « pire état » d'un groupe : ton d'abord, puis forme. */
 export function gravite(def: EtatDef): number {
-  const ton = { bad: 3, warn: 2, neutre: 1, vide: 0 }[def.ton];
+  const ton = { bad: 3, warn: 2, good: 1, neutre: 1, vide: 0 }[def.ton];
   const forme = { haute: 4, moyenne: 3, basse: 2, contour: 1, hachure: 0 }[def.forme];
   return ton * 10 + forme;
 }

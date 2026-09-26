@@ -1,27 +1,31 @@
 import Link from "next/link";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { TableDefilante } from "@/components/TableDefilante";
 import { chargerViePrivee } from "@/lib/chargeurs/vie-privee";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
-import { DSAR_BARRIERE_MESSAGES, DSAR_LIMITES, DSAR_MESSAGES } from "@/lib/dsar";
+import { DSAR_BARRIERE_MESSAGES, DSAR_LIMITES, DSAR_MESSAGES, libelleTableDsar, phraseBarriere } from "@/lib/dsar";
+import { accord, pluriel } from "@/lib/format";
 import { eraseIdentityAction, eraseUserAction, searchIdentityAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 const ERRORS: Record<string, string> = {
-  empty: "Renseigne un identifiant.",
-  app: "Choisis une application : le HMAC est volontairement cloisonné par app.",
-  kind: "Choisis une identité utilisateur ou compte.",
-  secret: "IDENTITY_HASH_SECRET est absent : la recherche d'identité est indisponible.",
-  confirm: "La confirmation ne correspond pas à l'identifiant — effacement annulé.",
+  empty: "Renseignez un identifiant.",
+  app: "Choisissez une application : les identifiants pseudonymisés sont propres à chaque application.",
+  kind: "Choisissez une identité utilisateur ou compte.",
+  secret: "La recherche par identité est indisponible : la clé de pseudonymisation n'est pas configurée sur la plateforme.",
+  confirm: "La confirmation ne correspond pas à l'identifiant : effacement annulé.",
   perimetre: "Cette application n'est pas dans votre périmètre (« toutes » : l'administrateur de la plateforme).",
   // Le motif de refus renvoyé par la Server Action, mot pour mot.
   refus_empreinte: DSAR_MESSAGES.refus_empreinte,
   inconnu: DSAR_MESSAGES.inconnu,
 };
 
-/** DSAR admin : identité métier HMAC et compatibilité historique visitor_id. */
+const TYPE_IDENTITE = { user: "utilisateur", account: "compte" } as const;
+
+/** Demandes RGPD (administrateurs) : accès et effacement, par identité métier ou par identifiant de visiteur. */
 export default async function AdminPrivacy({
   searchParams,
 }: {
@@ -41,30 +45,38 @@ export default async function AdminPrivacy({
   const identityExportHref = `/admin/privacy/export?app=${encodeURIComponent(app)}&kind=${kind}&identity_hash=${identityHash}`;
   const visitorTotal = visitorCounts ? total(visitorCounts) : 0;
   const visitorExportHref = `/admin/privacy/export?app=${encodeURIComponent(visitorApp)}&user=${encodeURIComponent(visitorId)}`;
+  const nomApp = (id: string) => apps.find((a) => a.app_id === id)?.name ?? id;
+  const effacees = erased != null && /^\d+$/.test(erased) ? Number(erased) : null;
 
   return (
     <div className="animate-fade-up">
       <PageHeader
-        title="Vie privée · DSAR"
+        title="Vie privée · demandes RGPD"
         sub={
           <>
-            Droits RGPD par identité métier pseudonymisée : <strong>accès/portabilité</strong> (export JSON) et{" "}
-            <strong>effacement</strong>. Toutes les actions sont tracées dans l&apos;audit, refus compris.
+            Répondre à une demande d&apos;<strong>accès</strong> (export des données) ou d&apos;
+            <strong>effacement</strong> d&apos;une personne. Chaque recherche, export et effacement est inscrit
+            au journal d&apos;audit, refus compris.{" "}
+            <Link href="/admin/audit?type=vie-privee" className="font-medium text-brand hover:underline">
+              Historique des demandes traitées
+            </Link>
           </>
         }
       />
 
       {identityHealth.label === "degraded" && (
         <div className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink">
-          Recherche indisponible : {!identityHealth.configured && <><code>IDENTITY_HASH_SECRET</code> manque. </>}
-          {!identityHealth.schema && <>La migration v66 n&apos;est pas détectée. </>}
-          L&apos;ingestion historique continue sans ces champs.
+          La recherche par identité est indisponible :{" "}
+          {!identityHealth.configured && <>la clé de pseudonymisation n&apos;est pas configurée sur la plateforme. </>}
+          {!identityHealth.schema && <>la base n&apos;est pas encore à jour pour l&apos;identité métier. </>}
+          La recherche par identifiant de visiteur reste possible.
         </div>
       )}
 
       {/* Ce que la garantie couvre, et ce qu'elle ne couvre pas. Affiché DANS le
           rapport, pas relégué à une documentation : un opérateur qui croit la
-          garantie plus large qu'elle ne l'est répondra à côté d'une demande. */}
+          garantie plus large qu'elle ne l'est répondra à côté d'une demande. En tête,
+          UNE phrase qui nomme l'application ; le détail, sur demande. */}
       <section
         className="card mb-6 p-4"
         aria-labelledby="dsar-portee"
@@ -72,22 +84,27 @@ export default async function AdminPrivacy({
         data-barriere={etatProtection}
       >
         <h2 id="dsar-portee" className="mb-2 text-sm font-semibold text-ink">
-          Portée de la garantie d&apos;effacement
+          Après un effacement
         </h2>
         <p
           className={
             etatProtection === "enforce"
-              ? "mb-3 rounded-lg border border-good/30 bg-good/10 px-3 py-2 text-sm text-good-ink"
-              : "mb-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn-ink"
+              ? "rounded-lg border border-good/30 bg-good/10 px-3 py-2 text-sm text-good-ink"
+              : "rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn-ink"
           }
+          data-testid="dsar-barriere"
         >
-          {DSAR_BARRIERE_MESSAGES[etatProtection]}
+          {phraseBarriere(etatProtection, nomApp(app))}
         </p>
-        <ul className="list-disc space-y-1 pl-5 text-sm text-ink-soft">
-          {DSAR_LIMITES.map((limite) => (
-            <li key={limite}>{limite}</li>
-          ))}
-        </ul>
+        <details className="mt-2 text-sm text-ink-soft">
+          <summary className="cursor-pointer select-none text-xs font-medium text-brand">En savoir plus</summary>
+          <p className="mt-2">{DSAR_BARRIERE_MESSAGES[etatProtection]}</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {DSAR_LIMITES.map((limite) => (
+              <li key={limite}>{limite}</li>
+            ))}
+          </ul>
+        </details>
       </section>
 
       {error && (
@@ -95,19 +112,27 @@ export default async function AdminPrivacy({
           {error}
         </div>
       )}
-      {erased != null && (
+      {effacees != null && (
         <div className="mb-6 rounded-xl border border-good/30 bg-good/10 px-4 py-3 text-sm text-good-ink">
-          Effacement effectué — <strong>{erased}</strong> ligne(s) supprimée(s).
+          Effacement effectué : <strong>{pluriel(effacees, "ligne supprimée", "lignes supprimées")}</strong>.
         </div>
       )}
 
-      {/* Recherche d'identité métier : app + type + valeur brute en POST. */}
+      {/* Recherche guidée : l'identité métier d'abord, l'identifiant de visiteur quand
+          l'application n'en transmet pas (recette du 26/09/2026 : deux recherches,
+          sans dire laquelle employer). */}
       <div className="card mb-6 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-ink-soft">Rechercher une identité métier</h2>
+        <h2 className="mb-1 text-sm font-semibold text-ink">1. Rechercher par identité métier (recommandé)</h2>
+        <p className="mb-3 text-xs text-ink-soft">
+          L&apos;identifiant que votre application transmet pour cette personne (numéro de client, identifiant de
+          compte…). Il est pseudonymisé à la volée et n&apos;est jamais conservé en clair.
+        </p>
         <form action={searchIdentityAction} className="flex flex-wrap items-end gap-3" data-testid="dsar-search-form">
-          <label className="text-xs font-medium text-ink-soft">
-            App
-            <select name="app" defaultValue={app} className="field mt-1 block">
+          {/* `min-w-0 max-w-full` + `max-w-full` : un champ ou une liste à largeur fixe
+              ne pousse plus la page au-delà de 390 px (417 px avant). */}
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
+            Application
+            <select name="app" defaultValue={app} className="field mt-1 block w-full max-w-full">
               {apps.map((a) => (
                 <option key={a.app_id} value={a.app_id}>
                   {a.name}
@@ -115,21 +140,21 @@ export default async function AdminPrivacy({
               ))}
             </select>
           </label>
-          <label className="text-xs font-medium text-ink-soft">
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
             Type
-            <select name="kind" defaultValue={kind} className="field mt-1 block">
+            <select name="kind" defaultValue={kind} className="field mt-1 block max-w-full">
               <option value="user">utilisateur</option>
               <option value="account">compte</option>
             </select>
           </label>
-          <label className="text-xs font-medium text-ink-soft">
-            Identifiant brut
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
+            Identifiant de la personne
             <input
               name="identity"
               type="text"
               required
-              placeholder="saisi puis HMAC en mémoire"
-              className="field mt-1 block w-96 font-mono text-xs"
+              placeholder="tel que votre application le transmet"
+              className="field mt-1 block w-96 max-w-full font-mono text-xs"
             />
           </label>
           <button type="submit" className="btn-accent">
@@ -139,47 +164,37 @@ export default async function AdminPrivacy({
       </div>
 
       {identityCounts && (
-        <div className="card mb-6 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3">
+        <section className="card mb-6 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
             <h2 className="text-sm font-semibold text-ink">
-              Identité {kind} <code className="font-mono text-xs text-brand">{identityHash.slice(0, 12)}…</code>
-              <span className="text-ink-faint"> · app {app}</span>
+              Identité {TYPE_IDENTITE[kind]} · empreinte{" "}
+              <code className="font-mono text-xs text-brand">{identityHash.slice(0, 12)}…</code>
+              <span className="font-normal text-ink-soft"> · {nomApp(app)}</span>
             </h2>
-            <span className="text-xs tabular-nums text-ink-soft">{identityTotal} ligne(s) au total</span>
+            <span className="text-xs tabular-nums text-ink-soft">
+              {pluriel(identityTotal, "ligne")} au total
+            </span>
           </div>
 
           {identityTotal === 0 ? (
             <p className="px-4 py-6 text-center text-sm text-ink-faint">
-              Aucune donnée pour cette identité métier sur ce périmètre.
+              Aucune donnée pour cette identité dans cette application.
             </p>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-panel2">
-                <tr>
-                  <th className="th">Table</th>
-                  <th className="th">Lignes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line/60">
-                {identityCounts.map((c) => (
-                  <tr key={c.table} className="transition hover:bg-panel2/60">
-                    <td className="px-4 py-2 font-mono text-xs">{c.table}</td>
-                    <td className="px-4 py-2 tabular-nums text-ink-soft">{c.rows}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <TableDefilante label="Données de cette identité">
+              <TableauVolumes lignes={identityCounts} />
+            </TableDefilante>
           )}
-        </div>
+        </section>
       )}
 
       {identityCounts && identityTotal > 0 && (
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="mb-6 grid gap-6 md:grid-cols-2">
           {/* Accès / portabilité */}
           <div className="card p-4">
-            <h2 className="mb-1 text-sm font-semibold text-ink">Accès & portabilité</h2>
-            <p className="mb-3 text-xs text-ink-faint">
-              Export JSON complet des données liées à cette identité (une clé par table).
+            <h2 className="mb-1 text-sm font-semibold text-ink">Accès et portabilité</h2>
+            <p className="mb-3 text-xs text-ink-soft">
+              Export JSON complet des données liées à cette identité, regroupées par type de donnée.
             </p>
             <Link href={identityExportHref} prefetch={false} className="btn-accent inline-block" data-testid="dsar-export">
               Exporter en JSON
@@ -189,9 +204,9 @@ export default async function AdminPrivacy({
           {/* Effacement */}
           <div className="card border-bad/60 p-4">
             <h2 className="mb-1 text-sm font-semibold text-bad-ink">Effacement</h2>
-            <p className="mb-3 text-xs text-ink-faint">
-              Supprime <strong>définitivement</strong> toutes les lignes ci-dessus (transaction).
-              Irréversible — re-saisis l&apos;identifiant métier pour confirmer.
+            <p className="mb-3 text-xs text-ink-soft">
+              Supprime <strong>définitivement</strong> toutes les données ci-dessus, en une seule opération.
+              Irréversible : saisissez de nouveau l&apos;identifiant de la personne pour confirmer.
             </p>
             <form action={eraseIdentityAction} className="flex flex-col gap-2" data-testid="dsar-erase-form">
               <input type="hidden" name="app" value={app} />
@@ -201,7 +216,7 @@ export default async function AdminPrivacy({
                 name="confirm_identity"
                 type="text"
                 required
-                placeholder="re-saisir l'identifiant métier brut"
+                placeholder="identifiant de la personne, de nouveau"
                 className="field w-full font-mono text-xs"
                 autoComplete="off"
               />
@@ -216,25 +231,32 @@ export default async function AdminPrivacy({
         </div>
       )}
 
-      <div className="my-8 border-t border-line" />
       <div className="card mb-6 p-4">
-        <h2 className="mb-1 text-sm font-semibold text-ink-soft">Compatibilité · identifiant visiteur historique</h2>
-        <p className="mb-3 text-xs text-ink-faint">
-          Le flux DSAR existant par <code>visitor_id</code> reste disponible, y compris sur toutes les applications autorisées.
+        <h2 className="mb-1 text-sm font-semibold text-ink">2. Rechercher par identifiant de visiteur</h2>
+        <p className="mb-3 text-xs text-ink-soft">
+          À employer quand votre application ne transmet pas d&apos;identité métier : l&apos;identifiant de visiteur
+          est posé par le code de suivi dans le navigateur de la personne.
         </p>
         <form method="GET" className="flex flex-wrap items-end gap-3" data-testid="dsar-visitor-search-form">
-          <label className="text-xs font-medium text-ink-soft">
-            App
-            <select name="visitor_app" defaultValue={visitorApp} className="field mt-1 block">
-              {toutes && <option value="all">toutes</option>}
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
+            Application
+            <select name="visitor_app" defaultValue={visitorApp} className="field mt-1 block w-full max-w-full">
+              {toutes && <option value="all">Toutes les applications</option>}
               {apps.map((candidate) => (
                 <option key={candidate.app_id} value={candidate.app_id}>{candidate.name}</option>
               ))}
             </select>
           </label>
-          <label className="text-xs font-medium text-ink-soft">
-            visitor_id
-            <input name="user" type="text" defaultValue={visitorId} required placeholder="identifiant de visiteur" className="field mt-1 block w-96 font-mono text-xs" />
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
+            Identifiant de visiteur
+            <input
+              name="user"
+              type="text"
+              defaultValue={visitorId}
+              required
+              placeholder="identifiant de visiteur"
+              className="field mt-1 block w-96 max-w-full font-mono text-xs"
+            />
           </label>
           <button type="submit" className="btn-accent">Chercher</button>
         </form>
@@ -244,43 +266,75 @@ export default async function AdminPrivacy({
         <div className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink" data-testid="dsar-refus">
           <p className="font-semibold">Demande non exécutable sur cet identifiant</p>
           <p className="mt-1">{DSAR_MESSAGES.refus_empreinte}</p>
-          <p className="mt-2 text-xs">{visitorTarget.sessionsHeritees.toLocaleString("fr-FR")} session(s) portent cette valeur en <code className="font-mono">user_hash</code>.</p>
+          <p className="mt-2 text-xs">
+            {pluriel(visitorTarget.sessionsHeritees, "session")}{" "}
+            {accord(visitorTarget.sessionsHeritees, "porte", "portent")} cette ancienne empreinte.
+          </p>
         </div>
       )}
       {visitorTarget?.verdict === "inconnu" && (
         <div className="mb-6 rounded-xl border border-line bg-panel2 px-4 py-3 text-sm text-ink-soft" data-testid="dsar-inconnu">{DSAR_MESSAGES.inconnu}</div>
       )}
       {visitorCounts && (
-        <div className="card mb-6 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3">
-            <h2 className="text-sm font-semibold text-ink">Données de <code className="font-mono text-xs text-brand">{visitorId}</code>{visitorApp !== "all" && <span className="text-ink-faint"> · app {visitorApp}</span>}</h2>
-            <span className="text-xs tabular-nums text-ink-soft">{visitorTotal} ligne(s) au total</span>
+        <section className="card mb-6 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+            <h2 className="text-sm font-semibold text-ink">
+              Données du visiteur <code className="break-all font-mono text-xs text-brand">{visitorId}</code>
+              <span className="font-normal text-ink-soft">
+                {" "}· {visitorApp === "all" ? "toutes les applications" : nomApp(visitorApp)}
+              </span>
+            </h2>
+            <span className="text-xs tabular-nums text-ink-soft">{pluriel(visitorTotal, "ligne")} au total</span>
           </div>
-          <table className="w-full text-sm">
-            <thead className="bg-panel2"><tr><th className="th">Table</th><th className="th">Lignes</th></tr></thead>
-            <tbody className="divide-y divide-line/60">
-              {visitorCounts.map((count) => <tr key={count.table}><td className="px-4 py-2 font-mono text-xs">{count.table}</td><td className="px-4 py-2 tabular-nums text-ink-soft">{count.rows}</td></tr>)}
-            </tbody>
-          </table>
-        </div>
+          <TableDefilante label="Données de ce visiteur">
+            <TableauVolumes lignes={visitorCounts} />
+          </TableDefilante>
+        </section>
       )}
       {visitorCounts && visitorTotal > 0 && (
         <div className="grid gap-6 md:grid-cols-2">
           <div className="card p-4">
-            <h2 className="mb-3 text-sm font-semibold text-ink">Accès & portabilité visitor_id</h2>
+            <h2 className="mb-3 text-sm font-semibold text-ink">Accès et portabilité</h2>
             <Link href={visitorExportHref} prefetch={false} className="btn-accent inline-block" data-testid="dsar-visitor-export">Exporter en JSON</Link>
           </div>
           <div className="card border-bad/60 p-4">
-            <h2 className="mb-3 text-sm font-semibold text-bad-ink">Effacement visitor_id</h2>
+            <h2 className="mb-1 text-sm font-semibold text-bad-ink">Effacement</h2>
+            <p className="mb-3 text-xs text-ink-soft">
+              Irréversible : saisissez de nouveau l&apos;identifiant de visiteur pour confirmer.
+            </p>
             <form action={eraseUserAction} className="flex flex-col gap-2" data-testid="dsar-visitor-erase-form">
               <input type="hidden" name="app" value={visitorApp} />
               <input type="hidden" name="user" value={visitorId} />
-              <input name="confirm" type="text" required placeholder="re-saisir l'identifiant de visiteur" className="field w-full font-mono text-xs" autoComplete="off" />
+              <input name="confirm" type="text" required placeholder="identifiant de visiteur, de nouveau" className="field w-full font-mono text-xs" autoComplete="off" />
               <button type="submit" className="rounded-lg border border-bad/30 bg-bad-fond px-3 py-2 text-sm font-semibold text-white transition hover:bg-bad-fond/90">Effacer définitivement</button>
             </form>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+/** Le volume par type de donnée : ce qu'un export rendrait, ce qu'un effacement supprimerait. */
+function TableauVolumes({ lignes }: { lignes: { table: string; rows: number }[] }) {
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-panel2">
+        <tr>
+          <th className="th">Données</th>
+          <th className="th">Lignes</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-line/60">
+        {lignes.map((c) => (
+          <tr key={c.table} className="transition hover:bg-panel2/60">
+            <td className="px-4 py-2 text-ink">
+              {libelleTableDsar(c.table)}
+            </td>
+            <td className="px-4 py-2 tabular-nums text-ink-soft">{c.rows.toLocaleString("fr-FR")}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

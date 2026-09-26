@@ -12,9 +12,11 @@
 // établit. Chaque ligne garde ses sources (`sources`), que tests/unit/SaitFaire.test.tsx
 // résout dans le dépôt ; le contenu, lui, se relit à la main (P**.8, relecture n° 3).
 //
-// À 390 px, la table défile dans son propre conteneur, première colonne fixée
-// (§ 3.9) ; ce conteneur est `relative` : un élément positionné qu'il contiendrait
-// se placerait sinon par rapport à la page, et l'élargirait.
+// « Ce POC » est la DEUXIÈME colonne (recette du 26/09/2026) : en troisième, elle
+// tombait hors champ à 390 px, et le lecteur ne voyait que le concurrent. La table
+// défile dans un cadre qui le signale (TableDefilante), première colonne fixée.
+
+import { TableDefilante } from "@/components/TableDefilante";
 
 /** Une ligne de la table ; chaque source s'écrit « chemin:ligne » depuis la racine du dépôt. */
 export interface LignePositionnement {
@@ -83,34 +85,34 @@ export function Positionnement() {
       <h3 id={TITRE_ID} className="text-xl font-bold tracking-tight text-ink">
         Où se situe ce POC
       </h3>
-      <div className="relative mt-5 overflow-x-auto rounded-xl border border-line bg-panel">
+      <TableDefilante className="mt-5 rounded-xl border border-line bg-panel" label="Où se situe ce POC">
         <table className="w-full min-w-[36rem] border-collapse text-left text-sm" aria-labelledby={TITRE_ID}>
           <thead>
             <tr className="border-b border-line">
-              <th scope="col" className="sticky left-0 w-36 bg-panel px-3 py-3 align-bottom font-semibold text-ink-soft sm:w-48 sm:px-4">
+              <th scope="col" className="sticky left-0 z-10 w-36 bg-panel px-3 py-3 align-bottom font-semibold text-ink-soft sm:w-48 sm:px-4">
                 Critère
               </th>
               <th scope="col" className="px-4 py-3 align-bottom font-semibold text-ink-soft">
-                {EN_TETE_EKARA}
+                Ce POC
               </th>
               <th scope="col" className="px-4 py-3 align-bottom font-semibold text-ink-soft">
-                Ce POC
+                {EN_TETE_EKARA}
               </th>
             </tr>
           </thead>
           <tbody>
             {POSITIONNEMENT.map((l) => (
               <tr key={l.critere} className="border-b border-line/70 align-top last:border-0">
-                <th scope="row" className="sticky left-0 w-36 bg-panel px-3 py-3 font-medium text-ink sm:w-48 sm:px-4">
+                <th scope="row" className="sticky left-0 z-10 w-36 bg-panel px-3 py-3 font-medium text-ink sm:w-48 sm:px-4">
                   {l.critere}
                 </th>
+                <td className="px-4 py-3 leading-relaxed text-ink">{l.poc}</td>
                 <td className="px-4 py-3 leading-relaxed text-ink-soft">{l.ekara}</td>
-                <td className="px-4 py-3 leading-relaxed text-ink-soft">{l.poc}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
       <p className="mt-3 text-sm leading-relaxed text-ink-soft">
         Cette table compare ce qui est publié, pas ce qui a été essayé : nous n&apos;avons pas utilisé
         Ekara.

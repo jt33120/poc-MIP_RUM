@@ -77,6 +77,33 @@ export const DSAR_CHILD_TABLES = [
 
 export type DsarTable = (typeof DSAR_CHILD_TABLES)[number] | typeof DSAR_ANCHOR;
 
+/**
+ * Ce que contient chaque table, en mots : le rapport d'une demande affiche ce qu'on
+ * exporterait ou effacerait, et un nom de table n'en dit rien à un délégué à la
+ * protection des données (recette du 26/09/2026).
+ */
+export const DSAR_LIBELLES_TABLES: Record<DsarTable, string> = {
+  rum_metric: "Mesures de performance (Web Vitals)",
+  rum_error: "Erreurs",
+  rum_pageview: "Pages vues",
+  rum_event_index: "Index des événements",
+  rum_action: "Actions (clics, saisies)",
+  rum_span: "Appels suivis (traces)",
+  rum_event: "Événements",
+  rum_breadcrumb: "Étapes précédant une erreur",
+  rum_longtask: "Tâches longues",
+  rum_resource: "Ressources chargées",
+  rum_log: "Journaux",
+  rum_ai: "Appels à l'intelligence artificielle",
+  replay_chunk: "Rejeux de session",
+  rum_session: "Sessions",
+};
+
+/** Le libellé d'une table du périmètre ; une table inconnue garde son nom. */
+export function libelleTableDsar(table: string): string {
+  return (DSAR_LIBELLES_TABLES as Record<string, string>)[table] ?? table;
+}
+
 /** Toutes les tables du périmètre DSAR (enfants + ancre). */
 export const DSAR_TABLES: readonly string[] = [...DSAR_CHILD_TABLES, DSAR_ANCHOR];
 
@@ -142,13 +169,14 @@ export function dsarVerdict(n: { visiteur: number; heritees: number }): DsarVerd
 /** Ce qu'on affiche, et ce qu'on trace dans l'audit, pour chaque verdict. */
 export const DSAR_MESSAGES: Record<DsarVerdict, string> = {
   execute: "Identifiant de visiteur reconnu — export et effacement autorisés sur ce périmètre.",
+  // Sans nom de colonne (recette du 26/09/2026) : « ancienne empreinte d'appareil »
+  // désigne `user_hash` pour qui lit l'écran, pas pour qui lit le schéma.
   refus_empreinte:
-    "REFUS. Cet identifiant est une ancienne empreinte de classe d'appareil (user_hash), " +
-    "pas un identifiant de personne : plusieurs visiteurs d'un parc homogène partagent la " +
-    "même valeur. Exporter reviendrait à communiquer les données de tiers, effacer à " +
-    "supprimer celles de personnes qui n'ont rien demandé. Ces sessions ne sont ni " +
-    "exportables ni effaçables individuellement ; elles disparaissent d'elles-mêmes à " +
-    "l'échéance de rétention.",
+    "Refus : cet identifiant est une ancienne empreinte de type d'appareil, pas un " +
+    "identifiant de personne. Plusieurs visiteurs d'un parc homogène partagent la même " +
+    "valeur : exporter reviendrait à communiquer les données de tiers, effacer à supprimer " +
+    "celles de personnes qui n'ont rien demandé. Ces sessions ne sont ni exportables ni " +
+    "effaçables une par une ; elles disparaissent d'elles-mêmes au terme de la durée de conservation.",
   inconnu: "Aucune session sous cet identifiant de visiteur sur ce périmètre.",
 };
 
@@ -280,33 +308,54 @@ export function buildDsarExport(input: {
 export type EtatBarriere = "enforce" | "off" | "indisponible";
 
 export const DSAR_LIMITES: readonly string[] = [
-  "La preuve porte sur les identifiants FOURNIS ou DÉJÀ LIÉS : identifiant de session, " +
-    "identifiant de visiteur, HMAC utilisateur ou compte, tous cloisonnés par application. " +
-    "Un événement totalement anonyme — nouvelle session, aucun identifiant commun — ne peut " +
-    "pas être attribué à cette personne, et ce produit ne le prétend pas.",
-  "L'égalité repose sur des identifiants techniques ou des HMAC app-scopés. Aucune suppression " +
-    "n'est décidée d'après une ressemblance de message, de stack ou d'user-agent.",
-  "La même empreinte dans une AUTRE application est une autre personne au regard de ce produit : " +
-    "le HMAC est cloisonné par application. Elle n'apparaît ni dans ce rapport, ni dans cet effacement.",
-  "La barrière d'effacement est elle-même une donnée pseudonyme : elle conserve l'identifiant " +
-    "effacé pour pouvoir le refuser. Elle n'a pas d'expiration par défaut.",
+  "La recherche porte sur les identifiants que vous fournissez, ou qui leur sont déjà liés : " +
+    "identifiant de session, identifiant de visiteur, identifiant utilisateur ou compte " +
+    "pseudonymisé, chacun propre à une application. Un événement totalement anonyme — nouvelle " +
+    "session, aucun identifiant commun — ne peut pas être attribué à cette personne, et ce " +
+    "produit ne le prétend pas.",
+  "La correspondance repose sur des identifiants techniques ou pseudonymisés, propres à chaque " +
+    "application. Aucune suppression n'est décidée d'après une ressemblance de message d'erreur, " +
+    "de trace ou de navigateur.",
+  "La même personne dans une AUTRE application est, pour ce produit, une autre personne : ses " +
+    "identifiants pseudonymisés y sont différents. Elle n'apparaît ni dans ce rapport, ni dans cet effacement.",
+  "La protection durable conserve elle-même l'identifiant effacé, sous forme pseudonymisée, pour " +
+    "pouvoir le refuser ensuite. Cette conservation n'a pas de fin par défaut.",
 ];
 
+/**
+ * Le détail de l'état de la protection durable, derrière « En savoir plus ». La
+ * phrase affichée d'emblée est `phraseBarriere` : une seule, qui nomme
+ * l'application (recette du 26/09/2026 : quatre lignes de jargon, sans le nom de
+ * l'application, pour un état qui est pourtant PAR application).
+ */
 export const DSAR_BARRIERE_MESSAGES: Record<EtatBarriere, string> = {
   enforce:
-    "Protection durable ACTIVE sur cette application : après l'effacement, tout writer refuse " +
-    "les données rattachables aux identifiants supprimés. Les identifiants de session effacés " +
-    "restent refusés pour toujours.",
+    "Protection durable ACTIVE : après un effacement, toute nouvelle donnée rattachée aux " +
+    "identifiants effacés est refusée à la collecte. Les identifiants de session effacés restent " +
+    "refusés pour toujours.",
   off:
-    "Protection durable NON ACTIVÉE sur cette application. L'effacement est sérialisé avec " +
-    "l'ingestion — aucun writer ne peut recréer de ligne pendant l'opération, et les lots encore " +
-    "en file sont nettoyés — mais aucune barrière n'est conservée : un événement ultérieur " +
-    "portant le même identifiant serait de nouveau collecté. L'activation attend une décision de " +
-    "politique sur la conservation des barrières, leur réactivation et le traitement des sauvegardes.",
+    "Protection durable NON ACTIVÉE. Pendant l'effacement, aucune nouvelle donnée de la personne ne " +
+    "peut être écrite, et les envois encore en attente sont nettoyés ; mais rien n'est conservé " +
+    "ensuite pour refuser ses prochaines visites. L'activer relève d'une décision de politique, à " +
+    "prendre avec le responsable de traitement : combien de temps conserver les identifiants " +
+    "effacés, comment les lever, que faire des sauvegardes.",
   indisponible:
-    "État de la protection durable inconnu : la migration v81 n'est pas encore appliquée sur cette " +
-    "base. L'effacement reste sérialisé avec l'ingestion ; aucune barrière n'est enregistrée.",
+    "État de la protection durable inconnu : la base n'est pas encore à jour pour la porter. " +
+    "Pendant l'effacement, aucune nouvelle donnée de la personne ne peut être écrite ; rien n'est " +
+    "conservé ensuite pour refuser ses prochaines visites.",
 };
+
+/** L'état de la protection durable, en une phrase qui nomme l'application. */
+export function phraseBarriere(etat: EtatBarriere, application: string): string {
+  switch (etat) {
+    case "enforce":
+      return `${application} : après un effacement, les données rattachées aux identifiants effacés sont refusées, même si la personne revient.`;
+    case "off":
+      return `${application} : après un effacement, une nouvelle visite de la même personne sera de nouveau collectée.`;
+    case "indisponible":
+      return `${application} : impossible de dire si une nouvelle visite de la personne effacée serait de nouveau collectée.`;
+  }
+}
 
 /** Nom de fichier d'export : horodaté et tronqué (identifiant long, pas de PII). */
 export function dsarExportFilename(visitorId: string, generatedAt: string): string {

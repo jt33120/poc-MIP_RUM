@@ -133,7 +133,8 @@ export function HeroCwv({
       <h2 id="hero-cwv-titre" className="mb-1 text-sm font-semibold text-ink">
         Core Web Vitals dans le temps
       </h2>
-      <p className="mb-3 text-xs text-ink-soft">{lecture}</p>
+      {/* Un bloc, pas un paragraphe : la lecture peut porter un repli « Méthode ». */}
+      <div className="mb-3 space-y-1 text-xs text-ink-soft">{lecture}</div>
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
         {vitaux.map((l, i) => {
           const m = petitMultiple(l, mode, commun);
@@ -170,8 +171,11 @@ export function HeroCwv({
                   // Les déploiements sont les mêmes sur les trois : listés en liens sous le
                   // premier seulement (un arrêt de tabulation chacun, pas trois).
                   legendeAnnotations={i === 0}
+                  // « Premières données à HH:MM » : dite une fois, au-dessus du premier
+                  // petit multiple, pas trois fois de suite.
+                  noteCollecte={i === 0}
                   hauteur={200}
-                  ariaLabel={`${l.vital} p75 par tranche de ${seau}, ${commun.grille.length} seaux, 3 zones de seuil (Bon, À améliorer, Mauvais)${
+                  ariaLabel={`${l.vital} p75 par tranche de ${seau}, ${commun.grille.length} tranches, 3 zones de seuil (Bon, À améliorer, Mauvais)${
                     m.series.length > 1 ? `, comparé à ${m.series[1].libelle.toLowerCase()}` : ""
                   }`}
                 />
@@ -254,8 +258,9 @@ export function ChargeErreursLcp({
       etat={toutEnEchec ? { kind: "erreur", titre: "Charge, erreurs et LCP" } : undefined}
       meta={
         <>
-          <span>seau de {seau}</span>
-          <span>{commun.grille.length} tranches</span>
+          <span>
+            {commun.grille.length} tranches de {seau}
+          </span>
           <span>{compte(totalVues, "pages vues")}</span>
           <span>{compte(totalErreurs, "occurrences navigateur")}</span>
           <span>{compte(totalLcp, "mesures LCP")}</span>
@@ -316,7 +321,7 @@ export function ChargeErreursLcp({
                 ...(avecInconnu ? [{ cle: "inconnu", libelle: "Type de navigation inconnu", categorieIndex: 2 }] : []),
               ]}
               format="count"
-              ariaLabel={`Pages vues par tranche de ${seau}, chargements et changements de route SPA empilés, ${commun.grille.length} seaux`}
+              ariaLabel={`Pages vues par tranche de ${seau}, chargements et changements de route SPA empilés, ${commun.grille.length} tranches`}
             />
           )}
         </Panneau>
@@ -337,10 +342,13 @@ export function ChargeErreursLcp({
             <ThresholdSeries
               {...partage}
               {...annotationsDe(false)}
+              // Les trois panneaux partagent l'axe : la note de collecte récente est dite
+              // une fois, au-dessus du premier.
+              noteCollecte={false}
               points={lignes}
               series={[{ cle: "erreurs", libelle: titreErreurs, role: "categorie", categorieIndex: 3, forme: "barres", additive: true }]}
               format="count"
-              ariaLabel={`${titreErreurs} par tranche de ${seau}, ${commun.grille.length} seaux`}
+              ariaLabel={`${titreErreurs} par tranche de ${seau}, ${commun.grille.length} tranches`}
             />
           )}
           {noteSansSource && totalErreurs !== 0 && (
@@ -359,13 +367,14 @@ export function ChargeErreursLcp({
               {...partage}
               {...annotationsDe(true)}
               points={lignes}
+              noteCollecte={false}
               series={[
                 { cle: "p75", libelle: "LCP p75", role: "principale", effectifCle: "n" },
                 ...(precedent ? [{ cle: "precedent", libelle: "Période précédente", role: "reference" as const }] : []),
               ]}
               format="ms"
               vital="LCP"
-              ariaLabel={`LCP p75 par tranche de ${seau}, ${commun.grille.length} seaux, 3 zones de seuil (Bon, À améliorer, Mauvais)`}
+              ariaLabel={`LCP p75 par tranche de ${seau}, ${commun.grille.length} tranches, 3 zones de seuil (Bon, À améliorer, Mauvais)`}
             />
           )}
         </Panneau>

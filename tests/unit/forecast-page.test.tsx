@@ -227,7 +227,7 @@ describe("/forecast — vérité des libellés et des liens", () => {
   it("« Créer une alerte » : rendu pour un administrateur, jamais pour un lecteur", async () => {
     dailyTraffic.mockResolvedValue(trafic());
     dailyLcpSeries.mockResolvedValue(lcpDe(DERIVE));
-    expect(await rendre()).toContain("Créer une alerte sur ce seuil");
+    expect(await rendre()).toContain("Créer une alerte LCP &gt; 2,5");
     getUser.mockResolvedValue({ email: "v@b", role: "viewer", apps: ["demo"] });
     expect(await rendre()).not.toContain("Créer une alerte");
     getUser.mockResolvedValue({ email: "d@b", role: "admin", apps: null, demo: true });

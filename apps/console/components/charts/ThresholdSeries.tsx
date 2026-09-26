@@ -61,9 +61,11 @@ import {
   libelleSeau,
   libelleSeauComplet,
   nombreOuNull,
+  phrasePeuDePoints,
   placerAnnotations,
   preparerPoints,
   premiereDonneeTardive,
+  tranchesMesurees,
   regrouperAnnotations,
   type Annotation,
   type AnnotationPlacee,
@@ -124,12 +126,18 @@ export function formateurGraduations(valeurs: number[], format: FormatId): (v: n
   return (v: number) => parValeur.get(v) ?? formaterAxe(format, v);
 }
 
-/** Motif « période en cours » d'une barre : la couleur de la série, hachurée, jamais pâle au point de disparaître. */
+/**
+ * Motif « période en cours » d'une barre : la couleur PLEINE de la série, rayée du
+ * fond. À 55 % d'opacité, la barre devenait bleu nuit ou violet foncé sur le fond
+ * sombre pendant que sa pastille de légende restait vive : on ne reliait plus l'une à
+ * l'autre (recette du 26/09/2026). La teinte reste donc celle de la légende ; seules
+ * les rayures disent « incomplète ».
+ */
 export function MotifEnCours({ id, couleur }: { id: string; couleur: string }) {
   return (
     <pattern id={id} patternUnits="userSpaceOnUse" width={6} height={6} patternTransform="rotate(45)">
-      <rect width={6} height={6} fill={couleur} fillOpacity={0.55} />
-      <line x1={0} y1={0} x2={0} y2={6} stroke={couleur} strokeWidth={3} />
+      <rect width={6} height={6} fill={couleur} />
+      <line x1={0} y1={0} x2={0} y2={6} stroke="rgb(var(--c-panel))" strokeOpacity={0.55} strokeWidth={2} />
     </pattern>
   );
 }
@@ -408,6 +416,20 @@ export function NoteCollecteRecente({
   );
 }
 
+/**
+ * Moins de trois tranches mesurées sur toute la grille : un ou deux points ne
+ * dessinent pas une évolution, et l'axe vide autour ne dit rien de lui-même
+ * (recette du 26/09/2026 : un seul point à 92 ms, 23 h d'axe vides sans message).
+ */
+export function NotePeuDePoints({ n, seauSecondes, jours }: { n: number; seauSecondes: number; jours: boolean }) {
+  return (
+    <p className="mb-1 text-xs text-ink-soft" data-testid="peu-de-points">
+      <span className="font-medium text-ink">{phrasePeuDePoints(n, seauSecondes, jours)}</span>
+      {"\u00a0"}: trop peu de points pour lire une évolution.
+    </p>
+  );
+}
+
 // ─────────────────────────────── Infobulle ───────────────────────────────
 
 interface SerieTracee extends SerieDef {
@@ -578,6 +600,12 @@ export function ThresholdSeries({
     () => premiereDonneeTardive(prep.lignes, tracees.map((s) => s.cle)),
     [prep.lignes, tracees],
   );
+  // Seules les MESURES comptent : un compte absent vaut 0 (une vraie valeur), une
+  // mesure absente est un trou. Une série de comptes n'a jamais « trop peu de points ».
+  const mesurees = useMemo(
+    () => tranchesMesurees(prep.lignes, tracees.filter((s) => !s.additive).map((s) => s.cle)),
+    [prep.lignes, tracees],
+  );
   const placees = useMemo(
     () => placerAnnotations(annotations ?? [], grille, seauSecondes, fuseau),
     [annotations, grille, seauSecondes, fuseau],
@@ -622,6 +650,9 @@ export function ThresholdSeries({
     >
       {premier !== null && noteCollecte && (
         <NoteCollecteRecente grille={grille} premier={premier} seauSecondes={seauSecondes} debutCollecte={debutCollecte} />
+      )}
+      {premier === null && noteCollecte && mesurees > 0 && mesurees < 3 && grille.length >= 3 && (
+        <NotePeuDePoints n={mesurees} seauSecondes={seauSecondes} jours={estJour(dernier ?? "")} />
       )}
       {barres.length > 0 && (
         <svg width={0} height={0} aria-hidden="true" className="absolute">

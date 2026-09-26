@@ -26,7 +26,7 @@ function phraseComptage(c: EtatComptage): string {
 
 export const dynamic = "force-dynamic";
 
-/** Consommation par client (mois courant) + quotas — admin only (P0 #5). */
+/** Consommation par application (mois courant) et quotas, pour les administrateurs (P0 #5). */
 export default async function Usage() {
   // Le chargeur : la consommation des applications de son périmètre (C9).
   const { lignes: rows, comptage } = accesAdmin(await chargerEcran(ECRANS_ADMIN.consommation, chargerConsommation, {}));
@@ -34,7 +34,7 @@ export default async function Usage() {
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title="Consommation & quotas" sub={`Usage du mois — ${month}`} />
+      <PageHeader title="Consommation et quotas" sub={`Ce que chaque application a envoyé en ${month}, rapporté à son quota mensuel.`} />
       <p className="mb-3 text-sm text-ink-soft" data-testid="usage-comptage">
         {phraseComptage(comptage)}
       </p>
@@ -45,8 +45,8 @@ export default async function Usage() {
         <table className="w-full text-sm">
           <thead className="bg-panel2">
             <tr>
-              <th className="th">Client</th>
-              <th className="th text-right">Events</th>
+              <th className="th">Application</th>
+              <th className="th text-right">Événements</th>
               <th className="th text-right">Sessions</th>
               <th className="th text-right">Erreurs</th>
               <th className="th">Quota mensuel</th>
@@ -64,28 +64,30 @@ export default async function Usage() {
                   <td className="px-4 py-2 text-right tabular-nums" data-testid="usage-events">
                     {compteur(r.events)}
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-ink-soft">
-                    {compteur(r.sessions)}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-ink-soft">
-                    {compteur(r.errors)}
-                  </td>
+                  {/* Trois volumes, une seule couleur : rien ne distinguait les événements
+                      (noirs) des sessions et des erreurs (grises), recette du 26/09/2026. */}
+                  <td className="px-4 py-2 text-right tabular-nums">{compteur(r.sessions)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{compteur(r.errors)}</td>
                   <td className="px-4 py-2">
                     {r.quota == null ? (
-                      <span className="text-xs text-ink-faint">illimité</span>
+                      <span className="whitespace-nowrap rounded border border-line bg-panel2 px-2 py-0.5 text-xs font-medium text-ink">
+                        Illimité
+                      </span>
                     ) : qv === null ? (
                       <span className="text-xs text-ink-faint">
-                        quota de {r.quota.toLocaleString("fr-FR")}, consommation non encore comptée
+                        Quota de {r.quota.toLocaleString("fr-FR")}, consommation pas encore comptée
                       </span>
                     ) : (
                       <div className="flex items-center gap-2">
+                        {/* Une consommation est un volume : barre neutre ; seul le dépassement,
+                            un état, prend la couleur du problème. */}
                         <div className="h-1.5 w-28 overflow-hidden rounded-full bg-line">
                           <div
-                            className={`h-full ${qv.over ? "bg-bad" : "bg-accent"}`}
+                            className={`h-full ${qv.over ? "bg-bad" : "bg-ink-faint"}`}
                             style={{ width: `${Math.min(100, qv.pct ?? 0)}%` }}
                           />
                         </div>
-                        <span className={`text-xs ${qv.over ? "font-semibold text-bad-ink" : "text-ink-faint"}`}>
+                        <span className={`whitespace-nowrap text-xs ${qv.over ? "font-semibold text-bad-ink" : "text-ink-soft"}`}>
                           {qv.label} de {r.quota.toLocaleString("fr-FR")}
                           {qv.over && " · dépassé"}
                         </span>

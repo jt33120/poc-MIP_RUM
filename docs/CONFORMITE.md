@@ -8,8 +8,9 @@
 ## 1. Résidence des données 🇪🇺
 
 > Ces trois lignes sont le reflet de `apps/console/lib/legal.ts` (constantes `HOSTS` et
-> `SUBPROCESSORS`), qui alimente `/legal/confidentialite` et les Specs de la vitrine (les pages
-> `/legal/mentions` et `/legal/dpa` ont été retirées le 22/09/2026). `tests/unit/conformite.test.ts`
+> `SUBPROCESSORS`), qui alimente `/legal/confidentialite`, `/extension-privacy` et les Specs de la
+> vitrine (les pages `/legal/mentions` et `/legal/dpa` ont été retirées le 22/09/2026 ; les documents
+> publics renvoient au DPA comme à une pièce fournie sur demande). `tests/unit/conformite.test.ts`
 > refuse qu'elles divergent : ce document a déclaré **Supabase / `eu-west-3` (Paris)** pendant des
 > semaines après la migration vers Neon, et omis Railway alors que ce sous-traitant reçoit les
 > mesures. Une pièce d'appel d'offres périmée n'est pas une coquille, c'est une déclaration

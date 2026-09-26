@@ -17,8 +17,15 @@
 //     un ruban ouvre les sessions passées par la route d'arrivée, un nœud ouvre
 //     la route dans `/pages`. Mêmes liens dans l'alternative textuelle : qui ne
 //     voit pas les rubans doit pouvoir faire le même geste.
+//
+// SOUS 640 PX, UNE LISTE (recette du 26/09/2026). Le dessin garde 560 px de large
+// pour que ses libellés restent lisibles : dans une carte de 324 px, la colonne des
+// destinations sortait de l'écran sans signe de défilement, et les libellés
+// tombaient à 8 px. Sur mobile, les transitions les plus fréquentes sont listées à
+// sa place (« départ → arrivée », nombre, barre proportionnelle), avec le même
+// lien qu'un ruban ; le dessin reste au-delà de `sm`.
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { TableAlternative } from "./charts/Figure";
 import { SERIE } from "@/lib/palette";
 import { hauteurSankey, type SankeyModel } from "@/lib/sankey";
@@ -34,6 +41,8 @@ const XM = (RX0 + X1) / 2;
 const ENTETE = 18;
 /** Caractères d'un libellé de nœud (police mono 11) qui tiennent dans la marge de 150 unités. */
 const CARACTERES_LIBELLE = 21;
+/** Transitions listées sous 640 px : autant qu'un côté du dessin a de nœuds au plus. */
+const TRANSITIONS_MOBILE = 8;
 
 /**
  * Où mènent les nœuds et les rubans. Calculé par l'appelant (§ 0.3 : un lien
@@ -62,6 +71,24 @@ export function tronquerMilieu(s: string, n: number): string {
   return `${s.slice(0, tete)}…${s.slice(s.length - (n - 1 - tete))}`;
 }
 
+/**
+ * Une route avec une occasion de coupure (`<wbr>`) avant chaque « / » : passée à la
+ * ligne dans une colonne étroite, elle se coupe entre deux segments
+ * (« /partners/:id/ | documents ») plutôt qu'au milieu d'un mot (« documen | ts »).
+ * Le texte, lui, ne change pas (ni espace ni caractère ajouté).
+ */
+export function routeCoupable(route: string): ReactNode {
+  return route.split("/").map((segment, i) =>
+    i === 0 ? (
+      segment
+    ) : (
+      <Fragment key={i}>
+        <wbr />/{segment}
+      </Fragment>
+    ),
+  );
+}
+
 const compte = (n: number) => n.toLocaleString("fr-FR");
 
 /** « 128 passages » / « 1 passage » : le total d'un nœud, accordé. */
@@ -76,6 +103,17 @@ export function libelleNoeud(route: string, total: number): string {
   return `${tronquerMilieu(route, Math.max(8, CARACTERES_LIBELLE - suffixe.length))}${suffixe}`;
 }
 
+/**
+ * Les transitions les plus fréquentes, pour la liste mobile : celles du dessin, par
+ * nombre de passages décroissant (à égalité, dans l'ordre des routes : un rendu
+ * serveur stable). Logique pure, exportée pour les tests.
+ */
+export function transitionsPrincipales(model: SankeyModel, n = TRANSITIONS_MOBILE): SankeyModel["links"] {
+  return [...model.links]
+    .sort((a, b) => b.count - a.count || (a.from < b.from ? -1 : a.from > b.from ? 1 : a.to < b.to ? -1 : a.to > b.to ? 1 : 0))
+    .slice(0, n);
+}
+
 /** Un texte, ou ce même texte cliquable — sans forcer un lien là où il n'y en a pas. */
 function PeutEtreLien({ href, title, children }: { href?: string; title: string; children: ReactNode }) {
   if (!href) return <>{children}</>;
@@ -83,6 +121,67 @@ function PeutEtreLien({ href, title, children }: { href?: string; title: string;
     <Link href={href} title={title} className="font-medium text-ink hover:text-accent hover:underline">
       {children}
     </Link>
+  );
+}
+
+/**
+ * Sous 640 px : les transitions les plus fréquentes, en liste. Une ligne mène où
+ * mène son ruban (les sessions passées par la route d'arrivée) ; la barre, relative
+ * à la première transition, garde la lecture « épaisseur = volume » du dessin.
+ */
+function ListeTransitions({ model, liens }: { model: SankeyModel; liens: LiensSankey }) {
+  const principales = transitionsPrincipales(model);
+  const max = principales[0]?.count ?? 0;
+  return (
+    <div className="sm:hidden" data-testid="sankey-liste">
+      <p className="mb-2 text-xs text-ink-soft">
+        {principales.length < model.links.length
+          ? `${compte(principales.length)} principales transitions sur ${compte(model.links.length)}`
+          : "Principales transitions"}
+        , de la plus fréquente à la moins fréquente
+      </p>
+      <ol className="space-y-1">
+        {principales.map((l) => {
+          const href = liens.sessions?.(l.to);
+          const libelle = `${l.from} vers ${l.to} : ${passages(l.count)}`;
+          const contenu = (
+            <>
+              <span className="flex min-w-0 items-baseline justify-between gap-2">
+                {/* Les routes passent à la ligne plutôt que d'être coupées : sur mobile,
+                    aucune infobulle ne rendrait la fin d'une route tronquée. */}
+                <span className="min-w-0 font-mono text-xs text-ink [overflow-wrap:anywhere]">
+                  {routeCoupable(l.from)} <span aria-hidden="true">→</span>
+                  <span className="sr-only">vers</span> {routeCoupable(l.to)}
+                </span>
+                <span className="shrink-0 text-xs font-semibold tabular-nums text-ink">{compte(l.count)}</span>
+              </span>
+              <span aria-hidden="true" className="mt-1 block h-1.5 overflow-hidden rounded-full bg-panel2">
+                <span
+                  className="block h-full rounded-full"
+                  style={{ width: `${max > 0 ? Math.max(2, (l.count / max) * 100) : 0}%`, backgroundColor: SERIE.principale, opacity: 0.6 }}
+                />
+              </span>
+            </>
+          );
+          return (
+            <li key={`${l.from}→${l.to}`} data-testid="sankey-transition">
+              {href ? (
+                <Link
+                  href={href}
+                  aria-label={`${libelle} — ouvrir les sessions passées par ${l.to}`}
+                  title={`Sessions passées par ${l.to}`}
+                  className="block rounded-md px-2 py-1.5 transition hover:bg-panel2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                >
+                  {contenu}
+                </Link>
+              ) : (
+                <div className="px-2 py-1.5">{contenu}</div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
@@ -108,7 +207,7 @@ export function Sankey({
   const H = hauteur ?? hauteurSankey(model);
   const y = (v: number) => v * H;
   const depuis = ancre ? ` à partir de ${ancre}` : "";
-  const legende = `Flux de navigation entre routes (source vers cible)${depuis}`;
+  const legende = `Flux de navigation entre routes (départ vers arrivée)${depuis}`;
   const cliquable = Boolean(liens.sessions || liens.pages || liens.ancrer);
 
   const lignes: ReactNode[][] = model.links.map((l) => [
@@ -136,7 +235,8 @@ export function Sankey({
           Flux à partir de <span className="font-mono text-ink">{ancre}</span>
         </p>
       )}
-      <div className="overflow-x-auto">
+      <ListeTransitions model={model} liens={liens} />
+      <div className="hidden overflow-x-auto sm:block" data-testid="sankey-dessin">
         {/* La hauteur passe par le viewBox, pas par une hauteur CSS : le dessin garde
             son rapport largeur/hauteur à toutes les tailles d'écran (une hauteur fixe
             avec un viewBox large laisserait des bandes vides autour du dessin).
@@ -164,7 +264,7 @@ export function Sankey({
             const ty1 = y(l.ty1);
             const d = `M ${RX0},${sy0} C ${XM},${sy0} ${XM},${ty0} ${X1},${ty0} L ${X1},${ty1} C ${XM},${ty1} ${XM},${sy1} ${RX0},${sy1} Z`;
             const href = liens.sessions?.(l.to);
-            const titre = `${l.from} → ${l.to} : ${compte(l.count)}${href ? ` — ouvrir les sessions passées par ${l.to}` : ""}`;
+            const titre = `${l.from} → ${l.to} : ${passages(l.count)}${href ? ` — ouvrir les sessions passées par ${l.to}` : ""}`;
             // Une couleur unique : la direction et le volume sont déjà portés par la
             // forme ; une teinte par route se lirait comme une catégorie (P15).
             const ruban = (
@@ -195,7 +295,7 @@ export function Sankey({
               const ancrage = gauche ? liens.ancrer?.(n.route) : undefined;
               const href = ancrage ?? liens.pages?.(n.route);
               const titre = ancrage
-                ? `Ancrer le flux à partir de ${n.route} (${passages(n.total)}) — la page de la route s'ouvre depuis l'alternative textuelle`
+                ? `Ne suivre que les passages qui partent de ${n.route} (${passages(n.total)})`
                 : `Ouvrir ${n.route} dans Pages (${passages(n.total)})`;
               const contenu = (
                 <>
@@ -228,7 +328,9 @@ export function Sankey({
       </div>
       {alternative && (
         <TableAlternative
-          alternative={{ legende: `${legende} — De, Vers, Sessions`, colonnes: ["De", "Vers", "Sessions"], lignes }}
+          // « Passages », pas « Sessions » : une session qui repasse deux fois par la même
+          // transition y compte deux fois (c'est l'épaisseur du ruban).
+          alternative={{ legende: `${legende} — De, Vers, Passages`, colonnes: ["De", "Vers", "Passages"], lignes }}
         />
       )}
     </div>

@@ -33,6 +33,9 @@ export type SensMeilleur = "bas" | "haut" | "neutre";
 /** Sous ce nombre de mesures, « échantillon faible » (§ 3.12 : 100 pour un vital). */
 export const FAIBLE_SOUS_DEFAUT = 100;
 
+/** Espace insécable : « ≈ » ne se sépare jamais du chiffre en fin de ligne. */
+const NBSP = String.fromCharCode(0xa0);
+
 /** Sous ±2 %, un delta est « stable » : reprise de `DeltaBadge`. */
 const SEUIL_STABLE_PCT = 2;
 
@@ -179,6 +182,7 @@ export function KpiTile({
   ecart,
   href,
   testid,
+  approchee = false,
 }: {
   /** « LCP p75 », « Sessions commencées ». */
   label: string;
@@ -227,11 +231,21 @@ export function KpiTile({
    * l'attacher au cadre (dont le texte porte aussi le libellé et la lecture).
    */
   testid?: string;
+  /**
+   * Valeur lue sur une distribution par tranches, pas mesure par mesure : le chiffre
+   * s'écrit « ≈ 93 ms », et le lecteur d'écran dit « environ ». Une mention sous la
+   * valeur (« ≈ valeur approchée ») se lisait comme une ligne de plus, détachée du
+   * chiffre qu'elle qualifie (recette du 26/09/2026).
+   */
+  approchee?: boolean;
 }) {
   const connue = valeur != null && Number.isFinite(valeur);
   const faibleSous = couverture?.faibleSous ?? FAIBLE_SOUS_DEFAUT;
   const sens: SensMeilleur = sensMeilleur ?? (vital ? "bas" : "neutre");
-  const texteValeur = formater(format, connue ? valeur : null);
+  const brute = formater(format, connue ? valeur : null);
+  // « — » n'est pas approché : un inconnu reste un inconnu.
+  const approche = approchee && connue;
+  const texteValeur = approche ? `≈${NBSP}${brute}` : brute;
 
   // Verdict (vital au p75 seulement) : la logique de VitalCard, partagée.
   const verdict =
@@ -275,7 +289,7 @@ export function KpiTile({
         : `${formater("count", couverture.n)} ${couverture.unite}`;
 
   const ariaLabel = [
-    `${label} ${texteValeur}`,
+    `${label} ${approche ? `environ ${brute}` : brute}`,
     !connue ? raisonNull : null,
     verdict ? texteVerdict(verdict) : null,
     texteIntervalle,

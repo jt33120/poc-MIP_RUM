@@ -13,7 +13,7 @@ describe("quotaView", () => {
     expect(quotaView(5, 0)).toMatchObject({ pct: null, over: false });
   });
   it("sous le quota → pct + over=false", () => {
-    expect(quotaView(620, 1000)).toEqual({ pct: 62, over: false, label: "62%" });
+    expect(quotaView(620, 1000)).toEqual({ pct: 62, over: false, label: "62\u00a0%" });
   });
   it("au-dessus du quota → over=true, pct > 100", () => {
     const v = quotaView(1500, 1000);

@@ -158,7 +158,7 @@ const VUES = { table: "rum_pageview", colonneTemps: "started_at", additive: true
     expect(debut?.toISOString()).toBe(HIER.toISOString());
     const couverture = await lib.couverturePrecedente(requete(`app=${A}&period=7d`), METRIQUE);
     expect(couverture.etat).toBe("partielle");
-    expect(couverture.raison).toMatch(/^mesures de performance collectées depuis le \d{2}\/\d{2} \d{2}:\d{2} UTC seulement$/);
+    expect(couverture.raison).toMatch(/^mesures de performance collectées depuis le \d{2}\/\d{2} à \d{2}:\d{2} seulement$/);
   });
 
   it("period=24h avec historique complet → complète", async () => {

@@ -28,8 +28,8 @@ export const METRIC_LABELS: Record<string, string> = {
   FCP: "FCP (ms)",
   TTFB: "TTFB (ms)",
   error_rate: "Taux d'erreur JS",
-  log_errors: "Logs ERROR (nombre)",
-  event: "Événement custom (nombre)",
+  log_errors: "Logs en erreur (nombre)",
+  event: "Événement personnalisé (nombre)",
   issue: "Issue d'erreurs (occurrences)",
 };
 
@@ -38,4 +38,33 @@ export function metricLabel(metric: string): string {
   if (metric.startsWith("event:")) return `Événement « ${metric.slice(6)} » (nombre)`;
   if (ISSUE_METRIC.test(metric)) return `Issue ${metric.slice(6, 14)} (occurrences)`;
   return METRIC_LABELS[metric] ?? metric;
+}
+
+/**
+ * Libellé COURT d'une métrique, sans son unité : ce qu'une annotation dessinée
+ * au-dessus d'une série, ou une phrase (« Taux d'erreur JS : 37 % »), peut porter.
+ * Le même vocabulaire que les règles (`metricLabel`) : la recette du 26/09/2026
+ * lisait « log_errors », « error_rate » ou « event:frustration.rage » au-dessus des
+ * courbes, quand la règle, plus bas, disait « Taux d'erreur JS ».
+ */
+export function libelleCourtMetrique(metric: string): string {
+  if (metric.startsWith("event:")) return `Événement « ${metric.slice(6)} »`;
+  if (ISSUE_METRIC.test(metric)) return `Issue ${metric.slice(6, 14)}`;
+  if (metric === "error_rate") return "Taux d'erreur JS";
+  if (metric === "log_errors") return "Logs en erreur";
+  if (metric === "event") return "Événement";
+  if (metric === "issue") return "Issue d'erreurs";
+  return metric === "" ? "sans métrique" : metric;
+}
+
+/**
+ * La sévérité en français (« critique »), jamais la clé de la base (« critical »).
+ * Ici, sans la base : le badge et les champs de règle la lisent. Une valeur
+ * ancienne (`page`, `error`, `warn`) est ramenée aux trois du domaine, une
+ * inconnue à « information » — la règle de `severiteConnue`.
+ */
+export function libelleSeverite(severity: string): string {
+  if (severity === "critical" || severity === "page" || severity === "error") return "critique";
+  if (severity === "warning" || severity === "warn") return "avertissement";
+  return "information";
 }

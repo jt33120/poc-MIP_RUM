@@ -30,6 +30,7 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref
 import "@rrweb/replay/dist/style.css";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { formater } from "@/lib/fmt-ids";
+import { pluriel } from "@/lib/format";
 import {
   TEXTE_COUVERTURE,
   VITESSES,
@@ -54,7 +55,7 @@ interface Viewport {
   height: number;
 }
 
-const INDISPONIBLE = "Replay indisponible à cet instant";
+const INDISPONIBLE = "Rejeu indisponible à cet instant";
 
 /** Commande de la tête de lecture, tenue par l'îlot `ReplaySynchro`. */
 export interface CommandeLecteur {
@@ -327,7 +328,7 @@ export default function ReplayPlayer({
       )}
       {state === "error" && (
         <div className="py-6 text-center" data-testid="replay-erreur">
-          <p className="text-sm text-bad-ink">Replay indisponible : le chargement des segments a échoué.</p>
+          <p className="text-sm text-bad-ink">Rejeu indisponible : le chargement des segments a échoué.</p>
           <button type="button" className="btn-accent mt-3" onClick={() => setTentative((n) => n + 1)}>
             Réessayer
           </button>
@@ -365,7 +366,7 @@ export default function ReplayPlayer({
           >
             Sauter l&apos;inactivité
           </button>
-          <p className="text-xs text-ink-soft">{formater("count", eventCount)} événements rrweb</p>
+          <p className="text-xs text-ink-soft">{pluriel(eventCount, "événement enregistré", "événements enregistrés")}</p>
         </div>
       )}
       {state === "ready" && saut && (

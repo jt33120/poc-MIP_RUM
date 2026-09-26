@@ -288,7 +288,9 @@ export function FriseDeclenchements({ debut, fin, pistes, maxPistes = 12, tronqu
         </span>
       </p>
 
-      <TableAlternative alternative={alternativeDeclenchements(ordonnees)} />
+      {/* Nommée par ce qu'elle double : sur /alerts, la carte porte aussi l'alternative
+          des barres par jour, et deux « Alternative textuelle » se confondaient. */}
+      <TableAlternative alternative={alternativeDeclenchements(ordonnees)} titre="Alternative textuelle — déclenchements par source" />
     </div>
   );
 }

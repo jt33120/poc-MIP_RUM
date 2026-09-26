@@ -42,6 +42,7 @@ import { DEFAULT_ROWS, EXPLORER_VERSION } from "@/lib/analytics-schema";
 import { HISTO_BUCKETS } from "@/lib/distribution";
 import { etatLectureEchantillonnage } from "@/lib/echantillonnage";
 import { explorerHref } from "@/lib/explorer-page-params";
+import { pluriel } from "@/lib/format";
 import type { SearchParams } from "@/lib/filters";
 import { estVital, formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
 import { classerParGravite, estFaible } from "@/lib/impact";
@@ -241,7 +242,20 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
     ? annotationsDeploiements(deploys.data, ecran.query.range, {
         lien: (relB, relA) => hrefCourant({ cmp: "release", rel_b: relB, rel_a: relA }),
       })
-    : { annotations: [], liste: [], indisponible: "marqueurs de déploiement non lus" };
+    : { annotations: [], liste: [], indisponible: "la liste des déploiements n'a pas pu être lue" };
+  // Les mêmes lectures pour la série des blocages et la table de leurs pires cas.
+  const proprietesBlocages = {
+    serie: blocages,
+    worst: pires,
+    grille: bucketStarts(ecran.query.range),
+    bucketSeconds: ecran.query.range.bucketSeconds,
+    bucketLabel: ecran.bucketLabel,
+    periodLabel: period.label,
+    zoomHref: gabaritZoom(hrefWithQuery("/pages", ecran.query, { period: null, from: "{from}", to: "{to}" }), sp),
+    annotations: annotations.annotations,
+    annotationsIndisponibles: annotations.indisponible ?? undefined,
+    sessionHref: (id: string) => hrefWithQuery(`/sessions/${encodeURIComponent(id)}`, ecran.query),
+  };
 
   const lignesJointes: RoutePages[] | null =
     classement.disponible && decoupe.ok && decoupe.data
@@ -479,7 +493,9 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
         </SectionErreur>
       </div>
 
-      {/* 7 — Réseau (5/12) · fil principal (7/12). */}
+      {/* 7 — Réseau (5/12) · fil principal (7/12), puis les pires blocages. Le bloc
+          garde l'adresse `longtasks` des e2e : série et pires cas y restent ensemble. */}
+      <div data-testid="longtasks">
       <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-12">
         <div id="reseau" className="min-w-0 scroll-mt-4 lg:col-span-5">
           <SectionErreur titre="D'où vient le TTFB">
@@ -508,20 +524,15 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
             lectures : l'une en échec le dit dans SON bloc, l'autre reste. */}
         <div id="fil-principal" className="min-w-0 scroll-mt-4 lg:col-span-7">
           <SectionErreur titre="Tâches longues dans le temps">
-            <LongtasksView
-              serie={blocages}
-              worst={pires}
-              grille={bucketStarts(ecran.query.range)}
-              bucketSeconds={ecran.query.range.bucketSeconds}
-              bucketLabel={ecran.bucketLabel}
-              periodLabel={period.label}
-              zoomHref={gabaritZoom(hrefWithQuery("/pages", ecran.query, { period: null, from: "{from}", to: "{to}" }), sp)}
-              annotations={annotations.annotations}
-              annotationsIndisponibles={annotations.indisponible ?? undefined}
-              sessionHref={(id) => hrefWithQuery(`/sessions/${encodeURIComponent(id)}`, ecran.query)}
-            />
+            <LongtasksView {...proprietesBlocages} partie="serie" />
           </SectionErreur>
         </div>
+      </div>
+      {/* Les pires blocages sur toute la largeur, sous la rangée : dans la colonne de la
+          série, ils laissaient une colonne vide à côté du TTFB (recette du 26/09/2026). */}
+      <SectionErreur titre="Les blocages les plus longs">
+        <LongtasksView {...proprietesBlocages} partie="pires" />
+      </SectionErreur>
       </div>
 
       {/* 8 — Ressources (P6.3) : ce qui est téléchargé, d'où, à quel coût — avec son
@@ -695,13 +706,18 @@ function FigureNavigation({
       `${formater("count", l.spa)} SPA`,
       ...(l.inconnu > 0 ? [`${formater("count", l.inconnu)} type inconnu`] : []),
     ].join(" · ");
+  // Une route web commence par « / » ; sans, c'est un écran React Native
+  // (« FichePartenaire ») : il est dit tel quel, pour que « Recherche » ne se lise
+  // pas comme un doublon de « /recherche » (recette du 26/09/2026).
+  const libelleRoute = (route: string | null) =>
+    route !== null && route !== "" && !route.startsWith("/") ? `${groupLabel(route)} (écran mobile)` : groupLabel(route);
   const data: RankDatum[] = lignes.map((l) => ({
-    label: l.ensemble ? "Ensemble" : groupLabel(l.route),
+    label: l.ensemble ? "Ensemble" : libelleRoute(l.route),
     value: total(l),
     display: formater("count", total(l)),
     sub: sousTexte(l),
     href: l.ensemble ? undefined : drill(l.route),
-    title: `${l.ensemble ? "Ensemble" : groupLabel(l.route)} — ${sousTexte(l)}`,
+    title: `${l.ensemble ? "Ensemble" : libelleRoute(l.route)} — ${sousTexte(l)}`,
     segments: CLASSES_NAVIGATION.map((c) => ({ value: l[c.cle], color: c.couleur, label: `${c.libelle} : ${formater("count", l[c.cle])}` })),
   }));
   const autres = navigation.data.length - Math.min(navigation.data.length, ROUTES_NAVIGATION);
@@ -713,8 +729,8 @@ function FigureNavigation({
         <>
           <span>{plage}</span>
           <span>
-            {Math.min(navigation.data.length, ROUTES_NAVIGATION).toLocaleString("fr-FR")} route(s) par volume décroissant
-            {autres > 0 ? `, ${autres.toLocaleString("fr-FR")} autre(s) non montrée(s)` : ""}
+            {pluriel(Math.min(navigation.data.length, ROUTES_NAVIGATION), "route")} par volume décroissant
+            {autres > 0 ? `, ${pluriel(autres, "autre non montrée", "autres non montrées")}` : ""}
           </span>
           {!totalEnsemble && <span>ligne « Ensemble » non lue</span>}
         </>
@@ -728,7 +744,7 @@ function FigureNavigation({
       alternative={{
         legende: `${titre} sur ${plage} : chargements, changements de route SPA et type inconnu, par route`,
         colonnes: ["Route", "Chargements", "SPA", "Inconnu", "Total"],
-        lignes: lignes.map((l) => [l.ensemble ? "Ensemble" : groupLabel(l.route), l.chargements, l.spa, l.inconnu, total(l)]),
+        lignes: lignes.map((l) => [l.ensemble ? "Ensemble" : libelleRoute(l.route), l.chargements, l.spa, l.inconnu, total(l)]),
       }}
     >
       <ul className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-soft" aria-label="Légende">
@@ -1028,7 +1044,9 @@ function HeroRoutes({
     .join(" ");
 
   return (
-    <div className="min-w-0 [&_ol]:max-h-[28rem] [&_ol]:overflow-y-auto" data-testid="hero-routes" data-vital={vital}>
+    // Défilement de la liste à partir de 640 px seulement : sur mobile, une zone qui
+    // défile DANS la page montrait 4 routes sur 9 sans le dire (recette du 26/09/2026).
+    <div className="min-w-0 sm:[&_ol]:max-h-[28rem] sm:[&_ol]:overflow-y-auto" data-testid="hero-routes" data-vital={vital}>
       {avertissements.length > 0 && (
         <div className="mb-2">
           <EtatSurface compact etat={{ kind: "partiel", raison: `${avertissements.join(" ; ")}.` }} />

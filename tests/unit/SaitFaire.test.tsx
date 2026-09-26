@@ -1,11 +1,12 @@
-// P**.4 — La partie 2 de la vitrine, rendue (plan § 8.2, PS7 à PS9 ; recette TP3 et
-// TP4 du § 8.5 pour la page elle-même).
+// P**.4 — La partie 2 du dossier technique, rendue (plan § 8.2, PS7 à PS9 ; recette
+// TP3 et TP4 du § 8.5 pour la page elle-même).
 //
 // Ce que ces tests tiennent, en rendu SSR réel (`renderToStaticMarkup`) :
-//   - PS7 : une carte par entrée, au verdict LU dans le document et écrit une fois,
-//     « Limites : » puis une puce par identifiant, sa pastille en tête, sa phrase
-//     entière — rien de replié ; ni D12 ni D14 nulle part dans la partie ; le renvoi
-//     « (voir R3) » mène à une ancre qui existe dans « Ce qui reste » ;
+//   - PS7 : une carte par entrée, au verdict LU dans le document (`data-verdict`) et
+//     dit une seule fois pour toutes dans le chapeau (recette du 26/09/2026), « Limites : »
+//     puis une puce par identifiant, sa pastille en tête, sa phrase entière — rien de
+//     replié ; ni D12 ni D14 nulle part dans la partie ; le renvoi « (voir R3) » est un
+//     lien nommé par le titre du point, vers une ancre qui existe dans « Ce qui reste » ;
 //   - V-E : une case par capacité, une légende qui écrit chaque nombre et son
 //     verdict, un `role="img"` qui dit la même chose, une alternative textuelle ;
 //     aucune teinte de verdict de mesure (vert, ambre, rouge) ;
@@ -56,7 +57,7 @@ describe("la partie 2 — titre, chapeau, ordre des blocs", () => {
     expect(PARTIE).toContain(`<section id="sait-faire" aria-labelledby="${idTitre("sait-faire")}"`);
     expect(texte(PARTIE)).toContain("Ce qu'il sait faire");
     expect(texte(PARTIE)).toContain(
-      "Ne figurent ici que les capacités que le document de couverture classe « déployé, non éprouvé » : le code est en service et ses tests passent, mais il n'a jamais rencontré de données réellement ingérées. Aucune capacité n'a encore de meilleur verdict. Chacune est donnée avec sa limite.",
+      "Toutes les capacités ci-dessous sont classées « déployé, non éprouvé » par le registre : le code est en service et ses tests passent, mais il n'a pas encore été éprouvé sur des données réellement ingérées. Aucune capacité n'a encore de meilleur verdict. Chacune est donnée avec sa limite ; la pastille est sa référence dans le registre, en fin de page.",
     );
   });
 
@@ -78,12 +79,15 @@ describe("la partie 2 — titre, chapeau, ordre des blocs", () => {
 describe("PS7 — les cartes rendues (pendant unitaire de TP3)", () => {
   const cartes = articles(PARTIE);
 
-  it("une carte par entrée, dans l'ordre, au verdict du document écrit une seule fois", () => {
+  it("une carte par entrée, dans l'ordre, au verdict du document ; le verdict commun est dit une fois, dans le chapeau", () => {
     expect(cartes).toHaveLength(CARTES.length);
+    // Recette du 26/09/2026 : « non éprouvé » revenait sur chaque carte.
+    expect(texte(PARTIE).split("« déployé, non éprouvé »").length - 1).toBe(1);
     cartes.forEach((html, i) => {
       const c = CARTES[i];
       expect(html).toContain(`data-testid="capacite" data-carte="${c.id}" data-verdict="deploye_non_eprouve"`);
-      expect(html.split(VERDICT_LABEL.deploye_non_eprouve).length - 1, c.id).toBe(1);
+      expect(html, c.id).not.toContain(VERDICT_LABEL.deploye_non_eprouve);
+      expect(html, c.id).not.toContain('data-testid="capacite-verdict"');
       expect(texte(html)).toContain(texte(c.titre));
       expect(texte(html)).toContain(texte(c.faitQuoi));
       expect(html.split("Limites :").length - 1, c.id).toBe(1);
@@ -98,7 +102,9 @@ describe("PS7 — les cartes rendues (pendant unitaire de TP3)", () => {
       puces.forEach((m, j) => {
         const pastille = /^<span[^>]*>([^<]+)<\/span>/.exec(m[2]);
         expect(pastille?.[1], `${c.id} ${m[1]}`).toBe(m[1]);
-        expect(texte(m[2].slice(pastille![0].length)), `${c.id} ${m[1]}`).toBe(texte(c.limites[j].texte));
+        // Un renvoi « (voir R3) » se lit par le titre du point.
+        const attendu = c.limites[j].texte.replace(/\(voir (R\d+)\)/g, (_, id: string) => `(voir « ${POINTS_RESTE.find((p) => p.id === id)!.titre} »)`);
+        expect(texte(m[2].slice(pastille![0].length)), `${c.id} ${m[1]}`).toBe(texte(attendu));
       });
       expect(html).not.toMatch(/<details|voir plus/i);
     });
@@ -118,22 +124,24 @@ describe("PS7 — les cartes rendues (pendant unitaire de TP3)", () => {
     }
   });
 
-  it("une colonne à 390 px, deux à 768, trois à 1440", () => {
-    expect(PARTIE).toContain('class="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"');
+  it("une colonne à 390 px, deux à partir de 768, en colonnes de texte (sans blanc sous les cartes courtes)", () => {
+    expect(PARTIE).toContain('class="mt-5 columns-1 gap-4 md:columns-2"');
+    for (const html of cartes) expect(html).toMatch(/^<article [^>]*class="[^"]*break-inside-avoid/);
   });
 
-  it("un renvoi « (voir R3) » est un lien vers la carte de ce point, qui existe dans « Ce qui reste »", () => {
+  it("un renvoi « (voir R3) » est un lien nommé par le titre du point, vers sa carte dans « Ce qui reste »", () => {
     const renvois = [...new Set(CARTES.flatMap((c) => c.limites).flatMap((l) => [...l.texte.matchAll(/\(voir (R\d+)\)/g)].map((m) => m[1])))];
     expect(renvois).toEqual(["R3"]); // A6 : le branchement dans la CI d'un client
     const reste = renderToStaticMarkup(<Reste />);
     for (const id of renvois) {
       const titre = POINTS_RESTE.find((p) => p.id === id)!.titre;
-      expect(PARTIE).toContain(`<a href="#${ancreDuPoint(id)}" title="Ce qui reste : ${titre.replace(/'/g, "&#x27;")}"`);
+      expect(PARTIE).toMatch(new RegExp(`<a href="#${ancreDuPoint(id)}"[^>]*>${titre.replace(/'/g, "&#x27;")}</a>`));
       expect(reste, `${id} : ancre absente de Reste.tsx`).toContain(`id="${ancreDuPoint(id)}"`);
     }
-    // Le texte lu reste celui du plan.
+    // Le texte lu nomme le point, jamais son code.
     const a6 = /<li data-testid="capacite-limite" data-id="A6"[^>]*>(.*?)<\/li>/.exec(PARTIE)?.[1] ?? "";
-    expect(texte(a6)).toContain("n'est pas fait (voir R3).");
+    expect(texte(a6)).toContain("n'est pas fait (voir « Source maps dans l'intégration continue du client »).");
+    expect(texte(PARTIE)).not.toMatch(/\bR\d+\b/);
   });
 });
 
@@ -157,7 +165,9 @@ describe("V-E — la barre de couverture", () => {
 
   it("l'alternative textuelle : une ligne par groupe dessiné, relevé et commit en légende", () => {
     const alt = /<details[^>]*data-testid="alternative"[^>]*>(.*?)<\/details>/.exec(html)?.[1] ?? "";
-    expect(texte(alt)).toContain(`Capacités du document de couverture par verdict, relevé du ${RELEVE} sur ${SHA}`);
+    expect(texte(alt)).toContain(`Capacités du registre par verdict, relevé du ${RELEVE}`);
+    // Ni empreinte de commit ni « document de couverture » sur la page publique.
+    expect(html).not.toContain(SHA);
     expect(alt).toContain('<th scope="col"');
     const lignes = [...alt.matchAll(/<tr[^>]*><th scope="row"[^>]*>([^<]+)<\/th><td[^>]*>([^<]+)<\/td><\/tr>/g)];
     expect(lignes.map((m) => [texte(m[1]), Number(texte(m[2]))])).toEqual(
@@ -190,10 +200,11 @@ describe("PS9 — où se situe ce POC", () => {
 
   it("en-tête de colonne et phrase sous la table, textes exacts du plan", () => {
     expect(EN_TETE_EKARA).toBe("IP-Label Ekara, d'après ses pages publiques consultées en septembre 2026");
+    // « Ce POC » en deuxième colonne : en troisième, elle tombait hors champ à 390 px.
     expect([...html.matchAll(/<th scope="col"[^>]*>([^<]+)<\/th>/g)].map((m) => texte(m[1]))).toEqual([
       "Critère",
-      EN_TETE_EKARA,
       "Ce POC",
+      EN_TETE_EKARA,
     ]);
     expect(lu).toContain("Cette table compare ce qui est publié, pas ce qui a été essayé : nous n'avons pas utilisé Ekara.");
   });
@@ -206,8 +217,8 @@ describe("PS9 — où se situe ce POC", () => {
       "Extension navigateur pour postes gérés",
       "Hébergement en UE",
     ]);
-    for (const m of lignes) expect(texte(m[2])).toMatch(/^Documenté( |$)/);
-    expect(lignes.map((m) => texte(m[3]))).toEqual(POSITIONNEMENT.map((l) => l.poc));
+    for (const m of lignes) expect(texte(m[3])).toMatch(/^Documenté( |$)/);
+    expect(lignes.map((m) => texte(m[2]))).toEqual(POSITIONNEMENT.map((l) => l.poc));
   });
 
   it("aucune cellule « rapporté (prudence) », rien sur Datadog, aucun superlatif", () => {
@@ -229,8 +240,8 @@ describe("PS9 — où se situe ce POC", () => {
     }
   });
 
-  it("la table défile dans un conteneur positionné, première colonne fixée", () => {
-    expect(html).toMatch(/<div class="relative [^"]*overflow-x-auto[^"]*"><table /);
+  it("la table défile dans un cadre qui le signale, première colonne fixée", () => {
+    expect(html).toMatch(/<div role="region" aria-label="Où se situe ce POC"[^>]*class="relative overflow-x-auto[^"]*"><table /);
     expect(html.match(/<th scope="(col|row)" class="sticky left-0/g)).toHaveLength(1 + POSITIONNEMENT.length);
   });
 });

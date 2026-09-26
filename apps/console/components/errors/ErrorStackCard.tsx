@@ -4,6 +4,7 @@
 // Ce qui est lu — la symbolication, et le contexte de code réservé à
 // l'administrateur — l'est par le chargeur de l'écran (`lib/chargeurs/pile-erreur.ts`,
 // C4) : ce composant rend ce qu'il reçoit, sur le fil.
+import Link from "next/link";
 import type { Fil } from "@mip/console-contract";
 import type { PileErreur } from "@/lib/chargeurs/pile-erreur";
 import { fmtDate } from "@/lib/format";
@@ -15,10 +16,16 @@ type CodeContext = NonNullable<Fil<PileErreur>["contexte"]>;
 export function ErrorStackCard({
   last,
   pile,
+  appId,
+  admin = false,
 }: {
   last: ErrorExemplar | null;
   /** La pile lue par le chargeur : symbolication, et contexte de code pour l'admin hors démo. */
   pile: Fil<PileErreur>;
+  /** App du groupe : le lien de téléversement d'une source map la porte. */
+  appId: string;
+  /** Administrateur hors démo : lui seul peut téléverser une source map. */
+  admin?: boolean;
 }) {
   const { symbolication, contexte } = pile;
   const deminified = symbolication?.symbolication_status === "resolved" && !!symbolication.stack_symbolicated;
@@ -29,7 +36,7 @@ export function ErrorStackCard({
     // la colonne (et donc la page) — c'est le `<pre>` qui défile.
     <div className="card mb-6 min-w-0 overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-        Stack du dernier exemplaire ({last ? fmtDate(last.ts) : "—"})
+        Pile d&apos;appels du dernier exemplaire ({last ? fmtDate(last.ts) : "—"})
         {deminified && (
           <span
             data-testid="stack-deminified"
@@ -64,15 +71,19 @@ export function ErrorStackCard({
           </span>
         )}
       </div>
-      <SymbolicationNotice symbolication={symbolication} release={last?.release ?? null} />
+      <SymbolicationNotice
+        symbolication={symbolication}
+        release={last?.release ?? null}
+        televerserHref={admin ? `/admin/sourcemaps?app=${encodeURIComponent(appId)}` : null}
+      />
       {/* terminal navy permanent : lisible dans les deux thèmes */}
       <pre className="max-w-full overflow-x-auto bg-navy-950 p-4 text-xs leading-relaxed text-slate-200">
-        {(deminified ? symbolication?.stack_symbolicated : last?.stack) ?? last?.message ?? "(pas de stack capturée)"}
+        {(deminified ? symbolication?.stack_symbolicated : last?.stack) ?? last?.message ?? "(aucune pile capturée)"}
       </pre>
       {deminified && last?.stack && (
         <details className="border-t border-line">
           <summary className="cursor-pointer px-4 py-2 text-xs text-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-            Stack brute (minifiée)
+            Pile brute (minifiée)
           </summary>
           <pre className="max-w-full overflow-x-auto bg-navy-950 p-4 text-xs leading-relaxed text-slate-300">{last.stack}</pre>
         </details>
@@ -90,9 +101,12 @@ export function ErrorStackCard({
 function SymbolicationNotice({
   symbolication,
   release,
+  televerserHref,
 }: {
   symbolication: StackSymbolication | null;
   release: string | null;
+  /** Écran de téléversement des source maps (administrateur) ; `null` : un autre compte. */
+  televerserHref: string | null;
 }) {
   const status = symbolication?.symbolication_status;
   if (!symbolication || !status) return null;
@@ -104,7 +118,7 @@ function SymbolicationNotice({
     ) : null;
   }
   const titre =
-    status === "failed" ? "Source map inutilisable" : status === "pending" ? "Symbolication différée" : "Stack non symbolisée";
+    status === "failed" ? "Source map inutilisable" : status === "pending" ? "Symbolication différée" : "Pile non symbolisée";
   // Une app sans source map n'est pas en défaut : seuls l'échec et le report alertent.
   const ton = status === "unavailable" ? "bg-panel2" : "bg-warn/10";
   return (
@@ -112,6 +126,19 @@ function SymbolicationNotice({
       <strong className="font-semibold text-ink">{titre}</strong>
       {" — "}
       {symbolication.reason ?? (release ? `aucune source map exploitable pour la release ${release}` : "release absente")}
+      {/* Recette du 26/09/2026 : la phrase ne disait pas quoi faire. Une symbolication
+          différée n'appelle aucun geste ; les deux autres états, un téléversement. */}
+      {status !== "pending" &&
+        (televerserHref ? (
+          <>
+            {" "}
+            <Link href={televerserHref} className="whitespace-nowrap rounded text-brand hover:underline" data-testid="televerser-source-map">
+              Téléverser une source map →
+            </Link>
+          </>
+        ) : (
+          " Un administrateur peut téléverser la source map de cette release."
+        ))}
     </p>
   );
 }
@@ -132,7 +159,7 @@ function CodeContextBlock({ context }: { context: CodeContext }) {
               <span className="mr-4 inline-block w-10 select-none text-right text-slate-500" aria-hidden="true">
                 {numero}
               </span>
-              <span className="sr-only">{courante ? `ligne ${numero}, frame résolue : ` : `ligne ${numero} : `}</span>
+              <span className="sr-only">{courante ? `ligne ${numero}, ligne résolue de la pile : ` : `ligne ${numero} : `}</span>
               {ligne}
             </div>
           );

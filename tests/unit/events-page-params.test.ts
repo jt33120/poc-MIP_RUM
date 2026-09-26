@@ -58,6 +58,7 @@ describe("paramètres de la page Événements", () => {
 // ─────────────────────────── F25 — liens du Journal ───────────────────────────
 import {
   cleSansValeur,
+  diagnosticJournal,
   lienJournal,
   lienPanneauJournal,
   paginationJournal,
@@ -129,5 +130,30 @@ describe("Journal (F25) : facettes, panneau, pagination", () => {
       limit: 50,
       offset: 0,
     });
+  });
+});
+
+// Recette du 26/09/2026 : l'écran écrivait le diagnostic de l'API tel quel
+// (« migration v65 absente… »). L'API garde son texte ; l'écran dit ce qui manque.
+describe("diagnosticJournal — le diagnostic de l'API, lu par un utilisateur", () => {
+  it("aucun numéro de migration ni jargon à l'écran", () => {
+    const diagnostics = [
+      "migration v65 absente : projection d’événements indisponible",
+      "migration v68 absente : journal P1 disponible, tendances et facettes désactivées",
+      "migration v68 absente : compteur indisponible",
+    ];
+    for (const d of diagnostics) {
+      const lu = diagnosticJournal(d);
+      expect(lu, d).not.toMatch(/migration|v6\d|P1|projection/);
+      expect(lu.length, d).toBeGreaterThan(10);
+    }
+    expect(diagnosticJournal(diagnostics[0])).toContain("pas encore tenu");
+    expect(diagnosticJournal(diagnostics[2])).toContain("total");
+  });
+
+  it("sans diagnostic : « lecture incomplète » ; un diagnostic inconnu garde son texte", () => {
+    expect(diagnosticJournal(null)).toBe("lecture incomplète");
+    expect(diagnosticJournal("nom d’événement invalide")).toBe("nom d’événement invalide");
+    expect(diagnosticJournal("migration v99 absente : autre chose")).toBe("autre chose");
   });
 });

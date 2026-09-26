@@ -121,7 +121,9 @@ export function MatriceCohortes({
         </table>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-soft" aria-hidden="true">
-        <span>Part revenue (intensité, sans verdict) :</span>
+        {/* En français courant : « Part revenue (intensité, sans verdict) » disait la
+            règle de conception, pas ce que la couleur mesure (recette du 26/09/2026). */}
+        <span>Part des visiteurs revenus&nbsp;:</span>
         {PALIERS_SEQUENTIELLE.map((couleur, i) => (
           <span key={couleur} className="inline-flex items-center gap-1">
             <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: couleur }} />

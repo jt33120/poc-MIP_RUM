@@ -14,9 +14,12 @@
 //
 // F42 pose la table dense « Toutes les sessions » (cartes de trois lignes à
 // 390 px), les filtres rapides et le hero « À regarder d'abord ». Le CLASSEMENT du
-// hero attend B30 (§ 6.3) : tant qu'il manque, le hero dit sa raison et ne classe
-// rien — trier les 50 lignes de la page courante donnerait « les plus graves »
-// d'un échantillon arbitraire, pas de la fenêtre (§ 5.11.6).
+// hero attend B30 (§ 6.3) : tant qu'il manque, le hero N'EST PAS AFFICHÉ — trier
+// les 50 lignes de la page courante donnerait « les plus graves » d'un échantillon
+// arbitraire, pas de la fenêtre (§ 5.11.6). Même règle pour les filtres rapides et
+// la tuile « Sessions avec frustration » : une fonction absente ne se montre pas
+// (recette du 26/09/2026, où « lecture à créer (B30) » occupait le hero, une tuile
+// et trois bascules dessinées comme actives).
 //
 // F43 ouvre le PANNEAU de session (`panel=session:<id>`, § 3.5) : une ligne de la
 // liste le pose dans l'URL, « Précédent » / « Suivant » (↑ / ↓) parcourent la page
@@ -84,7 +87,10 @@ import {
   type HrefsPriorite,
 } from "@/components/sessions/PrioriteSessions";
 import { SessionsTable } from "@/components/sessions/SessionsTable";
-import { RAISON_PRIORITE, SIGNAUX_A_CREER, type SessionPrioritaire } from "@/lib/sessions-priorite";
+import { FILTRE_AVEC_INDISPONIBLE, RAISON_PRIORITE, type SessionPrioritaire } from "@/lib/sessions-priorite";
+import { RangeeKpi } from "@/components/charts/RangeeKpi";
+import { pluriel } from "@/lib/format";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import {
   DIMENSIONS_REPARTITION,
   LIBELLES_REPARTITION,
@@ -119,7 +125,7 @@ export const dynamic = "force-dynamic";
 /** Sous ce nombre de sessions, un delta se tait : le seuil d'engagement du domaine (S6, `lib/engagement.ts`). */
 const FAIBLE_SOUS = ENGAGEMENT_MIN_SESSIONS;
 
-/** Libellés des filtres rapides de la liste (§ 5.11.4) ; leur lecture est B30. */
+/** Libellés des filtres rapides de la liste (§ 5.11.4) ; leur lecture est B30, et elles ne sont pas affichées d'ici là. */
 const LIBELLES_AVEC: Record<(typeof AVEC_SESSIONS)[number], string> = {
   erreurs: "Avec erreurs",
   frustration: "Avec frustration",
@@ -216,6 +222,15 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
   const comparer = (lu: SectionLue<unknown>, precedent: number | null, couv: CouverturePrecedente[]): Comparaison =>
     prev && lu.ok ? { precedent, reference, couverturePrecedente: couvertureCombinee(couv, nPrec) } : {};
   const precIllisible = prev && [engagementPrec, visiteursPrec, erreursPrec].some((l) => !l.ok);
+  // Les couvertures de la période précédente des tuiles comparées, pour le bandeau
+  // unique de la rangée (mêmes combinaisons que `comparer`).
+  const couverturesTuiles = prev
+    ? [
+        engagementPrec.ok ? couvertureCombinee(couvSessions, nPrec) : null,
+        visiteursPrec.ok ? couvertureCombinee(couvVisiteurs, nPrec) : null,
+        erreursPrec.ok ? couvertureCombinee([...couvTaux, ...couvErreurs], nPrec) : null,
+      ]
+    : [];
 
   // ── Volume sur grille (F04, § 3.10) ────────────────────────────────────────
   const debuts = bucketStarts(query.range);
@@ -288,13 +303,14 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
   const voisins = idPanneau === null ? null : voisinsDansLaListe(page.map((s) => s.session_id), idPanneau);
   const panneauOuvert = panneauLu !== null && panneauLu.etat !== "introuvable" ? panneauLu : null;
   const notePanneau = panneauLu?.etat === "introuvable" ? SESSION_INTROUVABLE : panneauIgnore;
-  // Hero : classement de la FENÊTRE, lu à part de la liste (B30). Aujourd'hui, son
-  // absence motivée — et aucune ligne dessinée.
+  // Hero : classement de la FENÊTRE, lu à part de la liste (B30). Aujourd'hui absent :
+  // le hero n'est pas rendu.
   const priorite = lirePriorite();
+  const heroPriorite = blocs.priorite && !("raison" in priorite);
   // Filtres rapides : `avec` est déjà un paramètre d'écran (F06) ; sa LECTURE
-  // (option `avec` de `listSessions`) est B30. Tant qu'elle manque, les bascules
-  // sont désactivées avec leur raison et une URL qui porte `avec` est déclarée NON
-  // APPLIQUÉE (V10) — jamais ignorée en silence, jamais appliquée à moitié.
+  // (option `avec` de `listSessions`) est B30. Tant qu'elle manque, les bascules ne
+  // sont pas dessinées et une URL qui porte `avec` est déclarée NON APPLIQUÉE (V10) —
+  // jamais ignorée en silence, jamais appliquée à moitié.
   const avecDemande = etatVue.avec;
   const rechercheParams = recherche
     ? { [SESSION_SEARCH_FIELD_PARAM]: recherche.field, [SESSION_SEARCH_PARAM]: recherche.value }
@@ -325,73 +341,71 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
         </p>
       )}
 
-      {/* Z2 — rangée de KPI : cinq tuiles, UNE population chacune, nommée. */}
+      {/* Z2 — rangée de KPI : quatre tuiles, UNE population chacune, nommée. */}
       <SectionErreur titre="Chiffres clés">
-        <section aria-label="Chiffres clés des sessions" className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" data-testid="kpi-sessions">
-          {engagementLu.ok ? (
-            <KpiTile
-              label="Sessions commencées"
-              valeur={commencees}
-              format="count"
-              sensMeilleur="neutre"
-              serie={tendance.ok ? sessionsParSeau : undefined}
-              couverture={{ n: commencees, unite: "sessions commencées", faibleSous: FAIBLE_SOUS }}
-              lecture={commencees === 0 ? `Aucune session commencée sur ${ecran.label}.` : undefined}
-              href={explorerHref(query, PLAN_SESSIONS_COMMENCEES)}
-              {...comparer(engagementPrec, precEngagement?.sessions_started ?? null, couvSessions)}
-            />
-          ) : (
-            <TuileEnEchec titre="Sessions commencées" />
-          )}
-          {visiteursLu.ok && visiteurs ? (
-            <KpiTile
-              label="Visiteurs distincts (identifiant aléatoire)"
-              valeur={visiteurs.valeur}
-              raisonNull={visiteurs.raisonNull}
-              format="count"
-              sensMeilleur="neutre"
-              lecture="identifiant aléatoire seulement ; ne s'additionne pas aux sessions."
-              href={explorerHref(query, PLAN_VISITEURS_DISTINCTS)}
-              {...comparer(visiteursPrec, visiteursPrec.ok ? visiteursPrec.data : null, couvVisiteurs)}
-            />
-          ) : (
-            <TuileEnEchec titre="Visiteurs distincts" />
-          )}
-          {tendance.ok ? (
-            <KpiTile
-              label="Sessions sans identifiant"
-              valeur={sansIdentifiant}
-              format="count"
-              sensMeilleur="neutre"
-              lecture="hors du compte des visiteurs : ni nouvelles ni revenantes."
-            />
-          ) : (
-            <TuileEnEchec titre="Sessions sans identifiant" />
-          )}
-          {erreursLu.ok ? (
-            <KpiTile
-              label="Occurrences d'erreur par session commencée"
-              valeur={taux.valeur}
-              raisonNull={taux.raisonNull}
-              format="ratio"
-              sensMeilleur="bas"
-              couverture={{ n: erreurs?.sessions ?? null, unite: "sessions commencées", faibleSous: FAIBLE_SOUS }}
-              lecture={lectureOccurrences(erreurs, engagement?.still_active ?? null)}
-              href={contextHref("/errors", url)}
-              {...comparer(erreursPrec, tauxPrec, [...couvTaux, ...couvErreurs])}
-            />
-          ) : (
-            <TuileEnEchec titre="Occurrences d'erreur par session commencée" />
-          )}
-          {/* B30 manque : la tuile n'affiche AUCUN nombre. Ce n'est pas « Non collecté » :
-              les événements `frustration.*` existent, c'est leur lecture par session qui manque. */}
-          <KpiTile
-            label="Sessions avec frustration"
-            valeur={null}
-            raisonNull="lecture à créer (B30)"
-            format="pct"
-            href={contextHref("/ux", url)}
-          />
+        {/* « Période précédente incomplète » dit UNE fois au-dessus de la rangée
+            (RangeeKpi), plus sous chaque tuile. */}
+        <section aria-label="Chiffres clés des sessions" className="mb-4" data-testid="kpi-sessions">
+          <RangeeKpi couvertures={couverturesTuiles} className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            {engagementLu.ok ? (
+              <KpiTile
+                label="Sessions commencées"
+                valeur={commencees}
+                format="count"
+                sensMeilleur="neutre"
+                serie={tendance.ok ? sessionsParSeau : undefined}
+                couverture={{ n: commencees, unite: "sessions commencées", faibleSous: FAIBLE_SOUS }}
+                lecture={commencees === 0 ? `Aucune session commencée sur ${ecran.label}.` : undefined}
+                href={explorerHref(query, PLAN_SESSIONS_COMMENCEES)}
+                {...comparer(engagementPrec, precEngagement?.sessions_started ?? null, couvSessions)}
+              />
+            ) : (
+              <TuileEnEchec titre="Sessions commencées" />
+            )}
+            {visiteursLu.ok && visiteurs ? (
+              <KpiTile
+                label="Visiteurs distincts (identifiant aléatoire)"
+                valeur={visiteurs.valeur}
+                raisonNull={visiteurs.raisonNull}
+                format="count"
+                sensMeilleur="neutre"
+                lecture="identifiant aléatoire seulement ; ne s'additionne pas aux sessions."
+                href={explorerHref(query, PLAN_VISITEURS_DISTINCTS)}
+                {...comparer(visiteursPrec, visiteursPrec.ok ? visiteursPrec.data : null, couvVisiteurs)}
+              />
+            ) : (
+              <TuileEnEchec titre="Visiteurs distincts" />
+            )}
+            {tendance.ok ? (
+              <KpiTile
+                label="Sessions sans identifiant"
+                valeur={sansIdentifiant}
+                format="count"
+                sensMeilleur="neutre"
+                lecture="hors du compte des visiteurs : ni nouvelles ni revenantes."
+              />
+            ) : (
+              <TuileEnEchec titre="Sessions sans identifiant" />
+            )}
+            {erreursLu.ok ? (
+              <KpiTile
+                label="Occurrences d'erreur par session commencée"
+                valeur={taux.valeur}
+                raisonNull={taux.raisonNull}
+                format="ratio"
+                sensMeilleur="bas"
+                couverture={{ n: erreurs?.sessions ?? null, unite: "sessions commencées", faibleSous: FAIBLE_SOUS }}
+                lecture={lectureOccurrences(erreurs, engagement?.still_active ?? null)}
+                href={contextHref("/errors", url)}
+                {...comparer(erreursPrec, tauxPrec, [...couvTaux, ...couvErreurs])}
+              />
+            ) : (
+              <TuileEnEchec titre="Occurrences d'erreur par session commencée" />
+            )}
+            {/* « Sessions avec frustration » attend sa lecture par session (B30) : la tuile
+                n'est pas affichée d'ici là. Les signaux de frustration se lisent sur
+                l'écran Expérience et par ligne dans la liste ci-dessous. */}
+          </RangeeKpi>
         </section>
       </SectionErreur>
 
@@ -410,49 +424,40 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
       {/* Z2b — S7 : sous la rangée de KPI qu'il qualifie. Rien n'est rendu hors échantillonnage. */}
       <BandeauEchantillonnage lecture={echantillonnage} />
 
-      {/* Z3 — hero « À regarder d'abord » (8 col.) + « Qui sont ces sessions » (4 col.). */}
-      {(blocs.priorite || blocs.repartition) && (
+      {/* Z3 — hero « À regarder d'abord » (8 col.) + « Qui sont ces sessions » (4 col.).
+          Sans classement lu (B30), le hero n'est pas rendu et la répartition prend la
+          largeur : un cadre « Partiel » qui ne classe rien n'aidait personne. */}
+      {(heroPriorite || blocs.repartition) && (
         <div className="mb-6 grid gap-6 xl:grid-cols-12">
-          {blocs.priorite && (
+          {heroPriorite && !("raison" in priorite) && (
             <div className={`min-w-0 ${blocs.repartition ? "xl:col-span-8" : "xl:col-span-12"}`}>
-              {/* Avant B30, le hero le dit, et rien d'autre : trier les 50 lignes de la
-                  liste produirait un faux classement de la fenêtre (§ 5.11.6). */}
               <SectionErreur titre="À regarder d'abord">
                 <Figure
                   titre="À regarder d'abord"
                   id="a-regarder-d-abord"
-                  etat={"raison" in priorite ? { kind: "partiel", raison: priorite.raison } : undefined}
                   meta={
-                    "raison" in priorite ? undefined : (
-                      <>
-                        <span>{formater("count", priorite.lignes.length)} session(s) sur 10 au plus</span>
-                        <span>sessions actives (dernière activité dans la fenêtre)</span>
-                        <span>{ecran.label}</span>
-                      </>
-                    )
+                    <>
+                      <span>{pluriel(priorite.lignes.length, "session")} sur 10 au plus</span>
+                      <span>sessions actives (dernière activité dans la période)</span>
+                      <span>{ecran.label}</span>
+                    </>
                   }
                   lecture={
-                    // Décrire l'ordre d'un classement absent le ferait croire rendu :
-                    // sans lecture, la figure ne dit que ce qui lui manque.
-                    "raison" in priorite ? undefined : (
-                      <>
-                        Ordre : occurrences d&apos;erreur, puis signaux de frustration, puis appels API en échec, puis
-                        dernière activité. <strong>Ce n&apos;est pas un tri de la liste</strong> : la liste reste
-                        chronologique, et ce classement porte sur la fenêtre entière, borné à dix lignes.
-                      </>
-                    )
+                    <>
+                      Ordre : occurrences d&apos;erreur, puis signaux de frustration, puis appels API en échec, puis
+                      dernière activité. <strong>Ce n&apos;est pas un tri de la liste</strong> : la liste reste
+                      chronologique, et ce classement porte sur toute la période, borné à dix lignes.
+                    </>
                   }
-                  alternative={"raison" in priorite ? undefined : alternativePriorite(priorite.lignes, ecran.label)}
+                  alternative={alternativePriorite(priorite.lignes, ecran.label)}
                 >
-                  {"raison" in priorite ? null : (
-                    <PrioriteSessions lignes={priorite.lignes} hrefs={priorite.hrefs} plage={ecran.label} />
-                  )}
+                  <PrioriteSessions lignes={priorite.lignes} hrefs={priorite.hrefs} plage={ecran.label} />
                 </Figure>
               </SectionErreur>
             </div>
           )}
           {blocs.repartition && (
-            <div className={`min-w-0 ${blocs.priorite ? "xl:col-span-4" : "xl:col-span-12"}`} data-testid="repartition">
+            <div className={`min-w-0 ${heroPriorite ? "xl:col-span-4" : "xl:col-span-12"}`} data-testid="repartition">
               <SectionErreur titre="Qui sont ces sessions">
                 {!repartition.ok ? (
                   <div className="card p-4">
@@ -503,8 +508,8 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
               }
               meta={
                 <>
-                  <span>sessions commencées (début dans la fenêtre)</span>
-                  <span>seaux de {bucketLabel(query.range.bucketSeconds)} (UTC)</span>
+                  <span>sessions commencées (début dans la période)</span>
+                  <span>par tranche de {bucketLabel(query.range.bucketSeconds)}</span>
                   <span>{ecran.label}</span>
                   {prev && !referenceTracee && (
                     <span data-testid="volume-reference-absente">
@@ -518,22 +523,21 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
               }
               lecture={
                 <>
-                  Barres = sessions commencées par seau ; un clic sur un seau resserre l&apos;écran sur sa plage.{" "}
-                  {referenceTracee && "Trait gris pointillé = période précédente, seau contre seau (même rang). "}
-                  <strong>Les visiteurs ne s&apos;additionnent pas</strong> : un visiteur présent dans trois seaux y est
-                  compté trois fois, et aucun total de fenêtre n&apos;en est déduit.
+                  Un clic sur une tranche resserre l&apos;écran sur sa plage.{" "}
+                  {referenceTracee && "Trait gris pointillé : la période précédente, tranche contre tranche. "}
+                  Les visiteurs ne s&apos;additionnent pas d&apos;une tranche à l&apos;autre.
                 </>
               }
               alternative={{
-                legende: `Volume par seau de ${bucketLabel(query.range.bucketSeconds)}, ${ecran.label}`,
+                legende: `Volume par tranche de ${bucketLabel(query.range.bucketSeconds)}, ${ecran.label}`,
                 colonnes: [
-                  "Seau (UTC)",
+                  "Période",
                   "Sessions commencées",
                   ...(referenceTracee ? ["Période précédente (même rang)"] : []),
                   "Visiteurs distincts",
                 ],
                 lignes: pointsVolume.map((p) => [
-                  libelleSeauComplet(p.t, query.range.bucketSeconds, "UTC"),
+                  libelleSeauComplet(p.t, query.range.bucketSeconds, FUSEAU_AFFICHAGE),
                   p.sessions,
                   ...(referenceTracee ? [p.precedent ?? null] : []),
                   p.visiteurs,
@@ -543,47 +547,47 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
             >
               <div className="flex min-w-0 flex-col gap-4" data-testid="volume-panneaux">
                 <div className="min-w-0">
-                  <h3 className="mb-1 text-xs font-medium text-ink-soft">Sessions commencées par seau</h3>
+                  <h3 className="mb-1 text-xs font-medium text-ink-soft">Sessions commencées</h3>
                   <ThresholdSeries
                     grille={grille}
                     points={pointsVolume}
                     series={[
                       { cle: "sessions", libelle: "Sessions commencées", role: "principale", forme: "barres", additive: true },
                       ...(referenceTracee
-                        ? [{ cle: "precedent", libelle: "Période précédente (même rang de seau)", role: "reference" as const, additive: true }]
+                        ? [{ cle: "precedent", libelle: "Période précédente", role: "reference" as const, additive: true }]
                         : []),
                     ]}
                     format="count"
                     annotations={annotations.annotations}
                     annotationsIndisponibles={annotations.indisponible ?? undefined}
                     seauSecondes={query.range.bucketSeconds}
-                    fuseau="UTC"
+                    fuseau={FUSEAU_AFFICHAGE}
                     zoomHref={gabarit}
                     hauteur={160}
                     synchro="sessions-volume"
-                    ariaLabel={`Sessions commencées par seau de ${bucketLabel(query.range.bucketSeconds)}, ${ecran.label}`}
+                    ariaLabel={`Sessions commencées par tranche de ${bucketLabel(query.range.bucketSeconds)}, ${ecran.label}`}
                   />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="mb-1 text-xs font-medium text-ink-soft">Visiteurs distincts par seau (identifiant aléatoire)</h3>
+                  <h3 className="mb-1 text-xs font-medium text-ink-soft">Visiteurs distincts (identifiant aléatoire)</h3>
                   <ThresholdSeries
                     grille={grille}
                     points={pointsVolume}
                     series={[{ cle: "visiteurs", libelle: "Visiteurs distincts", role: "categorie", categorieIndex: 0 }]}
                     format="count"
                     seauSecondes={query.range.bucketSeconds}
-                    fuseau="UTC"
+                    fuseau={FUSEAU_AFFICHAGE}
                     zoomHref={gabarit}
                     hauteur={160}
                     synchro="sessions-volume"
                     legendeAnnotations={false}
-                    ariaLabel={`Visiteurs distincts par seau de ${bucketLabel(query.range.bucketSeconds)}, ${ecran.label} ; valeurs non additionnables`}
+                    ariaLabel={`Visiteurs distincts par tranche de ${bucketLabel(query.range.bucketSeconds)}, ${ecran.label} ; valeurs non additionnables`}
                   />
                 </div>
                 {sansIdentifiant !== null && sansIdentifiant > 0 && (
                   <p className="text-xs text-ink-soft">
-                    {formater("count", sansIdentifiant)} session(s) sans identifiant de visiteur sont hors du panneau des visiteurs ;
-                    un seau qui n&apos;a que de telles sessions y est un trou, pas un zéro.
+                    {pluriel(sansIdentifiant, "session sans identifiant de visiteur est", "sessions sans identifiant de visiteur sont")}{" "}
+                    hors du panneau des visiteurs ; une tranche qui n&apos;a que de telles sessions y est un trou, pas un zéro.
                   </p>
                 )}
               </div>
@@ -693,31 +697,14 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
             <h2 id="toutes-les-sessions-titre" className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
               Toutes les sessions
             </h2>
-            {/* Filtres rapides : ils restreindront LA LISTE SEULE, jamais les tuiles.
-                Désactivés tant que leur lecture manque — une bascule qui ne filtre
-                rien est pire qu'une bascule qui dit pourquoi elle ne peut pas. */}
-            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2" role="group" aria-label="Filtres rapides de la liste" data-testid="filtres-rapides">
-              {AVEC_SESSIONS.map((cle) => (
-                <button
-                  key={cle}
-                  type="button"
-                  disabled
-                  data-testid={`filtre-${cle}`}
-                  data-applied="false"
-                  title={SIGNAUX_A_CREER}
-                  className="max-w-full rounded-full border border-warn/40 bg-warn/10 px-2 py-0.5 text-xs font-medium text-ink-soft"
-                >
-                  <span className="block truncate">{LIBELLES_AVEC[cle]}</span>
-                </button>
-              ))}
-              <span className="min-w-0 text-xs text-ink-faint">
-                Ces bascules ne restreindront que cette liste, jamais les tuiles — {SIGNAUX_A_CREER}.
-              </span>
-            </div>
+            {/* Filtres rapides : ils restreindront LA LISTE SEULE, jamais les tuiles. Leur
+                lecture (B30) manque : ils ne sont pas dessinés — des bascules désactivées
+                aux couleurs d'un filtre actif trompaient (recette du 26/09/2026). Une URL
+                qui porte `avec` est déclarée NON APPLIQUÉE (V10), jamais ignorée en silence. */}
             {avecDemande !== null && (
               <p role="note" data-testid="avec-non-applique" className="mt-2 text-xs text-ink-soft">
-                Filtre rapide « {LIBELLES_AVEC[avecDemande]} » NON APPLIQUÉ : {SIGNAUX_A_CREER}. La liste ci-dessous
-                porte donc sur toutes les sessions de la fenêtre.
+                Filtre « {LIBELLES_AVEC[avecDemande]} » non appliqué : {FILTRE_AVEC_INDISPONIBLE}. La liste ci-dessous
+                porte sur toutes les sessions de la période.
               </p>
             )}
             <div className="mt-3">
@@ -765,7 +752,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
       </>
       )}
 
-      {!blocs.priorite && !blocs.repartition && !blocs.visiteurs && !blocs.engagement && !blocs.resume && !blocs.liste && (
+      {!heroPriorite && !blocs.repartition && !blocs.visiteurs && !blocs.engagement && !blocs.resume && !blocs.liste && (
         <TousEteints />
       )}
 
@@ -820,7 +807,7 @@ function Repartition({
       value: g.sessions,
       display: formater("count", g.sessions),
       href: hrefDe(g.valeur),
-      description: `${LIBELLES_REPARTITION[dimension]} ${libelle} — ${formater("count", g.sessions)} sessions commencées, ${part} du total`,
+      description: `${LIBELLES_REPARTITION[dimension]} ${libelle} — ${pluriel(g.sessions, "session commencée", "sessions commencées")}, ${part} du total`,
       cells: [{ label: "part", value: part }],
     };
   });
@@ -828,7 +815,7 @@ function Repartition({
   const notice = [
     `Sessions commencées sur ${plage} : ${formater("count", donnees.total)} au total ; chaque barre ouvre l'écran filtré sur son groupe.`,
     reste !== null
-      ? `Plus de ${REPARTITION_LIMITE} groupes : les ${REPARTITION_LIMITE} plus fournis sont affichés, ${formater("count", reste)} session(s) (${partDuTout(reste, donnees.total)}) appartiennent aux autres.`
+      ? `Plus de ${REPARTITION_LIMITE} groupes : les ${REPARTITION_LIMITE} plus fournis sont affichés, ${pluriel(reste, "session", "sessions")} (${partDuTout(reste, donnees.total)}) ${reste > 1 ? "appartiennent" : "appartient"} aux autres.`
       : null,
     noticeDimension,
   ]
@@ -877,12 +864,12 @@ function Engagement({
       meta={
         <>
           <span>
-            {formater("count", e.sessions_with_view)} session(s) commencée(s) avec au moins une page vue
+            {pluriel(e.sessions_with_view, "session commencée", "sessions commencées")} avec au moins une page vue
           </span>
           {e.still_active > 0 && (
             <span>
-              {formater("count", e.still_active)} encore active(s) (vue dans les {STILL_ACTIVE_MINUTES} dernières minutes de
-              la fenêtre) : leur durée n&apos;est pas finie
+              {pluriel(e.still_active, "encore active", "encore actives")} (vue dans les {STILL_ACTIVE_MINUTES} dernières minutes de
+              la période) : durée pas encore close
             </span>
           )}
         </>
@@ -921,7 +908,7 @@ function Engagement({
           raisonNull="aucune session avec une page vue : taux non calculable"
           format="pct"
           sensMeilleur="neutre"
-          lecture={`${formater("count", e.single_view_sessions)} sur ${formater("count", e.sessions_with_view)} session(s) avec au moins une vue.`}
+          lecture={`${formater("count", e.single_view_sessions)} sur ${pluriel(e.sessions_with_view, "session")} avec au moins une vue.`}
           couverture={couverture}
           {...comparer(precedent ? singleViewSessionRate(precedent) : null)}
         />
@@ -949,7 +936,7 @@ function AnneauVisiteurs({ lu, plage }: { lu: SectionLue<VisitStats | null>; pla
       meta={
         <>
           <span data-testid="anneau-population">
-            {formater("count", total)} sessions actives (dernière activité dans la fenêtre)
+            {pluriel(total, "session active", "sessions actives")} (dernière activité dans la période)
           </span>
         </>
       }
@@ -977,7 +964,9 @@ function AnneauVisiteurs({ lu, plage }: { lu: SectionLue<VisitStats | null>; pla
         ]}
         inconnu={{ label: "Non identifiées", value: vs.unidentified_count }}
         centerValue={formater("count", total)}
-        centerLabel="sessions actives"
+        // « sessions » seul : « SESSIONS ACTIVES » touchait l'anneau (recette du
+        // 26/09/2026) ; le titre de la figure dit déjà « actives ».
+        centerLabel="sessions"
         size={168}
         thickness={28}
       />

@@ -1,4 +1,5 @@
-// Vitrine des composants (F03, plan § 6.4) — réservée aux administrateurs.
+// Vitrine des composants (F03, plan § 6.4) — réservée aux administrateurs, et
+// jamais servie en production (`lib/vitrine-composants.ts`).
 //
 // POURQUOI UNE PAGE. Un composant se relit dans TOUS ses états, pas seulement dans
 // celui que la base de démonstration produit ce jour-là : une valeur inconnue, une
@@ -9,6 +10,7 @@
 //
 // Pas sous `app/demo` : cette route est l'accès de démonstration.
 import type { ReactNode } from "react";
+import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { TableDefilante } from "@/components/TableDefilante";
 import { DeltaBadge, HeroStat } from "@/components/SupervisionHero";
@@ -22,6 +24,7 @@ import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { ScatterPlot, type ScatterPoint } from "@/components/charts/ScatterPlot";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { requireAdmin } from "@/lib/auth";
+import { vitrineOuverte } from "@/lib/vitrine-composants";
 import { formater, type FormatId } from "@/lib/fmt-ids";
 import { CATEGORIELLE, RATING_HEX } from "@/lib/palette";
 import { THRESHOLDS, rating2026 } from "@/lib/rating";
@@ -142,6 +145,8 @@ function Exemple({ etat, children }: { etat: string; children: ReactNode }) {
 const GRILLE = "grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3";
 
 export default async function VitrineComposants() {
+  // Page de développement : introuvable en production, avant même la session.
+  if (!vitrineOuverte()) notFound();
   await requireAdmin();
 
   return (
@@ -349,22 +354,22 @@ export default async function VitrineComposants() {
 
       <Section id="sparkline" titre="Sparkline" sous="Un trou reste un trou ; l'axe part de 0 ; moins de deux points, rien n'est tracé.">
         <div className={GRILLE}>
-          <Exemple etat="Série avec deux seaux sans mesure">
-            <Sparkline valeurs={SERIE_LCP} label="LCP p75, 24 seaux d'une heure" />
+          <Exemple etat="Série avec deux tranches sans mesure">
+            <Sparkline valeurs={SERIE_LCP} label="LCP p75, 24 tranches d'une heure" />
           </Exemple>
           <Exemple etat="Bande « Bon » (seuils LCP)">
-            <Sparkline valeurs={SERIE_LCP} label="LCP p75, 24 seaux d'une heure" seuils={THRESHOLDS.LCP} largeur={160} hauteur={32} />
+            <Sparkline valeurs={SERIE_LCP} label="LCP p75, 24 tranches d'une heure" seuils={THRESHOLDS.LCP} largeur={160} hauteur={32} />
           </Exemple>
           <Exemple etat="Points isolés entre des trous">
-            <Sparkline valeurs={[1, null, 3, null, 2]} label="Occurrences, 5 seaux" />
+            <Sparkline valeurs={[1, null, 3, null, 2]} label="Occurrences, 5 tranches" />
           </Exemple>
           <Exemple etat="Pas assez de points">
-            <Sparkline valeurs={[null, 4, null, null]} label="Occurrences, 4 seaux" />
+            <Sparkline valeurs={[null, 4, null, null]} label="Occurrences, 4 tranches" />
           </Exemple>
           <Exemple etat="Échelle commune d'une liste (max 90)">
             <div className="flex flex-col gap-1">
-              <Sparkline valeurs={[10, 20, 15, 30]} label="Groupe A, 4 seaux" max={90} />
-              <Sparkline valeurs={[60, 90, 75, 80]} label="Groupe B, 4 seaux" max={90} />
+              <Sparkline valeurs={[10, 20, 15, 30]} label="Groupe A, 4 tranches" max={90} />
+              <Sparkline valeurs={[60, 90, 75, 80]} label="Groupe B, 4 tranches" max={90} />
             </div>
           </Exemple>
         </div>

@@ -25,7 +25,7 @@
 // dans la tuile et dans la méta de la figure. `cmp=prev` relit la même analyse sur la
 // période précédente pour une valeur ou une série sans groupe ; une série porte les
 // déploiements de la fenêtre. L'onglet « Distribution » est visible, désactivé avec
-// sa raison (B5).
+// sa raison en infobulle (backend B5 : la raison ne cite plus ce code à l'écran).
 //
 // F33 — LE CONTEXTE DU RÉSULTAT (§ 5.21.3 zone 8, W-E2 et W-E7). Sous le résultat,
 // deux lectures de plus disent sur QUOI il porte : le volume de la population seau
@@ -44,6 +44,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { ModelesDepart } from "@/components/explorer/ModelesDepart";
 import { QueryPills } from "@/components/explorer/QueryPills";
+import { OngletsRepresentation } from "@/components/explorer/OngletsRepresentation";
 import { ResultatAnalyse, type HrefsResultat, type PrecedentResultat } from "@/components/explorer/ResultatAnalyse";
 // F33 — contexte du résultat (W-E2, W-E7).
 import { RepartitionResultat, VolumeResultat, type OngletRepartition } from "@/components/explorer/ContexteResultat";
@@ -54,6 +55,7 @@ import { INPUT_CLASS } from "@/components/forms/Field";
 import { CopyBlock } from "@/components/CopyBlock";
 import { TabLink } from "@/components/sessions/TabLink";
 import { type SearchParams } from "@/lib/filters";
+import { fmtDate } from "@/lib/format";
 import { chargerExplorer, demandeExplorer } from "@/lib/chargeurs/explorer";
 import { chargerEcran } from "@/lib/ecran";
 import {
@@ -115,11 +117,12 @@ const ONGLETS: Record<Visualization, string> = LIBELLES_REPRESENTATION;
 
 /**
  * W-E9 — la représentation « Distribution » n'est pas exposée par l'Explorer : elle
- * manque au registre (`VISUALIZATIONS`, backend B5). L'onglet est MONTRÉ désactivé
- * avec sa raison, plutôt que caché : l'absence est une information.
+ * manque au registre (`VISUALIZATIONS`, backend B5). L'onglet reste visible,
+ * désactivé, et sa raison est dans son infobulle et son texte lu — plus dans une
+ * ligne sous la rangée, qui s'affichait quel que soit l'onglet actif et citait un
+ * code de lot interne (recette du 26/09/2026).
  */
-const RAISON_DISTRIBUTION =
-  "représentation non disponible : la lecture en distribution n'est pas encore exposée par l'Explorer (B5)";
+const RAISON_DISTRIBUTION = "la distribution d'une mesure ne se lit pas encore dans l'Explorer";
 
 /** `tri` de l'écran (P3) : gravité par défaut, volume sur demande. */
 function lienTri(query: AnalyticsQuery, plan: ExplorerPlan, vue: Record<string, string | null>): HrefsResultat["tri"] {
@@ -316,7 +319,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
     <div data-testid="explorer-racine" className="animate-fade-up">
       <PageHeader
         title="Explorer"
-        sub={`Composer une mesure bornée sur ${ecran.label}, puis l’exécuter. Aucune requête n’est lancée avant.`}
+        sub={`Composez une analyse sur ${ecran.label}, puis exécutez-la : rien n’est lu avant.`}
       />
 
       <nav aria-label="Jeu de données" className="mb-4 flex flex-wrap gap-2">
@@ -452,15 +455,8 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
 
       {/* Zone 5 : la forme du résultat. Un onglet relit la MÊME requête (population,
           mesure, regroupements) sous une autre forme ; il ne la recompose pas.
-          À 390 px, la rangée défile plutôt que de pousser la page. */}
-      {/* `relative` : les raisons `sr-only` des onglets désactivés sont en `position:
-          absolute` ; sans ancêtre positionné, elles se plaçaient par rapport à la PAGE
-          et l'élargissaient à 390 px (piège 16 du brief). */}
-      <nav
-        aria-label="Représentation"
-        data-testid="explorer-representation"
-        className="relative mb-6 flex overflow-x-auto border-b border-line"
-      >
+          À 390 px, la rangée défile plutôt que de pousser la page, et le signale. */}
+      <OngletsRepresentation cle={vizCourante}>
         {VISUALIZATIONS.map((viz) =>
           viz === "timeseries" && serieIndisponible && viz !== vizCourante ? (
             <span
@@ -479,31 +475,29 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
             </TabLink>
           ),
         )}
-        {/* W-E9 : visible, désactivé, avec sa raison — lue au clavier (sr-only) et écrite sous la rangée. */}
+        {/* W-E9 : visible, désactivé ; sa raison au survol (`title`) et au clavier (sr-only). */}
         <span
           aria-disabled="true"
-          title={RAISON_DISTRIBUTION}
+          title={`Indisponible : ${RAISON_DISTRIBUTION}.`}
           data-testid="onglet-distribution"
           className="-mb-px shrink-0 cursor-not-allowed whitespace-nowrap border-b-2 border-transparent px-4 py-2 text-sm font-medium text-ink-faint opacity-60"
         >
           Distribution
           <span className="sr-only"> — indisponible : {RAISON_DISTRIBUTION}</span>
         </span>
-      </nav>
-      <p data-testid="distribution-indisponible" className="-mt-4 mb-6 text-xs text-ink-soft">
-        Distribution : {RAISON_DISTRIBUTION}.
-        {dataset === "vitals" && plan.ok && plan.value.variant !== null && (
-          <>
-            {" "}
-            <Link
-              href={hrefWithQuery("/pages", ecran.query, { ...vue, vital: plan.value.variant })}
-              className="font-medium text-brand hover:underline"
-            >
-              Voir la distribution de {plan.value.variant} sur Pages
-            </Link>
-          </>
-        )}
-      </p>
+      </OngletsRepresentation>
+      {/* La distribution d'un Web Vital existe ailleurs : on y mène, sans répéter la
+          raison de l'onglet grisé. */}
+      {dataset === "vitals" && plan.ok && plan.value.variant !== null && (
+        <p data-testid="distribution-indisponible" className="-mt-4 mb-6 text-xs text-ink-soft">
+          <Link
+            href={hrefWithQuery("/pages", ecran.query, { ...vue, vital: plan.value.variant })}
+            className="font-medium text-brand hover:underline"
+          >
+            Voir la distribution de {plan.value.variant} sur Pages
+          </Link>
+        </p>
+      )}
 
       {/* Zone 6 : constats de lecture — ce qui borne ce que la figure peut affirmer. */}
       {reglagesIgnores.map((ligne) => (
@@ -536,17 +530,16 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
           />
         </div>
       )}
-      {resultat?.meta.warnings.map((avertissement) => (
-        <p key={avertissement} role="note" className="mb-4 rounded-lg border border-line bg-panel2/60 px-4 py-3 text-sm text-ink-soft">
-          {avertissement}
-        </p>
-      ))}
+      {/* Les avertissements de la lecture (« CLS et INP sont rapportés une fois par
+          chargement… ») sont de la méthode : ils rejoignent le pied de page du
+          résultat au lieu de s'empiler en bandeaux au-dessus (recette du 26/09/2026). */}
 
       {!plan.ok && (
-        <div role="alert" data-testid="explorer-invalide" className="card mb-6 border-bad/30 p-6 text-sm">
+        // Le code du refus reste dans le DOM (`data-code`, pour le support et les tests),
+        // plus à l'écran : « unsupported_measure » n'est pas un mot de l'utilisateur.
+        <div role="alert" data-testid="explorer-invalide" data-code={plan.error.code} className="card mb-6 border-bad/30 p-6 text-sm">
           <p className="font-semibold text-bad-ink">Requête refusée</p>
           <p className="mt-1 text-ink-soft">{plan.error.message}</p>
-          <p className="mt-2 text-xs text-ink-faint">Code : {plan.error.code}</p>
         </div>
       )}
 
@@ -657,6 +650,7 @@ function Resultat({
         annotationsIndisponibles={annotations?.indisponible ?? undefined}
         taille="page"
         tri={tri}
+        notes={meta.warnings}
       />
 
       {/* Zone 8 : sur quoi ce résultat porte — volume de la population et répartition. */}
@@ -665,8 +659,8 @@ function Resultat({
       <section className="card mt-6 p-4">
         <h2 className="text-sm font-semibold text-ink">Enregistrer cette analyse</h2>
         <p className="mt-1 text-sm text-ink-soft">
-          Ce qui est enregistré est la requête canonique — l’AST seul, sans aucune donnée de résultat. Elle sera
-          rejouée avec les droits de son lecteur, sur la fenêtre de l’écran qui l’affiche.
+          Seule la question est enregistrée, pas le résultat : elle sera relancée à chaque lecture, avec les droits
+          du lecteur et sur la fenêtre de l’écran qui l’affiche.
         </p>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -684,7 +678,7 @@ function Resultat({
                   <select name="id" className={`${INPUT_CLASS} w-full`}>
                     {cibles.map((cible) => (
                       <option key={cible.id} value={cible.id}>
-                        {cible.name} — {cible.app_id ?? "toutes apps"}
+                        {cible.name} — {cible.app_id ?? "toutes les applications"}
                       </option>
                     ))}
                   </select>
@@ -704,14 +698,14 @@ function Resultat({
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-                  Fenêtre de la carte
+                  Période de la carte
                   <select name="fenetre" className={`${INPUT_CLASS} w-full`}>
-                    <option value="">Suivre la fenêtre du tableau de bord</option>
+                    <option value="">Suivre la période du tableau de bord</option>
                     {/* Figer n'a de sens que pour une fenêtre PERSONNALISÉE : un
                         preset doit rester glissant, sinon la carte vieillit seule. */}
                     {query.range.preset === null && (
                       <option value="freeze">
-                        Figer la fenêtre courante (du {query.range.from} au {query.range.to})
+                        Figer la période actuelle (du {fmtDate(query.range.from)} au {fmtDate(query.range.to)})
                       </option>
                     )}
                   </select>
@@ -779,7 +773,7 @@ function Resultat({
 
         <details className="mt-4 text-xs text-ink-soft">
           <summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-            Requête canonique (JSON)
+            Requête au format JSON
           </summary>
           <div className="mt-2">
             <CopyBlock code={JSON.stringify(meta.query, null, 2)} label="Copier la requête" />

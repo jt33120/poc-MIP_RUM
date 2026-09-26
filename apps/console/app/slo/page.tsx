@@ -10,8 +10,10 @@
 //     mesurable », et nulle part comme « 0 % consommé » (V3).
 //   - Aucune couleur sous 100 % : « épuisé » (≥ 100 %) est la seule définition ; les
 //     repères 50 / 75 % sont gris (R-S).
-//   - Aucun historique : `slo_status()` est un instantané ; la figure « dans le
-//     temps » le dit (« Non collecté », B6) au lieu de dessiner une série.
+//   - Aucun historique : `slo_status()` est un instantané. La figure « dans le
+//     temps » (B6) n'est pas rendue tant qu'elle n'existe pas : une carte entière
+//     pour dire « Non collecté » montrait la fonction comme présente (recette du
+//     26/09/2026) ; la date de l'instantané est écrite sous le hero.
 //   - Aucun bouton d'écriture pour un viewer ou une session de démonstration (V9).
 //
 // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8) : `lire()` ne lève pas. PAS de
@@ -34,7 +36,6 @@ import type { SearchParams } from "@/lib/filters";
 import { SLO_METRICS } from "@/lib/queries-v2";
 import { alertesParSlo, comptesSlo, FACTEUR_BURN_RAPIDE, FORMULE_SLO, lignesBudget, metriqueEnClair } from "@/lib/slo-ecran";
 import { createSloAction } from "../alerts/actions";
-import { fmtHeure } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -49,9 +50,8 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
   const ecran = await chargerEcran(ECRANS.slo, chargerSlo, await avecBlocs(sp, "/slo"));
   if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const f = { app: ecran.appFiltre };
-  // `luA` du chargeur est une heure UTC déjà écrite : l'instantané est daté ICI, dans
-  // le fuseau d'affichage (heure de Paris), à quelques millisecondes de la lecture.
-  const { blocs, admin, statuts, slos, apps, declenchements } = ecran;
+  // `luA` : l'heure de la lecture, déjà écrite par le chargeur en heure de Paris.
+  const { blocs, admin, statuts, slos, apps, declenchements, luA } = ecran;
 
   const lignes = statuts.ok ? lignesBudget(statuts.data) : [];
   const comptes = statuts.ok ? comptesSlo(statuts.data) : null;
@@ -81,7 +81,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                 valeur={kpi(comptes?.actifs)}
                 format="count"
                 raisonNull="lecture en échec"
-                lecture="sans référence : configuration"
+                lecture="objectifs suivis en ce moment"
                 href="#definitions"
               />
               <KpiTile
@@ -133,7 +133,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                 id="budget"
                 meta={
                   <span>
-                    instantané calculé à {fmtHeure(Date.now(), { secondes: true })} ; chaque SLO sur sa fenêtre glissante jusqu&apos;à maintenant
+                    instantané calculé à {luA} ; chaque SLO sur sa fenêtre glissante jusqu&apos;à maintenant
                   </span>
                 }
                 etat={!statuts.ok ? { kind: "erreur", titre: "Budget d'erreur consommé, par SLO" } : undefined}
@@ -141,8 +141,9 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                 lecture={
                   <>
                     Consommé = (1 − atteinte) ÷ (1 − objectif). Une barre mène à ce qui consomme le budget (pages
-                    du vital, ou erreurs de la route). Le badge « brûle vite » suit la seule dernière heure (facteur{" "}
-                    {FACTEUR_BURN_RAPIDE.toLocaleString("fr-FR")}, origine non documentée).
+                    du vital, ou erreurs de la route). Le badge « brûle vite » suit la seule dernière heure : le
+                    budget y part {FACTEUR_BURN_RAPIDE.toLocaleString("fr-FR")} fois trop vite, le seuil usuel des
+                    pratiques SRE (2 % d&apos;un budget de 30 jours en une heure).
                   </>
                 }
               >
@@ -168,14 +169,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
             </SectionErreur>
           </div>
 
-          {/* ── Zone 4 : consommation dans le temps (SL4) — B6 manque. ── */}
-          <div className="mb-6">
-            <Figure
-              titre="Consommation du budget dans le temps"
-              id="consommation-temps"
-              etat={{ kind: "non_collecte", manque: "historique de consommation non conservé (instantané seulement)" }}
-            />
-          </div>
+          {/* ── Zone 4 : consommation dans le temps (SL4) — non rendue tant que B6 manque. ── */}
         </>
       )}
 
@@ -201,10 +195,11 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                 </div>
               )}
               {listeSlo.length > 0 ? (
-                // Défilement SIGNALÉ (TableDefilante, dont la zone reste `relative` pour
-                // les `sr-only` — piège 16) : même à 1 440 px, onze colonnes ne tiennent
-                // pas, et « Alertes sur 7 j », « Actif » et les actions restaient cachées
-                // derrière un défilement que rien n'annonçait (recette 26/09).
+                // Sept colonnes (recette 26/09 : onze ne tenaient pas à 1 440 px, et
+                // « Alertes sur 7 j », « Actif » et les actions restaient cachées) : la
+                // métrique et l'état dans la cellule du SLO, objectif et fenêtre ensemble,
+                // les actions dans un menu. Sous 1 024 px, le défilement reste SIGNALÉ
+                // (TableDefilante, zone `relative` pour les `sr-only` — piège 16).
                 <TableDefilante label="Définitions et état des SLO">
                   <table className="w-full min-w-max text-sm" data-testid="table-slo">
                     <caption className="sr-only">Définitions et état des SLO, actifs et désactivés</caption>
@@ -214,16 +209,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                           SLO
                         </th>
                         <th scope="col" className={TH}>
-                          Métrique
-                        </th>
-                        <th scope="col" className={TH}>
-                          Route
-                        </th>
-                        <th scope="col" className={TH}>
                           Objectif
-                        </th>
-                        <th scope="col" className={TH}>
-                          Fenêtre
                         </th>
                         <th scope="col" className={TH}>
                           Atteinte
@@ -236,9 +222,6 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                         </th>
                         <th scope="col" className={TH}>
                           Alertes sur {JOURS_ALERTES} j
-                        </th>
-                        <th scope="col" className={TH}>
-                          Actif
                         </th>
                         {admin && (
                           <th scope="col" className={TH}>

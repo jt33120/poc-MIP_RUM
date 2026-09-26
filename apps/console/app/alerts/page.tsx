@@ -13,7 +13,8 @@
 //   - « Livrée » ≠ « partie » : trois états conservés (v49). Une alerte transmise
 //     dont le code HTTP n'est pas connu n'est ni livrée ni perdue.
 //   - Le délai d'acquittement (MTTA) n'est pas affiché : `alert_event` n'a pas
-//     d'horodatage d'acquittement (B50, § 6.3). Le motif est écrit à l'écran.
+//     d'horodatage d'acquittement (B50, § 6.3). Le motif est écrit à l'écran, en
+//     mots : sans nom de colonne (recette du 26/09/2026).
 //   - Aucun bouton d'écriture n'est RENDU pour un viewer ou une démonstration (V9).
 //
 // CHAQUE SECTION LIT INDÉPENDAMMENT (F02, § 3.8) : `lire()` ne lève pas, et une
@@ -40,7 +41,7 @@ import { chargerAlertes } from "@/lib/chargeurs/alertes";
 import { chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import { fmtDate } from "@/lib/format";
+import { accord, fmtDate, pluriel } from "@/lib/format";
 import { hrefWithQuery, paramReader, queryToSearchParams } from "@/lib/query-contract";
 import type { NotifyChannelRow } from "@/lib/queries-alerting";
 import {
@@ -110,7 +111,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
   // La fenêtre d'évaluation d'un déclenchement vient de SA règle : c'est elle qui
   // donne `[fired_at − window_minutes, fired_at)`, la seule plage qui décrit ce que
   // l'évaluateur a regardé.
-  const fenetreDeRegle = new Map(listeRegles.map((r) => [r.id, r.window_minutes]));
+  const regleParId = new Map(listeRegles.map((r) => [r.id, r]));
   // `alertEvents` ne rend pas l'issue d'un déclenchement SANS règle (notification
   // v73) ; `alertFirings` la porte. Jointure par identifiant d'événement.
   const sourceParEvenement = new Map(lignes.map((l) => [l.event_id, l]));
@@ -144,7 +145,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                 data-testid="unacked-badge"
                 className="rounded-full bg-bad-fond px-2.5 py-0.5 text-xs font-bold text-white"
               >
-                {formater("count", nonAcquittees.data)} non acquittée(s)
+                {formater("count", nonAcquittees.data)} non {accord(nonAcquittees.data, "acquittée", "acquittées")}
               </span>
             )}
           </span>
@@ -176,7 +177,8 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
             fired > 0 ? "border-bad/30 bg-bad/10 text-bad-ink" : "border-good/30 bg-good/10 text-good-ink"
           }`}
         >
-          check_alerts() exécutée : {formater("count", fired)} alerte(s) déclenchée(s).
+          Évaluation faite :{" "}
+          {fired > 0 ? `${pluriel(fired, "alerte déclenchée", "alertes déclenchées")}.` : "aucune alerte déclenchée."}
         </div>
       )}
       {urlRefusee && (
@@ -200,7 +202,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
         >
           <strong>Aucun canal de notification actif.</strong> Les alertes de ce périmètre se déclenchent{" "}
           <strong>sans être envoyées à personne</strong> — la supervision voit, elle ne prévient pas.
-          {total30j > 0 ? ` ${formater("count", total30j)} déclenchement(s) sur ${JOURS_DECLENCHEMENTS} jours.` : ""}{" "}
+          {total30j > 0 ? ` ${pluriel(total30j, "déclenchement")} sur ${JOURS_DECLENCHEMENTS} jours.` : ""}{" "}
           <a href="#canaux" className="font-medium underline underline-offset-2">
             Ajouter un canal
           </a>
@@ -233,7 +235,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
             valeur={comptes ? comptes.franchies : null}
             format="count"
             raisonNull="lecture en échec"
-            lecture={comptes ? `sur ${formater("count", comptes.actives)} règle(s) active(s)` : undefined}
+            lecture={comptes ? `sur ${pluriel(comptes.actives, "règle active", "règles actives")}` : undefined}
             href="#regles"
           />
           <KpiTile
@@ -241,9 +243,16 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
             valeur={comptes ? comptes.sansDonnees : null}
             format="count"
             raisonNull="lecture en échec"
+            // Une règle sans données n'est pas « normale » : elle ne surveille rien encore.
             lecture={
               comptes
-                ? `« données insuffisantes » n'est pas « normale » ; dont ${formater("count", comptes.jamaisEvaluees)} jamais évaluée(s)`
+                ? comptes.sansDonnees === 0
+                  ? "toutes les règles actives ont assez d'historique"
+                  : `pas assez d'historique pour conclure${
+                      comptes.jamaisEvaluees > 0
+                        ? `, dont ${pluriel(comptes.jamaisEvaluees, "règle jamais évaluée", "règles jamais évaluées")}`
+                        : ""
+                    }`
                 : undefined
             }
             href="#regles"
@@ -277,10 +286,11 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
               !parJour.ok
                 ? { kind: "erreur", titre: `Déclenchements des ${JOURS_DECLENCHEMENTS} derniers jours` }
                 : total30j === 0 && pistes.length === 0
-                  ? { kind: "vide", population: "déclenchement", plage: `${JOURS_DECLENCHEMENTS} jours` }
+                  ? { kind: "vide", population: "déclenchement", masculin: true, plage: `${JOURS_DECLENCHEMENTS} jours` }
                   : undefined
             }
             alternative={jours.length > 0 ? alternativeParJour(jours) : undefined}
+            titreAlternative="Alternative textuelle — déclenchements par jour"
             lecture={
               <>
                 Chaque barre compte les déclenchements d&apos;un jour, empilés par sévérité (des
@@ -352,11 +362,8 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
               {flux.map((e) => {
                 const source = sourceParEvenement.get(e.id);
                 const livraison = etatLivraison(e);
-                const cible = cibleMesure(
-                  e,
-                  e.rule_id != null ? (fenetreDeRegle.get(e.rule_id) ?? null) : null,
-                  source?.source === "issue" ? source.source_id : null,
-                );
+                const regle = e.rule_id != null ? (regleParId.get(e.rule_id) ?? null) : null;
+                const cible = cibleMesure(e, regle?.window_minutes ?? null, source?.source === "issue" ? source.source_id : null);
                 const enEvidence = evtMisEnEvidence === e.id;
                 return (
                   <div
@@ -376,7 +383,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                       )}
                       <span className="shrink-0 font-mono text-xs text-ink-faint">#{e.id}</span>
                       <SeverityBadge severity={e.severity} />
-                      <span className="min-w-0 break-words font-medium">{titreEvenement(e, source)}</span>
+                      <span className="min-w-0 break-words font-medium">{titreEvenement(e, source, regle)}</span>
                       {/* Trois états, pas deux : une notification transmise dont le code
                           HTTP n'est pas encore connu n'est PAS une notification livrée.
                           La confondre avec un succès était le défaut corrigé par v49. */}
@@ -396,9 +403,10 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                     </div>
                     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-soft">
                       {/* La route était renvoyée par la lecture sans jamais être affichée :
-                          « LCP franchi » sans savoir où n'aide personne. */}
+                          « LCP franchi » sans savoir où n'aide personne. La métrique, elle,
+                          est dans le titre : plus de clé brute (« error_rate ») ici. */}
                       <span className="min-w-0 break-words">
-                        {e.metric ? `${e.metric}` : "métrique inconnue"} · {e.route ?? "toutes routes"} · app {e.app_id}
+                        {e.route ?? "toutes routes"} · app {e.app_id}
                       </span>
                       <span className="tabular-nums">
                         {fmtDate(e.fired_at)} (il y a {formater("s-auto", Date.now() - new Date(e.fired_at).getTime())})

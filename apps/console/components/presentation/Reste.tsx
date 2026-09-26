@@ -1,4 +1,4 @@
-// Partie 3 de la vitrine — « Ce qui reste pour un vrai outil de RUM » (plan § 8.2, PS10).
+// Partie 3 du dossier technique — « Ce qui reste pour un vrai outil de RUM » (plan § 8.2, PS10).
 //
 // Une carte par point de lib/presentation-reste.ts (R1 à R10), dans l'ordre fixe du
 // plan : titre, puis trois lignes étiquetées « Ce qui manque », « Ce qui le
@@ -58,7 +58,7 @@ function CartePoint({ point, rang }: { point: PointReste; rang: number }) {
         <span aria-hidden className="shrink-0 font-mono text-xs font-bold text-accent-ink">
           {String(rang).padStart(2, "0")}
         </span>
-        <h3 id={idTitrePoint(point.id)} className="min-w-0 text-base font-bold leading-snug tracking-tight text-ink">
+        <h3 id={idTitrePoint(point.id)} className="min-w-0 scroll-mt-28 text-base font-bold leading-snug tracking-tight text-ink">
           {point.titre}
         </h3>
       </header>
@@ -75,7 +75,7 @@ function CartePoint({ point, rang }: { point: PointReste; rang: number }) {
       {lignes.length > 0 && (
         <div className="mt-auto pt-4">
           <p id={`reste-${point.id}-lignes`} className="text-[11px] text-ink-soft">
-            Lignes du document de couverture
+            Lignes du registre
           </p>
           <ul aria-labelledby={`reste-${point.id}-lignes`} className="mt-1.5 flex flex-wrap gap-1.5">
             {lignes.map((capacite) => (

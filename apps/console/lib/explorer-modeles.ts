@@ -113,7 +113,9 @@ export const MODELES_EXPLORER: ModeleExplorer[] = [
   },
   {
     cle: "loaf-par-route",
-    titre: "Blocages LoAF p95 par route",
+    // Le nom du jeu (« Tâches longues ») et le sigle dit une fois : « Blocages LoAF »
+    // ne se rattachait à rien d’autre sur l’écran (recette du 26/09/2026).
+    titre: "Tâches longues (LoAF) : part bloquante p95 par route",
     question: "Où le fil principal reste-t-il bloqué le plus longtemps ?",
     plan: {
       version: 1,

@@ -9,9 +9,15 @@
 // que ça vaut face au marché.
 //
 // L'écart reste le troisième — pas parce qu'il compte moins, mais parce qu'il ne
-// se comprend qu'une fois les deux premiers lus. Il n'est pas pour autant caché :
-// son décompte (atteints / partiels / non atteints) est affiché EN TÊTE de
-// section, hors des onglets, avant tout clic.
+// se comprend qu'une fois les deux premiers lus. Son décompte (atteints / partiels /
+// non atteints) est en tête de CET onglet : posé au-dessus des trois, il semblait
+// résumer l'infrastructure, qui a sa propre échelle (recette du 26/09/2026).
+//
+// L'HÉBERGEMENT NE S'ÉCRIT PAS ICI. Il vit une seule fois, dans le tableau « Où sont
+// les données, et sous quel droit » de la présentation ; l'onglet Infrastructure y
+// renvoie, et le critère « Hébergement » le résume en une ligne. Les chemins du code
+// qui prouvent chaque ligne (`preuve`, `module`, `table`) restent dans lib/specs.ts,
+// où les tests les ouvrent : ils ne s'affichent plus sur une page publique.
 //
 // SANS JAVASCRIPT. Les onglets sont trois boutons radio masqués et leurs
 // étiquettes ; `peer-checked` fait le reste en CSS : ni script ni URL, et les
@@ -22,7 +28,7 @@
 // porte de quoi la contredire (fichier de preuve, marqueur d'absence, valeurs
 // importées de lib/legal.ts). Ici, il n'y a que du rendu.
 import { ICON_PATHS, Icon } from "@/components/icons";
-import { fmtBorne } from "@/lib/format";
+import { fmtBorne, pluriel } from "@/lib/format";
 import { THRESHOLDS } from "@/lib/rating";
 import { lireEtatPlateforme } from "@/lib/etat-plateforme";
 import { CADENCE_TICK_MIN } from "@/lib/etat-latence";
@@ -93,12 +99,12 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Donnée identifiante",
     cible: "Aucune adresse IP stockée",
-    reel: "Pays estimé, scrub PII côté client et serveur",
+    reel: "Pays estimé, données personnelles nettoyées côté client et côté serveur",
     s: "atteint",
   },
   {
     c: "Format sur le fil",
-    cible: "OTLP/HTTP standard, backend remplaçable",
+    cible: "OTLP/HTTP standard, outil d'analyse remplaçable",
     // CE QUI A ÉTÉ ÉCRIT DE TRAVERS, ET CORRIGÉ LE MÊME JOUR. Cette ligne a
     // annoncé le matin du 09/09/2026 une trace « lisible par un collecteur
     // tiers ». La STRUCTURE avait bien été vérifiée — parenté, nature, issue —
@@ -108,11 +114,11 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
     // Un collecteur tiers reçoit donc un arbre juste et une chronologie vide :
     // il dessine un waterfall PLAT. Vérifier la forme d'un span ne dit rien de
     // ce qu'il mesure.
-    reel: "OTLP JSON dont la structure est vérifiée — parentSpanId, kind, status, trace enracinée sur la page vue. Mais les spans partent avec une durée nulle : un collecteur tiers dessine un waterfall plat. Vocabulaire encore partiellement propriétaire.",
+    reel: "OTLP JSON dont la structure est vérifiée — parentSpanId, kind, status, trace enracinée sur la page vue. Mais les spans partent avec une durée nulle : un collecteur tiers dessine une cascade plate. Vocabulaire encore en partie propre à MIP.",
     s: "partiel",
   },
   {
-    c: "Masquage du replay",
+    c: "Masquage du rejeu",
     cible: "Saisies, texte et médias masqués par défaut (standard 2026)",
     // Vérifié le 09/09/2026 dans un Chromium réel, avec le bundle rrweb publié :
     // ni le texte de la page, ni la valeur d'un champ, ni les octets d'une image
@@ -139,7 +145,7 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
     // « Traitement en UE » est donc désormais VRAI ; « chez un hébergeur de
     // droit européen » reste faux. La ligne dit les deux, parce que ne dire que
     // la première moitié laisserait croire la seconde.
-    reel: "Donnée et traitement en UE — Neon et Vercel à Francfort, Railway à Amsterdam ; mais trois fournisseurs de droit américain",
+    reel: "Donnée et traitement en UE, mais chez trois hébergeurs de droit américain (voir « Où sont les données, et sous quel droit »)",
     s: "partiel",
   },
   {
@@ -166,7 +172,7 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
   {
     t: "Filet d'isolation en base à activer",
     g: "bloquant",
-    d: "Les policies de cloisonnement existent et filtrent bien par application, mais la connexion de production utilise un rôle propriétaire qui les contourne. L'isolation repose aujourd'hui entièrement sur le code, sans filet au niveau du moteur.",
+    d: "Les règles de cloisonnement existent et filtrent bien par application, mais la connexion de production utilise un rôle propriétaire qui les contourne. L'isolation repose aujourd'hui entièrement sur le code, sans filet au niveau du moteur.",
   },
   {
     t: "Pas de couche organisation",
@@ -174,9 +180,9 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
     d: "Le cloisonnement s'arrête à l'application. Aucun niveau au-dessus pour regrouper les applications d'un même client, ni facturer à ce niveau.",
   },
   {
-    t: "Backend sur Railway, à migrer chez un hébergeur de droit européen",
+    t: "Hébergement à rapatrier chez un fournisseur de droit européen",
     g: "bloquant",
-    d: "Les travaux planifiés et le serveur MCP ont quitté la console : ce sont des services autonomes, sans framework, déployés sur Railway à Amsterdam depuis le 09/09/2026 ; la collecte, elle, reste une route de la console, sur Vercel à Francfort. Le calcul est donc en UE, au même titre que la donnée. Cela ne change RIEN à la souveraineté — Neon, Vercel et Railway sont trois sociétés de droit américain, et la résidence européenne des données n'est pas la souveraineté : ce point reste bloquant tant que l'hébergeur relève du droit américain, quelle que soit la région. Cible : base, console et backend chez un hébergeur de droit européen, qualifié SecNumCloud pour un acheteur public. Le backend y est prêt : il ne dépend que de Node et de PostgreSQL, et ses images se construisent depuis ce dépôt.",
+    d: "La donnée et le calcul sont en Union européenne, mais la résidence des données n'est pas la souveraineté : tant que les hébergeurs relèvent du droit américain, ce point reste bloquant, quelle que soit la région. Cible : base, console et services chez un hébergeur de droit européen, qualifié SecNumCloud pour un acheteur public. Les services n'ont besoin que de Node et de PostgreSQL, et leurs images se construisent depuis le code source.",
   },
   {
     t: "SDK non distribuables",
@@ -248,6 +254,8 @@ export async function Specs() {
   const aFaire = planif ? [planif, ...A_FAIRE] : A_FAIRE;
   const compte = (s: Statut) => criteres.filter((c) => c.s === s).length;
   const nonCouvertes = mesuresNonCouvertes();
+  // L'hébergement se lit dans la présentation (voir l'en-tête) : son groupe n'est pas redit.
+  const infra = INFRA.filter((g) => g.titre !== "Hébergement");
 
   // Un bloc de la partie « Le détail » (Annexe.tsx), pas une section de page : son
   // titre est un h3 sous le h2 de la partie, et il n'a plus son propre conteneur.
@@ -255,33 +263,13 @@ export async function Specs() {
   return (
     <section id="specs" aria-labelledby="specs-titre" className="mt-16 scroll-mt-6 border-t border-line pt-12">
       <header className="max-w-3xl">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-perf">
-          Ce qu&apos;on a codé, sans le maquiller
-        </span>
-        <h3 id="specs-titre" className="mt-2 text-xl font-bold tracking-tight text-ink sm:text-2xl">
-          Specs / Capacité technique
+        <h3 id="specs-titre" className="text-xl font-bold tracking-tight text-ink sm:text-2xl">
+          Spécifications techniques
         </h3>
         <p className="mt-3 leading-relaxed text-ink-soft">
-          Où ça tourne, ce que ça mesure, et ce que ça vaut face aux critères d&apos;un vrai RUM.
-          Les chiffres viennent du code et des mesures, pas d&apos;un document d&apos;intention —
-          et les lignes qui décrivent le dépôt portent le fichier qui les prouve.
-        </p>
-        <p className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold">
-          <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-soft">
-            Face au marché
-          </span>
-          <span className="rounded-full border border-good/40 bg-good/10 px-3 py-1 text-good-ink">
-            {compte("atteint")} atteints
-          </span>
-          <span className="rounded-full border border-warn/40 bg-warn/10 px-3 py-1 text-warn-ink">
-            {compte("partiel")} partiels
-          </span>
-          <span className="rounded-full border border-bad/40 bg-bad/10 px-3 py-1 text-bad-ink">
-            {compte("manque")} non atteints
-          </span>
-          <span className="rounded-full border border-line bg-panel2 px-3 py-1 text-ink-soft">
-            {compte("non-mesure")} non mesuré
-          </span>
+          Où ça tourne, ce que ça mesure, et ce que ça vaut face aux critères d&apos;un outil de RUM
+          du marché. Les chiffres viennent du code et des mesures, pas d&apos;un document
+          d&apos;intention.
         </p>
       </header>
 
@@ -320,8 +308,16 @@ export async function Specs() {
 
         {/* ═══════════════ Onglet 1 — infrastructure ═══════════════ */}
         <div data-testid="specs-panneau" data-onglet="infra" className="hidden w-full pt-6 peer-checked/infra:block">
+          <p className="mb-5 rounded-xl border border-line bg-panel px-5 py-3 text-sm leading-relaxed text-ink-soft">
+            <span className="font-semibold text-ink">Hébergement.</span> Où sont les données, et sous quel
+            droit : le tableau de la{" "}
+            <a href="/presentation#hebergement" className="font-medium text-ink underline decoration-line underline-offset-2 hover:decoration-ink">
+              présentation
+            </a>
+            , seule place où il s&apos;écrit.
+          </p>
           <div className="grid gap-5">
-            {INFRA.map((g) => (
+            {infra.map((g) => (
               <div key={g.titre} className="overflow-hidden rounded-2xl border border-line bg-panel">
                 <div className="border-b border-line bg-panel2 px-5 py-3">
                   <h4 className="text-sm font-bold text-ink">{g.titre}</h4>
@@ -334,14 +330,7 @@ export async function Specs() {
                       className="grid gap-x-5 gap-y-1.5 px-5 py-4 lg:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_minmax(0,7rem)] lg:items-baseline"
                     >
                       <span className="text-sm font-semibold text-ink">{l.k}</span>
-                      <span className="min-w-0 text-[13px] leading-relaxed text-ink">
-                        {l.v}
-                        {l.preuve && (
-                          <span className="mt-1 block font-mono text-[11px] text-ink-soft">
-                            {l.preuve}
-                          </span>
-                        )}
-                      </span>
+                      <span className="min-w-0 text-[13px] leading-relaxed text-ink">{l.v}</span>
                       <span className="lg:text-right">
                         <Etiquette s={l.s} />
                       </span>
@@ -361,23 +350,18 @@ export async function Specs() {
                 Ce qu&apos;on capte — {MESURES.length} familles de mesures
               </h4>
               <p className="mt-0.5 text-[12px] leading-relaxed text-ink-soft">
-                Chaque ligne dit ce qui voyage sur le fil, où ça atterrit en base, et quel module
-                l&apos;émet. Rien ici n&apos;est déclaratif : les trois se vérifient dans le dépôt.
+                Chaque famille est émise par un module du SDK ou de l&apos;agent, reconnue à
+                l&apos;arrivée et rangée en base : des tests le vérifient à chaque modification.
               </p>
             </div>
             <ul className="divide-y divide-line">
               {MESURES.map((m) => (
                 <li
                   key={`${m.quoi}-${m.module}`}
-                  className="grid gap-x-5 gap-y-1.5 px-5 py-4 lg:grid-cols-[minmax(0,13rem)_minmax(0,1fr)_minmax(0,13rem)] lg:items-baseline"
+                  className="grid gap-x-5 gap-y-1.5 px-5 py-4 lg:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] lg:items-baseline"
                 >
                   <span className="text-sm font-semibold text-ink">{m.quoi}</span>
                   <span className="text-[13px] leading-relaxed text-ink-soft">{m.detail}</span>
-                  <span className="min-w-0 font-mono text-[11px] leading-relaxed text-ink-soft lg:text-right">
-                    <span className="block">{m.otlp ? `${m.otlp} →` : "canal séparé →"}</span>
-                    <span className="block text-ink">{m.table}</span>
-                    <span className="block break-all">{m.module.replace(/^packages\//, "")}</span>
-                  </span>
                 </li>
               ))}
             </ul>
@@ -434,6 +418,23 @@ export async function Specs() {
 
         {/* ═══════════════ Onglet 3 — écart au marché ═══════════════ */}
         <div data-testid="specs-panneau" data-onglet="ecart" className="hidden w-full pt-6 peer-checked/ecart:block">
+          <p data-testid="specs-decompte" className="mb-4 flex flex-wrap items-center gap-2 text-xs font-semibold">
+            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-soft">
+              Face au marché
+            </span>
+            <span className="rounded-full border border-good/40 bg-good/10 px-3 py-1 text-good-ink">
+              {pluriel(compte("atteint"), "atteint")}
+            </span>
+            <span className="rounded-full border border-warn/40 bg-warn/10 px-3 py-1 text-warn-ink">
+              {pluriel(compte("partiel"), "partiel", "partiels")}
+            </span>
+            <span className="rounded-full border border-bad/40 bg-bad/10 px-3 py-1 text-bad-ink">
+              {pluriel(compte("manque"), "non atteint", "non atteints")}
+            </span>
+            <span className="rounded-full border border-line bg-panel2 px-3 py-1 text-ink-soft">
+              {pluriel(compte("non-mesure"), "non mesuré", "non mesurés")}
+            </span>
+          </p>
           <div className="overflow-hidden rounded-2xl border border-line bg-panel">
             {/* En-têtes : desktop seulement — en mobile chaque cellule porte son
                 propre libellé, une ligne de titres n'aurait rien à surmonter. */}

@@ -1,6 +1,5 @@
 "use server";
-// Server Actions /admin/read-tokens (livrable UTI) — génère / révoque les tokens
-// de lecture. C9 — les COMMANDES `creerJetonLecture` et `revoquerJetonLecture`
+// Server Actions /admin/read-tokens — génère / révoque les jetons de lecture. C9 — les COMMANDES `creerJetonLecture` et `revoquerJetonLecture`
 // (`lib/commandes/raccordements.ts`) : l'administrateur de l'application du jeton,
 // audité ; le jeton en clair rendu UNE fois par la commande (seul le hash est en
 // base), rendu au formulaire (`useActionState`, C9c) qui l'affiche une fois.
@@ -15,11 +14,16 @@ const champ = (fd: FormData, nom: string) => String(fd.get(nom) ?? "").trim();
 export async function createReadTokenAction(_precedent: SecretRemis, fd: FormData): Promise<SecretRemis> {
   const app = champ(fd, "app");
   if (!app) redirect("/admin/read-tokens?error=app");
-  const r = await executerCommande("creerJetonLecture", { app, corps: { label: champ(fd, "label") } });
+  const validite = champ(fd, "validite");
+  const r = await executerCommande("creerJetonLecture", {
+    app,
+    corps: { label: champ(fd, "label"), ...(validite ? { expiresInDays: validite } : {}) },
+  });
   if (!r.ok) {
     apresRefus(r);
     redirect("/admin/read-tokens?error=app");
   }
+  if (r.data.etat === "refus") redirect("/admin/read-tokens?error=validite");
   revalidatePath("/admin/read-tokens");
   return { nom: "jeton-lecture", valeur: r.data.jeton, pour: r.data.app };
 }

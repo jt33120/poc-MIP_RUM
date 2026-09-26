@@ -1,8 +1,12 @@
-// E2E — la vitrine publique /presentation (plan § 8.5, recette TP1 à TP12).
+// E2E — la vitrine publique (plan § 8.5, recette TP1 à TP12).
 //
-// Une page pour tous, en trois parties (« Ce qu'il contient », « Ce qu'il sait
-// faire », « Ce qui reste pour un vrai outil de RUM ») puis le détail. Visiteur non
-// connecté sauf TP10 ; 1440 × 900 sauf mention (TP5 : 390, 768, 1440).
+// Depuis la recette du 26/09/2026, deux pages publiques : la PRÉSENTATION
+// (/presentation, deux ou trois écrans : promesse, statut daté, trois preuves,
+// hébergement, démo) et son DOSSIER TECHNIQUE (/presentation/dossier), en trois
+// parties (« Ce qu'il contient », « Ce qu'il sait faire », « Ce qui reste pour un
+// vrai outil de RUM ») puis le détail. Les garanties de l'ancienne page longue ont
+// suivi leur contenu vers le dossier. Visiteur non connecté sauf TP10 ; 1440 × 900
+// sauf mention (TP5 : 390, 768, 1440).
 //
 // CE QUE CE SPEC EXISTE POUR EMPÊCHER. Que la vitrine dise plus que le document de
 // couverture (docs/RUM_PARITY_STATUS.md) : ses chiffres sont lus dans
@@ -21,6 +25,8 @@ import { expect, test } from "@playwright/test";
 // l'URL complète. Un `goto("/presentation")` relatif est refusé par le navigateur
 // (« Cannot navigate to invalid URL ») — c'est ce qui faisait échouer tout ce fichier.
 const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
+/** Le dossier technique, où vivent les trois parties et le détail. */
+const dossierUrl = `${consoleUrl}/presentation/dossier`;
 
 /** Ce que la page doit afficher, relu dans l'extraction du document de couverture. */
 function couverture() {
@@ -50,11 +56,11 @@ const PARTIES = [
   { id: "reste", titre: "Ce qui reste pour un vrai outil de RUM" },
 ] as const;
 
-test.describe("P**.2 — ossature : une page, trois parties", () => {
+test.describe("P**.2 — ossature : le dossier technique, trois parties", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("TP1 — trois titres h2, dans l'ordre, chacun en tête de sa partie", async ({ page }) => {
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const titres = (await page.locator("h2").allInnerTexts()).map((t) => t.trim());
     const attendus: string[] = PARTIES.map((p) => p.titre);
     expect(titres.filter((t) => attendus.includes(t))).toEqual(attendus);
@@ -67,12 +73,14 @@ test.describe("P**.2 — ossature : une page, trois parties", () => {
 
   test("TP2 — la ligne de relevé ne dit que ce que calcule le document de couverture", async ({ page }) => {
     const c = couverture();
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const releve = page.getByTestId("presentation-releve");
-    await expect(releve).toContainText(`État relevé le ${c.releve} sur ${c.sha}`);
+    await expect(releve).toContainText(`État relevé le ${c.releve} :`);
     await expect(releve).toContainText(
-      `${c.total} capacités recensées, ${c.deployees} déployées, aucune éprouvée sur des données réellement ingérées.`,
+      `${c.total} capacités recensées, ${c.deployees} déployées, aucune encore éprouvée sur des données réellement ingérées.`,
     );
+    // Recette du 26/09/2026 : plus d'empreinte de commit à l'écran.
+    await expect(releve).not.toContainText(c.sha);
     // Au-delà de 30 jours, et seulement alors, la ligne prévient que l'état a pu changer.
     const perime = Date.now() - minuitUtc(c.releve) > PERIME_JOURS * 86_400_000;
     await expect(page.getByTestId("presentation-releve-perime")).toHaveCount(perime ? 1 : 0);
@@ -84,7 +92,7 @@ test.describe("P**.2 — ossature : une page, trois parties", () => {
       "TP9 suppose une console lancée sans DEMO_USER_APPS, comme en CI",
     );
     await page.goto(`${consoleUrl}/presentation`);
-    for (const id of ["presentation-demo", "presentation-demo-top"]) {
+    for (const id of ["presentation-demo", "presentation-demo-top", "presentation-demo-fin"]) {
       await expect(page.getByTestId(id)).toHaveAttribute("aria-disabled", "true");
     }
     await expect(page.locator('a[href="/demo"]')).toHaveCount(0);
@@ -94,7 +102,7 @@ test.describe("P**.2 — ossature : une page, trois parties", () => {
   });
 
   test("PS1 — chaque lien du sommaire mène au titre d'une partie", async ({ page }) => {
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const sommaire = page.getByRole("navigation", { name: "Sommaire de la présentation" });
     const liens = sommaire.getByRole("link");
     await expect(liens).toHaveText(["Ce qu'il contient", "Ce qu'il sait faire", "Ce qui reste", "Le détail"]);
@@ -121,7 +129,7 @@ test.describe("P**.3 — Partie 1 : ce qu'il contient", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("TP7 — la topologie est une image nommée, doublée d'une alternative textuelle", async ({ page }) => {
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const partie = page.locator("section#contient");
     const dessin = partie.getByRole("img", { name: /^Chemin de la mesure :/ });
     await expect(dessin).toBeVisible();
@@ -165,7 +173,9 @@ test.describe("P**.3 — Partie 1 : ce qu'il contient", () => {
       await expect(page.getByTestId("presentation-console")).toBeVisible();
       await expect(page.getByTestId("presentation-demo")).toHaveCount(0);
 
-      // Chaque écran listé est un lien vers sa route.
+      // Le détail est au dossier technique : chaque écran listé y est un lien vers sa route.
+      await page.goto(dossierUrl);
+      await expect(page.getByTestId("presentation-console-top")).toBeVisible();
       const ecrans = page.getByTestId("ecrans-console");
       const nbEcrans = await ecrans.locator("li li").count();
       expect(nbEcrans).toBeGreaterThan(0);
@@ -187,7 +197,7 @@ test.describe("P**.3 — Partie 1 : ce qu'il contient", () => {
 
       // Un écran s'ouvre vraiment : navigation document, sans retour à la connexion.
       await liens.first().click();
-      await page.waitForURL((u) => u.pathname !== "/presentation", { timeout: 15_000 });
+      await page.waitForURL((u) => u.pathname !== "/presentation/dossier", { timeout: 15_000 });
       expect(new URL(page.url()).pathname).not.toBe("/login");
     });
   });
@@ -225,16 +235,20 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
       .map((c) => c.id);
     const ids = cartesDuFichier();
 
-    await page.goto(`${consoleUrl}/presentation`);
-    const cartes = page.locator("section#sait-faire").getByTestId("capacite");
+    await page.goto(dossierUrl);
+    const partie = page.locator("section#sait-faire");
+    const cartes = partie.getByTestId("capacite");
     await expect(cartes).toHaveCount(ids.length);
     expect(await cartes.evaluateAll((els) => els.map((e) => e.getAttribute("data-carte")))).toEqual(ids);
+    // Recette du 26/09/2026 : le verdict commun est dit une fois, dans le chapeau, et
+    // plus sur chaque carte ; une carte déclassée le redirait (capacite-verdict).
+    await expect(partie.locator("header")).toContainText("« déployé, non éprouvé »");
+    await expect(partie.getByTestId("capacite-verdict")).toHaveCount(0);
 
     const vus: string[] = [];
     for (const carte of await cartes.all()) {
       const nom = (await carte.getAttribute("data-carte")) ?? "?";
       await expect(carte, nom).toHaveAttribute("data-verdict", "deploye_non_eprouve");
-      await expect(carte.getByTestId("capacite-verdict"), nom).toHaveText("Déployé, non éprouvé");
       const puces = carte.getByTestId("capacite-limite");
       expect(await puces.count(), `${nom} : au moins une puce`).toBeGreaterThan(0);
       for (const puce of await puces.all()) {
@@ -255,7 +269,7 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
   });
 
   test("renvoi — « (voir R3) » dans une limite mène au point de « Ce qui reste »", async ({ page }) => {
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const liens = page.locator('section#sait-faire [data-testid="capacite-limite"] a[href^="#reste-"]');
     expect(await liens.count(), "la limite A6 renvoie à R3").toBeGreaterThan(0);
     for (const href of await liens.evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""))) {
@@ -264,7 +278,7 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
   });
 
   test("TP4 — D12 et D14, déployées mais inertes, n'apparaissent pas dans « Ce qu'il sait faire »", async ({ page }) => {
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const partie = page.locator("section#sait-faire");
     await expect(partie).toHaveCount(1);
     for (const id of INERTES) await expect(partie.locator(`[data-id="${id}"]`)).toHaveCount(0);
@@ -274,7 +288,7 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
   test("V-E — la barre de couverture : une case par capacité, des décomptes écrits", async ({ page }) => {
     const capacites = capacitesDuDocument();
     const deployees = capacites.filter((c) => c.verdict === "deploye_non_eprouve").length;
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const barre = page.locator("section#sait-faire").getByTestId("couverture-barre");
     const dessin = barre.locator('svg[role="img"]');
     await expect(dessin).toHaveAttribute("aria-label", new RegExp(` ${capacites.length} capacités, `));
@@ -300,7 +314,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
 
   test("TP4 — D12 et D14, déployées mais inertes, ont leur pastille dans « Ce qui reste »", async ({ page }) => {
     const verdicts = verdictsDuDocument();
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const reste = page.locator("section#reste");
     for (const id of ["D12", "D14"]) {
       const pastille = reste.locator(`[data-testid="reste-pastille"][data-id="${id}"]`);
@@ -312,7 +326,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
   });
 
   test("dix points dans l'ordre du plan, chacun avec ce qui manque, ce qui le débloque et qui décide", async ({ page }) => {
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const points = page.locator('section#reste [data-testid="reste-point"]');
     await expect(points).toHaveCount(10);
     expect(await points.evaluateAll((els) => els.map((e) => e.getAttribute("data-id")))).toEqual([
@@ -331,7 +345,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
 
   test("chaque pastille est une ligne du document de couverture, avec son verdict", async ({ page }) => {
     const verdicts = verdictsDuDocument();
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const lues = await page
       .locator('section#reste [data-testid="reste-pastille"]')
       .evaluateAll((els) => els.map((e) => [e.getAttribute("data-id") ?? "", e.getAttribute("data-verdict") ?? ""]));
@@ -359,9 +373,9 @@ test.describe("P**.6 — annexe et Specs", () => {
 
   test("TP11 — une famille par <details>, et toutes les capacités du document, dans son ordre", async ({ page }) => {
     const doc = extraction();
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const annexe = page.locator("section#detail");
-    await expect(annexe).toContainText(`Le document de couverture du ${doc.releve}, tel quel`);
+    await expect(annexe).toContainText(`Le registre des capacités au ${doc.releve}`);
 
     const familles = annexe.getByTestId("annexe-famille");
     await expect(familles).toHaveCount(doc.familles.length);
@@ -384,14 +398,18 @@ test.describe("P**.6 — annexe et Specs", () => {
     const premiere = familles.first();
     await premiere.locator("summary").click();
     expect(await premiere.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(true);
-    for (const nom of ["Identifiant", "Capacité", "Verdict", "Limite"]) {
+    for (const nom of ["Identifiant", "Capacité", "Verdict", "Sa limite"]) {
       await expect(premiere.getByRole("columnheader", { name: nom, exact: true })).toBeVisible();
     }
     const ligne = premiere.getByTestId("annexe-capacite").first();
     const c0 = doc.capacites.filter((c) => c.famille === doc.familles[0])[0];
     await expect(ligne.getByRole("rowheader")).toHaveText(c0.id);
-    // Trois cellules non vides : capacité, verdict ÉCRIT (pas seulement une teinte), limite.
+    // Trois cellules non vides : capacité, verdict ÉCRIT (pas seulement une teinte), et
+    // le renvoi vers la carte ou le point qui dit sa limite, dont la cible existe.
     for (const cellule of await ligne.getByRole("cell").all()) await expect(cellule).not.toBeEmpty();
+    const renvois = await annexe.getByTestId("annexe-capacite").locator("a").evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""));
+    expect(renvois.length).toBe(doc.capacites.length);
+    for (const href of new Set(renvois)) await expect(page.locator(href), href).toHaveCount(1);
 
     // Le Markdown du document est rendu : ni astérisques ni accents graves à l'écran.
     const brut = await annexe.getByTestId("annexe-couverture").evaluate((el) => el.textContent ?? "");
@@ -401,7 +419,7 @@ test.describe("P**.6 — annexe et Specs", () => {
   test("PS11 — familles ouvertes : rien ne dépasse à 390, 768, 1440 px ; sous 1024 px, une ligne s'empile", async ({
     page,
   }) => {
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const annexe = page.locator("section#detail");
     const familles = annexe.getByTestId("annexe-famille");
     for (const bloc of await familles.all()) await bloc.locator("summary").click();
@@ -435,7 +453,7 @@ test.describe("P**.6 — annexe et Specs", () => {
     page,
   }) => {
     const doc = extraction();
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const sommaire = page.getByRole("navigation", { name: "Sommaire de la présentation" });
 
     // 1. Tab depuis le haut de la page atteint le sommaire, par son premier lien.
@@ -494,7 +512,7 @@ test.describe("P**.6 — annexe et Specs", () => {
       }
     }
     // L'onglet choisi ne passe pas par l'URL : l'adresse est restée celle de l'ancre.
-    await expect(page).toHaveURL(/\/presentation#detail-titre$/);
+    await expect(page).toHaveURL(/\/presentation\/dossier#detail-titre$/);
   });
 });
 
@@ -520,16 +538,41 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
   const colonnes = (cartes: LocatorPss8) =>
     cartes.evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().left))).size);
 
-  /** Cartes de capacité par rangée (PS7) : une à 390 px, deux à 768, trois à 1440. */
-  const COLONNES_CAPACITES: Record<(typeof LARGEURS_PSS8)[number], number> = { 390: 1, 768: 2, 1440: 3 };
+  /**
+   * Cartes de capacité par rangée (PS7) : une à 390 px, deux à partir de 768 — en
+   * colonnes de texte depuis la recette du 26/09/2026 (trois colonnes de grille
+   * laissaient jusqu'à 450 px de blanc sous les cartes courtes).
+   */
+  const COLONNES_CAPACITES: Record<(typeof LARGEURS_PSS8)[number], number> = { 390: 1, 768: 2, 1440: 2 };
 
-  test("TP5 — rien ne dépasse à 390, 768 et 1440 px, même tout déplié ; à 390 px, les cartes sur une colonne", async ({
+  test("TP5 — la présentation : rien ne dépasse à 390, 768 et 1440 px, et le premier écran d'un téléphone n'a qu'une rangée d'actions", async ({
     page,
   }) => {
     const fautes: string[] = [];
     for (const largeur of LARGEURS_PSS8) {
       await page.setViewportSize({ width: largeur, height: 900 });
       await page.goto(`${consoleUrl}/presentation`);
+      await page.evaluate(() =>
+        document.querySelectorAll("details").forEach((d) => {
+          d.open = true;
+        }),
+      );
+      for (const f of await debordementsPss8(page)) fautes.push(`${largeur} px — ${f}`);
+      // Recette du 26/09/2026 : à 390 px, les boutons de l'en-tête doublaient ceux du titre.
+      const enTete = page.getByTestId("presentation-login-top");
+      if (largeur === 390) await expect(enTete).toBeHidden();
+      else await expect(enTete).toBeVisible();
+    }
+    expect(fautes).toEqual([]);
+  });
+
+  test("TP5 — le dossier : rien ne dépasse à 390, 768 et 1440 px, même tout déplié ; à 390 px, les cartes sur une colonne", async ({
+    page,
+  }) => {
+    const fautes: string[] = [];
+    for (const largeur of LARGEURS_PSS8) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(dossierUrl);
       // Les Specs arrivent sous <Suspense> : on mesure la page finie, pas son squelette.
       await expect(page.locator("#specs-infra")).toBeAttached();
       await expect(page.getByTestId("specs-chargement")).toHaveCount(0);
@@ -583,7 +626,9 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
     await expect(page.locator('img[src*="overview-light"]')).toBeVisible();
     await expect(page.locator('img[src*="overview-dark"]')).toBeHidden();
 
-    const legende = page.locator("main p", { hasText: "Capture réelle de la console" });
+    // Trois preuves, une légende (au pluriel depuis la recette du 26/09/2026).
+    await expect(page.getByTestId("preuve")).toHaveCount(3);
+    const legende = page.locator("main p", { hasText: "Captures réelles de la console" });
     await expect(legende).toHaveCount(1);
     await expect(legende).toContainText("jeu de démonstration");
     // La date d'une capture vient du manifeste des captures (P**.7) ; sans lui, elle
@@ -618,8 +663,9 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
 
     // Témoin : sans préférence, les flèches dérivent (Capteurs.tsx, globals.css). Sans
     // lui, une classe renommée ferait passer le test à vide.
+    // Les flèches sont au dossier technique (Capteurs.tsx).
     await page.emulateMedia({ reducedMotion: "no-preference" });
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const libres = await etat();
     expect(libres.length, "des flèches dans le chemin de la mesure").toBeGreaterThan(0);
     for (const f of libres) {
@@ -629,7 +675,7 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
 
     // Mouvement réduit demandé : aucune animation sur les flèches…
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(dossierUrl);
     const reduites = await etat();
     expect(reduites.length).toBe(libres.length);
     for (const f of reduites) {

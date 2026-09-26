@@ -199,7 +199,7 @@ export const chargerExplorer = (async (principal, sp) => {
   if (demande && tropDeSeries) {
     echec = {
       titre: "Trop de séries demandées",
-      message: `Une série temporelle superpose au plus ${SERIES_MAX} groupes : au-delà, les courbes cessent d'être lisibles. Choisir 1, 3 ou ${SERIES_MAX} dans « Nombre maximum », ou la représentation « Classement ».`,
+      message: `Une série temporelle superpose au plus ${SERIES_MAX} groupes : au-delà, les courbes cessent d'être lisibles. Choisissez 1, 3 ou ${SERIES_MAX} dans « Nombre maximum », ou la représentation « Classement ».`,
     };
   } else if (demande && plan.ok) {
     const p = plan.value;
@@ -222,7 +222,7 @@ export const chargerExplorer = (async (principal, sp) => {
     } catch (e) {
       if (e instanceof ExplorerBudgetError) {
         echec = {
-          titre: "Budget de lecture dépassé",
+          titre: "Analyse trop longue",
           message: `${e.message}. Aucun chiffre n'est affiché : une série de zéros se lirait comme une absence de trafic.`,
         };
       } else if (e instanceof UnsupportedExplorerDimension) {

@@ -19,11 +19,12 @@ import type { ReactNode } from "react";
 import { Figure, type AlternativeTexte } from "@/components/charts/Figure";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
-import { metaResultat, pointsDeSerie } from "@/components/explorer/ResultatAnalyse";
+import { TEINTE_VOLUME, metaResultat, pointsDeSerie, provenanceResultat } from "@/components/explorer/ResultatAnalyse";
+import { APropos } from "@/components/explorer/APropos";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import type { ExplorerPlan } from "@/lib/analytics-schema";
-import { libelleCle } from "@/lib/explorer-page-params";
+import { libelleCle, uniteEffectif } from "@/lib/explorer-page-params";
 import { formater } from "@/lib/fmt-ids";
 import type { ExplorerResult } from "@/lib/queries-explorer";
 import { bucketLabel, rangeLabel, type ResolvedRange } from "@/lib/query-contract";
@@ -63,6 +64,14 @@ function Meta({ plan, resultat }: { plan: ExplorerPlan; resultat: ExplorerResult
 }
 
 /**
+ * La provenance du contexte, dans son pied de page — même règle que la figure
+ * principale : la lecture d'abord, d'où viennent les chiffres ensuite.
+ */
+function Provenance({ plan, resultat, methode = [] }: { plan: ExplorerPlan; resultat: ExplorerResult; methode?: string[] }) {
+  return <APropos lignes={[...methode, ...provenanceResultat(plan, resultat.meta)]} className="mt-2" />;
+}
+
+/**
  * Ce qui remplace le dessin quand la lecture n'a pas abouti. Le budget dépassé est
  * un `partiel` : rien n'est cassé, la réponse est simplement hors d'atteinte dans le
  * temps imparti — réduire la période ou les filtres suffit. Une panne est une
@@ -83,7 +92,7 @@ function Manquant({
       <EtatSurface
         etat={{
           kind: "partiel",
-          raison: `${phraseBudget} : budget de lecture dépassé. Le résultat ci-dessus, lui, a été lu ; réduire la période ou les filtres pour obtenir aussi ce contexte.`,
+          raison: `${phraseBudget} : la lecture a pris trop de temps. Le résultat ci-dessus, lui, a été lu ; réduisez la période ou ajoutez un filtre pour obtenir aussi ce contexte.`,
         }}
       />
     );
@@ -143,7 +152,9 @@ export function VolumeResultat({
   const { grille, points, groupes } = pointsDeSerie(meta, data);
   const seauSecondes = meta.range.bucket_seconds;
   const cle = groupes[0]?.cle ?? "s0";
-  const series: SerieDef[] = [{ cle, libelle: unite, role: "principale", forme: "barres", additive: true }];
+  // Un volume se situe, il ne se juge pas : teinte neutre (ardoise, `categorie(4)`),
+  // pas l'orange de la série mesurée principale — c'est le résultat, au-dessus.
+  const series: SerieDef[] = [{ cle, libelle: unite, role: "categorie", categorieIndex: 4, forme: "barres", additive: true }];
   const ariaLabel = `${titre} : ${unite} par tranche, ${grille.length} tranches de ${bucketLabel(seauSecondes)}`;
   // Un dénombrement : un seau sans ligne vaut réellement 0 — ce n'est pas un trou.
   const parT = new Map(points.map((p: PointSerie) => [Date.parse(p.t), p]));
@@ -157,25 +168,32 @@ export function VolumeResultat({
   };
 
   return (
-    <Figure
-      id="volume-resultat"
-      titre={titre}
-      meta={metaFigure}
-      alternative={alternative}
-      lecture={`Contexte : le nombre de ${unite} qui composent le résultat, seau par seau. Aucun seuil ne s'applique à un volume.`}
-    >
-      <ThresholdSeries
-        grille={grille}
-        points={points}
-        series={series}
-        format="count"
-        seauSecondes={seauSecondes}
-        fuseau={FUSEAU_AFFICHAGE}
-        zoomHref={zoomHref}
-        hauteur={120}
-        ariaLabel={ariaLabel}
+    <div className="min-w-0">
+      <Figure
+        id="volume-resultat"
+        titre={titre}
+        meta={metaFigure}
+        alternative={alternative}
+        lecture={`Le nombre de ${unite} qui composent le résultat, tranche par tranche.`}
+      >
+        <ThresholdSeries
+          grille={grille}
+          points={points}
+          series={series}
+          format="count"
+          seauSecondes={seauSecondes}
+          fuseau={FUSEAU_AFFICHAGE}
+          zoomHref={zoomHref}
+          hauteur={120}
+          ariaLabel={ariaLabel}
+        />
+      </Figure>
+      <Provenance
+        plan={plan}
+        resultat={lecture.resultat}
+        methode={["Aucun seuil ne s'applique à un volume : il situe le résultat, il ne le juge pas."]}
       />
-    </Figure>
+    </div>
   );
 }
 
@@ -279,12 +297,13 @@ export function RepartitionResultat({
   limite: number;
 }) {
   const titre = `Répartition par ${dimensionLabel.toLowerCase()}`;
-  const enveloppe = (contenu: ReactNode, metaFigure?: ReactNode, lectureFigure?: string) => (
+  const enveloppe = (contenu: ReactNode, metaFigure?: ReactNode, pied?: ReactNode) => (
     <div data-testid="repartition-resultat" data-dimension={plan.groupBy[0]} className="min-w-0">
-      <Figure id="repartition-resultat" titre={titre} meta={metaFigure} lecture={lectureFigure}>
+      <Figure id="repartition-resultat" titre={titre} meta={metaFigure}>
         <Onglets onglets={onglets} />
         {contenu}
       </Figure>
+      {pied}
     </div>
   );
 
@@ -305,15 +324,16 @@ export function RepartitionResultat({
   const total = data.total;
   const connu = (v: number | null): v is number => v !== null && Number.isFinite(v);
   const lignes: RankDatum[] = data.groups.map((groupe) => {
-    const nom = libelleCle(groupe.key);
+    const nom = libelleCle(groupe.key, plan.groupBy);
     const part = connu(groupe.value) && connu(total) && total > 0 ? groupe.value / total : null;
-    const compte = `${formater("count", groupe.samples)} lignes`;
+    const compte = `${formater("count", groupe.samples)} ${uniteEffectif(plan.dataset)}`;
     return {
       label: nom,
       // Le libellé complet reste lisible au survol quand la colonne le tronque.
       title: nom,
       value: groupe.value,
       display: formater("count", groupe.value),
+      color: TEINTE_VOLUME,
       sub: part === null ? compte : `${formater("pct", part)} du total · ${compte}`,
       href: lienValeur(groupe.key[0] ?? null),
     };
@@ -330,6 +350,6 @@ export function RepartitionResultat({
   return enveloppe(
     <RankBar data={lignes} legende={`${titre} — ${unite} par valeur`} emptyLabel={`Aucune ligne sur ${plage}.`} />,
     metaFigure,
-    lectures.join(" "),
+    <Provenance plan={plan} resultat={lecture.resultat} methode={lectures} />,
   );
 }

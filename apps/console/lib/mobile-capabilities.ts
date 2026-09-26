@@ -34,7 +34,10 @@ export const CAPABILITY_LABELS: Record<MobileCapability, string> = {
   anr: "ANR (application ne répond plus)",
   native_start: "Démarrage natif",
   offline_persistence: "Reprise hors ligne",
-  screen_tracking: "Suivi des écrans",
+  // « automatique » : sans lui, les écrans que l'app déclare elle-même s'affichent
+  // quand même (« Écrans les plus consultés ») ; « Suivi des écrans : Non collecté »
+  // au-dessus d'une liste d'écrans se lisait comme une contradiction (recette du 26/09/2026).
+  screen_tracking: "Suivi automatique des écrans",
 };
 
 /**
@@ -45,15 +48,15 @@ export const CAPABILITY_NOTES: Record<MobileCapability, string> = {
   js_errors:
     "Erreurs JavaScript non interceptées et rejets de promesses. Sans elle, l'absence d'erreur n'est pas une absence d'erreur.",
   native_crashes:
-    "Plantages du processus natif (signal, exception Objective-C, SIGABRT). Aucun module natif MIP n'existe : ils appartiennent à P8.5.",
+    "Plantages du processus natif (signal, exception Objective-C, SIGABRT). Aucun module natif MIP ne les mesure encore.",
   anr:
     "Fil principal bloqué au-delà du seuil du système. Un compteur JavaScript ne sait pas distinguer un blocage d'une application au repos.",
   native_start:
-    "Démarrage du processus, pré-main et écran de lancement. Le SDK ne mesure que le temps JS jusqu'au premier écran déclaré.",
+    "Démarrage du processus, pré-main et écran de lancement. Le capteur ne mesure que le temps JavaScript jusqu'au premier écran déclaré.",
   offline_persistence:
     "File durable sur le stockage de l'appareil. Désactivée, les signaux émis hors ligne sont perdus à la fermeture.",
   screen_tracking:
-    "Adaptateur de navigation abonné au routeur. Sans lui, seul un appel manuel à screen() alimente les écrans : la couverture n'est pas garantie.",
+    "Suivi branché sur la navigation de l'application. Sans lui, seuls les écrans que l'application déclare elle-même sont comptés : la liste peut être incomplète.",
 };
 
 /** Une ligne de `mobile_capabilities`, telle que la lecture la rend. */
@@ -199,8 +202,11 @@ export const PLATFORM_LABELS: Record<Platform, string> = { ios: "iOS", android: 
  * Motif écrit par `mobileSummary` dans `unavailable` quand la migration v82 manque :
  * sans colonne `runtime`, aucune cohorte React Native ne peut être isolée.
  */
+// Textes lus à l'écran ET rendus par l'API (`unavailable`) : ils disent ce qui manque,
+// sans numéro de migration (la recette du 26/09/2026 en relevait à l'écran). Le
+// commentaire, lui, garde la migration en cause.
 export const RAISON_SANS_RUNTIME =
-  "migration v82 absente : le runtime des sessions n'est pas encore collecté, aucune cohorte React Native ne peut être isolée";
+  "le type d'application des sessions (web ou mobile) n'est pas encore enregistré sur cette installation : aucune cohorte React Native ne peut être isolée";
 
 /**
  * Sessions React Native à AFFICHER (F30, CE9). Sans v82, la lecture rend
@@ -212,7 +218,7 @@ export function sessionsCohorte(data: {
   unavailable: readonly string[];
 }): { valeur: number | null; raison: string | null } {
   if (data.unavailable.includes(RAISON_SANS_RUNTIME)) {
-    return { valeur: null, raison: "runtime non collecté (migration v82) : la cohorte React Native ne peut pas être isolée" };
+    return { valeur: null, raison: "type d'application non enregistré : la cohorte React Native ne peut pas être isolée" };
   }
   return { valeur: data.sessions.sessions, raison: null };
 }
@@ -236,7 +242,7 @@ export function parsePlatform(raw: string | null | undefined): Platform | null {
 
 /** Motif d'une part non calculable faute de `rum_error.error_source` (v69). */
 export const RAISON_SANS_SOURCE_JS =
-  "migration v69 absente : les erreurs JavaScript React Native ne sont pas distinguables";
+  "l'origine des erreurs n'est pas encore enregistrée sur cette installation : les erreurs JavaScript React Native ne sont pas distinguables";
 
 /**
  * Une déclaration avec l'app qui l'a émise. Une release n'est un fait que DANS son
@@ -412,11 +418,13 @@ export const CONDITION_REACT_NATIVE: FilterCondition = { dimension: "runtime", o
 /** Un lien vers la cohorte sur un autre écran, ou la raison pour laquelle il n'est pas rendu. */
 export type LienCohorte = { href: string; raison: null } | { href: null; raison: string };
 
+// v82 (colonne `runtime`) ; sonde de schéma ; release lue sur la SESSION ici, alors
+// que /sessions et l'Explorer ne la filtrent pas et que /pages la lit sur chaque vue.
 export const RAISON_LIEN_SANS_RUNTIME =
-  "runtime non collecté (migration v82) : l'écran cible ne peut pas isoler la cohorte React Native";
-export const RAISON_LIEN_SCHEMA_NON_LU = "schéma non lu : impossible de savoir si l'écran cible sait isoler la cohorte React Native";
+  "type d'application non enregistré sur cette installation : l'écran cible ne peut pas isoler la cohorte React Native";
+export const RAISON_LIEN_SCHEMA_NON_LU = "configuration non lue : impossible de savoir si l'écran cible sait isoler la cohorte React Native";
 export const RAISON_LIEN_RELEASE =
-  "sous un filtre de release, ici lu sur la session : /sessions et l'Explorer ne filtrent pas la release d'une session, /pages la lit sur chaque page vue — retirez le filtre de release pour ouvrir la cohorte";
+  "sous un filtre de release, la liste des sessions ne peut pas isoler cette cohorte — retirez le filtre de release pour l'ouvrir";
 
 /**
  * Liens de /mobile vers la cohorte React Native sur /sessions (tuile W-M2, W-M12),

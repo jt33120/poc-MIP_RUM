@@ -6,8 +6,10 @@ import {
   echelleY,
   graduationsTemps,
   libellePeriodeEnCours,
+  phrasePeuDePoints,
   premiereDonneeTardive,
   regrouperAnnotations,
+  tranchesMesurees,
   type Annotation,
   type LignePreparee,
   type SerieDef,
@@ -55,8 +57,17 @@ describe("echelleY", () => {
     expect(echelleY(lignes([12, 253, 40]), S, "count")).toEqual({ haut: 300, valeurs: [0, 100, 200, 300] });
   });
 
-  it("vital : la bande « Bon » reste visible (LCP tout bon → 0-1-2-3 s)", () => {
-    expect(echelleY(lignes([92, 120, null]), S, "ms", { vital: "LCP" })).toEqual({ haut: 3000, valeurs: [0, 1000, 2000, 3000] });
+  // Recette du 26/09/2026 : un LCP à 92 ms s'écrasait sous une échelle de 0 à 2,8 s.
+  // L'axe se cale sur les données ; la bande « Bon » en occupe alors toute la hauteur.
+  it("vital : l'échelle suit les données (LCP tout bon → 0-125 ms), pas le seuil", () => {
+    const e = echelleY(lignes([92, 120, null]), S, "ms", { vital: "LCP" });
+    expect(e.haut).toBe(125);
+    expect(e.valeurs[0]).toBe(0);
+    expect(e.valeurs.at(-1)).toBe(125);
+  });
+
+  it("vital sans aucune donnée : la bande « Bon » entière reste lisible", () => {
+    expect(echelleY(lignes([null, null]), S, "ms", { vital: "LCP" }).haut).toBeGreaterThanOrEqual(2750);
   });
 
   it("empilé : la plus haute PILE fait le haut de l'axe", () => {
@@ -142,5 +153,20 @@ describe("regrouperAnnotations", () => {
       fuseau: "UTC",
     });
     expect(seules[0]).toMatchObject({ libelle: "v1.4.2", href: "/r" });
+  });
+});
+
+describe("peu de points : une figure presque vide le dit", () => {
+  const S: SerieDef[] = [{ cle: "v", libelle: "V", role: "principale" }];
+  it("compte les tranches MESURÉES, les trous exclus", () => {
+    const l: LignePreparee[] = GRILLE_24H.slice(0, 5).map((t, i) => ({ t, v: i === 2 ? 92 : null }));
+    expect(tranchesMesurees(l, S.map((s) => s.cle))).toBe(1);
+    expect(tranchesMesurees(l, [])).toBe(0);
+  });
+
+  it("la phrase s'accorde avec la tranche", () => {
+    expect(phrasePeuDePoints(1, 3600)).toBe("Une seule heure mesurée sur la période");
+    expect(phrasePeuDePoints(2, 86_400)).toBe("Deux jours mesurés sur la période");
+    expect(phrasePeuDePoints(1, 300)).toBe("Une seule tranche mesurée sur la période");
   });
 });

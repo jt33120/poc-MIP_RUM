@@ -1,7 +1,9 @@
-// Ligne de relevé de la vitrine (plan § 8.2, PS0) : de quand date l'état que la
-// page décrit, sur quel commit, et combien de capacités il compte.
+// Ligne de relevé du dossier technique (plan § 8.2, PS0) : de quand date l'état que
+// la page décrit, et combien de capacités il compte. Le commit relevé n'est plus
+// affiché (recette du 26/09/2026) : une empreinte ne dit rien à un lecteur, et le
+// registre la garde pour qui veut vérifier.
 //
-// AUCUN CHIFFRE N'EST TAPÉ ICI. Date, commit, total et nombre de capacités
+// AUCUN CHIFFRE N'EST TAPÉ ICI. Date, total et nombre de capacités
 // déployées sont CALCULÉS par lib/couverture.ts depuis le document de couverture
 // (docs/RUM_PARITY_STATUS.md) : un nouveau relevé change cette ligne au build
 // suivant, et tests/unit/couverture-site.test.ts refuse un décompte écrit en dur
@@ -13,7 +15,7 @@
 //
 // Un relevé vieillit : au-delà de RELEVE_PERIME_JOURS, la ligne le dit. La page est
 // rendue à chaque requête (`force-dynamic`), l'âge est donc celui du jour.
-import { CAPACITES, RELEVE, SHA, compte } from "@/lib/couverture";
+import { CAPACITES, RELEVE, compte } from "@/lib/couverture";
 
 /** Au-delà de ce nombre de jours, la ligne prévient que l'état a pu changer. */
 export const RELEVE_PERIME_JOURS = 30;
@@ -39,12 +41,11 @@ export function Releve({ maintenant = new Date() }: { maintenant?: Date }) {
   const perime = relevePerime(RELEVE, maintenant);
   return (
     <p data-testid="presentation-releve" className="mt-5 max-w-xl text-sm leading-relaxed text-ink-soft">
-      État relevé le <strong className="font-semibold text-ink">{RELEVE}</strong> sur{" "}
-      <code className="rounded bg-app/70 px-1.5 py-0.5 font-mono text-[13px] text-ink">{SHA}</code> :{" "}
+      État relevé le <strong className="font-semibold text-ink">{RELEVE}</strong> :{" "}
       <strong className="font-semibold text-ink">{total}</strong> capacités recensées,{" "}
       <strong className="font-semibold text-ink">{deployees}</strong> déployées,{" "}
-      <strong className="font-semibold text-ink">aucune</strong> éprouvée sur des données réellement
-      ingérées.
+      <strong className="font-semibold text-ink">aucune</strong> encore éprouvée sur des données
+      réellement ingérées.
       {perime && (
         <>
           {" "}

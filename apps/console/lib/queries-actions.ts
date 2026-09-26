@@ -60,6 +60,31 @@ export function hasNextActionsPage(page: Pagination, rowCount: number): boolean 
 }
 
 /**
+ * Ordre du classement des actions (paramètre d'URL `classer` de l'écran). Le
+ * sous-titre promettait « le plus d'erreurs OU de temps réseau » alors que seul le
+ * tri par erreurs existait : « Appel API (fetch) », 139 actions et 121 s de réseau
+ * cumulé, finissait dernier (recette du 26/09/2026). Les calculs ne changent pas :
+ * seul l'ORDER BY diffère.
+ */
+export type OrdreActions = "erreurs" | "reseau";
+
+/** `classer=reseau` → « reseau » ; toute autre valeur (ou rien) → « erreurs », le défaut. */
+export function parseOrdreActions(valeur: string | null | undefined): OrdreActions {
+  return valeur === "reseau" ? "reseau" : "erreurs";
+}
+
+/**
+ * Clauses de tri, totales dans les deux cas (même départage final) : une page
+ * suivante ne peut ni sauter ni répéter une ligne. « reseau » : temps réseau lié
+ * CUMULÉ d'abord — ce qu'un groupe d'actions coûte en réseau, fréquence comprise —,
+ * puis la p75 d'une action, puis les erreurs.
+ */
+const ORDRES_SQL: Record<OrdreActions, string> = {
+  erreurs: "errors desc, total_ms desc, actions desc",
+  reseau: "total_ms desc, lie_p75_ms desc nulls last, errors desc, actions desc",
+};
+
+/**
  * La table des actions existe-t-elle sur ce déploiement (migration-v67) ?
  * Exportée pour que l'écran pose la question AVANT de lire : sans elle,
  * `topActionsSummary` rend des zéros qui s'affichaient « 0 action » — un vide
@@ -193,7 +218,11 @@ function actionCtes(ctx: SqlContext, range?: ResolvedRange): string {
  * agrégée PAR action_id avant la jointure : une action avec 2 erreurs et 3
  * ressources reste une racine, jamais six lignes multipliées.
  */
-export async function topActions(f: Filters, page: Pagination = { limit: 50, offset: 0 }): Promise<TopActionRow[]> {
+export async function topActions(
+  f: Filters,
+  page: Pagination = { limit: 50, offset: 0 },
+  ordre: OrdreActions = "erreurs",
+): Promise<TopActionRow[]> {
   if (!(await actionsDisponible())) return [];
   const ctx = await sqlContext(f);
   const ctes = actionCtes(ctx);
@@ -213,7 +242,7 @@ export async function topActions(f: Filters, page: Pagination = { limit: 50, off
             max(ts) as last_seen
        from per_action
       group by app_id, name, type, route
-      order by errors desc, total_ms desc, actions desc,
+      order by ${ORDRES_SQL[ordre]},
                app_id asc, name asc, type asc, coalesce(route, '') asc
       limit ${ctx.bind(page.limit)} offset ${ctx.bind(page.offset)}`,
     ctx.params,
@@ -275,7 +304,7 @@ export function actionSamplingNotice(min: number | null | undefined): ActionSamp
 /** État d'une surface d'actions, de forme compatible avec `Etat` (components/states). */
 export type EtatActions = { kind: "non_collecte"; manque: string };
 
-export const MANQUE_TABLE_ACTIONS = "la table des actions n'existe pas sur ce déploiement";
+export const MANQUE_TABLE_ACTIONS = "les actions des visiteurs ne sont pas encore collectées sur cette installation";
 
 /**
  * Ce que l'écran Actions rend quand la table n'existe pas (F00, § 5.4.3) : un

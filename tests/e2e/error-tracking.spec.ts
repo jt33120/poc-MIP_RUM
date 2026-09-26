@@ -267,21 +267,22 @@ test("liens d'occurrence : session, replay, trace avec span parent et action, da
 
   const r1 = occurrence(page, "r1");
   await expect(r1.getByRole("link", { name: /^Session/ })).toHaveAttribute("href", `/sessions/p51-a-desktop?app=${A}`);
-  await expect(r1.getByRole("link", { name: /^Replay/ })).toHaveAttribute(
+  await expect(r1.getByRole("link", { name: /^Rejeu/ })).toHaveAttribute(
     "href",
     new RegExp(`^/sessions/p51-a-desktop\\?app=${A}&tab=replay&at=\\d+$`),
   );
   await expect(r1.getByRole("link", { name: /^Trace/ })).toHaveAttribute("href", `/tracing/${T1}?app=${A}&span=${P1}`);
-  await expect(r1.getByText("Action « Payer »")).toBeVisible();
+  // Le nom d'action sans préfixe technique, sur une ligne (recette du 26/09/2026).
+  await expect(r1.getByText("Action : Payer")).toBeVisible();
   await expect(r1).toContainText("JavaScript navigateur");
   await expect(r1).toContainText("non gérée");
 
   // r2 cite T2, dont les spans n'existent que dans B : aucun lien de trace depuis A.
   const r2 = occurrence(page, "r2");
   await expect(r2.getByRole("link", { name: /^Session/ })).toHaveCount(1);
-  await expect(r2.getByRole("link", { name: /^Replay/ })).toHaveCount(1);
+  await expect(r2.getByRole("link", { name: /^Rejeu/ })).toHaveCount(1);
   await expect(r2.getByRole("link", { name: /^Trace/ })).toHaveCount(0);
-  await expect(r2.getByText(/Action «/)).toHaveCount(0);
+  await expect(r2.getByText(/Action :/)).toHaveCount(0);
 
   await r1.getByRole("link", { name: /^Trace/ }).click();
   await expect(page.getByTestId("trace-span-state")).toHaveAttribute("data-span-state", "found");
@@ -289,8 +290,11 @@ test("liens d'occurrence : session, replay, trace avec span parent et action, da
 
   // La session citée par r10 appartient à B : aucun lien, même sans filtre d'appareil.
   await page.goto(`${CONSOLE}/errors/p51fp004?app=${A}&period=24h`);
-  await expect(occurrence(page, "r10").getByRole("link")).toHaveCount(0);
-  await expect(occurrence(page, "r10")).toContainText("Inconnu");
+  // Une seule occurrence (r10) : la colonne « Message », qui répéterait le titre du
+  // groupe, n'est pas affichée — la ligne est la seule du tableau.
+  await expect(occurrences(page)).toHaveCount(1);
+  await expect(occurrences(page).first().getByRole("link")).toHaveCount(0);
+  await expect(occurrences(page).first()).toContainText("Inconnu");
 });
 
 test("trace et session étrangères : invisibles depuis l'app A", async ({ page }) => {
@@ -325,7 +329,7 @@ test("empreinte partagée : choix explicite de l'app, jamais un tirage", async (
   await expect(liens).toHaveCount(2);
   await expect(choix.getByRole("link", { name: A })).toHaveAttribute("href", `/errors/p51fp001?app=${A}&device=desktop`);
   await expect(choix.getByRole("link", { name: B })).toHaveAttribute("href", `/errors/p51fp001?app=${B}&device=desktop`);
-  await expect(choix).toContainText("13 occurrence(s)");
+  await expect(choix).toContainText("13 occurrences");
 
   // Absente de l'app demandée, présente dans une seule autre : un lien, et on le dit.
   await page.goto(`${CONSOLE}/errors/p51fp002?app=${A}&period=24h`);
@@ -338,13 +342,13 @@ test("empreinte partagée : choix explicite de l'app, jamais un tirage", async (
 test("replay : positionné à l'instant de l'erreur, sinon indisponible", async ({ page }) => {
   await login(page);
   await page.goto(`${CONSOLE}/errors/p51fp001?app=${A}&period=24h&device=desktop`);
-  await occurrence(page, "r1").getByRole("link", { name: /^Replay/ }).click();
+  await occurrence(page, "r1").getByRole("link", { name: /^Rejeu/ }).click();
 
   const lecteur = page.getByTestId("replay-player");
   await expect(lecteur).toHaveAttribute("data-state", "ready", { timeout: 15_000 });
   await expect(lecteur.locator("iframe")).toBeAttached();
   await expect(page.getByTestId("replay-offset")).toHaveAttribute("data-offset-state", "positioned");
-  await expect(page.getByText("Replay positionné à l'instant de l'erreur")).toBeVisible();
+  await expect(page.getByText("Rejeu positionné à l'instant de l'erreur")).toBeVisible();
   await expect(lecteur.getByRole("button", { name: "Lecture" })).toBeVisible();
   await expect(lecteur.getByRole("button", { name: "Pause" })).toBeVisible();
 
@@ -352,7 +356,7 @@ test("replay : positionné à l'instant de l'erreur, sinon indisponible", async 
   await page.goto(`${CONSOLE}/sessions/p51-a-desktop?app=${A}&tab=replay&at=${refMs - 60 * MINUTE_MS}`);
   await expect(page.getByTestId("replay-player")).toHaveAttribute("data-state", "ready", { timeout: 15_000 });
   await expect(page.getByTestId("replay-offset")).toHaveAttribute("data-offset-state", "unavailable");
-  await expect(page.getByText("Replay indisponible à cet instant")).toBeVisible();
+  await expect(page.getByText("Rejeu indisponible à cet instant")).toBeVisible();
 });
 
 test("clavier : chaque lien d'occurrence est atteignable et activable", async ({ page }) => {
@@ -364,7 +368,7 @@ test("clavier : chaque lien d'occurrence est atteignable et activable", async ({
   await session.focus();
   await expect(session).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(r1.getByRole("link", { name: /^Replay/ })).toBeFocused();
+  await expect(r1.getByRole("link", { name: /^Rejeu/ })).toBeFocused();
   await page.keyboard.press("Tab");
   const trace = r1.getByRole("link", { name: /^Trace/ });
   await expect(trace).toBeFocused();
@@ -522,21 +526,23 @@ test.describe("P5.6 — workflow d'une issue", () => {
     const triage = page.getByTestId("issue-triage-form");
     await triage.getByTestId("issue-triage-status").selectOption("resolved");
     await triage.getByTestId("issue-triage-submit").click();
-    await expect(page.getByTestId("issue-status")).toHaveText("Résolue");
+    await expect(page.getByTestId("issue-status")).toHaveText("Résolu");
   }
 
   test("résolution avec sa référence, régression confirmée sur release postérieure, puis réapparition à vérifier", async ({ page }) => {
     await login(page);
     await page.goto(`${CONSOLE}${PAGE_ISSUE}`);
-    await expect(page.getByTestId("issue-assignee")).toHaveText("personne");
+    // L'administrateur lit l'assigné dans le sélecteur du triage (le texte « Assigné à »
+    // ne le répète plus au-dessus : recette du 26/09/2026).
+    await expect(page.getByTestId("issue-triage-assignee")).toHaveValue("");
     await resoudre(page);
     await expect(page.getByTestId("issue-resolution")).toContainText("release 2.0.0 (env prod)");
-    await expect(page.getByTestId("issue-activity-status")).toContainText("« Ouverte » à « Résolue »");
+    await expect(page.getByTestId("issue-activity-status")).toContainText("« Ouvert » à « Résolu »");
 
     // Release 2.1.0, déployée après la référence : l'issue est rouverte.
     await occurrenceEcrite("2.1.0");
     await page.reload();
-    await expect(page.getByTestId("issue-status")).toHaveText("Ouverte");
+    await expect(page.getByTestId("issue-status")).toHaveText("Ouvert");
     await expect(page.getByTestId("issue-regression")).toContainText("release 2.1.0 (env prod)");
     await expect(page.getByTestId("issue-activity-regression")).toContainText("Régression confirmée");
     // F21 : les versions touchées de l'issue le lisent aussi — apparue en 2.0.0, revue en 2.1.0.
@@ -548,7 +554,7 @@ test.describe("P5.6 — workflow d'une issue", () => {
     await expect(page.getByTestId("issue-resolution")).toContainText("release 2.1.0 (env prod)");
     await occurrenceEcrite("2.0.0");
     await page.reload();
-    await expect(page.getByTestId("issue-status")).toHaveText("Résolue");
+    await expect(page.getByTestId("issue-status")).toHaveText("Résolu");
     await expect(page.getByTestId("issue-reappeared")).toContainText("Réapparition à vérifier");
     await expect(page.getByTestId("issue-regression")).toHaveCount(0);
   });
@@ -614,21 +620,23 @@ test.describe("P5.6 — workflow d'une issue", () => {
     await triage.getByTestId("issue-triage-status").selectOption("ignored");
     await triage.getByTestId("issue-triage-submit").click();
     const conflit = page.getByTestId("issue-triage-conflict");
-    await expect(conflit).toContainText("modifiée depuis sa lecture");
-    await expect(page.getByTestId("issue-status")).toHaveText("Ouverte");
+    await expect(conflit).toContainText("modifié depuis sa lecture");
+    await expect(page.getByTestId("issue-status")).toHaveText("Ouvert");
 
     const { rows: [{ revision }] } = await pool.query("select revision::text as revision from error_issue where id = $1", [ISSUE_W]);
-    await conflit.getByRole("button", { name: "Recharger l'issue" }).click();
+    await conflit.getByRole("button", { name: "Recharger le groupe" }).click();
     await expect(conflit).toHaveCount(0);
     // La page relue porte la nouvelle révision et l'assignation de l'autre ; le statut choisi, lui, est repris.
     await expect(triage).toHaveAttribute("data-revision", revision);
-    await expect(page.getByTestId("issue-assignee")).toHaveText(VIEWER_EMAIL);
     await expect(triage.getByTestId("issue-triage-status")).toHaveValue("ignored");
     await expect(triage.getByTestId("issue-triage-assignee")).toHaveValue(viewerId);
     await triage.getByTestId("issue-triage-submit").click();
-    await expect(page.getByTestId("issue-status")).toHaveText("Ignorée");
-    // Le champ non touché n'a pas été renvoyé : l'assignation de l'autre tient.
-    await expect(page.getByTestId("issue-assignee")).toHaveText(VIEWER_EMAIL);
+    await expect(page.getByTestId("issue-status")).toHaveText("Ignoré");
+    // Le champ non touché n'a pas été renvoyé : l'assignation de l'autre tient, en base
+    // comme dans le sélecteur relu.
+    const { rows: [{ assignee }] } = await pool.query("select assignee_user_id::text as assignee from error_issue where id = $1", [ISSUE_W]);
+    expect(assignee).toBe(viewerId);
+    await expect(triage.getByTestId("issue-triage-assignee")).toHaveValue(viewerId);
   });
 
   test("viewer : état lisible sans adresse de compte, aucun formulaire, et l'API refuse l'écriture", async ({ page }) => {

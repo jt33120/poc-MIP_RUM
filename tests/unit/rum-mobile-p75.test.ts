@@ -251,7 +251,9 @@ describe("F30 — sessionsCohorte : « — » quand la cohorte ne peut pas être
   it("v82 absente (motif dans `unavailable`) → valeur null et raison, jamais 0", () => {
     const r = sessionsCohorte({ sessions: { sessions: 0 }, unavailable: [RAISON_SANS_RUNTIME] });
     expect(r.valeur).toBeNull();
-    expect(r.raison).toMatch(/runtime non collecté \(migration v82\)/);
+    expect(r.raison).toMatch(/type d'application non enregistré/);
+    // Aucun numéro de migration à l'écran (recette du 26/09/2026).
+    expect(r.raison).not.toMatch(/migration|runtime/);
   });
 
   it("v82 présente : le compte lu, 0 compris (un vrai zéro)", () => {

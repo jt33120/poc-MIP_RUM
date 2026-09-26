@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
+import { PageHeader } from "@/components/PageHeader";
 import { FormulaireSecret } from "@/components/secret/SecretUnique";
 import { TableDefilante } from "@/components/TableDefilante";
 import { chargerClients } from "@/lib/chargeurs/administration";
@@ -12,15 +13,15 @@ import { createCustomerAction, toggleAppAction } from "./actions";
 export const dynamic = "force-dynamic";
 
 const ERRORS: Record<string, string> = {
-  app_id: "Identifiant invalide : minuscules, chiffres et tirets, 3 à 40 caractères (ex. plateforme-client).",
-  name: "Le nom est requis.",
-  origin: "Origine invalide — il faut une URL http(s) absolue (ex. https://app.client.fr).",
-  no_origin: "Au moins un domaine (origine) est requis pour autoriser le CORS.",
-  exists: "Cet identifiant d'app existe déjà.",
-  unknown: "App inconnue.",
+  app_id: "Identifiant invalide : minuscules, chiffres et tirets, 3 à 40 caractères (ex. portail-exemple).",
+  name: "Le nom de l’application est requis.",
+  origin: "Domaine invalide : il faut une adresse http(s) complète (ex. https://app.exemple.fr).",
+  no_origin: "Au moins un domaine est requis : c’est lui qui autorise le site à envoyer ses mesures.",
+  exists: "Une application porte déjà cet identifiant.",
+  unknown: "Application inconnue.",
 };
 
-/** Onboarding clients (admin) — liste des apps + création guidée (v0.5). */
+/** Applications clientes (administrateurs) : la liste et l'ajout guidé. */
 export default async function AdminCustomers({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   // Le chargeur : les applications de son périmètre ; créer, l'administrateur de la plateforme (C9).
@@ -28,142 +29,148 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : null;
   const detail = typeof sp.detail === "string" ? sp.detail : null;
 
+  // Jetons du thème partout (recette du 26/09/2026) : les `bg-white` / `slate` /
+  // `blue` écrits en dur donnaient des cartes blanches sur fond sombre, et des
+  // colonnes « Clé API » et « Sessions 7 j » presque invisibles.
   return (
-    <div>
-      <h1 className="mb-1 text-2xl font-bold">Clients</h1>
-      <p className="mb-6 text-sm text-slate-500">
-        Une app = un site monitoré. La création génère la clé d&apos;API (affichée une seule
-        fois), autorise le domaine (CORS dynamique) et ouvre le guide d&apos;intégration pas-à-pas.
-      </p>
+    <div className="animate-fade-up">
+      <PageHeader
+        title="Applications clientes"
+        sub={
+          <>
+            Une application = un site ou une application suivie, rattachée à un client. L&apos;ajouter
+            génère sa clé d&apos;API (affichée une seule fois), autorise ses domaines à envoyer des
+            mesures et ouvre son guide d&apos;intégration.
+          </>
+        }
+      />
 
       {error && (
-        <div className="mb-6 rounded-lg border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink">
+        <div className="mb-6 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink">
           {error}
-          {detail && <code className="ml-2 rounded bg-white px-1.5 py-0.5 text-xs">{detail}</code>}
+          {detail && <code className="ml-2 break-all rounded bg-panel px-1.5 py-0.5 text-xs text-ink">{detail}</code>}
         </div>
       )}
 
       {/* Créer une application : l'administrateur de la plateforme seul (C9) — un
           administrateur d'une liste la verrait tomber hors de son périmètre. */}
       {creation && (
-      <div className="mb-8 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="mb-3 text-sm font-semibold text-slate-700">Ajouter un client</h2>
-        {/* La clé générée est rendue au formulaire, qui l'affiche sur la fiche de l'application (C9c). */}
-        <FormulaireSecret action={createCustomerAction} testid="create-customer-form" className="grid max-w-3xl gap-3">
-          <div className="flex flex-wrap gap-3">
-            <label className="text-xs font-medium text-slate-600">
-              Nom de l&apos;application
-              <input
-                name="name"
-                type="text"
+        <div className="card mb-8 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-ink">Ajouter une application</h2>
+          {/* La clé générée est rendue au formulaire, qui l'affiche sur la fiche de l'application (C9c). */}
+          <FormulaireSecret action={createCustomerAction} testid="create-customer-form" className="grid max-w-3xl gap-3">
+            {/* `min-w-0 max-w-full` + `w-64 max-w-full` : un champ à largeur fixe ne
+                pousse plus la page au-delà de 390 px. */}
+            <div className="flex flex-wrap gap-3">
+              <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
+                Nom de l&apos;application
+                <input
+                  name="name"
+                  type="text"
+                  required
+                  placeholder="Portail Exemple"
+                  className="field mt-1 block w-64 max-w-full"
+                />
+              </label>
+              <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
+                Identifiant de l&apos;application
+                <input
+                  name="app_id"
+                  type="text"
+                  required
+                  placeholder="portail-exemple"
+                  pattern="[a-z0-9][a-z0-9-]{1,38}[a-z0-9]"
+                  title="minuscules, chiffres, tirets — 3 à 40 caractères"
+                  className="field mt-1 block w-52 max-w-full font-mono"
+                />
+              </label>
+              <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
+                Client (facultatif)
+                <input
+                  name="client_id"
+                  type="text"
+                  placeholder="exemple-sa"
+                  className="field mt-1 block w-52 max-w-full"
+                />
+              </label>
+            </div>
+            <label className="text-xs font-medium text-ink-soft">
+              Domaines du site, séparés par une virgule ou un retour à la ligne
+              <textarea
+                name="origins"
                 required
-                placeholder="Plateforme Groupement IT"
-                className="mt-1 block w-64 rounded-md border border-slate-300 px-2 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none"
+                rows={2}
+                placeholder={"https://app.exemple.fr\nhttps://recette.exemple.fr"}
+                className="field mt-1 block w-full font-mono"
               />
             </label>
-            <label className="text-xs font-medium text-slate-600">
-              Identifiant (app_id)
+            <label className="text-xs font-medium text-ink-soft">
+              Notes internes (facultatif)
               <input
-                name="app_id"
+                name="notes"
                 type="text"
-                required
-                placeholder="plateforme-git"
-                pattern="[a-z0-9][a-z0-9-]{1,38}[a-z0-9]"
-                title="minuscules, chiffres, tirets — 3 à 40 caractères"
-                className="mt-1 block w-52 rounded-md border border-slate-300 px-2 py-1.5 font-mono text-sm shadow-sm focus:border-blue-500 focus:outline-none"
+                placeholder="contact technique, contexte…"
+                className="field mt-1 block w-full"
               />
             </label>
-            <label className="text-xs font-medium text-slate-600">
-              Client / groupement
-              <input
-                name="client_id"
-                type="text"
-                placeholder="groupement-it (optionnel)"
-                className="mt-1 block w-52 rounded-md border border-slate-300 px-2 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none"
-              />
-            </label>
-          </div>
-          <label className="text-xs font-medium text-slate-600">
-            Domaines du site (origines autorisées, séparées par virgule ou retour ligne)
-            <textarea
-              name="origins"
-              required
-              rows={2}
-              placeholder={"https://app.client.fr\nhttps://staging.client.fr"}
-              className="mt-1 block w-full rounded-md border border-slate-300 px-2 py-1.5 font-mono text-sm shadow-sm focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="text-xs font-medium text-slate-600">
-            Notes internes
-            <input
-              name="notes"
-              type="text"
-              placeholder="contact technique, contexte… (optionnel)"
-              className="mt-1 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <div>
-            <button
-              type="submit"
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              Créer le client (clé d&apos;API générée)
-            </button>
-          </div>
-        </FormulaireSecret>
-      </div>
+            <div>
+              <button type="submit" className="btn-accent">
+                Ajouter l&apos;application
+              </button>
+            </div>
+          </FormulaireSecret>
+        </div>
       )}
 
       {/* Défilant et signalé : à 390 px, `overflow-hidden` rendait Statut, Clé API,
           Sessions et les actions (Guide, Désactiver) inaccessibles (recette 26/09). */}
-      <TableDefilante className="rounded-lg border border-slate-200 bg-white shadow-sm" label="Applications">
+      <TableDefilante className="card" label="Applications">
         <table className="w-full text-sm">
-          <thead className="whitespace-nowrap bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="whitespace-nowrap bg-panel2">
             <tr>
-              <th className="px-4 py-2">App</th>
-              <th className="px-4 py-2">Client</th>
-              <th className="px-4 py-2">Domaines</th>
-              <th className="px-4 py-2">Clé API</th>
-              <th className="px-4 py-2">Sessions 7 j</th>
-              <th className="px-4 py-2">Dernier event</th>
-              <th className="px-4 py-2">Statut</th>
-              <th className="px-4 py-2">Actions</th>
+              <th className="th">Application</th>
+              <th className="th">Client</th>
+              <th className="th">Domaines</th>
+              <th className="th">Clé d&apos;API</th>
+              <th className="th">Sessions sur 7 jours</th>
+              <th className="th">Dernière donnée reçue</th>
+              <th className="th">Statut</th>
+              <th className="th">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-line/60">
             {customers.map((c) => (
-              <tr key={c.app_id} data-testid={`customer-${c.app_id}`}>
+              <tr key={c.app_id} className="transition hover:bg-panel2/60" data-testid={`customer-${c.app_id}`}>
                 <td className="px-4 py-2">
-                  <Link href={`/admin/customers/${c.app_id}`} className="font-medium text-blue-700 hover:underline">
+                  <Link href={`/admin/customers/${c.app_id}`} className="font-medium text-brand hover:underline">
                     {c.name}
                   </Link>
-                  <div className="font-mono text-[11px] text-slate-400">{c.app_id}</div>
+                  <div className="font-mono text-[11px] text-ink-faint">{c.app_id}</div>
                 </td>
-                <td className="px-4 py-2 text-xs text-slate-600">{c.client_id ?? "—"}</td>
-                <td className="px-4 py-2 text-xs text-slate-600">
+                <td className="px-4 py-2 text-xs text-ink-soft">{c.client_id ?? "—"}</td>
+                <td className="px-4 py-2 text-xs text-ink-soft">
                   {c.allowed_origins.length ? c.allowed_origins.join(", ") : "—"}
                 </td>
-                <td className="px-4 py-2 text-xs">{c.has_key ? "configurée" : "aucune (legacy)"}</td>
-                <td className="px-4 py-2 text-xs">{c.sessions_7d}</td>
-                <td className="px-4 py-2 text-xs text-slate-500">
+                <td className="whitespace-nowrap px-4 py-2 text-xs text-ink-soft">
+                  {c.has_key ? "configurée" : "aucune (intégration ancienne)"}
+                </td>
+                <td className="px-4 py-2 text-xs tabular-nums text-ink">{c.sessions_7d.toLocaleString("fr-FR")}</td>
+                <td className="whitespace-nowrap px-4 py-2 text-xs tabular-nums text-ink-soft">
                   {c.last_event_at ? fmtDate(c.last_event_at) : "jamais"}
                 </td>
                 <td className="px-4 py-2">
                   <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      c.active ? "bg-green-100 text-green-800" : "bg-bad/10 text-bad-ink"
+                    className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
+                      c.active ? "bg-good/10 text-good-ink" : "bg-bad/10 text-bad-ink"
                     }`}
                   >
-                    {c.active ? "actif" : "désactivé"}
+                    {c.active ? "active" : "désactivée"}
                   </span>
                 </td>
                 <td className="px-4 py-2">
                   {/* `items-start` : la confirmation se déplie sous « Désactiver » sans étirer « Guide ». */}
                   <div className="flex items-start gap-2">
-                    <Link
-                      href={`/admin/customers/${c.app_id}`}
-                      className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-                    >
+                    <Link href={`/admin/customers/${c.app_id}`} className="btn-ghost px-2 py-1">
                       Guide
                     </Link>
                     <form action={toggleAppAction}>
@@ -182,10 +189,7 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
                           testid={`desactiver-${c.app_id}`}
                         />
                       ) : (
-                        <button
-                          type="submit"
-                          className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-                        >
+                        <button type="submit" className="btn-ghost px-2 py-1">
                           Activer
                         </button>
                       )}
@@ -196,8 +200,8 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
             ))}
             {!customers.length && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
-                  Aucune app — crée ton premier client ci-dessus
+                <td colSpan={8} className="px-4 py-8 text-center text-ink-faint">
+                  {creation ? "Aucune application : ajoutez la première ci-dessus." : "Aucune application dans votre périmètre."}
                 </td>
               </tr>
             )}

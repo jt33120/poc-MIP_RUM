@@ -38,7 +38,7 @@
     "/mobile",
     "/pages",
     "/paths",
-    "/presentation",
+    "/presentation/dossier",
     "/retention",
     "/select",
     "/select/new",
@@ -122,7 +122,7 @@
     "apps/console/components/errors/ErrorTriage.tsx",
     "apps/console/components/explorer/ActionsVue.tsx",
     "apps/console/components/presentation/Annexe.tsx",
-    "apps/console/components/presentation/Landing.tsx",
+    "apps/console/components/presentation/Dossier.tsx",
     "apps/console/components/presentation/Specs.tsx",
     "apps/console/components/slo/SloStatusRow.tsx"
   ],

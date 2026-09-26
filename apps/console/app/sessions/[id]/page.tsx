@@ -41,6 +41,7 @@ import { ReplaySynchro } from "@/components/replay/ReplaySynchro";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RecitSession } from "@/components/sessions/RecitSession";
 import { TabLink } from "@/components/sessions/TabLink";
+import { CopierIdentifiant } from "@/components/sessions/CopierIdentifiant";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { SectionErreur } from "@/components/states/SectionErreur";
 import { TableDefilante } from "@/components/TableDefilante";
@@ -63,7 +64,7 @@ import { lignesSynchro, marqueursDeSession } from "@/lib/replay-synchro";
 import { NATURES_CHRONOLOGIE, ligneIgnoree, lireVoir, type NatureChronologie } from "@/lib/view-state";
 import { HISTO_BUCKETS } from "@/lib/distribution";
 import { formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, pluriel } from "@/lib/format";
 import { chargerSession, premier, type Situation as SituationBrute } from "@/lib/chargeurs/session";
 import { chargerEcran } from "@/lib/ecran";
 import { type TimelineItem } from "@/lib/queries";
@@ -186,7 +187,6 @@ export default async function SessionDetail({
   timeline.forEach((it, i) => {
     if (it.kind === "pageview" && it.title) liensChronologie[i] = lienRoute(it.title);
   });
-  const liensSortantsManquants = timeline.some((it) => it.kind === "error" || it.kind === "api");
 
   // F47 — rejeu synchronisé. Chaque ligne du déroulé (sauf une mesure, rapportée
   // après coup) reçoit un lien d'instant `?tab=deroule&at=<t>#evt-<rang>` : sans
@@ -227,11 +227,16 @@ export default async function SessionDetail({
         <PageHeader
           title={
             <>
-              Session <span className="font-mono text-lg text-ink-soft">{meta.session_id.slice(0, 8)}…</span>
+              Session{" "}
+              <span className="break-all font-mono text-lg text-ink-soft" data-testid="session-identifiant">
+                {meta.session_id}
+              </span>
             </>
           }
           sub="Que s'est-il passé dans cette session, dans quel ordre, et qu'a vu le visiteur ?"
-        />
+        >
+          <CopierIdentifiant valeur={meta.session_id} />
+        </PageHeader>
       </div>
 
       {/* Y1 — puces de contexte : une ligne à 1440 px, repliées « Contexte (N) » à 390 px. */}
@@ -309,12 +314,9 @@ export default async function SessionDetail({
               </p>
             )}
             <FiltresVoir voir={voir} href={(n) => hrefOnglet("deroule", { ancre: "chronologie", voir: n })} />
-            {liensSortantsManquants && (
-              <p role="note" className="mb-3 text-xs text-ink-soft" data-testid="liens-sortants-b32">
-                Liens sortants non disponibles, raison : la chronologie ne porte encore ni l&apos;empreinte de l&apos;erreur
-                ni l&apos;identifiant de trace. Les onglets Erreurs et Appels API listent les mêmes lignes.
-              </p>
-            )}
+            {/* Les liens vers l'erreur groupée et la trace attendent B32 : aucun lien
+                mort n'est rendu, et la note qui le disait n'est plus affichée (recette du
+                26/09/2026 — une note de conception, pas une aide). */}
             <SectionErreur titre="Chronologie de la session">
               <Deroule
                 items={timeline}
@@ -573,7 +575,8 @@ function Resume({
         label="Durée observée"
         valeur={dureeMs}
         format="s-auto"
-        lecture={`écart entre la première et la dernière observation, pas du temps actif${active ? " · encore active : elle peut encore augmenter" : ""}.`}
+        lecture={active ? "encore active : elle peut encore augmenter." : undefined}
+        methode="Écart entre la première et la dernière observation, pas du temps actif."
       />
       <KpiTile label="Pages vues" valeur={pages} format="count" href={hrefs.vues} />
       <KpiTile
@@ -581,7 +584,7 @@ function Resume({
         valeur={erreursEnLignes ? resume.erreursLignes : resume.occurrences}
         raisonNull={RAISON_TRONQUEE}
         format="count"
-        lecture={erreursEnLignes ? "une ligne peut regrouper plusieurs répétitions." : undefined}
+        methode={erreursEnLignes ? "Une ligne peut regrouper plusieurs répétitions." : undefined}
         href={hrefs.erreurs}
       />
       <KpiTile
@@ -589,7 +592,8 @@ function Resume({
         valeur={resume.frustration}
         raisonNull={mobile ? RAISON_FRUSTRATION_MOBILE : RAISON_TRONQUEE}
         format="count"
-        lecture={mobile ? undefined : LECTURE_FRUSTRATION}
+        // Les règles de détection derrière l'aide : la tuile faisait sept lignes.
+        methode={mobile ? undefined : LECTURE_FRUSTRATION}
         href={hrefs.frustration}
       />
       <KpiTile
@@ -597,7 +601,7 @@ function Resume({
         valeur={resume.apiEchecs}
         raisonNull={RAISON_TRONQUEE}
         format="count"
-        lecture="statut 400 ou plus, ou réseau (statut 0)."
+        methode="Statut 400 ou plus, ou échec réseau (statut 0)."
         href={hrefs.api}
       />
     </section>
@@ -847,8 +851,9 @@ function OngletVitaux({
         </table>
         {phases > 0 && (
           <p className="mt-3 text-xs text-ink-soft">
-            {formater("count", phases)} phase(s) réseau (DNS, connexion, TLS…) ne sont pas des Web Vitals : elles restent
-            dans le Déroulé.
+            {phases > 1
+              ? `${formater("count", phases)} phases réseau (DNS, connexion, TLS…) ne sont pas des Web Vitals : elles restent dans le Déroulé.`
+              : "1 phase réseau (DNS, connexion, TLS…) n'est pas un Web Vital : elle reste dans le Déroulé."}
           </p>
         )}
       </OngletTable>
@@ -916,7 +921,7 @@ function FigureSituation({
           <span className="min-w-0 break-words" data-testid="vitaux-population">
             mesures {vital} de {route} {periode}, toutes sessions (robots exclus), {inclusion}
           </span>
-          <span>{formater("count", n)} mesures</span>
+          <span>{pluriel(n, "mesure")}</span>
           {n > 0 && <span>{plafondTexte}</span>}
         </>
       }

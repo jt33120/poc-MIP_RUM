@@ -1,4 +1,4 @@
-// P**.5 — Partie 3 de la vitrine, rendue (components/presentation/Reste.tsx).
+// P**.5 — Partie 3 du dossier technique, rendue (components/presentation/Reste.tsx).
 //
 // Ce que ces tests tiennent, en rendu SSR réel (`renderToStaticMarkup`) : une
 // carte par point de lib/presentation-reste.ts, dans l'ordre ; les trois lignes
@@ -88,10 +88,10 @@ describe("Partie 3 — les pastilles des lignes du document", () => {
     CARTES.forEach((carte, i) => {
       const p = POINTS_RESTE[i];
       if (lignesCitees(p).length > 0) {
-        expect(texte(carte), p.id).toContain("Lignes du document de couverture");
+        expect(texte(carte), p.id).toContain("Lignes du registre");
         expect(carte).toContain(`<ul aria-labelledby="reste-${p.id}-lignes"`);
       } else {
-        expect(texte(carte), p.id).not.toContain("Lignes du document de couverture");
+        expect(texte(carte), p.id).not.toContain("Lignes du registre");
         expect(carte, p.id).not.toContain("reste-pastille");
       }
     });

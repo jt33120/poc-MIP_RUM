@@ -48,10 +48,10 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
           ← Explorer
         </Link>
       </PageHeader>
+      {/* Une phrase : l'ancien paragraphe mêlait droits, fenêtre et plafond (recette 26/09). */}
       <p className="-mt-4 mb-6 text-xs text-ink-soft">
-        Analyses de l’Explorer conservées pour les rejouer : chacune se relit avec les droits de son lecteur, sur la
-        fenêtre de l’écran. {SAVED_VIEW_MAX_PER_APP} au plus par application ; elles restent personnelles — aucune
-        n’est publique.
+        Vos analyses de l’Explorer, gardées pour les relancer : elles restent personnelles, {SAVED_VIEW_MAX_PER_APP} au
+        plus par application.
       </p>
 
       {sp.conflit === "1" && (
@@ -74,13 +74,13 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
 
       {/* W-V1 : les analyses fournies — des liens, qui ne lisent rien avant le clic. */}
       <section aria-labelledby="modeles-fournis-titre" data-testid="vues-modeles" className="card mb-6 min-w-0 p-4">
+        {/* Plus de badge « fourni » : il redisait le titre (recette du 26/09/2026). */}
         <div className="flex flex-wrap items-center gap-2">
           <h2 id="modeles-fournis-titre" className="text-sm font-semibold text-ink">
             Modèles fournis
           </h2>
-          <span className="rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink-soft">fourni</span>
           <span className="min-w-0 basis-full text-xs text-ink-soft sm:basis-auto">
-            lecture seule : ni renommables, ni supprimables ; chacun s’ouvre exécuté dans l’Explorer.
+            Prêts à l’emploi : chacun s’ouvre exécuté dans l’Explorer.
           </span>
         </div>
         <ModelesDepart modeles={modeles} compact />
@@ -90,8 +90,8 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
 
       {result.kind === "unavailable" && (
         <p role="status" data-testid="vues-indisponibles" className="card px-4 py-8 text-center text-sm text-ink-soft">
-          Les vues enregistrées ne sont pas encore disponibles sur cette base : la migration v79 n’est pas appliquée.
-          L’Explorer reste utilisable, et ses requêtes restent partageables par leur URL.
+          Les vues enregistrées ne sont pas encore disponibles sur cette installation. L’Explorer reste utilisable, et
+          ses analyses restent partageables par leur adresse.
         </p>
       )}
       {result.kind === "forbidden" && (
@@ -102,10 +102,17 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
 
       {/* Liste vide : le message seul. Dans une ligne du tableau à six colonnes, il se
           coupait à 390 px (« dans l' ») sous des en-têtes écrasés (recette 26/09). */}
+      {/* L'état vide porte le geste qu'il décrit : le seul lien vers l'Explorer était
+          « ← Explorer », en haut à droite (recette du 26/09/2026). */}
       {result.kind === "ok" && !result.value.length && (
-        <p role="status" className="card px-4 py-8 text-center text-sm text-ink-soft">
-          Aucune vue enregistrée — en composer une dans l’Explorer, puis l’enregistrer.
-        </p>
+        <div role="status" className="card flex flex-col items-center gap-3 px-4 py-8 text-center text-sm text-ink-soft">
+          <p>Aucune vue enregistrée. Composez une analyse dans l’Explorer, puis enregistrez-la comme vue.</p>
+          {!demo && (
+            <Link href="/explorer" className="btn-accent" data-testid="vues-composer">
+              Composer une analyse
+            </Link>
+          )}
+        </div>
       )}
 
       {result.kind === "ok" && result.value.length > 0 && (

@@ -314,7 +314,7 @@ test.describe("F66 — /goals : viewer restreint à A + app=all, aucune donnée 
       await expect(corps(page), qs).toContainText(OBJECTIF_F66[APP_A_F66]);
       await expect(corps(page), qs).not.toContainText(OBJECTIF_F66[APP_B_F66]);
       // Dénominateur : les 2 sessions de A, jamais les 7 de A + B.
-      const denominateur = page.getByTestId("kpi-tile").filter({ hasText: "Sessions de la fenêtre" });
+      const denominateur = page.getByTestId("kpi-tile").filter({ hasText: "Sessions de la période" });
       await expect(denominateur.getByTestId("kpi-valeur"), qs).toHaveText("2");
       await expect(page.locator("#objectifs tr", { hasText: OBJECTIF_F66[APP_A_F66] }), qs).toContainText("1 sur 2");
       // Aucune gestion (écriture) rendue pour un viewer (V9).

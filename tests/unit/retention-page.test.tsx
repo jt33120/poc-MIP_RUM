@@ -8,7 +8,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { indexSemaine, type CohortRow } from "@/lib/cohorts";
+import { indexSemaine, lundiDeSemaine, type CohortRow } from "@/lib/cohorts";
+import { fmtJour } from "@/lib/format";
 import { parseAnalyticsQuery } from "@/lib/query-contract";
 
 const { retentionCohorts, samplingSessions, pageFilters } = vi.hoisted(() => ({
@@ -167,7 +168,7 @@ describe("/retention — les fenêtres proposées suivent l'historique conservé
     process.env.RETENTION_DAYS = "30";
     const html = await rendre();
     expect(fenetres(html)).toEqual(["4 sem."]);
-    expect(html).toContain("historique conservé : 30 jours");
+    expect(html).toContain("historique conservé\u00a0: 30 jours");
     expect(bloc(html, "retention-courbe")).toContain("fenêtre de 4 semaines");
   });
 
@@ -183,5 +184,57 @@ describe("/retention — les fenêtres proposées suivent l'historique conservé
     expect(fenetreParDefaut(fenetresDisponibles(200))).toBe(8);
     expect(fenetresDisponibles(60)).toEqual([4, 8]);
     expect(fenetresDisponibles(10)).toEqual([4]);
+  });
+});
+
+// Recette du 26/09/2026 : une tuile qui n'affichait qu'un code de lot (« B35 »), un
+// code interne dans une note (« parité C3 »), et deux bandeaux orange « Partiel »
+// pour un historique encore court — normal, et pas une panne.
+describe("/retention — ni fonction non livrée, ni code interne, ni « Partiel » pour un historique court", () => {
+  /** Le texte visible, sans balises ni entités, espaces insécables compris. */
+  const texte = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
+
+  it("trois tuiles : « Sessions sans identifiant, hors matrice » n'est pas rendue ; aucun code de lot à l'écran", async () => {
+    const html = await rendre();
+    const tuiles = html.slice(html.indexOf('data-testid="retention-kpi"'), html.indexOf('data-testid="retention-courbe"'));
+    expect(tuiles.match(/data-testid="kpi-tile"/g)).toHaveLength(3);
+    expect(html).not.toContain("Sessions sans identifiant");
+    expect(texte(html)).not.toMatch(/\bB35\b|parité C3/);
+  });
+
+  it("une seule cohorte, cette semaine : cadre neutre daté, sans bandeau « Partiel » ni courbe dessinée", async () => {
+    retentionCohorts.mockResolvedValue([cohorte(0, 146, [146])]);
+    const html = await rendre();
+    // S+1 de la cohorte se termine le lundi qui suit la semaine prochaine.
+    const date = fmtJour(lundiDeSemaine(indexSemaine(Date.now()) + 2));
+    for (const id of ["retention-courbe", "retention-appareils"]) {
+      const figure = bloc(html, id);
+      expect(figure).toContain('data-testid="retention-recul"');
+      expect(texte(figure)).toContain(`Historique encore court : S+1 lisible à partir du ${date}.`);
+      expect(figure).not.toContain('data-etat="partiel"');
+      expect(figure).not.toContain('role="img"');
+    }
+    expect(texte(html)).not.toContain("Partiel");
+    // La tuile S+1 dit la même date.
+    expect(texte(html)).toContain(`lisible à partir du ${date}`);
+  });
+
+  it("S+4 : une date quand la fenêtre le couvre, « au-delà de la fenêtre » sinon", async () => {
+    // 200 jours conservés, 8 semaines : la plus ancienne cohorte (il y a 2 semaines)
+    // aura sa semaine S+4 terminée le lundi de la semaine courante + 3.
+    const date = fmtJour(lundiDeSemaine(indexSemaine(Date.now()) + 3));
+    expect(texte(await rendre())).toContain(`lisible à partir du ${date}`);
+    // 30 jours conservés : 4 semaines lues, S+0 à S+3 ; S+4 n'y sera jamais lisible.
+    process.env.RETENTION_DAYS = "30";
+    const court = texte(await rendre());
+    expect(court).toContain("au-delà de la fenêtre de 4 semaines");
+  });
+
+  it("la méthode passe derrière une aide repliable, après le chiffre", async () => {
+    const courbe = bloc(await rendre(), "retention-courbe");
+    const meta = courbe.slice(courbe.indexOf('data-testid="figure-meta"'), courbe.indexOf('role="figure"'));
+    expect(meta).not.toContain("moyenne pondérée");
+    expect(courbe).toContain('data-testid="figure-methode"');
+    expect(texte(courbe)).toContain("Moyenne pondérée par la taille des cohortes");
   });
 });

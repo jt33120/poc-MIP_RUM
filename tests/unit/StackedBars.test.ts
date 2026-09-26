@@ -42,3 +42,17 @@ describe("dessinerSeries", () => {
     expect(ecartees).toEqual(["F"]);
   });
 });
+
+// Recette du 26/09/2026 (sombre) : la barre de la période en cours, à 55 % d'opacité,
+// devenait bleu nuit pendant que sa pastille de légende restait vive.
+describe("barre de la période en cours", () => {
+  it("garde la couleur PLEINE de sa série ; seules des rayures du fond disent « incomplète »", async () => {
+    const { createElement } = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { MotifEnCours } = await import("@/components/charts/ThresholdSeries");
+    const svg = renderToStaticMarkup(createElement(MotifEnCours, { id: "m", couleur: CATEGORIELLE[0] }));
+    expect(svg).toContain(`fill="${CATEGORIELLE[0]}"`);
+    expect(svg).not.toMatch(/fill-opacity="0\.\d+"/);
+    expect(svg).toContain('stroke="rgb(var(--c-panel))"');
+  });
+});

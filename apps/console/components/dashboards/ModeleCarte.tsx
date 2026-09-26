@@ -121,7 +121,9 @@ export function ModeleCarte({
                 ))}
               </select>
             </label>
-            <button type="submit" className="btn-accent" aria-label={`Cloner le modèle ${titre}`}>
+            {/* Secondaire : quatre boutons orange en tête de page prenaient le pas sur
+                les tableaux de l'utilisateur (recette du 26/09/2026). */}
+            <button type="submit" className="btn-ghost" aria-label={`Cloner le modèle ${titre}`}>
               Cloner
             </button>
           </form>

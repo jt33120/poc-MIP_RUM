@@ -90,6 +90,17 @@ async function deplier(page: Page, resume: string) {
   }
 }
 
+/**
+ * Passe le tableau en mode édition (« Éditer », `?edition=1`) : depuis la recette du
+ * 26/09/2026, seul ce mode montre ↑ ↓ ✕ sur les cartes et le panneau d'édition. Déjà
+ * en édition (une écriture réussie revalide la même adresse), rien à faire.
+ */
+async function editer(page: Page) {
+  if ((await page.getByTestId("edit-panel").count()) > 0) return;
+  await page.getByTestId("mode-edition").click();
+  await expect(page.getByTestId("edit-panel")).toBeVisible({ timeout: 20_000 });
+}
+
 /** Crée un tableau de bord vide et rend son identifiant. */
 async function creerTableau(page: Page): Promise<string> {
   await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
@@ -277,7 +288,7 @@ test("ordre des cartes au clavier, et aucune largeur qui déborde (390 / 768 / 1
   // Deux cartes v1 suffisent pour l'ordre : le geste ne dépend pas de leur type.
   await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
   for (const type of ["traffic", "top_errors"]) {
-    await deplier(page, "Éditer le tableau de bord");
+    await editer(page);
     await page.locator('select[name="type"]').selectOption(type);
     await page.getByTestId("add-widget").click();
     await expect(page.getByTestId("widget-0")).toBeVisible({ timeout: 20_000 });
@@ -297,6 +308,8 @@ test("ordre des cartes au clavier, et aucune largeur qui déborde (390 / 768 / 1
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
     await expect(page.getByTestId("widget-0")).toBeVisible({ timeout: 20_000 });
+    // En lecture (sans `edition=1`), aucune carte ne porte ↑ ↓ ✕.
+    await expect(page.getByTestId("widget-0-gestes")).toHaveCount(0);
     for (const faute of await debordements(page)) fautes.push(`tableau de bord @ ${width} px — ${faute}`);
     await page.goto(`${consoleUrl}/explorer/views`);
     await expect(page.getByRole("heading", { name: "Vues enregistrées" })).toBeVisible();
@@ -317,6 +330,8 @@ test.describe("F35 — tableaux de bord : modèles", () => {
   test("quatre modèles visibles ; cloner « Performance » ouvre un tableau à ses cartes", async ({ page }) => {
     await login(page);
     await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
+    // Les modèles viennent après les tableaux, repliés dès qu'un tableau existe.
+    await deplier(page, "Modèles fournis");
     const modeles = page.getByTestId("modele-carte");
     await expect(modeles).toHaveCount(4);
     for (const titre of ["Performance", "Erreurs", "Usages", "Releases"]) {
@@ -371,6 +386,7 @@ test.describe("F35 — tableaux de bord : modèles", () => {
     for (const width of [390, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
+      await deplier(page, "Modèles fournis");
       await expect(page.getByTestId("modele-carte").first()).toBeVisible({ timeout: 15_000 });
       for (const faute of await debordements(page)) fautes.push(`liste @ ${width} px — ${faute}`);
     }
@@ -579,6 +595,7 @@ test.describe("F37 — tableau de bord : sections", () => {
   test("cloner « Erreurs » : le tableau s'affiche en sections titrées, chacune avec ses cartes", async ({ page }) => {
     await login(page);
     await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
+    await deplier(page, "Modèles fournis");
     const modele = page.locator('[data-testid="modele-carte"][data-modele="erreurs"]');
     await expect(modele.locator('select[name="app_id"]')).toHaveValue("demo-app");
     await modele.getByRole("button", { name: "Cloner le modèle Erreurs" }).click();
@@ -638,7 +655,7 @@ test.describe("F37 — tableau de bord : sections", () => {
     const id = await tableauF37(page);
     await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
     await expect(page.getByTestId("section-1")).toBeVisible({ timeout: 20_000 });
-    await deplier(page, "Éditer le tableau de bord");
+    await editer(page);
     const formulaire = page.getByTestId("ajouter-section");
     await formulaire.locator('input[name="title"]').fill("Tendance");
     await formulaire.locator('input[name="question"]').fill("Depuis quand ?");
@@ -704,6 +721,7 @@ test.describe("F37 — tableau de bord : sections", () => {
     await expect(page.getByTestId("ajouter-section")).toHaveCount(0);
     await expect(page.getByTestId("sections-edition")).toHaveCount(0);
     await expect(page.getByTestId("edit-panel")).toHaveCount(0);
+    await expect(page.getByTestId("mode-edition")).toHaveCount(0);
     // Les gestes d'ÉCRITURE seulement : « Retirer le filtre Release » (la puce de la
     // barre de filtres, rendue par `release=` du contexte) retire un réglage de VUE,
     // légitime en démo — l'ancienne expression le comptait comme une écriture.
@@ -720,7 +738,7 @@ test.describe("F37 — tableau de bord : sections", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
       await expect(page.getByTestId("section-1")).toBeVisible({ timeout: 20_000 });
-      await deplier(page, "Éditer le tableau de bord");
+      await editer(page);
       await expect(page.getByTestId("ajouter-section")).toBeVisible();
       for (const faute of await debordements(page)) fautes.push(`sections F37 @ ${width} px — ${faute}`);
     }

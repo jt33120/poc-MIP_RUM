@@ -24,6 +24,17 @@
 // veut dire une valeur plus grande. La valeur classée n'est plus répétée dans les
 // colonnes voisines (« LCP p75 92 ms … LCP p75 92 ms ») : la colonne qui la double
 // est retirée de la ligne, son verdict passe sur la valeur.
+//
+// UN VERDICT QUI TIENT SUR SON INTERVALLE (recette du 26/09/2026). La tuile « INP
+// p75 304 ms » disait « verdict incertain » ; la même valeur portait « À améliorer »
+// ici. Une mesure qui fournit son intervalle (`ImpactMesure.intervalle`) suit la
+// règle des tuiles (`lireVital`) : verdict affirmé seulement s'il vaut sur tout
+// l'intervalle, sinon « incertain », sans couleur. Sans intervalle fourni, la
+// règle d'avant (verdict de la valeur) reste celle de l'appelant.
+//
+// UN SEUL RANG DE COMMANDES. Un ordre non proposé (« Impact », barré en permanence)
+// n'est plus affiché ; un sélecteur propre à l'écran (le vital qui classe) se pose
+// dans la même rangée que l'ordre (`commandes`), au lieu d'un second « Classé par ».
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { BasculeTri, LIBELLES_TRI, MarqueFaible, OngletsDecoupage, type OngletDecoupage } from "./Breakdown";
@@ -31,8 +42,9 @@ import { TableAlternative } from "./charts/Figure";
 import { formater, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import { accord } from "@/lib/format";
 import type { TriClassement } from "@/lib/impact";
-import { RATING_BAR, RATING_CLASS, RATING_LABEL, rating2026, type Rating } from "@/lib/rating";
-import { TRIS_INDISPONIBLES } from "@/lib/view-state";
+import { RATING_BAR, RATING_CLASS, RATING_LABEL, type Rating } from "@/lib/rating";
+import type { IntervalleP75 } from "@/lib/stats/incertitude";
+import { lireVital, texteVerdict, type VerdictVital } from "@/lib/vital-lecture";
 
 export interface ImpactMesure {
   cle: string;
@@ -41,6 +53,11 @@ export interface ImpactMesure {
   /** Pose un verdict : réservé à un p75 de vital (R-V). */
   vital?: VitalName;
   n?: number | null;
+  /**
+   * Intervalle à 95 % de la p75 (P*.1). Fourni : le verdict n'est affirmé que s'il
+   * vaut sur tout l'intervalle (règle des tuiles), sinon « incertain », sans couleur.
+   */
+  intervalle?: IntervalleP75;
 }
 
 export interface ImpactLigne {
@@ -87,25 +104,41 @@ function affichePilote(unitePilote: string, v: number | null): string {
   return v == null || !Number.isFinite(v) ? "—" : `${v.toLocaleString("fr-FR")} ${unitePilote}`;
 }
 
-/** Raison d'un ordre indisponible (`triHref[id] === null`). */
-function raisonTri(id: "gravite" | "volume" | "impact"): string {
-  if (id === "impact") return TRIS_INDISPONIBLES.impact ?? "le classement par impact n'est pas proposé ici";
-  return "ordre non proposé sur cet écran";
+/**
+ * Le verdict d'une mesure qui porte un vital : la règle des tuiles (`lireVital`),
+ * avec l'intervalle quand l'appelant le fournit. `null` : aucun verdict à écrire.
+ */
+export function verdictMesure(m: Pick<ImpactMesure, "vital" | "valeur" | "n" | "intervalle">): VerdictVital | null {
+  if (!m.vital || m.valeur == null || !Number.isFinite(m.valeur)) return null;
+  return lireVital(m.vital, m.valeur, m.n ?? 0, m.intervalle).verdict;
+}
+
+/** La teinte d'un verdict : seulement s'il est affirmé sur tout l'intervalle. */
+function teinte(v: VerdictVital | null): Rating | null {
+  return v?.kind === "etabli" ? v.rating : null;
+}
+
+/** Le verdict en mots, tel que la ligne l'écrit à côté de la valeur. */
+function motVerdict(v: VerdictVital): string {
+  return v.kind === "etabli" ? RATING_LABEL[v.rating] : v.kind === "incertain" ? "verdict incertain" : "verdict non établi";
 }
 
 /** Une mesure, avec son verdict écrit quand elle en porte un. */
 function Mesure({ m, libelle }: { m: ImpactMesure; libelle: string }) {
-  const verdict = m.vital && m.valeur != null ? rating2026(m.vital, m.valeur) : null;
+  const verdict = verdictMesure(m);
+  const couleur = teinte(verdict);
   return (
     <span className="inline-flex items-center gap-1">
       <span className="text-ink-soft">{libelle}</span>
-      {verdict ? (
-        <>
-          <span className={`rounded border px-1 py-px font-medium tabular-nums ${RATING_CLASS[verdict]}`}>{m.affichage}</span>
-          <span className="text-[10px] text-ink-soft">{RATING_LABEL[verdict]}</span>
-        </>
+      {couleur ? (
+        <span className={`rounded border px-1 py-px font-medium tabular-nums ${RATING_CLASS[couleur]}`}>{m.affichage}</span>
       ) : (
         <span className="tabular-nums text-ink">{m.valeur == null ? "—" : m.affichage}</span>
+      )}
+      {verdict && (
+        <span className="text-[10px] text-ink-soft" title={verdict.kind === "etabli" ? undefined : texteVerdict(verdict)}>
+          {motVerdict(verdict)}
+        </span>
       )}
     </span>
   );
@@ -158,8 +191,13 @@ function couleurBarre(verdict: Rating | null): string {
 /** Texte d'une mesure pour l'alternative : valeur et verdict en toutes lettres. */
 function texteMesure(m: ImpactMesure): string {
   if (m.valeur == null) return "—";
-  const verdict = m.vital ? rating2026(m.vital, m.valeur) : null;
-  return verdict ? `${m.affichage} (${RATING_LABEL[verdict]})` : m.affichage;
+  const verdict = verdictMesure(m);
+  return verdict ? `${m.affichage} (${texteVerdict(verdict)})` : m.affichage;
+}
+
+/** Préfixe « ≈ » d'une valeur approchée ; « — » reste « — ». */
+function approche(texte: string, approchee: boolean): string {
+  return approchee && texte !== "—" ? `≈${String.fromCharCode(0xa0)}${texte}` : texte;
 }
 
 export function ImpactTable({
@@ -179,6 +217,8 @@ export function ImpactTable({
   notice,
   compact = false,
   colonnePilote,
+  approchee = false,
+  commandes,
 }: {
   titre: string;
   /** Dimensions, mêmes règles que `Breakdown` (raison si indisponible). */
@@ -203,8 +243,8 @@ export function ImpactTable({
   /** Nombre réel de groupes. */
   groupes: number;
   tronque: boolean;
-  /** Provenance de la dimension (BREAKDOWN_NOTICES). */
-  notice: string;
+  /** Provenance de la dimension (BREAKDOWN_NOTICES) ; vide ou absente : aucun paragraphe. */
+  notice?: string;
   /** Carte de tableau de bord. */
   compact?: boolean;
   /**
@@ -212,6 +252,14 @@ export function ImpactTable({
    * dans l'alternative) ; défaut : reconnue (`colonneDoublon`) ; `null` : aucune.
    */
   colonnePilote?: string | null;
+  /**
+   * Valeurs lues sur une distribution par tranches (`meta.approximate`) : la valeur
+   * classée s'écrit « ≈ 93 ms ». Les `affichage` des mesures sont déjà du texte :
+   * l'appelant les préfixe lui-même.
+   */
+  approchee?: boolean;
+  /** Sélecteur propre à l'écran (le vital qui classe…), posé dans la rangée de l'ordre. */
+  commandes?: ReactNode;
 }) {
   const pilotes = lignes.map((l) => l.pilote).filter((p): p is number => p != null && Number.isFinite(p));
   // Base 100 % : la plus grande valeur. Plus « au moins 1 » : un CLS (0,1 ; 0,25)
@@ -223,10 +271,16 @@ export function ImpactTable({
   const avecSansLien = lignes.some((l) => l.href === null);
   const nombre = (n: number | null) => (n == null ? "—" : n.toLocaleString("fr-FR"));
   const doublon = colonneDoublon(lignes, colonnePilote);
-  const verdictPilote = (l: ImpactLigne): Rating | null => {
-    const vital = doublon >= 0 ? l.mesures[doublon]?.vital : undefined;
-    return vital && l.pilote != null && Number.isFinite(l.pilote) ? rating2026(vital, l.pilote) : null;
+  // Le verdict de la valeur classée est celui de la colonne qu'elle double (même
+  // vital, même effectif, même intervalle), porté par la valeur classée.
+  const verdictPilote = (l: ImpactLigne): VerdictVital | null => {
+    const m = doublon >= 0 ? l.mesures[doublon] : undefined;
+    return m ? verdictMesure({ vital: m.vital, valeur: l.pilote, n: m.n, intervalle: m.intervalle }) : null;
   };
+  const pilote = (v: number | null) => approche(affichePilote(unitePilote, v), approchee);
+  // Un ordre que l'écran ne propose pas n'est pas montré (« Impact » était barré en
+  // permanence) ; l'ordre courant l'est toujours.
+  const ordres = (["gravite", "volume", "impact"] as const).filter((id) => id === tri || triHref[id] !== null);
   const grille = `${GRILLE_ETROITE} ${compact ? "" : GRILLE_LARGE}`;
   const place = compact ? CELLULES.etroite : CELLULES.large;
 
@@ -243,7 +297,7 @@ export function ImpactTable({
   ];
   const ligneAlternative = (l: ImpactLigne): ReactNode[] => [
     l.libelle,
-    affichePilote(unitePilote, l.pilote),
+    pilote(l.pilote),
     nombre(l.volume),
     ...colonnes.map((_c, i) => (l.mesures[i] ? texteMesure(l.mesures[i]) : null)),
     ...(avecEcart ? [l.ecart?.affichage ?? null] : []),
@@ -269,17 +323,21 @@ export function ImpactTable({
     <section className={`card min-w-0 ${compact ? "p-3" : "mb-6 p-4"}`} data-testid="impact-table" data-tri={tri}>
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h2 className="min-w-0 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">{titre}</h2>
-        {tri !== "fourni" && (
-          <div className="sm:ml-auto">
-            <BasculeTri
-              courant={tri}
-              options={(["gravite", "volume", "impact"] as const).map((id) => ({
-                id,
-                libelle: LIBELLES_TRI[id],
-                href: triHref[id],
-                raison: triHref[id] === null ? raisonTri(id) : undefined,
-              }))}
-            />
+        {(commandes || tri !== "fourni") && (
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 sm:ml-auto" data-testid="impact-commandes">
+            {commandes}
+            {tri !== "fourni" &&
+              (ordres.length > 1 ? (
+                <BasculeTri
+                  courant={tri}
+                  options={ordres.map((id) => ({ id, libelle: LIBELLES_TRI[id], href: triHref[id] }))}
+                />
+              ) : (
+                // Un seul ordre possible : il est écrit, pas proposé comme un choix.
+                <span className="text-xs text-ink-soft" data-testid="bascule-tri-seul">
+                  Classés par {LIBELLES_TRI[tri].toLowerCase()}
+                </span>
+              ))}
           </div>
         )}
       </div>
@@ -290,7 +348,8 @@ export function ImpactTable({
       )}
 
       {onglets && <OngletsDecoupage titre={titre} onglets={onglets} />}
-      <p className={`mb-3 leading-relaxed text-ink-soft ${compact ? "text-[11px]" : "text-xs"}`}>{notice}</p>
+      {/* Une notice vide ne laisse pas de paragraphe vide (et sa marge) sous le titre. */}
+      {notice?.trim() && <p className={`mb-3 leading-relaxed text-ink-soft ${compact ? "text-[11px]" : "text-xs"}`}>{notice}</p>}
 
       {reference ? (
         <div
@@ -332,6 +391,7 @@ export function ImpactTable({
         <ol className="flex flex-col gap-1">
           {lignes.map((l) => {
             const verdict = verdictPilote(l);
+            const couleur = teinte(verdict);
             const contenu = (
               <>
                 <span className={`${place.libelle} min-w-0 truncate font-mono text-xs text-ink`} title={l.libelle}>
@@ -341,7 +401,7 @@ export function ImpactTable({
                   {l.pilote != null && Number.isFinite(l.pilote) && (
                     <span
                       aria-hidden="true"
-                      className={`absolute inset-y-0 left-0 rounded ${couleurBarre(verdict)}`}
+                      className={`absolute inset-y-0 left-0 rounded ${couleurBarre(couleur)}`}
                       data-barre=""
                       style={{ width: `${Math.max(2, (l.pilote / max) * 100)}%` }}
                     />
@@ -350,14 +410,18 @@ export function ImpactTable({
                 <span className={`${place.valeur} text-right`}>
                   <span
                     className={`text-xs font-semibold tabular-nums ${
-                      verdict ? `rounded border px-1 py-px ${RATING_CLASS[verdict]}` : "text-ink"
+                      couleur ? `rounded border px-1 py-px ${RATING_CLASS[couleur]}` : "text-ink"
                     }`}
                   >
-                    {affichePilote(unitePilote, l.pilote)}
+                    {pilote(l.pilote)}
                   </span>
                 </span>
                 <span className={`${place.details} flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs`}>
-                  {verdict && <span className="text-[10px] text-ink-soft">{RATING_LABEL[verdict]}</span>}
+                  {verdict && (
+                    <span className="text-[10px] text-ink-soft" data-testid="impact-verdict" data-verdict={verdict.kind}>
+                      {verdict.kind === "etabli" ? motVerdict(verdict) : texteVerdict(verdict)}
+                    </span>
+                  )}
                   <span className="tabular-nums text-ink-soft">
                     {volumeLibelle} <span className="text-ink">{nombre(l.volume)}</span>
                   </span>

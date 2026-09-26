@@ -1,9 +1,13 @@
 // Hero de `/mobile` : « Stabilité par release » (F38, W-M6, plan § 5.6.4). Rendu
 // serveur : la lecture `mobileParRelease` mise en `ImpactTable`.
 //
-// UNE LIGNE PAR RELEASE, UNE BARRE = LA PART DES SESSIONS TOUCHÉES par au moins une
-// erreur JavaScript. Sur mobile la release est un fait exact de la session : le
-// numérateur et le dénominateur parlent de la même population.
+// UNE LIGNE PAR RELEASE, UNE BARRE = LA PART DES SESSIONS SANS ERREUR JavaScript —
+// la MÊME mesure que la tuile « Sessions sans erreur JS », dans le même sens (plus
+// haut = mieux). La barre montrait la part TOUCHÉE (plus haut = pire) à côté de la
+// tuile, dans la même couleur, et « Écart +5,6 pt » ne disait pas si c'était mieux
+// (recette du 26/09/2026) : la ligne de référence vaut désormais la tuile. Sur
+// mobile la release est un fait exact de la session : le numérateur et le
+// dénominateur parlent de la même population.
 //
 // CE QU'ELLE N'AFFICHE JAMAIS.
 //   - « 0 % » pour une release qui ne déclare pas collecter les erreurs JS : sa part
@@ -15,8 +19,9 @@
 //
 // L'ORDRE PAR DÉFAUT EST CELUI DE LA SOURCE (première session vue, la plus récente
 // en tête) : `tri` absent de l'URL. `tri=gravite` et `tri=volume` reclassent les
-// mêmes lignes. La bascule est rendue ICI, au-dessus de la table : `ImpactTable`
-// n'en rend pas sous l'ordre « fourni », qui n'est jamais une valeur d'URL.
+// mêmes lignes. La bascule est construite ICI (`ImpactTable` n'en rend pas sous
+// l'ordre « fourni », qui n'est jamais une valeur d'URL) et posée dans la rangée du
+// titre de la table (`commandes`) : au-dessus du cadre, elle flottait hors de la carte.
 import { BasculeTri } from "@/components/Breakdown";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
 import { EtatSurface } from "@/components/states/EtatSurface";
@@ -25,7 +30,7 @@ import { classerParGravite, SEUIL_ECHANTILLON_FAIBLE } from "@/lib/impact";
 import { texteRaisonTaux } from "@/lib/mobile-capabilities";
 import type { MobileParRelease, MobileReleaseRow } from "@/lib/queries-mobile";
 import { intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
-import { fmtDate } from "@/lib/format";
+import { accord, fmtDate, pluriel } from "@/lib/format";
 
 export type TriStabilite = "fourni" | "gravite" | "volume";
 
@@ -45,10 +50,14 @@ export type HrefDeRelease = (release: string | null, app: string) => string;
 
 const nombre = (n: number) => n.toLocaleString("fr-FR");
 
-/** « +2,1 pts vs 1.3 » ; « — » sans précédente ou sans part d'un côté. */
+/**
+ * « −2,1 pt vs 1.3 » en part SANS erreur ; « — » sans précédente ou sans part d'un
+ * côté. La lecture rend l'écart en points de part TOUCHÉE : son signe est inversé ici,
+ * pour qu'un écart positif veuille dire « plus stable », comme la tuile.
+ */
 function texteEcart(l: MobileReleaseRow): string {
   if (l.ecart_precedente_pts === null || l.release_precedente === null) return "—";
-  const v = l.ecart_precedente_pts;
+  const v = -l.ecart_precedente_pts;
   const arrondi = Math.round(v * 10) / 10;
   const signe = arrondi > 0 ? "+" : arrondi < 0 ? "−" : "±";
   return `${signe}${Math.abs(arrondi).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} pt vs ${l.release_precedente}`;
@@ -57,9 +66,12 @@ function texteEcart(l: MobileReleaseRow): string {
 const ORDRES: Record<TriStabilite, string> = {
   fourni: "Ordre : par première session vue sur la fenêtre, la plus récente en tête.",
   gravite:
-    "Ordre : par part de sessions touchées, la plus forte en tête ; moins de 30 sessions, puis part non calculable, en fin de liste.",
+    "Ordre : de la release la moins stable à la plus stable ; moins de 30 sessions, puis part non calculable, en fin de liste.",
   volume: "Ordre : par nombre de sessions, le plus grand en tête.",
 };
+
+/** Part des sessions SANS erreur JS (la mesure de la tuile), depuis la part touchée lue. */
+const partSansErreur = (partTouchee: number | null) => (partTouchee === null ? null : 1 - partTouchee);
 
 export function lignesStabilite(
   lignes: readonly MobileReleaseRow[],
@@ -73,16 +85,19 @@ export function lignesStabilite(
     // positif reste écrit — des erreurs reçues sont un fait, même sans déclaration.
     const occurrencesAffichees = l.occurrences === null || (l.etat_js_errors !== "active" && l.occurrences === 0) ? null : l.occurrences;
     const touchees = connue && l.sessions_touchees !== null ? l.sessions_touchees : null;
-    const intervalle = connue && touchees !== null ? texteIntervalle(intervalleWilson(touchees, l.sessions), (v) => formater("pct", v)) : null;
+    // Wilson sur les sessions SANS erreur : l'intervalle encadre la valeur affichée.
+    const intervalle =
+      connue && touchees !== null ? texteIntervalle(intervalleWilson(l.sessions - touchees, l.sessions), (v) => formater("pct", v)) : null;
+    const sansErreur = partSansErreur(l.part_touchee);
     return {
       // Une clé par (app, release) : deux « 1.0.0 » de deux apps sont deux lignes.
       cle: JSON.stringify([l.app_id, l.release]),
       libelle,
       href: hrefDeRelease(l.release, l.app_id),
       description: connue
-        ? `Release ${libelle} : ${formater("pct", l.part_touchee)} des sessions touchées par une erreur JavaScript, ${nombre(touchees ?? 0)} sessions touchées sur ${nombre(l.sessions)}`
-        : `Release ${libelle} : part des sessions touchées non calculable (${l.raison_part ?? "raison non lue"}), ${nombre(l.sessions)} sessions`,
-      pilote: l.part_touchee,
+        ? `Release ${libelle} : ${formater("pct", sansErreur)} des sessions sans erreur JavaScript, ${nombre(touchees ?? 0)} ${accord(touchees ?? 0, "touchée")} sur ${pluriel(l.sessions, "session")}`
+        : `Release ${libelle} : part des sessions sans erreur non calculable (${l.raison_part ?? "raison non lue"}), ${pluriel(l.sessions, "session")}`,
+      pilote: sansErreur,
       volume: l.sessions,
       mesures: [
         {
@@ -91,7 +106,7 @@ export function lignesStabilite(
           affichage: touchees === null ? "—" : `${nombre(touchees)} sur ${nombre(l.sessions)}`,
         },
         { cle: "occurrences", valeur: occurrencesAffichees, affichage: formater("count", occurrencesAffichees) },
-        { cle: "ecart", valeur: l.ecart_precedente_pts, affichage: texteEcart(l) },
+        { cle: "ecart", valeur: l.ecart_precedente_pts === null ? null : -l.ecart_precedente_pts, affichage: texteEcart(l) },
         {
           cle: "demarrage",
           valeur: l.demarrage_froid_p75_ms,
@@ -104,6 +119,17 @@ export function lignesStabilite(
       echantillonFaible: l.sessions < SEUIL_ECHANTILLON_FAIBLE,
     };
   });
+}
+
+/**
+ * « échantillon faible » UNE fois (recette du 26/09/2026 : le badge se répétait sur
+ * chaque ligne) : quand TOUTES les lignes sont sous le seuil, la mention passe dans
+ * la notice et les lignes ne la portent plus ; sinon chaque ligne faible garde la
+ * sienne. Le classement, lui, lit l'effectif : il ne dépend pas de ce drapeau.
+ */
+export function faibleUneFois<L extends { echantillonFaible: boolean }>(lignes: L[]): { lignes: L[]; toutesFaibles: boolean } {
+  const toutesFaibles = lignes.length > 1 && lignes.every((l) => l.echantillonFaible);
+  return { lignes: toutesFaibles ? lignes.map((l) => ({ ...l, echantillonFaible: false })) : lignes, toutesFaibles };
 }
 
 export function StabiliteParRelease({
@@ -137,9 +163,12 @@ export function StabiliteParRelease({
   const classees =
     tri === "fourni"
       ? construites
-      : classerParGravite(construites, { pilote: (l) => l.pilote, effectif: (l) => l.volume, tri }).lignes;
+      : // « Gravité » = la moins stable d'abord : la clé décroissante est la part TOUCHÉE.
+        classerParGravite(construites, { pilote: (l) => (l.pilote === null ? null : 1 - l.pilote), effectif: (l) => l.volume, tri }).lignes;
+  const { lignes: affichees, toutesFaibles } = faibleUneFois(classees);
   const d = resultat.declarantes;
-  const part = d.rate === null ? null : 1 - d.rate;
+  // Le taux des releases déclarantes : celui de la tuile « Sessions sans erreur JS ».
+  const part = d.rate;
   const sansPart = resultat.lignes.filter((l) => l.part_touchee === null);
   const raisons = [...new Set(sansPart.map((l) => l.raison_part ?? "raison non lue"))].map((raison) => ({
     raison,
@@ -148,18 +177,18 @@ export function StabiliteParRelease({
 
   return (
     <div className="min-w-0" data-testid="mobile-stabilite">
-      <div className="mb-2 flex justify-end">
-        <BasculeTri
-          courant={tri}
-          options={[
-            { id: "fourni", libelle: "Chronologie", href: triHref.fourni },
-            { id: "gravite", libelle: "Gravité", href: triHref.gravite },
-            { id: "volume", libelle: "Volume", href: triHref.volume },
-          ]}
-        />
-      </div>
       <ImpactTable
         titre="Stabilité par release"
+        commandes={
+          <BasculeTri
+            courant={tri}
+            options={[
+              { id: "fourni", libelle: "Chronologie", href: triHref.fourni },
+              { id: "gravite", libelle: "Gravité", href: triHref.gravite },
+              { id: "volume", libelle: "Volume", href: triHref.volume },
+            ]}
+          />
+        }
         tri="fourni"
         triHref={{ gravite: null, volume: null, impact: null, fourni: null }}
         ordreLibelle={`${ORDRES[tri]}${resultat.tronque && tri !== "fourni" ? ` Classement parmi les ${resultat.lignes.length} releases les plus récentes.` : ""}`}
@@ -167,7 +196,7 @@ export function StabiliteParRelease({
           part === null
             ? null
             : {
-                libelle: "Releases déclarantes",
+                libelle: "Ensemble des releases qui collectent les erreurs JS",
                 valeurs: {
                   pilote: formater("pct", part),
                   volume: nombre(d.sessions),
@@ -177,13 +206,15 @@ export function StabiliteParRelease({
               }
         }
         referenceRaison={d.reason === null ? "raison non lue" : texteRaisonTaux(d.reason)}
-        lignes={classees}
-        colonnes={["Touchées", "Occurrences", "Écart", "Démarrage à froid p75", "1re session"]}
+        lignes={affichees}
+        colonnes={["Touchées", "Occurrences", "Écart à la précédente", "Démarrage à froid p75", "1re session"]}
         unitePilote="pct"
         volumeLibelle="Sessions"
         groupes={resultat.releases}
         tronque={resultat.tronque}
-        notice="Part des sessions React Native de chaque release touchées par au moins une erreur JavaScript de la fenêtre, même cohorte que les tuiles. Écart : en points, contre la release précédente de la même app dans l'ordre de première session vue — même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte."
+        notice={`Part des sessions React Native de chaque release sans aucune erreur JavaScript — la mesure de la tuile, release par release : plus haut = plus stable. Écart : en points, contre la release précédente de la même app, sur la même fenêtre ; il mêle le code et le contexte (trafic, usage).${
+          toutesFaibles ? ` Toutes les releases ont moins de ${SEUIL_ECHANTILLON_FAIBLE} sessions : échantillon faible.` : ""
+        }`}
       />
       {(raisons.length > 0 || resultat.tronque) && (
         <div className="-mt-4 mb-6 flex flex-col gap-1 px-1 text-xs text-ink-soft" data-testid="mobile-stabilite-notes">

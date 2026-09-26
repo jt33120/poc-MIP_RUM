@@ -118,18 +118,19 @@ describe("/sessions — Frustration et Rejeu viennent de la lecture, plus d'un n
     expect(rangee(html, "sans-rejeu-3")).toContain(">Non<");
   });
 
-  /** Les deux dernières cellules d'une rangée : Frustration, puis Rejeu. */
+  /** Les cellules Frustration et Rejeu d'une rangée, repérées par leur colonne. */
   const signauxDe = (tr: string) => {
     const cellules = tr.split("<td").slice(1);
-    return { frustration: cellules.at(-2) ?? "", rejeu: cellules.at(-1) ?? "" };
+    const colonne = (nom: string) => cellules.find((c) => c.includes(`data-colonne="${nom}"`)) ?? "";
+    return { frustration: colonne("frustration"), rejeu: colonne("rejeu") };
   };
 
-  it("le compte de signaux est écrit ; une session mobile sans capteur reste « — », jamais 0", async () => {
+  it("le compte de signaux est écrit ; une session mobile dit « non collecté », jamais 0", async () => {
     const html = await rendre();
     expect(signauxDe(rangee(html, "avec-rejeu-7")).frustration).toMatch(/>7<\/td>$/);
     expect(signauxDe(rangee(html, "sans-rejeu-3")).frustration).toMatch(/>3<\/td>$/);
     const mobile = signauxDe(rangee(html, "mobile-sans-capteur"));
-    expect(mobile.frustration).toContain('data-testid="signal-non-lu"');
+    expect(mobile.frustration).toContain('data-testid="signal-non-collecte"');
     expect(mobile.frustration).not.toMatch(/>0</);
     expect(mobile.rejeu).toContain(">Non<");
   });

@@ -27,6 +27,8 @@ import { EchecLecture } from "@/components/states/SectionErreur";
 import { TableDefilante } from "@/components/TableDefilante";
 import { CopierTrace } from "@/components/tracing/CopierTrace";
 import { formater } from "@/lib/fmt-ids";
+import { fmtInstant, pluriel } from "@/lib/format";
+import { FUSEAU_AFFICHAGE, nomFuseau } from "@/lib/fuseau-local";
 import { appelDeLaTrace, chargerTrace, premier as first } from "@/lib/chargeurs/trace";
 import { chargerEcran } from "@/lib/ecran";
 import { type TraceSpanRow } from "@/lib/queries-tracing";
@@ -107,7 +109,13 @@ export default async function TraceDetail({
   // descend le segment désigné ; à défaut, le premier appel, et on le dit.
   const { highlighted, spanState, fronts, designe, front, sessionSpan } = appelDeLaTrace(spans, sp);
   const hasBackend = spans.some((s) => s.tier === "back" || s.tier === "detail");
-  const rootMs = front?.duration_ms ?? total;
+  // Sans segment navigateur (un GET /health appelé par une sonde, un appel entre
+  // services), aucun visiteur n'a rien « perçu » : la puce dit la durée SERVEUR, et la
+  // route est celle du serveur (recette du 26/09/2026 : « Latence perçue 9 ms », « Route — »).
+  const racineServeur = front ? undefined : (spans.find((s) => s.tier === "back" && !s.parent_span_id) ?? spans.find((s) => s.tier === "back"));
+  const rootMs = front?.duration_ms ?? racineServeur?.duration_ms ?? total;
+  // L'instant de l'appel résumé (ou du premier segment) : le détail se situe sans revenir à la liste.
+  const instantTrace = front?.ts ?? racineServeur?.ts ?? spans[0]?.ts;
   const appsDistinctes = [...new Set(spans.map((s) => s.app_id))].sort();
 
   // Session LISIBLE : elle existe encore, dans l'app du span et dans le périmètre (verdict du chargeur).
@@ -127,16 +135,24 @@ export default async function TraceDetail({
     `/sessions/${encodeURIComponent(id)}?${new URLSearchParams({ app, ...extra })}`;
   const retour = first(sp.app) ? `/tracing?app=${encodeURIComponent(first(sp.app)!)}` : "/tracing";
 
+  // Un segment navigateur est un APPEL : il se nomme par ce qu'il appelle (« GET
+  // /api/demo/items/42 »), la page d'où il part en détail. Son nom de span (« GET
+  // /partners/:id ») se lisait comme un chargement de page (recette du 26/09/2026).
+  const libelleSegment = (s: TraceSpanRow) =>
+    s.tier === "front" && s.url ? `${s.method ?? ""} ${s.url}`.trim() : (s.name ?? tierLabel(s));
   const elements: ElementCascade[] = spans.map((s, i) => ({
     id: s.span_id,
     piste: pisteDe(s),
-    libelle: s.name ?? tierLabel(s),
+    libelle: libelleSegment(s),
     debutMs: starts[i] - t0,
     dureeMs: s.duration_ms,
     ton: tonDe(s.status_code),
     parentId: s.parent_span_id,
     href: lienTrace(s.span_id),
-    detail: s.status_code != null ? `HTTP ${s.status_code}` : undefined,
+    detail:
+      [s.status_code != null ? `HTTP ${s.status_code}` : null, s.tier === "front" && s.route ? `depuis ${s.route}` : null]
+        .filter(Boolean)
+        .join(" · ") || undefined,
   }));
 
   return (
@@ -162,13 +178,24 @@ export default async function TraceDetail({
               </span>
             </Puce>
           )}
-          <Puce label="Latence perçue" testId="trace-latence">
+          {instantTrace && (
+            <Puce label="Heure" testId="trace-heure">
+              {fmtInstant(instantTrace, { annee: true, secondes: true })}, {nomFuseau(FUSEAU_AFFICHAGE)}
+            </Puce>
+          )}
+          <Puce label={front ? "Latence perçue" : "Durée serveur"} testId="trace-latence">
             {formater("ms", rootMs)}
           </Puce>
           <Puce label="Segments">{formater("count", spans.length)}</Puce>
-          <Puce label="Route">
-            <span title={front?.route ?? front?.url ?? undefined}>{front?.route ?? front?.url ?? "—"}</span>
-          </Puce>
+          {front ? (
+            <Puce label="Depuis la page">
+              <span title={front.route ?? undefined}>{front.route ?? "—"}</span>
+            </Puce>
+          ) : (
+            <Puce label="Route serveur">
+              <span title={racineServeur?.route ?? undefined}>{racineServeur?.route ?? racineServeur?.name ?? "—"}</span>
+            </Puce>
+          )}
           <Puce label="Session" testId="trace-session">
             {sessionSpan?.session_id ? (
               // L'app du span accompagne le lien : la page session refuse une
@@ -250,9 +277,7 @@ export default async function TraceDetail({
         id="chronologie"
         meta={
           <>
-            <span>
-              {spans.length} segment{spans.length > 1 ? "s" : ""}
-            </span>
+            <span>{pluriel(spans.length, "segment")}</span>
             <span>axe de 0 à {texteDuree(total)}, depuis le début du premier segment</span>
           </>
         }
@@ -326,8 +351,8 @@ export default async function TraceDetail({
               {spans.map((s, i) => (
                 <tr key={s.span_id} className="border-t border-line/60">
                   <th scope="row" className="sticky left-0 z-10 max-w-[14rem] bg-panel px-4 py-2 text-left font-normal">
-                    <span className="block truncate" title={s.name ?? tierLabel(s)}>
-                      {s.name ?? tierLabel(s)}
+                    <span className="block truncate" title={libelleSegment(s)}>
+                      {libelleSegment(s)}
                     </span>
                   </th>
                   <td className="whitespace-nowrap px-4 py-2 text-ink-soft">{tierLabel(s)}</td>

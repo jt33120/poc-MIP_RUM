@@ -133,7 +133,7 @@ export function SectionsSeries() {
       <Bloc
         id="threshold-series"
         titre="ThresholdSeries"
-        sous="Série sur grille obligatoire : un seau absent est un trou (ou 0 pour un compte), jamais une droite ; bandes pleines Bon / À améliorer / Mauvais lues dans lib/rating.ts ; un seul axe y."
+        sous="Série sur grille obligatoire : une tranche absente est un trou (ou 0 pour un compte), jamais une droite ; bandes pleines Bon / À améliorer / Mauvais lues dans lib/rating.ts ; un seul axe y."
       >
         <div className={DEUX_COLONNES}>
           <Figure
@@ -142,12 +142,12 @@ export function SectionsSeries() {
             id="vitrine-serie-lcp"
             meta={
               <>
-                <span>24 seaux d&apos;une heure (UTC)</span>
+                <span>24 tranches d&apos;une heure (UTC)</span>
                 <span>2 heures sans mesure</span>
                 <span>4 annotations reçues, 3 dans la fenêtre</span>
               </>
             }
-            lecture="Trous aux heures sans mesure ; point creux sous 30 mesures et pour le seau en cours ; un clic sur un seau zoome sur sa plage ; le triangle d'une annotation mène à sa destination."
+            lecture="Trous aux heures sans mesure ; point creux sous 30 mesures et pour la tranche en cours ; un clic sur une tranche zoome sur sa plage ; le triangle d'une annotation mène à sa destination."
             alternative={{
               legende: "LCP p75 et mesures par heure",
               colonnes: ["Seau", "LCP p75", "Mesures"],
@@ -170,7 +170,7 @@ export function SectionsSeries() {
 
           <Figure
             titre="INP p75 face à la période précédente"
-            meta={<span>24 seaux d&apos;une heure (UTC) · cmp=prev</span>}
+            meta={<span>24 tranches d&apos;une heure (UTC) · cmp=prev</span>}
             alternative={{
               legende: "INP p75 par heure, période courante et précédente",
               colonnes: ["Seau", "INP p75", "Période précédente"],
@@ -194,7 +194,7 @@ export function SectionsSeries() {
 
           <Figure
             titre="Tout est « Bon » : la borne Mauvais sort du cadre"
-            meta={<span>24 seaux d&apos;une heure (UTC)</span>}
+            meta={<span>24 tranches d&apos;une heure (UTC)</span>}
             lecture="Le domaine garde la bande « Bon » visible ; la borne « Mauvais » n'étire pas l'axe, elle est écrite sous la figure."
             alternative={{
               legende: "LCP p75 par heure",
@@ -234,7 +234,7 @@ export function SectionsSeries() {
               seauSecondes={3600}
               fuseau="UTC"
               hauteur={180}
-              ariaLabel="CLS p75 par heure, 3 zones de seuil, un seau sans mesure"
+              ariaLabel="CLS p75 par heure, 3 zones de seuil, une tranche sans mesure"
             />
           </Figure>
 
@@ -316,7 +316,7 @@ export function SectionsSeries() {
 
           <Figure
             titre="Six séries demandées, un point hors grille"
-            lecture="Au-delà de cinq séries, les suivantes sont nommées sous la figure, pas tracées ; un point qui ne tombe pas sur un début de seau est compté."
+            lecture="Au-delà de cinq séries, les suivantes sont nommées sous la figure, pas tracées ; un point qui ne tombe pas sur un début de tranche est compté."
             alternative={{
               legende: "Six séries par heure",
               colonnes: ["Seau", "A", "B", "C", "D", "E", "F"],
@@ -340,13 +340,13 @@ export function SectionsSeries() {
       <Bloc
         id="stacked-bars"
         titre="StackedBars"
-        sous="Le seul composant qui empile, réservé aux comptes : seau absent = 0 ; tons de sévérité doublés d'un motif ; une série peut mener à sa destination ; mêmes marges que ThresholdSeries."
+        sous="Le seul composant qui empile, réservé aux comptes : tranche absente = 0 ; tons de sévérité doublés d'un motif ; une série peut mener à sa destination ; mêmes marges que ThresholdSeries."
       >
         <div className={DEUX_COLONNES}>
           <Figure
             titre="Déclenchements d'alerte par heure et sévérité"
-            meta={<span>24 seaux d&apos;une heure (UTC) · 3 heures sans déclenchement lu</span>}
-            lecture="Critique plein, avertissement hachuré, information pointillé ; un clic sur un segment critique ouvre les alertes, un clic ailleurs dans le seau zoome."
+            meta={<span>24 tranches d&apos;une heure (UTC) · 3 heures sans déclenchement lu</span>}
+            lecture="Critique plein, avertissement hachuré, information pointillé ; un clic sur un segment critique ouvre les alertes, un clic ailleurs dans la tranche zoome."
             alternative={{
               legende: "Déclenchements par heure et sévérité",
               colonnes: ["Seau", "Critique", "Avertissement", "Information"],
@@ -375,7 +375,7 @@ export function SectionsSeries() {
 
           <Figure
             titre="Pages vues : chargements et changements de route SPA"
-            meta={<span>24 seaux d&apos;une heure (UTC) · une heure sans vue (0)</span>}
+            meta={<span>24 tranches d&apos;une heure (UTC) · une heure sans vue (0)</span>}
             alternative={{
               legende: "Pages vues par heure et type",
               colonnes: ["Seau", "Chargements", "Changements de route SPA"],
@@ -438,7 +438,7 @@ export function SectionsSeries() {
         <div className={DEUX_COLONNES}>
           <Figure
             titre="INP p75 par heure"
-            meta={<span>24 seaux d&apos;une heure (UTC) · 3 seaux sous 30 mesures</span>}
+            meta={<span>24 tranches d&apos;une heure (UTC) · 3 tranches sous 30 mesures</span>}
             alternative={{
               legende: "INP p75 et mesures par heure",
               colonnes: ["Seau", "INP p75", "Mesures"],

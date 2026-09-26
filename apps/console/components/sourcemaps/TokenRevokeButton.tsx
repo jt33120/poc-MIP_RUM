@@ -11,7 +11,7 @@ import { useState } from "react";
 import { revoquerJetonSourcemapAction } from "@/app/admin/sourcemaps/actions";
 import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
 
-export function TokenRevokeButton({ id, name, appId }: { id: string; name: string; appId: string }) {
+export function TokenRevokeButton({ id, name, appId, scope }: { id: string; name: string; appId: string; scope?: string }) {
   const router = useRouter();
   const [echec, setEchec] = useState(false);
 
@@ -35,7 +35,7 @@ export function TokenRevokeButton({ id, name, appId }: { id: string; name: strin
         libelle="Révoquer"
         libelleAccessible={`Révoquer le jeton ${name}`}
         question={`Révoquer le jeton ${entreGuillemets(name)}\u00a0?`}
-        consequence="La CI qui l’utilise ne pourra plus envoyer de source maps ; un jeton révoqué ne se rétablit pas."
+        consequence={`La CI qui l’utilise ne pourra plus ${scope === "deploys:write" ? "déclarer de déploiement" : "envoyer de source maps"} ; un jeton révoqué ne se rétablit pas.`}
         confirmer="Révoquer le jeton"
         enCours="Révocation…"
         onConfirmer={revoquer}

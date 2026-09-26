@@ -6,13 +6,17 @@
 //     `sessionsAvecVue` (B31), et sa lecture en échec rend « — », jamais « 0 % » ;
 //   · les deux tables de bords ont les mêmes colonnes, dans le même ordre ;
 //   · l'ancrage `depuis` (B31) : les nœuds de gauche et la rangée « À partir de »
-//     ancrent le flux, sans toucher aux tuiles ; les étapes typées (B33) restent
-//     annoncées absentes ;
+//     ancrent le flux, sans toucher aux tuiles ;
+//   · recette du 26/09/2026 : les étapes typées (B33), non livrées, ne sont plus
+//     montrées comme présentes (plus de bandeau « Partiel ») ; aucun code interne ;
+//     la route racine se lit « Accueil (/) » dans les tuiles ; la route d'une table
+//     est le lien vers ses sessions, Pages s'ouvre par une icône ;
 //   · l'entonnoir nomme ses deux taux et encadre la plus forte perte ;
 //   · une lecture en échec n'efface pas les autres blocs.
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { tronquerMilieu } from "@/components/Sankey";
 import { parseAnalyticsQuery } from "@/lib/query-contract";
 
 const { routeTransitions, entryExitRoutes, lcpDesRoutes, availableEvents, funnelReport, samplingSessions, sessionsAvecVue } =
@@ -109,7 +113,7 @@ afterEach(() => consoleError.mockRestore());
 describe("/paths — la part se lit sur les sessions avec vue (B31), jamais sur un top N", () => {
   it("les tuiles de bord donnent la route, son compte et sa part de toutes les sessions avec vue", async () => {
     const t = texte(await rendre());
-    expect(t).toContain("Page d'entrée n°1 / · 12 sessions sur 16 75,0 % des sessions avec vue y démarrent.");
+    expect(t).toContain("Page d'entrée n°1 Accueil (/) · 12 sessions sur 16 75,0 % des sessions avec vue y démarrent.");
     expect(t).toContain("Page de sortie n°1 /paiement · 9 sessions sur 16 56,3 % des sessions avec vue s'y terminent.");
     expect(t).not.toContain("dénominateur à créer");
   });
@@ -122,12 +126,15 @@ describe("/paths — la part se lit sur les sessions avec vue (B31), jamais sur 
     expect(colonnes(entrees)).toEqual(["Route", "Sessions", "Part de toutes les sessions", "Sessions à une vue", "LCP p75 de la route"]);
     expect(colonnes(sorties)).toEqual(colonnes(entrees));
     // « / » : 12 sur 16 = 75 %, 5 sessions à une vue, LCP p75 2,1 s ; « /panier » sans mesure → « — ».
-    expect(texte(entrees)).toMatch(/\/ Ouvrir \/pages 12 75,0 % 5 2,1 s/);
-    expect(texte(entrees)).toMatch(/\/panier Ouvrir \/pages 4 25,0 % 0 —/);
-    expect(entrees).toContain('title="aucune mesure LCP de cette route sur la plage"');
-    // La route mène aux sessions passées par elle (recherche exacte), et à /pages.
+    expect(texte(entrees)).toMatch(/ \/ 12 75,0 % 5 2,1 s/);
+    expect(texte(entrees)).toMatch(/ \/panier 4 25,0 % 0 —/);
+    expect(entrees).toContain('title="aucune mesure LCP de cette route sur la période"');
+    // La route (son nom) mène aux sessions passées par elle (recherche exacte) ; Pages
+    // s'ouvre par une icône nommée, jamais par un lien texte à la place du nom.
     expect(entrees).toContain("/sessions?app=demo&amp;period=7d&amp;qf=route&amp;q=%2Fpanier");
     expect(entrees).toContain("/pages?app=demo&amp;period=7d&amp;route=%2Fpanier");
+    expect(entrees).toContain('aria-label="Ouvrir /panier dans Pages"');
+    expect(texte(entrees)).not.toContain("Ouvrir /pages");
     // Le LCP est lu pour les routes des deux tables, sur la même requête.
     expect(lcpDesRoutes).toHaveBeenCalledWith(expect.anything(), ["/", "/panier", "/paiement"]);
   });
@@ -146,7 +153,36 @@ describe("/paths — la part se lit sur les sessions avec vue (B31), jamais sur 
     expect(texte(html)).not.toContain("Transitions les plus fréquentes");
     const flux = html.slice(html.indexOf('id="paths-flux"'), html.indexOf('data-testid="paths-ancrage"'));
     expect(flux).toContain('data-testid="alternative"');
-    expect(texte(flux)).toContain("De Vers Sessions");
+    // Des passages, pas des sessions : une session repasse parfois deux fois par la même transition.
+    expect(texte(flux)).toContain("De Vers Passages");
+  });
+
+  it("une route longue est coupée AU MILIEU dans les tables, entière dans l'infobulle et le nom du lien", async () => {
+    const longue = "/partenaires/:id/documents/:docId/versions/:version/comparaison";
+    entryExitRoutes.mockResolvedValue({ entries: [route(longue, 3)], exits: [route("/", 3)] });
+    const html = await rendre();
+    const entrees = html.slice(html.indexOf('id="paths-entrees"'), html.indexOf('id="paths-sorties"'));
+    expect(entrees).toContain(`title="Sessions passées par ${longue}"`);
+    expect(entrees).toContain(`aria-label="${longue}"`);
+    // Début et fin gardés : « /partenaires/:id/documen…version/comparaison », avec une
+    // occasion de coupure avant chaque « / » (passée à la ligne, la route se coupe entre
+    // deux segments, pas au milieu d'un mot).
+    expect(entrees).toContain("<wbr/>/partenaires<wbr/>/:id");
+    expect(texte(entrees.replace(/<wbr\/>/g, ""))).toContain(tronquerMilieu(longue, 48));
+    expect(tronquerMilieu(longue, 48)).toMatch(/^\/partenaires\/:id.*….*\/comparaison$/);
+  });
+
+  it("sous 640 px, une liste des principales transitions remplace le dessin (même lien qu'un ruban)", async () => {
+    const html = await rendre();
+    expect(html).toContain('<div class="sm:hidden" data-testid="sankey-liste">');
+    const liste = html.slice(html.indexOf('data-testid="sankey-liste"'), html.indexOf('data-testid="sankey-dessin"'));
+    const items = [...liste.matchAll(/data-testid="sankey-transition"/g)];
+    expect(items).toHaveLength(2);
+    // La plus fréquente d'abord : « / → /panier » (8) puis « /panier → /paiement » (3).
+    expect(texte(liste)).toMatch(/\/ → vers \/panier 8 .*\/panier → vers \/paiement 3/);
+    expect(liste).toContain("/sessions?app=demo&amp;period=7d&amp;qf=route&amp;q=%2Fpanier");
+    // Le dessin, lui, n'est rendu qu'au-delà de `sm`.
+    expect(html).toMatch(/class="hidden overflow-x-auto sm:block" data-testid="sankey-dessin"/);
   });
 });
 
@@ -180,9 +216,13 @@ describe("/paths — ancrage `depuis` (B31)", () => {
 });
 
 describe("/paths — patchs backend absents (§ 0.5) et contrat (F53)", () => {
-  it("étapes typées (B33) annoncées, jamais rendues inertes", async () => {
-    const t = texte(await rendre());
-    expect(t).toContain("étapes de type vue ou action à créer : seuls les événements custom sont proposés comme étapes (B33)");
+  it("étapes typées (B33) non livrées : ni bandeau « Partiel », ni code interne ; seul ce qui est proposé est dit", async () => {
+    const html = await rendre();
+    const t = texte(html);
+    expect(t).toContain("Étapes : événements personnalisés. Choisissez-en 2 à 4, dans l'ordre du parcours");
+    expect(t).not.toContain("à créer");
+    expect(html).not.toContain('data-etat="partiel"');
+    for (const code of ["B33", "R-P", "custom", "méta", "tuiles et tables", "Choisis ", "Ouvrir /pages"]) expect(t, code).not.toContain(code);
   });
 
   it("plus de « lecture non migrée » : la méta de chaque figure écrit la plage du contrat", async () => {
@@ -256,7 +296,7 @@ describe("/paths — lectures en échec et vides", () => {
     const html = await rendre();
     expect(html).toContain('data-echec="Flux entre routes"');
     const t = texte(html);
-    expect(t).toContain("Page d'entrée n°1 / · 12 sessions sur 16");
+    expect(t).toContain("Page d'entrée n°1 Accueil (/) · 12 sessions sur 16");
     expect(t).toContain("Transitions distinctes — lecture des transitions en échec");
     expect(t).toContain("Entonnoir de conversion");
   });

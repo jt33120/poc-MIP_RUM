@@ -46,9 +46,15 @@ export const chargerTableau = (async (principal, sp, chemin) => {
     resolveWidgets(dash.layout, { filters: f, timeZone, nowMs: Date.now(), comparaison: reglages.valeur.mode }),
     registeredApps(),
   ]);
+  // Le NOM de chaque app (« Mini-site de démo »), celui du sélecteur de projet :
+  // l'en-tête, la barre de population et « Renommer » l'écrivaient par son
+  // identifiant technique (recette du 26/09/2026). Une app retirée du registre
+  // garde son identifiant.
+  const nomsApps = Object.fromEntries(apps.map((a) => [a.app_id, a.name || a.app_id]));
   return {
     etat: "ok",
     tableau: { id: dash.id, name: dash.name, app_id: dash.app_id, layout: dash.layout, revision: dash.revision },
+    nomsApps,
     proprietaire: ownerLabel(dash, user),
     query: ecran.query,
     label: ecran.label,

@@ -16,7 +16,7 @@
 // laisse les autres blocs.
 import Link from "next/link";
 import { DetailPanel, type PuceDetail } from "@/components/DetailPanel";
-import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
+import { ErrorSourceBadge, ErrorStatusBadges, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
 import {
   BoutonRejeu,
   OccurrencesDansLeTemps,
@@ -91,7 +91,7 @@ export function PanneauErreur({
   const portee = porteeOccurrences({ curseur: false, suite: page.next_cursor !== null });
   const puces: PuceDetail[] = [
     { label: "Empreinte", valeur: group.fingerprint },
-    { label: "App", valeur: group.app_id },
+    { label: "Application", valeur: group.app_id },
     { label: "Première vue", valeur: `${fmtDate(group.first_seen)} (depuis toujours)` },
     { label: "Dernière vue", valeur: fmtDate(group.last_seen) },
   ];
@@ -112,6 +112,7 @@ export function PanneauErreur({
       {/* ── Bloc 1 : type, source, caractère géré, et le rejeu au premier niveau ── */}
       <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2">
         <ErrorTypeBadge type={group.error_type} />
+        <ErrorStatusBadges status={group.status} regressed={group.regressed} />
         <ErrorSourceBadge source={last?.error_source ?? null} />
         <HandledBadge handled={last?.handled ?? null} />
         <span className="basis-full sm:ml-auto sm:basis-auto">
@@ -141,7 +142,7 @@ export function PanneauErreur({
             seauSecondes={range.bucketSeconds}
             annotations={annotations.annotations}
             annotationsIndisponibles={
-              deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement non lus"
+              deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement indisponibles"
             }
           />
         </SectionErreur>

@@ -4,7 +4,11 @@
 //
 // Le dessin et son alternative lisent la MÊME liste (lib/presentation-topologie.ts) :
 // une boîte = une ligne du tableau, et les hébergeurs y sont lus dans lib/legal.ts,
-// pas retapés. Les faits d'exploitation portent leur date de relevé.
+// pas retapés. La légende dit le chemin en français courant et date la topologie ;
+// le journal d'exploitation (service supprimé tel jour, identifiant de déploiement)
+// n'est plus sur une page publique (recette du 26/09/2026) : il est dans
+// docs/TOPOLOGIE_BACKEND.md. L'hébergement et son droit renvoient au tableau de la
+// présentation, leur seule place.
 //
 // UNE COLONNE, À TOUTES LES LARGEURS. Un texte SVG rétrécit avec son dessin : cinq
 // boîtes côte à côte, ramenées aux 358 px d'un téléphone, s'écriraient en 7 px. Les
@@ -12,11 +16,10 @@
 // console par un rail à droite (il ne touche pas la base : aucune flèche vers elle).
 import { TableAlternative } from "@/components/charts/Figure";
 import { SousPartie } from "@/components/presentation/SousPartie";
+import Link from "next/link";
 import {
   ARIA_TOPOLOGIE,
-  INGEST_SUPPRIME_LE,
   LIAISONS,
-  MIGRATIONS_CONSTATEES,
   PIECES,
   TOPOLOGIE_RELEVEE,
   type Piece,
@@ -146,8 +149,6 @@ function Dessin() {
   );
 }
 
-const CODE = "rounded bg-app/70 px-1 py-0.5 font-mono text-[12.5px] text-ink";
-
 export function Topologie() {
   return (
     <SousPartie id="contient-topologie" titre="Le chemin de la mesure">
@@ -157,21 +158,21 @@ export function Topologie() {
         </div>
         <div className="min-w-0 space-y-3 text-sm leading-relaxed text-ink-soft">
           <p>
-            Le collecteur est une route de la console : c&apos;est l&apos;adresse que visent les SDK. Le
-            même parseur existe en service Node autonome (<code className={CODE}>services/collector/server.mjs</code>),
-            construit et démarré par la CI ; le dépôt le déclare comme service Railway, pas encore
-            créé, et le relais de la console vers lui est livré éteint ; en production, il ne
-            tourne nulle part : le service Railway <code className={CODE}>ingest</code>, qui
-            l&apos;exécutait sans domaine public, a été supprimé le {INGEST_SUPPRIME_LE}.
+            Le collecteur est une route de la console : c&apos;est l&apos;adresse que visent les capteurs.
+            La console écrit les mesures dans la base, puis les relit pour ses écrans et son API.
           </p>
           <p>
-            Le <code className={CODE}>scheduler</code> applique les migrations au pré-déploiement : constaté
-            le {MIGRATIONS_CONSTATEES.le} dans les journaux du déploiement{" "}
-            <code className={CODE}>{MIGRATIONS_CONSTATEES.deploiement}</code>.
+            Les travaux planifiés — alertes, objectifs de service, sondes, purge — tournent à part, tout
+            comme le serveur MCP, qui passe par l&apos;API et n&apos;a aucun accès à la base. Un collecteur
+            autonome existe aussi dans le code, testé à chaque intégration continue, mais n&apos;est pas
+            encore mis en service.
           </p>
           <p>
-            Topologie relevée par les API Railway et Vercel le {TOPOLOGIE_RELEVEE.railwayEtVercel}, puis
-            par l&apos;API Railway le {TOPOLOGIE_RELEVEE.railway}.
+            Topologie relevée le {TOPOLOGIE_RELEVEE.railway}. Où sont les données, et sous quel droit :{" "}
+            <Link href="/presentation#hebergement" className="font-medium text-ink underline decoration-line underline-offset-2 hover:decoration-ink">
+              le tableau de la présentation
+            </Link>
+            .
           </p>
         </div>
         {/* Sous les deux colonnes : son tableau (`min-w-max`) tient en pleine largeur à

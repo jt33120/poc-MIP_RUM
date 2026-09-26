@@ -122,9 +122,11 @@ describe("la perte de détail est visible dans la santé interne", () => {
   it("la page /admin/health dit quoi FAIRE, pas seulement qu'il y a un problème", () => {
     // « Apps au plafond : 3 » sans suite ne sert à rien. La bonne réponse est
     // d'écrire des motifs, pas de relever le plafond.
+    // Sans nom de table à l'écran (recette du 26/09/2026) : « règles de regroupement »
+    // de ses adresses, la même consigne en mots.
     const page = lire("apps/console/app/admin/health/page.tsx");
     expect(page).toContain("apps_route_capped");
-    expect(page).toContain("route_pattern");
-    expect(page.replace(/\s+/g, " ")).toContain("pas un plafond plus haut");
+    expect(page.replace(/\s+/g, " ")).toContain("règles de regroupement de ses adresses");
+    expect(page.replace(/\s+/g, " ")).toContain("pas d&apos;un plafond plus haut");
   });
 });

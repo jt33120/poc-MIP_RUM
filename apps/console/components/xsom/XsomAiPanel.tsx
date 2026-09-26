@@ -27,7 +27,8 @@ export function XsomSponsorBanner({ href }: { href: string }) {
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-ink">Supervision IA propulsée par xSOM AI Guard</div>
         <div className="text-xs text-ink-soft">
-          Le suivi de vos appels LLM (coût, tokens, latence, qualité) est fourni par notre partenaire{" "}
+          Le suivi de vos appels aux modèles de langage (coût, volume de texte traité, latence, qualité) est fourni par
+          notre partenaire{" "}
           <strong>xSOM AI Guard</strong> — service indépendant du RUM MIP.
         </div>
       </div>

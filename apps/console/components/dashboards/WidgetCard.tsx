@@ -1,6 +1,11 @@
 // Carte d'un widget de tableau de bord : titre, fenêtre et filtres propres,
 // contrôles d'ordre et de suppression (server actions), puis le corps.
 //
+// LIRE OU ÉDITER (recette du 26/09/2026). ↑ ↓ ✕ et « Filtres et période de cette
+// carte » n'apparaissent qu'en mode édition (`edition`, `?edition=1`) : en lecture,
+// ils étaient visibles en permanence, collés au titre, et le ✕ rouge se lisait
+// comme une alerte. La lecture montre le titre, la valeur, le verdict, le graphique.
+//
 // ORDRE AU CLAVIER. Monter et descendre sont des boutons de soumission : ils sont
 // donc atteignables à la tabulation et actionnables à l'entrée ou à l'espace, sans
 // glisser-déposer. Leur libellé annonce la POSITION (« Monter — 2 sur 5 ») : sans
@@ -22,10 +27,11 @@ import {
 } from "@/app/dashboards/actions";
 import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
 import { INPUT_CLASS } from "@/components/forms/Field";
-import { RANGE_PRESETS, serializeSegments, type AnalyticsQuery } from "@/lib/query-contract";
+import { PRESET_LABELS, RANGE_PRESETS, serializeSegments, type AnalyticsQuery } from "@/lib/query-contract";
 import { widgetQueryJson, type Widget } from "@/lib/dashboards";
-import { explorerHref, explorerHrefFromAst } from "@/lib/explorer-page-params";
+import { explorerHref, explorerHrefFromAst, valeurApprochee } from "@/lib/explorer-page-params";
 import { formater } from "@/lib/fmt-ids";
+import { fmtDate } from "@/lib/format";
 import { widgetQuery, type WidgetData } from "@/lib/widget-data";
 import { WidgetBody } from "./WidgetBody";
 
@@ -63,6 +69,7 @@ export function WidgetCard({
   ctx,
   query,
   editable,
+  edition = false,
 }: {
   id: number;
   index: number;
@@ -75,14 +82,21 @@ export function WidgetCard({
   /** Requête de l'écran : population des liens sortants de la carte. */
   query: AnalyticsQuery;
   editable: boolean;
+  /** Mode édition du tableau (`?edition=1`) : seul lui montre les gestes d'écriture. */
+  edition?: boolean;
 }) {
   const position = `${index + 1} sur ${count}`;
   const explorer = widget.kind === "v2" ? hrefExplorerDeCarte(widget, query) : null;
+  const gestes = editable && edition;
   // Le total reste un NOMBRE jusqu'ici : il se formate au rendu, avec son unité
-  // quand le format n'en porte pas (« 6 occurrences », « 2,7 s »).
+  // quand le format n'en porte pas (« 6 occurrences », « 2,7 s »). Une carte
+  // « Valeur » ne le redit pas : sa tuile l'affiche déjà, avec son verdict (la
+  // valeur apparaissait deux fois, recette du 26/09/2026). Approché, il porte « ≈ ».
   const resume =
-    widget.kind === "v2" && data.total !== undefined && data.format
-      ? `${formater(data.format, data.total)}${data.unit && (data.format === "count" || data.format === "ratio") ? ` ${data.unit}` : ""}`
+    widget.kind === "v2" && widget.plan.visualization !== "value" && data.total !== undefined && data.format
+      ? `${valeurApprochee(formater(data.format, data.total), data.analyse?.meta.approximate === true)}${
+          data.unit && (data.format === "count" || data.format === "ratio") ? ` ${data.unit}` : ""
+        }`
       : null;
   const champsCommuns = (
     <>
@@ -105,7 +119,7 @@ export function WidgetCard({
           )}
           {(data.rangeLabel || data.filtersLabel) && (
             <p className="mt-0.5 break-words text-[11px] text-ink-faint" data-testid={`widget-${index}-portee`}>
-              {data.rangeLabel ?? "Fenêtre de l’écran"}
+              {data.rangeLabel ?? "Période de l’écran"}
               {data.filtersLabel ? ` · ${data.filtersLabel}` : ""}
             </p>
           )}
@@ -125,8 +139,8 @@ export function WidgetCard({
             </p>
           )}
         </div>
-        {editable && (
-          <div className="flex shrink-0 items-center gap-1">
+        {gestes && (
+          <div className="flex shrink-0 items-center gap-1" data-testid={`widget-${index}-gestes`}>
             <form action={moveWidgetAction}>
               {champsCommuns}
               <input type="hidden" name="dir" value="up" />
@@ -176,18 +190,18 @@ export function WidgetCard({
 
       {/* Configuration par carte : réservée aux analyses, qui seules savent
           appliquer un filtre supplémentaire à leur requête. */}
-      {editable && widget.kind === "v2" && (
+      {gestes && widget.kind === "v2" && (
         <details className="border-t border-line pt-2 text-xs">
           <summary className="cursor-pointer rounded text-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-            Filtres et fenêtre de cette carte
+            Filtres et période de cette carte
           </summary>
           <form action={configureWidgetAction} className="mt-2 flex flex-col gap-2">
             {champsCommuns}
             <label className="flex flex-col gap-1 text-ink-soft">
               <span>
-                Filtres supplémentaires — même syntaxe que le paramètre <code className="text-ink">seg</code> des
-                URL, par exemple <code className="text-ink">v2:browser:eq:Firefox;os:is_null</code>. Ils
-                s’ajoutent aux filtres de l’écran, ils ne les remplacent pas.
+                Filtres supplémentaires, écrits comme dans l’adresse d’un segment — par exemple{" "}
+                <code className="text-ink">v2:browser:eq:Firefox;os:is_null</code>. Ils s’ajoutent aux filtres de
+                l’écran, ils ne les remplacent pas.
               </span>
               <input
                 name="filters"
@@ -197,7 +211,7 @@ export function WidgetCard({
               />
             </label>
             <label className="flex flex-col gap-1 text-ink-soft">
-              Fenêtre de la carte
+              Période de la carte
               <select
                 name="range_preset"
                 defaultValue={
@@ -209,17 +223,17 @@ export function WidgetCard({
                 }
                 className={`${INPUT_CLASS} w-full`}
               >
-                <option value="">Suivre la fenêtre de l’écran</option>
+                <option value="">Suivre la période de l’écran</option>
                 {RANGE_PRESETS.map((preset) => (
                   <option key={preset} value={preset}>
-                    {preset}
+                    {PRESET_LABELS[preset]}
                   </option>
                 ))}
                 {/* Une fenêtre FIGÉE ne se retape pas dans une liste de presets :
                     elle se garde, ou elle se remplace par un preset. */}
                 {widget.rangeOverride && !("preset" in widget.rangeOverride) && (
                   <option value="keep">
-                    Garder la fenêtre figée (du {widget.rangeOverride.from} au {widget.rangeOverride.to})
+                    Garder la période figée (du {fmtDate(widget.rangeOverride.from)} au {fmtDate(widget.rangeOverride.to)})
                   </option>
                 )}
               </select>

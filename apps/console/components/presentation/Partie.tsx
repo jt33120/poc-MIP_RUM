@@ -3,7 +3,8 @@
 //
 // Le titre est la cible du sommaire (lib/presentation-parties.ts) : `tabIndex={-1}`
 // pour que la navigation vers l'ancre y place le focus, `scroll-mt` pour qu'il ne
-// colle pas au bord. L'anneau de focus est celui de la console (`ring-perf`).
+// passe pas sous le sommaire collé en haut de l'écran (deux lignes à 390 px).
+// L'anneau de focus est celui de la console (`ring-perf`).
 import type { ReactNode } from "react";
 import { idTitre, partie, type PartieId } from "@/lib/presentation-parties";
 
@@ -24,7 +25,7 @@ export function Partie({
           <h2
             id={idTitre(p.id)}
             tabIndex={-1}
-            className="scroll-mt-6 rounded-md text-2xl font-bold tracking-tight text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:text-3xl"
+            className="scroll-mt-28 rounded-md text-2xl font-bold tracking-tight text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:text-3xl"
           >
             {p.titre}
           </h2>

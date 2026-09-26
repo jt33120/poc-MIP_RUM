@@ -19,7 +19,41 @@ import Link from "next/link";
 import { fmtDate, fmtVital } from "@/lib/format";
 import type { TimelineItem } from "@/lib/queries";
 import { RATING_CLASS, type Rating } from "@/lib/rating";
-import { KIND_ICON, KIND_STYLE } from "@/lib/timeline-constants";
+import { libelleAction } from "@/lib/libelle-action";
+import { KIND_ICON, KIND_STYLE, libelleEvenement } from "@/lib/timeline-constants";
+
+/** Types de repère du SDK (`rum_breadcrumb.type`), en français ; un autre type reste tel quel. */
+const TYPES_REPERE: Record<string, string> = {
+  nav: "navigation",
+  click: "clic",
+  custom: "personnalisé",
+  console: "console",
+  fetch: "réseau",
+  xhr: "réseau",
+};
+
+/** Au-delà, les propriétés d'un événement se replient : un JSON de 400 caractères noyait la ligne. */
+const DETAIL_COURT = 60;
+
+/**
+ * Propriétés d'un événement : courtes, sur la ligne ; longues, repliées derrière
+ * « Détails » (recette du 26/09/2026 : `form.abandon` étalait son JSON brut).
+ */
+function ProprietesEvenement({ detail }: { detail: string }) {
+  if (detail.length <= DETAIL_COURT) {
+    return <span className="max-w-xl truncate font-mono text-xs text-ink-faint">{detail}</span>;
+  }
+  return (
+    <details className="w-full min-w-0 text-xs">
+      <summary className="cursor-pointer rounded text-ink-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
+        Détails
+      </summary>
+      <pre className="mt-1 max-w-full overflow-x-auto whitespace-pre-wrap break-all rounded bg-panel2 p-2 font-mono text-[11px] text-ink-soft">
+        {detail}
+      </pre>
+    </details>
+  );
+}
 
 /** Décalage depuis le début de la session, même règle pour la ligne et pour l'en-tête de vue (F45). */
 export function fmtOffset(ms: number): string {
@@ -113,7 +147,7 @@ export function TimelineRow({
         <ItemBody item={item} />
         {item.action_id && item.kind !== "action" && !imbrique && (
           <span className="rounded-full border border-fuchsia-300 bg-fuchsia-50 px-2 py-0.5 text-[11px] font-medium text-fuchsia-800 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/10 dark:text-fuchsia-300">
-            ↳ {item.action_name ?? "action"}
+            ↳ {item.action_name ? libelleAction(item.action_name) : "action"}
           </span>
         )}
         {lien && (
@@ -164,11 +198,11 @@ function ItemBody({ item }: { item: TimelineItem }) {
       return (
         <>
           <span className="rounded bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-400/10 dark:text-violet-300">
-            {item.title}
+            {TYPES_REPERE[item.title ?? ""] ?? item.title}
           </span>
           {item.detail && (
             <span className="max-w-xl truncate text-xs text-ink-soft" title={item.detail}>
-              {item.detail}
+              {libelleAction(item.detail)}
             </span>
           )}
         </>
@@ -185,18 +219,18 @@ function ItemBody({ item }: { item: TimelineItem }) {
     case "event":
       return (
         <>
-          <span className="font-semibold text-cyan-700 dark:text-cyan-400">{item.title}</span>
-          {item.detail && item.detail !== "null" && (
-            <span className="max-w-xl truncate font-mono text-xs text-ink-faint" title={item.detail}>
-              {item.detail}
-            </span>
-          )}
+          <span className="font-semibold text-cyan-700 dark:text-cyan-400" title={item.title ?? undefined}>
+            {libelleEvenement(item.title)}
+          </span>
+          {item.detail && item.detail !== "null" && item.detail !== "{}" && <ProprietesEvenement detail={item.detail} />}
         </>
       );
     case "action":
       return (
         <>
-          <span className="font-semibold text-fuchsia-700 dark:text-fuchsia-300">{item.title}</span>
+          <span className="font-semibold text-fuchsia-700 dark:text-fuchsia-300" title={item.title ?? undefined}>
+            {libelleAction(item.title)}
+          </span>
           {item.detail && <span className="text-xs text-ink-faint">{item.detail}</span>}
         </>
       );

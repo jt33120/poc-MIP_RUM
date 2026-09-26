@@ -71,7 +71,7 @@
 | `/` | C4 | **oui** | overview | queries, breakdowns, deploys, errors, events, explorer, grid, sessions, v2 | 32 | — | oui |
 | `/pages` | C4 | **oui** | pages | queries, breakdowns, deploys, errors, events, explorer, longtasks, resources, sessions, v2 | 22 | route | oui |
 | `/paths` | C5 | **oui** | paths | queries, deploys, explorer, funnel, paths, sessions | 9 | — | oui |
-| `/presentation` | statique ou vitrine | **oui** | — | planifie | — | — | oui |
+| `/presentation/dossier` | statique ou vitrine | **oui** | — | planifie | — | — | oui |
 | `/retention` | C5 | **oui** | retention | cohorts, deploys, explorer, sessions | 3 | — | oui |
 | `/select/new` | C1–C2 identité, sélection | **oui** | projets | queries, accounts, alerting, customers, dashboards, deploys, dsar, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, projects, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
 | `/select` | C1–C2 identité, sélection | **oui** | projets | queries, customers, deploys, explorer, extension-scope, projects, sessions | — | — | oui |
@@ -175,7 +175,7 @@
 | `components/errors/ErrorTriage.tsx` | `app/errors/[fingerprint]/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/explorer/ActionsVue.tsx` | `app/explorer/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/presentation/Annexe.tsx` | `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
-| `components/presentation/Landing.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
+| `components/presentation/Dossier.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Specs.tsx` | `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/slo/SloStatusRow.tsx` | `app/alerts/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 

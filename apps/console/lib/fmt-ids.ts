@@ -24,7 +24,7 @@ export type FormatId =
   | "count" // 1240 → « 1 240 »
   | "bytes" // 18 432 → « 18 Ko »
   | "score" // 0..100 → « 72 »
-  | "ratio" // 3 → « 3,00 » (deux décimales ; un ratio n'est pas une part)
+  | "ratio" // 3,303 → « 3,3 » ; 0,5 → « 0,50 » (un ratio n'est pas une part)
   | "pour100"; // 150 → « 150 pour 100 » ; 2,43 → « 2,4 pour 100 » ; jamais « % »
 
 export type VitalName = "LCP" | "INP" | "CLS" | "FCP" | "TTFB";
@@ -108,7 +108,10 @@ export function formater(id: FormatId, v: number | null): string {
     case "score":
       return nombre(v, 0, 0);
     case "ratio":
-      return nombre(v, 2, 2);
+      // Un taux par session : « 3,3 par session » se lit, « 3,30 » ajoute une
+      // précision que la mesure n'a pas (recette du 26/09/2026). Sous 1, deux
+      // décimales : « 0,50 » ne s'arrondit pas en « 0,5 » ni un « 0,04 » en « 0,0 ».
+      return Math.abs(v) >= 1 ? nombre(v, 1, 1) : nombre(v, 2, 2);
     case "pour100":
       return `${nombre(v, 0, 1)}${NBSP}pour${NBSP}100`;
   }

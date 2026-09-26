@@ -10,8 +10,10 @@
 //
 // Chaque contrôle suit les capacités de l'écran (lib/surfaces.ts) : un filtre que
 // les mesures affichées ne savent pas appliquer est désactivé avec sa raison, et
-// celui que l'URL porte déjà y est marqué « non appliqué ». Le projet (?app) se
-// choisit en amont (/select) : il est seulement préservé.
+// celui que l'URL porte déjà y est marqué « non appliqué ». La PÉRIODE, elle, n'est
+// pas affichée sur un écran qui ne l'applique pas (`range: "none"`) : désactivée,
+// elle semblait choisie. Le projet (?app) se choisit en amont (/select) : il est
+// seulement préservé.
 //
 // Comparaison (F06) : `CompareToggle` à droite des presets. La liste des releases
 // dépend de la population et de la plage de l'URL ; le layout qui monte cette barre
@@ -92,6 +94,14 @@ export function GlobalFilters({
   // comparaison actives au-dessus d'une page vide faisaient croire à des données
   // (recette du 26/09/2026).
   if (!surface || estFermee(pathname)) return null;
+  // Une période que l'écran n'applique pas n'est pas montrée (recette du 26/09/2026) :
+  // grisée, « 24 h » paraissait sélectionnée à côté de la fenêtre propre à l'écran
+  // (« 8 sem. » sur la Rétention), deux périodes contradictoires. Et un écran qui
+  // n'applique NI période NI filtre (une session, une trace, la liste des tableaux,
+  // les SLO, les alertes, les tendances à fenêtre fixe) n'a pas de barre du tout :
+  // elle n'était qu'une rangée grisée.
+  const sansPeriode = surface.range === "none";
+  if (sansPeriode && (surface.noFilters || surface.legacy)) return null;
   const comparaison = lireComparaison(pathname, sp);
 
   const app = sp.get("app");
@@ -161,17 +171,19 @@ export function GlobalFilters({
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2" data-testid="global-filters">
-      <Segmented
-        label="Période"
-        testid="filter-period"
-        availability={presetAvailability}
-        items={[
-          ...RANGE_PRESETS.map((key) => ({ key, label: PRESET_LABELS[key] })),
-          { key: "custom", label: "Personnalisée", availability: customAvailability },
-        ]}
-        value={custom ? "custom" : preset}
-        onChange={(key) => (key === "custom" ? toggleRangeEditor() : choosePreset(key as RangePreset))}
-      />
+      {!sansPeriode && (
+        <Segmented
+          label="Période"
+          testid="filter-period"
+          availability={presetAvailability}
+          items={[
+            ...RANGE_PRESETS.map((key) => ({ key, label: PRESET_LABELS[key] })),
+            { key: "custom", label: "Personnalisée", availability: customAvailability },
+          ]}
+          value={custom ? "custom" : preset}
+          onChange={(key) => (key === "custom" ? toggleRangeEditor() : choosePreset(key as RangePreset))}
+        />
+      )}
       {comparable && (
         <CompareToggle
           mode={comparaison.valeur.mode}
@@ -250,7 +262,7 @@ export function GlobalFilters({
           </p>
         ))}
 
-      {rangeDraft && customAvailability.available && (
+      {rangeDraft && !sansPeriode && customAvailability.available && (
         <RangeEditor
           initialFrom={rangeDraft.from}
           initialTo={rangeDraft.to}

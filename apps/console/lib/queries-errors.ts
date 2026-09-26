@@ -30,6 +30,7 @@ import { dimensionSchema } from "./query-schema";
 import { sqlContext } from "./query-sql";
 import { bucketStarts } from "./query-contract";
 import { type ErrorSource } from "./erreurs-sources";
+import { cleGroupe, type DistinctionLue } from "./erreurs-distinction";
 // Les sources d'erreurs, leurs libellés et `stackSymbolisable` vivent dans
 // `erreurs-sources.ts`, SANS la base ; réexportés ici pour les lectures.
 export * from "./erreurs-sources";
@@ -959,6 +960,73 @@ export async function listErrorGroups(
       sampling: samplingOf(totalsRows.find((row) => !row.unfingerprinted_rows)?.min_inclusion_probability),
       enrichment: enrichmentOf(v69),
     };
+  });
+}
+
+/**
+ * Ce qui distingue les groupes d'une page de la liste (recette du 26/09/2026 : neuf
+ * groupes au même titre, qu'une empreinte hexadécimale seule séparait). Deux faits
+ * par groupe, sur la MÊME base filtrée que la liste (fenêtre, filtres, périmètre) :
+ *   · la pile — ou, sans pile, le fichier et la ligne — du dernier exemplaire qui en
+ *     porte : l'empreinte tient à sa première ligne applicative ;
+ *   · la route qui porte le plus d'occurrences, et sa part.
+ * La mise en forme est dans lib/erreurs-distinction.ts (pure, testée).
+ *
+ * Deux instructions, comme partout ici : `filtered_errors` citée deux fois dans une
+ * même instruction serait matérialisée (voir l'en-tête du module). Restreintes aux
+ * empreintes de la page (au plus `ERROR_LIST_MAX_LIMIT`). Hors de la liste de
+ * l'API v1 : c'est une aide de lecture de l'écran, pas un champ du contrat.
+ */
+export async function distinctionsDesGroupes(
+  f: ErrorFilters,
+  groupes: readonly ErrorGroupRef[],
+): Promise<Record<string, DistinctionLue>> {
+  if (groupes.length === 0) return {};
+  const schema = await errorSchema();
+  const resolved: ErrorFilters = { ...f, query: queryOf(f) };
+  const restriction: ErrorRestriction = { fingerprints: [...new Set(groupes.map((g) => g.fingerprint))] };
+  return snapshot(async (lire) => {
+    const pileBase = errorBase(resolved, schema, restriction);
+    const piles = await lire<ErrorGroupRef & { stack: string | null; source: string | null; lineno: number | null }>(
+      `${pileBase.sql}
+       select distinct on (app_id, fingerprint) app_id, fingerprint, stack, source, lineno
+         from filtered_errors
+        where fingerprint is not null and (nullif(stack, '') is not null or source is not null)
+        order by app_id, fingerprint, (nullif(stack, '') is not null) desc, ts desc, id desc`,
+      pileBase.params,
+    );
+    const routeBase = errorBase(resolved, schema, restriction);
+    const routes = await lire<ErrorGroupRef & { route: string | null; part: number | null }>(
+      `${routeBase.sql}, r as (
+         select app_id, fingerprint, route, sum(occurrences)::float8 as n
+           from filtered_errors
+          where fingerprint is not null
+          group by app_id, fingerprint, route
+       )
+       select distinct on (app_id, fingerprint) app_id, fingerprint, route,
+              n / nullif(sum(n) over (partition by app_id, fingerprint), 0) as part
+         from r
+        order by app_id, fingerprint, (route is not null) desc, n desc, route`,
+      routeBase.params,
+    );
+    const sortie: Record<string, DistinctionLue> = {};
+    const attendus = new Set(groupes.map(cleGroupe));
+    const entree = (g: ErrorGroupRef): DistinctionLue | null => {
+      const cle = cleGroupe(g);
+      // Une même empreinte peut exister dans une app absente de la page : ignorée.
+      if (!attendus.has(cle)) return null;
+      return (sortie[cle] ??= { pile: null, fichier: null, ligne: null, route: null, partRoute: null });
+    };
+    for (const p of piles) {
+      const d = entree(p);
+      if (d) Object.assign(d, { pile: p.stack || null, fichier: p.source, ligne: p.lineno });
+    }
+    for (const r of routes) {
+      const d = entree(r);
+      // Une route inconnue n'est pas « la route principale » : rien n'est écrit.
+      if (d && r.route !== null) Object.assign(d, { route: r.route, partRoute: r.part });
+    }
+    return sortie;
   });
 }
 

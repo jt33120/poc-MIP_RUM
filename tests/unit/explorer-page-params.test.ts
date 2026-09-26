@@ -20,6 +20,7 @@ import {
   explorerResume,
   explorerSource,
   libelleCle,
+  valeurApprochee,
   limitePour,
   mesureDefaut,
   mesuresDe,
@@ -155,6 +156,19 @@ describe("résumé français de ce qui est RÉELLEMENT appliqué", () => {
     expect(resume).toContain("Release inconnu");
     expect(libelleCle([null, "Firefox"])).toBe("Inconnu · Firefox");
     expect(libelleCle([])).toBe("Ensemble de la population");
+  });
+
+  it("écrit un appareil comme les filtres (« Ordinateur »), jamais la valeur brute « desktop »", () => {
+    expect(libelleCle(["desktop"], ["device"])).toBe("Ordinateur");
+    expect(libelleCle(["tablet", "Firefox"], ["device", "browser"])).toBe("Tablette · Firefox");
+    // Sans regroupement connu, la valeur reste telle quelle.
+    expect(libelleCle(["desktop"])).toBe("desktop");
+  });
+
+  it("une valeur approchée porte « ≈ », une valeur inconnue non", () => {
+    expect(valeurApprochee("93 ms", true)).toBe("≈\u00a093 ms");
+    expect(valeurApprochee("93 ms", false)).toBe("93 ms");
+    expect(valeurApprochee("—", true)).toBe("—");
   });
 
   it("dit « toutes les applications autorisées » quand aucune app n'est nommée", () => {
@@ -595,17 +609,28 @@ describe("F33 — plans dérivés du contexte (W-E2, W-E7)", () => {
 describe("F36 — résumé de la population lue (W-B1)", () => {
   it("sans aucune condition : « Tous les visiteurs · Robots exclus », et les apps effectives", () => {
     const puces = f36ResumePopulation(requete("app=demo-app"), "Europe/Paris");
-    expect(puces[0]).toBe("Apps : demo-app");
+    expect(puces[0]).toBe("Application : demo-app");
     expect(puces.join(" · ")).toContain("Tous les visiteurs · Robots exclus");
-    // Le fuseau des découpes locales est dit : un jour n'est pas le même partout (R-T).
-    expect(puces.at(-1)).toBe("Jours et heures : heure de Paris");
+    // Même fuseau que les axes (« axes : heure de Paris », écrit par la barre) : pas
+    // de seconde mention qui redirait la même heure.
+    expect(puces.join(" · ")).not.toContain("Jours et heures");
     // La plage et le fuseau d'axe sont les props dédiées de `PopulationBar` : pas ici.
     expect(puces.join(" · ")).not.toContain("24 h");
   });
 
+  it("l'application se nomme par son nom, pas par son identifiant technique", () => {
+    const puces = f36ResumePopulation(requete("app=demo-app"), "Europe/Paris", (id) => (id === "demo-app" ? "Mini-site de démo" : id));
+    expect(puces[0]).toBe("Application : Mini-site de démo");
+  });
+
+  it("un fuseau d'app différent de celui des axes est dit : un jour n'est pas le même partout (R-T)", () => {
+    const puces = f36ResumePopulation(requete("app=demo-app"), "America/New_York");
+    expect(puces.at(-1)).toBe("Jours et heures : America/New_York");
+  });
+
   it("à « toutes les apps », la barre parle quand même — l'absence de filtre est une information", () => {
     const puces = f36ResumePopulation(requete(""), "UTC");
-    expect(puces[0]).toBe("Toutes les apps autorisées");
+    expect(puces[0]).toBe("Toutes les applications autorisées");
   });
 
   it("chaque condition est écrite, et robots inclus se dit comme tel", () => {

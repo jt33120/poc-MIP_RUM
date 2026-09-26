@@ -6,6 +6,11 @@
 // administrateur — décidé par le principal du chargeur : le périmètre du
 // principal, jamais l'app demandée seule. Les écritures restent des actions de la
 // console (C6).
+//
+// LE NOM DES APPLICATIONS (recette du 26/09/2026) : la colonne « App » et le préfixe
+// des objectifs écrivaient l'identifiant (« demo-app ») quand le sélecteur de projet
+// dit « Mini-site de démo ». Les noms sont lus pour tout principal, bornés à son
+// périmètre effectif ; la gestion (admin) reprend la même lecture.
 import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "../comparaison";
 import { analyserFiltres } from "../filtres-ecran";
 import { listApps } from "../queries";
@@ -24,7 +29,9 @@ export const chargerGoals = (async (principal, sp) => {
   const query = ecran.query;
   const prev = lireComparaison("/goals", paramReader(sp)).valeur.mode === "prev";
   const isAdmin = principal?.role === "admin";
-  const [lecture, lecturePrev, parAppareil, couvertures, schema, gestion] = await Promise.all([
+  // `listApps` ne lève pas (base indisponible : liste vide, l'identifiant s'affiche alors).
+  const appsLues = listApps();
+  const [lecture, lecturePrev, parAppareil, couvertures, schema, gestion, apps] = await Promise.all([
     section(() => goalConversions(f)),
     prev ? section(() => goalConversions(f, true)) : sansSection(null),
     section(() => goalConversionsByDevice(f)),
@@ -33,8 +40,13 @@ export const chargerGoals = (async (principal, sp) => {
       : Promise.resolve<CouverturePrecedente[]>([]),
     dimensionSchema(),
     // Gestion (G6) : le périmètre du principal, jamais l'app demandée seule.
-    isAdmin ? section(() => Promise.all([listApps(), listGoals(query.scope.effectiveApps)])) : sansSection(null),
+    isAdmin ? section(() => Promise.all([appsLues, listGoals(query.scope.effectiveApps)])) : sansSection(null),
+    appsLues,
   ]);
+  const effectives = query.scope.effectiveApps;
+  const nomsApps: Record<string, string> = Object.fromEntries(
+    apps.filter((a) => effectives === null || effectives.includes(a.app_id)).map((a) => [a.app_id, a.name || a.app_id]),
+  );
   return {
     etat: "ok",
     query,
@@ -47,5 +59,6 @@ export const chargerGoals = (async (principal, sp) => {
     couvertures,
     schema: [...schema].sort(),
     gestion,
+    nomsApps,
   } as const;
 }) satisfies Chargeur<unknown>;

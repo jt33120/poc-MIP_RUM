@@ -94,10 +94,13 @@ export const CATALOGUES: readonly Catalogue[] = [
     // continue de valoir pour le bloc qui a pris sa place. Rangée de KPI et
     // bandeau d'échantillonnage ne sont pas des blocs : ils qualifient tout
     // l'écran, ils ne s'éteignent pas.
+    // « À regarder d'abord » (`priorite`) n'est PAS proposé tant que son classement
+    // n'est pas lu (B30) : un interrupteur pour un bloc qui ne s'affiche jamais montrait
+    // la fonction comme présente (recette du 26/09/2026). Rétabli, il reprend son
+    // identifiant : un cookie qui le porte encore l'ignore d'ici là (identifiant inconnu).
     blocs: [
-      { id: "priorite", label: "À regarder d'abord", defaut: true, desc: "Les dix sessions qui cumulent le plus d'occurrences d'erreur, de signaux de frustration et d'appels en échec, chacune avec sa raison écrite." },
       { id: "repartition", label: "Qui sont ces sessions", defaut: true, desc: "Sessions commencées réparties par appareil, navigateur, système, pays estimé ou capteur, avec leur part du tout. Chaque groupe filtre l'écran." },
-      { id: "visiteurs", label: "Volume dans le temps", defaut: true, desc: "Sessions commencées et visiteurs distincts par seau de temps, en deux panneaux. Les visiteurs ne s'additionnent pas : un visiteur présent dans trois seaux y est compté trois fois." },
+      { id: "visiteurs", label: "Volume dans le temps", defaut: true, desc: "Sessions commencées et visiteurs distincts par tranche de temps, en deux panneaux. Les visiteurs ne s'additionnent pas : un visiteur présent dans trois tranches y est compté trois fois." },
       { id: "engagement", label: "Engagement", defaut: true, desc: "Durée observée médiane et p75, et part des sessions qui n'ont vu qu'une page. Affiché seulement si la fenêtre porte assez de sessions." },
       // « exacte » était vrai de l'agrégat (il balaie toute la fenêtre, là où la
       // liste s'arrête à 50 lignes) et faux de la POPULATION : le partage ne
@@ -114,7 +117,7 @@ export const CATALOGUES: readonly Catalogue[] = [
         // plusieurs personnes. Le SDK ne l'émet plus (migration-v57).
         label: "Identité du visiteur",
         raison:
-          "Jamais de personne nommée. Une session porte un identifiant de visiteur TIRÉ AU HASARD, sans lien avec le terminal ni avec un compte, et la PII est retirée à la collecte comme à l'ingestion. C'est un engagement du produit, pas une fonctionnalité manquante.",
+          "Jamais de personne nommée. Une session porte un identifiant de visiteur tiré au hasard, sans lien avec le terminal ni avec un compte, et les données personnelles sont retirées à la collecte comme à l'ingestion. C'est un engagement du produit, pas une fonctionnalité manquante.",
       },
       {
         // La ligne d'avant — « ne masque encore ni le texte ni les images » —
@@ -154,7 +157,7 @@ export const CATALOGUES: readonly Catalogue[] = [
       {
         label: "Politique d'escalade",
         raison:
-          "Les alertes partent en webhook sortant, sans niveaux, ni astreinte, ni accusé de réception. Il n'y a pas de couche d'escalade dans ce POC.",
+          "Les alertes partent en webhook sortant, sans niveaux, ni astreinte, ni accusé de réception. La console n'a pas de couche d'escalade.",
       },
     ],
   },

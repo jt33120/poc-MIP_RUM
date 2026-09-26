@@ -11,7 +11,12 @@
 //   - Deux conventions de pourcentage anonymes dans l'entonnoir : les deux taux
 //     sont nommés, et la marche la plus perdante est désignée.
 //   - Un ancrage qui changerait les chiffres : `depuis` ne restreint que le dessin
-//     du flux ; les étapes typées (B33) restent annoncées absentes.
+//     du flux.
+//   - Une fonction absente montrée comme présente (recette du 26/09/2026) : les
+//     étapes typées (B33) ne sont pas livrées ; l'écran dit seulement ce qu'il
+//     propose, sans bandeau « Partiel » ni code interne.
+//   - Un dessin de 560 px dans une carte de 324 : sous 640 px, la liste des
+//     principales transitions le remplace.
 //
 // Données EXPLICITEMENT SYNTHÉTIQUES, dans une app dédiée, et un compte admin
 // dédié à ce fichier (jamais le compte de seed-admin).
@@ -126,7 +131,7 @@ test.describe("F50 — Parcours", () => {
     await expect(flux).toContainText("/f50-panier · 10");
     await expect(flux).toContainText("/f50-panier · 4");
     await expect(flux).toContainText("/f50-paiement · 4");
-    await expect(flux.getByTestId("figure-meta")).toContainText("14 / 14 passages représentés");
+    await expect(flux.getByTestId("figure-meta")).toContainText("14 passages représentés sur 14");
     // Le nœud SOURCE « /f50-panier » (4 passages sortants) ancre le flux à partir de lui.
     await expect(flux.locator('[data-testid="sankey-noeud"]').filter({ hasText: "/f50-panier · 4" })).toHaveAttribute(
       "href",
@@ -176,6 +181,9 @@ test.describe("F50 — Parcours", () => {
     const entrees = page.locator("#paths-entrees tbody tr");
     await expect(entrees).toHaveCount(1);
     await expect(entrees.getByRole("link", { name: "/", exact: true })).toBeVisible();
+    // Pages s'ouvre par une icône nommée à côté du nom, jamais par un lien texte à sa place.
+    await expect(entrees.getByRole("link", { name: "Ouvrir / dans Pages" })).toHaveAttribute("href", /\/pages\?.*route=%2F/);
+    await expect(page.locator("#paths-entrees")).not.toContainText("Ouvrir /pages");
     await expect(entrees.first().getByRole("cell")).toHaveText(["10", /100,0\s%/, "0", "—"]);
     const sorties = page.locator("#paths-sorties tbody tr");
     await expect(sorties).toHaveCount(2);
@@ -183,7 +191,8 @@ test.describe("F50 — Parcours", () => {
     await expect(sorties.filter({ hasText: "/f50-paiement" }).getByRole("cell")).toHaveText(["4", /40,0\s%/, "0", "—"]);
     // Les tuiles disent la route, son compte et sa part de TOUTES les sessions avec vue.
     const tuiles = page.getByTestId("kpi-libelle");
-    await expect(tuiles.filter({ hasText: "Page d'entrée n°1" })).toContainText("/ · 10 sessions sur 10");
+    // La route racine seule se lisait comme un séparateur (« / · 10 sessions ») : « Accueil (/) ».
+    await expect(tuiles.filter({ hasText: "Page d'entrée n°1" })).toContainText("Accueil (/) · 10 sessions sur 10");
     await expect(tuiles.filter({ hasText: "Page d'entrée n°1" })).toContainText(/100,0\s% des sessions avec vue y démarrent/);
     await expect(tuiles.filter({ hasText: "Page de sortie n°1" })).toContainText("/f50-panier · 6 sessions sur 10");
     await expect(page.locator("body")).not.toContainText("dénominateur à créer");
@@ -196,9 +205,9 @@ test.describe("F50 — Parcours", () => {
     await page.goto(`${BASE}&${ETAPES}`, { waitUntil: "domcontentloaded" });
     const entonnoir = page.locator("#paths-entonnoir");
     await expect(entonnoir).toContainText("f50_vue (10 sessions)");
-    await expect(entonnoir).toContainText(
-      "étapes de type vue ou action à créer : seuls les événements custom sont proposés comme étapes (B33)",
-    );
+    await expect(entonnoir).toContainText("Étapes : événements personnalisés.");
+    await expect(entonnoir).not.toContainText("B33");
+    await expect(entonnoir).not.toContainText("Partiel");
     const etapes = entonnoir.getByTestId("funnel-etape");
     await expect(etapes).toHaveCount(3);
     // Marche 2 : 4 sessions sur 10, −6 — la plus forte perte.
@@ -224,6 +233,9 @@ test.describe("F50 — Parcours", () => {
       await page.setViewportSize({ width: largeur, height: 900 });
       await page.goto(`${BASE}&${ETAPES}`, { waitUntil: "domcontentloaded" });
       await expect(page.locator("#paths-flux")).toBeVisible();
+      // Sous 640 px, la liste des transitions ; au-delà, le dessin.
+      await expect(page.getByTestId(largeur < 640 ? "sankey-liste" : "sankey-dessin"), `${largeur} px`).toBeVisible();
+      await expect(page.getByTestId(largeur < 640 ? "sankey-dessin" : "sankey-liste"), `${largeur} px`).toBeHidden();
       expect(await debordements(page), `${largeur} px`).toEqual([]);
     }
   });

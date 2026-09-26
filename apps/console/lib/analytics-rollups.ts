@@ -129,7 +129,7 @@ export const ROLLUP_SOURCES = {
       },
     ],
     notice:
-      "Percentile lu sur une distribution en seaux de 2 % : la valeur rendue est approchée à environ " +
+      "Percentile lu sur une distribution par tranches de 2 % : la valeur rendue est approchée à environ " +
       "1 % près, jamais arrondie en silence.",
   },
 
@@ -245,7 +245,7 @@ export function rollupAnswers(source: RollupSource, plan: ExplorerPlan, query: A
   // Un seau plus fin que le grain de l'agrégat ne peut pas en sortir : une heure
   // agrégée ne se redécoupe pas en tranches de 5 minutes.
   if (plan.visualization === "timeseries" && query.range.bucketSeconds % source.grainSeconds !== 0) {
-    return refus(`${source.label} a un grain d'une heure, plus large que le seau demandé`);
+    return refus(`${source.label} a un grain d'une heure, plus large que la tranche demandée`);
   }
   return { usable: true, source, answer };
 }

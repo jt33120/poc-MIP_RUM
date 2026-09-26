@@ -1,4 +1,5 @@
-// P**.2 — Ossature de la vitrine : une page, trois parties (plan § 8.2, § 8.4).
+// P**.2 — Ossature du dossier technique (l'ancienne vitrine longue, séparée de la
+// présentation par la recette du 26/09/2026) : trois parties et le détail (plan § 8.2, § 8.4).
 //
 // Ce que ces tests tiennent, en rendu SSR réel (`renderToStaticMarkup`) :
 //   - le sommaire mène aux TITRES des parties, qui acceptent le focus : suivre un
@@ -16,7 +17,7 @@ import { Actions } from "@/components/presentation/Landing";
 import { Partie } from "@/components/presentation/Partie";
 import { RELEVE_PERIME_JOURS, Releve, relevePerime } from "@/components/presentation/Releve";
 import type { SessionUser } from "@/lib/auth";
-import { CAPACITES, RELEVE, SHA, compte } from "@/lib/couverture";
+import { CAPACITES, RELEVE, compte } from "@/lib/couverture";
 import { PARTIES, idTitre } from "@/lib/presentation-parties";
 
 /** Texte lisible : balises retirées, entités et espaces insécables normalisés. */
@@ -54,9 +55,13 @@ describe("PS1 — le sommaire mène aux titres des parties", () => {
     expect(liens).toEqual(PARTIES.map((p) => [idTitre(p.id), p.ancre]));
   });
 
-  it("la rangée défile dans un conteneur positionné, jamais la page", () => {
+  it("la rangée ne peut pas élargir la page, et le sommaire reste collé en haut de l'écran", () => {
     const html = renderToStaticMarkup(<Ancres />);
     expect(html).toMatch(/class="relative [^"]*overflow-x-auto/);
+    // Recette du 26/09/2026 : à 390 px, « Le détail » tombait hors de l'écran sans
+    // indice ; les liens passent désormais à la ligne, et la barre suit la lecture.
+    expect(html).toMatch(/<ul class="flex flex-wrap /);
+    expect(html).toMatch(/<nav [^>]*class="sticky top-0 /);
   });
 
   it("le titre d'une partie porte l'identifiant visé et accepte le focus ; la section s'y rattache", () => {
@@ -72,13 +77,16 @@ describe("PS1 — le sommaire mène aux titres des parties", () => {
 });
 
 describe("PS0 — la ligne de relevé ne dit que ce que calcule le document de couverture", () => {
-  it("date, commit, total, déployées et « aucune éprouvée », sans chiffre écrit à la main", () => {
-    const lu = texte(renderToStaticMarkup(<Releve maintenant={apresReleve(1)} />));
+  it("date, total, déployées et « aucune encore éprouvée », sans chiffre écrit à la main ni empreinte de commit", () => {
+    const html = renderToStaticMarkup(<Releve maintenant={apresReleve(1)} />);
+    const lu = texte(html);
     expect(lu).toContain(
-      `État relevé le ${RELEVE} sur ${SHA} : ${CAPACITES.length} capacités recensées, ` +
-        `${compte("deploye_non_eprouve")} déployées, aucune éprouvée sur des données réellement ingérées.`,
+      `État relevé le ${RELEVE} : ${CAPACITES.length} capacités recensées, ` +
+        `${compte("deploye_non_eprouve")} déployées, aucune encore éprouvée sur des données réellement ingérées.`,
     );
     expect(lu).not.toContain("plus de");
+    // Recette du 26/09/2026 : une empreinte de commit ne dit rien à un lecteur.
+    expect(html).not.toContain("<code");
   });
 
   it(`au-delà de ${RELEVE_PERIME_JOURS} jours, la ligne prévient que l'état a pu changer`, () => {

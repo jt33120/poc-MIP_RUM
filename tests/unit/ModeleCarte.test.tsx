@@ -59,7 +59,9 @@ describe("ModeleCarte", () => {
         limite={releases.limite}
       />,
     );
-    expect(html).toContain("aucune mesure de ratio");
+    expect(html).toContain("Taux d&#x27;erreur par release");
+    // La limite technique (« aucune mesure de ratio ») n'est plus écrite à l'écran.
+    expect(html).not.toContain("aucune mesure de ratio");
     expect(html).toContain('href="/?cmp=release"');
   });
 });

@@ -55,7 +55,8 @@ describe("timeline progressive v66/v67", () => {
       "utf8",
     );
     expect(component).toContain('item.action_id && item.kind !== "action"');
-    expect(component).toContain('↳ {item.action_name ?? "action"}');
+    // Le nom d'action s'affiche sans préfixe technique (`libelleAction`, recette du 26/09/2026).
+    expect(component).toContain('↳ {item.action_name ? libelleAction(item.action_name) : "action"}');
     expect(component).toContain('case "action"');
     expect(constants).toContain('label: "Action"');
     expect(constants).toContain('action: <Icon');

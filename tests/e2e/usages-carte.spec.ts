@@ -121,7 +121,7 @@ test.describe("F52 — Carte d'expérience", () => {
     await page.goto(urlCarte(APP_F52), { waitUntil: "domcontentloaded" });
     const graphe = page.locator("#carte-graphe");
     await expect(graphe).toContainText("Autres routes (2)");
-    await expect(page.getByTestId("carte-autres")).toContainText("2 route(s) moins actives regroupées");
+    await expect(page.getByTestId("carte-autres")).toContainText("2 routes moins actives regroupées");
     // 12 routes back → 10 détaillées + l'agrégat ; 1 route front. Le graphe des
     // largeurs ≥ sm est le seul compté (le repli à 390 px porte le sien).
     const svg = page.getByTestId("carte-graphe-svg");

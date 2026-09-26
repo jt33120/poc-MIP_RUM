@@ -6,8 +6,9 @@ import { describe, expect, it } from "vitest";
 import { estCheminPublic } from "../../apps/console/lib/chemins-publics";
 
 describe("estCheminPublic", () => {
-  it("ouvre la vitrine et la confidentialité de l'extension", () => {
+  it("ouvre la vitrine, son dossier technique et la confidentialité de l'extension", () => {
     expect(estCheminPublic("/presentation")).toBe(true);
+    expect(estCheminPublic("/presentation/dossier")).toBe(true);
     // URL exigée par le Chrome Web Store : elle ne peut pas être derrière un login.
     expect(estCheminPublic("/extension-privacy")).toBe(true);
   });
@@ -30,6 +31,9 @@ describe("estCheminPublic", () => {
   it("ne s'ouvre pas non plus sur une variante de la vitrine", () => {
     expect(estCheminPublic("/presentations")).toBe(false);
     expect(estCheminPublic("/presentation/secret")).toBe(false);
+    // Le dossier est ouvert par son chemin exact, pas par son préfixe.
+    expect(estCheminPublic("/presentation/dossier/secret")).toBe(false);
+    expect(estCheminPublic("/presentation/dossiers")).toBe(false);
   });
 
   it("laisse privés les écrans de console et l'administration", () => {

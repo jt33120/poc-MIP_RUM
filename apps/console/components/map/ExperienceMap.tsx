@@ -27,6 +27,7 @@ import { useState } from "react";
 import type { Health, Placed, Layout, TrendDir } from "@/lib/map";
 import { NODE_HEIGHT, NODE_WIDTH } from "@/lib/map";
 import { SERIE } from "@/lib/palette";
+import { pluriel } from "@/lib/format";
 
 /** Jetons de F01 (`good` / `warn` / `bad`) : ils suivent le mode sombre. */
 const HEALTH_FILL: Record<Exclude<Health, "unknown">, string> = {
@@ -62,7 +63,7 @@ function label(route: string): string {
 
 /** « 1 240 appels · ▲ +32 % » — la tendance n'est écrite que si elle est chiffrable. */
 function ligneVolume(n: Placed): string {
-  const appels = `${n.calls.toLocaleString("fr-FR")} appels`;
+  const appels = pluriel(n.calls, "appel");
   const fleche = TREND[n.dir];
   if (n.agrege) return `${appels} au total`;
   if (!n.tendance) return appels;
@@ -71,7 +72,7 @@ function ligneVolume(n: Placed): string {
 
 /** Ce qu'annonce le lien du nœud : tout ce que le dessin montre, en toutes lettres. */
 function annonce(n: Placed): string {
-  if (n.agrege) return `${n.route}, ${n.calls.toLocaleString("fr-FR")} appels au total — routes moins actives, non détaillées`;
+  if (n.agrege) return `${n.route}, ${pluriel(n.calls, "appel")} au total — routes moins actives, non détaillées`;
   return [
     `${n.tier === "front" ? "Page" : "Service"} ${n.route}`,
     `santé ${LIBELLE_SANTE[n.health]}`,
@@ -85,6 +86,7 @@ function annonce(n: Placed): string {
 
 export function ExperienceMap({ layout }: { layout: Layout }) {
   const [hover, setHover] = useState<string | null>(null);
+  const santeParId = new Map(layout.nodes.map((n) => [n.id, n.health]));
 
   return (
     <div className="overflow-x-auto">
@@ -94,16 +96,21 @@ export function ExperienceMap({ layout }: { layout: Layout }) {
         className="min-w-full"
         data-testid="carte-svg"
       >
-        {/* arêtes */}
+        {/* arêtes — un ruban vers un service dégradé ou à surveiller en prend la
+            couleur : tous gris, on ne voyait pas quelle page appelle un service qui
+            échoue (recette du 26/09/2026). Un service sain ou inconnu reste neutre. */}
         {layout.edges.map((e, i) => {
           const on = hover === e.from || hover === e.to;
           const mid = (e.x1 + e.x2) / 2;
+          const sante = santeParId.get(e.to);
+          const teinte = sante === "bad" || sante === "warn" ? HEALTH_FILL[sante] : "rgb(var(--c-ink-faint))";
           return (
             <path
               key={i}
               d={`M ${e.x1} ${e.y1} C ${mid} ${e.y1}, ${mid} ${e.y2}, ${e.x2} ${e.y2}`}
               fill="none"
-              style={{ stroke: on ? SERIE.principale : "rgb(var(--c-ink-faint))" }}
+              data-sante={sante === "bad" || sante === "warn" ? sante : undefined}
+              style={{ stroke: on ? SERIE.principale : teinte }}
               strokeWidth={e.width}
               strokeOpacity={hover && !on ? 0.15 : on ? 0.9 : 0.35}
             />

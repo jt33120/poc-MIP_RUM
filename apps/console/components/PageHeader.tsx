@@ -28,7 +28,7 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-wrap items-start gap-3">
       <div className="min-w-0">
-        <SurtitreDomaine domain={domain} />
+        <SurtitreDomaine domain={domain} titre={typeof title === "string" ? title : undefined} />
         {/* La bulle d'aide est la SŒUR du titre, pas son enfant : dans le h1, son
             texte faisait partie du nom du titre (« SatisfactionSatisfactionTechnique
             Ce que… » à la lecture d'écran, recette du 26/09/2026). */}

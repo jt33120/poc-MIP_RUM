@@ -355,7 +355,8 @@ interface AvantResume {
 async function preparerResume(query: AnalyticsQuery, etat: MobileSchema): Promise<AvantResume> {
   const unavailable: string[] = [];
   if (!etat.capabilities) {
-    unavailable.push("migration v82 partielle : les capacités déclarées ne sont pas lisibles, toutes sont « Inconnu »");
+    // v82 partielle : table des déclarations absente.
+    unavailable.push("les capacités déclarées ne sont pas lisibles sur cette installation : toutes sont « Inconnu »");
   }
   if (!etat.errorSource) {
     unavailable.push(RAISON_SANS_SOURCE_JS);
@@ -664,8 +665,9 @@ export type MobileParRelease =
     }
   | { disponible: false; raison: string };
 
+// Colonne `rum_session.release` absente.
 export const RAISON_SANS_RELEASE_SESSION =
-  "la release des sessions n'est pas lisible sur ce schéma (colonne rum_session.release absente) : aucune coupe par release possible";
+  "la release des sessions n'est pas encore enregistrée sur cette installation : aucune coupe par release possible";
 
 /**
  * Stabilité par release de la cohorte React Native : même `cohorte()` que

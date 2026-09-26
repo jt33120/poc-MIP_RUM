@@ -43,11 +43,11 @@ const CAPTEURS: Capteur[] = [
     accroche: "Sans toucher au site",
     flux: ["Poste géré", "Extension MV3", "OTLP/HTTP", "Console"],
     specs: [
-      { k: "Déploiement", v: "Politique Chrome / Edge, ou sideload" },
+      { k: "Déploiement", v: "Politique Chrome / Edge, ou installation manuelle" },
       { k: "Intégration", v: "Aucune — le site n'est pas modifié" },
-      { k: "Portée", v: "Registre domaine → app, jamais <all_urls>" },
+      { k: "Portée", v: "Domaines déclarés dans un registre, jamais tous les sites" },
       { k: "Périmètre", v: "Chrome / Edge, Manifest V3" },
-      { k: "Moteur", v: "Recharge le même SDK, même pipeline" },
+      { k: "Moteur", v: "Le même SDK, la même chaîne de traitement" },
       { k: "Version", v: `${EXT_VERSION}, non publiée au Chrome Web Store` },
     ],
     pourQui: [
@@ -68,13 +68,13 @@ const CAPTEURS: Capteur[] = [
       { k: "Déploiement", v: `Une balise <script>, ${SDK_POIDS_TEXTE}` },
       { k: "Intégration", v: "Une ligne d'init, côté développeur" },
       { k: "Portée", v: "Tout le trafic réel, échantillonnable" },
-      { k: "Capture", v: "Vitals, erreurs, fetch/XHR, replay opt-in" },
-      { k: "Sur le fil", v: "OTLP/HTTP JSON, lisible au DevTools" },
+      { k: "Capture", v: "Web Vitals, erreurs, appels réseau, rejeu sur option" },
+      { k: "Sur le fil", v: "OpenTelemetry (OTLP/HTTP JSON), lisible dans les outils du navigateur" },
     ],
     pourQui: [
-      "Monitoring de masse : trafic public, portails, e-commerce",
+      "Mesure à grande échelle : trafic public, portails, commerce en ligne",
       // Node ET FastAPI, comme la ligne « Côté serveur » sous les cartes (C5, C6).
-      "Corrélation front → back par traceparent (un saut, Node ou FastAPI)",
+      "Lien du navigateur au serveur par l'en-tête traceparent (un saut, Node ou FastAPI)",
     ],
     fort: "Atteint tout le trafic public, bien au-delà du parc interne — moins les visiteurs qui refusent la mesure (DNT et GPC honorés par défaut) et ceux qu'un bloqueur arrête.",
     // Texte exact du plan (PS2). « ni un simulateur » : C1 (« Aucun appareil, aucun
@@ -216,18 +216,17 @@ export function Capteurs() {
           « pages lentes » est devenu « Pages » (F09) ; le filtre est la dimension
           `source` du contrat, libellée « Source de collecte » (lib/query-contract.ts). */}
       <p className="mt-6 rounded-xl border border-line bg-panel/60 px-5 py-4 text-sm leading-relaxed text-ink-soft backdrop-blur-sm">
-        <span className="font-semibold text-ink">Même pipeline, même console.</span> Les deux capteurs
-        écrivent avec le même identifiant d&apos;application ; un attribut{" "}
-        <code className={CODE}>collection_source</code> distingue l&apos;extension du SDK. Sessions,
-        pages, erreurs et alertes fonctionnent sur les deux, et le filtre « Source de collecte » les
-        compare l&apos;un à l&apos;autre.
+        <span className="font-semibold text-ink">Même chaîne de traitement, même console.</span> Les deux
+        capteurs écrivent avec le même identifiant d&apos;application, et chaque mesure dit lequel
+        l&apos;a produite. Sessions, pages, erreurs et alertes fonctionnent sur les deux, et le filtre
+        « Source de collecte » les compare l&apos;un à l&apos;autre.
       </p>
 
-      {/* Texte exact du plan (PS2). Sources : C5, C6 (RUM_PARITY_STATUS.md:173-174) —
-          un seul saut de trace, ni propagation d'un service à l'autre. */}
+      {/* Texte du plan (PS2), sans les chemins du code depuis la recette du 26/09/2026.
+          Sources : C5, C6 (RUM_PARITY_STATUS.md:173-174) — un seul saut de trace, ni
+          propagation d'un service à l'autre. */}
       <p className="mt-3 text-sm leading-relaxed text-ink-soft" data-testid="capteurs-serveur">
-        Côté serveur : un agent Node (<code className={CODE}>packages/agent-node</code>) et un middleware
-        FastAPI (<code className={CODE}>examples/integrations/fastapi</code>) relient un appel du navigateur à son
+        Côté serveur : un agent Node et un middleware FastAPI relient un appel du navigateur à son
         exécution serveur, sur un seul saut.
       </p>
     </SousPartie>

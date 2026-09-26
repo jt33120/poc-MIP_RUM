@@ -220,20 +220,38 @@ export function autresGroupes(trend: readonly number[], series: readonly (readon
   });
 }
 
-/** Longueur du message dans une légende du hero (§ 5.3.2). */
-export const LEGENDE_MESSAGE_MAX = 40;
+/**
+ * Longueur du message dans une légende du hero (§ 5.3.2). 40 caractères coupaient
+ * « Uncaught TypeError: Cannot read propert… » avant ce qui distingue le groupe
+ * (quelle propriété, de quoi) : la légende passe désormais à la ligne, elle a la place.
+ */
+export const LEGENDE_MESSAGE_MAX = 90;
 
 /**
- * Libellé de légende d'un groupe d'erreurs : le MESSAGE, tronqué à 40 caractères,
- * puis l'empreinte courte — jamais le seul type (« ● Error » ×5 ne distinguait
- * rien, `console-ecrans-1.md` L191). L'app s'ajoute quand l'écran en lit plusieurs :
- * une même empreinte peut exister dans deux apps.
+ * Préfixes que le navigateur ajoute au message sans rien dire du groupe : « Uncaught »
+ * (non interceptée), « (in promise) ». Retirés de la LÉGENDE seulement ; le message
+ * entier reste en infobulle et dans le détail du groupe.
+ */
+const PREFIXES_SANS_INFORMATION = /^(?:Uncaught\s+(?:\(in promise\)\s*)?)/i;
+
+/**
+ * Libellé de légende d'un groupe d'erreurs : le MESSAGE, sans le préfixe « Uncaught »,
+ * coupé à un mot au-delà de 90 caractères, puis l'empreinte courte — jamais le seul
+ * type (« ● Error » ×5 ne distinguait rien, `console-ecrans-1.md` L191). L'app s'ajoute
+ * quand l'écran en lit plusieurs : une même empreinte peut exister dans deux apps.
  */
 export function libelleGroupeErreur(g: { message: string | null; fingerprint: string; app_id?: string | null }): string {
-  const brut = (g.message ?? "").replace(/\s+/g, " ").trim();
-  const message =
-    brut === "" ? "(sans message)" : brut.length > LEGENDE_MESSAGE_MAX ? `${brut.slice(0, LEGENDE_MESSAGE_MAX - 1)}…` : brut;
-  return [message, g.fingerprint.slice(0, 8), g.app_id ?? null].filter(Boolean).join(" · ");
+  const brut = (g.message ?? "").replace(/\s+/g, " ").trim().replace(PREFIXES_SANS_INFORMATION, "");
+  return [messageCourt(brut), g.fingerprint.slice(0, 8), g.app_id ?? null].filter(Boolean).join(" · ");
+}
+
+/** Le message coupé au dernier espace avant la limite (jamais au milieu d'un mot, sauf mot géant). */
+function messageCourt(brut: string): string {
+  if (brut === "") return "(sans message)";
+  if (brut.length <= LEGENDE_MESSAGE_MAX) return brut;
+  const tete = brut.slice(0, LEGENDE_MESSAGE_MAX - 1);
+  const espace = tete.lastIndexOf(" ");
+  return `${(espace >= LEGENDE_MESSAGE_MAX / 2 ? tete.slice(0, espace) : tete).trimEnd()}…`;
 }
 
 const PRECEDENTE_PAR_PRESET: Record<string, string> = {

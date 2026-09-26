@@ -8,7 +8,11 @@
 //   · F53 : plus de « lecture non migrée » ; la méta écrit la plage du contrat ; la
 //     table croisée et la série sont dessinées (B31), et une panne des canaux
 //     n'efface pas la série ;
-//   · `cmp=prev` : les tuiles portent la référence, et un plafond atteint tait l'écart.
+//   · `cmp=prev` : les tuiles portent la référence, et un plafond atteint tait l'écart ;
+//   · recette du 26/09/2026 : aucune note qui justifie une limite technique
+//     (« non cliquables », « ne sait pas se limiter à l'entrée »), la méthode derrière
+//     l'aide des tuiles ou repliée sous la figure, un seul lien par route d'entrée —
+//     sur son nom —, et une lecture propre au rendu mobile (volets par canal).
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -108,8 +112,10 @@ describe("/acquisition — canaux", () => {
     }
     expect(t).toMatch(/0 · 0,0\s%/); // le zéro des réseaux sociaux, affiché
     expect(t).toMatch(/6 · 60,0\s%/);
-    // Part hors direct : (10 − 6 − 1) / 10.
-    expect(t).toMatch(/Part hors direct\s+30,0\s%/);
+    // Part hors direct : (10 − 6 − 1) / 10 (le nom annoncé de la tuile : libellé puis valeur,
+    // la méthode étant rangée derrière l'aide « ? »).
+    expect(html).toMatch(/aria-label="Part hors direct\s+30,0\s%/);
+    expect(html).toContain('data-testid="kpi-methode"');
     // L'anneau (`Donut`) dessinait un SVG dans le hero : plus aucun SVG dans la figure.
     const hero = html.slice(html.indexOf('id="acquisition-canaux"'), html.indexOf('data-testid="acquisition-direct"'));
     expect(hero).not.toContain("<svg");
@@ -132,9 +138,10 @@ describe("/acquisition — canaux", () => {
   it("aucune session : hero vide motivé, part hors direct inconnue (jamais « 0 % »)", async () => {
     acquisition.mockResolvedValue(report({}));
     acquisitionSerie.mockResolvedValue(serie(0));
-    const t = texte(await rendre());
+    const html = await rendre();
+    const t = texte(html);
     expect(t).toContain("Aucune session sur les 7 derniers jours.");
-    expect(t).toMatch(/Part hors direct\s+—\s+aucune session lue sur la fenêtre/);
+    expect(html).toMatch(/aria-label="Part hors direct —, aucune session sur la période : pas de part à calculer/);
     expect(t).toContain("Aucun site référent externe sur les 7 derniers jours");
   });
 });
@@ -173,13 +180,13 @@ describe("/acquisition — plafonds (S4)", () => {
     expect(texte(await rendre())).toMatch(/Référents externes distincts\s+≥ 20/);
     acquisition.mockResolvedValue(report({ referral: 19 }, 19));
     const t = texte(await rendre());
-    expect(t).toMatch(/Référents externes distincts\s+19/);
+    expect(t).toMatch(/Référents externes distincts[^]*?19 Moteurs, réseaux sociaux et autres sites\./);
     expect(t).not.toContain("≥ 20");
   });
 });
 
 describe("/acquisition — B31 : table croisée et série", () => {
-  it("table route × canal : cinq canaux, total de ligne, lien « sessions passées par cette route »", async () => {
+  it("table route × canal : cinq canaux, total de ligne, le nom de la route est le seul lien de la ligne", async () => {
     acquisition.mockResolvedValue(
       report({ direct: 2, search: 1 }, 0, [
         { route: "/accueil", parCanal: { ...zero(), direct: 2, search: 1 }, total: 3 },
@@ -187,11 +194,20 @@ describe("/acquisition — B31 : table croisée et série", () => {
     );
     const html = await rendre();
     const table = html.slice(html.indexOf('data-testid="acquisition-entrees-table"'), html.indexOf('data-testid="acquisition-entrees-liste"'));
-    expect(texte(table)).toMatch(/\/accueil Sessions passées par cette route 2 1 0 0 0 3/);
+    expect(texte(table)).toMatch(/\/accueil 2 1 0 0 0 3/);
     expect(table).toContain("/sessions?app=demo&amp;period=7d&amp;qf=route&amp;q=%2Faccueil");
+    expect(table).toContain('title="Sessions passées par /accueil"');
+    expect(texte(table)).not.toContain("Sessions passées par cette route");
+    expect([...table.matchAll(/<a /g)]).toHaveLength(1);
+    // Deux rendus, deux lectures : « fond d'une cellule » ne vaut que pour le tableau.
+    expect(html).toMatch(/class="[^"]*hidden[^"]*sm:block"[^>]*data-testid="acquisition-entrees-lecture"[^>]*>[^<]*fond d/);
+    expect(html).toMatch(/class="[^"]*sm:hidden"[^>]*data-testid="acquisition-entrees-lecture-mobile"[^>]*>[^<]*Un volet par canal/);
     // Plus d'état « à créer » : la route est lue.
     expect(texte(html)).not.toContain("route d'entrée non lue par cette lecture (à créer)");
     expect(texte(html)).not.toContain("série à créer");
+    // Plus de justification de limite technique visible.
+    for (const note of ["non cliquable", "pas un filtre de la console", "ne sait pas se limiter", "sessions lues", "au plus."])
+      expect(texte(html), note).not.toContain(note);
   });
 
   it("revue vague 8 — sous 640 px, le résumé d'un canal porte le total du CANAL (celui du hero), et la part des routes affichées est dite", async () => {

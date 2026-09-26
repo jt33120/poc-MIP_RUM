@@ -21,6 +21,7 @@ import { reglerBlocsAction } from "./actions-dashboard";
 import { chargerCoquilleEcran } from "@/lib/coquille-ecran";
 import { FUSEAU_AFFICHAGE, FUSEAU_DEFAUT, nomFuseau } from "@/lib/fuseau";
 import { describeProject, selectedProjectId } from "@/lib/project";
+import { BandeauDemo } from "@/components/presentation/BandeauDemo";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -301,6 +302,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </aside>
 
           <div className="flex min-w-0 flex-1 flex-col">
+            {user?.demo && <BandeauDemo />}
             <div className="flex items-center justify-between gap-3 border-b border-line bg-panel px-4 py-3 lg:hidden">
               <BrandMark />
               <div className="flex items-center gap-2">

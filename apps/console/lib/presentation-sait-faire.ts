@@ -327,11 +327,11 @@ export const CARTES: readonly CarteCapacite[] = [
     ],
     // Le rôle propriétaire de la production : la procédure de déploiement le dit, et
     // l'onglet « Écart au marché » des Specs le reprend (le plan citait ses lignes
-    // 160-163 ; le texte est aujourd'hui aux lignes 166-170).
+    // 160-163 ; le texte est aujourd'hui aux lignes 172-176).
     sources: [
       { ligne: "D6" },
       { fichier: "DEPLOY.md:272-278" },
-      { fichier: "components/presentation/Specs.tsx:166-170" },
+      { fichier: "components/presentation/Specs.tsx:172-176" },
     ],
   },
   {

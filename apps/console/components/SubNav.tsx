@@ -29,13 +29,19 @@ export function SubNav() {
   // verrouiller — la sidebar n'y mène plus, cette barre ne doit pas y mener non plus.
   if (cat.verrouille) return null;
   const actif = ongletActif(cat, pathname);
+  // Le nom de la catégorie à gauche des onglets redit un onglet du même nom
+  // (« Explorer » : catégorie, onglet, surtitre et titre, recette du 26/09/2026) :
+  // il n'est écrit que s'il dit autre chose que ses onglets.
+  const libelleUtile = !onglets.some((t) => t.label === cat.label);
 
   return (
     <nav aria-label={`Onglets ${cat.label}`} className="relative border-b border-line bg-panel" data-testid="subnav">
       <div ref={rangee} className="flex items-center gap-1 overflow-x-auto px-4 sm:px-6">
-        <span className="mr-2 hidden shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint md:inline">
-          {cat.label}
-        </span>
+        {libelleUtile && (
+          <span className="mr-2 hidden shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint md:inline">
+            {cat.label}
+          </span>
+        )}
         {onglets.map((t) => {
           const active = t.href === actif;
           return (

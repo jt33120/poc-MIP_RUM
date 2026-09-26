@@ -37,8 +37,11 @@
 
 ## 5. Sous-traitance ultérieure
 - Sous-traitants autorisés listés dans [`CONFORMITE.md` §7](CONFORMITE.md), reflet du
-  registre `SUBPROCESSORS` de `apps/console/lib/legal.ts` (à ce jour Neon, Vercel et
-  Railway ; aucun fournisseur de modèle d'IA depuis le 09/09/2026).
+  registre `SUBPROCESSORS` de `apps/console/lib/legal.ts` (à ce jour Neon, Vercel, Railway
+  et Resend — ce dernier pour les seules alertes e-mail des opérateurs, envoyées depuis les
+  États-Unis ; aucun fournisseur de modèle d'IA depuis le 09/09/2026).
+- Ce modèle n'est plus publié en ligne (retiré le 22/09/2026) : les CGU, les CGV et la
+  politique de confidentialité y renvoient comme à un document **fourni sur demande**.
 - Information préalable du Responsable avant tout **changement** de sous-traitant, avec
   droit d'objection.
 

@@ -81,10 +81,90 @@ describe("ImpactTable", () => {
     expect(texte(tout)).toContain("LCP p75 900 ms");
   });
 
-  it("le tri impact indisponible dit sa raison (B2), sans lien", () => {
-    expect(html).toMatch(/data-testid="tri-impact"[^>]*aria-disabled="true"|aria-disabled="true"[^>]*data-testid="tri-impact"/);
-    expect(texte(html)).toContain("mesures « Mauvais » par groupe");
+  // Recette du 26/09/2026 : « Impact » barré en permanence. Un ordre que l'écran ne
+  // propose pas n'est pas montré ; les ordres proposés restent des liens.
+  it("un ordre non proposé (impact) n'est pas affiché ; l'ordre proposé est un lien", () => {
+    expect(html).not.toContain('data-testid="tri-impact"');
+    expect(html).toContain('data-testid="tri-gravite"');
     expect(html).toContain('href="/?tri=volume"');
+  });
+
+  it("un seul ordre possible : il est écrit, pas proposé comme un choix", () => {
+    const seul = renderToStaticMarkup(
+      <ImpactTable
+        {...BASE}
+        tri="gravite"
+        triHref={{ gravite: "/?", volume: null, impact: null, fourni: null }}
+        reference={null}
+        referenceRaison="—"
+        lignes={[LIGNE("/a", 900, 40)]}
+      />,
+    );
+    expect(seul).not.toContain('data-testid="bascule-tri"');
+    expect(texte(seul)).toContain("Classés par gravité");
+  });
+
+  it("un sélecteur de l'écran (le vital) se pose dans la même rangée que l'ordre", () => {
+    const avec = renderToStaticMarkup(
+      <ImpactTable
+        {...BASE}
+        tri="gravite"
+        commandes={<nav data-testid="choix-vital">Vital : LCP p75</nav>}
+        reference={null}
+        referenceRaison="—"
+        lignes={[LIGNE("/a", 900, 40)]}
+      />,
+    );
+    const rangee = avec.split('data-testid="impact-commandes"')[1]?.split("</div>")[0] ?? "";
+    expect(rangee).toContain('data-testid="choix-vital"');
+    expect(rangee).toContain('data-testid="bascule-tri"');
+  });
+
+  it("une notice vide ne laisse aucun paragraphe vide", () => {
+    const sans = renderToStaticMarkup(
+      <ImpactTable {...BASE} notice="" tri="gravite" reference={null} referenceRaison="—" lignes={[LIGNE("/a", 900, 40)]} />,
+    );
+    expect(sans).not.toMatch(/<p[^>]*><\/p>/);
+  });
+
+  it("valeur approchée : la valeur classée s'écrit « ≈ »", () => {
+    const approchee = renderToStaticMarkup(
+      <ImpactTable {...BASE} approchee tri="gravite" reference={null} referenceRaison="—" lignes={[LIGNE("/a", 93, 40)]} />,
+    );
+    expect(texte(approchee)).toContain("≈ 93 ms");
+  });
+
+  // Recette du 26/09/2026 : la tuile disait « verdict incertain » pour 304 ms, la table
+  // « À améliorer ». Avec son intervalle, la table suit la règle des tuiles.
+  it("verdict avec intervalle : affirmé s'il tient sur tout l'intervalle, sinon « incertain » sans couleur", () => {
+    const ligne = (cle: string, pilote: number, bas: number, haut: number): ImpactLigne => ({
+      ...LIGNE(cle, pilote, 400),
+      mesures: [
+        {
+          cle: "inp",
+          valeur: pilote,
+          affichage: `${pilote} ms`,
+          vital: "INP",
+          n: 400,
+          intervalle: { bas, haut, niveau: 0.95, methode: "quantile_normal" },
+        },
+      ],
+    });
+    const rendu = renderToStaticMarkup(
+      <ImpactTable
+        {...BASE}
+        colonnes={["INP p75"]}
+        tri="gravite"
+        reference={null}
+        referenceRaison="—"
+        lignes={[ligne("/incertain", 304, 180, 330), ligne("/etabli", 320, 260, 380)]}
+      />,
+    );
+    const lignes = rendu.split('data-testid="impact-ligne"').slice(1);
+    expect(texte(lignes[0])).toContain("verdict incertain : entre Bon et À améliorer");
+    expect(lignes[0]).not.toMatch(/bg-warn|bg-good|bg-bad/);
+    expect(texte(lignes[1])).toContain("À améliorer");
+    expect(lignes[1]).toContain('data-verdict="etabli"');
   });
 
   it("aucune ligne « Autres », aucun total", () => {

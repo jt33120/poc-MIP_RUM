@@ -6,7 +6,7 @@ import { q } from "./db";
 import { type FiltersLike } from "./filters";
 import { bucketExpr, bucketSeriesSql, sessionJoin } from "./query-compiler";
 import { sqlContext } from "./query-sql";
-import type { Appel } from "./tracing-ancres";
+import { TRACES_PAR_APPEL, type Appel } from "./tracing-ancres";
 
 export interface TraceCoverage {
   total: number; // appels API vus du navigateur (spans front)
@@ -279,6 +279,12 @@ export interface SlowTrace {
   back_ms: number | null;
   network_ms: number | null;
   ts: Date | string;
+  /**
+   * Nombre de traces de CET appel (même méthode, même chemin) sur toute la plage
+   * filtrée, et pas seulement parmi les lignes rendues : la ligne « N autres traces »
+   * le dit sans compter sur les 20 lues.
+   */
+  traces_appel: number;
 }
 
 export interface TraceSpanRow {
@@ -379,10 +385,17 @@ export async function errorsOfTrace(traceId: string, opts: { apps: string[] | nu
 /**
  * Les appels les plus lents de la plage, décomposés front / serveur / réseau.
  *
+ * AU PLUS `TRACES_PAR_APPEL` TRACES PAR APPEL, EN SQL (recette du 26/09/2026). Les 20
+ * plus lentes étaient toutes « GET /api/demo/items/42 », et le regroupement par appel
+ * se faisait APRÈS, sur ces 20 : les autres appels lents n'y entraient jamais. Chaque
+ * appel (même méthode, même chemin) est désormais classé à part (`row_number`), et
+ * `traces_appel` compte toutes ses traces de la plage.
+ *
  * `opts.appel` restreint à UN appel (paramètre d'écran `appel=<méthode> <chemin>`,
  * lu par `lireAppel`) : même méthode et même chemin — l'expression `CHEMIN` qui
- * regroupe les appels de `apiCallsDecomposition` —, valeurs liées. Filtre
- * d'écran : il ne change aucun chiffre d'une autre section.
+ * regroupe les appels de `apiCallsDecomposition` —, valeurs liées, et ses 20 traces
+ * les plus lentes, sans plafond par appel. Filtre d'écran : il ne change aucun
+ * chiffre d'une autre section.
  */
 export async function slowTraces(f: FiltersLike, opts?: { appel?: Appel }): Promise<SlowTrace[]> {
   const sql = await sqlContext(f);
@@ -390,19 +403,26 @@ export async function slowTraces(f: FiltersLike, opts?: { appel?: Appel }): Prom
   const appel = opts?.appel
     ? ` and fr.method = ${sql.bind(opts.appel.method)} and ${CHEMIN} = ${sql.bind(opts.appel.url)}`
     : "";
+  const plafond = opts?.appel ? "" : ` where t.rang <= ${sql.bind(TRACES_PAR_APPEL)}`;
   return q<SlowTrace>(
-    `select fr.trace_id, fr.span_id, fr.session_id,
-            ${CHEMIN} as url,
-            fr.method, fr.status_code as front_status, fr.duration_ms as front_ms,
-            b.duration_ms as back_ms,
-            case when b.duration_ms is not null then greatest(fr.duration_ms - b.duration_ms, 0) end as network_ms,
-            fr.ts
-     from rum_span fr
-     ${JUMEAU_BACK}
-     ${sessionJoin("fr", "s")}
-     where fr.tier = 'front'${where}${appel}
-     order by fr.duration_ms desc
-     limit 20`,
+    `select t.trace_id, t.span_id, t.session_id, t.url, t.method, t.front_status, t.front_ms,
+            t.back_ms, t.network_ms, t.ts, t.traces_appel
+       from (
+         select fr.trace_id, fr.span_id, fr.session_id,
+                ${CHEMIN} as url,
+                fr.method, fr.status_code as front_status, fr.duration_ms as front_ms,
+                b.duration_ms as back_ms,
+                case when b.duration_ms is not null then greatest(fr.duration_ms - b.duration_ms, 0) end as network_ms,
+                fr.ts,
+                row_number() over (partition by fr.method, ${CHEMIN} order by fr.duration_ms desc, fr.span_id) as rang,
+                (count(*) over (partition by fr.method, ${CHEMIN}))::int as traces_appel
+         from rum_span fr
+         ${JUMEAU_BACK}
+         ${sessionJoin("fr", "s")}
+         where fr.tier = 'front'${where}${appel}
+       ) t${plafond}
+      order by t.front_ms desc, t.span_id
+      limit 20`,
     sql.params,
   );
 }

@@ -26,6 +26,8 @@ export async function createSiteAction(_precedent: SecretRemis, fd: FormData): P
   if (d.etat === "refus") redirect(`/select/new?error=${d.champ}`);
   if (d.etat === "existe") redirect("/select/new?error=exists");
   return d.etat === "cree"
-    ? { nom: cleDe(d.app), valeur: d.cle, pour: d.app, aller: `/select/new?app=${encodeURIComponent(d.app)}&mode=${d.mode}` }
+    ? // `cree=1` : la page d'intégration dit « est créé » juste après la création, et
+      // seulement alors (recette du 26/09/2026 : elle le disait d'un projet existant).
+      { nom: cleDe(d.app), valeur: d.cle, pour: d.app, aller: `/select/new?app=${encodeURIComponent(d.app)}&mode=${d.mode}&cree=1` }
     : null;
 }

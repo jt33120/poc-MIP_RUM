@@ -254,7 +254,7 @@ test("budget dépassé sur le contexte : le message, et le résultat reste affic
 
   // Le contexte dit qu'il n'a pas pu lire — jamais des barres à zéro.
   const contexte = page.getByTestId("explorer-contexte");
-  await expect(contexte.getByTestId("etat-partiel").first()).toContainText("budget de lecture dépassé");
+  await expect(contexte.getByTestId("etat-partiel").first()).toContainText("la lecture a pris trop de temps");
   await expect(contexte).toContainText("Volume non lu");
   await expect(contexte).toContainText("Répartition non lue");
   await expect(contexte.locator(".recharts-wrapper")).toHaveCount(0);

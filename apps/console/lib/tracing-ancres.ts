@@ -13,6 +13,13 @@
 // donc le seul séparateur non ambigu.
 import type { SearchParams } from "./filters";
 
+/**
+ * « Traces les plus lentes » sans filtre d'appel : au plus trois traces par appel,
+ * posé en SQL (`slowTraces`) et relu par l'écran pour replier le reste. Ici, dans un
+ * module sans lecture : l'écran l'importe sans atteindre la base.
+ */
+export const TRACES_PAR_APPEL = 3;
+
 export interface Appel {
   method: string;
   url: string;

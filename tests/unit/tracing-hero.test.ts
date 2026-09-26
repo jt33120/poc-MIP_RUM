@@ -23,6 +23,7 @@ import {
   lignesHero,
   partServeur,
   texteDecomposition,
+  tracesParAppel,
 } from "../../apps/console/lib/tracing-hero";
 
 function appel(over: Partial<ApiCallDecomposition> = {}): ApiCallDecomposition {
@@ -139,9 +140,37 @@ describe("partServeur, texteDecomposition, libelleAppel", () => {
 
   it("texte de l'alternative", () => {
     expect(texteDecomposition({ n: 150, n_suivis: 120, part_serveur_p50: 0.42 })).toBe(
-      "part serveur 42 % (médiane, 120 appels suivis sur 150)",
+      "part serveur 42\u00a0% (médiane, 120 appels suivis sur 150)",
     );
     expect(texteDecomposition({ n: 3, n_suivis: 0, part_serveur_p50: null })).toBe("non décomposé : aucun jumeau serveur");
+  });
+
+  it("« Traces les plus lentes » : trois traces au plus par appel, le reste compté et relié (recette du 26/09/2026)", () => {
+    const t = (url: string, ms: number) => ({ method: "GET", url, front_ms: ms });
+    const traces = [t("/a", 900), t("/a", 800), t("/b", 700), t("/a", 600), t("/a", 500), t("/a", 400), t("/b", 300)];
+    const lignes = tracesParAppel(traces, 3);
+    expect(lignes.map((l) => (l.kind === "trace" ? `${l.trace.url} ${l.trace.front_ms}` : `+${l.n} ${l.appel.url}`))).toEqual([
+      "/a 900",
+      "/a 800",
+      "/b 700",
+      "/a 600",
+      "+2 /a",
+      "/b 300",
+    ]);
+    // Filtré sur un appel : rien n'est replié.
+    expect(tracesParAppel(traces, Infinity).every((l) => l.kind === "trace")).toBe(true);
+  });
+
+  it("plafond posé en SQL : le reste se compte sur toute la plage (`traces_appel`), pas sur les lignes lues", () => {
+    const t = (url: string, ms: number, total: number) => ({ method: "GET", url, front_ms: ms, traces_appel: total });
+    const lignes = tracesParAppel([t("/a", 900, 42), t("/a", 800, 42), t("/b", 700, 1), t("/a", 600, 42)], 3);
+    expect(lignes.map((l) => (l.kind === "trace" ? `${l.trace.url} ${l.trace.front_ms}` : `+${l.n} ${l.appel.url}`))).toEqual([
+      "/a 900",
+      "/a 800",
+      "/b 700",
+      "/a 600",
+      "+39 /a",
+    ]);
   });
 
   it("un span sans URL garde un libellé lisible", () => {

@@ -33,7 +33,7 @@ export function TuileAngleMort({
   etat: EtatAngleMort;
   /** `/correlation#angles-morts`, filtres conservés. */
   href: string;
-  /** La règle de CR9, borne importée de `lib/rating.ts`. */
+  /** La règle de CR9, borne importée de `lib/rating.ts` : la méthode de la tuile. */
   regle: string;
   plage: string;
 }) {
@@ -45,7 +45,10 @@ export function TuileAngleMort({
           valeur={etat.heures}
           format="count"
           sensMeilleur="bas"
-          lecture={`${regle} Sur ${plage}.`}
+          // La règle est la MÉTHODE du compte : derrière l'infobulle de la tuile-lien,
+          // pas avant le chiffre (recette du 26/09/2026).
+          lecture={`robot ok, visiteurs au-delà du seuil Bon · ${plage}`}
+          methode={regle}
           href={href}
         />
         {/* Un second lien, HORS de la tuile : un lien dans un lien n'est pas du HTML. */}

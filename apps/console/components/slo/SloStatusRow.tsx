@@ -53,14 +53,26 @@ export function SloRow({
       data-statut={statut ?? "desactive"}
       className={`border-t border-line/60 ${raw.active ? "" : "opacity-60"}`}
     >
-      <th scope="row" className={`${TD} sticky left-0 bg-panel text-left font-normal`}>
-        <span className="block font-medium text-ink">{raw.name}</span>
-        <span className="chip-mono text-xs">{raw.app_id}</span>
+      {/* Nom, app, métrique et route dans UNE cellule (recette du 26/09/2026) : à onze
+          colonnes, « Alertes sur 7 j » et les actions restaient hors de l'écran même à
+          1 440 px. La métrique passe en sous-ligne, l'état « désactivé » en étiquette. */}
+      <th scope="row" className={`${TD} sticky left-0 max-w-[18rem] bg-panel text-left font-normal`}>
+        <span className="block font-medium text-ink">
+          {raw.name}
+          {!raw.active && (
+            <span className="ml-1.5 rounded border border-line px-1 py-px text-[11px] font-normal text-ink-soft">désactivé</span>
+          )}
+        </span>
+        <span className="block text-xs text-ink-soft">{metriqueEnClair(raw.metric)}</span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-ink-soft">
+          <span className="chip-mono">{raw.app_id}</span>
+          <span className="font-mono">{raw.route ?? "toutes routes"}</span>
+        </span>
       </th>
-      <td className={`${TD} text-ink-soft`}>{metriqueEnClair(raw.metric)}</td>
-      <td className={`${TD} font-mono text-xs text-ink-soft`}>{raw.route ?? "toutes"}</td>
-      <td className={`${TD} tabular-nums text-ink-soft`}>{formater("pct", raw.objective)}</td>
-      <td className={`${TD} tabular-nums text-ink-soft`}>{raw.window_days} j</td>
+      <td className={`${TD} whitespace-nowrap tabular-nums text-ink-soft`}>
+        {formater("pct", raw.objective)}
+        <span className="block text-xs">sur {raw.window_days} j</span>
+      </td>
       <td className={`${TD} tabular-nums`}>
         {!status ? (
           <span className="text-ink-soft">—</span>
@@ -108,44 +120,51 @@ export function SloRow({
           </Link>
         )}
       </td>
-      <td className={`${TD} text-ink-soft`}>{raw.active ? "actif" : "désactivé"}</td>
       {admin && (
         <td className={TD}>
-          <div className="flex flex-wrap items-start justify-end gap-2">
-            <Link
-              href={hrefCreerAlerte(raw)}
-              className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink"
-            >
-              Créer une alerte
-            </Link>
-            <form action={toggleSloAction}>
-              <input type="hidden" name="id" value={raw.id} />
-              <input type="hidden" name="app" value={raw.app_id} />
-              <input type="hidden" name="active" value={raw.active ? "false" : "true"} />
-              <button
-                type="submit"
-                data-testid={`toggle-slo-${raw.id}`}
-                className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink"
+          {/* Les trois actions dans un menu replié : trois boutons par ligne élargissaient
+              la table au-delà de l'écran. Il s'ouvre dans la cellule (pas en surimpression) :
+              la zone défilante le couperait. */}
+          <details className="group" data-testid={`actions-slo-${raw.id}`}>
+            <summary className="cursor-pointer list-none whitespace-nowrap rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink [&::-webkit-details-marker]:hidden">
+              Actions <span aria-hidden="true" className="inline-block transition group-open:rotate-180">▾</span>
+            </summary>
+            <div className="mt-2 flex flex-col items-stretch gap-2">
+              <Link
+                href={hrefCreerAlerte(raw)}
+                className="whitespace-nowrap rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink"
               >
-                {raw.active ? "Désactiver" : "Activer"}
-              </button>
-            </form>
-            {/* La suppression emporte l'historique des déclenchements (cascade) : confirmée. */}
-            <form action={deleteSloAction}>
-              <input type="hidden" name="id" value={raw.id} />
-              <input type="hidden" name="app" value={raw.app_id} />
-              <ConfirmationDanger
-                libelle="Supprimer"
-                libelleAccessible={`Supprimer le SLO ${raw.name}`}
-                question={`Supprimer le SLO ${entreGuillemets(raw.name)}\u00a0?`}
-                consequence="Son suivi et l’historique de ses déclenchements seront effacés définitivement."
-                confirmer="Supprimer le SLO"
-                enCours="Suppression…"
-                classeDeclencheur="rounded-lg border border-bad/40 bg-panel px-3 py-1.5 text-xs font-medium text-bad-ink transition hover:bg-bad/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bad/40"
-                testid={`delete-slo-${raw.id}`}
-              />
-            </form>
-          </div>
+                Créer une alerte
+              </Link>
+              <form action={toggleSloAction}>
+                <input type="hidden" name="id" value={raw.id} />
+                <input type="hidden" name="app" value={raw.app_id} />
+                <input type="hidden" name="active" value={raw.active ? "false" : "true"} />
+                <button
+                  type="submit"
+                  data-testid={`toggle-slo-${raw.id}`}
+                  className="w-full whitespace-nowrap rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink"
+                >
+                  {raw.active ? "Désactiver" : "Activer"}
+                </button>
+              </form>
+              {/* La suppression emporte l'historique des déclenchements (cascade) : confirmée. */}
+              <form action={deleteSloAction}>
+                <input type="hidden" name="id" value={raw.id} />
+                <input type="hidden" name="app" value={raw.app_id} />
+                <ConfirmationDanger
+                  libelle="Supprimer"
+                  libelleAccessible={`Supprimer le SLO ${raw.name}`}
+                  question={`Supprimer le SLO ${entreGuillemets(raw.name)}\u00a0?`}
+                  consequence="Son suivi et l’historique de ses déclenchements seront effacés définitivement."
+                  confirmer="Supprimer le SLO"
+                  enCours="Suppression…"
+                  classeDeclencheur="w-full whitespace-nowrap rounded-lg border border-bad/40 bg-panel px-3 py-1.5 text-xs font-medium text-bad-ink transition hover:bg-bad/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bad/40"
+                  testid={`delete-slo-${raw.id}`}
+                />
+              </form>
+            </div>
+          </details>
         </td>
       )}
     </tr>

@@ -400,17 +400,21 @@ test.describe("F38 — réagencement et stabilité par release", () => {
     await ouvrir(page, 1440, 900);
     const hero = page.getByTestId("mobile-stabilite");
     const ligne = (texte: string) => hero.getByTestId("impact-ligne").filter({ hasText: texte });
-    await expect(ligne("2.1.0")).toContainText("33,3 %");
+    // La part SANS erreur, comme la tuile (1 session touchée sur 3 → 66,7 %).
+    await expect(ligne("2.1.0")).toContainText("66,7 %");
     await expect(ligne("2.0.0")).not.toContainText("%");
     await expect(hero.getByTestId("mobile-stabilite-raison")).toContainText("2.0.0");
     // Sessions sans release : « Inconnue », et son lien ne pose pas `release=` vide.
     await expect(ligne("Inconnue").locator("a")).toHaveAttribute("href", /seg=v2%3Arelease%3Ais_null/);
     // Référence : Σ touchées / Σ sessions des releases déclarantes.
-    await expect(hero.getByTestId("impact-reference")).toContainText("Releases déclarantes");
+    // La référence vaut la tuile « Sessions sans erreur JS ».
+    await expect(hero.getByTestId("impact-reference")).toContainText("Ensemble des releases qui collectent les erreurs JS");
+    await expect(hero.getByTestId("impact-reference")).toContainText("66,7 %");
     // Tuile « Sessions sans erreur JS » : calculée sur les déclarantes seules (2 sur 3),
     // les 3 sessions de 2.0.0 et sans release exclues — et elle le dit.
     await expect(page.getByTestId("mobile-taux-sans-erreur").getByTestId("kpi-valeur")).toHaveText("66,7 %");
-    await expect(page.getByTestId("mobile-taux-sans-erreur")).toContainText("3 sessions de releases non déclarantes exclues");
+    await expect(page.getByTestId("mobile-taux-sans-erreur")).toContainText("3 sessions exclues");
+    await expect(page.getByTestId("mobile-taux-sans-erreur")).toContainText("ne déclarent pas collecter les erreurs JS");
 
     await ligne("2.1.0").locator("a").click();
     await page.waitForURL((u) => u.searchParams.get("release") === "2.1.0", { timeout: 15_000 });
@@ -434,7 +438,7 @@ test.describe("F38 — réagencement et stabilité par release", () => {
     await expect(page.getByTestId("mobile-stabilite").getByTestId("impact-ordre")).toContainText("première session vue");
     await page.getByTestId("mobile-stabilite").getByTestId("tri-gravite").click();
     await page.waitForURL((u) => u.searchParams.get("tri") === "gravite", { timeout: 15_000 });
-    await expect(page.getByTestId("mobile-stabilite").getByTestId("impact-ordre")).toContainText("part de sessions touchées");
+    await expect(page.getByTestId("mobile-stabilite").getByTestId("impact-ordre")).toContainText("la moins stable");
     expect(new URL(page.url()).searchParams.get("os")).toBe("iOS");
   });
 

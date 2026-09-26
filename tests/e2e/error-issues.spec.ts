@@ -184,7 +184,7 @@ test("liste d'une app activée : issues et groupe historique, chaque occurrence 
   await expect(entree(page, `issue-entry-${I2}`).getByTestId("entry-occurrences")).toHaveText("2", RENDU);
   const historique = entree(page, "legacy-entry-p55fp009");
   await expect(historique.getByTestId("entry-occurrences")).toHaveText("1", RENDU);
-  await expect(historique).toContainText("groupe historique");
+  await expect(historique).toContainText("ancienne signature");
   // Tuile « Occurrences » de la rangée de F18 : la même population que la liste.
   await expect(
     page.getByTestId("kpi-tile").filter({ has: page.getByText("Occurrences", { exact: true }) }).getByTestId("kpi-valeur"),
@@ -212,7 +212,7 @@ test("ancienne URL à alias unique : redirection vers l'issue, groupes historiqu
   const groupes = page.getByTestId("issue-legacy-groups");
   await expect(groupes).toContainText("corrigé en 1.0.1");
   await expect(groupes).toContainText("bruit connu");
-  await expect(groupes.getByRole("row").filter({ hasText: "p55fp002" })).toContainText("répartie sur 2 issues");
+  await expect(groupes.getByRole("row").filter({ hasText: "p55fp002" })).toContainText("répartie sur 2 groupes");
   await expect(groupes.getByRole("link", { name: "p55fp001" })).toHaveAttribute("href", `/errors/p55fp001?app=${A}&legacy=1`);
 });
 
@@ -220,11 +220,11 @@ test("empreinte répartie : choix explicite entre les issues, détail historique
   await login(page);
   await page.goto(`${CONSOLE}/errors/p55fp002?app=${A}&period=24h`);
   const choix = page.getByTestId("error-issue-chooser");
-  await expect(choix.getByRole("heading")).toHaveText("Ce groupe est réparti sur plusieurs issues");
-  await expect(choix.getByRole("link", { name: `issue ${I1}` })).toHaveAttribute("href", `/errors/issues/${I1}?app=${A}`);
-  await expect(choix.getByRole("link", { name: `issue ${I2}` })).toHaveAttribute("href", `/errors/issues/${I2}?app=${A}`);
+  await expect(choix.getByRole("heading")).toHaveText("Cette signature est répartie sur plusieurs groupes");
+  await expect(choix.getByRole("link", { name: `groupe ${I1}` })).toHaveAttribute("href", `/errors/issues/${I1}?app=${A}`);
+  await expect(choix.getByRole("link", { name: `groupe ${I2}` })).toHaveAttribute("href", `/errors/issues/${I2}?app=${A}`);
 
-  await choix.getByRole("link", { name: "Voir le détail historique de la signature" }).click();
+  await choix.getByRole("link", { name: "Voir le détail de l'ancienne signature" }).click();
   await expect(page).toHaveURL(new RegExp(`/errors/p55fp002\\?app=${A}&legacy=1$`));
   // La vue historique compte toutes les lignes de la signature, quelle que soit leur issue.
   await expect(page.getByTestId("detail-occurrences")).toHaveText("3");
@@ -242,7 +242,7 @@ test("détail d'issue : l'app de l'URL est ramenée à celle de l'issue ; inconn
   await login(page);
   await page.goto(`${CONSOLE}/errors/issues/${I2}?app=${OFF}&period=7d`);
   await expect(page).toHaveURL(new RegExp(`/errors/issues/${I2}\\?app=${A}&period=7d$`));
-  await expect(page.getByTestId("issue-status")).toHaveText("Ouverte");
+  await expect(page.getByTestId("issue-status")).toHaveText("Ouvert");
 
   await page.goto(`${CONSOLE}/errors/issues/55e2e000-0000-4000-8000-00000000dead?app=${A}&period=24h`);
   await introuvable(page);
@@ -266,8 +266,8 @@ test("F21 — détail d'une issue : les blocs 2 à 7 du détail d'un groupe, la 
   // propres et alias unique de p55fp001), s2 a une vue et aucune erreur : 1 sur 2.
   const impact = page.getByTestId("phrase-impact");
   await expect(impact).toContainText("8 occurrences");
-  await expect(impact).toContainText("1 sessions");
-  await expect(impact).toContainText(/50,0\s%\sdes 2 sessions avec au moins une vue/);
+  await expect(impact).toContainText("touchant 1 session et 1 visiteur");
+  await expect(impact).toContainText(/50,0\s%\sdes 2\ssessions avec au moins une vue/);
   // Quatre tuiles au lieu de sept : les dates et « Utilisateurs identifiés » quittent la rangée.
   await expect(page.getByTestId("kpi-detail-erreur").getByTestId("kpi-tile")).toHaveCount(4);
   await expect(page.getByTestId("issue-sessions")).toHaveText("1");
@@ -277,10 +277,11 @@ test("F21 — détail d'une issue : les blocs 2 à 7 du détail d'un groupe, la 
   // Bloc 4 : des barres sur la grille du contrat, avec leur alternative — plus la courbe sans axe.
   await expect(page.locator("#detail-erreur-temps").getByTestId("alternative")).toHaveCount(1);
   await expect(page.getByText("Alternative textuelle de la série")).toHaveCount(0);
-  // Bloc 5 : le repli tant que B3 manque, sur les occurrences affichées de l'issue.
+  // Bloc 5 : le repli tant que B3 manque, sur les occurrences affichées de l'issue ;
+  // la comparaison absente n'est pas dessinée (recette du 26/09/2026).
   const commun = page.locator("#detail-erreur-commun");
   await commun.scrollIntoViewIfNeeded();
-  await expect(commun.getByTestId("contrast-bars")).toHaveAttribute("data-etat", "indisponible");
+  await expect(commun.getByTestId("contrast-bars")).toHaveCount(0);
   await expect(commun.getByTestId("repli-release")).toContainText("1.1.0");
   // Ce qui reste propre à l'issue : son état, en tête.
   await expect(page.getByTestId("issue-state")).toBeVisible();
@@ -306,7 +307,7 @@ test("F21 — versions touchées d'une issue : toutes ses releases, hors fenêtr
   await expect(page.getByTestId("issue-occurrences")).toHaveText("0");
   await expect(page.getByTestId("issue-sessions")).toHaveText("0");
   await expect(page.getByTestId("issue-users")).toHaveText("0");
-  await expect(page.getByTestId("phrase-impact")).not.toContainText("Inconnu");
+  await expect(page.getByTestId("phrase-impact")).not.toContainText("inconnu");
   await expect(page.getByTestId("premiere-release")).toContainText("1.0.0");
   await expect(page.getByTestId("derniere-release")).toContainText("1.1.0");
 
@@ -402,7 +403,7 @@ test("retour arrière : liste et anciennes URL historiques, l'issue reste lisibl
 
     await page.goto(`${CONSOLE}/errors/issues/${I1}?app=${A}&period=24h`);
     await expect(page.getByTestId("issue-status")).toHaveText("À revoir");
-    await expect(page.getByText("Regroupement v2 désactivé pour cette application")).toBeVisible();
+    await expect(page.getByText("Regroupement avancé désactivé pour cette application")).toBeVisible();
   } finally {
     await pool.query("select error_grouping_activate($1, 'e2e@p55.test')", [A]);
   }

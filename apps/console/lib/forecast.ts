@@ -167,6 +167,25 @@ export const JOURS_VALIDES_REQUIS = 7;
 export const K_BRUIT = 2;
 
 /**
+ * Le premier jour où une tendance PEUT être calculée, en clé « AAAA-MM-JJ » : le
+ * lendemain du dernier jour complet, plus les jours valides qui manquent — si
+ * chaque journée à venir compte assez de mesures. Un état vide qui ne dit pas quand
+ * l'écran servira laisse l'utilisateur revenir au hasard (recette du 26/09/2026).
+ * `null` sans dernier jour lisible, ou si rien ne manque.
+ */
+export function premiereTendancePossible(
+  dernierJour: string | undefined,
+  joursValides: number,
+  requis = JOURS_VALIDES_REQUIS,
+): string | null {
+  const manque = requis - joursValides;
+  if (!dernierJour || manque <= 0) return null;
+  const ms = Date.parse(`${dernierJour}T00:00:00Z`);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms + (1 + manque) * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
  * Écart type des résidus autour de la droite, sur les points mesurés :
  * `√(Σ résidus² / (m − 2))` — deux degrés de liberté pris par la droite. `null`
  * sous trois points (la dispersion d'une droite qui passe par deux points n'existe pas).

@@ -95,7 +95,7 @@ function Retour({ etat, recharger, testid }: { etat: Etat; recharger: () => void
       <div role="alert" data-testid={`${testid}-conflict`} className="mt-3 flex flex-wrap items-center gap-2 text-sm text-bad-ink">
         <span>{etat.message}</span>
         <button type="button" className="btn-ghost border border-line px-2 py-1 text-xs" onClick={recharger}>
-          Recharger l&apos;issue
+          Recharger le groupe
         </button>
       </div>
     );
@@ -110,7 +110,7 @@ function Retour({ etat, recharger, testid }: { etat: Etat; recharger: () => void
   if (etat.kind === "rechargement") {
     return (
       <p role="status" className="mt-3 text-sm text-ink-soft">
-        Enregistré — relecture de l&apos;issue…
+        Enregistré — relecture du groupe…
       </p>
     );
   }
@@ -168,7 +168,7 @@ export function IssueTriageForm({
   }
 
   return (
-    <form onSubmit={soumettre} aria-label="Triage de l'issue" data-testid="issue-triage-form" data-revision={revision}>
+    <form onSubmit={soumettre} aria-label="Triage du groupe" data-testid="issue-triage-form" data-revision={revision}>
       <div className="flex flex-wrap items-end gap-3">
         <label className={CHAMP}>
           Statut
@@ -188,7 +188,7 @@ export function IssueTriageForm({
           </select>
         </label>
         <label className={CHAMP}>
-          Assignée à
+          Assigné à
           <select
             name="assignee"
             value={assigne ?? assigneLu}
@@ -231,7 +231,7 @@ export function IssueCommentForm({ issueId, appId, revision }: { issueId: string
   }
 
   return (
-    <form onSubmit={soumettre} aria-label="Commenter l'issue" data-testid="issue-comment-form">
+    <form onSubmit={soumettre} aria-label="Commenter le groupe" data-testid="issue-comment-form">
       <label className={`${CHAMP} w-full`}>
         Commentaire
         <textarea

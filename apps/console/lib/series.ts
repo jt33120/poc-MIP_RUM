@@ -277,10 +277,15 @@ export function domaineY(
 /**
  * Échelle y d'une figure temporelle, en graduations RONDES (recette du 26/09/2026) :
  * le haut de l'axe est le maximum des données arrondi vers le haut à un pas rond
- * (`graduationsAxe`), l'axe part de 0. Pour un vital, le maximum pris en compte
- * est au moins `seuilBon × 1,1` : la bande « Bon » et le début de « À améliorer »
- * restent visibles même quand tout est bon (P2). La marge × 1,2 de `domaineY`
- * n'est plus nécessaire : l'arrondi au pas rond en donne une.
+ * (`graduationsAxe`), l'axe part de 0. La marge × 1,2 de `domaineY` n'est plus
+ * nécessaire : l'arrondi au pas rond en donne une.
+ *
+ * UN VITAL SE CALE AUSSI SUR SES DONNÉES (recette du 26/09/2026). L'axe montait
+ * jusqu'à `seuilBon × 1,1` pour garder « À améliorer » visible : un LCP à 92 ms
+ * s'écrasait sur l'axe, sous une échelle de 0 à 2,8 s. La bande de seuil reste
+ * dessinée là où elle tombe (toute la hauteur quand tout est « Bon »), et la borne
+ * hors échelle est écrite sous la figure (`bandesSeuils`). Sans aucune donnée,
+ * l'axe garde la bande « Bon » entière.
  */
 export function echelleY(
   lignes: LignePreparee[],
@@ -300,14 +305,18 @@ export function echelleY(
     }
   }
   const bon = vital ? THRESHOLDS[vital][0] : null;
-  return graduationsAxe(Math.max(maxDonnees, bon !== null ? bon * 1.1 : 0), format);
+  return graduationsAxe(maxDonnees > 0 ? maxDonnees : bon !== null ? bon * 1.1 : 0, format);
 }
 
 export interface BandesSeuils {
   bon: { y1: number; y2: number };
   ameliorer: { y1: number; y2: number } | null;
   mauvais: { y1: number; y2: number } | null;
-  /** « seuil Mauvais à 4,0 s, hors échelle » quand la borne haute sort du domaine. */
+  /**
+   * « seuil Mauvais à 4,0 s, hors échelle » quand la borne haute sort du domaine ;
+   * « seuil À améliorer à 2,5 s et seuil Mauvais à 4,0 s, hors échelle » quand
+   * tout le domaine est « Bon » (échelle calée sur des données toutes bonnes).
+   */
   horsEchelle: string | null;
   /** Bornes lues dans `lib/rating.ts` (P2 : un seul fichier de seuils). */
   seuils: [number, number];
@@ -325,7 +334,12 @@ export function bandesSeuils(vital: VitalName, haut: number): BandesSeuils {
     bon: { y1: 0, y2: Math.min(bon, haut) },
     ameliorer: bon < haut ? { y1: bon, y2: Math.min(mauvais, haut) } : null,
     mauvais: mauvais < haut ? { y1: mauvais, y2: haut } : null,
-    horsEchelle: mauvais > haut ? `seuil Mauvais à ${formater(formatDuVital(vital), mauvais)}, hors échelle` : null,
+    horsEchelle:
+      bon >= haut
+        ? `seuil À améliorer à ${formater(formatDuVital(vital), bon)} et seuil Mauvais à ${formater(formatDuVital(vital), mauvais)}, hors échelle`
+        : mauvais > haut
+          ? `seuil Mauvais à ${formater(formatDuVital(vital), mauvais)}, hors échelle`
+          : null,
     seuils,
   };
 }
@@ -480,6 +494,29 @@ export function premiereDonneeTardive(lignes: LignePreparee[], cles: string[]): 
   );
   if (premier < 0) return null;
   return premier >= lignes.length - 2 ? premier : null;
+}
+
+/** Nombre de tranches de la grille où au moins une des séries `cles` porte une valeur. */
+export function tranchesMesurees(lignes: LignePreparee[], cles: string[]): number {
+  if (cles.length === 0) return 0;
+  return lignes.filter((l) => cles.some((c) => nombreOuNull(l[c]) !== null)).length;
+}
+
+/** Le nom d'une tranche et son genre : « heure » (f.), « jour » (m.)… */
+function nomDeTranche(seauSecondes: number, jours: boolean): { nom: string; masculin: boolean } {
+  if (jours || seauSecondes === 86_400) return { nom: "jour", masculin: true };
+  if (seauSecondes === 3600) return { nom: "heure", masculin: false };
+  if (seauSecondes === 604_800) return { nom: "semaine", masculin: false };
+  if (seauSecondes === 60) return { nom: "minute", masculin: false };
+  return { nom: "tranche", masculin: false };
+}
+
+/** « Une seule heure mesurée », « Deux jours mesurés » : ce que dit une figure presque vide. */
+export function phrasePeuDePoints(n: number, seauSecondes: number, jours = false): string {
+  const { nom, masculin } = nomDeTranche(seauSecondes, jours);
+  const mesure = masculin ? "mesuré" : "mesurée";
+  if (n <= 1) return `${masculin ? "Un seul" : "Une seule"} ${nom} ${mesure} sur la période`;
+  return `${n === 2 ? "Deux" : n.toLocaleString("fr-FR")} ${nom}s ${mesure}s sur la période`;
 }
 
 /**

@@ -12,9 +12,26 @@ import type { SecretRemis } from "@/lib/secret-remis";
 
 const champ = (fd: FormData, nom: string) => String(fd.get(nom) ?? "").trim();
 
+/**
+ * La portée choisie à l'écran, dans la forme qu'attend la commande (liste séparée
+ * par des virgules, vide = toutes). « Certaines applications » sans case cochée
+ * est REFUSÉ ici : transmise vide, la liste vaudrait « toutes » — l'inverse exact
+ * de ce que l'administrateur a demandé.
+ */
+function porteeChoisie(fd: FormData): string | null {
+  if (champ(fd, "portee") !== "liste") return "";
+  const apps = fd
+    .getAll("apps")
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+  return apps.length ? apps.join(",") : null;
+}
+
 export async function createUserAction(_precedent: SecretRemis, fd: FormData): Promise<SecretRemis> {
+  const apps = porteeChoisie(fd);
+  if (apps === null) redirect("/admin/users?error=apps");
   const r = await executerCommande("creerCompte", {
-    corps: { email: champ(fd, "email"), role: champ(fd, "role") === "admin" ? "admin" : "viewer", apps: champ(fd, "apps") },
+    corps: { email: champ(fd, "email"), role: champ(fd, "role") === "admin" ? "admin" : "viewer", apps },
   });
   if (!r.ok) {
     apresRefus(r);

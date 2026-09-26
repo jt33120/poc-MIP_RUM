@@ -36,7 +36,7 @@ import { bucketLabel, bucketStarts, hrefWithQuery, type AnalyticsQuery } from "@
 import type { SlowResource, VitalAgg, VitalPercentiles, VitalSeriesPoint } from "@/lib/queries";
 import type { ErrorGroupRow } from "@/lib/queries-errors";
 import type { Concordance, CorrCardRow } from "@/lib/queries-v2";
-import { RATING_LABEL, rating2026 } from "@/lib/rating";
+import { lireVital, texteVerdict } from "@/lib/vital-lecture";
 import { grilleIso, libelleSeauComplet } from "@/lib/series";
 import { pointsRelease } from "@/lib/vue-ensemble";
 import type { Fil } from "@mip/console-contract";
@@ -399,11 +399,13 @@ function VuParLeRobot({
   }
   const regle = regleAngleMort(EFFECTIF_MIN_HEURE);
   const lcp = reel.ok ? (reel.data.find((v) => v.name === "LCP") ?? null) : null;
-  const verdict = lcp ? rating2026("LCP", lcp.p75) : null;
+  // Même règle que les tuiles (P*.1) : un verdict qui ne tient pas sur tout
+  // l'intervalle à 95 % est dit « incertain », jamais affirmé.
+  const verdict = lcp ? lireVital("LCP", lcp.p75, lcp.n, lcp.intervalle).verdict : null;
   const ligneReelle = !reel.ok
     ? "lecture en échec"
     : lcp
-      ? `LCP p75 ${formater("ms", lcp.p75)}, ${RATING_LABEL[verdict!]}`
+      ? `LCP p75 ${formater("ms", lcp.p75)}${verdict ? `, ${texteVerdict(verdict)}` : ""}`
       : "aucune mesure LCP sur cette route";
 
   const robots = cartes.data.data.filter((c) => c.route === route && (c.syn_state !== null || c.syn_latency_avg !== null));

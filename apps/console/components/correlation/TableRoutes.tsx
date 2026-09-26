@@ -18,7 +18,7 @@
 import Link from "next/link";
 import { TableDefilante } from "@/components/TableDefilante";
 import { LIBELLE_ETAT_ROBOT } from "@/lib/correlation";
-import { fmtLatency } from "@/lib/format";
+import { fmtLatency, pluriel } from "@/lib/format";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
 
 export interface LigneRoute {
@@ -160,7 +160,7 @@ export function TableRoutes({ lignes, avecApp }: { lignes: LigneRoute[]; avecApp
                   pas de trafic réel sur la plage
                   {l.robot && (
                     <span className="mt-0.5 block text-warn-ink" data-testid="verifier-correspondance">
-                      vérifier la correspondance route_hint ↔ route
+                      vérifier que le scénario robot vise bien cette route
                     </span>
                   )}
                 </td>
@@ -169,7 +169,7 @@ export function TableRoutes({ lignes, avecApp }: { lignes: LigneRoute[]; avecApp
                 <span className="block tabular-nums">{l.concordance.texte}</span>
                 {l.concordance.issue && (
                   <span className="mt-0.5 block text-xs text-ink-soft">
-                    {l.concordance.issue} · {l.concordance.jours} jours communs
+                    {l.concordance.issue} · {pluriel(l.concordance.jours ?? 0, "jour commun", "jours communs")}
                   </span>
                 )}
               </td>

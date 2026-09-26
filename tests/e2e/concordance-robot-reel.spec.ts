@@ -115,8 +115,9 @@ test("le hero dit la concordance en toutes lettres, avec ρ, son intervalle et l
   await expect(phrase).toContainText("entre 0,82 et 0,99");
   // La phrase qui empêche de lire ρ comme un écart de valeurs (critère de recette).
   await expect(phrase).toContainText("pas si leurs valeurs sont égales");
-  // Le seuil est un CHOIX, dit comme tel.
-  await expect(phrase).toContainText("0,30 est un choix de produit");
+  // Le seuil est un CHOIX, dit comme tel — dans la méthode, repliée sous la figure
+  // (recette du 26/09/2026 : la règle passait avant l'information, deux fois).
+  await expect(page.getByTestId("methode-concordance")).toContainText("0,30 est un choix de produit");
 });
 
 test("la table des routes porte un ρ par route, ou un refus chiffré", async ({ page }) => {

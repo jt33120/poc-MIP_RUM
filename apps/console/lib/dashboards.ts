@@ -45,6 +45,7 @@ import {
   type FilterCondition,
   type RangePreset,
 } from "./query-contract";
+import { titreResultat } from "./explorer-page-params";
 
 export const WIDGET_TYPES = [
   "vital_p75",
@@ -139,9 +140,11 @@ export const WIDGET_META: Record<WidgetType, { label: string; needsMetric: boole
   vital_p75: { label: "Web Vital (p75)", needsMetric: true },
   traffic: { label: "Trafic (pages vues / erreurs)", needsMetric: false },
   slow_routes: { label: "Routes les plus lentes", needsMetric: false },
-  top_errors: { label: "Top erreurs", needsMetric: false },
+  // Français, comme la puce de la liste (« Erreurs principales ») : « Top » et
+  // « custom » étaient les deux seuls mots anglais du formulaire d'ajout.
+  top_errors: { label: "Erreurs principales", needsMetric: false },
   frustration: { label: "Signaux de frustration", needsMetric: false },
-  event_count: { label: "Événements custom (nombre)", needsMetric: false, needsEventName: true },
+  event_count: { label: "Événements personnalisés (nombre)", needsMetric: false, needsEventName: true },
 };
 
 const isType = (t: unknown): t is WidgetType =>
@@ -277,9 +280,14 @@ export function parseAnalyticsWidget(raw: Record<string, unknown>): WidgetParsed
   });
 }
 
-/** Titre par défaut d'une analyse enregistrée : sa mesure et son jeu de données. */
+/**
+ * Titre par défaut d'une analyse enregistrée : le titre de sa figure (« Pages vues —
+ * Nombre », « LCP — p75 par route »). Il s'écrivait avec les identifiants internes
+ * du registre (« rows · views »), en anglais, jusque dans le champ « Titre de la
+ * carte » de l'Explorer (recette du 26/09/2026).
+ */
 export function defaultAnalyticsTitle(plan: ExplorerPlan): string {
-  return `${plan.measure.field} · ${plan.dataset}`;
+  return titreResultat(plan).slice(0, TITLE_MAX);
 }
 
 /**

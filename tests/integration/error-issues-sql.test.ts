@@ -1517,7 +1517,7 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         const lie = await lib.linkIssue(ctx(issue.id), lien);
         expect(lie).toMatchObject({ kind: "ok", value: { link: { url: lien.url, label: "MIP-7", created_by: { email: ADMIN } } } });
         revision = lie.kind === "ok" ? lie.value.revision : "";
-        expect(await lib.linkIssue(ctx(issue.id), { ...lien, expectedRevision: revision })).toEqual({ kind: "duplicate", error: "ce lien est déjà attaché à l'issue" });
+        expect(await lib.linkIssue(ctx(issue.id), { ...lien, expectedRevision: revision })).toEqual({ kind: "duplicate", error: "ce lien est déjà attaché à ce groupe" });
         expect(await lib.commentIssue(ctx(autre.id), { app: B, body: "B", expectedRevision: await revisionDe(autre.id) })).toMatchObject({ kind: "ok" });
 
         for (let i = 0; i < 3; i++) {

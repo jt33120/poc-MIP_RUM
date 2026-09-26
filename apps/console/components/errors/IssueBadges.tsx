@@ -11,8 +11,11 @@ import {
 
 const PASTILLE = "mr-2 inline-block rounded-full border px-1.5 py-0.5 text-[10px] font-semibold";
 
+// Couleurs de STATUT, distinctes du rouge de la GRAVITÉ (type, « non gérée »,
+// « fatale ») : « Ouverte », « Error » et « fatale » étaient tous rouges, et le
+// statut se lisait comme une gravité (recette du 26/09/2026).
 const STATUT_CLASSES: Record<IssueStatus, string> = {
-  open: "border-bad/30 bg-bad/10 text-bad-ink",
+  open: "border-perf/40 bg-perf/10 text-ink",
   for_review: "border-warn/50 bg-warn/10 text-warn-ink",
   resolved: "border-good/30 bg-good/10 text-good-ink",
   ignored: "border-line bg-panel2 text-ink-soft",
@@ -31,7 +34,7 @@ export function ReappearedBadge({ reappeared }: { reappeared: boolean }) {
   return (
     <span
       className={`${PASTILLE} border-warn/50 bg-warn/10 text-warn-ink`}
-      title="Marquée résolue puis revue depuis : la release et le déploiement restent à vérifier avant de parler de régression."
+      title="Marqué résolu puis revu depuis : la release et le déploiement restent à vérifier avant de parler de régression."
     >
       ⚠ réapparition à vérifier
     </span>
@@ -45,24 +48,24 @@ export function IssueOriginBadge({ origin, testid }: { origin: IssueOrigin; test
     <span
       className={`${PASTILLE} border-perf/30 bg-perf/10 text-ink`}
       data-testid={testid}
-      title="Reprend un ou plusieurs groupes historiques déjà vus : ce n'est pas un nouveau bug."
+      title="Reprend une ou plusieurs anciennes signatures déjà vues : ce n'est pas un nouveau bug."
     >
       reprise de l&apos;historique
     </span>
   );
 }
 
-/** Une base peu discriminante est dite ; les autres restent discrètes. */
+/**
+ * Une base peu discriminante est dite ; les autres ne se montrent pas (recette du
+ * 26/09/2026 : « Frame normalisée » était un badge technique sans usage pour le
+ * lecteur).
+ */
 export function GroupingBasisBadge({ basis }: { basis: GroupingBasis }) {
-  const faible = basis === "low_confidence";
+  if (basis !== "low_confidence") return null;
   return (
     <span
-      className={`${PASTILLE} ${faible ? "border-warn/40 bg-warn/10 text-ink" : "border-line bg-panel2 text-ink-soft"}`}
-      title={
-        faible
-          ? "Aucune frame applicative (« Script error. », pile tierce ou absente) : regroupement par type et message, peu discriminant."
-          : "Base de la clé de regroupement de cette issue."
-      }
+      className={`${PASTILLE} border-warn/40 bg-warn/10 text-ink`}
+      title="Aucune ligne de code de l'application dans la pile (« Script error. », pile tierce ou absente) : regroupement par type et message, peu discriminant."
     >
       {GROUPING_BASIS_LABELS[basis]}
     </span>
@@ -73,9 +76,9 @@ export function LegacyEntryBadge() {
   return (
     <span
       className={`${PASTILLE} border-line bg-panel2 text-ink-soft`}
-      title="Groupe historique qu'aucune issue ne reprend seule : occurrences antérieures au regroupement v2, ou empreinte répartie sur plusieurs issues."
+      title="Ancienne signature qu'aucun groupe ne reprend seul : occurrences antérieures au regroupement actuel, ou signature répartie sur plusieurs groupes."
     >
-      groupe historique
+      ancienne signature
     </span>
   );
 }

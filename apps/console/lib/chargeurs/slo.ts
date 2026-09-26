@@ -6,6 +6,7 @@
 // ne sont lues que pour un administrateur, et ce sont celles de son périmètre
 // d'écriture (C8).
 import { analyserFiltres } from "../filtres-ecran";
+import { fmtHeure } from "../format";
 import type { AppItem } from "../queries";
 import { listSlo, sloStatus, type SloRaw, type SloStatusRow } from "../queries-alerting";
 import { alertFirings } from "../queries-v2";
@@ -37,6 +38,8 @@ export const chargerSlo = (async (principal, sp) => {
     slos,
     apps,
     declenchements,
-    luA: new Date().toISOString().slice(11, 19),
+    // Heure de l'instantané, dans le fuseau d'affichage (heure de Paris) comme tout
+    // l'écran : servi par `console-api`, l'écran ne peut plus la prendre lui-même.
+    luA: fmtHeure(Date.now(), { secondes: true }),
   } as const;
 }) satisfies Chargeur<unknown>;

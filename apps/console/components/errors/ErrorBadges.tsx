@@ -16,30 +16,39 @@ export function ErrorTypeBadge({ type, large = false }: { type: string | null; l
   );
 }
 
-/** Régression d'abord : une erreur « résolue » qui revient n'est plus résolue. */
+/**
+ * Statut de triage d'un groupe, TOUJOURS dit — « ouvert » compris (recette du
+ * 26/09/2026 : on pouvait trier et filtrer par triage sans voir le statut d'aucune
+ * ligne). Couleurs de STATUT, jamais celle de la GRAVITÉ : le rouge reste au type
+ * d'erreur, à « non gérée » et à « fatale » ; ouvert est bleu, régressé orange,
+ * résolu vert, ignoré neutre.
+ *
+ * Régression d'abord : une erreur « résolue » qui revient n'est plus résolue.
+ */
+export const STATUT_GROUPE: Record<"open" | "regressed" | "resolved" | "ignored", { libelle: string; classes: string }> = {
+  open: { libelle: "Ouvert", classes: "border-perf/40 bg-perf/10 text-ink" },
+  regressed: { libelle: "⚠ Régressé", classes: "border-warn/50 bg-warn/10 text-warn-ink" },
+  resolved: { libelle: "Résolu", classes: "border-good/30 bg-good/10 text-good-ink" },
+  ignored: { libelle: "Ignoré", classes: "border-line bg-panel2 text-ink-soft" },
+};
+
+/** L'état affiché d'un groupe : `regressed` prime sur le statut enregistré. */
+export function statutAffiche(status: ErrorStatus, regressed: boolean): keyof typeof STATUT_GROUPE {
+  return regressed ? "regressed" : status;
+}
+
 export function ErrorStatusBadges({ status, regressed }: { status: ErrorStatus; regressed: boolean }) {
-  if (regressed) {
-    return (
-      <span className="mr-2 rounded-full border border-warn/50 bg-warn/10 px-1.5 py-0.5 text-[10px] font-bold text-warn-ink">
-        ⚠ régression
-      </span>
-    );
-  }
-  if (status === "resolved") {
-    return (
-      <span className="mr-2 rounded-full border border-good/30 bg-good/10 px-1.5 py-0.5 text-[10px] font-semibold text-good-ink">
-        résolue
-      </span>
-    );
-  }
-  if (status === "ignored") {
-    return (
-      <span className="mr-2 rounded-full border border-line bg-panel2 px-1.5 py-0.5 text-[10px] font-semibold text-ink-soft">
-        ignorée
-      </span>
-    );
-  }
-  return null;
+  const etat = statutAffiche(status, regressed);
+  const { libelle, classes } = STATUT_GROUPE[etat];
+  return (
+    <span
+      className={`mr-2 inline-block rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${classes}`}
+      data-testid="statut-groupe"
+      data-statut={etat}
+    >
+      {libelle}
+    </span>
+  );
 }
 
 /** Source déclarée de l'occurrence ; NULL = émetteur inconnu ou ligne antérieure à v69. */

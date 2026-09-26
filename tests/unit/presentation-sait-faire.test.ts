@@ -139,7 +139,7 @@ describe("sources — les passages cités disent encore ce qu'on leur fait dire"
       readFileSync(join(RACINE, chemin), "utf8").split("\n").slice(debut - 1, fin).join("\n");
     expect(lignes("apps/console/lib/error-view.ts", 90, 93)).toContain('"Inconnu"');
     expect(lignes("DEPLOY.md", 272, 278)).toContain("`neondb_owner`, PAS `console_ro`");
-    expect(lignes("apps/console/components/presentation/Specs.tsx", 166, 170)).toContain("rôle propriétaire");
+    expect(lignes("apps/console/components/presentation/Specs.tsx", 172, 176)).toContain("rôle propriétaire");
   });
 });
 

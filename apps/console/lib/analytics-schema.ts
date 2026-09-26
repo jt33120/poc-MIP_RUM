@@ -78,7 +78,8 @@ export const VISUALIZATION_LABELS: Record<Visualization, string> = {
   value: "Valeur unique",
   toplist: "Classement",
   timeseries: "Série temporelle",
-  table: "Journal",
+  // « Lignes » et non « Journal » : « Journal » est l'onglet de navigation de /events.
+  table: "Lignes",
 };
 
 /**
@@ -218,7 +219,7 @@ const UTILISATEURS_IDENTIFIES: FieldDefinition = {
 export const EXPLORER_DATASETS = {
   custom_events: {
     dataset: "custom_events",
-    label: "Événements custom",
+    label: "Événements personnalisés",
     summary: "Les événements déclarés par l'application, avec leurs propriétés bornées.",
     time: "ts",
     key: { column: "id", type: "bigint" },

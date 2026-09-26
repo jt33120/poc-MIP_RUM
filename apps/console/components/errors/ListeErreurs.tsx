@@ -36,7 +36,10 @@ export function CelluleGroupe({
   testId?: string;
 }) {
   return (
-    <td className={`mt-1 flex min-w-0 items-baseline gap-2 text-xs ${CELLULE_GROUPE} ${className}`} data-testid={testId}>
+    // En carte, les cellules s'enchaînent sur une ligne (`inline-flex`) : une carte de
+    // six lignes empilées faisait 230 px, et 22 groupes une page de 8 460 px à 390 px
+    // (recette du 26/09/2026).
+    <td className={`mr-4 mt-1 inline-flex min-w-0 items-baseline gap-1.5 text-xs sm:mr-0 ${CELLULE_GROUPE} ${className}`} data-testid={testId}>
       <span className="shrink-0 text-ink-soft sm:hidden">{libelle}</span>
       {children}
     </td>

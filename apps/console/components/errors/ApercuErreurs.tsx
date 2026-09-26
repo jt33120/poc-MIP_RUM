@@ -21,6 +21,7 @@ import { StackedBars, type SerieEmpilee } from "@/components/charts/StackedBars"
 import { EchecLecture } from "@/components/states/SectionErreur";
 import type { CouverturePrecedente } from "@/lib/comparaison";
 import { formater } from "@/lib/fmt-ids";
+import { pluriel } from "@/lib/format";
 import type { SectionLue } from "@/lib/lecture";
 import { autresGroupes, libelleGroupeErreur, partTouchees } from "@/lib/perf-domain";
 import type { GroupeFrequent, PartSessionsTouchees, TotauxErreurs } from "@/lib/queries-errors";
@@ -273,6 +274,9 @@ export function HeroGroupesErreurs({
         fingerprint: g.ref.fingerprint,
         app_id: plusieursApps ? g.ref.app_id : null,
       }),
+      // Le message ENTIER en infobulle de la légende : le libellé en retire « Uncaught »
+      // et coupe au-delà de 90 caractères.
+      libelleComplet: g.message ?? undefined,
       categorieIndex: i,
       href: hrefGroupe(g),
     })),
@@ -298,17 +302,16 @@ export function HeroGroupesErreurs({
                 : `${groupes.length} groupe sur ${plage}`}
             </span>
             <span>tranches de {bucketLabel}</span>
-            <span>{formater("count", total)} occurrences en tout</span>
+            <span>{pluriel(total, "occurrence")} en tout</span>
           </>
         }
+        // Recette du 26/09/2026 : quatre lignes de méthode sous le graphique. Il en reste
+        // l'essentiel — ce qu'est « Autres », ce que fait un clic — en une phrase.
         lecture={
           <>
-            Barres empilées : des occurrences s&apos;additionnent, la hauteur d&apos;une colonne est le total du seau. Les
-            groupes sont les {GROUPES_DU_HERO} plus fréquents de la fenêtre, quel que soit leur statut — pas les premiers
-            de la liste, rangée pour le triage.
-            {avecAutres && " « Autres groupes (somme) » = total de la tranche moins ces groupes : ce n'est pas un groupe."} Un
-            clic sur un segment ouvre son groupe, un clic sur une tranche zoome sur sa plage. La période précédente n&apos;est
-            pas superposée (une pile de référence ne se lit pas) : son écart est dans la tuile « Occurrences ».{" "}
+            Les {GROUPES_DU_HERO} groupes les plus fréquents de la période, quel que soit leur statut
+            {avecAutres ? ", et la somme des autres" : ""}. Un clic sur un segment ouvre son groupe ; sur une tranche,
+            zoome sur sa plage.{" "}
             <Link href="#groupes-erreurs" className="text-perf underline-offset-2 hover:underline">
               Tous les groupes
             </Link>

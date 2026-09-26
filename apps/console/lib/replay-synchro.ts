@@ -184,12 +184,12 @@ export function messagePosition(source: SourcePosition, t: number, marqueurs: re
   const dans = `+${formater("s-auto", Math.max(0, t - debut))} dans l'enregistrement`;
   if (source === "url") {
     return marqueurs.some((m) => m.ton === "erreur" && Math.abs(m.t - t) <= 1000)
-      ? "Replay positionné à l'instant de l'erreur"
-      : `Replay positionné à l'instant demandé (${dans})`;
+      ? "Rejeu positionné à l'instant de l'erreur"
+      : `Rejeu positionné à l'instant demandé (${dans})`;
   }
   return source === "ligne"
-    ? `Replay positionné sur la ligne choisie (${dans})`
-    : `Replay positionné sur le repère choisi (${dans})`;
+    ? `Rejeu positionné sur la ligne choisie (${dans})`
+    : `Rejeu positionné sur le repère choisi (${dans})`;
 }
 
 /** `ignores` de `GET /api/replay/[sessionId]` (B36) : un entier positif, sinon 0. */

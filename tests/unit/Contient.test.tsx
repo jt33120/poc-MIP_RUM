@@ -1,5 +1,6 @@
-// P**.3 — La partie 1 de la vitrine, « Ce qu'il contient » (plan § 8.2, PS2 à PS6),
-// en rendu SSR réel (`renderToStaticMarkup`).
+// P**.3 — La partie 1 du dossier technique, « Ce qu'il contient » (plan § 8.2, PS2 à
+// PS6), en rendu SSR réel (`renderToStaticMarkup`). L'hébergement (PS4) a quitté la
+// partie pour la présentation, sa seule place (tests/unit/presentation-vitrine.test.tsx).
 //
 // Ce que ces tests tiennent :
 //   - la hiérarchie : la partie porte le seul `h2`, ses blocs des `h3`, dans l'ordre
@@ -7,7 +8,7 @@
 //   - les textes exacts du plan, et ceux qu'il a fallu réécrire parce que le relevé
 //     du 23/09/2026 les avait rendus faux, avec des valeurs CALCULÉES ;
 //   - la topologie : `role="img"`, libellé, alternative textuelle (TP7, côté SSR) ;
-//   - l'hébergement : une ligne par hébergeur de lib/legal.ts, et la phrase du plan ;
+//   - l'hébergement n'y est plus redit : un renvoi vers le tableau de la présentation ;
 //   - les écrans : la liste de la navigation, du texte pour un visiteur, des liens
 //     pour un connecté, rien des catégories fermées ;
 //   - le carrousel : connecté seulement, bouton d'administration pour un admin seulement.
@@ -21,7 +22,7 @@ import { Topologie } from "@/components/presentation/Topologie";
 import type { SessionUser } from "@/lib/auth";
 import { RELEVE, TESTS_SQL, TESTS_SQL_VERTS, TESTS_UNITAIRES } from "@/lib/couverture";
 import { FAMILLES_API_V1, OUTILS_MCP, RESERVES_CHAINE } from "@/lib/presentation-contient";
-import { ARIA_TOPOLOGIE, HEBERGEMENT, PIECES } from "@/lib/presentation-topologie";
+import { ARIA_TOPOLOGIE, PIECES, TOPOLOGIE_RELEVEE } from "@/lib/presentation-topologie";
 import { REPLAY_GZIP_KO, SDK_POIDS_TEXTE, koTexte } from "@/lib/sdk-poids";
 import { EXT_VERSION } from "@/lib/specs";
 import { RN_VERSION } from "@/lib/versions";
@@ -42,9 +43,6 @@ const lisible = (html: string) =>
     .replace(/[\u00a0\u202f]/g, " ")
     .replace(/\s+/g, " ");
 
-/** Les cellules d'une rangée de tableau, une par une. */
-const cellules = (rangee: string) => [...rangee.matchAll(/<t[hd][^>]*>(.*?)<\/t[hd]>/gs)].map((m) => lisible(m[1]).trim());
-
 /** Un nombre tel que la page l'écrit, espaces fines normalisées. */
 const nombre = (n: number) => n.toLocaleString("fr-FR").replace(/[\u00a0\u202f]/g, " ");
 
@@ -60,23 +58,23 @@ function titres(html: string): [number, string][] {
 }
 
 describe("la partie : un h2, ses blocs en h3, dans l'ordre du plan", () => {
-  it("visiteur : capteurs, chemin, hébergement, écrans, état de la chaîne", () => {
+  it("visiteur : capteurs, chemin, écrans, état de la chaîne — l'hébergement n'est plus redit ici", () => {
     const t = titres(visiteur);
     expect(t.filter(([n]) => n === 2)).toEqual([[2, "Ce qu'il contient"]]);
     expect(t.filter(([n]) => n === 3).map(([, x]) => x)).toEqual([
       "Extension navigateur ou SDK embarqué",
       "Le chemin de la mesure",
-      "Où sont les données, et sous quel droit",
       "Les écrans de la console",
       "Autour de la console, et l'état de la chaîne",
     ]);
+    expect(visiteur).not.toContain('data-testid="hebergement"');
   });
 
   it("connecté : « Brancher une application » sous les écrans, avant l'état de la chaîne", () => {
     const h3 = titres(connecte)
       .filter(([n]) => n === 3)
       .map(([, x]) => x);
-    expect(h3.slice(3, 6)).toEqual([
+    expect(h3.slice(2, 5)).toEqual([
       "Les écrans de la console",
       "Brancher une application",
       "Autour de la console, et l'état de la chaîne",
@@ -84,7 +82,7 @@ describe("la partie : un h2, ses blocs en h3, dans l'ordre du plan", () => {
   });
 
   it("chaque bloc est une section nommée par son titre", () => {
-    for (const id of ["contient-capteurs", "contient-topologie", "contient-hebergement", "contient-ecrans", "contient-chaine"]) {
+    for (const id of ["contient-capteurs", "contient-topologie", "contient-ecrans", "contient-chaine"]) {
       expect(visiteur, id).toContain(`<section id="${id}" aria-labelledby="${id}-titre"`);
       expect(visiteur, id).toMatch(new RegExp(`<h3 id="${id}-titre"`));
     }
@@ -120,10 +118,11 @@ describe("PS2 — les capteurs", () => {
     expect(lisible(version)).toBe(`${EXT_VERSION}, non publiée au Chrome Web Store`);
   });
 
-  it("sous les cartes, les agents côté serveur (texte exact du plan)", () => {
+  it("sous les cartes, les agents côté serveur (texte du plan, sans chemin du code)", () => {
     expect(texte).toContain(
-      "Côté serveur : un agent Node (packages/agent-node) et un middleware FastAPI (examples/integrations/fastapi) relient un appel du navigateur à son exécution serveur, sur un seul saut.",
+      "Côté serveur : un agent Node et un middleware FastAPI relient un appel du navigateur à son exécution serveur, sur un seul saut.",
     );
+    expect(texte).not.toMatch(/packages\/|examples\/|collection_source|<all_urls>/);
   });
 
   it("les flèches gardent la classe que coupe le mouvement réduit (TP12)", () => {
@@ -165,41 +164,26 @@ describe("PS3 — le chemin de la mesure (TP7, côté SSR)", () => {
     for (const mot of ["Vercel", "fra1", "Neon", "Railway"]) expect(alternative).toContain(mot);
   });
 
-  it("la légende dit où passe le trafic, et date chaque fait d'exploitation", () => {
-    expect(texte).toContain("Le collecteur est une route de la console : c'est l'adresse que visent les SDK.");
-    expect(texte).toContain(
-      "en production, il ne tourne nulle part : le service Railway ingest, qui l'exécutait sans domaine public, a été supprimé le 21/09/2026.",
-    );
-    expect(texte).toContain(
-      "Le scheduler applique les migrations au pré-déploiement : constaté le 18/09/2026 dans les journaux du déploiement 03850b30.",
-    );
-    expect(texte).toContain("Topologie relevée par les API Railway et Vercel le 18/09/2026, puis par l'API Railway le 23/09/2026.");
-  });
-});
-
-describe("PS4 — où sont les données, et sous quel droit", () => {
-  const texte = lisible(visiteur);
-
-  it("une ligne par hébergeur, lue dans lib/legal.ts", () => {
-    const table = /<table aria-labelledby="contient-hebergement-titre".*?<\/table>/s.exec(visiteur)?.[0] ?? "";
-    const [entete, ...lignes] = [...table.matchAll(/<tr[^>]*>(.*?)<\/tr>/gs)].map((m) => cellules(m[1]));
-    expect(entete).toEqual(["Pièce", "Hébergeur", "Région", "Droit de l'hébergeur"]);
-    expect(lignes).toEqual(HEBERGEMENT.map((l) => [l.piece, l.hebergeur, l.lieu, l.droit]));
+  it("la légende dit où passe le trafic, datée, sans journal d'exploitation ni chemin du code", () => {
+    expect(texte).toContain("Le collecteur est une route de la console : c'est l'adresse que visent les capteurs.");
+    expect(texte).toContain("Un collecteur autonome existe aussi dans le code, testé à chaque intégration continue, mais n'est pas encore mis en service.");
+    expect(texte).toContain(`Topologie relevée le ${TOPOLOGIE_RELEVEE.railway}.`);
+    // Recette du 26/09/2026 : ni service supprimé tel jour, ni identifiant de déploiement,
+    // ni chemin du code sur une page publique.
+    expect(texte).not.toMatch(/supprimé le|03850b30|services\/collector|\bscheduler\b/);
   });
 
-  it("la phrase sous la table, texte exact du plan", () => {
-    expect(texte).toContain(
-      "La donnée et le calcul sont en Union européenne ; les trois hébergeurs relèvent d'un droit tiers. Ce POC n'est pas une offre souveraine. Aucune adresse IP n'est stockée, sous aucune forme.",
-    );
-  });
-
-  it("la table défile dans un conteneur positionné, jamais la page", () => {
-    expect(visiteur).toMatch(/<div class="card relative [^"]*overflow-x-auto"><table aria-labelledby="contient-hebergement-titre"/);
+  it("l'hébergement renvoie au tableau de la présentation, sa seule place", () => {
+    expect(html).toMatch(/<a [^>]*href="\/presentation#hebergement"[^>]*>le tableau de la présentation<\/a>/);
   });
 });
 
 describe("PS5 — les écrans de la console", () => {
-  const liste = (html: string) => /<ul [^>]*data-testid="ecrans-console".*?<\/ul><\/li><\/ul>/s.exec(html)?.[0] ?? "";
+  /** La liste des écrans : du `ul` jusqu'au paragraphe des méthodes d'analyse. */
+  const liste = (html: string) => {
+    const debut = html.indexOf('data-testid="ecrans-console"');
+    return debut < 0 ? "" : html.slice(debut, html.indexOf('data-testid="methodes-analyse"', debut));
+  };
 
   it("la liste de la navigation, sans rien recopier ni les catégories fermées", () => {
     const montrees = categoriesMontrees();
@@ -213,18 +197,40 @@ describe("PS5 — les écrans de la console", () => {
     expect(performance.ecrans.some((e) => e.href === "/actions")).toBe(false);
   });
 
+  it("un libellé par écran : aucune catégorie ne se répète sous son propre titre (recette du 26/09/2026)", () => {
+    for (const { categorie, ecrans } of categoriesMontrees()) {
+      expect(ecrans.map((e) => e.label), categorie.label).not.toContain(categorie.label);
+    }
+    // « API et MCP » n'a pas de sous-onglets : son titre suffit.
+    expect(categoriesMontrees().find((m) => m.categorie.href === "/api-docs")?.ecrans).toEqual([]);
+  });
+
   it("visiteur : du texte, aucun lien (ces écrans demandent une session)", () => {
     const html = renderToStaticMarkup(<EcransConsole user={null} />);
     expect(liste(html)).not.toContain("<a ");
-    for (const { ecrans } of categoriesMontrees()) {
+    for (const { categorie, ecrans } of categoriesMontrees()) {
+      expect(lisible(liste(html))).toContain(categorie.label);
       for (const e of ecrans) expect(lisible(liste(html))).toContain(e.label);
     }
+    // Sans démo ouverte, aucune invitation vers elle.
+    expect(html).not.toContain('data-testid="ecrans-demo"');
   });
 
-  it("connecté : chaque écran est un lien vers sa route, en navigation document", () => {
+  it("visiteur, démo ouverte : une invitation à voir ces écrans en lecture seule", () => {
+    const html = renderToStaticMarkup(<EcransConsole user={null} demoOuverte />);
+    expect(html).toMatch(/data-testid="ecrans-demo"[^>]*>.*<a href="\/demo"/s);
+    expect(renderToStaticMarkup(<EcransConsole user={VIEWER} demoOuverte />)).not.toContain('data-testid="ecrans-demo"');
+  });
+
+  it("connecté : chaque catégorie et chaque écran sont des liens vers leur route, en navigation document", () => {
     const html = renderToStaticMarkup(<EcransConsole user={VIEWER} />);
     const liens = [...liste(html).matchAll(/<a href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map((m) => [m[1], lisible(m[2]).trim()]);
-    expect(liens).toEqual(categoriesMontrees().flatMap(({ ecrans }) => ecrans.map((e) => [e.href, e.label])));
+    expect(liens).toEqual(
+      categoriesMontrees().flatMap(({ categorie, ecrans }) => [
+        [categorie.href, categorie.label],
+        ...ecrans.map((e) => [e.href, e.label]),
+      ]),
+    );
   });
 
   it("chapeau exact ; méthodes d'analyse datées par le relevé, sans compte figé", () => {

@@ -64,6 +64,8 @@ import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
 import { grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, lireEtatDeVue, ligneIgnoree } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { pluriel } from "@/lib/format";
+import { CheminCoupable } from "@/components/map/CheminCoupable";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +73,7 @@ export const dynamic = "force-dynamic";
 const PLAFOND_NOEUDS = 40;
 
 /** La population de l'écran, nommée dans chaque méta (S1). */
-const POPULATION = "appels instrumentés (spans) de la fenêtre";
+const POPULATION = "appels instrumentés de la fenêtre";
 
 // Santé inconnue : pastille CREUSE et neutre, pas une quatrième couleur de verdict.
 const DOT: Record<Health, string> = {
@@ -216,7 +218,7 @@ export default async function ExperienceMapPage({
               }
             />
             <KpiTile
-              label="Appels front avec service corrélé"
+              label="Appels navigateur suivis jusqu'au serveur"
               valeur={partCorrelee}
               format="pct"
               raisonNull={
@@ -227,7 +229,7 @@ export default async function ExperienceMapPage({
                 unite: "appels navigateur",
                 faibleSous: SEUIL_ECHANTILLON_FAIBLE,
               }}
-              lecture="Part des appels navigateur dont la réponse serveur a été retrouvée (span serveur enfant de l'appel)."
+              lecture="part des appels navigateur dont la réponse serveur a été retrouvée"
               href={hrefWithQuery("/tracing", query)}
             />
             <KpiTile
@@ -235,7 +237,7 @@ export default async function ExperienceMapPage({
               valeur={risques.conclues.services > 0 ? risques.services : null}
               raisonNull="non conclu : aucune tendance mesurable, la première moitié de la plage ne porte pas d'appel à comparer"
               format="count"
-              lecture={`volume en hausse ET santé dégradée, services serveur seulement${
+              lecture={`volume en hausse et santé dégradée, services serveur seulement${
                 risques.pages > 0 ? ` ; pages concernées à part : ${formater("count", risques.pages)}` : ""
               } ; une santé inconnue n'est pas une dégradation observée`}
               href="#services-classes"
@@ -298,10 +300,10 @@ export default async function ExperienceMapPage({
             lecture={
               <>
                 Colonne gauche = les pages vues du navigateur, colonne droite = les routes serveur ; un ruban relie
-                une page à l&apos;exécution serveur de SES appels (span serveur enfant de l&apos;appel), épaisseur =
-                volume, couleur et texte du nœud = santé. La carte se remplit quand le tracing front → back émet.
-                Santé d&apos;un nœud (règle de la console, sans seuil publié de référence, S6) :{" "}
-                <span data-testid="regle-sante">{texteRegleSanteApi()}</span>.
+                une page à l&apos;exécution serveur de SES appels, épaisseur = volume, couleur et texte du nœud =
+                santé ; un ruban prend la couleur du service qu&apos;il appelle quand celui-ci est dégradé ou à
+                surveiller. La carte se remplit quand le tracing navigateur → serveur émet. Santé d&apos;un nœud (règle de
+                la console, faute de seuil publié) : <span data-testid="regle-sante">{texteRegleSanteApi()}</span>.
               </>
             }
           >
@@ -328,9 +330,9 @@ export default async function ExperienceMapPage({
                   <ExperienceMap layout={layout} />
                 </div>
                 {masquees > 0 && (
-                  <p className="mt-2 text-xs text-ink-faint" data-testid="carte-autres">
-                    {formater("count", masquees)} route(s) moins actives regroupées dans « Autres routes » (top{" "}
-                    {CAP_COLONNE} par colonne détaillés) : leurs liens y arrivent, ils ne sont plus jetés.
+                  <p className="mt-2 text-xs text-ink-soft" data-testid="carte-autres">
+                    {pluriel(masquees, "route moins active regroupée", "routes moins actives regroupées")} dans « Autres
+                    routes » ({CAP_COLONNE} par colonne détaillées) : leurs liens y arrivent.
                   </p>
                 )}
                 {bandeauRisque && (
@@ -370,7 +372,15 @@ export default async function ExperienceMapPage({
         <Figure
           id="pages-visitees"
           titre="Pages les plus visitées"
-          meta={<span>Top 12 des routes par sessions mesurées · {plage}</span>}
+          // Le nombre RÉEL de lignes (recette du 26/09/2026 : « Top 12 » au-dessus de 9 lignes).
+          meta={
+            <span>
+              {pages.ok && pages.data.length > 0
+                ? `${pluriel(pages.data.length, "route", "routes")} les plus mesurées, par sessions`
+                : "routes les plus mesurées, par sessions"}{" "}
+              · {plage}
+            </span>
+          }
           etat={
             !pages.ok
               ? { kind: "erreur", titre: "Pages les plus visitées" }
@@ -453,7 +463,7 @@ function Cellule({ noeud }: { noeud: GNode | undefined }) {
   const contenu = (
     <span className="inline-flex min-w-0 items-center gap-2">
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[noeud.health]}`} aria-hidden="true" />
-      <span className="min-w-0 break-all font-mono text-xs">{noeud.route}</span>
+      <CheminCoupable chemin={noeud.route} />
     </span>
   );
   if (!noeud.href) return contenu;
@@ -482,14 +492,19 @@ function ServicesClasses({
   appelsTotal: number;
   groupes: number;
 }) {
+  // Le libellé est la ROUTE seule : préfixée du côté (« navigateur /partners/:i… »),
+  // elle était coupée avant ce qui la distingue, et /partners/:id et
+  // /partners/:id/documents devenaient indiscernables (recette du 26/09/2026). Le
+  // côté passe dans sa colonne.
   const impactLignes: ImpactLigne[] = classees.map((r) => ({
     cle: `${r.tier}:${r.route}`,
-    libelle: `${LIBELLE_TIER[r.tier]} ${r.route}`,
+    libelle: r.route,
     href: hrefNoeud(r),
-    description: `${LIBELLE_TIER[r.tier]} ${r.route}, ${formater("count", r.calls)} appels, p75 ${formater("ms", r.latency_p75)}`,
+    description: `${LIBELLE_TIER[r.tier]} ${r.route}, ${pluriel(r.calls, "appel")}, p75 ${formater("ms", r.latency_p75)}`,
     pilote: r.latency_p75,
     volume: r.calls,
     mesures: [
+      { cle: "cote", valeur: null, affichage: LIBELLE_TIER[r.tier] },
       { cle: "err", valeur: r.error_rate, affichage: formater("pct", r.error_rate) },
       // La tendance est un TEXTE (« +32 % » ou « — ») : elle ne classe rien et ne
       // porte pas de verdict, donc aucune valeur numérique n'est donnée.
@@ -510,15 +525,16 @@ function ServicesClasses({
         // d'écart n'est proposée.
         reference={{ libelle: "Tous les services", valeurs: { volume: formater("count", appelsTotal) } }}
         lignes={impactLignes}
-        colonnes={["Taux d'erreur", "Tendance"]}
+        colonnes={["Côté", "Taux d'erreur", "Tendance"]}
         unitePilote="ms"
         volumeLibelle="Appels"
         groupes={groupes}
         tronque={groupes >= PLAFOND_NOEUDS}
-        notice={`Un nœud = un couple (tier, route) de rum_span sur la fenêtre. Classement par latence p75 ; sous ${SEUIL_ECHANTILLON_FAIBLE} appels, la ligne passe en fin de liste (${formater(
-          "count",
+        notice={`Un nœud = une page (côté navigateur) ou une route serveur, sur la fenêtre. Classement par latence p75 ; sous ${SEUIL_ECHANTILLON_FAIBLE} appels, la ligne passe en fin de liste (${pluriel(
           faibles,
-        )} concernée(s)). Tendance : moitié récente contre moitié ancienne de la plage, rien sous le seuil anti-bruit.`}
+          "ligne concernée",
+          "lignes concernées",
+        )}). Tendance : moitié récente contre moitié ancienne de la plage, rien sous le seuil anti-bruit.`}
       />
     </div>
   );
@@ -553,7 +569,7 @@ function TablePages({ pages, query }: { pages: { route: string; sessions: number
                       className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[sante]}`}
                       title={p.lcp_p75 == null ? "aucune mesure LCP" : `LCP p75 : ${LIBELLE_SANTE[sante]}`}
                     />
-                    <span className="min-w-0 break-all font-mono text-xs">{p.route}</span>
+                    <CheminCoupable chemin={p.route} />
                   </Link>
                 </td>
                 <td className="px-4 py-2 text-right font-semibold tabular-nums">{formater("count", p.sessions)}</td>

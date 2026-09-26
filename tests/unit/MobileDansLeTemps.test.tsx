@@ -135,12 +135,15 @@ describe("MobileDansLeTemps — deux panneaux empilés, avec alternative", () =>
     expect(avec).toContain(NOTE_CAPACITE_INCONNUE);
   });
 
-  it("l'Explorer rejoue le panneau des sessions, et la figure le dit", () => {
+  it("l'Explorer rouvre le panneau des sessions, et la figure le dit sans nom de champ", () => {
     const html = renderToStaticMarkup(
       <MobileDansLeTemps {...COMMUN} explorer="/explorer?seg=v2%3Aruntime%3Aeq%3Areact_native" lecture={lue([3, 0, 1], [2, 0, 0])} />,
     );
     expect(html).toContain('href="/explorer?seg=v2%3Aruntime%3Aeq%3Areact_native"');
-    expect(texte(html)).toContain("L'Explorer rejoue le panneau des sessions");
+    expect(texte(html)).toContain("L'Explorer rouvre le panneau des sessions");
+    // Recette du 26/09/2026 : plus de nom de champ (« runtime = react_native ») ni de « seau ».
+    expect(texte(html)).not.toContain("runtime");
+    expect(texte(html)).not.toMatch(/\bseaux?\b/);
     const sans = renderToStaticMarkup(<MobileDansLeTemps {...COMMUN} lecture={lue([3, 0, 1], [2, 0, 0])} />);
     expect(sans).not.toContain("/explorer");
   });

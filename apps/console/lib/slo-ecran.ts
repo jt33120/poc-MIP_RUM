@@ -28,7 +28,11 @@ const VITAUX: readonly string[] = ["LCP", "INP", "CLS", "FCP", "TTFB"];
 export const FORMULE_SLO =
   "LCP, INP, CLS, FCP, TTFB : part des mesures notées Bon sur la fenêtre. Taux d'erreur : 1 − occurrences d'erreurs navigateur ÷ pages vues sur la fenêtre, comme la Vue d'ensemble (négatif s'il y a plus d'occurrences que de pages vues) ; ce n'est pas une part de pages.";
 
-/** Facteur du burn rapide de `slo_status()` (migration-v64) ; origine non documentée dans le dépôt. */
+/**
+ * Facteur du burn rapide de `slo_status()` (migration-v64). C'est le seuil usuel des
+ * pratiques SRE pour une fenêtre d'une heure : 14,4 × 1 h ÷ 720 h = 2 % d'un budget
+ * de 30 jours consommés en une heure.
+ */
 export const FACTEUR_BURN_RAPIDE = 14.4;
 
 /** La métrique en clair : sa formule, pas son identifiant (« Taux d'erreur JS » disparaît). */

@@ -10,6 +10,7 @@
 // stabilité → Sessions, anomalies → leur table).
 import Link from "next/link";
 import { GlossaryTip } from "@/components/GlossaryTip";
+import { InfoTip } from "@/components/InfoTip";
 import { dominantFactors, type Health, type HealthFactor, HEALTH_CLASS, type HealthLabel } from "@/lib/health-libelles";
 import { RATING_HEX } from "@/lib/palette";
 import { pluriel } from "@/lib/format";
@@ -128,6 +129,24 @@ function FactorBar({ facteur, compact, href }: { facteur: HealthFactor; compact:
   );
 }
 
+/**
+ * La pondération du score et ses deux réserves, DERRIÈRE une aide : sept lignes de
+ * pondérations sous l'anneau passaient avant l'information (recette du 26/09/2026).
+ * Le texte reste dans la page, lisible par un lecteur d'écran.
+ */
+function MethodeSante() {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-ink-soft">
+      <InfoTip label="Comment ce score est calculé" align="start">
+        <span data-testid="sante-formule">
+          {FORMULE_SANTE} {LIGNE_FIXE_SANTE}
+        </span>
+      </InfoTip>
+      Comment ce score est calculé
+    </span>
+  );
+}
+
 /** Composantes exclues parce que non testables (P*.1, 0-c) : dites en clair. */
 function Exclusions({ health }: { health: Health }) {
   return (
@@ -218,10 +237,16 @@ export function HealthBanner({
             ))}
           </div>
         </div>
-        <p className="text-xs text-ink-soft" data-testid="sante-formule">
-          {FORMULE_SANTE} {LIGNE_FIXE_SANTE}
-          <Exclusions health={health} />
-        </p>
+        {/* Ce qui change la lecture du chiffre (une composante exclue) reste écrit ; la
+            méthode passe derrière l'aide. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <MethodeSante />
+          {health.factors.some((x) => x.earned == null && x.raisonNull === "non testable") && (
+            <p className="text-xs text-ink-soft" data-testid="sante-exclusions">
+              <Exclusions health={health} />
+            </p>
+          )}
+        </div>
       </section>
     );
   }
@@ -266,7 +291,7 @@ export function HealthBanner({
         ))}
       </div>
       <div className="w-full text-xs text-ink-faint">
-        {FORMULE_SANTE}
+        <MethodeSante />
         <Exclusions health={health} />
         {dominant.length > 0 && (
           <>

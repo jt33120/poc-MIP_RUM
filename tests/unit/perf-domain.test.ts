@@ -235,11 +235,19 @@ describe("F18 — autresGroupes", () => {
 });
 
 describe("F18 — libelleGroupeErreur", () => {
-  it("message tronqué à 40 caractères + empreinte courte : jamais le seul type", () => {
-    const long = "TypeError: Cannot read properties of undefined (reading 'panier')";
-    const libelle = libelleGroupeErreur({ message: long, fingerprint: "a1b2c3d4e5f6a7b8" });
-    expect(libelle).toBe(`${long.slice(0, 39)}… · a1b2c3d4`);
-    expect(libelle.split(" · ")[0]).toHaveLength(40);
+  // Recette du 26/09/2026 : « Cannot read propert… » ne disait plus quel groupe c'était.
+  it("message lisible : « Uncaught » retiré, ce qui distingue le groupe gardé, empreinte courte", () => {
+    const message = "Uncaught TypeError: Cannot read properties of undefined (reading 'panier')";
+    expect(libelleGroupeErreur({ message, fingerprint: "a1b2c3d4e5f6a7b8" })).toBe(
+      "TypeError: Cannot read properties of undefined (reading 'panier') · a1b2c3d4",
+    );
+  });
+
+  it("au-delà de 90 caractères : coupé à un mot, jamais au milieu", () => {
+    const long = `Échec de connexion au référentiel partenaires ${"très ".repeat(20)}long`;
+    const tete = libelleGroupeErreur({ message: long, fingerprint: "a1b2c3d4e5f6a7b8" }).split(" · ")[0];
+    expect(tete.length).toBeLessThanOrEqual(90);
+    expect(tete.endsWith("très…")).toBe(true);
   });
 
   it("cinq groupes du même type « Error » ont cinq libellés distincts", () => {

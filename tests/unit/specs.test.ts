@@ -102,8 +102,11 @@ describe("onglet infrastructure — chaque ligne porte sa preuve", () => {
     expect(valeurs).toContain(HOSTS.backend);
   });
 
-  it("donne l'adresse du serveur MCP depuis sa source unique", () => {
-    expect(LIGNES.some((l) => l.v.includes(MCP_ORIGINE))).toBe(true);
+  it("ne publie pas l'adresse du serveur MCP sur la page publique (recette du 26/09/2026)", () => {
+    // Une URL d'infrastructure sur une page sans compte dessine la carte de la
+    // plateforme ; les clients la trouvent dans « API et MCP », derrière la connexion.
+    expect(LIGNES.some((l) => l.v.includes(MCP_ORIGINE))).toBe(false);
+    expect(LIGNES.some((l) => /railway\.app/.test(l.v))).toBe(false);
   });
 
   it("dit que la souveraineté n'est PAS atteinte", () => {

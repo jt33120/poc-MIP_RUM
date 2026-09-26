@@ -167,7 +167,7 @@ const NAVIGATION = [
     categorie: "Robot et réel",
     landing: "/correlation",
     onglets: [
-      ["/correlation", "Corrélation synthétique ↔ RUM"],
+      ["/correlation", "Robot et réel"],
       ["/tracing", "Tracing"],
       ["/map", "Carte"],
     ],

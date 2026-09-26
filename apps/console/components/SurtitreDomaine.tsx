@@ -29,10 +29,13 @@ export const DOMAINES = {
 
 export type PageDomain = keyof typeof DOMAINES;
 
-export function SurtitreDomaine({ domain }: { domain?: PageDomain }) {
+export function SurtitreDomaine({ domain, titre }: { domain?: PageDomain; titre?: string }) {
   // usePathname peut rendre null hors du routeur (rendu isolé en test) : repli « perf ».
   const pathname = usePathname();
   const d = DOMAINES[domain ?? surtitreDe(pathname ?? "") ?? "perf"];
+  // Un surtitre qui redit le titre n'apporte rien : « Explorer » s'écrivait quatre
+  // fois en haut de l'Explorer (recette du 26/09/2026). L'onglet actif et le titre suffisent.
+  if (titre !== undefined && titre.trim().toLowerCase() === d.label.toLowerCase()) return null;
   return (
     <div className={`mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] ${d.text}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${d.dot}`} />

@@ -97,6 +97,36 @@ describe("Figure — alternative textuelle (P10)", () => {
   });
 });
 
+// Recette du 26/09/2026 : la méthode passait avant le chiffre, et chaque écran avait
+// sa copie du repli ; deux « Alternative textuelle » dans une carte se confondaient.
+describe("Figure — méthode repliée et alternative nommée", () => {
+  it("la méthode se replie APRÈS le dessin, sous « Méthode »", () => {
+    const html = rendu(
+      <Figure titre="Taux de retour" methode="Part des visiteurs revenus la semaine suivante." alternative={ALTERNATIVE}>
+        {DESSIN}
+      </Figure>,
+    );
+    const methode = html.indexOf('data-testid="figure-methode"');
+    expect(methode).toBeGreaterThan(html.indexOf('data-testid="dessin"'));
+    expect(methode).toBeLessThan(html.indexOf('data-testid="alternative"'));
+    expect(texte(html)).toContain("MéthodePart des visiteurs revenus la semaine suivante.");
+  });
+
+  it("un état remplace aussi la méthode", () => {
+    const html = rendu(<Figure titre="Taux" methode="Définition." etat={{ kind: "vide", population: "visite", plage: "24 h" }} />);
+    expect(html).not.toContain('data-testid="figure-methode"');
+  });
+
+  it("le repli de l'alternative peut dire ce qu'il double", () => {
+    const html = rendu(
+      <Figure titre="Déclenchements" alternative={ALTERNATIVE} titreAlternative="Alternative textuelle — par jour">
+        {DESSIN}
+      </Figure>,
+    );
+    expect(texte(html)).toContain("Alternative textuelle — par jour");
+  });
+});
+
 describe("Figure — un état remplace le dessin", () => {
   it("vide : le texte de l'état, ni dessin ni alternative", () => {
     const html = rendu(

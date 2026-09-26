@@ -22,15 +22,29 @@
 // L'INCONNU RESTE INCONNU. Un seau sans mesure est un trou, pas une barre à zéro
 // (CE5) ; un groupe sans valeur est « — », rangé en dernier, sans barre (CE2) ;
 // un total `null` est « — » avec sa raison (V3).
+//
+// L'APPROCHÉ SE VOIT. Une valeur lue sur une distribution par tranches
+// (`meta.approximate`) s'écrit « ≈ 93 ms » (`valeurApprochee`), partout où ce
+// composant l'écrit : le même p75 lu sur chaque mesure donnait 92 ms deux cartes plus
+// bas, et rien ne distinguait les deux (recette du 26/09/2026).
+//
+// LA LECTURE D'ABORD, LA PROVENANCE ENSUITE (recette du 26/09/2026). Sous le titre,
+// la figure dit l'essentiel : effectif, fenêtre, tranches, « approchée ». Ce qui est
+// compté, l'additivité, la source, l'agrégat écarté, les apps et la méthode passent
+// dans un pied de page unique, replié (`APropos`). En carte de tableau de bord
+// (`taille="carte"`), la figure est compacte : valeur, verdict, graphique — sans
+// second cadre, sans titre redit, et tout le reste dans ce pied de page.
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Figure, type AlternativeTexte } from "@/components/charts/Figure";
+import { Figure, TableAlternative, type AlternativeTexte } from "@/components/charts/Figure";
 import { ImpactTable, type ImpactLigne, type TriImpact } from "@/components/ImpactTable";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { StackedBars, type SerieEmpilee } from "@/components/charts/StackedBars";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { TableDefilante } from "@/components/TableDefilante";
+import { EtatSurface, type Etat } from "@/components/states/EtatSurface";
+import { APropos } from "@/components/explorer/APropos";
 import { datasetDefinition, estAdditive, type ExplorerPlan } from "@/lib/analytics-schema";
 import type { CouverturePrecedente } from "@/lib/comparaison";
 import {
@@ -39,6 +53,8 @@ import {
   libelleMesure,
   phraseSansVerdict,
   titreResultat,
+  uniteEffectif,
+  valeurApprochee,
   vitalDeVerdict,
 } from "@/lib/explorer-page-params";
 import { formater, type FormatId } from "@/lib/fmt-ids";
@@ -54,6 +70,14 @@ import {
 } from "@/lib/query-contract";
 import { grilleIso, libelleSeauComplet, type Annotation, type PointSerie, type SerieDef } from "@/lib/series";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { categorie } from "@/lib/palette";
+
+/**
+ * Teinte d'un compte classé (occurrences, vues par groupe) : neutre (ardoise). Un
+ * volume n'a pas de seuil : ni l'orange, lu comme « À améliorer » à côté des badges
+ * de verdict, ni une couleur d'état (recette du 26/09/2026).
+ */
+export const TEINTE_VOLUME = categorie(4);
 
 /** La période de référence d'une comparaison `cmp=prev`, déjà lue par l'appelant. */
 export interface PrecedentResultat {
@@ -86,9 +110,6 @@ export interface HrefsResultat {
 /** Sous ce nombre de mesures, un vital est un échantillon faible (§ 3.12). */
 const FAIBLE_VITAL = 100;
 
-/** Effectif d'une ligne de résultat : des LIGNES de la population, pas des occurrences. */
-const UNITE_EFFECTIF = "lignes de population";
-
 /**
  * Seuil d'échantillon faible d'une valeur : 100 pour un vital (§ 3.12), 30 pour une
  * autre estimation (P3), aucun pour un compte — une somme n'est pas une estimation.
@@ -119,43 +140,92 @@ function plageLue(meta: ExplorerMeta): string {
   return rangeLabel(range, FUSEAU_AFFICHAGE);
 }
 
+/** La source d'un résultat, en mots d'utilisateur (« lignes brutes » était du vocabulaire de conception). */
+function libelleSource(meta: ExplorerMeta): string {
+  return meta.source === "rollup+raw" ? "agrégat horaire + données récentes" : "données détaillées";
+}
+
 /**
- * W-E8 — ce que la figure déclare (P11) : population comptée, effectif, fenêtre
- * réellement lue, seau, additivité, caractère approché, source, raison pour laquelle
- * l'agrégat n'a pas servi, apps effectives, couverture, troncature. Jamais vide dès
- * qu'une ligne a été lue. Exporté pour les tests.
+ * W-E8 — ce que la figure déclare D'EMBLÉE (P11), en tête de figure : l'effectif
+ * nommé par ce qu'il compte (« 186 mesures »), la fenêtre réellement lue, les
+ * tranches d'une série, « valeur approchée », une couverture partielle et une
+ * troncature — ce qui change la lecture du chiffre. Jamais vide dès qu'une ligne a
+ * été lue. Exporté pour les tests.
  */
 export function metaResultat(plan: ExplorerPlan, meta: ExplorerMeta, data: ExplorerData): string[] {
-  const morceaux = [
-    `Compte : ${meta.counting}`,
-    `${nombre(data.samples)} ${UNITE_EFFECTIF}`,
-    `fenêtre ${plageLue(meta)}`,
-  ];
+  const morceaux = [`${nombre(data.samples)} ${uniteEffectif(plan.dataset)}`, `fenêtre ${plageLue(meta)}`];
   if (plan.visualization === "timeseries") morceaux.push(`tranches de ${bucketLabel(meta.range.bucket_seconds)}`);
-  morceaux.push(meta.additive ? "agrégation additive" : "agrégation non additive");
-  if (meta.approximate) morceaux.push("valeur approchée");
-  morceaux.push(`source : ${meta.source === "rollup+raw" ? "agrégat + lignes" : "lignes brutes"}`);
-  if (meta.rollup.reason) morceaux.push(`agrégat non utilisé : ${meta.rollup.reason}`);
-  morceaux.push(
-    meta.effective_apps === null ? "toutes les apps autorisées" : `apps : ${meta.effective_apps.join(", ")}`,
-  );
-  morceaux.push(meta.coverage.status === "complete" ? "couverture complète" : `couverture partielle : ${meta.coverage.reason ?? "raison non lue"}`);
+  if (meta.approximate) morceaux.push("valeur approchée (≈)");
+  if (meta.coverage.status !== "complete") {
+    morceaux.push(`couverture partielle : ${meta.coverage.reason ?? "raison non lue"}`);
+  }
   if (meta.truncated_groups && (plan.visualization === "toplist" || plan.visualization === "timeseries")) {
     morceaux.push(`${nombre(data.groups.length)} groupes affichés ; le total porte sur toute la population`);
   }
-  if (plan.visualization === "table") {
-    morceaux.push("aucun tri par mesure : le journal est ordonné par date");
-  }
+  if (plan.visualization === "table") morceaux.push("lignes ordonnées par date, aucun tri par mesure");
   return morceaux;
 }
 
+/**
+ * La PROVENANCE du résultat, rangée dans le pied de page (`APropos`) : ce qui est
+ * compté, si les valeurs s'additionnent, d'où vient le calcul, pourquoi l'agrégat
+ * horaire n'a pas servi, sur quelles apps, et si la fenêtre est entièrement
+ * conservée. Rien de ce que disait la méta W-E8 n'est perdu : il est dit après le
+ * chiffre. Exporté pour les tests.
+ */
+export function provenanceResultat(plan: ExplorerPlan, meta: ExplorerMeta): string[] {
+  const lignes = [`Ce qui est compté : ${meta.counting}.`];
+  lignes.push(
+    meta.additive
+      ? "Valeurs additionnables : un total est la somme de ses groupes."
+      : "Valeurs non additionnables (percentile, moyenne, distincts) : un total n'est pas la somme de ses groupes.",
+  );
+  if (meta.approximate) {
+    lignes.push("Valeur approchée (≈) : lue sur une distribution par tranches, pas mesure par mesure.");
+  }
+  lignes.push(`Source : ${libelleSource(meta)}.`);
+  if (meta.rollup.reason) lignes.push(`Agrégat horaire non utilisé : ${meta.rollup.reason}.`);
+  lignes.push(
+    meta.effective_apps === null
+      ? "Applications : toutes celles autorisées."
+      : `${meta.effective_apps.length > 1 ? "Applications" : "Application"} : ${meta.effective_apps.join(", ")}.`,
+  );
+  lignes.push(
+    meta.coverage.status === "complete"
+      ? "Fenêtre entièrement conservée."
+      : `Couverture partielle : ${meta.coverage.reason ?? "raison non lue"}.`,
+  );
+  if (plan.visualization === "table") lignes.push("Les lignes sont ordonnées par date : aucun tri par mesure.");
+  return lignes;
+}
+
+/**
+ * Les lignes du pied de page : la provenance, dont la source porte son repère de test
+ * (`explorer-source`), puis la méthode propre à la forme.
+ */
+function lignesAPropos(plan: ExplorerPlan, meta: ExplorerMeta, methode: string[]): ReactNode[] {
+  const source = `Source : ${libelleSource(meta)}.`;
+  return [
+    ...provenanceResultat(plan, meta).map((ligne) =>
+      ligne === source ? (
+        <>
+          Source : <span data-testid="explorer-source">{libelleSource(meta)}</span>.
+        </>
+      ) : (
+        ligne
+      ),
+    ),
+    ...methode,
+  ];
+}
+
 /** Le total de toute la population, écrit dans la méta hors représentation « Valeur ». */
-function Total({ data, format, unite }: { data: ExplorerData; format: FormatId; unite: string }) {
+function Total({ data, format, unite, approchee }: { data: ExplorerData; format: FormatId; unite: string; approchee: boolean }) {
   return (
     <span>
       Total sur toute la population :{" "}
       <strong className="font-semibold tabular-nums text-ink" data-testid="explorer-total">
-        {formater(format, data.total)}
+        {valeurApprochee(formater(format, data.total), approchee)}
       </strong>
       {uniteApres(format, unite)}
     </span>
@@ -163,21 +233,12 @@ function Total({ data, format, unite }: { data: ExplorerData; format: FormatId; 
 }
 
 function Meta({ plan, meta, data, format }: { plan: ExplorerPlan; meta: ExplorerMeta; data: ExplorerData; format: FormatId }) {
-  const morceaux = metaResultat(plan, meta, data);
-  const source = morceaux.findIndex((m) => m.startsWith("source : "));
   return (
     <>
-      {plan.visualization !== "value" && <Total data={data} format={format} unite={meta.unit} />}
-      {morceaux.map((m, i) =>
-        i === source ? (
-          <span key={m}>
-            source :{" "}
-            <span data-testid="explorer-source">{meta.source === "rollup+raw" ? "agrégat + lignes" : "lignes brutes"}</span>
-          </span>
-        ) : (
-          <span key={m}>{m}</span>
-        ),
-      )}
+      {plan.visualization !== "value" && <Total data={data} format={format} unite={meta.unit} approchee={meta.approximate} />}
+      {metaResultat(plan, meta, data).map((m) => (
+        <span key={m}>{m}</span>
+      ))}
     </>
   );
 }
@@ -276,7 +337,7 @@ function serieDuResultat({
   const hauteur = taille === "page" ? 260 : 160;
   const titre = titreResultat(plan);
   const ariaLabel = `${titre}, ${grille.length} tranches de ${bucketLabel(seauSecondes)}`;
-  const libelleGroupe = (key: (string | null)[]) => (key.length ? libelleCle(key) : libelleMesure(plan));
+  const libelleGroupe = (key: (string | null)[]) => (key.length ? libelleCle(key, plan.groupBy) : libelleMesure(plan));
 
   let dessin: ReactNode;
   if (additive && avecGroupes) {
@@ -379,7 +440,13 @@ function serieDuResultat({
 // ─────────────────────────────── Classement (W-E4) ───────────────────────────────
 
 /** Classement d'une mesure ADDITIVE : barre = valeur, sous-texte = part du total. */
-function donneesRankBar(plan: ExplorerPlan, data: ExplorerData, hrefs: HrefsResultat, format: FormatId): RankDatum[] {
+function donneesRankBar(
+  plan: ExplorerPlan,
+  data: ExplorerData,
+  hrefs: HrefsResultat,
+  format: FormatId,
+  approchee: boolean,
+): RankDatum[] {
   const connu = (v: number | null): v is number => v !== null && Number.isFinite(v);
   // Une valeur inconnue ferme la liste, sans barre (CE2) ; l'ordre reçu est gardé sinon.
   const tries = data.groups
@@ -389,13 +456,15 @@ function donneesRankBar(plan: ExplorerPlan, data: ExplorerData, hrefs: HrefsResu
   const total = data.total;
   return tries.map((g) => {
     const part = connu(g.value) && connu(total) && total > 0 ? g.value / total : null;
-    const lignes = `${nombre(g.samples)} lignes`;
+    const lignes = `${nombre(g.samples)} ${uniteEffectif(plan.dataset)}`;
+    const libelle = libelleCle(g.key, plan.groupBy);
     return {
-      label: libelleCle(g.key),
+      label: libelle,
       // Le libellé complet reste lisible au survol quand la colonne le tronque (P14).
-      title: libelleCle(g.key),
+      title: libelle,
       value: g.value,
-      display: formater(format, g.value),
+      display: valeurApprochee(formater(format, g.value), approchee),
+      color: TEINTE_VOLUME,
       sub: part === null ? lignes : `${formater("pct", part)} du total · ${lignes}`,
       href: hrefs.groupe(g.key),
     };
@@ -409,6 +478,7 @@ function lignesImpact(
   hrefs: HrefsResultat,
   format: FormatId,
   tri: "gravite" | "volume",
+  approchee: boolean,
 ): ImpactLigne[] {
   const verdict = vitalDeVerdict(plan);
   const { lignes } = classerParGravite(data.groups, {
@@ -418,20 +488,22 @@ function lignesImpact(
     volume: (g) => g.samples,
   });
   const ecartLibelle = `écart de ${plan.measure.aggregation === "avg" ? "moyenne" : plan.measure.aggregation}`;
+  const unite = uniteEffectif(plan.dataset);
   return lignes.map((g) => {
-    const libelle = libelleCle(g.key);
+    const libelle = libelleCle(g.key, plan.groupBy);
     const ecart = ecartALaReference(g.value, data.total);
     const affichageEcart =
       ecart === null ? "—" : `${ecart > 0 ? "+" : ecart < 0 ? "−" : "±"}${formater(format, Math.abs(ecart))} vs ensemble`;
+    const valeur = valeurApprochee(formater(format, g.value), approchee);
     return {
       cle: JSON.stringify(g.key),
       libelle,
       href: hrefs.groupe(g.key),
-      description: `${libelle} : ${formater(format, g.value)}, ${nombre(g.samples)} lignes, ${ecartLibelle} ${affichageEcart}`,
+      description: `${libelle} : ${valeur}, ${nombre(g.samples)} ${unite}, ${ecartLibelle} ${affichageEcart}`,
       pilote: g.value,
       volume: g.samples,
       // R-V : le verdict n'est posé que sur le p75 d'un vital.
-      mesures: verdict ? [{ cle: "verdict", valeur: g.value, affichage: formater(format, g.value), vital: verdict, n: g.samples }] : [],
+      mesures: verdict ? [{ cle: "verdict", valeur: g.value, affichage: valeur, vital: verdict, n: g.samples }] : [],
       ecart: { valeur: ecart, affichage: affichageEcart },
       echantillonFaible: estFaible(g.samples),
     };
@@ -515,6 +587,7 @@ export function ResultatAnalyse({
   annotationsIndisponibles,
   taille,
   tri = "gravite",
+  notes = [],
   id,
 }: {
   plan: ExplorerPlan;
@@ -531,6 +604,12 @@ export function ResultatAnalyse({
   taille: "page" | "carte";
   /** Ordre du classement non additif (P3, `TRIS_PAR_ECRAN["/explorer"]`). */
   tri?: "gravite" | "volume";
+  /**
+   * Ce que la mesure ne dit pas (avertissements de la lecture, comparaison non
+   * calculée…), rangé dans le pied de page avec la provenance. Une carte de tableau
+   * de bord les reçoit de `widget-data` ; l'Explorer les écrit lui-même au-dessus.
+   */
+  notes?: string[];
   /** Ancre de la figure. */
   id?: string;
 }) {
@@ -541,7 +620,11 @@ export function ResultatAnalyse({
   const plage = plageLue(meta);
   const sansVerdict = phraseSansVerdict(plan);
   const vide = data.samples === 0;
+  const approchee = meta.approximate;
+  const carte = taille === "carte";
+  const unite = uniteEffectif(plan.dataset);
 
+  // Ce qui borne ce que la figure affirme : dit en clair sous la figure de l'Explorer.
   const lectures: string[] = [];
   if (sansVerdict) lectures.push(sansVerdict);
   if (precedent === null) {
@@ -551,8 +634,10 @@ export function ResultatAnalyse({
         : "Comparaison à la période précédente non calculée pour une série à plusieurs groupes : elle doublerait les courbes.",
     );
   }
+  // La méthode de lecture d'un classement : dans le pied de page, pas avant le chiffre.
+  const methode: string[] = [];
   if (plan.visualization === "toplist" && !vide) {
-    lectures.push(
+    methode.push(
       additive
         ? "Chaque part est rapportée au total de toute la population, groupes non affichés compris."
         : "L'écart est la différence entre la valeur du groupe et celle de l'ensemble de la population : ce n'est pas une contribution.",
@@ -566,48 +651,63 @@ export function ResultatAnalyse({
       une erreur.
     </span>
   ) : null;
-  const lecture =
-    lectures.length || lectureVide ? (
-      <>
-        {lectureVide}
-        {lectureVide && lectures.length > 0 && " "}
-        {lectures.join(" ")}
-      </>
-    ) : undefined;
-  const meta_ = <Meta plan={plan} meta={meta} data={data} format={format} />;
   const idFigure = id ?? "explorer-resultat";
+
+  // Pied de page unique. En carte, il porte AUSSI la méta W-E8, les phrases de lecture
+  // et les notes de la lecture : la carte ne montre que valeur, verdict et graphique.
+  const aPropos = (
+    <APropos
+      lignes={[
+        ...(carte ? metaResultat(plan, meta, data).map((m) => `${m.charAt(0).toUpperCase()}${m.slice(1)}.`) : []),
+        ...(carte ? lectures : []),
+        ...lignesAPropos(plan, meta, methode),
+        ...notes,
+      ]}
+      className={carte ? "mt-2" : "mt-2 mb-6"}
+    />
+  );
 
   // ───── Classement non additif : l'ImpactTable EST la figure (titre, ordre, référence,
   // alternative, couverture) ; la méta W-E8 y est portée par sa notice.
   if (plan.visualization === "toplist" && !additive && !vide && data.groups.length > 0) {
-    const lignes = lignesImpact(plan, data, hrefs, format, tri);
+    const lignes = lignesImpact(plan, data, hrefs, format, tri, approchee);
+    const totalTexte = `${valeurApprochee(formater(format, data.total), approchee)}${uniteApres(format, meta.unit)}`;
     const notice = [
-      `Total sur toute la population : ${formater(format, data.total)}${uniteApres(format, meta.unit)}`,
+      `Total sur toute la population : ${totalTexte}`,
       ...metaResultat(plan, meta, data),
       ...(meta.truncated_groups
         ? [`au moins ${nombre(data.groups.length + 1)} groupes existent : seuls les ${nombre(data.groups.length)} de valeur la plus haute sont lus et classés ici`]
         : []),
     ].join(" · ");
     return (
-      <div id={idFigure} data-testid="resultat-analyse" data-forme="impact" data-vital={vital ?? undefined}>
+      <div id={idFigure} data-testid="resultat-analyse" data-forme="impact" data-vital={vital ?? undefined} className="min-w-0">
         <ImpactTable
           titre={titre}
-          tri={tri}
+          // En carte, un seul ordre existe (gravité) : une bascule à une option active et
+          // deux grisées était du bruit (recette 26/09) — l'ordre est écrit à la place.
+          tri={carte ? "fourni" : tri}
+          ordreLibelle={carte ? "Classés du plus élevé au plus bas ; les échantillons faibles en fin de liste." : undefined}
           triHref={hrefs.tri ?? { gravite: null, volume: null, impact: null, fourni: null }}
           reference={{
             libelle: "Ensemble de la population",
-            valeurs: { pilote: formater(format, data.total), volume: nombre(data.samples), ...(vital ? { verdict: formater(format, data.total) } : {}) },
+            valeurs: {
+              pilote: valeurApprochee(formater(format, data.total), approchee),
+              volume: nombre(data.samples),
+              ...(vital ? { verdict: valeurApprochee(formater(format, data.total), approchee) } : {}),
+            },
           }}
           lignes={lignes}
           colonnes={vital ? [`Verdict ${vital} p75`] : []}
           unitePilote={format}
-          volumeLibelle="Lignes"
+          volumeLibelle={`${unite.charAt(0).toUpperCase()}${unite.slice(1)}`}
           groupes={data.groups.length}
           tronque={meta.truncated_groups}
-          notice={notice}
-          compact={taille === "carte"}
+          notice={carte ? undefined : notice}
+          compact={carte}
+          approchee={approchee}
         />
-        {lectures.length > 0 && <p className="-mt-3 mb-6 text-xs leading-relaxed text-ink-soft">{lectures.join(" ")}</p>}
+        {!carte && lectures.length > 0 && <p className="-mt-3 mb-2 text-xs leading-relaxed text-ink-soft">{lectures.join(" ")}</p>}
+        {aPropos}
       </div>
     );
   }
@@ -615,7 +715,7 @@ export function ResultatAnalyse({
   let corps: ReactNode;
   let alternative: AlternativeTexte | undefined;
   let titreFigure = titre;
-  let etat: { kind: "vide"; population: string; plage: string } | undefined;
+  let etat: Etat | undefined;
 
   switch (plan.visualization) {
     case "value": {
@@ -623,7 +723,7 @@ export function ResultatAnalyse({
       titreFigure = "Valeur unique";
       const raisonNull = data.samples === 0 ? "aucune ligne mesurée sur la fenêtre" : "valeur non calculable sur ces lignes";
       corps = (
-        <div className="max-w-sm">
+        <div className={carte ? undefined : "max-w-sm"}>
           <KpiTile
             label={libelleMesure(plan)}
             valeur={data.total}
@@ -634,15 +734,17 @@ export function ResultatAnalyse({
             precedent={precedent ? precedent.total : undefined}
             reference={precedent ? precedent.plage : undefined}
             couverturePrecedente={precedent ? precedent.couverture : undefined}
-            couverture={{ n: data.samples, unite: UNITE_EFFECTIF, faibleSous: faibleSousDe(plan) }}
+            couverture={{ n: data.samples, unite, faibleSous: faibleSousDe(plan) }}
+            // La tuile formate elle-même son chiffre et le préfixe de « ≈ ».
+            approchee={approchee}
           />
         </div>
       );
       alternative = {
         legende: `${libelleMesure(plan)} sur ${plage}`,
-        colonnes: ["Période", libelleMesure(plan), "Lignes de population"],
+        colonnes: ["Période", libelleMesure(plan), unite.charAt(0).toUpperCase() + unite.slice(1)],
         lignes: [
-          [plage, formater(format, data.total), data.samples],
+          [plage, valeurApprochee(formater(format, data.total), approchee), data.samples],
           ...(precedent ? [[precedent.plage.replace(/^vs\s+/, ""), formater(format, precedent.total), precedent.couverture.n ?? null]] : []),
         ],
       };
@@ -654,7 +756,9 @@ export function ResultatAnalyse({
         break;
       }
       // Mesure additive : `RankBar` porte sa propre alternative (mêmes lignes que les barres).
-      corps = <RankBar data={donneesRankBar(plan, data, hrefs, format)} legende={titre} emptyLabel="Aucun groupe sur la fenêtre." />;
+      corps = (
+        <RankBar data={donneesRankBar(plan, data, hrefs, format, approchee)} legende={titre} emptyLabel="Aucun groupe sur la fenêtre." />
+      );
       break;
     }
     case "timeseries": {
@@ -677,11 +781,52 @@ export function ResultatAnalyse({
     }
   }
 
+  // ───── Carte de tableau de bord : lecture compacte. Pas de second cadre ni de titre
+  // (la carte porte déjà le sien), pas de méta en tête : la valeur, son verdict, son
+  // graphique, puis le pied de page. Une tuile « Valeur » est déjà un texte complet
+  // (son nom annoncé dit tout) : elle n'a pas besoin d'alternative textuelle.
+  if (carte) {
+    const partielle = meta.coverage.status !== "complete";
+    return (
+      <div id={idFigure} data-testid="resultat-analyse" data-forme={plan.visualization} data-vital={vital ?? undefined} className="min-w-0">
+        {/* Une couverture partielle change la lecture du chiffre : elle reste visible. */}
+        {partielle && (
+          <div className="mb-2">
+            <EtatSurface etat={{ kind: "partiel", raison: meta.coverage.reason ?? "couverture de la fenêtre non lue" }} />
+          </div>
+        )}
+        <div role="figure" aria-label={titre} className="min-w-0">
+          {etat ? <EtatSurface etat={etat} /> : corps}
+        </div>
+        {lectureVide && <p className="mt-2 text-xs text-ink-soft">{lectureVide}</p>}
+        {alternative && !etat && plan.visualization !== "value" && <TableAlternative alternative={alternative} />}
+        {aPropos}
+      </div>
+    );
+  }
+
+  const lecture =
+    lectures.length || lectureVide ? (
+      <>
+        {lectureVide}
+        {lectureVide && lectures.length > 0 && " "}
+        {lectures.join(" ")}
+      </>
+    ) : undefined;
+
   return (
-    <div data-testid="resultat-analyse" data-forme={plan.visualization} data-vital={vital ?? undefined} className={taille === "page" ? "mb-6" : undefined}>
-      <Figure id={idFigure} titre={titreFigure} meta={meta_} etat={etat} alternative={alternative} lecture={lecture}>
+    <div data-testid="resultat-analyse" data-forme={plan.visualization} data-vital={vital ?? undefined}>
+      <Figure
+        id={idFigure}
+        titre={titreFigure}
+        meta={<Meta plan={plan} meta={meta} data={data} format={format} />}
+        etat={etat}
+        alternative={alternative}
+        lecture={lecture}
+      >
         {corps}
       </Figure>
+      {aPropos}
     </div>
   );
 }

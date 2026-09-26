@@ -79,8 +79,11 @@ bouton n'apparaît pas ; `oidcConfig()`, `apps/console/lib/oidc.ts`) :
 
 À la 1ʳᵉ connexion SSO, le `console_user` est **créé** (`password_hash` = sentinelle
 `sso:oidc` ⇒ connexion par mot de passe **impossible** pour ce compte) ; aux suivantes
-il est **mis à jour** (`last_login_at`, rôle/apps si l'IdP les fournit). Comportement
-prouvé sur Postgres réel (`scripts/verify-oidc-jit.mjs`).
+il est **mis à jour** (`last_login_at`, rôle/apps si l'IdP les fournit). Un compte
+**désactivé** dans la console le reste : le retour SSO est refusé (`/login?error=1`,
+`login_failed` au journal d'audit avec la raison `compte_desactive`), et l'écriture ne
+réactive jamais un compte désactivé entre-temps. Comportement prouvé sur Postgres réel
+(`scripts/verify-oidc-jit.mjs`, `tests/integration/oidc-callback-jit-sql.test.ts`).
 
 ## Sécurité du flux
 

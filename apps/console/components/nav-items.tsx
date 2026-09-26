@@ -69,7 +69,9 @@ export const CATEGORIES: NavCategory[] = [
     icon: "compare",
     domain: "perf",
     children: [
-      { href: "/correlation", label: "Corrélation synthétique ↔ RUM" },
+      // Le nom de l'écran (« Robot et réel ») : « Corrélation synthétique ↔ RUM » était
+      // du vocabulaire de fournisseur, et la seule entrée qui ne disait pas son titre.
+      { href: "/correlation", label: "Robot et réel" },
       { href: "/tracing", label: "Tracing" },
       { href: "/map", label: "Carte" },
     ],
@@ -166,13 +168,15 @@ export type LienAdministration = { href: string; label: string; icon: IconName; 
 export const ADMINISTRATION: readonly LienAdministration[] = [
   { href: "/admin/customers", label: "Clients", icon: "building" },
   { href: "/admin/users", label: "Utilisateurs", icon: "user" },
-  { href: "/admin/privacy", label: "Vie privée · DSAR", icon: "shield" },
-  { href: "/admin/read-tokens", label: "Tokens de lecture", icon: "key" },
+  { href: "/admin/privacy", label: "Vie privée · RGPD", icon: "shield" },
+  { href: "/admin/read-tokens", label: "Jetons de lecture", icon: "key" },
   { href: "/admin/sourcemaps", label: "Source maps", icon: "fileCode" },
   { href: "/admin/ticket-integrations", label: "Connecteurs de tickets", icon: "bell", seulementSi: "tickets" },
   { href: "/admin/extension-scope", label: "Extension navigateur", icon: "puzzle" },
   { href: "/admin/extension-installs", label: "Postes équipés", icon: "monitor" },
-  { href: "/admin/uptime", label: "Uptime", icon: "signal" },
+  // Le titre de l'écran, en français : « Uptime » à la barre latérale, « Sondes de
+  // disponibilité » sur la page (recette du 26/09/2026).
+  { href: "/admin/uptime", label: "Sondes de disponibilité", icon: "signal" },
   { href: "/admin/audit", label: "Audit", icon: "list" },
   { href: "/admin/usage", label: "Consommation", icon: "barChart" },
   { href: "/admin/health", label: "Santé interne", icon: "heartPulse" },

@@ -72,11 +72,12 @@ describe("le SDK a cessé de dériver une identité du terminal", () => {
   const SESSION = sansCommentaires(lire("packages/rum-sdk/src/session.ts"));
   const INDEX = sansCommentaires(lire("packages/rum-sdk/src/index.ts"));
 
-  it("l'attribut annoncé par la vitrine est celui que le SDK émet", () => {
-    // La fiche « Sessions anonymes » de la page Specs nomme `mip.visitor_id`.
-    // Le test des Specs vérifie le champ `otlp` ; celui-ci vérifie la PROSE,
-    // qui sinon pourrait annoncer n'importe quoi.
-    expect(lire("apps/console/lib/specs.ts")).toContain("`mip.visitor_id`");
+  it("ce que la vitrine dit de l'identifiant du visiteur est ce que le SDK émet", () => {
+    // La fiche « Sessions pseudonymes » des Specs ne nomme plus l'attribut depuis la
+    // recette du 26/09/2026 (pas de nom technique sur une page publique) : elle dit un
+    // identifiant tiré au hasard par le SDK. Le test des Specs vérifie le champ
+    // `otlp` ; celui-ci vérifie la PROSE, qui sinon pourrait annoncer n'importe quoi.
+    expect(lire("apps/console/lib/specs.ts")).toContain("Le visiteur porte un identifiant tiré au hasard par le SDK");
     expect(INDEX).toContain('"mip.visitor_id"');
   });
 
@@ -244,7 +245,9 @@ describe("recevabilité d'une demande RGPD — la décision, isolée et pure", (
 
   it("chaque verdict a un message, et le refus dit POURQUOI", () => {
     for (const v of DSAR_VERDICTS) expect(DSAR_MESSAGES[v].length).toBeGreaterThan(20);
-    expect(DSAR_MESSAGES.refus_empreinte).toContain("user_hash");
+    // Le message est affiché : il dit « ancienne empreinte », pas le nom de la colonne.
+    expect(DSAR_MESSAGES.refus_empreinte).toContain("ancienne empreinte");
+    expect(DSAR_MESSAGES.refus_empreinte).not.toContain("user_hash");
     expect(DSAR_MESSAGES.refus_empreinte.toLowerCase()).toContain("tiers");
   });
 

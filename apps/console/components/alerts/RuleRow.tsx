@@ -9,7 +9,7 @@
 // déclenche (mode, seuil ou sensibilité, fenêtre), et ce que la dernière évaluation
 // a trouvé — `no_data` avec sa raison, jamais confondu avec « normale ».
 import { fmtDate, accord } from "@/lib/format";
-import { libelleDeRegle, reglageDeRegle } from "@/lib/alertes-ecran";
+import { libelleDeRegle, reglageDeRegle, valeurDeMetrique } from "@/lib/alertes-ecran";
 import { type AlertRuleRow, type RuleState } from "@/lib/queries-v2";
 import { toggleRuleAction, updateRuleAction } from "@/app/alerts/actions";
 import { RuleFields, type ModeRelease } from "./RuleFields";
@@ -48,7 +48,7 @@ function RuleEvaluation({ rule }: { rule: AlertRuleRow }) {
           écart) ; une valeur seule ne dirait pas contre quelle release. */}
       {rule.last_state !== "no_data" && rule.mode === "release" && rule.last_reason ? ` — ${rule.last_reason}` : ""}
       {rule.last_state !== "no_data" && !(rule.mode === "release" && rule.last_reason) && rule.last_value !== null
-        ? ` (${rule.last_value.toLocaleString("fr-FR")})`
+        ? ` (${valeurDeMetrique(rule.metric, rule.last_value)})`
         : ""}
       <span className="ml-1 text-ink-faint">· évaluée {fmtDate(rule.last_evaluated_at)}</span>
     </span>

@@ -1,9 +1,9 @@
 // E2E — écran /sessions (domaine Usages, règle S8).
 //
 // F41 — KPI, volume, répartition. CE QUE CE SPEC EXISTE POUR PROUVER :
-//   - la rangée de cinq tuiles, une population chacune : « Sessions commencées » au
-//     nombre semé, visiteurs « identifiant aléatoire », et « Sessions avec
-//     frustration » SANS nombre tant que sa lecture (B30) manque ;
+//   - la rangée de quatre tuiles, une population chacune : « Sessions commencées » au
+//     nombre semé, visiteurs « identifiant aléatoire » ; « Sessions avec frustration »
+//     n'est PAS affichée tant que sa lecture (B30) manque (recette du 26/09/2026) ;
 //   - un clic sur un seau du volume resserre l'écran sur sa plage (`from`/`to`,
 //     plus de `period`) ;
 //   - le groupe « Inconnu » de « Qui sont ces sessions » filtre par `is_null` ;
@@ -101,11 +101,11 @@ test.describe("F41 — Sessions : KPI, volume, répartition", () => {
     await pool.end();
   });
 
-  test("rangée de KPI : cinq tuiles, une population chacune, B30 sans nombre", async ({ page }) => {
+  test("rangée de KPI : quatre tuiles, une population chacune, rien d'absent montré", async ({ page }) => {
     await login(page);
     await page.goto(adresse(), { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1").first()).toHaveText(/Sessions/);
-    await expect(page.getByTestId("kpi-sessions").getByTestId("kpi-tile")).toHaveCount(5);
+    await expect(page.getByTestId("kpi-sessions").getByTestId("kpi-tile")).toHaveCount(4);
 
     await expect(tuile(page, "Sessions commencées").getByTestId("kpi-valeur")).toHaveText("6");
     await expect(tuile(page, "Visiteurs distincts (identifiant aléatoire)")).toBeVisible();
@@ -116,14 +116,11 @@ test.describe("F41 — Sessions : KPI, volume, répartition", () => {
     const taux = tuile(page, "Occurrences d'erreur par session commencée");
     await expect(taux.getByTestId("kpi-valeur")).toHaveText("0,50");
     await expect(taux).toContainText("2 occurrences sans session rattachée, exclues");
-    // Sans lecture (B30), aucun nombre : ni « 0 % », ni « Non collecté ».
-    const frustration = tuile(page, "Sessions avec frustration");
-    await expect(frustration.getByTestId("kpi-valeur")).toHaveText("—");
-    await expect(frustration).toContainText("lecture à créer (B30)");
-    await expect(frustration).not.toContainText("%");
-
-    // Le hero dit ce qui lui manque, et rien d'autre.
-    await expect(page.locator("#a-regarder-d-abord")).toContainText("classement indisponible : lecture à créer (B30)");
+    // Sans lecture (B30), ni tuile « Sessions avec frustration », ni hero « À regarder
+    // d'abord » : une fonction absente ne se montre pas, et aucun code de lot n'est écrit.
+    await expect(tuile(page, "Sessions avec frustration")).toHaveCount(0);
+    await expect(page.locator("#a-regarder-d-abord")).toHaveCount(0);
+    await expect(page.locator("main")).not.toContainText("B30");
   });
 
   test("volume : deux graphiques sur grille, plus d'ObservedTrend ; un clic sur un seau zoome", async ({ page }) => {
@@ -170,14 +167,15 @@ test.describe("F41 — Sessions : KPI, volume, répartition", () => {
     await expect(page.getByTestId("volume-reference-absente")).toContainText("période précédente non tracée");
   });
 
-  test("KPI et hero au-dessus du pli à 1440 × 900", async ({ page }) => {
+  test("KPI et répartition au-dessus du pli à 1440 × 900", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await login(page);
     await page.goto(adresse(), { waitUntil: "domcontentloaded" });
-    const hero = page.locator("#a-regarder-d-abord");
-    await expect(hero).toBeVisible();
-    const boite = await hero.boundingBox();
-    if (!boite) throw new Error("hero sans boîte");
+    // Sans classement (B30), le hero n'est pas rendu : la répartition prend sa place.
+    const repartition = page.getByTestId("repartition");
+    await expect(repartition).toBeVisible();
+    const boite = await repartition.boundingBox();
+    if (!boite) throw new Error("répartition sans boîte");
     expect(boite.y).toBeLessThan(900);
   });
 
@@ -202,11 +200,12 @@ test.describe("F41 — Sessions : KPI, volume, répartition", () => {
 //     suivantes » quand il en reste, AUCUN identifiant de visiteur dans le HTML ;
 //   - à 390 px, des cartes de trois lignes et PAS de table ;
 //   - les filtres rapides : `avec=erreurs` ne change pas la tuile « Sessions
-//     commencées », et l'URL qui le porte est déclarée NON APPLIQUÉE (V10) ;
-//   - le hero, AVEC ET SANS B30 : sans lecture, l'état `partiel` et sa raison, et
-//     aucune ligne dessinée ; avec, la session à erreurs en tête, sa raison écrite
-//     et ▶ vers `?tab=replay&at=`. Le test lit l'état rendu et vérifie le monde qui
-//     va avec : il reste vert le jour où B30 est livré, sans être réécrit.
+//     commencées », et l'URL qui le porte est déclarée non appliquée (V10) ; sans
+//     leur lecture (B30), les bascules ne sont pas dessinées ;
+//   - le hero, AVEC ET SANS B30 : sans lecture, AUCUN hero (recette du 26/09/2026) ;
+//     avec, la session à erreurs en tête, sa raison écrite et ▶ vers
+//     `?tab=replay&at=`. Le test lit l'état rendu et vérifie le monde qui va avec : il
+//     reste vert le jour où B30 est livré, sans être réécrit.
 //
 // Pool PROPRE au bloc : `pool.end()` de F41 ferme le sien à la fin de ses tests.
 test.describe("F42 — Sessions : priorité et table", () => {
@@ -304,7 +303,7 @@ test.describe("F42 — Sessions : priorité et table", () => {
     await expect(page.getByTestId("sessions-suivantes")).toBeVisible();
     // Aucune colonne ne montre un `visitor_id` (V9) — ni ailleurs dans la page.
     expect(await page.content()).not.toContain(VISITEUR_F42);
-    for (const c of ["Dernière activité", "Durée observée", "Pays estimé", "Capteur", "Occurrences d'erreur", "Frustration", "Rejeu"]) {
+    for (const c of ["Dernière activité", "Durée observée", "Pays estimé", "Occurrences d'erreur", "Frustration", "Rejeu"]) {
       await expect(table.locator("thead")).toContainText(c);
     }
     // La page suivante reprend APRÈS le curseur : les identifiants de la première
@@ -345,34 +344,30 @@ test.describe("F42 — Sessions : priorité et table", () => {
     const sansFiltre = await tuileF42(page, "Sessions commencées").getByTestId("kpi-valeur").textContent();
     expect(sansFiltre).toBe(String(SEMEES));
     const chips = page.getByTestId("filtres-rapides");
-    for (const cle of ["erreurs", "frustration", "rejeu"]) {
-      await expect(chips.getByTestId(`filtre-${cle}`)).toBeVisible();
-    }
 
     await page.goto(adresseF42("&avec=erreurs"), { waitUntil: "domcontentloaded" });
     // La règle du plan : ce filtre ne touche QUE la liste, jamais les tuiles.
     await expect(tuileF42(page, "Sessions commencées").getByTestId("kpi-valeur")).toHaveText(sansFiltre ?? "");
-    const applique = await chips.getByTestId("filtre-erreurs").getAttribute("data-applied");
+    const applique = (await chips.count()) > 0 ? await chips.getByTestId("filtre-erreurs").getAttribute("data-applied") : null;
     if (applique === "true") {
       // B30 livré : la liste se restreint à la seule session à erreurs, les tuiles non.
       await expect(page.getByTestId("ligne-session")).toHaveCount(1);
     } else {
-      // B30 absent : la bascule dit pourquoi, et l'URL est déclarée non appliquée.
-      await expect(page.getByTestId("avec-non-applique")).toContainText("NON APPLIQUÉ");
+      // B30 absent : aucune bascule dessinée, et l'URL est déclarée non appliquée.
+      await expect(chips).toHaveCount(0);
+      await expect(page.getByTestId("avec-non-applique")).toContainText("non appliqué");
       await expect(page.getByTestId("ligne-session")).toHaveCount(50);
     }
   });
 
-  test("hero « À regarder d'abord » : classé avec B30, motivé sans lui", async ({ page }) => {
+  test("hero « À regarder d'abord » : classé avec B30, absent sans lui", async ({ page }) => {
     await loginF42(page);
     await page.goto(adresseF42(), { waitUntil: "domcontentloaded" });
     const hero = page.locator("#a-regarder-d-abord");
-    await expect(hero).toBeVisible();
-    if ((await hero.getAttribute("data-etat")) === "partiel") {
-      // Sans lecture : la raison, et AUCUNE ligne — pas de faux classement.
-      await expect(hero).toContainText("classement indisponible : lecture à créer (B30)");
-      await expect(hero.getByTestId("priorite-ligne")).toHaveCount(0);
-      await expect(hero.getByTestId("rejeu-lien")).toHaveCount(0);
+    if ((await hero.count()) === 0) {
+      // Sans lecture : pas de hero du tout — ni cadre « Partiel », ni faux classement.
+      await expect(page.getByTestId("priorite-ligne")).toHaveCount(0);
+      await expect(page.getByTestId("repartition")).toBeVisible();
     } else {
       // Avec lecture : la session à erreurs est première, sa raison est écrite,
       // et ▶ ouvre le rejeu calé sur la première erreur.
