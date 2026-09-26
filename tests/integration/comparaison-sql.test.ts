@@ -188,7 +188,8 @@ const VUES = { table: "rum_pageview", colonneTemps: "started_at", additive: true
     expect((await lib.couverturePrecedente(requete(`app=${A}&period=24h`), VUES)).etat).toBe("complete");
     const couverture = await lib.couverturePrecedente(requete(`app=${A}&period=7d`), source);
     expect(couverture.etat).toBe("partielle");
-    expect(couverture.raison).toMatch(/^champ « release » collecté depuis le /);
+    // Libellé utilisateur depuis la recette du 26/09/2026, plus le nom de colonne.
+    expect(couverture.raison).toMatch(/^donnée « version de l'application » collectée depuis le /);
   });
 
   it("sample_rate : collecté depuis v58, quelle que soit la date des sessions", async () => {

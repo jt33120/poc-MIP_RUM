@@ -290,7 +290,7 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
     expect(resultat.meta.source).toBe("rollup+raw");
     expect(resultat.meta.approximate).toBe(true);
     expect(resultat.meta.rollup).toEqual({ eligible: true, source: "vitals_histogram", reason: null });
-    expect(resultat.meta.warnings.some((w) => /seaux/.test(w))).toBe(true);
+    expect(resultat.meta.warnings.some((w) => /tranches/.test(w))).toBe(true);
     expect(resultat.data.total).not.toBeNull();
     expect(Math.abs(resultat.data.total! - reference.valeur!) / reference.valeur!).toBeLessThan(TOLERANCE);
   });

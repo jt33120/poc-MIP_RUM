@@ -96,7 +96,7 @@ if (!url) console.warn("[sante-erreurs-sql] SAUTÉ — définir SQL_TEST_DATABAS
     expect(f.label).toBe("Erreurs navigateur");
     // L'occurrence sans source déclarée est hors du numérateur, et dite (CP14).
     expect(f.detail.replace(/[\u00a0\u202f]/g, " ")).toBe(
-      "2 occurrence(s) pour 4 page(s) vue(s) (50 pour 100) ; 3 occurrence(s) sans source déclarée, non comptée(s)",
+      "2 occurrences pour 4 pages vues (50 pour 100) ; 3 occurrences sans source déclarée, non comptées",
     );
     expect(f.earned).toBe(15); // 30 × (1 − 2 / 4)
   });
