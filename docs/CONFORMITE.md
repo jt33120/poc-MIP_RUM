@@ -156,7 +156,8 @@ modification ni redistribution.
 
 ## 4. Rétention — **configurable par client** (migration-v14)
 - `purge_rum_tenants(default_days)` purge **chaque app selon SA rétention**
-  (`app_registry.retention_days`, sinon défaut **30 j**), planifié quotidiennement (pg_cron).
+  (`app_registry.retention_days`, sinon défaut **30 j**), lancé une fois par jour par le service
+  `scheduler` (cadence `quotidien`, `packages/backend/jobs/planifie.mjs` ; Neon n'offre pas pg_cron).
 - ClickHouse (le jour J) : **TTL 30 j** natif sur les tables brutes (les agrégats horaires
   sans PII peuvent être conservés plus longtemps).
 - Vérifié sur Postgres réel : `scripts/verify-conformite.mjs` (rétention par tenant honorée).
@@ -177,7 +178,9 @@ modification ni redistribution.
 - **RLS** activé sur toutes les tables `public` (API PostgREST fermée) ; secrets hashés
   (`password_hash` bcrypt, clés d'API sha256) ; fonctions `SECURITY DEFINER` `search_path` figé.
 - **Authentification** : JWT cookie httpOnly + **SSO/OIDC** (Azure AD/Okta/Keycloak — MFA
-  déléguée à l'IdP) + **RBAC** admin/viewer scopé par app. Secrets via **coffre** (Vault).
+  déléguée à l'IdP) + **RBAC** admin/viewer scopé par app. Secrets en **variables d'environnement**
+  des hébergeurs (Vercel, Railway), jamais en clair en base : un identifiant d'intégration de tickets
+  y est une référence `env:TICKET_*` ou un chiffré AES-256-GCM `enc:v1:` (clé `TICKET_SECRET_KEY`).
 - **Ingestion durcie** : 400/500 distincts, limites de taille (413), retries transitoires,
   rate limiting durable, logs structurés avec **redaction des secrets**.
 - **Cloisonnement multi-tenant** : scoping `app_id` + RBAC (renforcement P0 #5 à venir).
