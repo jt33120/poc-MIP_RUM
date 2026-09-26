@@ -135,9 +135,12 @@ function ListeTransitions({ model, liens }: { model: SankeyModel; liens: LiensSa
   return (
     <div className="sm:hidden" data-testid="sankey-liste">
       <p className="mb-2 text-xs text-ink-soft">
+        {/* « 8 principales transitions sur 17 » contredisait la tuile « Transitions
+            distinctes : 44 » (contre-recette du 26/09/2026) : 17 ne compte que les
+            rubans DESSINÉS, entre les routes principales de chaque côté. Le dire. */}
         {principales.length < model.links.length
-          ? `${compte(principales.length)} principales transitions sur ${compte(model.links.length)}`
-          : "Principales transitions"}
+          ? `Les ${compte(principales.length)} plus fréquentes des ${compte(model.links.length)} transitions dessinées (entre les routes principales de chaque côté)`
+          : "Les transitions dessinées (entre les routes principales de chaque côté)"}
         , de la plus fréquente à la moins fréquente
       </p>
       <ol className="space-y-1">

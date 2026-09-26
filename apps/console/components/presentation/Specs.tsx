@@ -98,7 +98,7 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   },
   {
     c: "Donnée identifiante",
-    cible: "Aucune adresse IP stockée",
+    cible: "Aucune adresse IP de visiteur stockée",
     reel: "Pays estimé, données personnelles nettoyées côté client et côté serveur",
     s: "atteint",
   },

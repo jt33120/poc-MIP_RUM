@@ -25,11 +25,13 @@ import {
   moveWidgetAction,
   removeWidgetAction,
 } from "@/app/dashboards/actions";
-import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
+import { ConfirmationDanger } from "@/components/ConfirmationDanger";
+import { entreGuillemets } from "@/lib/format";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { PRESET_LABELS, RANGE_PRESETS, serializeSegments, type AnalyticsQuery } from "@/lib/query-contract";
 import { widgetQueryJson, type Widget } from "@/lib/dashboards";
 import { explorerHref, explorerHrefFromAst, valeurApprochee } from "@/lib/explorer-page-params";
+import { estAdditive } from "@/lib/analytics-schema";
 import { formater } from "@/lib/fmt-ids";
 import { fmtDate } from "@/lib/format";
 import { widgetQuery, type WidgetData } from "@/lib/widget-data";
@@ -91,9 +93,16 @@ export function WidgetCard({
   // Le total reste un NOMBRE jusqu'ici : il se formate au rendu, avec son unité
   // quand le format n'en porte pas (« 6 occurrences », « 2,7 s »). Une carte
   // « Valeur » ne le redit pas : sa tuile l'affiche déjà, avec son verdict (la
-  // valeur apparaissait deux fois, recette du 26/09/2026). Approché, il porte « ≈ ».
+  // valeur apparaissait deux fois, recette du 26/09/2026). Un classement d'une
+  // mesure non additive (p75, moyenne) non plus : sa ligne « Ensemble de la
+  // population » porte déjà ce total (« 86 ms » deux fois, contre-recette du
+  // 26/09/2026). Approché, il porte « ≈ ».
+  const totalDejaEcrit =
+    widget.kind === "v2" &&
+    (widget.plan.visualization === "value" ||
+      (widget.plan.visualization === "toplist" && !estAdditive(widget.plan.measure.aggregation)));
   const resume =
-    widget.kind === "v2" && widget.plan.visualization !== "value" && data.total !== undefined && data.format
+    widget.kind === "v2" && !totalDejaEcrit && data.total !== undefined && data.format
       ? `${valeurApprochee(formater(data.format, data.total), data.analyse?.meta.approximate === true)}${
           data.unit && (data.format === "count" || data.format === "ratio") ? ` ${data.unit}` : ""
         }`

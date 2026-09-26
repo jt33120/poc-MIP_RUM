@@ -456,10 +456,11 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
             {appel ? `Aucune trace de ${libelleAppel(appel)} sur la plage.` : "Aucune trace sur la plage."}
           </Vide>
         ) : (
-          // Défilement signalé : sept colonnes ne tiennent pas à 390 px.
+          // Sous 640 px, une carte par trace (SlowRow) : à 390 px, les durées étaient
+          // hors champ. Au-delà, le défilement reste signalé.
           <TableDefilante label="Traces les plus lentes">
-            <table className="w-full text-sm" data-testid="traces-lentes">
-              <thead className="bg-panel2">
+            <table className="block w-full text-sm sm:table" data-testid="traces-lentes">
+              <thead className="hidden bg-panel2 sm:table-header-group">
                 <tr>
                   <th scope="col" className="th sticky left-0 z-10 whitespace-nowrap bg-panel2">Heure</th>
                   <th scope="col" className="th">Appel</th>
@@ -470,13 +471,17 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                   <th scope="col" className="th">Session</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="block sm:table-row-group">
                 {tracesParAppel(lentes.data, appel ? Infinity : TRACES_PAR_APPEL).map((l) =>
                   l.kind === "trace" ? (
                     <SlowRow key={l.trace.span_id} t={l.trace} query={query} />
                   ) : (
-                    <tr key={`reste-${l.appel.method} ${l.appel.url}`} className="border-t border-line/60" data-testid="traces-repliees">
-                      <td colSpan={7} className="px-4 py-2 text-xs text-ink-soft">
+                    <tr
+                      key={`reste-${l.appel.method} ${l.appel.url}`}
+                      className="block border-t border-line/60 sm:table-row"
+                      data-testid="traces-repliees"
+                    >
+                      <td colSpan={7} className="block px-4 py-2 text-xs text-ink-soft sm:table-cell">
                         {/* Le reste est compté sur TOUTE la plage (`traces_appel`, lu en SQL), plus
                             seulement parmi les 20 lues. */}
                         {l.n === 1 ? "Une autre trace" : `${formater("count", l.n)} autres traces`} de{" "}

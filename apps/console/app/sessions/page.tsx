@@ -1,5 +1,7 @@
-// Sessions (F41, plan § 5.11) : « Quelles sessions regarder en premier, et qui sont
-// les visiteurs de cette période ? »
+// Sessions (F41, plan § 5.11). La question du plan, « Quelles sessions regarder en
+// premier ? », attend le classement de la fenêtre (B30), non livré : le sous-titre
+// pose celle à laquelle l'écran répond aujourd'hui — les colonnes Erreurs, Rejeu et
+// Frustration de la liste, et les visiteurs (contre-recette du 26/09/2026).
 //
 // UNE POPULATION PAR FIGURE (S1, R-P). Les tuiles comptent les sessions COMMENCÉES
 // (`started_at` dans la fenêtre) — le même nombre que la tuile de trafic de la Vue
@@ -330,7 +332,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     <div className="animate-fade-up">
       <PageHeader
         title="Sessions"
-        sub="Quelles sessions regarder en premier, et qui sont les visiteurs de cette période ?"
+        sub="Qui sont les visiteurs de cette période, et quelles sessions ont connu une erreur ou de la frustration ?"
       />
 
       {/* Un panneau demandé qui ne s'ouvre pas le dit, en tête (F43) : hors périmètre

@@ -44,13 +44,6 @@ import { useFormStatus } from "react-dom";
 export const CLASSE_DECLENCHEUR_DANGER =
   "rounded-lg border border-bad/40 bg-panel px-2 py-1 text-xs font-medium text-bad-ink transition hover:bg-bad/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bad/40";
 
-/**
- * Le nom d'une cible entre guillemets français, espaces insécables comprises : la
- * question se lit « Supprimer l'objectif « Inscription » ? » sans que le
- * navigateur ne coupe la ligne entre le guillemet et le nom.
- */
-export const entreGuillemets = (nom: string) => `«\u00a0${nom}\u00a0»`;
-
 const CLASSE_CONFIRMER =
   "rounded-lg bg-bad-fond px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-bad-fond/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bad/40 focus-visible:ring-offset-1 disabled:cursor-wait disabled:opacity-70";
 

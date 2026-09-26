@@ -135,6 +135,13 @@ describe("F42 — durée, parcours, dimensions", () => {
     expect(navigateurDeSession({ browser: null, user_agent: null })).toEqual({ texte: "Inconnu", deduit: false });
   });
 
+  it("une session React Native n'a pas de navigateur : « application native », jamais « Autre * »", () => {
+    expect(navigateurDeSession({ browser: null, user_agent: "MIP-RN/0.4 (ios 18.6)", runtime: "react_native" })).toEqual({
+      texte: "application native",
+      deduit: false,
+    });
+  });
+
   it("une dimension absente se lit « Inconnu », jamais une chaîne vide (V3)", () => {
     expect(valeurOuInconnu(null)).toBe("Inconnu");
     expect(valeurOuInconnu("  ")).toBe("Inconnu");

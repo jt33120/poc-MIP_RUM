@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ECRANS_ADMIN } from "@mip/console-contract";
-import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
+import { ConfirmationDanger } from "@/components/ConfirmationDanger";
+import { entreGuillemets } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
 import { FormulaireSecret } from "@/components/secret/SecretUnique";
 import { TableDefilante } from "@/components/TableDefilante";

@@ -117,7 +117,7 @@ test("la période globale n'est pas affichée ; la fenêtre se choisit en semain
   await expect(page.getByTestId("reglage-ignore")).toContainText("weeks=26");
 });
 
-test("tuiles : S+1 sur les seules cohortes complètes, S+4 hors fenêtre → « — », jamais 0", async ({ page }) => {
+test("tuiles : S+1 sur les seules cohortes complètes, S+4 hors fenêtre → la dernière semaine lisible, jamais 0", async ({ page }) => {
   await ouvrir(page, 1440, 900);
   await expect(tuile(page, "Visiteurs identifiés suivis").getByTestId("kpi-valeur")).toHaveText("18");
   // Cohorte A seule complète à S+1 : 6 / 12. La cohorte B (S+1 = cette semaine) est exclue.
@@ -127,11 +127,15 @@ test("tuiles : S+1 sur les seules cohortes complètes, S+4 hors fenêtre → « 
   // Aucun verdict coloré : aucun seuil de rétention n'est publié.
   await expect(s1).toHaveAttribute("data-ton", "neutre");
   await expect(s1.getByTestId("kpi-verdict")).toHaveCount(0);
-  // 30 jours conservés : la fenêtre de 4 semaines couvre S+0 à S+3. S+4 n'y sera
-  // jamais lisible, la tuile dit la fenêtre plutôt qu'une date qu'elle ne tiendrait pas.
-  const s4 = tuile(page, "Retour en S+4");
-  await expect(s4.getByTestId("kpi-valeur")).toHaveText("—");
-  await expect(s4).toContainText("au-delà de la fenêtre de 4 semaines");
+  // 30 jours conservés : la fenêtre de 4 semaines couvre S+0 à S+3. S+4 n'y serait
+  // jamais lisible (une tuile vide par construction, contre-recette du 26/09/2026) :
+  // la tuile lit S+3, la dernière semaine de la fenêtre, et le dit.
+  await expect(tuile(page, "Retour en S+4")).toHaveCount(0);
+  const s3 = tuile(page, "Retour en S+3");
+  await expect(s3).toContainText("S+4 dépasse la fenêtre de 4 semaines : dernière semaine lisible");
+  // La cohorte A (il y a deux semaines) n'a pas encore sa semaine S+3 terminée : « — » daté, jamais 0.
+  await expect(s3.getByTestId("kpi-valeur")).toHaveText("—");
+  await expect(s3).toContainText("lisible à partir du");
   // Recette du 26/09/2026 : la tuile « Sessions sans identifiant, hors matrice »
   // attend une lecture non livrée — elle n'est pas rendue, et aucun code interne
   // n'apparaît à l'écran.

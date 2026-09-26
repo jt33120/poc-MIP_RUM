@@ -219,15 +219,21 @@ describe("/retention — ni fonction non livrée, ni code interne, ni « Partiel
     expect(texte(html)).toContain(`lisible à partir du ${date}`);
   });
 
-  it("S+4 : une date quand la fenêtre le couvre, « au-delà de la fenêtre » sinon", async () => {
+  it("S+4 : une date quand la fenêtre le couvre ; sinon la dernière semaine lisible, dite", async () => {
     // 200 jours conservés, 8 semaines : la plus ancienne cohorte (il y a 2 semaines)
     // aura sa semaine S+4 terminée le lundi de la semaine courante + 3.
     const date = fmtJour(lundiDeSemaine(indexSemaine(Date.now()) + 3));
-    expect(texte(await rendre())).toContain(`lisible à partir du ${date}`);
-    // 30 jours conservés : 4 semaines lues, S+0 à S+3 ; S+4 n'y sera jamais lisible.
+    const long = texte(await rendre());
+    expect(long).toContain("Retour en S+4");
+    expect(long).toContain(`lisible à partir du ${date}`);
+    // 30 jours conservés : 4 semaines lues, S+0 à S+3 ; S+4 n'y serait jamais lisible
+    // (contre-recette du 26/09/2026) : la tuile lit S+3 et le dit.
     process.env.RETENTION_DAYS = "30";
     const court = texte(await rendre());
-    expect(court).toContain("au-delà de la fenêtre de 4 semaines");
+    expect(court).not.toContain("Retour en S+4");
+    expect(court).toContain("Retour en S+3");
+    expect(court).toContain("S+4 dépasse la fenêtre de 4 semaines : dernière semaine lisible");
+    expect(court).toContain(`lisible à partir du ${fmtJour(lundiDeSemaine(indexSemaine(Date.now()) + 2))}`);
   });
 
   it("la méthode passe derrière une aide repliable, après le chiffre", async () => {

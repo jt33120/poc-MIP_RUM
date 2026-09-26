@@ -161,11 +161,17 @@ export function Topologie() {
             Le collecteur est une route de la console : c&apos;est l&apos;adresse que visent les capteurs.
             La console écrit les mesures dans la base, puis les relit pour ses écrans et son API.
           </p>
+          {/* Les services livrés mais pas en service (dont le collecteur autonome) ne sont
+              racontés qu'une fois, dans les spécifications (contre-recette du 26/09/2026 :
+              quatre fois dans le dossier). Ici, un renvoi. */}
           <p>
             Les travaux planifiés — alertes, objectifs de service, sondes, purge — tournent à part, tout
-            comme le serveur MCP, qui passe par l&apos;API et n&apos;a aucun accès à la base. Un collecteur
-            autonome existe aussi dans le code, testé à chaque intégration continue, mais n&apos;est pas
-            encore mis en service.
+            comme le serveur MCP, qui passe par l&apos;API et n&apos;a aucun accès à la base. Les autres
+            services du code, et leur état, sont décrits dans{" "}
+            <Link href="#specs" className="font-medium text-ink underline decoration-line underline-offset-2 hover:decoration-ink">
+              les spécifications
+            </Link>
+            .
           </p>
           <p>
             Topologie relevée le {TOPOLOGIE_RELEVEE.railway}. Où sont les données, et sous quel droit :{" "}

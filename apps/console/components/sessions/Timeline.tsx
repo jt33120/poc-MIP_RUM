@@ -19,7 +19,7 @@ import Link from "next/link";
 import { fmtDate, fmtVital } from "@/lib/format";
 import type { TimelineItem } from "@/lib/queries";
 import { RATING_CLASS, type Rating } from "@/lib/rating";
-import { libelleAction } from "@/lib/libelle-action";
+import { libelleAction, libelleRepere } from "@/lib/libelle-action";
 import { KIND_ICON, KIND_STYLE, libelleEvenement } from "@/lib/timeline-constants";
 
 /** Types de repère du SDK (`rum_breadcrumb.type`), en français ; un autre type reste tel quel. */
@@ -202,7 +202,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
           </span>
           {item.detail && (
             <span className="max-w-xl truncate text-xs text-ink-soft" title={item.detail}>
-              {libelleAction(item.detail)}
+              {libelleRepere(item.detail)}
             </span>
           )}
         </>

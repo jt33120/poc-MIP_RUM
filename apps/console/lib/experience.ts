@@ -5,6 +5,7 @@
 // Le « score d'expérience /100 » qui vivait ici a été retiré : il pondérait au
 // jugé des paliers de LCP sans source. L'écran montre désormais ses constituants
 // côte à côte, chacun avec sa source.
+import type { IntervalleP75 } from "./stats/incertitude";
 
 /** Une note ≥ 4/5 (ou 👍) compte comme positive. */
 export const CSAT_POSITIVE = 4;
@@ -92,6 +93,8 @@ export interface LcpParPage {
   valeur: string | null;
   lcp_p75: number | null;
   lcp_n: number;
+  /** Intervalle à 95 % de la p75 : le verdict du LCP suit la règle des tuiles. */
+  lcp_intervalle?: IntervalleP75;
 }
 
 export interface LigneSatisfactionPage {
@@ -112,6 +115,7 @@ export interface LigneSatisfactionPage {
   /** LCP p75 de la même route ; `null` si non mesuré (ou route inconnue). */
   lcp: number | null;
   lcpN: number | null;
+  lcpIntervalle?: IntervalleP75;
 }
 
 /**
@@ -133,6 +137,7 @@ export function lignesSatisfactionParPage(pages: readonly AvisParPage[], lcp: re
       partDetracteurs: partPositive(p.detracteurs, p.count),
       lcp: l?.lcp_p75 ?? null,
       lcpN: l ? l.lcp_n : null,
+      ...(l?.lcp_intervalle ? { lcpIntervalle: l.lcp_intervalle } : {}),
     };
   });
 }

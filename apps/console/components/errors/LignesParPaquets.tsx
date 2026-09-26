@@ -16,6 +16,7 @@ export function LignesParPaquets({
   entete,
   legende,
   classeTable,
+  classeCorps,
   parPaquet = 20,
   children,
 }: {
@@ -24,6 +25,8 @@ export function LignesParPaquets({
   /** Légende accessible (`<caption>`, masquée). */
   legende: string;
   classeTable: string;
+  /** Classe du `<tbody>` (rendu en cartes sous 640 px). */
+  classeCorps?: string;
   parPaquet?: number;
   /** Les `<tr>` du corps, dans l'ordre. */
   children: ReactNode;
@@ -38,7 +41,7 @@ export function LignesParPaquets({
       <table className={classeTable}>
         <caption className="sr-only">{legende}</caption>
         {entete}
-        <tbody>{montrees}</tbody>
+        <tbody className={classeCorps}>{montrees}</tbody>
       </table>
       {reste > 0 && (
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-4 py-2 text-xs text-ink-soft">

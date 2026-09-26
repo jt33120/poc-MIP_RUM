@@ -1,6 +1,7 @@
 // Section canaux de notification : liste + création (webhook/slack/email) par sévérité.
 import { ALERT_SEVERITIES, CHANNEL_KINDS } from "@/lib/alerting";
-import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
+import { ConfirmationDanger } from "@/components/ConfirmationDanger";
+import { entreGuillemets } from "@/lib/format";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
 import { createChannelAction, deleteChannelAction, toggleChannelAction } from "@/app/alerts/actions";
 import { LockedBadge } from "@/components/LockedBadge";

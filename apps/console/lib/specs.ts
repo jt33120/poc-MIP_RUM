@@ -114,7 +114,7 @@ export const INFRA: GroupeInfra[] = [
     // Les quatre autres services sont déclarés dans `.railway/railway.ts` (groupes
     // 1 · Collecte, 2 · Restitution, 3 · Traitements) ; tant que l'opérateur n'a pas
     // appliqué cette déclaration, ils n'existent pas sur Railway (relu le 26/09/2026).
-    sous: `Les mesures arrivent par la console. Deux services tournent à part en production : les travaux planifiés et le serveur MCP (relevé le ${TOPOLOGIE_RELEVEE.railway}). Quatre autres — un collecteur autonome, une API, un service de console et un service de notification — sont livrés dans le code sans être encore mis en service. Ni framework, ni fonction à la demande : du Node et du PostgreSQL, dans des images construites depuis le code source.`,
+    sous: `Les mesures arrivent par la console. Deux services tournent à part en production : les travaux planifiés et le serveur MCP (relevé le ${TOPOLOGIE_RELEVEE.railway}). Quatre autres sont livrés dans le code : le collecteur autonome, décrit ci-dessous, une API, un service de console et un service de notification. Ni framework, ni fonction à la demande : du Node et du PostgreSQL, dans des images construites depuis le code source.`,
     lignes: [
       {
         k: "Collecteur autonome",
@@ -123,7 +123,9 @@ export const INFRA: GroupeInfra[] = [
         // déjà repris par le scheduler. Le receveur reste dans le dépôt, et revient
         // comme service `collector` de `.railway/railway.ts`, que la console relaiera
         // (lib/ingest-relay.ts, drapeau `ingest_relay_pct`, 0 par défaut — ADR 0005).
-        v: "Un receveur OpenTelemetry autonome, construit et démarré à chaque intégration continue. Il n'est pas encore mis en service, et le relais de la console vers lui est livré éteint : en production, les mesures arrivent par la console.",
+        // La SEULE place où le dossier raconte ce service (contre-recette du 26/09/2026 :
+        // quatre fois) ; « Le chemin de la mesure » et le point R6 y renvoient.
+        v: "Un receveur OpenTelemetry autonome, construit et démarré à chaque intégration continue, mais pas encore mis en service. Le relais de la console vers lui est livré éteint : en production, les mesures arrivent par la console. La résolution du pays par adresse IP l'attend (voir « Ce qui reste »).",
         s: "partiel",
         preuve: "services/collector/server.mjs",
       },

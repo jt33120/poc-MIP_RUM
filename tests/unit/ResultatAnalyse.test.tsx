@@ -387,5 +387,8 @@ describe("ResultatAnalyse — méta (W-E8)", () => {
     );
     expect(texte(html)).toContain("lignes ordonnées par date, aucun tri par mesure");
     expect(html).toContain('href="/sessions/sess-1"');
+    // L'instant ISO (UTC) s'écrit à l'heure de Paris, jamais tel quel.
+    expect(texte(html)).toContain("22/09/2026 13:00:00");
+    expect(html).not.toContain("2026-09-22T11:00:00Z");
   });
 });

@@ -143,6 +143,12 @@ export interface VariantAxis {
   nullDefault?: string;
   /** Avertissement produit quand l'axe n'est pas choisi. */
   mixedNotice?: string;
+  /**
+   * Limites propres à certaines valeurs de l'axe : écrites seulement quand la
+   * requête porte l'une d'elles (ou n'en choisit aucune). La note CLS/INP figurait
+   * sur les cartes LCP (contre-recette du 26/09/2026).
+   */
+  valueNotices?: readonly { values: readonly string[]; text: string }[];
 }
 
 export interface RowColumn {
@@ -385,6 +391,14 @@ export const EXPLORER_DATASETS = {
       // La table accueille aussi les métriques du serveur vocal (v51) : sans nom
       // explicite, une moyenne mélangerait deux produits.
       required: true,
+      valueNotices: [
+        {
+          values: ["CLS", "INP"],
+          text:
+            "CLS et INP sont rapportés une fois par chargement de page : la valeur mesurée est celle " +
+            "retenue par le SDK, pas la somme des rapports intermédiaires.",
+        },
+      ],
     },
     fields: {
       rows: { label: "Mesures", unit: "mesures", kind: "rows", aggregations: COUNT },
@@ -399,10 +413,7 @@ export const EXPLORER_DATASETS = {
       { id: "route", column: "route", label: "Route" },
       { id: "session", column: "session_id", label: "Session" },
     ],
-    notices: [
-      "CLS et INP sont rapportés une fois par chargement de page : la valeur mesurée est celle " +
-        "retenue par le SDK, pas la somme des rapports intermédiaires.",
-    ],
+    notices: [],
   },
 
   resources: {
@@ -1273,7 +1284,8 @@ export function publicSchema(
           return { id: dimension, label: DIMENSION_LABELS[dimension], available: state.available, reason: state.reason };
         }),
         columns: definition.rows.map((column) => ({ id: column.id, label: column.label })),
-        notices: [...definition.notices],
+        // Le catalogue décrit tout le jeu : les limites propres à une valeur y restent.
+        notices: [...definition.notices, ...(definition.variant?.valueNotices ?? []).map((n) => n.text)],
       };
     }),
   };

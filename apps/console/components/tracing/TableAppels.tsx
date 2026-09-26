@@ -17,11 +17,20 @@ import { ancreAppel, type Appel } from "@/lib/tracing-ancres";
 import { partServeur } from "@/lib/tracing-hero";
 
 const TH = "th whitespace-nowrap";
-const TD = "px-4 py-3 tabular-nums";
+// Sous 640 px, chaque appel est une CARTE (recette du 26/09/2026 : à 390 px, seuls
+// « Méthode et chemin » et « Appels » tenaient dans l'écran, les p75 hors champ) :
+// les chiffres s'écrivent à la suite, chacun précédé de son libellé.
+const TD =
+  "mr-4 mt-1 inline-flex items-baseline gap-1 text-xs tabular-nums sm:mr-0 sm:mt-0 sm:table-cell sm:px-4 sm:py-3 sm:text-sm";
+
+/** Libellé d'une cellule, écrit seulement dans la carte (sous 640 px). */
+function Libelle({ children }: { children: ReactNode }) {
+  return <span className="font-normal text-ink-soft sm:hidden">{children}</span>;
+}
 
 function Entete() {
   return (
-    <thead className="bg-panel2">
+    <thead className="hidden bg-panel2 sm:table-header-group">
       <tr>
         <th scope="col" className={`${TH} sticky left-0 z-10 bg-panel2`}>
           Méthode et chemin
@@ -48,8 +57,15 @@ function Entete() {
 function Ligne({ a, hrefTraces }: { a: ApiCallDecomposition; hrefTraces: string }) {
   const part = partServeur(a);
   return (
-    <tr id={ancreAppel(a.method, a.url)} className="scroll-mt-20 border-t border-line/60 target:bg-perf/10" data-testid="ligne-appel">
-      <th scope="row" className="sticky left-0 z-10 max-w-[16rem] bg-panel px-4 py-3 text-left font-mono text-xs font-normal">
+    <tr
+      id={ancreAppel(a.method, a.url)}
+      className="block scroll-mt-20 border-t border-line/60 px-4 py-3 target:bg-perf/10 sm:table-row sm:p-0"
+      data-testid="ligne-appel"
+    >
+      <th
+        scope="row"
+        className="block min-w-0 text-left font-mono text-xs font-normal sm:sticky sm:left-0 sm:z-10 sm:table-cell sm:max-w-[16rem] sm:bg-panel sm:px-4 sm:py-3"
+      >
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="shrink-0 rounded bg-panel2 px-1.5 py-0.5 font-semibold text-ink-soft">{a.method}</span>
           <span className="block min-w-0 truncate text-ink" title={a.url}>
@@ -57,17 +73,36 @@ function Ligne({ a, hrefTraces }: { a: ApiCallDecomposition; hrefTraces: string 
           </span>
         </span>
       </th>
-      <td className={TD}>{formater("count", a.n)}</td>
-      <td className={TD}>{formater("count", a.n_suivis)}</td>
-      <td className={`${TD} font-semibold`}>{formater("ms", a.front_p75)}</td>
-      <td className={TD}>{formater("ms", a.back_p75)}</td>
-      <td className={TD}>{formater("ms", a.reseau_p75)}</td>
-      <td className="px-4 py-3">{part === null ? <span className="text-ink-soft">—</span> : <ShareBar share={part} />}</td>
       <td className={TD}>
+        <Libelle>Appels</Libelle>
+        {formater("count", a.n)}
+      </td>
+      <td className={TD}>
+        <Libelle>Suivis</Libelle>
+        {formater("count", a.n_suivis)}
+      </td>
+      <td className={`${TD} font-semibold`}>
+        <Libelle>p75 navigateur</Libelle>
+        {formater("ms", a.front_p75)}
+      </td>
+      <td className={TD}>
+        <Libelle>p75 serveur</Libelle>
+        {formater("ms", a.back_p75)}
+      </td>
+      <td className={TD}>
+        <Libelle>p75 trajet</Libelle>
+        {formater("ms", a.reseau_p75)}
+      </td>
+      <td className="mt-1 flex items-center gap-2 text-xs sm:mt-0 sm:table-cell sm:px-4 sm:py-3">
+        <Libelle>Part serveur</Libelle>
+        {part === null ? <span className="text-ink-soft">—</span> : <ShareBar share={part} />}
+      </td>
+      <td className={TD}>
+        <Libelle>Échecs</Libelle>
         {formater("count", a.err)}
         <span className="text-ink-soft"> ({formater("pct", a.n > 0 ? a.err / a.n : null)})</span>
       </td>
-      <td className="whitespace-nowrap px-4 py-3 text-xs">
+      <td className="mt-1 block whitespace-nowrap text-xs sm:mt-0 sm:table-cell sm:px-4 sm:py-3">
         <Link href={hrefTraces} className="text-perf underline-offset-2 hover:underline">
           Voir les traces
         </Link>
@@ -92,9 +127,9 @@ function Table({
     // Neuf colonnes : le défilement est signalé (ombre, consigne) et la zone reste
     // `relative` pour les `sr-only` (voir l'en-tête « Traces »).
     <TableDefilante label={label}>
-      <table className="w-full text-sm" data-testid={testId}>
+      <table className="block w-full text-sm sm:table" data-testid={testId}>
         <Entete />
-        <tbody>
+        <tbody className="block sm:table-row-group">
           {lignes.map((a) => (
             <Ligne key={`${a.method} ${a.url}`} a={a} hrefTraces={hrefTraces({ method: a.method, url: a.url })} />
           ))}

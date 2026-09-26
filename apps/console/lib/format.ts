@@ -204,3 +204,15 @@ export function decouperUrlScript(url: string | null): { fichier: string; hote: 
     return { fichier: url, hote: null };
   }
 }
+
+/**
+ * Le nom d'une cible entre guillemets français, espaces insécables comprises : la
+ * question se lit « Supprimer l'objectif « Inscription » ? » sans que le
+ * navigateur ne coupe la ligne entre le guillemet et le nom.
+ *
+ * ICI, et pas dans `components/ConfirmationDanger.tsx` : une fonction exportée par
+ * un module `"use client"` n'est, vue d'un composant serveur, qu'une référence
+ * client — l'appeler côté serveur fait tomber la page en 500 (contre-recette du
+ * 26/09/2026). Garde : tests/unit/use-client-exports.test.ts.
+ */
+export const entreGuillemets = (nom: string) => `«\u00a0${nom}\u00a0»`;

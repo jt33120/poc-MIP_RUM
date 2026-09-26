@@ -1,6 +1,7 @@
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
-import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
+import { ConfirmationDanger } from "@/components/ConfirmationDanger";
+import { entreGuillemets } from "@/lib/format";
 import { FormulaireSecret, SecretAffiche } from "@/components/secret/SecretUnique";
 import { TableDefilante } from "@/components/TableDefilante";
 import { chargerJetonsLecture } from "@/lib/chargeurs/administration";

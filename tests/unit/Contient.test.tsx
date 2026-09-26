@@ -166,7 +166,10 @@ describe("PS3 — le chemin de la mesure (TP7, côté SSR)", () => {
 
   it("la légende dit où passe le trafic, datée, sans journal d'exploitation ni chemin du code", () => {
     expect(texte).toContain("Le collecteur est une route de la console : c'est l'adresse que visent les capteurs.");
-    expect(texte).toContain("Un collecteur autonome existe aussi dans le code, testé à chaque intégration continue, mais n'est pas encore mis en service.");
+    // Le collecteur autonome n'est raconté qu'une fois, dans les spécifications : ici, un renvoi.
+    expect(texte).toContain("Les autres services du code, et leur état, sont décrits dans les spécifications.");
+    expect(html).toMatch(/<a [^>]*href="#specs"[^>]*>les spécifications<\/a>/);
+    expect(texte).not.toContain("collecteur autonome");
     expect(texte).toContain(`Topologie relevée le ${TOPOLOGIE_RELEVEE.railway}.`);
     // Recette du 26/09/2026 : ni service supprimé tel jour, ni identifiant de déploiement,
     // ni chemin du code sur une page publique.

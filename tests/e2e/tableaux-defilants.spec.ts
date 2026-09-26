@@ -82,7 +82,10 @@ test.describe("à 390 px", () => {
     test(`${chemin} : tableau dans une zone défilante nommée, page à la largeur de l'écran`, async ({ page }) => {
       await login(page);
       await page.goto(`${consoleUrl}${chemin}`);
-      await expect(page.getByRole("region", { name: nom, exact: true })).toBeVisible();
+      // Sans aucune sonde, /admin/uptime montre son état vide en carte, HORS du tableau
+      // (contre-recette du 26/09/2026 : dans la cellule, il était coupé à 390 px).
+      const zone = page.getByRole("region", { name: nom, exact: true });
+      await expect(chemin === "/admin/uptime" ? zone.or(page.getByTestId("uptime-vide")) : zone).toBeVisible();
       // Les listes d'applications à long libellé ne poussent plus la page (417 px avant).
       expect(await debordements(page), chemin).toEqual([]);
     });

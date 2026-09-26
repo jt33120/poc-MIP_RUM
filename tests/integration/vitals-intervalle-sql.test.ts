@@ -45,6 +45,7 @@ if (!url) console.warn("[vitals-intervalle-sql] SAUTÉ — définir SQL_TEST_DAT
   const c = new pg.Client(url ? { connectionString: url } : {});
   let vitalsP75: typeof import("../../apps/console/lib/queries").vitalsP75;
   let vitalPercentiles: typeof import("../../apps/console/lib/queries").vitalPercentiles;
+  let vitalsBreakdown: typeof import("../../apps/console/lib/queries-breakdowns").vitalsBreakdown;
   let pool: { end: () => Promise<void> };
 
   beforeAll(async () => {
@@ -74,6 +75,7 @@ if (!url) console.warn("[vitals-intervalle-sql] SAUTÉ — définir SQL_TEST_DAT
     vi.resetModules();
     process.env.DATABASE_URL = url;
     ({ vitalsP75, vitalPercentiles } = await import("../../apps/console/lib/queries"));
+    ({ vitalsBreakdown } = await import("../../apps/console/lib/queries-breakdowns"));
     ({ pool } = await import("../../apps/console/lib/db"));
   }, 180_000);
 
@@ -123,6 +125,21 @@ if (!url) console.warn("[vitals-intervalle-sql] SAUTÉ — définir SQL_TEST_DAT
       expect(Number(pcts[nom].pcts[1]), nom).toBeCloseTo(Number(p75[nom].p75), 9);
     }
     expect(Object.keys(pcts.CLS).sort()).toEqual(["intervalle", "n", "name", "pcts"]);
+  });
+
+  // Recette du 26/09/2026 : « Segments classés » affirmait « À améliorer » là où la
+  // tuile disait « verdict incertain ». Chaque groupe du découpage porte désormais
+  // l'intervalle de SA p75, par la même méthode : un groupe qui contient toute la
+  // population (ici, la seule route « / ») dit exactement l'intervalle de la tuile.
+  it("vitalsBreakdown : l'intervalle d'un groupe est celui de la tuile, pour 40, 20 et 7 mesures", async () => {
+    const p75 = await lire();
+    const { rows } = await vitalsBreakdown({ app: APP, period: "24h", device: null, segment: [] }, "route");
+    const racine = rows.find((r) => r.valeur === "/")!;
+    expect(racine.lcp_intervalle).toEqual(p75.LCP.intervalle);
+    expect(racine.inp_intervalle).toEqual(p75.INP.intervalle);
+    expect(racine.cls_intervalle).toEqual({ indisponible: "7 mesures, 13 requises" });
+    // Les mesures triées servent au calcul, jamais à la réponse.
+    expect(Object.keys(racine).filter((k) => /_(tri|valeurs|bas|haut)$/.test(k))).toEqual([]);
   });
 
   it("les rangs normaux du SQL sont ceux du JS pour tout n de 30 à 5 000", async () => {

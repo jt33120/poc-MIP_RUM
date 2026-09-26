@@ -55,6 +55,18 @@ export const json = (
   });
 
 /**
+ * La requête a-t-elle été coupée par le CLIENT pendant la lecture de son corps
+ * (onglet fermé, navigation, beacon interrompu) ? Node lève alors `Error: aborted`,
+ * code `ECONNRESET` — le même code qu'une connexion à la base coupée, que
+ * `estIndisponibilite` range en panne de base. Une coupure côté base ne porte
+ * jamais ce message (« read ECONNRESET », « Connection terminated… »).
+ */
+export function estAbandonClient(err: unknown): boolean {
+  const e = err as { message?: unknown; code?: unknown } | null;
+  return e?.message === "aborted" && (e.code === "ECONNRESET" || e.code === undefined);
+}
+
+/**
  * Refus IDENTIFIÉS de la sérialisation d'écriture (P8.1), à opposer avant le 500
  * générique. Retourne null si l'erreur n'en est pas un.
  *
@@ -78,6 +90,13 @@ export function refusIngestion(
     return json({ error: "ingestion busy, retry", retry: true }, 503, cors, {
       "retry-after": "2",
     });
+  }
+  // Requête abandonnée par le client : rien n'est écrit, personne n'attend la
+  // réponse. Journalisée comme telle — « busy: database unavailable » brouillait
+  // l'exploitation, la base n'y était pour rien (contre-recette du 26/09/2026).
+  if (estAbandonClient(err)) {
+    log.info("aborted: client closed the request", {});
+    return json({ error: "request aborted by client" }, 400, cors);
   }
   // Base injoignable au-delà des reprises (`withRetry`) : la transaction n'a pas
   // commencé ou a été annulée, rien n'est écrit, et rejouer plus tard réussira.

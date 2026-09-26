@@ -167,6 +167,33 @@ describe("ImpactTable", () => {
     expect(lignes[1]).toContain('data-verdict="etabli"');
   });
 
+  // Contre-recette du 26/09/2026 : « Côté » et « Tendance » de /map valaient « — » partout.
+  it("une mesure textuelle s'écrit telle quelle ; une valeur nulle sans ce drapeau reste « — »", () => {
+    const ligne: ImpactLigne = {
+      ...LIGNE("/api/items/:id", 120, 80),
+      mesures: [
+        { cle: "cote", valeur: null, affichage: "serveur", texte: true },
+        { cle: "err", valeur: null, affichage: "12 %" },
+      ],
+    };
+    const rendu = renderToStaticMarkup(
+      <ImpactTable {...BASE} colonnes={["Côté", "Taux d'erreur"]} tri="gravite" reference={null} referenceRaison="—" lignes={[ligne]} colonnePilote={null} />,
+    );
+    const [, corps] = rendu.split('data-testid="impact-ligne"');
+    expect(texte(corps)).toContain("Côté serveur");
+    expect(texte(corps)).toContain("Taux d'erreur —");
+  });
+
+  it("une barre sans verdict affirmé est neutre, jamais l'orange de marque", () => {
+    const sansVital: ImpactLigne = { ...LIGNE("/a", 300, 40), mesures: [] };
+    const rendu = renderToStaticMarkup(
+      <ImpactTable {...BASE} colonnes={[]} tri="gravite" reference={null} referenceRaison="—" lignes={[sansVital]} />,
+    );
+    const barre = /<span[^>]*class="([^"]*)"[^>]*data-barre=""/.exec(rendu)?.[1] ?? "";
+    expect(barre).toContain("bg-ink-faint/50");
+    expect(barre).not.toContain("bg-accent");
+  });
+
   it("aucune ligne « Autres », aucun total", () => {
     expect(texte(html)).not.toMatch(/\bAutres\b(?! »)|Total/);
   });

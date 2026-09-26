@@ -56,7 +56,7 @@ export default function Confidentialite() {
           </li>
         </ul>
         <p>
-          <strong>Aucune adresse IP n&apos;est stockée</strong>, sous aucune forme, et aucune donnée directement
+          <strong>Aucune adresse IP de visiteur n&apos;est stockée</strong>, sous aucune forme, et aucune donnée directement
           identifiante n&apos;est conservée en clair.
         </p>
         {DATA_SOURCES.map((d) => (

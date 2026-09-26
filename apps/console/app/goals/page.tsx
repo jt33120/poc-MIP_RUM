@@ -25,7 +25,8 @@
 //     figure ou derrière l'aide « ? » ; aucune justification technique visible.
 import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
-import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
+import { ConfirmationDanger } from "@/components/ConfirmationDanger";
+import { entreGuillemets } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { Figure, MethodeRepliee as Methode } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";

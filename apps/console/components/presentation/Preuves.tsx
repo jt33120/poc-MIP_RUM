@@ -11,6 +11,14 @@
 // Les zones sont en pixels de la capture ; si les captures sont reprises
 // (scripts/captures-portail.mjs), il faut revoir les zones avec elles.
 //
+// DEUX RECADRAGES PAR PREUVE (contre-recette du 26/09/2026). À 390 px, la zone large
+// (700 à 1 140 px de capture) tombait à l'échelle 0,4 : un texte de 5 px, illisible.
+// Sous 640 px, chaque preuve montre donc sa ou ses tuiles les plus parlantes, une par
+// cadre, près de leur taille réelle ; au-delà, la zone large. Un cadre n'agrandit
+// jamais sa zone (`maxWidth` : sa largeur en pixels de capture) : une capture
+// agrandie est floue. La zone large du mobile, un bandeau et quatre tuiles sur toute
+// la largeur de l'écran, prend toute la largeur de la section, texte au-dessus.
+//
 // La légende commune (LegendeCapture) date les captures par le manifeste, et seulement
 // par lui ; elle dit que les chiffres viennent d'un jeu de démonstration.
 import type { CSSProperties } from "react";
@@ -29,6 +37,12 @@ interface Zone {
   h: number;
 }
 
+/** Un recadrage et ce qu'il montre (l'alt de son image). */
+interface Recadrage {
+  zone: Zone;
+  alt: string;
+}
+
 interface Preuve {
   id: string;
   titre: string;
@@ -37,8 +51,12 @@ interface Preuve {
   clair: string;
   /** Variante sombre, quand la capture existe ; sinon la claire sert aux deux thèmes. */
   sombre: string | null;
-  alt: string;
-  zone: Zone;
+  /** À partir de 640 px. */
+  large: Recadrage;
+  /** Sous 640 px : un cadre par zone, empilés. */
+  etroits: readonly Recadrage[];
+  /** La zone large occupe toute la largeur de la section, texte au-dessus. */
+  pleineLargeur?: boolean;
 }
 
 const PREUVES: readonly Preuve[] = [
@@ -46,11 +64,19 @@ const PREUVES: readonly Preuve[] = [
     id: "marge",
     titre: "Chaque chiffre dit sa marge",
     texte:
-      "Les Web Vitals sont donnés au 75e centile, avec leur intervalle de confiance et le nombre de mesures. Quand l'échantillon ne suffit pas, l'écran écrit « verdict non établi » au lieu d'inventer une note.",
+      "Les Web Vitals sont donnés au 75e centile, avec leur intervalle de confiance et le nombre de mesures. Quand l'échantillon ne permet pas de trancher, l'écran l'écrit au lieu d'inventer une note.",
     clair: "/portail/overview-light.png",
     sombre: "/portail/overview-dark.png",
-    alt: "Trois tuiles de la vue d'ensemble : LCP, INP et CLS au 75e centile, chacune avec son intervalle à 95 %, sa médiane et son nombre de mesures.",
-    zone: { x: 280, y: 664, w: 700, h: 236 },
+    large: {
+      zone: { x: 280, y: 111, w: 684, h: 211 },
+      alt: "Trois tuiles de la vue d'ensemble : LCP, INP et CLS au 75e centile, chacune avec son intervalle à 95 % et son nombre de mesures ; l'INP porte « verdict incertain : entre Bon et À améliorer ».",
+    },
+    etroits: [
+      {
+        zone: { x: 506, y: 111, w: 230, h: 211 },
+        alt: "La tuile INP au 75e centile : « verdict incertain : entre Bon et À améliorer », son intervalle à 95 % et son nombre de mesures.",
+      },
+    ],
   },
   {
     id: "impact",
@@ -59,8 +85,15 @@ const PREUVES: readonly Preuve[] = [
       "Occurrences, sessions et visiteurs touchés sont comptés à part, jamais additionnés. Depuis l'erreur, on ouvre la session, l'action, la trace et le rejeu où elle s'est produite.",
     clair: "/portail/issue-light.png",
     sombre: "/portail/issue-dark.png",
-    alt: "La page d'une erreur : sept occurrences sur 24 heures, touchant sept sessions et sept visiteurs, en tuiles séparées.",
-    zone: { x: 280, y: 740, w: 860, h: 160 },
+    large: {
+      zone: { x: 280, y: 111, w: 853, h: 174 },
+      alt: "La page d'un groupe d'erreurs : 75 occurrences sur 24 heures, touchant 65 sessions et 63 visiteurs, dites dans une phrase puis en tuiles séparées.",
+    },
+    etroits: [
+      { zone: { x: 280, y: 146, w: 287, h: 139 }, alt: "Tuile « Occurrences · 24 h » : 75, une erreur répétée comptant chaque fois." },
+      { zone: { x: 563, y: 146, w: 287, h: 139 }, alt: "Tuile « Sessions touchées » : 65." },
+      { zone: { x: 846, y: 146, w: 287, h: 139 }, alt: "Tuile « Visiteurs touchés » : 63." },
+    ],
   },
   {
     id: "non-collecte",
@@ -68,9 +101,18 @@ const PREUVES: readonly Preuve[] = [
     texte:
       "Sans capteur natif, l'écran mobile écrit « Non collecté » pour les crashes et le démarrage natifs, plutôt qu'un zéro ou un taux sans crash qui ne reposerait sur rien.",
     clair: "/portail/mobile-light.png",
-    sombre: null,
-    alt: "L'écran Mobile : un bandeau « Non collecté » pour les crashes natifs, l'ANR et le démarrage natif, et des tuiles qui affichent un tiret plutôt qu'un zéro.",
-    zone: { x: 280, y: 300, w: 860, h: 270 },
+    sombre: "/portail/mobile-dark.png",
+    large: {
+      zone: { x: 280, y: 342, w: 1136, h: 324 },
+      alt: "L'écran Mobile : un bandeau « Non collecté » pour les crashes natifs, l'ANR et le démarrage natif, puis quatre tuiles ; celle des sessions sans erreur précise qu'elle ne compte que les erreurs JavaScript.",
+    },
+    etroits: [
+      {
+        zone: { x: 1132, y: 455, w: 284, h: 211 },
+        alt: "Tuile « Sessions sans erreur JS » : son intervalle à 95 %, et « Erreurs JavaScript seulement : les crashes natifs ne sont pas collectés, ce taux n'en dit rien ».",
+      },
+    ],
+    pleineLargeur: true,
   },
 ];
 
@@ -86,22 +128,27 @@ function recadrage(z: Zone): CSSProperties {
   };
 }
 
-function Figure({ p }: { p: Preuve }) {
-  // L'image est plus large que son cadre (la zone n'en est qu'une partie) : on la
-  // demande assez grande pour que le détail reste net.
-  const sizes = `(min-width: 1024px) ${Math.round((LARGEUR / p.zone.w) * 46)}rem, ${Math.round((LARGEUR / p.zone.w) * 100)}vw`;
+/**
+ * Un cadre : la zone d'une capture, jamais agrandie. `largeurRem` : la largeur que le
+ * cadre peut prendre, pour que le navigateur demande une image assez grande.
+ */
+function Cadre({ p, r, largeurRem, cache }: { p: Preuve; r: Recadrage; largeurRem: number; cache?: boolean }) {
+  const z = r.zone;
+  const sizes = `${Math.round((LARGEUR / z.w) * Math.min(largeurRem, z.w / 16))}rem`;
   return (
     <div
-      className="relative overflow-hidden rounded-xl border border-line bg-panel shadow-card"
-      style={{ aspectRatio: `${p.zone.w} / ${p.zone.h}` }}
+      className="relative mx-auto w-full overflow-hidden rounded-xl border border-line bg-panel shadow-card"
+      style={{ aspectRatio: `${z.w} / ${z.h}`, maxWidth: `${z.w}px` }}
+      data-testid="preuve-cadre"
     >
       <Image
         src={p.clair}
-        alt={p.alt}
+        alt={cache ? "" : r.alt}
+        aria-hidden={cache || undefined}
         width={LARGEUR}
         height={HAUTEUR}
         sizes={sizes}
-        style={recadrage(p.zone)}
+        style={recadrage(z)}
         className={p.sombre ? "dark:hidden" : ""}
       />
       {p.sombre && (
@@ -112,11 +159,27 @@ function Figure({ p }: { p: Preuve }) {
           width={LARGEUR}
           height={HAUTEUR}
           sizes={sizes}
-          style={recadrage(p.zone)}
+          style={recadrage(z)}
           className="hidden dark:block"
         />
       )}
     </div>
+  );
+}
+
+function Figure({ p }: { p: Preuve }) {
+  return (
+    <>
+      {/* Sous 640 px : les tuiles les plus parlantes, une par cadre. */}
+      <div className="flex flex-col gap-3 sm:hidden" data-testid="preuve-etroite">
+        {p.etroits.map((r) => (
+          <Cadre key={`${r.zone.x}-${r.zone.y}`} p={p} r={r} largeurRem={24} />
+        ))}
+      </div>
+      <div className="hidden sm:block" data-testid="preuve-large">
+        <Cadre p={p} r={p.large} largeurRem={p.pleineLargeur ? 70 : 50} />
+      </div>
+    </>
   );
 }
 
@@ -135,7 +198,7 @@ export function Preuves() {
             <li
               key={p.id}
               data-testid="preuve"
-              className="grid gap-5 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)] lg:items-center lg:gap-10"
+              className={`grid gap-5 ${p.pleineLargeur ? "" : "lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)] lg:items-center lg:gap-10"}`}
             >
               <div className="min-w-0">
                 <h3 className="text-lg font-bold tracking-tight text-ink">{p.titre}</h3>

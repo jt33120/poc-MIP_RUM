@@ -43,7 +43,8 @@ import { PrintButton } from "./PrintButton";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { WidgetCard } from "@/components/dashboards/WidgetCard";
-import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
+import { ConfirmationDanger } from "@/components/ConfirmationDanger";
+import { entreGuillemets } from "@/lib/format";
 // F36 — barre de population (W-B1) et réglages d'affichage de l'écran (§ 3.1).
 import { PopulationBar } from "@/components/PopulationBar";
 import { resumePopulation, retraitsDePopulation } from "@/lib/explorer-page-params";
@@ -482,18 +483,24 @@ export default async function D({
                               ↓
                             </button>
                           </form>
+                          {/* Retirer une section se confirme, comme retirer une carte
+                              (contre-recette du 26/09/2026) : le ✕ partait en un clic. */}
                           <form action={removeWidgetAction}>
                             <input type="hidden" name="id" value={dash.id} />
                             <input type="hidden" name="index" value={index} />
                             <input type="hidden" name="revision" value={dash.revision} />
                             <input type="hidden" name="ctx" value={contexte} />
-                            <button
-                              type="submit"
-                              aria-label={`Retirer la section « ${widget.title} » — ses cartes restent`}
-                              className="btn-ghost px-2 py-1 text-bad-ink"
-                            >
-                              ✕
-                            </button>
+                            <ConfirmationDanger
+                              libelle="✕"
+                              libelleAccessible={`Retirer la section ${entreGuillemets(widget.title)} — ${position}`}
+                              question={`Retirer la section ${entreGuillemets(widget.title)} de ce tableau de bord\u00a0?`}
+                              consequence="Seul le titre de section disparaît : ses cartes restent sur le tableau de bord."
+                              confirmer="Retirer la section"
+                              enCours="Retrait…"
+                              flottant
+                              classeDeclencheur="btn-ghost px-2 py-1 text-bad-ink"
+                              testid={`section-${index}-retirer`}
+                            />
                           </form>
                         </span>
                       </li>

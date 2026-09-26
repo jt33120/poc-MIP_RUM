@@ -264,12 +264,17 @@ export function Breakdown({
           <ul className="flex flex-col gap-1.5">
             {items.map((item) => (
               <li key={item.key}>
+                {/* Colonnes BORNÉES (minmax), pas fixes (contre-recette du 26/09/2026) : en
+                    demi-largeur (/admin/composants), 12 + 16 + 6 rem ne laissaient rien aux
+                    détails, qui sortaient de la carte. Les bornes sont des longueurs, jamais
+                    le contenu : toutes les lignes gardent la même piste, les barres restent
+                    comparables ; à pleine largeur, les colonnes prennent leur maximum. */}
                 <Link
                   href={item.href}
                   aria-label={`${item.description}${item.echantillonFaible ? ", échantillon faible" : ""} — ouvrir le détail`}
                   data-testid="breakdown-row"
                   data-faible={item.echantillonFaible ? "1" : undefined}
-                  className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:grid-cols-[10rem_12rem_6rem_minmax(0,1fr)] lg:grid-cols-[12rem_16rem_6rem_minmax(0,1fr)]"
+                  className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:grid-cols-[minmax(6rem,10rem)_minmax(6rem,12rem)_6rem_minmax(7rem,1fr)] lg:grid-cols-[minmax(7rem,12rem)_minmax(7rem,16rem)_6rem_minmax(7rem,1fr)]"
                 >
                   <span className="col-span-2 min-w-0 truncate font-mono text-xs text-ink sm:col-span-1" title={item.label}>
                     {item.label}

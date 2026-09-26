@@ -29,8 +29,10 @@
 // p75 304 ms » disait « verdict incertain » ; la même valeur portait « À améliorer »
 // ici. Une mesure qui fournit son intervalle (`ImpactMesure.intervalle`) suit la
 // règle des tuiles (`lireVital`) : verdict affirmé seulement s'il vaut sur tout
-// l'intervalle, sinon « incertain », sans couleur. Sans intervalle fourni, la
-// règle d'avant (verdict de la valeur) reste celle de l'appelant.
+// l'intervalle, sinon « incertain » (ou « non établi » sous 13 mesures), sans
+// couleur. Le découpage des Web Vitals lit cet intervalle par groupe
+// (`vitalsBreakdown`) : la Vue d'ensemble et /pages suivent la même règle que leurs
+// tuiles. Sans intervalle fourni, le verdict est celui de la valeur.
 //
 // UN SEUL RANG DE COMMANDES. Un ordre non proposé (« Impact », barré en permanence)
 // n'est plus affiché ; un sélecteur propre à l'écran (le vital qui classe) se pose
@@ -58,6 +60,13 @@ export interface ImpactMesure {
    * vaut sur tout l'intervalle (règle des tuiles), sinon « incertain », sans couleur.
    */
   intervalle?: IntervalleP75;
+  /**
+   * Mesure TEXTUELLE (« navigateur », « +32 % ») : sans valeur numérique, elle ne
+   * classe rien, mais son `affichage` s'écrit tel quel. Sans ce drapeau, une valeur
+   * nulle s'écrit « — » (les colonnes « Côté » et « Tendance » de /map valaient
+   * « — » sur toutes les lignes, contre-recette du 26/09/2026).
+   */
+  texte?: boolean;
 }
 
 export interface ImpactLigne {
@@ -133,7 +142,7 @@ function Mesure({ m, libelle }: { m: ImpactMesure; libelle: string }) {
       {couleur ? (
         <span className={`rounded border px-1 py-px font-medium tabular-nums ${RATING_CLASS[couleur]}`}>{m.affichage}</span>
       ) : (
-        <span className="tabular-nums text-ink">{m.valeur == null ? "—" : m.affichage}</span>
+        <span className="tabular-nums text-ink">{m.valeur == null && !m.texte ? "—" : m.affichage}</span>
       )}
       {verdict && (
         <span className="text-[10px] text-ink-soft" title={verdict.kind === "etabli" ? undefined : texteVerdict(verdict)}>
@@ -183,13 +192,18 @@ const CELLULES = {
   },
 } as const;
 
-/** Couleur de barre : celle du verdict quand la valeur classée en porte un, la série principale sinon. */
+/**
+ * Couleur de barre : celle du verdict quand la valeur classée en porte un affirmé,
+ * NEUTRE sinon. L'orange de marque, à côté de barres vertes « Bon », se lisait
+ * « À améliorer » : /recherche à 443 ms paraissait lente (recette du 26/09/2026).
+ */
 function couleurBarre(verdict: Rating | null): string {
-  return verdict ? `${RATING_BAR[verdict]} opacity-80` : "bg-accent/70";
+  return verdict ? `${RATING_BAR[verdict]} opacity-80` : "bg-ink-faint/50";
 }
 
 /** Texte d'une mesure pour l'alternative : valeur et verdict en toutes lettres. */
 function texteMesure(m: ImpactMesure): string {
+  if (m.texte) return m.affichage;
   if (m.valeur == null) return "—";
   const verdict = verdictMesure(m);
   return verdict ? `${m.affichage} (${texteVerdict(verdict)})` : m.affichage;

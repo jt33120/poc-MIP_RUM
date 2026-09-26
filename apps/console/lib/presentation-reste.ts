@@ -126,7 +126,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R6",
     titre: "Le pays par adresse IP, inerte tant que la collecte passe par Vercel",
     manque:
-      "La résolution et sa base (DB-IP Lite, téléchargée à la construction de l'image) sont livrées dans le collecteur, un service Railway que le code déclare mais qui n'est pas encore créé. Le trafic entre par la route de la console sur Vercel, qui ne l'appelle pas ; et le relais de la console vers le collecteur, livré éteint, ne lui transmettra que le pays posé par Vercel, jamais l'adresse : la résolution y est sautée. Cette résolution ne donne donc aucun pays aujourd'hui.",
+      "La résolution et sa base (DB-IP Lite, téléchargée à la construction de l'image) sont livrées dans le collecteur autonome, qui n'est pas en service (voir les spécifications, « Services »). Même allumé, le relais de la console ne lui transmettra que le pays posé par Vercel, jamais l'adresse : la résolution y est sautée. Cette résolution ne donne donc aucun pays aujourd'hui.",
     debloque:
       "Le chemin est choisi : une collecte directe vers le collecteur, pour les sites dont la politique de sécurité du contenu (CSP) le permet, une fois que le relais porte tout le trafic depuis 7 jours sans repli. Avant, prouver sur un environnement de recette que la façade Railway écrase une adresse forgée par le client. Rien de cela n'est livré.",
     decide: "L'équipe MIP.",

@@ -44,8 +44,9 @@ export const CATEGORIES: NavCategory[] = [
       // « lentes » présupposait le verdict que le tri par gravité établit.
       { href: "/pages", label: "Pages" },
       // « JS » était faux : error_source couvre réseau, CSP, console, Node,
-      // Python et React Native, et les issues v2 vivent sous /errors/issues.
-      { href: "/errors", label: "Erreurs et issues" },
+      // Python et React Native. « et issues » est retiré (contre-recette du
+      // 26/09/2026) : les écrans disent « groupe », jamais « issue ».
+      { href: "/errors", label: "Erreurs" },
       // Frustration et Actions : UNE question (« quels gestes échouent ou font
       // attendre »), donc une entrée ; les deux routes restent, l'onglet Actions
       // vit dans la page (§ 5.4).

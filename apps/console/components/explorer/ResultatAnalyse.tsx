@@ -58,7 +58,7 @@ import {
   vitalDeVerdict,
 } from "@/lib/explorer-page-params";
 import { formater, type FormatId } from "@/lib/fmt-ids";
-import { fmtDate } from "@/lib/format";
+import { fmtInstant } from "@/lib/format";
 import { classerParGravite, ecartALaReference, estFaible, SEUIL_ECHANTILLON_FAIBLE } from "@/lib/impact";
 import type { ExplorerData, ExplorerMeta, ExplorerPoint } from "@/lib/queries-explorer";
 import {
@@ -512,10 +512,19 @@ function lignesImpact(
 
 // ─────────────────────────────── Journal (W-E6) ───────────────────────────────
 
-/** Une cellule de journal : jamais un objet brut, jamais une valeur inventée. */
+/** Un instant sérialisé en ISO 8601 (« 2026-09-26T20:08:56.319Z »), tel que le journal le reçoit en JSON. */
+const INSTANT_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/;
+
+/**
+ * Une cellule de journal : jamais un objet brut, jamais une valeur inventée. Un
+ * instant s'écrit à l'heure de Paris, à la seconde : les dates arrivent en chaînes
+ * ISO (UTC) et s'affichaient telles quelles sous une barre qui annonce « Heure de
+ * Paris » (contre-recette du 26/09/2026).
+ */
 function cellule(valeur: unknown): string {
   if (valeur === null || valeur === undefined) return "—";
-  if (valeur instanceof Date) return fmtDate(valeur);
+  if (valeur instanceof Date) return fmtInstant(valeur, { annee: true, secondes: true, sansA: true });
+  if (typeof valeur === "string" && INSTANT_ISO.test(valeur)) return fmtInstant(valeur, { annee: true, secondes: true, sansA: true });
   if (typeof valeur === "number") return valeur.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
   return String(valeur);
 }

@@ -12,6 +12,7 @@ import type { AlertFiringRow } from "./queries-v2";
 import { verdictDeploiement, type DeployImpact } from "./deploys-verdict";
 import { RAISON_MOINS_DE_DEUX_RELEASES, type ChoixReleases } from "./presets";
 import type { AnalyticsQuery, ResolvedRange } from "./query-contract";
+import type { IntervalleP75 } from "./stats/incertitude";
 
 // ─────────────────────────────── Références (§ 3.12) ───────────────────────────────
 
@@ -227,7 +228,7 @@ export function estVitalDecoupe(v: string | null | undefined): v is VitalDecoupe
   return (VITAUX_DECOUPES as readonly string[]).includes(v ?? "");
 }
 
-/** Une ligne de `vitalsBreakdown` : les trois p75 et leurs effectifs. */
+/** Une ligne de `vitalsBreakdown` : les trois p75, leurs effectifs et leurs intervalles. */
 export interface LigneDecoupage {
   valeur: string | null;
   samples: number;
@@ -237,10 +238,19 @@ export interface LigneDecoupage {
   lcp_n: number;
   inp_n: number;
   cls_n: number;
+  /** Intervalle à 95 % de chaque p75 : le verdict suit alors la règle des tuiles. */
+  lcp_intervalle?: IntervalleP75;
+  inp_intervalle?: IntervalleP75;
+  cls_intervalle?: IntervalleP75;
 }
 
 const P75: Record<VitalDecoupe, "lcp_p75" | "inp_p75" | "cls_p75"> = { LCP: "lcp_p75", INP: "inp_p75", CLS: "cls_p75" };
 const N: Record<VitalDecoupe, "lcp_n" | "inp_n" | "cls_n"> = { LCP: "lcp_n", INP: "inp_n", CLS: "cls_n" };
+const INTERVALLE: Record<VitalDecoupe, "lcp_intervalle" | "inp_intervalle" | "cls_intervalle"> = {
+  LCP: "lcp_intervalle",
+  INP: "inp_intervalle",
+  CLS: "cls_intervalle",
+};
 
 /** « +1,2 s vs ensemble », « −0,012 vs ensemble » : un écart de p75, jamais une contribution. */
 function texteEcart(vital: VitalDecoupe, ecart: number): string {
@@ -282,6 +292,10 @@ export function lignesSegments(
         affichage: formater(v === "CLS" ? "cls" : "ms", r[P75[v]]),
         vital: v,
         n: r[N[v]],
+        // Le verdict tient sur l'intervalle, comme sur la tuile du même vital : « À
+        // améliorer » affirmé sur 312 ms quand la tuile disait « incertain » pour la
+        // même valeur se contredisait (recette du 26/09/2026).
+        ...(r[INTERVALLE[v]] ? { intervalle: r[INTERVALLE[v]] } : {}),
       });
       return {
         cle: cle(r.valeur),

@@ -67,11 +67,16 @@ const NBSP = "\u00a0";
 const enPct = (t: number | null) => (t === null ? null : Math.round(t * 1000) / 10);
 const RAISON_ECHEC = "les cohortes n'ont pas pu être chargées";
 
+/** La semaine de retour « à un mois » que le plan demande en seconde tuile. */
+const SEMAINE_LONGUE = 4;
+
 /**
  * Tuile « Retour en S+n » : le point de la courbe à cet offset, ou pourquoi il
  * n'existe pas — et, s'il existera, À QUELLE DATE (`lisibleLe`). Un offset que la
  * fenêtre ne couvre pas (S+4 sur 4 semaines : S+0 à S+3) ne deviendra jamais
- * lisible : la tuile dit la fenêtre, pas une date qu'elle ne tiendrait pas.
+ * lisible : la tuile dirait la fenêtre, pas une date qu'elle ne tiendrait pas. La
+ * page ne lui en passe plus : la seconde tuile lit la dernière semaine lisible, et
+ * le dit (`note`).
  */
 function tuileRetour({
   point,
@@ -79,14 +84,23 @@ function tuileRetour({
   lu,
   weeks,
   lisibleLe,
+  note,
 }: {
   point: PointRetention | undefined;
   offset: number;
   lu: boolean;
   weeks: number;
   lisibleLe: string | null;
+  /** Dit pourquoi la tuile lit cette semaine-là plutôt que celle du plan. */
+  note?: string;
 }) {
   const complet = point && point.taux !== null ? point : null;
+  const cohortesLues = complet
+    ? `${pluriel(complet.cohortes, "cohorte complète", "cohortes complètes")}${
+        complet.exclues > 0 ? ` (${pluriel(complet.exclues, "exclue")}${NBSP}: semaine incomplète)` : ""
+      }`
+    : null;
+  const lecture = [note, cohortesLues].filter(Boolean).join(" · ") || undefined;
   return (
     <KpiTile
       label={`Retour en S+${offset}`}
@@ -103,13 +117,7 @@ function tuileRetour({
       }
       sensMeilleur="neutre"
       couverture={complet ? { n: complet.taille, unite: accord(complet.taille, "visiteur"), faibleSous: 30 } : undefined}
-      lecture={
-        complet
-          ? `${pluriel(complet.cohortes, "cohorte complète", "cohortes complètes")}${
-              complet.exclues > 0 ? ` (${pluriel(complet.exclues, "exclue")}${NBSP}: semaine incomplète)` : ""
-            }`
-          : undefined
-      }
+      lecture={lecture}
       methode={`Part des visiteurs d'une cohorte revenus ${
         offset === 1 ? "la semaine qui suit" : `${offset} semaines après`
       } leur semaine d'arrivée. Moyenne pondérée par la taille des cohortes dont cette semaine est terminée${NBSP}; la semaine en cours est exclue.`}
@@ -162,6 +170,8 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   const premiereCohorte = rows.length ? Math.min(...rows.map((r) => r.cohort)) : null;
   const lisibleLe = (offset: number) =>
     premiereCohorte === null ? null : fmtSemaine(lundiDeSemaine(premiereCohorte + offset + 1));
+  // La seconde tuile de retour : S+4, ramenée à la dernière semaine de la fenêtre.
+  const semaineLongue = Math.max(1, Math.min(SEMAINE_LONGUE, weeks - 1));
   // Aucun point complet au-delà de S+0 (toujours 100 %) : la courbe ne dirait rien.
   const sansRecul = !courbe.some((p) => p.offset > 0 && p.taux !== null);
 
@@ -221,7 +231,20 @@ export default async function Retention({ searchParams }: { searchParams: Promis
             methode="Visiteurs dont les sessions portent un identifiant de visiteur, sur la fenêtre choisie. Les sessions sans identifiant (dont toutes celles collectées avant le 09/09/2026) n'entrent dans aucune cohorte."
           />
           {tuileRetour({ point: courbe[1], offset: 1, lu: cohortes.ok, weeks, lisibleLe: lisibleLe(1) })}
-          {tuileRetour({ point: courbe[4], offset: 4, lu: cohortes.ok, weeks, lisibleLe: lisibleLe(4) })}
+          {/* S+4, ou la dernière semaine que la fenêtre contient : sous une fenêtre de 4
+              semaines (30 jours conservés), S+4 n'avait JAMAIS de valeur — une tuile vide
+              par construction (contre-recette du 26/09/2026). */}
+          {tuileRetour({
+            point: courbe[semaineLongue],
+            offset: semaineLongue,
+            lu: cohortes.ok,
+            weeks,
+            lisibleLe: lisibleLe(semaineLongue),
+            note:
+              semaineLongue < SEMAINE_LONGUE
+                ? `S+${SEMAINE_LONGUE} dépasse la fenêtre de ${weeks} semaines : dernière semaine lisible`
+                : undefined,
+          })}
         </div>
       </SectionErreur>
 

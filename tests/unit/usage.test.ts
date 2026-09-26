@@ -46,4 +46,29 @@ describe("consommationDuMois — une absence de comptage n'est pas un zéro", ()
     expect(c.lignes[1]).toMatchObject({ sessions: 40, errors: 3 });
     expect(c.comptage.dernierJour).toBe("2026-09-25");
   });
+
+  // Contre-recette du 26/09/2026 : le comptage de la nuit avait tourné sur un jour sans
+  // trafic, n'avait écrit aucune ligne, et l'écran disait « Aucun comptage ce mois-ci ».
+  it("aucune ligne, mais un passage abouti du travail quotidien ce mois-ci : sa veille est comptée, à 0", () => {
+    const c = consommationDuMois([brute], { dernier_jour: null, dernier_comptage: null }, {
+      jour_du_mois: "2026-09-25",
+      fin: "2026-09-26T20:09:05Z",
+    });
+    expect(c.lignes[0]).toMatchObject({ events: 0, sessions: 0, errors: 0 });
+    expect(c.comptage).toEqual({ dernierJour: "2026-09-25", dernierComptage: "2026-09-26T20:09:05Z" });
+  });
+
+  it("un passage qui a compté le mois précédent (le 1er au matin) ne compte rien pour ce mois-ci", () => {
+    const c = consommationDuMois([brute], { dernier_jour: null, dernier_comptage: null }, { jour_du_mois: null, fin: "2026-10-01T03:20:00Z" });
+    expect(c.lignes[0].events).toBeNull();
+    expect(c.comptage).toEqual({ dernierJour: null, dernierComptage: null });
+  });
+
+  it("des lignes plus récentes que le passage gardent leur date", () => {
+    const c = consommationDuMois([brute], { dernier_jour: "2026-09-25", dernier_comptage: "2026-09-26T03:20:00Z" }, {
+      jour_du_mois: "2026-09-24",
+      fin: "2026-09-25T03:20:00Z",
+    });
+    expect(c.comptage).toEqual({ dernierJour: "2026-09-25", dernierComptage: "2026-09-26T03:20:00Z" });
+  });
 });

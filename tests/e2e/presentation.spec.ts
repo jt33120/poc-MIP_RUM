@@ -562,6 +562,19 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
       const enTete = page.getByTestId("presentation-login-top");
       if (largeur === 390) await expect(enTete).toBeHidden();
       else await expect(enTete).toBeVisible();
+      // Contre-recette du 26/09/2026 : à 390 px, les preuves réduisaient une zone de
+      // 700 à 1 140 px de capture à l'échelle 0,4 (texte de 5 px). Sous 640 px, des
+      // cadres étroits, jamais réduits ni agrandis ; au-delà, la zone large.
+      const etroites = page.getByTestId("preuve-etroite");
+      const larges = page.getByTestId("preuve-large");
+      await expect(etroites.filter({ visible: true })).toHaveCount(largeur === 390 ? 3 : 0);
+      await expect(larges.filter({ visible: true })).toHaveCount(largeur === 390 ? 0 : 3);
+      if (largeur === 390) {
+        const echelles = await etroites.locator("img:visible").evaluateAll((imgs) =>
+          imgs.map((img) => (img as HTMLImageElement).getBoundingClientRect().width / 1440),
+        );
+        for (const e of echelles) expect(e, "échelle d'une capture à 390 px").toBeGreaterThanOrEqual(0.9);
+      }
     }
     expect(fautes).toEqual([]);
   });
@@ -622,9 +635,10 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
     expect(images.length, "la capture de la console").toBeGreaterThan(0);
     for (const i of images) expect(i.alt !== "" || i.masquee, `${i.src} : ni alt ni aria-hidden`).toBe(true);
 
-    // Thème clair (celui du contexte) : la capture claire se voit, la sombre non.
-    await expect(page.locator('img[src*="overview-light"]')).toBeVisible();
-    await expect(page.locator('img[src*="overview-dark"]')).toBeHidden();
+    // Thème clair (celui du contexte) : la capture claire se voit, la sombre non. Chaque
+    // capture a deux cadres (étroit sous 640 px, large au-delà) : un seul se voit.
+    await expect(page.locator('img[src*="overview-light"]').filter({ visible: true })).toHaveCount(1);
+    await expect(page.locator('img[src*="overview-dark"]').filter({ visible: true })).toHaveCount(0);
 
     // Trois preuves, une légende (au pluriel depuis la recette du 26/09/2026).
     await expect(page.getByTestId("preuve")).toHaveCount(3);
@@ -647,8 +661,11 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
       await page.goto(`${consoleUrl}/presentation`);
       // Sans choix enregistré, le script anti-flash du layout suit prefers-color-scheme.
       await expect(page.locator("html")).toHaveClass(/(^|\s)dark(\s|$)/);
-      await expect(page.locator('img[src*="overview-dark"]')).toBeVisible();
-      await expect(page.locator('img[src*="overview-light"]')).toBeHidden();
+      await expect(page.locator('img[src*="overview-dark"]').filter({ visible: true })).toHaveCount(1);
+      await expect(page.locator('img[src*="overview-light"]').filter({ visible: true })).toHaveCount(0);
+      // Le mobile a sa capture sombre (contre-recette du 26/09/2026) : plus d'image claire.
+      await expect(page.locator('img[src*="mobile-dark"]').filter({ visible: true })).toHaveCount(1);
+      await expect(page.locator('img[src*="mobile-light"]').filter({ visible: true })).toHaveCount(0);
     });
   });
 

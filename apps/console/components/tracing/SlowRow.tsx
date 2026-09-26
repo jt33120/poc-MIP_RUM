@@ -24,16 +24,31 @@ export function appelEnEchec(statut: number | null): boolean {
   return (statut ?? 0) >= 400 || (statut ?? 0) === 0;
 }
 
-/** Ligne détaillant une trace lente ; les filtres suivent ses liens. */
+/** Cellule chiffrée : une carte sous 640 px (libellé écrit devant), une cellule au-delà. */
+const CHIFFRE =
+  "mr-4 mt-1 inline-flex items-baseline gap-1 text-xs tabular-nums sm:mr-0 sm:mt-0 sm:table-cell sm:px-4 sm:py-3 sm:text-sm";
+
+/**
+ * Ligne détaillant une trace lente ; les filtres suivent ses liens.
+ *
+ * UNE CARTE SOUS 640 PX (recette du 26/09/2026). À 390 px, le tableau ne montrait que
+ * l'heure et l'appel : Navigateur, Serveur et Trajet — la raison d'être du tableau —
+ * restaient hors champ, derrière un défilement. Sous 640 px, chaque trace devient une
+ * carte : heure et appel, puis les trois durées libellées, puis la session et son rejeu.
+ */
 export function SlowRow({ t, query }: { t: SlowTrace; query: AnalyticsQuery }) {
   const echec = appelEnEchec(t.front_status);
   const at = instantAppelMs(t.ts);
   return (
-    <tr className="border-t border-line/60 transition hover:bg-panel2/60" data-testid="trace-lente" data-appel={`${t.method} ${t.url}`}>
-      <td className="sticky left-0 bg-panel px-4 py-3 text-xs tabular-nums text-ink-soft">
+    <tr
+      className="block border-t border-line/60 px-4 py-3 transition hover:bg-panel2/60 sm:table-row sm:p-0"
+      data-testid="trace-lente"
+      data-appel={`${t.method} ${t.url}`}
+    >
+      <td className="block text-xs tabular-nums text-ink-soft sm:sticky sm:left-0 sm:table-cell sm:bg-panel sm:px-4 sm:py-3">
         {fmtInstant(t.ts, { secondes: true, sansA: true })}
       </td>
-      <td className="max-w-[18rem] px-4 py-3 font-mono text-xs">
+      <td className="mt-1 block min-w-0 font-mono text-xs sm:mt-0 sm:table-cell sm:max-w-[18rem] sm:px-4 sm:py-3">
         {/* `span=` : une trace de page vue porte tous ses appels (E0) ; le détail
             résume CELUI-CI (latence, route, instant du rejeu), pas le premier venu. */}
         <Link
@@ -45,7 +60,8 @@ export function SlowRow({ t, query }: { t: SlowTrace; query: AnalyticsQuery }) {
           <span className="block min-w-0 truncate group-hover:underline">{t.url || "(sans URL)"}</span>
         </Link>
       </td>
-      <td className="px-4 py-3">
+      <td className={CHIFFRE}>
+        <span className="text-ink-soft sm:hidden">Statut</span>
         <span
           className={`rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums ${
             echec ? "border-bad/30 bg-bad/10 text-bad-ink" : "border-line bg-panel2 text-ink-soft"
@@ -54,15 +70,23 @@ export function SlowRow({ t, query }: { t: SlowTrace; query: AnalyticsQuery }) {
           {t.front_status || "réseau"}
         </span>
       </td>
-      <td className="px-4 py-3 font-semibold tabular-nums">{formater("ms", t.front_ms)}</td>
-      <td className="px-4 py-3 tabular-nums">
+      <td className={`${CHIFFRE} font-semibold`}>
+        <span className="font-normal text-ink-soft sm:hidden">Navigateur</span>
+        {formater("ms", t.front_ms)}
+      </td>
+      <td className={CHIFFRE}>
+        <span className="text-ink-soft sm:hidden">Serveur</span>
         {t.back_ms == null ? <span className="text-ink-soft">non suivi</span> : formater("ms", t.back_ms)}
       </td>
-      <td className="px-4 py-3 tabular-nums">{t.network_ms == null ? <span className="text-ink-soft">—</span> : formater("ms", t.network_ms)}</td>
-      <td className="px-4 py-3 text-xs">
+      <td className={CHIFFRE}>
+        <span className="text-ink-soft sm:hidden">Trajet</span>
+        {t.network_ms == null ? <span className="text-ink-soft">—</span> : formater("ms", t.network_ms)}
+      </td>
+      <td className="mt-2 block text-xs sm:mt-0 sm:table-cell sm:px-4 sm:py-3">
         {t.session_id ? (
-          <span className="flex flex-col gap-0.5">
+          <span className="flex flex-wrap gap-x-3 gap-y-0.5 sm:flex-col">
             <Link href={hrefWithQuery(`/sessions/${encodeURIComponent(t.session_id)}`, query)} className="font-mono text-brand hover:underline">
+              <span className="text-ink-soft sm:hidden">Session </span>
               {t.session_id.slice(0, 8)}…
             </Link>
             <Link

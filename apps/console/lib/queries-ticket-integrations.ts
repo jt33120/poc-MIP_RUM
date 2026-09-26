@@ -524,7 +524,7 @@ export async function demanderTicket(
     if (issue.revision !== request.expectedRevision) {
       return {
         kind: "conflict",
-        // « le groupe » : le mot de l'écran (« Erreurs et issues » range des groupes d'erreurs).
+        // « le groupe » : le mot de l'écran (« Erreurs » range des groupes d'erreurs).
         error: "le groupe a été modifié depuis sa lecture : recharger pour revoir le ticket qui sera envoyé",
         revision: issue.revision,
       };

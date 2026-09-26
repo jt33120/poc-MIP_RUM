@@ -181,7 +181,7 @@ describe("PS8 — une façon de compter", () => {
       "Inconnu n'est pas zéro. Une valeur qu'on ne connaît pas s'affiche « Inconnu » ; une mesure sans dénominateur n'a pas de valeur ; seul un compteur réellement vide vaut 0.",
       "Une capacité absente n'affiche pas de zéro. Il n'existe aucune table de crash natif : l'écran mobile dit « Non collecté » plutôt qu'un taux sans crash qui ne reposerait sur rien.",
       "L'échantillonnage est dit, pas corrigé. Les comptes sont ceux reçus, sans multiplicateur ; l'écran indique la probabilité qu'une erreur avait d'être retenue.",
-      "Aucune adresse IP n'est conservée. Le pays est estimé, et nommé « Pays estimé » partout.",
+      "Aucune adresse IP de visiteur n'est conservée. Le pays est estimé, et nommé « Pays estimé » partout.",
     ]);
   });
 

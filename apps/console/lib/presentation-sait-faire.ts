@@ -472,7 +472,7 @@ export const METHODE: readonly EnonceMethode[] = [
     sources: [{ passage: 253 }, { passage: 254 }, { passage: 255 }],
   },
   {
-    titre: "Aucune adresse IP n'est conservée.",
+    titre: "Aucune adresse IP de visiteur n'est conservée.",
     texte: "Le pays est estimé, et nommé « Pays estimé » partout.",
     // § 6.4.
     sources: [{ passage: 319 }, { passage: 326 }],

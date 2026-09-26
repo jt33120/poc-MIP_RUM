@@ -9,7 +9,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { revoquerJetonSourcemapAction } from "@/app/admin/sourcemaps/actions";
-import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
+import { ConfirmationDanger } from "@/components/ConfirmationDanger";
+import { entreGuillemets } from "@/lib/format";
 
 export function TokenRevokeButton({ id, name, appId, scope }: { id: string; name: string; appId: string; scope?: string }) {
   const router = useRouter();

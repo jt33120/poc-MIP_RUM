@@ -442,16 +442,19 @@ function HeroActions({
       color: TEINTE_NEUTRE,
       href: versErreurs(row.route),
       title: `${nom} — ${route}${avecApp ? ` (${row.app_id})` : ""}`,
+      // Le sous-texte passe à la ligne au lieu d'être coupé (contre-recette du
+      // 26/09/2026) : à 390 px, « 48 actions · 43 sessi… » perdait les appels API, et
+      // « Sessions passées par la route » son dernier mot ; à 1 440 px aussi.
       sub: (
         <>
           {/* La route sous le nom : deux actions de même nom sur deux routes sont deux
               barres, et la recette ne pouvait pas les distinguer. */}
-          <span className="block truncate font-mono">
+          <span className="block font-mono [overflow-wrap:anywhere]">
             {route}
             {avecApp ? ` · ${row.app_id}` : ""}
           </span>
           {/* « N sessions » : celles qui ont FAIT l'action. Un nombre, jamais un lien. */}
-          <span className="block truncate">
+          <span className="block">
             {[
               pluriel(row.actions, "action"),
               pluriel(row.sessions, "session"),
@@ -465,14 +468,14 @@ function HeroActions({
             <Link
               href={sessions.href}
               title={`Toutes les sessions passées par ${row.route}, qu’elles aient fait « ${nom} » ou non`}
-              className="block truncate rounded text-ink-soft underline-offset-2 hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+              className="block rounded text-ink-soft underline-offset-2 hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
               data-testid="actions-sessions-route"
             >
               {LIEN_SESSIONS_ROUTE}
             </Link>
           ) : (
             // Route que la recherche exacte refuserait : le libellé reste, en texte, avec sa raison.
-            <span className="relative block truncate text-ink-soft" title={sessions.raison}>
+            <span className="relative block text-ink-soft" title={sessions.raison}>
               Sessions de la route non proposées<span className="sr-only"> — {sessions.raison}</span>
             </span>
           )}

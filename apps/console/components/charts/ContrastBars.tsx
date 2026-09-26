@@ -121,10 +121,12 @@ export function ContrastBars({
                 aria-label={`${dimensionLibelle} ${l.valeur} : ${pct(l.partTouches)} des ${populationTouchee} (${l.nTouches.toLocaleString(
                   "fr-FR",
                 )}), ${pct(l.partBase)} de la base (${l.nBase.toLocaleString("fr-FR")}), ${texteRapport(r)} — filtrer`}
-                // Colonnes FIXES : la piste a la même largeur sur toutes les lignes, quelle que
-                // soit la longueur du texte voisin (recette du 26/09/2026 : en `flex-1`, deux
-                // parts égales n'avaient pas la même longueur de barre).
-                className="grid grid-cols-1 items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:grid-cols-[10rem_12rem_minmax(0,1fr)] lg:grid-cols-[12rem_16rem_minmax(0,1fr)]"
+                // Colonnes BORNÉES par des longueurs : la piste a la même largeur sur toutes
+                // les lignes, quelle que soit la longueur du texte voisin (recette du
+                // 26/09/2026 : en `flex-1`, deux parts égales n'avaient pas la même longueur
+                // de barre). Bornées et non fixes : en demi-largeur, la colonne du rapport
+                // tombait à 30 px, un mot par ligne (contre-recette du 26/09/2026).
+                className="grid grid-cols-1 items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:grid-cols-[minmax(6rem,10rem)_minmax(6rem,12rem)_minmax(8rem,1fr)] lg:grid-cols-[minmax(7rem,12rem)_minmax(7rem,16rem)_minmax(10rem,1fr)]"
               >
                 <span className="min-w-0 truncate text-xs font-medium text-ink" title={l.valeur}>
                   {l.valeur}

@@ -93,7 +93,7 @@ describe("CATEGORIES (§ 2.2)", () => {
     expect(perf.children?.map((l) => [l.href, l.label, l.sousOnglet ?? true])).toEqual([
       ["/", "Vue d'ensemble", true],
       ["/pages", "Pages", true],
-      ["/errors", "Erreurs et issues", true],
+      ["/errors", "Erreurs", true],
       ["/ux", "Interactions", true],
       ["/actions", "Actions", false],
       ["/experience", "Satisfaction", true],

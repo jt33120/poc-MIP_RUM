@@ -55,7 +55,7 @@ export default function ExtensionPrivacy() {
             d&apos;une visite, et les visites entre elles.
           </li>
           <li>
-            <strong>Pays estimé</strong>&nbsp;: {PAYS_ESTIME}. <strong>Aucune adresse IP n&apos;est stockée.</strong>
+            <strong>Pays estimé</strong>&nbsp;: {PAYS_ESTIME}. <strong>Aucune adresse IP de visiteur n&apos;est stockée.</strong>
           </li>
           <li>
             <strong>Déclaration d&apos;installation</strong>&nbsp;: toutes les 6&nbsp;h, l&apos;extension signale son

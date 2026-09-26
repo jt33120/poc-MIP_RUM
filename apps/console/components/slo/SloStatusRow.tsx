@@ -17,7 +17,8 @@
 import Link from "next/link";
 import { deleteSloAction, toggleSloAction } from "@/app/alerts/actions";
 import { pctBudget, statutBudget } from "@/components/charts/BudgetBars";
-import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
+import { ConfirmationDanger } from "@/components/ConfirmationDanger";
+import { entreGuillemets } from "@/lib/format";
 import { formater } from "@/lib/fmt-ids";
 import type { SloRaw, SloStatusRow as SloStatusData } from "@/lib/queries-alerting";
 import { hrefCreerAlerte, metriqueEnClair } from "@/lib/slo-ecran";

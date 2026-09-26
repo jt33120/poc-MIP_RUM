@@ -504,11 +504,11 @@ function ServicesClasses({
     pilote: r.latency_p75,
     volume: r.calls,
     mesures: [
-      { cle: "cote", valeur: null, affichage: LIBELLE_TIER[r.tier] },
+      { cle: "cote", valeur: null, affichage: LIBELLE_TIER[r.tier], texte: true },
       { cle: "err", valeur: r.error_rate, affichage: formater("pct", r.error_rate) },
       // La tendance est un TEXTE (« +32 % » ou « — ») : elle ne classe rien et ne
       // porte pas de verdict, donc aucune valeur numérique n'est donnée.
-      { cle: "tendance", valeur: null, affichage: texteTendance(r.recent, r.older) ?? "—" },
+      { cle: "tendance", valeur: null, affichage: texteTendance(r.recent, r.older) ?? "—", texte: true },
     ],
     echantillonFaible: r.calls < SEUIL_ECHANTILLON_FAIBLE,
   }));

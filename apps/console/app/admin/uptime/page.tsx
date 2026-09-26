@@ -1,7 +1,8 @@
 import { motifDeRefus } from "@mip/backend/lib/net/safe-fetch.mjs";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
-import { ConfirmationDanger, entreGuillemets } from "@/components/ConfirmationDanger";
+import { ConfirmationDanger } from "@/components/ConfirmationDanger";
+import { entreGuillemets } from "@/lib/format";
 import { TableDefilante } from "@/components/TableDefilante";
 import { chargerSondes } from "@/lib/chargeurs/sondes";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
@@ -104,108 +105,110 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
         </p>
       </div>
 
-      {/* Défilant et signalé : `overflow-hidden` coupait « Dernière sonde » et les
-          actions à 390 px (recette 26/09). */}
-      <TableDefilante className="card" label="Sondes">
-        <table className="w-full text-sm">
-          <thead className="bg-panel2">
-            <tr>
-              <th className="th">État</th>
-              <th className="th">Sonde</th>
-              <th className="th">Disponibilité sur 24&nbsp;h</th>
-              <th className="th">Temps de réponse</th>
-              <th className="th">Dernière vérification</th>
-              <th className="th">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line/60">
-            {checks.map((c) => {
-              const state = !c.enabled
-                ? "off"
-                : c.last_ok == null
-                  ? "pending"
-                  : c.last_ok
-                    ? "up"
-                    : "down";
-              return (
-                <tr key={c.id} className="transition hover:bg-panel2/60">
-                  <td className="px-4 py-2">
-                    <StatusPill state={state} />
-                  </td>
-                  <td className="px-4 py-2">
-                    <div className="font-medium text-ink">{c.name}</div>
-                    <div className="font-mono text-xs text-ink-faint">{c.url}</div>
-                    {state === "down" && c.last_error && (
-                      <div className="mt-0.5 text-xs text-bad-ink">{c.last_error}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 tabular-nums">
-                    {c.uptime_pct_24h == null ? (
-                      <span className="text-ink-faint">—</span>
-                    ) : (
-                      <span className={c.uptime_pct_24h >= 99 ? "text-good-ink" : c.uptime_pct_24h >= 95 ? "text-warn-ink" : "text-bad-ink"}>
-                        {fmtNombre(c.uptime_pct_24h, 1)}&nbsp;%
-                      </span>
-                    )}
-                    <span className="block text-xs text-ink-faint">sur {pluriel(c.checks_24h, "vérification")}</span>
-                  </td>
-                  <td className="px-4 py-2 tabular-nums text-ink-soft">
-                    {fmtLatency(c.last_latency_ms)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2 text-xs tabular-nums text-ink-faint">
-                    {c.last_checked_at ? fmtDate(c.last_checked_at) : "En attente"}
-                  </td>
-                  <td className="px-4 py-2">
-                    {/* `items-start` : la confirmation dépliée sous « Supprimer » n'étire pas « Désactiver ». */}
-                    <div className="flex items-start gap-1">
-                      <form action={toggleUptimeCheckAction}>
-                        <input type="hidden" name="id" value={c.id} />
-                        <input type="hidden" name="app" value={c.app_id} />
-                        <input type="hidden" name="enabled" value={c.enabled ? "0" : "1"} />
-                        <button
-                          type="submit"
-                          className={`btn-ghost px-2 py-1 text-xs ${c.enabled ? "text-ink-soft" : "text-good-ink"}`}
-                        >
-                          {c.enabled ? "Désactiver" : "Réactiver"}
-                        </button>
-                      </form>
-                      {/* La suppression emporte l'historique des vérifications (cascade) : confirmée. */}
-                      <form action={deleteUptimeCheckAction}>
-                        <input type="hidden" name="id" value={c.id} />
-                        <input type="hidden" name="app" value={c.app_id} />
-                        <ConfirmationDanger
-                          libelle="Supprimer"
-                          libelleAccessible={`Supprimer la sonde ${c.name}`}
-                          question={`Supprimer la sonde ${entreGuillemets(c.name)}\u00a0?`}
-                          consequence="Ses vérifications passées seront effacées avec elle et elle ne déclenchera plus d’alerte."
-                          confirmer="Supprimer la sonde"
-                          enCours="Suppression…"
-                          classeDeclencheur="btn-ghost px-2 py-1 text-xs text-bad-ink"
-                          testid={`supprimer-sonde-${c.id}`}
-                        />
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {!checks.length && (
+      {/* Sans sonde, l'état vide est une carte, HORS du tableau : dans une cellule, il
+          prenait la largeur du tableau (548 px) et se coupait dans une zone visible de
+          356 px à 390 px (contre-recette du 26/09/2026). */}
+      {!checks.length ? (
+        <div className="card px-4 py-8 text-center text-sm text-ink-soft" data-testid="uptime-vide">
+          {/* L'état vide dit ce qu'on obtiendra et quelle adresse choisir (recette du 26/09/2026). */}
+          <p className="font-medium text-ink">Aucune sonde pour l&apos;instant.</p>
+          <p className="mx-auto mt-1 max-w-xl text-xs leading-relaxed">
+            Ajoutez-en une ci-dessus, par exemple l&apos;adresse de santé de votre site
+            (<span className="break-all font-mono">https://votre-site.fr/health</span>, code 200 attendu). Vous
+            suivrez sa disponibilité sur 24&nbsp;h et son temps de réponse, et une alerte critique partira dès
+            qu&apos;elle cessera de répondre.
+          </p>
+        </div>
+      ) : (
+        // Défilant et signalé : `overflow-hidden` coupait « Dernière sonde » et les
+        // actions à 390 px (recette 26/09).
+        <TableDefilante className="card" label="Sondes">
+          <table className="w-full text-sm">
+            <thead className="bg-panel2">
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-ink-soft">
-                  {/* L'état vide dit ce qu'on obtiendra et quelle adresse choisir (recette du 26/09/2026). */}
-                  <p className="font-medium text-ink">Aucune sonde pour l&apos;instant.</p>
-                  <p className="mx-auto mt-1 max-w-xl text-xs leading-relaxed">
-                    Ajoutez-en une ci-dessus, par exemple l&apos;adresse de santé de votre site
-                    (<span className="whitespace-nowrap font-mono">https://votre-site.fr/health</span>, code 200
-                    attendu). Vous suivrez sa disponibilité sur 24&nbsp;h et son temps de réponse, et une alerte
-                    critique partira dès qu&apos;elle cessera de répondre.
-                  </p>
-                </td>
+                <th className="th">État</th>
+                <th className="th">Sonde</th>
+                <th className="th">Disponibilité sur 24&nbsp;h</th>
+                <th className="th">Temps de réponse</th>
+                <th className="th">Dernière vérification</th>
+                <th className="th">Actions</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </TableDefilante>
+            </thead>
+            <tbody className="divide-y divide-line/60">
+              {checks.map((c) => {
+                const state = !c.enabled
+                  ? "off"
+                  : c.last_ok == null
+                    ? "pending"
+                    : c.last_ok
+                      ? "up"
+                      : "down";
+                return (
+                  <tr key={c.id} className="transition hover:bg-panel2/60">
+                    <td className="px-4 py-2">
+                      <StatusPill state={state} />
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="font-medium text-ink">{c.name}</div>
+                      <div className="font-mono text-xs text-ink-faint">{c.url}</div>
+                      {state === "down" && c.last_error && (
+                        <div className="mt-0.5 text-xs text-bad-ink">{c.last_error}</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 tabular-nums">
+                      {c.uptime_pct_24h == null ? (
+                        <span className="text-ink-faint">—</span>
+                      ) : (
+                        <span className={c.uptime_pct_24h >= 99 ? "text-good-ink" : c.uptime_pct_24h >= 95 ? "text-warn-ink" : "text-bad-ink"}>
+                          {fmtNombre(c.uptime_pct_24h, 1)}&nbsp;%
+                        </span>
+                      )}
+                      <span className="block text-xs text-ink-faint">sur {pluriel(c.checks_24h, "vérification")}</span>
+                    </td>
+                    <td className="px-4 py-2 tabular-nums text-ink-soft">
+                      {fmtLatency(c.last_latency_ms)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2 text-xs tabular-nums text-ink-faint">
+                      {c.last_checked_at ? fmtDate(c.last_checked_at) : "En attente"}
+                    </td>
+                    <td className="px-4 py-2">
+                      {/* `items-start` : la confirmation dépliée sous « Supprimer » n'étire pas « Désactiver ». */}
+                      <div className="flex items-start gap-1">
+                        <form action={toggleUptimeCheckAction}>
+                          <input type="hidden" name="id" value={c.id} />
+                          <input type="hidden" name="app" value={c.app_id} />
+                          <input type="hidden" name="enabled" value={c.enabled ? "0" : "1"} />
+                          <button
+                            type="submit"
+                            className={`btn-ghost px-2 py-1 text-xs ${c.enabled ? "text-ink-soft" : "text-good-ink"}`}
+                          >
+                            {c.enabled ? "Désactiver" : "Réactiver"}
+                          </button>
+                        </form>
+                        {/* La suppression emporte l'historique des vérifications (cascade) : confirmée. */}
+                        <form action={deleteUptimeCheckAction}>
+                          <input type="hidden" name="id" value={c.id} />
+                          <input type="hidden" name="app" value={c.app_id} />
+                          <ConfirmationDanger
+                            libelle="Supprimer"
+                            libelleAccessible={`Supprimer la sonde ${c.name}`}
+                            question={`Supprimer la sonde ${entreGuillemets(c.name)}\u00a0?`}
+                            consequence="Ses vérifications passées seront effacées avec elle et elle ne déclenchera plus d’alerte."
+                            confirmer="Supprimer la sonde"
+                            enCours="Suppression…"
+                            classeDeclencheur="btn-ghost px-2 py-1 text-xs text-bad-ink"
+                            testid={`supprimer-sonde-${c.id}`}
+                          />
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </TableDefilante>
+      )}
     </div>
   );
 }

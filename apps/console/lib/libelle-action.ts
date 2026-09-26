@@ -44,3 +44,16 @@ export function libelleAction(nom: string | null | undefined): string {
   // tel quel — un nom manuel d'un seul mot (« checkout ») a la même forme.
   return NATURES[balise] ? `${NATURES[balise]} sans libellé` : brut;
 }
+
+/**
+ * Libellé d'un REPÈRE de clic (fil d'Ariane de la session). Pour un champ, le SDK n'y
+ * met que la balise (« input ») : l'absence de nom ne dit pas que le champ n'en a pas
+ * — l'action du même clic, juste au-dessus, le nomme (« Champ « Raison sociale » »).
+ * « Champ sans libellé » le laissait croire (contre-recette du 26/09/2026) : le
+ * repère dit la nature seule. Avec un nom, même libellé que l'action.
+ */
+export function libelleRepere(detail: string | null | undefined): string {
+  const m = FORME_SDK.exec(detail?.trim() ?? "");
+  if (m && (m[2] === undefined || m[2].trim() === "") && NATURES[m[1]]) return NATURES[m[1]];
+  return libelleAction(detail);
+}

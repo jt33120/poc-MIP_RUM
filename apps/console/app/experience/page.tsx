@@ -624,7 +624,14 @@ function lignesImpact(
       volume: l.avis,
       mesures: [
         { cle: "detracteurs", valeur: l.partDetracteurs, affichage: formater("pct", l.partDetracteurs) },
-        { cle: "lcp", valeur: l.lcp, affichage: formater("ms", l.lcp), vital: "LCP", n: l.lcpN },
+        {
+          cle: "lcp",
+          valeur: l.lcp,
+          affichage: formater("ms", l.lcp),
+          vital: "LCP",
+          n: l.lcpN,
+          ...(l.lcpIntervalle ? { intervalle: l.lcpIntervalle } : {}),
+        },
       ],
       ecart: ecartPoints(l.csat, ensemble),
       intervalle: w && !("indisponible" in w) ? `${formater("pct", w.bas)} – ${formater("pct", w.haut)}` : null,

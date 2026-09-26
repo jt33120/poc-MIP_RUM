@@ -74,7 +74,7 @@ import {
   type VuesParNavType,
 } from "@/lib/queries";
 import { VITALS_BREAKDOWN_DATASETS } from "@/lib/queries-breakdowns";
-import { ecartP75, mesuresMinimales } from "@/lib/stats/incertitude";
+import { ecartP75, type IntervalleP75 } from "@/lib/stats/incertitude";
 import { ecrirePanel, ecrireVue, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue, lireTri } from "@/lib/view-state";
 import { annotationsDeploiements, type AnnotationsDeploiements } from "@/lib/annotations";
 
@@ -990,20 +990,23 @@ function HeroRoutes({
   drill: (route: string | null) => string;
 }) {
   const fmt = formatDuVital(vital);
-  const minimumVerdict = mesuresMinimales();
   const ref = ensemble?.get(vital) ?? null;
   const { lignes: classees } = classerParGravite(lignes, {
     tri,
     pilote: (l) => p75DeLaRoute(l, vital).p75,
     effectif: (l) => p75DeLaRoute(l, vital).n,
   });
-  const mesureVital = (cle: string, v: "LCP" | "INP" | "CLS", valeur: number | null, n: number) => ({
+  // UNE règle de verdict, celle des tuiles : il suit l'intervalle de la p75 du groupe
+  // (« non établi » sous 13 mesures, « incertain » quand l'intervalle chevauche un
+  // seuil). Un seuil propre à cet écran laissait 7 routes sur 9 sans verdict ici,
+  // quand la Vue d'ensemble les disait « Bon » (recette du 26/09/2026).
+  const mesureVital = (cle: string, v: "LCP" | "INP" | "CLS", valeur: number | null, n: number, intervalle: IntervalleP75) => ({
     cle,
     valeur,
     affichage: formater(formatDuVital(v), valeur),
-    // Verdict écrit seulement quand la p75 a un intervalle (P*.1 : 13 mesures au moins).
-    ...(n >= minimumVerdict ? { vital: v } : {}),
+    vital: v,
     n,
+    intervalle,
   });
   const impact: ImpactLigne[] = classees.map((l) => {
     const { p75, n } = p75DeLaRoute(l, vital);
@@ -1016,9 +1019,9 @@ function HeroRoutes({
       pilote: p75,
       volume: n,
       mesures: [
-        mesureVital("lcp", "LCP", l.lcp_p75, l.lcp_n),
-        mesureVital("inp", "INP", l.inp_p75, l.inp_n),
-        mesureVital("cls", "CLS", l.cls_p75, l.cls_n),
+        mesureVital("lcp", "LCP", l.lcp_p75, l.lcp_n, l.lcp_intervalle),
+        mesureVital("inp", "INP", l.inp_p75, l.inp_n, l.inp_intervalle),
+        mesureVital("cls", "CLS", l.cls_p75, l.cls_n, l.cls_intervalle),
         { cle: "vues", valeur: l.vues, affichage: formater("count", l.vues) },
         { cle: "taches", valeur: l.tachesLongues, affichage: formater("count", l.tachesLongues) },
         { cle: "bloquantes", valeur: l.bloquantes, affichage: formater("count", l.bloquantes) },

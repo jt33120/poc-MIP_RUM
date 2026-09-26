@@ -647,31 +647,38 @@ function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<ScriptBloqua
   const titre = "Scripts qui bloquent le fil principal (trames longues)";
   if (!scripts.ok) return <Figure titre={titre} id="scripts-bloquants" etat={{ kind: "erreur", titre }} />;
 
+  // Un script intégré à la page n'a pas de fichier : la lecture le regroupe par
+  // fonction sur toutes les pages (recette du 26/09/2026 : la même fonction
+  // occupait huit lignes, une par URL de page), ses routes passent en détail.
+  const routesDe = (s: ScriptBloquant) =>
+    s.nbRoutes === 0
+      ? null
+      : s.nbRoutes === 1
+        ? `route ${s.routes[0]}`
+        : `${s.nbRoutes.toLocaleString("fr-FR")} routes (${s.routes.join(", ")}${s.nbRoutes > s.routes.length ? "…" : ""})`;
+  const fonction = (s: ScriptBloquant) => s.quoi ?? "exécution au chargement";
   const lignes: RankDatum[] = scripts.data.map((s) => {
+    const trames = `${pluriel(s.n, "trame")} · pire ${formater("ms", s.worstMs)}`;
+    if (s.url === null) {
+      const routes = routesDe(s);
+      return {
+        label: s.quoi ?? "Script de la page, au chargement",
+        value: s.totalMs,
+        display: formater("ms", s.totalMs),
+        title: `Script intégré à la page — ${fonction(s)}${routes ? ` — ${routes}` : ""}`,
+        sub: `script intégré à la page${routes ? ` · ${routes}` : ""} · ${trames}`,
+      };
+    }
     // Nom de fichier en évidence, hôte en sous-texte : une troncature de fin n'aurait
     // montré que le préfixe, identique pour tous les scripts du même site. L'URL
     // entière et la fonction restent en infobulle de la ligne.
-    //
-    // Un script INTÉGRÉ à la page n'a pas de fichier : son URL est celle de la page,
-    // et son « nom de fichier » était le dernier segment du chemin (« 42 »,
-    // « partners »). Il se nomme alors par sa fonction, la page en second (recette
-    // du 26/09/2026).
     const { fichier, hote } = decouperUrlScript(s.url);
-    const integre = !/\.[a-z0-9]{1,6}$/i.test(fichier);
-    const chemin = (() => {
-      try {
-        return new URL(s.url ?? "").pathname;
-      } catch {
-        return s.url ?? "";
-      }
-    })();
-    const trames = `${pluriel(s.n, "trame")} · pire ${formater("ms", s.worstMs)}`;
     return {
-      label: integre ? s.quoi : `${fichier} · ${s.quoi}`,
+      label: `${fichier} · ${fonction(s)}`,
       value: s.totalMs,
       display: formater("ms", s.totalMs),
-      title: `${s.url} — ${s.quoi}`,
-      sub: integre ? `script intégré à la page ${chemin} · ${trames}` : `${hote ? `${hote} · ` : ""}${trames}`,
+      title: `${s.url} — ${fonction(s)}`,
+      sub: `${hote ? `${hote} · ` : ""}${trames}`,
     };
   });
 
@@ -704,10 +711,11 @@ function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<ScriptBloqua
         lignes.length > 0
           ? {
               legende: `Blocage attribué par script et par fonction, ${label}`,
-              colonnes: ["Script", "Fonction / invocation", "Trames", "Blocage cumulé", "Pire"],
+              colonnes: ["Script", "Fonction / invocation", "Routes", "Trames", "Blocage cumulé", "Pire"],
               lignes: scripts.data.map((s) => [
-                s.url,
-                s.quoi,
+                s.url ?? "intégré à la page",
+                fonction(s),
+                routesDe(s) ?? "—",
                 s.n,
                 formater("ms", s.totalMs),
                 formater("ms", s.worstMs),

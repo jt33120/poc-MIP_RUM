@@ -368,6 +368,7 @@ describe("F12 — points des séries de la Vue d'ensemble", () => {
 import { THRESHOLDS } from "../../apps/console/lib/rating";
 import { formater } from "../../apps/console/lib/fmt-ids";
 import { estVitalDecoupe, heuresAngleMort, lignesSegments, regleAngleMort } from "../../apps/console/lib/vue-ensemble";
+import { verdictMesure } from "../../apps/console/components/ImpactTable";
 
 describe("F13 — segments les plus dégradés (P3)", () => {
   const ligne = (valeur: string | null, lcp: number | null, lcp_n: number, inp: number | null = 200, inp_n = lcp_n) => ({
@@ -421,6 +422,23 @@ describe("F13 — segments les plus dégradés (P3)", () => {
   it("pilote INP : le p75 et l'effectif de l'INP classent", () => {
     const parInp = [ligne("/a", 1000, 100, 150, 100), ligne("/b", 1000, 100, 600, 100)];
     expect(lignesSegments(parInp, { ...opts, vital: "INP", ensemble: null }).lignes.map((l) => l.libelle)).toEqual(["/b", "/a"]);
+  });
+
+  // Recette du 26/09/2026 : « INP p75 312 ms À améliorer » ici, « verdict incertain »
+  // sur la tuile. L'intervalle du groupe passe à la mesure : même règle que la tuile.
+  it("l'intervalle du groupe accompagne chaque p75 : le verdict devient incertain quand il chevauche un seuil", () => {
+    const avecIntervalle = {
+      ...ligne("/partners/:id", 2000, 108, 312, 108),
+      inp_intervalle: { bas: 180, haut: 312, niveau: 0.95, methode: "quantile_normal" as const },
+      lcp_intervalle: { indisponible: "7 mesures, 13 requises" },
+    };
+    const [l] = lignesSegments([avecIntervalle], { ...opts, vital: "INP", ensemble: null }).lignes;
+    const inp = l.mesures.find((m) => m.cle === "inp")!;
+    expect(inp.intervalle).toEqual(avecIntervalle.inp_intervalle);
+    expect(verdictMesure(inp)).toEqual({ kind: "incertain", de: "good", a: "needs-improvement" });
+    expect(verdictMesure(l.mesures.find((m) => m.cle === "lcp")!)?.kind).toBe("non_etabli");
+    // Sans intervalle lu (CLS ici), le verdict reste celui de la valeur.
+    expect(verdictMesure(l.mesures.find((m) => m.cle === "cls")!)).toEqual({ kind: "etabli", rating: "good" });
   });
 
   it("FCP et TTFB ne sont pas découpés (CP2)", () => {

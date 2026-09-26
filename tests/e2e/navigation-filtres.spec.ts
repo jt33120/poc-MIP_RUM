@@ -157,7 +157,7 @@ const NAVIGATION = [
     onglets: [
       ["/", "Vue d'ensemble"],
       ["/pages", "Pages"],
-      ["/errors", "Erreurs et issues"],
+      ["/errors", "Erreurs"],
       ["/ux", "Interactions"],
       ["/experience", "Satisfaction"],
       ["/mobile", "Mobile"],

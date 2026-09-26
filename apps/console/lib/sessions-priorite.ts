@@ -163,9 +163,15 @@ export function parcoursResume(routes: string[] | null): { premiere: string; der
  * sans elle, l'user-agent est lu, et `deduit` le dit à l'écran (infobulle), pour
  * qu'une ligne ne se compare pas silencieusement à un groupe d'une autre source.
  */
-export function navigateurDeSession(s: Pick<SessionRow, "browser" | "user_agent">): { texte: string; deduit: boolean } {
+export function navigateurDeSession(
+  s: Pick<SessionRow, "browser" | "user_agent"> & Partial<Pick<SessionRow, "runtime">>,
+): { texte: string; deduit: boolean } {
   const collecte = s.browser?.trim();
   if (collecte) return { texte: collecte, deduit: false };
+  // Une application React Native n'a pas de navigateur : son user-agent (« MIP-RN/0.4 »)
+  // se lisait « Autre * », avec un renvoi à une déduction qui n'a pas de sens ici
+  // (contre-recette du 26/09/2026).
+  if (s.runtime === RUNTIME_MOBILE) return { texte: "application native", deduit: false };
   const deduit = browserFromUA(s.user_agent ?? null);
   return deduit === "—" ? { texte: "Inconnu", deduit: false } : { texte: deduit, deduit: true };
 }

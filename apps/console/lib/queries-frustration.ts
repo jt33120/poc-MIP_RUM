@@ -68,15 +68,27 @@ export async function inpOffenders(f: Filters): Promise<InpOffender[]> {
 
 
 export interface ScriptBloquant {
-  /** URL du script, déjà nettoyée de sa query string à la collecte. */
-  url: string;
-  /** Nom de fonction, ou ce qui a invoqué le script quand la fonction est minifiée. */
-  quoi: string;
+  /**
+   * URL du FICHIER de script, déjà nettoyée de sa query string à la collecte ;
+   * `null` pour un script intégré à la page (son URL est celle du document : une
+   * par page vue, donc regroupées ici par fonction).
+   */
+  url: string | null;
+  /**
+   * Nom de fonction, ou ce qui a invoqué le script quand la fonction est minifiée ;
+   * `null` quand l'invocation est le chargement du script lui-même (le navigateur
+   * rend alors une URL, pas un nom).
+   */
+  quoi: string | null;
   n: number;
   /** Somme du temps de blocage attribué, en millisecondes. */
   totalMs: number;
   /** La pire frame observée. */
   worstMs: number;
+  /** Routes (normalisées) où le blocage a eu lieu, les plus lourdes d'abord, 3 au plus. */
+  routes: string[];
+  /** Nombre de routes distinctes. */
+  nbRoutes: number;
 }
 
 /**
@@ -93,6 +105,13 @@ export interface ScriptBloquant {
  * façon. Le blocage est la part que l'utilisateur SUBIT. Repli sur la durée pour
  * les navigateurs qui ne renseignent pas le champ.
  *
+ * UN SCRIPT INTÉGRÉ SE REGROUPE PAR FONCTION. Son URL est celle du document
+ * (/partners/17, /partners/42…) : groupée par URL, la même fonction occupait huit
+ * lignes (recette du 26/09/2026). Un script sans extension de fichier est donc
+ * regroupé par fonction seule, AVANT le plafond de 20, et ses routes passent en
+ * détail. Une invocation qui est une URL (le chargement du script) se regroupe
+ * sous « au chargement » : sa query string (utm_…) n'est pas un nom de fonction.
+ *
  * Ne rend QUE des lignes attribuées (`script_url is not null`) : une entrée
  * Long Tasks n'a pas de script, et l'afficher sous « (inconnu) » ferait une
  * première ligne écrasante qui n'apprend rien.
@@ -101,17 +120,35 @@ export async function scriptsBloquants(f: Filters): Promise<ScriptBloquant[]> {
   const sql = await sqlContext(f);
   const where = sql.where({ dataset: "longtasks", row: "l", session: "s", time: "l.ts" });
   return await q<ScriptBloquant>(
-    `select l.script_url as url,
-            coalesce(nullif(l.script_function, ''), nullif(l.invoker, ''), '(anonyme)') as quoi,
-            count(*)::int as n,
-            round(sum(coalesce(l.blocking_ms, l.duration_ms))::numeric)::float as "totalMs",
-            round(max(coalesce(l.blocking_ms, l.duration_ms))::numeric)::float as "worstMs"
-     from rum_longtask l
-     ${sessionJoin("l", "s")}
-     where l.script_url is not null${where}
-     group by 1, 2
-     order by "totalMs" desc
-     limit 20`,
+    `with t as (
+       select case when l.script_url ~* '\\.[a-z0-9]{1,6}$' then l.script_url end as fichier,
+              coalesce(nullif(l.script_function, ''), nullif(l.invoker, ''), '(anonyme)') as brut,
+              l.route,
+              coalesce(l.blocking_ms, l.duration_ms) as ms
+         from rum_longtask l
+         ${sessionJoin("l", "s")}
+        where l.script_url is not null${where}
+     ), g as (
+       select fichier,
+              case when brut ~* '^[a-z][a-z0-9+.-]*://' then null else brut end as quoi,
+              route,
+              count(*)::int as n,
+              sum(ms) as total,
+              max(ms) as pire
+         from t
+        group by 1, 2, 3
+     )
+     select fichier as url,
+            quoi,
+            sum(n)::int as n,
+            round(sum(total)::numeric)::float as "totalMs",
+            round(max(pire)::numeric)::float as "worstMs",
+            coalesce((array_agg(route order by total desc) filter (where route is not null))[1:3], '{}') as routes,
+            count(route)::int as "nbRoutes"
+       from g
+      group by 1, 2
+      order by "totalMs" desc
+      limit 20`,
     sql.params,
   );
 }
