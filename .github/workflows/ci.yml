@@ -446,7 +446,7 @@ jobs:
           pnpm test:contract
 
       # `...` entraîne `@mip/rum-core`, dont le SDK web inline les primitives.
-      - name: Build SDK (servi par demo/serve.mjs et la console)
+      - name: Build SDK (servi par tests/e2e/site-cobaye/serve.mjs et la console)
         run: pnpm --filter "@mip/rum-sdk..." build
 
       # le test corrélation attend des runs robot en face des données RUM générées par le test

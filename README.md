@@ -81,7 +81,7 @@ docker compose -f infra/docker/docker-compose.yml run --rm migrate  # Postgres 1
 pnpm build:sdk                                                  # SDK web, React Native, agent Node
 node scripts/seed-admin.mjs                                     # compte admin local : mot de passe affiché une fois, régénéré à chaque appel
 node services/collector/dev-server.mjs                          # ingestion locale :4318 (MIP_E2E_TAMPON=1 : tampon /__recent de l'E2E)
-node demo/serve.mjs                                             # mini-site de démo :8080
+node tests/e2e/site-cobaye/serve.mjs                            # site cobaye des E2E :8080
 pnpm --filter console dev                                       # console :3000 — lit la base elle-même (sans CONSOLE_API_URL)
 node tools/sync-synthetic/src/sync.mjs seed                      # passages robot pour /correlation
 ```
