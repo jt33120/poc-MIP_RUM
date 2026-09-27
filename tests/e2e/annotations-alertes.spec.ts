@@ -117,7 +117,8 @@ test.describe("F67 — annotations d'alerte et liens croisés", () => {
     const evenement = page.locator(`#evt-${evenementF67}`);
     await expect(evenement).toHaveAttribute("aria-current", "true");
     await expect(evenement).toBeVisible();
-    await expect(evenement).toContainText("LCP p75 au-dessus du seuil (e2e F67)");
+    // Le titre est reconstruit depuis la règle (recette du 26/09/2026), pas recopié du message.
+    await expect(evenement).toContainText("LCP : 3,2 s (seuil 2,5 s)");
   });
 
   test("evt inconnu ou illisible : dit, jamais un refus ni un écran vide", async ({ page }) => {

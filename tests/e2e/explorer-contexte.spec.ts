@@ -159,7 +159,8 @@ test("W-E2 : le volume accompagne un classement, avec une ligne d'alternative pa
   // son texte n'est pas rendu, et `innerText` ne l'a pas rendu non plus en CI (run
   // 35833662207) — on lit le texte du DOM, comme `toContainText` et `toHaveCount`.
   const legende = ((await volume.locator("caption").textContent()) ?? "").trim();
-  const seaux = legende.match(/—\s*(\d+)\s*seaux/);
+  // « seaux » est devenu « tranches » à l'écran (recette du 26/09/2026).
+  const seaux = legende.match(/—\s*(\d+)\s*tranches/);
   expect(seaux, `légende de l'alternative : « ${legende} »`).not.toBeNull();
   const annonces = Number(seaux![1]);
   expect(annonces).toBeGreaterThan(0);

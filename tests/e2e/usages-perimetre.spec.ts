@@ -471,7 +471,7 @@ test.describe("F53 — écrans d'usage sur le contrat : plage personnalisée, ta
     }
     await page.goto(`${consoleUrl}/retention?app=${APP_A_F53}&device=tablet`, { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("filter-problem")).toHaveCount(0);
-    await expect(corps(page)).toContainText("1 visiteurs identifiés");
+    await expect(corps(page)).toContainText("1 visiteur identifié");
     await expect(page.getByTestId("retention-deja-filtre")).toContainText("Déjà filtré sur tablettes");
   });
 
@@ -485,7 +485,7 @@ test.describe("F53 — écrans d'usage sur le contrat : plage personnalisée, ta
     }
     await page.goto(`${consoleUrl}/retention?app=${APP_A_F53}&seg=v2%3Abrowser%3Ais_null`, { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("filter-problem")).toHaveCount(0);
-    await expect(corps(page)).toContainText("1 visiteurs identifiés");
+    await expect(corps(page)).toContainText("1 visiteur identifié");
   });
 
   test("revue vague 8 — appareil porté par le SEGMENT : « Par appareil » dit « Déjà filtré », aucun lien vers un écran vide", async ({ page }) => {
@@ -496,7 +496,7 @@ test.describe("F53 — écrans d'usage sur le contrat : plage personnalisée, ta
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByTestId("filter-problem")).toHaveCount(0);
-    await expect(corps(page)).toContainText("1 visiteurs identifiés");
+    await expect(corps(page)).toContainText("1 visiteur identifié");
     const dejaFiltre = page.getByTestId("retention-deja-filtre");
     await expect(dejaFiltre).toContainText("Déjà filtré sur tablettes");
     await expect(page.getByTestId("retention-appareil-lien")).toHaveCount(0);

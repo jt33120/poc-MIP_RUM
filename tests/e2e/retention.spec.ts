@@ -140,7 +140,9 @@ test("tuiles : S+1 sur les seules cohortes complètes, S+4 hors fenêtre → la 
   // attend une lecture non livrée — elle n'est pas rendue, et aucun code interne
   // n'apparaît à l'écran.
   await expect(page.getByTestId("retention-kpi").getByTestId("kpi-tile")).toHaveCount(3);
-  await expect(tuile(page, "Sessions sans identifiant")).toHaveCount(0);
+  // Le libellé entier : la méthode de la tuile « Visiteurs identifiés suivis » parle,
+  // elle, des « sessions sans identifiant » (et `hasText` ignore la casse).
+  await expect(tuile(page, "Sessions sans identifiant, hors matrice")).toHaveCount(0);
   for (const code of ["B35", "parité C3"]) await expect(page.locator("main")).not.toContainText(code);
 });
 

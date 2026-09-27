@@ -16,7 +16,7 @@
 //
 // RIEN N'EST COUPÉ (recette du 26/09/2026) : « Direct ou référen… » à 390 px. Le
 // libellé et le sous-texte passent à la ligne dans leur colonne, y compris une
-// route sans espace (coupure au caractère) ; le libellé entier reste en infobulle.
+// route sans espace (coupure au caractère).
 // Une ligne peut être ACTIVE (`actif`) : celle dont le détail est affiché en dessous
 // (le formulaire dont on lit les champs, le canal ouvert) — marquée pour les yeux
 // ET pour le lecteur d'écran (`aria-current`).
@@ -116,9 +116,10 @@ export function RankBar({
             >
               <div className="w-[min(7rem,var(--rank-label))] shrink-0 text-xs leading-snug text-ink sm:w-[var(--rank-label)]">
                 {d.href ? (
+                  // Pas de `title` : le libellé n'est plus coupé, et la ligne porte déjà
+                  // l'infobulle de `d.title` (deux titres égaux, deux cibles pour un test).
                   <Link
                     href={d.href}
-                    title={d.label}
                     aria-current={d.actif ? "true" : undefined}
                     className={`${coupe} font-medium hover:text-accent hover:underline`}
                   >
