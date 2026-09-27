@@ -53,7 +53,7 @@ const PERMIS: Readonly<Record<string, string>> = {
 
 /**
  * Le dossier technique de la vitrine (`/presentation/dossier`) cite les identifiants
- * du registre de couverture (A1…F3, D14) et des points « Ce qui reste » (R1…R10) :
+ * du registre de couverture (A1…F3, D14) et des points « Ce qui reste » (R1…R11) :
  * ce sont les références que les tests de couverture exigent, pas des codes de lot.
  * Ce motif-là, et lui seul, y est admis.
  */

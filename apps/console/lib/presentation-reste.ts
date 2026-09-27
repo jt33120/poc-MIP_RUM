@@ -51,7 +51,7 @@ import type { PointReste } from "./couverture-controle";
 /** Le document de couverture, tel que les sources le citent. */
 const DOC = "docs/RUM_PARITY_STATUS.md";
 
-/** Les dix points, dans l'ordre fixe du plan (R10 ajouté le 24/09/2026). */
+/** Les onze points, dans l'ordre fixe du plan (R10 ajouté le 24/09/2026, R11 le 27/09/2026). */
 export const POINTS_RESTE: readonly PointReste[] = [
   {
     id: "R1",
@@ -221,6 +221,27 @@ export const POINTS_RESTE: readonly PointReste[] = [
       "services/scheduler/README.md:28-41",
       "packages/backend/jobs/cadence.mjs:6-26",
       "apps/console/lib/etat-latence.ts:20-28",
+    ],
+  },
+  {
+    // AJOUTÉ LE 27/09/2026, décision du responsable du produit : la couverture des
+    // backends se fera par les agents OpenTelemetry officiels de chaque langage,
+    // après la présentation. Le frein est chez nous : l'ingestion ne lit que du JSON
+    // (les deux points d'entrée cités), alors que ces agents envoient du protobuf
+    // par défaut.
+    id: "R11",
+    titre: "Les backends au-delà de Node et Python",
+    manque:
+      "Côté serveur, deux capteurs seulement relient un appel du navigateur à ce qu'il a coûté au backend : un agent pour Node.js et un middleware pour FastAPI. Java, .NET, PHP, Go ou Ruby n'ont rien. Ces langages ont tous un agent OpenTelemetry officiel, mais la collecte n'accepte que le format OTLP en JSON, alors que ces agents envoient du protobuf par défaut.",
+    debloque:
+      "Accepter OTLP en protobuf à la collecte : les agents officiels deviennent compatibles sans capteur maison. Puis une recette de configuration par langage dans la documentation d'intégration, et un test de bout en bout par langage qui vérifie que la trace du navigateur rejoint celle du serveur.",
+    decide: "L'équipe MIP ; le travail est prévu après la présentation.",
+    sources: [
+      "C5",
+      "C6",
+      "packages/backend/lib/receiver.mjs:426-432",
+      "apps/console/app/api/ingest/v1/traces/route.ts:1",
+      "apps/console/app/api/ingest/v1/traces/route.ts:84",
     ],
   },
 ];

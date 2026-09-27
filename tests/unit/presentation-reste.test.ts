@@ -36,8 +36,8 @@ function ligne(id: string): Capacite {
   return c;
 }
 
-describe("les dix points, dans l'ordre fixe du plan", () => {
-  it("titres exacts, R1 à R10", () => {
+describe("les onze points, dans l'ordre fixe du plan", () => {
+  it("titres exacts, R1 à R11", () => {
     expect(POINTS_RESTE.map((p) => [p.id, p.titre])).toEqual([
       ["R1", "Une recette sur une vraie application"],
       ["R2", "Reprise de l'historique des erreurs"],
@@ -49,6 +49,7 @@ describe("les dix points, dans l'ordre fixe du plan", () => {
       ["R8", "Souveraineté et mise en service chez un client"],
       ["R9", "Une chaîne de livraison qui dit vrai"],
       ["R10", "Une base dimensionnée pour un vrai produit"],
+      ["R11", "Les backends au-delà de Node et Python"],
     ]);
   });
 
