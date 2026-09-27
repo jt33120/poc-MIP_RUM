@@ -493,7 +493,8 @@ test.describe("F65 — Tendances (§ 5.20)", () => {
     expect(reference[0]).not.toBe("—");
     const bandeau = page.getByTestId("fenetre-fixe");
     await expect(bandeau).toContainText("14 jours complets, du ");
-    await expect(bandeau).toContainText(TZ_F65);
+    // Le fuseau est dit en mots (recette du 26/09/2026), plus par son identifiant IANA.
+    await expect(bandeau).toContainText("heure de Paris");
     await expect(bandeau).toContainText("la journée en cours est exclue");
     for (const periode of ["&period=1h", "&period=7d"]) {
       expect(await valeursKpi(page, periode), periode).toEqual(reference);

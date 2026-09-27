@@ -110,7 +110,9 @@ export function ContrastBars({
 
   return (
     <div className="min-w-0" data-testid="contrast-bars">
-      <ul className="flex flex-col gap-2">
+      {/* Conteneur de requêtes : les colonnes des lignes suivent la largeur de LA LISTE
+          (carte en demi-largeur, panneau), pas celle de la fenêtre. */}
+      <ul className="flex flex-col gap-2 [container-type:inline-size]">
         {ordre.map((l) => {
           const r = rapport(l);
           const nonClassee = l.valeur === INCONNU || l.nTouches < TOUCHES_MIN || r == null;
@@ -125,8 +127,10 @@ export function ContrastBars({
                 // les lignes, quelle que soit la longueur du texte voisin (recette du
                 // 26/09/2026 : en `flex-1`, deux parts égales n'avaient pas la même longueur
                 // de barre). Bornées et non fixes : en demi-largeur, la colonne du rapport
-                // tombait à 30 px, un mot par ligne (contre-recette du 26/09/2026).
-                className="grid grid-cols-1 items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:grid-cols-[minmax(6rem,10rem)_minmax(6rem,12rem)_minmax(8rem,1fr)] lg:grid-cols-[minmax(7rem,12rem)_minmax(7rem,16rem)_minmax(10rem,1fr)]"
+                // tombait à 30 px, un mot par ligne (contre-recette du 26/09/2026). Choisies
+                // par la largeur de la liste (`@container`) : réglées sur la fenêtre, leurs
+                // minimums (≈ 26 rem) débordaient d'une carte en demi-largeur à 1 024 px.
+                className="grid grid-cols-1 items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf [@container_(min-width:30rem)_and_(max-width:43.99rem)]:grid-cols-[minmax(6rem,10rem)_minmax(6rem,12rem)_minmax(8rem,1fr)] [@container_(min-width:44rem)]:grid-cols-[minmax(7rem,12rem)_minmax(7rem,16rem)_minmax(10rem,1fr)]"
               >
                 <span className="min-w-0 truncate text-xs font-medium text-ink" title={l.valeur}>
                   {l.valeur}

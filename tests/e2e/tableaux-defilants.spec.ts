@@ -62,7 +62,10 @@ test.describe("à 390 px", () => {
     await expect(page.getByTestId("table-defilante-ombre-droite")).toHaveCount(1);
 
     // Au bout de la zone : la colonne des actions est à l'écran, l'indice change de sens.
+    // La zone d'abord amenée en haut de la fenêtre : depuis la recette du 26/09/2026, le
+    // formulaire de création (choix des applications) la repousse sous la ligne de flottaison.
     await zone.evaluate((el) => {
+      el.scrollIntoView({ block: "start" });
       el.scrollLeft = el.scrollWidth;
     });
     await expect(page.getByRole("columnheader", { name: "Actions", exact: true })).toBeInViewport();

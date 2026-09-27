@@ -661,12 +661,20 @@ export function ResultatAnalyse({
     </span>
   ) : null;
   const idFigure = id ?? "explorer-resultat";
+  // En carte, la tuile « Valeur » n'a pas d'alternative textuelle : sa référence (quelle
+  // période, quelle valeur) passe au pied de page. Sans elle, « pas de mesure de
+  // référence non nulle » ne disait plus laquelle.
+  const referenceCarte =
+    carte && plan.visualization === "value" && precedent
+      ? [`Période de référence : ${precedent.plage.replace(/^vs\s+/, "")}, valeur ${formater(format, precedent.total)}.`]
+      : [];
 
   // Pied de page unique. En carte, il porte AUSSI la méta W-E8, les phrases de lecture
   // et les notes de la lecture : la carte ne montre que valeur, verdict et graphique.
   const aPropos = (
     <APropos
       lignes={[
+        ...referenceCarte,
         ...(carte ? metaResultat(plan, meta, data).map((m) => `${m.charAt(0).toUpperCase()}${m.slice(1)}.`) : []),
         ...(carte ? lectures : []),
         ...lignesAPropos(plan, meta, methode),

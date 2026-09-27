@@ -85,7 +85,7 @@ test("mêmes route et query : le lien, le filtre et le rafraîchissement aboutis
   // 2. Filtre global : la période change l'URL et l'écran, toujours sans rechargement.
   await page.getByTestId("filter-period").getByRole("button", { name: "24 h" }).click();
   await expect(page).toHaveURL(`${consoleUrl}/events?app=demo-app&device=mobile`, { timeout: 10_000 });
-  await expect(page.getByText(/signaux émis par le SDK, observés sur 24 h/)).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/signaux relevés par le capteur, sur 24 h/)).toBeVisible({ timeout: 10_000 });
   expect(await memeDocument(page)).toBe(true);
 
   // 3. « LIVE · 5 s » : une ligne ingérée apparaît sans que personne ne recharge.

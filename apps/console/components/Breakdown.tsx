@@ -261,25 +261,28 @@ export function Breakdown({
         <p className="py-10 text-center text-sm text-ink-soft">{emptyLabel}</p>
       ) : (
         <>
-          <ul className="flex flex-col gap-1.5">
+          {/* Conteneur de requêtes : les colonnes suivent la largeur de la liste (voir la ligne). */}
+          <ul className="flex flex-col gap-1.5 [container-type:inline-size]">
             {items.map((item) => (
               <li key={item.key}>
                 {/* Colonnes BORNÉES (minmax), pas fixes (contre-recette du 26/09/2026) : en
                     demi-largeur (/admin/composants), 12 + 16 + 6 rem ne laissaient rien aux
                     détails, qui sortaient de la carte. Les bornes sont des longueurs, jamais
                     le contenu : toutes les lignes gardent la même piste, les barres restent
-                    comparables ; à pleine largeur, les colonnes prennent leur maximum. */}
+                    comparables ; à pleine largeur, les colonnes prennent leur maximum. Choisies par
+                    la largeur de la LISTE (`@container`), pas de la fenêtre : à 1 024 px, les
+                    minimums (≈ 30 rem) débordaient encore d'une carte en demi-largeur. */}
                 <Link
                   href={item.href}
                   aria-label={`${item.description}${item.echantillonFaible ? ", échantillon faible" : ""} — ouvrir le détail`}
                   data-testid="breakdown-row"
                   data-faible={item.echantillonFaible ? "1" : undefined}
-                  className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:grid-cols-[minmax(6rem,10rem)_minmax(6rem,12rem)_6rem_minmax(7rem,1fr)] lg:grid-cols-[minmax(7rem,12rem)_minmax(7rem,16rem)_6rem_minmax(7rem,1fr)]"
+                  className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 transition hover:bg-panel2/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf [@container_(min-width:32rem)_and_(max-width:47.99rem)]:grid-cols-[minmax(6rem,10rem)_minmax(6rem,12rem)_6rem_minmax(7rem,1fr)] [@container_(min-width:48rem)]:grid-cols-[minmax(7rem,12rem)_minmax(7rem,16rem)_6rem_minmax(7rem,1fr)]"
                 >
-                  <span className="col-span-2 min-w-0 truncate font-mono text-xs text-ink sm:col-span-1" title={item.label}>
+                  <span className="col-span-2 min-w-0 truncate font-mono text-xs text-ink [@container_(min-width:32rem)]:col-span-1" title={item.label}>
                     {item.label}
                   </span>
-                  <span className="relative col-start-1 h-5 min-w-0 overflow-hidden rounded bg-panel2 sm:col-start-2">
+                  <span className="relative col-start-1 h-5 min-w-0 overflow-hidden rounded bg-panel2 [@container_(min-width:32rem)]:col-start-2">
                     {item.value !== null && (
                       <span
                         aria-hidden="true"
@@ -289,10 +292,10 @@ export function Breakdown({
                     )}
                   </span>
                   {/* La valeur à côté de la piste, pas dessus : elle ne cache plus le bout de la barre. */}
-                  <span className="col-start-2 text-right text-xs font-semibold tabular-nums text-ink sm:col-start-3">
+                  <span className="col-start-2 text-right text-xs font-semibold tabular-nums text-ink [@container_(min-width:32rem)]:col-start-3">
                     {item.display}
                   </span>
-                  <span className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs tabular-nums text-ink-soft sm:col-span-1 sm:col-start-4">
+                  <span className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs tabular-nums text-ink-soft [@container_(min-width:32rem)]:col-span-1 [@container_(min-width:32rem)]:col-start-4">
                     {item.cells.map((cell) => (
                       <span key={cell.label}>
                         <span className="text-ink-soft">{cell.label} </span>

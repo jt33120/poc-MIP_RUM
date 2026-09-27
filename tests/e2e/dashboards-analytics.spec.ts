@@ -665,7 +665,8 @@ test.describe("F37 — tableau de bord : sections", () => {
 
     const nouvelle = page.getByTestId("section-0");
     await expect(nouvelle.locator("summary h2")).toHaveText("Tendance", { timeout: 20_000 });
-    await expect(nouvelle.locator("summary")).toContainText("Depuis quand ?");
+    // `summary:has(h2)` : les cartes de la section ont aussi le leur (« À propos de ces chiffres »).
+    await expect(nouvelle.locator("summary:has(h2)")).toContainText("Depuis quand ?");
     await expect(nouvelle.getByTestId("widget-1")).toContainText("Trafic");
     const { rows } = await pool.query<{ layout: Record<string, unknown>[] }>("select layout from dashboard where id = $1", [
       Number(id),

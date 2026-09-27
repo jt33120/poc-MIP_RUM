@@ -15,6 +15,8 @@ import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import pg from "pg";
 
+// Comme les autres specs : la console visée se règle par PLAYWRIGHT_CONSOLE_URL.
+const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
 const APP_ID = "app-versions-e2e";
 const E2E_EMAIL = "e2e-versions@mip-rum.local";
 const E2E_PASSWORD = "e2e-versions-mdp-local";
@@ -136,7 +138,7 @@ test.afterAll(async () => {
 });
 
 async function loginConsole(page: Page) {
-  await page.goto("http://localhost:3000/login");
+  await page.goto(`${consoleUrl}/login`);
   await page.fill('input[name="email"]', E2E_EMAIL);
   await page.fill('input[name="password"]', E2E_PASSWORD);
   await page.click('button[type="submit"]');
@@ -145,7 +147,7 @@ async function loginConsole(page: Page) {
 
 test("comparaison par version : les deux releases, leur LCP et leur taux d'erreur", async ({ page }) => {
   await loginConsole(page);
-  await page.goto(`http://localhost:3000/?app=${APP_ID}&period=24h`);
+  await page.goto(`${consoleUrl}/?app=${APP_ID}&period=24h`);
 
   // F13 : la table des versions vit dans « Toutes les versions » de `ReleaseCompare`,
   // qui nomme LUI AUSSI les releases comparées — un `section` repéré par son texte, ou
@@ -161,13 +163,13 @@ test("comparaison par version : les deux releases, leur LCP et leur taux d'erreu
   const ligneRef = section.locator("tr", { hasText: "1.4.2" });
   await expect(ligneRef).toContainText("référence");
   await expect(ligneRef).toContainText("10"); // 10 sessions
-  await expect(ligneRef).toContainText("10.0 %"); // 1 session en erreur sur 10
+  await expect(ligneRef).toContainText("10,0 %"); // 1 session en erreur sur 10 (virgule française)
 
   // 1.5.0 : 3 sur 6 = 50 %, soit +40 points face à la référence. C'est CE nombre
   // qui prouve que la requête a bien joint les erreurs aux bonnes sessions.
   const ligne150 = section.locator("tr", { hasText: "1.5.0" });
-  await expect(ligne150).toContainText("50.0 %");
-  await expect(ligne150).toContainText("+40.0 pt");
+  await expect(ligne150).toContainText("50,0 %");
+  await expect(ligne150).toContainText("+40 pt");
   await expect(ligne150).not.toContainText("référence");
 
   // Le LCP vient de rum_metric joint par session : 3,40 s pour 1.5.0 (formaté à
@@ -187,7 +189,7 @@ test("le bloc disparaît quand il n'y a qu'une version à montrer", async ({ pag
     await pool.query(`update ${table} set release = '1.4.2' where app_id = $1`, [APP_ID]);
   }
   await loginConsole(page);
-  await page.goto(`http://localhost:3000/?app=${APP_ID}&period=24h`);
+  await page.goto(`${consoleUrl}/?app=${APP_ID}&period=24h`);
   await expect(page.locator("h2", { hasText: "Comparaison par version" })).toHaveCount(0);
   // On remet le jeu de données en état pour les autres cas.
   await semer();
@@ -195,7 +197,7 @@ test("le bloc disparaît quand il n'y a qu'une version à montrer", async ({ pag
 
 test("scripts bloquants : classés par blocage CUMULÉ, pas par pire cas", async ({ page }) => {
   await loginConsole(page);
-  await page.goto(`http://localhost:3000/ux?app=${APP_ID}&period=24h`);
+  await page.goto(`${consoleUrl}/ux?app=${APP_ID}&period=24h`);
 
   // F23 (§ 5.4.2) : la table d'avant est devenue un classement en BARRES (`RankBar`),
   // une barre par couple script × fonction, dans l'ordre du classement ; ses cinq

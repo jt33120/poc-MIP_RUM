@@ -11,6 +11,8 @@ import { debordements, LARGEURS } from "./helpers/debordements";
 
 // utilisateur DÉDIÉ à ce spec : seed-admin régénère le mdp de julian@ à chaque
 // run, et les spec files tournent en parallèle (course constatée sur rum-flow)
+// Comme les autres specs : la console visée se règle par PLAYWRIGHT_CONSOLE_URL.
+const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
 const E2E_EMAIL = "e2e-tracing@mip-rum.local";
 const E2E_PASSWORD = "e2e-tracing-mdp-local";
 
@@ -95,7 +97,7 @@ test.afterAll(async () => {
 });
 
 async function loginConsole(page: Page) {
-  await page.goto("http://localhost:3000/login");
+  await page.goto(`${consoleUrl}/login`);
   await page.fill('input[name="email"]', E2E_EMAIL);
   await page.fill('input[name="password"]', E2E_PASSWORD);
   await page.click('button[type="submit"]');
@@ -103,7 +105,7 @@ async function loginConsole(page: Page) {
   // Porte « projet courant » (/select) : projet fixé de façon déterministe sur
   // l'app de la démo e2e (demo-app) pour scoper les vues console à ses données.
   await page.context().addCookies([
-    { name: "mip-project", value: "demo-app", url: "http://localhost:3000" },
+    { name: "mip-project", value: "demo-app", url: consoleUrl },
   ]);
 }
 
@@ -163,11 +165,12 @@ test("console : /tracing affiche la corrélation et la timeline montre l'appel A
   test.skip(!PY, SANS_FASTAPI);
   await loginConsole(page);
 
-  await page.goto("http://localhost:3000/tracing", { waitUntil: "domcontentloaded" });
+  await page.goto(`${consoleUrl}/tracing`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("back-routes")).toContainText("/api/demo/items/{item_id}");
   await expect(page.getByTestId("api-calls")).toContainText("/api/demo/items/");
   // F60 : la couverture est la tuile « Appels suivis jusqu'au serveur » ; mesurée, jamais « — ».
-  const couverture = page.getByTestId("kpi-tile").filter({ hasText: "Appels suivis jusqu'au serveur" });
+  // Par son libellé exact : la tuile « Durée p75 côté serveur » en parle aussi dans sa phrase.
+  const couverture = page.getByTestId("kpi-tile").filter({ has: page.getByText("Appels suivis jusqu'au serveur", { exact: true }) });
   await expect(couverture.getByTestId("kpi-valeur")).not.toHaveText("—");
 
   // dernière session de demo-app avec un appel API -> timeline
@@ -175,7 +178,7 @@ test("console : /tracing affiche la corrélation et la timeline montre l'appel A
     `select session_id from rum_span where tier = 'front' and app_id = 'demo-app'
      order by ts desc limit 1`,
   ).then((r) => r.rows);
-  await page.goto(`http://localhost:3000/sessions/${row.session_id}`, {
+  await page.goto(`${consoleUrl}/sessions/${row.session_id}`, {
     waitUntil: "domcontentloaded",
   });
   await expect(page.locator("body")).toContainText("Appel API");
