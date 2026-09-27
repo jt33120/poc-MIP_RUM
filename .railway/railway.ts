@@ -37,8 +37,8 @@
 //                                que sur Vercel (le service `api` authentifie) ;
 //   · CONSOLE_API_ALLOWED_ORIGINS  les origines CORS, la même valeur que Vercel ;
 //   · API_DATABASE_URL           le pooler Neon, rôle `mip_api` (migration v89,
-//                                lecture seule) : mot de passe posé par
-//                                `\password mip_api` (runbook, « Le rôle de l'API »).
+//                                lecture seule) : mot de passe posé par `alter
+//                                role … password` (runbook, « Le rôle de l'API »).
 //   · CONSOLE_API_CLIENT_SECRETS le secret client de `console-api` (≥ 32 caractères,
 //                                `openssl rand -hex 32`) ; deux valeurs séparées
 //                                par une virgule pendant une rotation. Vercel en
