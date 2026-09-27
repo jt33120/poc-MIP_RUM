@@ -327,6 +327,27 @@ jobs:
       # SQL_TEST_PRE_V86_DATABASE_URL : fenêtre de déploiement B52, tick du
       # scheduler et dispatcher en service sur un schéma v85 — sans le mode release
       # de check_alerts — avant et après l'application de migration-v86.
+      #
+      # PAS D'AUTOVACUUM PENDANT `test:sql`. Chaque fichier rejoue TOUTE la chaîne
+      # de migrations sur `mip_rum_p0`, après que les fichiers précédents y ont
+      # écrit puis effacé des lignes : l'autovacuum y lance des `VACUUM ANALYZE`
+      # pendant le rejeu. Or le rejeu fait, dans la transaction d'un même fichier,
+      # `grant … on T` puis `create policy … on T` (v16, v89, v93 — et v47 supprime
+      # à chaque passage les policies `using (true)`, qui sont donc toujours
+      # recréées). Le GRANT modifie la ligne `pg_class` de T ; l'ANALYZE, qui tient
+      # un SHARE UPDATE EXCLUSIVE sur T, attend la fin de cette transaction pour y
+      # écrire ses statistiques ; le CREATE POLICY attend l'ACCESS EXCLUSIVE sur T.
+      # Interblocage (40P01), dont la victime est tantôt l'autovacuum, tantôt la
+      # migration — l'échec intermittent. Journal du service Postgres des runs
+      # 36127374039 (deux tentatives), 36150926732 et 36232253967 : l'autre
+      # processus est chaque fois « autovacuum: VACUUM ANALYZE public.<table> ».
+      # Ces bases sont jetables et aucun test de l'étape ne lit de statistiques
+      # (les bancs ont leur job et leur propre VACUUM ANALYZE) : l'autovacuum est
+      # coupé pour l'étape, vérifié arrêté AVANT la création des bases, puis
+      # rétabli pour les étapes suivantes (contrats, E2E). Le migrateur de
+      # production, lui, reprend un fichier sur 40P01 (`packages/db/migrate.mjs`).
+      # En local, un `pnpm test:sql` sur un serveur dont l'autovacuum tourne reste
+      # exposé au même aléa.
       - name: P0 safety and truth SQL (base dédiée)
         env:
           PGPASSWORD: postgres
@@ -339,6 +360,18 @@ jobs:
           SQL_TEST_PRE_V85_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v85
           SQL_TEST_PRE_V86_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v86
         run: |
+          psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'alter system set autovacuum = off' -c 'select pg_reload_conf()'
+          for essai in $(seq 1 30); do
+            actifs=$(psql -h localhost -p 5433 -U postgres -d postgres -tAc \
+              "select count(*) from pg_stat_activity where backend_type in ('autovacuum launcher', 'autovacuum worker')")
+            if [ "$actifs" = 0 ]; then break; fi
+            if [ "$essai" = 30 ]; then
+              echo "::error::l'autovacuum tourne encore 30 s après sa coupure"
+              exit 1
+            fi
+            sleep 1
+          done
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -c 'create database mip_rum_p0'
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
@@ -356,6 +389,8 @@ jobs:
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -c 'create database mip_rum_pre_v86'
           pnpm test:sql
+          psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'alter system reset autovacuum' -c 'select pg_reload_conf()'
 
       # P2 — CONTRAT DE PARITÉ DE LA COLLECTE. Les routes Next de la console et le
       # receveur du collector (`creerReceveur`) doivent rendre le même statut et
