@@ -136,7 +136,7 @@ export function SectionF42() {
           <PrioriteSessions lignes={CLASSEES} hrefs={hrefsPriorite(CLASSEES, PAGES)} plage={PLAGE} />
         </Figure>
 
-        <Figure titre="À regarder d'abord — sans classement (B30 absent)" id="vitrine-priorite-partiel" etat={{ kind: "partiel", raison: RAISON_PRIORITE }} />
+        <Figure titre="À regarder d'abord — sans classement (lecture absente)" id="vitrine-priorite-partiel" etat={{ kind: "partiel", raison: RAISON_PRIORITE }} />
 
         <Figure titre="À regarder d'abord — aucune session à signal" id="vitrine-priorite-vide">
           <PrioriteSessions lignes={[]} hrefs={{}} plage={PLAGE} />
@@ -144,7 +144,7 @@ export function SectionF42() {
 
         <div className="card min-w-0 p-4">
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-            Toutes les sessions — signaux lus (B30)
+            Toutes les sessions — signaux lus
           </h3>
           <SessionsTable
             lignes={AVEC_B30}
@@ -158,7 +158,7 @@ export function SectionF42() {
 
         <div className="card min-w-0 p-4">
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-            Toutes les sessions — signaux non lus (B30 absent)
+            Toutes les sessions — signaux non lus
           </h3>
           <SessionsTable
             lignes={SANS_B30}

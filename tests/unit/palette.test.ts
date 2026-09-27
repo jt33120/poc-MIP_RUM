@@ -2,7 +2,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CATEGORIELLE, PALIERS_SEQUENTIELLE, RATING_HEX, SEQUENTIELLE, SEVERITE } from "../../apps/console/lib/palette";
+import {
+  CATEGORIELLE,
+  PALIERS_SEQUENTIELLE,
+  PALIERS_SEQUENTIELLE_JETONS,
+  RATING_HEX,
+  SEQUENTIELLE,
+  SEVERITE,
+  sequentielleJeton,
+} from "../../apps/console/lib/palette";
 
 /** Luminance relative WCAG d'une couleur #rrggbb ou d'un triplet. */
 function luminance(c: string | [number, number, number]): number {
@@ -59,6 +67,23 @@ describe("SEQUENTIELLE", () => {
     expect(SEQUENTIELLE(-3)).toBe(PALIERS_SEQUENTIELLE[0]);
     expect(SEQUENTIELLE(7)).toBe(PALIERS_SEQUENTIELLE[4]);
     expect(SEQUENTIELLE(Number.NaN)).toBe(PALIERS_SEQUENTIELLE[0]);
+  });
+});
+
+describe("SEQUENTIELLE en jetons de thème (heatmap)", () => {
+  const hex = (t: [number, number, number]) => `#${t.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+
+  it("en clair, les jetons --c-seq-* sont les paliers de lib/palette.ts", () => {
+    for (let i = 0; i < 5; i++) expect(hex(variable(":root", `c-seq-${i}`))).toBe(PALIERS_SEQUENTIELLE[i].toLowerCase());
+    expect(PALIERS_SEQUENTIELLE_JETONS[3]).toBe("rgb(var(--c-seq-3))");
+    expect(sequentielleJeton(0.95)).toBe("rgb(var(--c-seq-4))");
+  });
+
+  it("en sombre, l'intensité croît avec le CONTRASTE sur le fond (la rampe claire, posée sur la nuit, criait sur les cases faibles)", () => {
+    const fond = variable(".dark", "c-panel");
+    const c = [0, 1, 2, 3, 4].map((i) => contraste(variable(".dark", `c-seq-${i}`), fond));
+    for (let i = 1; i < c.length; i++) expect(c[i]).toBeGreaterThan(c[i - 1]);
+    expect(c[4]).toBeGreaterThanOrEqual(3);
   });
 });
 

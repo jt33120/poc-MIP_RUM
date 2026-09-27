@@ -1017,11 +1017,19 @@ export function createPgAuth(pool, opts = {}) {
     // l'on vient de vider, et l'effacement n'aurait garanti le silence que
     // jusqu'au message suivant. La reprise est une opération d'exploitation
     // explicite — on efface la marque à la main — jamais l'effet d'un événement.
-    const suspendue = registry.get(appId)?.ingestion_suspended_at;
-    if (suspendue != null) return `ingestion suspended for app: ${appId}`;
-    if (!requireApiKey) return null;
     const app = registry.get(appId);
-    if (!app || !app.active) return `unknown or inactive app: ${appId}`;
+    const suspendue = app?.ingestion_suspended_at;
+    if (suspendue != null) return `ingestion suspended for app: ${appId}`;
+    // APPLICATION DÉSACTIVÉE — même règle, même place : avant `requireApiKey`.
+    // « Désactiver » dans l'administration promet que la collecte s'arrête, et
+    // la production tourne sans clé exigée ; derrière le court-circuit, une
+    // application coupée continuait d'écrire (recette du 26/09/2026). Le délai
+    // est celui du cache du registre (60 s au plus, par instance) ; une clé
+    // juste ne rouvre rien. Une application INCONNUE, elle, reste acceptée sans
+    // clé exigée : c'est le mode sans registre (CI, poste local).
+    if (app && app.active !== true) return `inactive app: ${appId}`;
+    if (!requireApiKey) return null;
+    if (!app) return `unknown or inactive app: ${appId}`;
     // Durcissement E1-S1 : sous REQUIRE_API_KEY, une app SANS clé est rejetée.
     if (app.api_key_hash == null) return `app requires an API key: ${appId}`;
     if (!apiKey || sha256(apiKey) !== app.api_key_hash)

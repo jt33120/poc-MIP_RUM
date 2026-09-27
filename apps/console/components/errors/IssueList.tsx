@@ -21,13 +21,15 @@ import { errorGroupHref, errorsHref, fmtCount, issueHref, issueListHref } from "
 import { INPUT_CLASS } from "@/components/forms/Field";
 import type { IssueEntry, IssueListFilters, IssueListResult } from "@/lib/error-issues";
 import { ISSUE_STATUSES, ISSUE_STATUS_LABELS } from "@/lib/issues-libelles";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, pluriel } from "@/lib/format";
 import { ERROR_SOURCES, ERROR_SOURCE_LABELS } from "@/lib/erreurs-sources";
 import type { ErrorFilters, ErrorTrendPoint } from "@/lib/queries-errors";
 
 const TITRE = "Erreurs JS";
+// « Groupe » pour l'utilisateur, comme la liste historique (recette du 26/09/2026) :
+// le mot « issue » et le numéro de version du regroupement restent dans le code.
 const SOUS_TITRE =
-  "Issues : une ligne = un problème identifié durablement (regroupement v2). Les groupes historiques qu'aucune issue ne reprend restent listés, sans double compte.";
+  "Une ligne = un problème identifié durablement. Les anciennes signatures qu'aucun groupe ne reprend restent listées, sans double compte.";
 
 export function IssueListInvalid({ f, raison }: { f: ErrorFilters; raison: string }) {
   return (
@@ -110,11 +112,11 @@ export function IssueList({
       {apercu}
 
       <h2 id="groupes-erreurs" className="mb-2 text-sm font-semibold text-ink">
-        Issues et groupes historiques ({total.toLocaleString("fr-FR")})
+        Groupes ({total.toLocaleString("fr-FR")})
       </h2>
       <p className="mb-3 text-xs text-ink-soft">{SOUS_TITRE}</p>
 
-      <form method="get" action="/errors" className="card mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Filtres des issues">
+      <form method="get" action="/errors" className="card mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Filtres des groupes">
         {cachees.map(([nom, valeur]) => (
           <input key={nom} type="hidden" name={nom} value={valeur} />
         ))}
@@ -158,30 +160,37 @@ export function IssueList({
 
       {coverage.occurrences_legacy > 0 && (
         <p role="note" className="mb-6 rounded-lg border border-line bg-panel2 px-4 py-3 text-sm text-ink-soft" data-testid="issue-coverage">
-          {coverage.occurrences_legacy.toLocaleString("fr-FR")} occurrence(s) restent dans des groupes historiques
-          qu&apos;aucune issue ne reprend seule : antérieures au regroupement v2, d&apos;une application où il n&apos;est pas
-          actif, ou d&apos;une signature répartie sur plusieurs issues.
+          {pluriel(coverage.occurrences_legacy, "occurrence reste", "occurrences restent")} dans d&apos;anciennes
+          signatures qu&apos;aucun groupe ne reprend seul : antérieures au regroupement actuel, d&apos;une application où il
+          n&apos;est pas actif, ou d&apos;une signature répartie sur plusieurs groupes.
         </p>
       )}
 
       {/* L'ordre de la liste, écrit (CP9) : il vivait dans la lecture de l'ancien hero. */}
-      <p className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="ordre-liste">
-        Triées pour le triage : à revoir, réapparitions, ouvertes, résolues, ignorées, puis par impact. « À revoir » :
-        les groupes historiques repris portaient des statuts différents. « Faible confiance » : aucune frame
-        applicative n&apos;a pu identifier l&apos;erreur. Tous les compteurs portent sur {label}, sauf « Première vue ».{" "}
-        {noteTendances}
-      </p>
+      <div className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="ordre-liste">
+        <p>Ordre : à revoir, réapparitions, ouverts, résolus, ignorés, puis par impact.</p>
+        <details className="mt-1">
+          <summary className="cursor-pointer rounded hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
+            Comment lire cette liste
+          </summary>
+          <p className="mt-1">
+            « À revoir » : les anciennes signatures reprises portaient des statuts différents. « Regroupement
+            approximatif » : aucune ligne de code de l&apos;application n&apos;a pu identifier l&apos;erreur. Tous les
+            compteurs portent sur {label}, sauf « Première vue ». {noteTendances}
+          </p>
+        </details>
+      </div>
 
       {/* Sous 640 px, la table devient une pile de cartes (F19, § 5.3.1) : à 390 px,
           occurrences et sessions se lisent sans défilement horizontal. */}
       <div className="card relative min-w-0 sm:overflow-x-auto">
         <table className="block w-full text-sm sm:table sm:min-w-table">
           <caption className="sr-only">
-            Issues et groupes historiques sur {label}, triés par statut puis par impact. {noteTendances}
+            Groupes d&apos;erreurs sur {label}, triés par statut puis par impact. {noteTendances}
           </caption>
           <thead className="hidden bg-panel2 sm:table-header-group">
             <tr>
-              <th scope="col" className="th">Issue</th>
+              <th scope="col" className="th">Groupe</th>
               <th scope="col" className="th">Occurrences</th>
               <th scope="col" className="th">Sessions</th>
               <th scope="col" className="th">Visiteurs</th>
@@ -204,7 +213,7 @@ export function IssueList({
                       Aucune entrée à cette position — revenir au début de la liste
                     </Link>
                   ) : filtre ? (
-                    "Aucune issue ne correspond à ces filtres sur cette période"
+                    "Aucun groupe ne correspond à ces filtres sur cette période"
                   ) : (
                     "Aucune erreur sur cette période"
                   )}
@@ -216,7 +225,7 @@ export function IssueList({
       </div>
 
       {(curseur || result.next_cursor) && (
-        <nav className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm" aria-label="Pagination des issues">
+        <nav className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm" aria-label="Pagination des groupes">
           {curseur ? (
             <Link href={issueListHref(f, filtres, limite)} className={ERROR_LINK}>
               Début de la liste
@@ -285,7 +294,7 @@ function IssueRow({
             {message.slice(0, 120)}
           </span>
           <span className="mt-0.5 block break-all font-mono text-xs text-ink-faint">
-            {entry.kind === "issue" ? `issue ${entry.id.slice(0, 8)}` : `fingerprint ${entry.fingerprint}`} · {entry.app_id}
+            {entry.kind === "issue" ? `groupe ${entry.id.slice(0, 8)}` : `signature ${entry.fingerprint}`} · {entry.app_id}
           </span>
         </Link>
       </td>
@@ -302,7 +311,7 @@ function IssueRow({
         <Sparkline
           valeurs={entry.series ?? trend.map(() => 0)}
           max={echelle}
-          label={`${entry.occurrences.toLocaleString("fr-FR")} occurrence(s) sur ${label}`}
+          label={`${pluriel(entry.occurrences, "occurrence")} sur ${label}`}
         />
       </CelluleGroupe>
       <CelluleGroupe libelle="Première vue" className="text-ink-soft sm:whitespace-nowrap">

@@ -52,25 +52,25 @@ const rendu = (lignes: LigneSessions[], extra: Partial<Parameters<typeof Session
   );
 
 describe("SessionsTable — colonnes et valeurs", () => {
-  it("porte les treize colonnes du plan, dont « Pays estimé » et sa provenance", () => {
+  it("porte dix colonnes, erreurs, rejeu et frustration juste après la durée (recette du 26/09/2026)", () => {
     const html = rendu([ligne("s1")]);
-    for (const c of [
-      "Dernière activité (UTC)",
-      "Début (UTC)",
+    const entetes = [...html.matchAll(/<th scope="col"[^>]*>([^<]*)<\/th>/g)].map((m) => texte(m[1]).trim());
+    expect(entetes).toEqual([
+      "Session",
+      "Dernière activité",
       "Durée observée",
-      "Appareil",
-      "Navigateur",
-      "Système",
+      "Occurrences d'erreur",
+      "Rejeu",
+      "Frustration",
+      "Appareil · navigateur · système",
       "Pays estimé",
-      "Capteur",
       "Pages vues",
       "Parcours",
-      "Occurrences d'erreur",
-      "Frustration",
-      "Rejeu",
-    ]) {
-      expect(texte(html)).toContain(c);
-    }
+    ]);
+    // Plus de colonnes « Capteur » (toujours « SDK ») ni « Début ».
+    expect(entetes).not.toContain("Capteur");
+    expect(entetes).not.toContain("Début");
+    expect(texte(html)).toContain("desktop · Chrome · Linux");
     expect(texte(html)).toContain("pays estimé, provenance : Fuseau horaire du terminal");
   });
 
@@ -80,29 +80,38 @@ describe("SessionsTable — colonnes et valeurs", () => {
     expect(texte(html)).not.toContain("0123456789abcdef …");
   });
 
-  it("les instants sont en UTC et la durée observée est mise en forme", () => {
+  it("la dernière activité est à l'heure de Paris et la durée observée est mise en forme", () => {
     const t = texte(rendu([ligne("s1")]));
-    expect(t).toContain("21/09 14:00");
+    // Début (16:00) n'a plus de colonne : il se lit de la dernière activité et de la durée.
+    expect(t).toContain("21/09 16:10");
     expect(t).toContain("10 min");
   });
 
-  it("le capteur de l'extension est nommé (CP16)", () => {
+  it("le capteur n'est nommé que s'il n'est pas le SDK web : extension (CP16) ou mobile", () => {
     expect(texte(rendu([ligne("s1", { collection_source: "extension" })]))).toContain("Extension");
-    expect(texte(rendu([ligne("s1")]))).toContain("SDK");
+    expect(texte(rendu([ligne("s1", { runtime: "react_native" })]))).toContain("Mobile");
+    expect(rendu([ligne("s1")])).not.toContain('data-testid="capteur-session"');
   });
 });
 
-describe("SessionsTable — Frustration et Rejeu avant B30", () => {
-  it("« — » avec sa raison, jamais « 0 » ni « Non »", () => {
+describe("SessionsTable — Frustration et Rejeu", () => {
+  it("lecture en échec : « — » avec sa raison, jamais « 0 » ni « Non », et aucun code de lot", () => {
     const html = rendu([ligne("s1")]);
-    expect(html).toContain('title="lecture à créer (B30)"');
+    expect(html).toContain('title="lecture en échec : valeur inconnue"');
+    expect(html).not.toContain("B30");
     expect(texte(html)).toContain("Frustration : —");
     expect(texte(html)).toContain("Rejeu : —");
   });
 
+  it("session mobile : frustration « non collecté », pas « — »", () => {
+    const html = rendu([ligne("s1", { runtime: "react_native", rejeu: false })]);
+    expect(html).toContain('data-testid="signal-non-collecte"');
+    expect(texte(html)).toContain("Frustration : non collecté");
+  });
+
   it("signaux lus : les nombres s'affichent, et « Non » distingue l'absence de rejeu", () => {
     const html = rendu([ligne("s1", { frustration: 0, rejeu: false })]);
-    expect(html).not.toContain('title="lecture à créer (B30)"');
+    expect(html).not.toContain('data-testid="signal-non-lu"');
     expect(texte(html)).toContain("Frustration : 0");
     expect(texte(html)).toContain("Rejeu : Non");
   });
@@ -120,8 +129,10 @@ describe("SessionsTable — mises en page, liens et vide", () => {
     const html = rendu([ligne("s1")]);
     expect(html).toContain('data-testid="sessions-table"');
     expect(html).toContain('data-testid="sessions-cartes"');
-    // Un `sr-only` vit dans le conteneur défilant : il doit avoir un ancêtre positionné.
-    expect(html).toContain('class="relative hidden overflow-x-auto sm:block"');
+    // Le cadre de TableDefilante n'apparaît qu'à partir de `sm` ; un `sr-only` vit
+    // dans sa zone défilante, qui doit donc être positionnée.
+    expect(html).toContain('class="relative overflow-hidden hidden sm:block"');
+    expect(html).toMatch(/role="region" aria-label="Sessions"[^>]*class="relative overflow-x-auto[ "]/);
   });
 
   it("sans href de panneau (F43 absent), la ligne mène à la page de session", () => {

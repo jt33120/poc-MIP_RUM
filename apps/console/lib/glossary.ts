@@ -8,6 +8,9 @@
 //
 // Ajouter une clé ici suffit à enrichir n'importe quel <GlossaryTip id="…" />.
 //
+// Tout ce texte est AFFICHÉ, niveau « stack » compris : ni nom de table, ni chemin
+// du dépôt, ni fonction SQL (recette du 26/09/2026, garde tests/unit/jargon-affiche.test.ts).
+//
 // Les seuils des Web Vitals sont LUS dans `THRESHOLDS` (lib/rating.ts), jamais
 // recopiés : le glossaire a longtemps annoncé « bon < 2,0 s » pour le LCP pendant
 // que l'écran, lui, colorait à 2,5 s.
@@ -115,7 +118,7 @@ export const GLOSSARY = {
     label: "Span",
     term: "Unité de travail tracée (début, durée, statut, attributs) — brique de base d'OpenTelemetry.",
     stack:
-      "Stocké en table rum_span avec son tier (front/back), corrélé par trace_id ; durée en ms, route templatisée.",
+      "Stocké avec son côté (navigateur ou serveur), corrélé par identifiant de trace ; durée en ms, route normalisée.",
     business:
       "Un segment chronométré d'une requête (« l'appel a pris 320 ms, dont 210 ms serveur »). En empilant les spans, on décompose précisément où part le temps.",
   },
@@ -141,7 +144,7 @@ export const GLOSSARY = {
     label: "Session utilisateur",
     term: "Suite de pages vues d'un même visiteur (session_id), avec device, pays (timezone) et durée.",
     stack:
-      "Upsert en table rum_session ; aucune IP stockée — le pays est déduit de la timezone (RGPD-friendly).",
+      "Mise à jour à chaque envoi du capteur ; aucune adresse IP stockée — le pays est déduit du fuseau horaire du navigateur, conformément au RGPD.",
     business:
       "Le parcours réel d'un visiteur. Permet de rejouer ce qu'il a vécu et de comprendre un abandon, sans collecter de données personnelles identifiantes.",
   },
@@ -157,7 +160,7 @@ export const GLOSSARY = {
     label: "Alerte",
     term: "Règle seuil (métrique/route/fenêtre/comparateur) déclenchant un webhook quand elle est franchie.",
     stack:
-      "Évaluée en base (check_alerts), livrée via pg_net (cloud) ou le dispatcher Node ; payload compatible Slack.",
+      "Évaluée en base à intervalle régulier, puis livrée par webhook ; contenu compatible Slack.",
     business:
       "Être prévenu automatiquement (Slack, Teams…) quand un indicateur dérape, sans surveiller l'écran. On passe du curatif au préventif.",
   },
@@ -181,9 +184,9 @@ export const GLOSSARY = {
   },
   healthGrid: {
     label: "Heatmap de santé (jour × heure)",
-    term: "Grille calendaire : une ligne par jour, une colonne par heure ; couleur = part de mesures « good » du créneau (LCP pondéré ×2), vert ≥ 90 %, orange ≥ 50 %, rouge sinon.",
+    term: "Grille calendaire : une ligne par jour, une colonne par heure ; couleur = part de mesures « Bon » du créneau (LCP pondéré ×2), vert ≥ 90 %, orange ≥ 50 %, rouge sinon.",
     stack:
-      "Agrégat SQL par date_trunc('day') × extract(hour) sur 14 jours glissants, mêmes filtres app/appareil ; rendu serveur en CSS grid (zéro JS client).",
+      "Agrégat par jour et par heure sur 14 jours glissants, mêmes filtres d'application et d'appareil ; rendu côté serveur, sans script dans le navigateur.",
     business:
       "La performance « vue de loin » : on repère en un clin d'œil les créneaux récurrents qui dérapent (tous les matins 9 h, les soirs de pic…) plutôt que de fixer une seule valeur instantanée. Idéal pour montrer la tenue dans la durée à un client.",
   },
@@ -197,9 +200,9 @@ export const GLOSSARY = {
   },
   experience: {
     label: "Satisfaction",
-    term: "Ce que les visiteurs déclarent (CSAT : part des avis ≥ 4/5, part de notes 1-2), à côté de ce qu'ils subissent (LCP p75 par page, frustration pour 1 000 sessions), sans score composite.",
+    term: "Ce que les visiteurs déclarent (CSAT : part des avis ≥ 4/5, part de notes 1-2), à côté de ce qu'ils subissent (LCP p75 par page, signaux de frustration par session), sans score composite.",
     stack:
-      "LCP : percentile_cont(0.75) sur rum_metric ; frustration : rum_event 'frustration.rage' / 'frustration.dead' rapportés aux sessions commencées ; CSAT : rum_event name='feedback'. Aucune pondération entre les trois.",
+      "LCP : 75e centile des mesures LCP ; frustration : clics de rage et clics sans réaction rapportés aux sessions commencées ; CSAT : avis envoyés par le widget. Aucune pondération entre les trois.",
     business:
       "Le mesuré (vitesse, agacement) à côté du déclaré (ce que l'utilisateur dit), chacun avec sa source. Une note unique aurait l'air d'une mesure alors qu'elle dépendrait d'un barème choisi au jugé.",
   },
@@ -207,7 +210,7 @@ export const GLOSSARY = {
     label: "CSAT — satisfaction déclarée",
     term: "Part de retours positifs (note ≥ 4/5, ou 👍) sur l'ensemble des feedbacks collectés sur la période.",
     stack:
-      "Feedbacks émis par le widget via MIPRum.track('feedback', {score, comment}), ingérés en rum_event (commentaire scrubbé PII), agrégés côté console.",
+      "Avis émis par le widget via MIPRum.track('feedback', {score, comment}), ingérés comme événements (commentaire expurgé des données personnelles), agrégés côté console.",
     business:
       "Ce que les utilisateurs pensent vraiment, en direct, relié à leur parcours et à la performance qu'ils ont subie. On voit si une lenteur se paie en insatisfaction.",
   },
@@ -216,7 +219,7 @@ export const GLOSSARY = {
     label: "Tendances",
     term: `Droite des moindres carrés sur les 14 derniers jours complets ; échéance de franchissement de la borne « Bon » du LCP (${fmtBorne("LCP", THRESHOLDS.LCP[0])}) écrite seulement si la pente dépasse le bruit. Les erreurs sont suivies en tendance, sans seuil : aucun n'est publié pour ce ratio.`,
     stack:
-      "lib/forecast (pur) sur les séries journalières (rum_metric/rum_pageview/rum_error), jours découpés dans le fuseau de l'app, journée en cours exclue. Régression transparente, dispersion des résidus affichée ; aucune saisonnalité.",
+      "Calculée par la console sur les séries journalières (LCP, pages vues, erreurs), jours découpés dans le fuseau de l'app, journée en cours exclue. Régression transparente, dispersion des résidus affichée ; aucune saisonnalité.",
     business:
       "On voit ce qui dérive et, si la dérive se distingue du bruit, QUAND elle franchira le seuil. Ce n'est pas une prévision : une extrapolation à surveiller, dite avec son incertitude.",
   },
@@ -224,7 +227,7 @@ export const GLOSSARY = {
     label: "Carte d'expérience",
     term: "Graphe de service front→back : pages → API appelées → routes backend, arêtes pondérées par le volume, nœuds colorés par santé et annotés d'une tendance.",
     stack:
-      "Construite depuis rum_span (spans front/back corrélés par trace_id) et rum_metric ; santé = latence p75 + taux d'erreur, tendance = moitié récente vs ancienne de la fenêtre. Rendu SVG maison, aucune dépendance graphe.",
+      "Construite depuis les appels tracés (navigateur et serveur, corrélés par identifiant de trace) et les mesures LCP ; santé = latence p75 + taux d'erreur, tendance = moitié récente contre moitié ancienne de la fenêtre. Rendu SVG maison, sans bibliothèque de graphe.",
     business:
       "La version « expérience » d'une weather map réseau : on voit d'un coup d'œil quelles briques du parcours sont sollicitées, lesquelles souffrent, et lesquelles montent en charge — cartographie, flux et anticipation réunis.",
   },

@@ -11,11 +11,13 @@
 // LE VERDICT RÉEL EST ÉCRIT. « À améliorer » ou « Mauvais », lu par `rating2026` :
 // plus le mot unique « poor » pour tout LCP au-dessus de 2,5 s.
 import Link from "next/link";
+import { TableDefilante } from "@/components/TableDefilante";
 import type { LienSessionsRoute } from "@/lib/breakdowns";
 import { LIBELLE_ETAT_ROBOT } from "@/lib/correlation";
 import { fmtLatency } from "@/lib/format";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
 import { libelleSeauComplet } from "@/lib/series";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 export interface LigneAngleMort {
   cle: string;
@@ -38,7 +40,8 @@ const TD = "px-3 py-2 align-top";
 
 export function TableAnglesMorts({ lignes, avecApp }: { lignes: LigneAngleMort[]; avecApp: boolean }) {
   return (
-    <div className="relative overflow-x-auto">
+    // Défilement signalé ; la zone reste `relative` pour la légende `sr-only`.
+    <TableDefilante label="Angles morts">
       <table className="w-full min-w-max text-sm" data-testid="table-angles-morts">
         <caption className="sr-only">Angles morts : une ligne par heure et par route, écart décroissant</caption>
         <thead className="bg-panel2">
@@ -52,7 +55,7 @@ export function TableAnglesMorts({ lignes, avecApp }: { lignes: LigneAngleMort[]
               </th>
             )}
             <th scope="col" className={TH}>
-              Heure (UTC)
+              Heure
             </th>
             <th scope="col" className={TH}>
               État robot
@@ -87,7 +90,7 @@ export function TableAnglesMorts({ lignes, avecApp }: { lignes: LigneAngleMort[]
                 </th>
                 {avecApp && <td className={`${TD} text-xs text-ink-soft`}>{l.app_id}</td>}
                 <td className={`${TD} whitespace-nowrap text-xs tabular-nums text-ink-soft`}>
-                  {libelleSeauComplet(l.heure, 3600, "UTC")}
+                  {libelleSeauComplet(l.heure, 3600, FUSEAU_AFFICHAGE)}
                 </td>
                 <td className={TD}>{LIBELLE_ETAT_ROBOT[l.etatRobot] ?? l.etatRobot}</td>
                 <td className={`${TD} tabular-nums`}>{fmtLatency(l.latenceRobot)}</td>
@@ -133,6 +136,6 @@ export function TableAnglesMorts({ lignes, avecApp }: { lignes: LigneAngleMort[]
           })}
         </tbody>
       </table>
-    </div>
+    </TableDefilante>
   );
 }

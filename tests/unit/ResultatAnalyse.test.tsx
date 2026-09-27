@@ -32,7 +32,7 @@ vi.mock("@/components/charts/StackedBars", () => ({
   ),
 }));
 
-import { ResultatAnalyse, metaResultat, pointsDeSerie } from "@/components/explorer/ResultatAnalyse";
+import { ResultatAnalyse, metaResultat, pointsDeSerie, provenanceResultat } from "@/components/explorer/ResultatAnalyse";
 import { explorerSource } from "@/lib/explorer-page-params";
 import { parseExplorerPlan, type ExplorerPlan } from "@/lib/analytics-schema";
 import type { ExplorerData, ExplorerMeta } from "@/lib/queries-explorer";
@@ -319,22 +319,59 @@ describe("ResultatAnalyse — Série (W-E5)", () => {
       series: [{ start: seau(0), end: seau(1), key: [], value: 2000, samples: 50 }],
     });
     expect(html).toContain('data-testid="alternative"');
-    expect(texte(html)).toContain("Seau (UTC)");
+    expect(texte(html)).toContain("Période");
   });
 });
 
 describe("ResultatAnalyse — méta (W-E8)", () => {
-  it("jamais vide dès qu'une ligne est lue ; « toutes les apps autorisées » sous app=all", () => {
+  it("jamais vide dès qu'une ligne est lue ; la provenance dit « toutes les applications autorisées » sous app=all", () => {
     const p = plan("dataset=errors&measure=occurrences:sum&viz=value");
-    const morceaux = metaResultat(p, meta(p, { effective_apps: null, rollup: { eligible: false, source: null, reason: "aucun agrégat ne porte cette mesure" } }), {
-      ...DATA,
-      total: 6,
-      samples: 3,
-    });
+    const m = meta(p, { effective_apps: null, rollup: { eligible: false, source: null, reason: "aucun agrégat ne porte cette mesure" } });
+    const morceaux = metaResultat(p, m, { ...DATA, total: 6, samples: 3 });
     expect(morceaux.length).toBeGreaterThan(0);
-    expect(morceaux).toContain("toutes les apps autorisées");
-    expect(morceaux).toContain("3 lignes de population");
-    expect(morceaux).toContain("agrégat non utilisé : aucun agrégat ne porte cette mesure");
+    // L'effectif se nomme par ce qu'il compte : une ligne d'erreur porte plusieurs occurrences.
+    expect(morceaux).toContain("3 signalements d’erreur");
+    const provenance = provenanceResultat(p, m);
+    expect(provenance).toContain("Applications : toutes celles autorisées.");
+    expect(provenance).toContain("Agrégat horaire non utilisé : aucun agrégat ne porte cette mesure.");
+    // Plus de vocabulaire de conception (recette du 26/09/2026).
+    expect(provenance.join(" ")).not.toMatch(/lignes brutes|lignes de population|agrégation (non )?additive/);
+  });
+
+  it("une valeur approchée s'écrit « ≈ » : dans la méta, le total et la provenance", () => {
+    const p = plan("dataset=vitals&measure=value:p75&variant=LCP&viz=toplist&g0=route");
+    const html = renderToStaticMarkup(
+      <ResultatAnalyse
+        plan={p}
+        meta={meta(p, { approximate: true, source: "rollup+raw" })}
+        data={{ ...DATA, total: 93, samples: 186, groups: [{ key: ["/a"], value: 93, samples: 186 }] }}
+        hrefs={HREFS}
+        taille="page"
+      />,
+    );
+    expect(texte(html)).toContain("Total sur toute la population : ≈ 93 ms");
+    expect(texte(html)).toContain("valeur approchée (≈)");
+    expect(texte(html)).toContain("agrégat horaire + données récentes");
+  });
+
+  it("carte de tableau de bord : ni méta en tête ni second cadre, provenance et notes dans un seul pied de page", () => {
+    const p = plan("dataset=vitals&measure=value:p75&variant=LCP&viz=value");
+    const html = renderToStaticMarkup(
+      <ResultatAnalyse
+        plan={p}
+        meta={meta(p)}
+        data={{ ...DATA, total: 2100, samples: 400 }}
+        hrefs={HREFS}
+        taille="carte"
+        notes={["CLS et INP sont rapportés une fois par chargement de page."]}
+      />,
+    );
+    expect(html).not.toContain('data-testid="figure"');
+    expect(html).not.toContain('data-testid="figure-meta"');
+    expect(html.match(/data-testid="a-propos"/g) ?? []).toHaveLength(1);
+    expect(texte(html)).toContain("CLS et INP sont rapportés une fois par chargement de page.");
+    // La valeur et son verdict restent en tête.
+    expect(html).toContain('data-testid="kpi-verdict"');
   });
 
   it("journal : l'ordre par date est écrit, la session est un lien", () => {
@@ -348,7 +385,10 @@ describe("ResultatAnalyse — méta (W-E8)", () => {
         taille="page"
       />,
     );
-    expect(texte(html)).toContain("aucun tri par mesure : le journal est ordonné par date");
+    expect(texte(html)).toContain("lignes ordonnées par date, aucun tri par mesure");
     expect(html).toContain('href="/sessions/sess-1"');
+    // L'instant ISO (UTC) s'écrit à l'heure de Paris, jamais tel quel.
+    expect(texte(html)).toContain("22/09/2026 13:00:00");
+    expect(html).not.toContain("2026-09-22T11:00:00Z");
   });
 });

@@ -25,12 +25,13 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { OngletsInteractions } from "@/components/perf/OngletsInteractions";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import { annotationsDeploiements } from "@/lib/annotations";
 import type { SearchParams } from "@/lib/filters";
 import { type SectionLue } from "@/lib/lecture";
 import { chargerUx } from "@/lib/chargeurs/ux";
 import { chargerEcran } from "@/lib/ecran";
-import { decouperUrlScript, fmtVital } from "@/lib/format";
+import { accord, decouperUrlScript, fmtVital, pluriel } from "@/lib/format";
 import { formater } from "@/lib/fmt-ids";
 import { libelleSeauComplet } from "@/lib/series";
 import { pointsVital } from "@/lib/vue-ensemble";
@@ -55,13 +56,29 @@ import { hrefWithQuery, paramReader, type AnalyticsQuery } from "@/lib/query-con
 import { RATING_CLASS, RATING_HEX, rating2026 } from "@/lib/rating";
 import { ecartP75 } from "@/lib/stats/incertitude";
 import { ecrirePanel, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { RangeeKpi } from "@/components/charts/RangeeKpi";
 
 export const dynamic = "force-dynamic";
 
 /** Question de l'écran (P1, § 5.4). */
 const QUESTION = "Quels gestes échouent, restent sans réponse ou font attendre ?";
 
-const LIBELLES_SIGNAL: Record<TypeSignal, string> = { rage: "Rage clicks", dead: "Dead clicks", error: "Error clicks" };
+// En français (recette du 26/09/2026 : « Rage clicks », « Dead clicks » à l'écran), et
+// les MÊMES mots que le détail de session et la Satisfaction : « sans réaction ».
+const LIBELLES_SIGNAL: Record<TypeSignal, string> = {
+  rage: "Clics de rage",
+  dead: "Clics sans réaction",
+  error: "Clics suivis d'erreur",
+};
+/** Le même signal, au singulier, pour « au moins un clic de rage ». */
+const SIGNAL_SINGULIER: Record<TypeSignal, string> = {
+  rage: "clic de rage",
+  dead: "clic sans réaction",
+  error: "clic suivi d'erreur",
+};
+/** Colonnes du classement : courtes, la tuile porte le nom complet. */
+const COLONNES_SIGNAL = ["De rage", "Sans réaction", "Suivis d'erreur"] as const;
 
 /**
  * Sélecteurs étiquetés dans le nuage (§ 5.4.2) : les cinq points les plus hauts, ceux
@@ -99,6 +116,13 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
   const couvSignaux = ecran.couvSignaux ?? undefined;
   const couvInp = ecran.couvInp ?? undefined;
   const reference = prev ? referencePeriodePrecedente(query.range) : undefined;
+  // Couvertures de la période précédente de la rangée, dites UNE fois au-dessus d'elle.
+  const couverturesRangee = reference
+    ? [
+        totauxPrec === null ? undefined : !totauxPrec.ok ? PRECEDENTE_EN_ECHEC : couvSignaux,
+        vitauxPrec === null ? undefined : !vitauxPrec.ok ? PRECEDENTE_EN_ECHEC : couvInp,
+      ]
+    : [];
 
   // Liens de l'écran vers lui-même : ils ne changent qu'un réglage d'affichage.
   const brut = new URLSearchParams(
@@ -154,7 +178,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
       {/* ── Zone 2 : tuiles (§ 5.4.2). Population : sessions dont le capteur émet. ── */}
       <SectionErreur titre="Signaux de frustration et INP">
         <section aria-label={`Signaux de frustration et INP sur ${label}`} className="mb-4" data-testid="kpi-interactions">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <RangeeKpi couvertures={couverturesRangee} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {!totaux.ok ? (
               <div className="col-span-2 lg:col-span-3">
                 <EchecLecture compact titre="Signaux de frustration" />
@@ -195,7 +219,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
                 href="#elements-inp"
               />
             )}
-          </div>
+          </RangeeKpi>
           <div className="mt-2 space-y-1 text-xs text-ink-soft">
             {capteur?.etat && !capteur.masquer && <EtatSurface etat={capteur.etat} compact />}
             <p>
@@ -212,7 +236,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
       {/* ── Zone 3 : règles de détection, repliées à une ligne ── */}
       <details className="card mb-6 px-4 py-3 text-sm" data-testid="regles-detection">
         <summary className="cursor-pointer select-none font-medium text-ink">
-          Règles de détection : rage, dead et error clicks (constantes du SDK)
+          Règles de détection des clics de rage, sans réaction et suivis d&apos;erreur (réglages du capteur)
         </summary>
         <ul className="mt-2 space-y-1 text-ink-soft">
           {reglesFrustration().map((r) => (
@@ -408,7 +432,7 @@ function HeroRoutes({
         )}
       </nav>
       <ImpactTable
-        titre={`${titre} — part des sessions de la route avec au moins un ${type ? LIBELLES_SIGNAL[type].toLowerCase().replace(/s$/, "") : "signal"}`}
+        titre={`${titre} — part des sessions de la route avec au moins un ${type ? SIGNAL_SINGULIER[type] : "signal"}`}
         tri={tri}
         triHref={{
           gravite: hrefUx({ tri: null }),
@@ -425,18 +449,19 @@ function HeroRoutes({
                 libelle: "Ensemble (toutes routes)",
                 valeurs: {
                   pilote: formater("pct", ensemble.taux),
-                  touchees: `${formater("count", ensemble.touchees)} sur ${formater("count", ensemble.couples)} couples session × route`,
+                  // Une session compte une fois PAR ROUTE vue : la somme n'est pas un nombre de sessions.
+                  touchees: `${formater("count", ensemble.touchees)} sur ${formater("count", ensemble.couples)} (une session comptée par route vue)`,
                 },
               }
         }
         referenceRaison={`aucune session avec vue sur ${label}`}
         lignes={impactLignes}
-        colonnes={["Rage", "Dead", "Error", "Sessions touchées"]}
+        colonnes={[...COLONNES_SIGNAL, "Sessions touchées"]}
         unitePilote="pct"
         volumeLibelle="Sessions de la route"
         groupes={lignes.length}
         tronque={false}
-        notice={`Route normalisée au moment de la vue. Population : sessions dont le capteur émet des signaux de frustration, ${label}. « Ensemble » = sessions touchées sur la route / sessions qui l'ont vue, sommées sur toutes les routes (mêmes couples session × route que les lignes).${type ? ` Le classement ne retient que les ${signaux} ; les colonnes Rage, Dead et Error comptent tous les signaux de la route.` : ""}${faibles > 0 ? ` ${faibles} route(s) vue(s) par moins de 30 sessions, rangée(s) en fin.` : ""}`}
+        notice={`Route normalisée au moment de la vue. Population : sessions dont le capteur émet des signaux de frustration, ${label}. « Ensemble » = sessions touchées sur la route / sessions qui l'ont vue, sommées sur toutes les routes, comme les lignes.${type ? ` Le classement ne retient que les ${signaux} ; les colonnes de clics comptent tous les signaux de la route.` : ""}${faibles > 0 ? ` ${pluriel(faibles, "route vue", "routes vues")} par moins de 30 sessions, ${accord(faibles, "rangée", "rangées")} en fin.` : ""}`}
       />
       <p className="mt-2 text-xs text-ink-soft">
         Les {signaux} eux-mêmes, route par route :{" "}
@@ -493,16 +518,16 @@ function SerieInp({
         <>
           <span>{formater("count", mesures)} mesures INP</span>
           <span>{label}</span>
-          <span>seaux de {seau} (UTC)</span>
+          <span>tranches de {seau}</span>
         </>
       }
-      lecture="L'INP p75 du seau, sur les bandes Bon / À améliorer / Mauvais de web.dev (seuils lus dans le code, jamais recopiés). Un seau sans interaction mesurée est un trou, pas un zéro. Un clic sur un seau zoome sur sa plage ; les traits verticaux sont les déploiements."
+      lecture="L'INP p75 de chaque tranche, sur les bandes Bon / À améliorer / Mauvais de web.dev (seuils lus dans le code, jamais recopiés). Une tranche sans interaction mesurée est un trou, pas un zéro. Un clic sur une tranche zoome sur sa plage ; les traits verticaux sont les déploiements."
       alternative={
         mesures > 0
           ? {
-              legende: `INP p75 par seau de ${seau} (UTC)`,
-              colonnes: ["Seau (UTC)", "INP p75", "Mesures"],
-              lignes: points.map((p) => [libelleSeauComplet(p.t, seauSecondes, "UTC"), formater("ms", p.p75), p.n]),
+              legende: `INP p75 par tranche de ${seau}`,
+              colonnes: ["Période", "INP p75", "Mesures"],
+              lignes: points.map((p) => [libelleSeauComplet(p.t, seauSecondes, FUSEAU_AFFICHAGE), formater("ms", p.p75), p.n]),
             }
           : undefined
       }
@@ -516,10 +541,10 @@ function SerieInp({
         annotations={annotations.annotations}
         annotationsIndisponibles={annotations.indisponible ?? undefined}
         seauSecondes={seauSecondes}
-        fuseau="UTC"
+        fuseau={FUSEAU_AFFICHAGE}
         zoomHref={zoom}
         hauteur={240}
-        ariaLabel={`INP p75 par seau de ${seau}, ${label}`}
+        ariaLabel={`INP p75 par tranche de ${seau}, ${label}`}
       />
     </Figure>
   );
@@ -566,37 +591,41 @@ function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof
         etiquettes={ETIQUETTES_INP}
         ariaLabel={`Éléments responsables de l'INP : ${pts.length} éléments, nombre d'interactions × INP p75, ${label}`}
       />
-      {/* `relative` sur le conteneur défilant : sans ancêtre positionné, le `sr-only`
-          de la légende (position: absolute) se place par rapport à la PAGE et l'élargit. */}
-      <div className="relative mt-4 overflow-x-auto" data-testid="table-elements-inp">
+      {/* Défilement signalé. La zone de TableDefilante est `relative` : sans ancêtre
+          positionné, le `sr-only` de la légende (position: absolute) se place par
+          rapport à la PAGE et l'élargit. */}
+      <TableDefilante className="mt-4" testId="table-elements-inp" label="Éléments responsables de l'INP">
         <table className="w-full text-sm">
           <caption className="sr-only">Éléments responsables de l&apos;INP sur {label}</caption>
           <thead className="bg-panel2">
             <tr>
-              <th scope="col" className="th">Élément (interactionTarget)</th>
+              <th scope="col" className="th">Élément cliqué</th>
               <th scope="col" className="th text-right">Interactions</th>
-              <th scope="col" className="th text-right">INP p75</th>
-              <th scope="col" className="th text-right">Pire</th>
+              <th scope="col" className="th whitespace-nowrap text-right">INP p75</th>
+              <th scope="col" className="th whitespace-nowrap text-right">Pire</th>
             </tr>
           </thead>
           <tbody>
             {inp.data.map((o) => (
               <tr key={o.target} className="border-t border-line/60">
-                <td className="max-w-xs truncate px-4 py-2 font-mono text-xs text-ink" title={o.target}>
+                {/* Plus étroite sous 640 px : à 390 px, le sélecteur poussait hors de l'écran
+                    les deux seuls chiffres utiles, INP p75 et « Pire ». */}
+                <td className="max-w-[9rem] truncate px-4 py-2 font-mono text-xs text-ink sm:max-w-xs" title={o.target}>
                   {o.target}
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums text-ink-soft">{o.n.toLocaleString("fr-FR")}</td>
-                <td className="px-4 py-2 text-right">
+                {/* `whitespace-nowrap` : « 320 ms » se coupait sur deux lignes. */}
+                <td className="whitespace-nowrap px-4 py-2 text-right">
                   <InpCell v={o.p75} />
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="whitespace-nowrap px-4 py-2 text-right">
                   <InpCell v={o.worst} />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
     </Figure>
   );
 }
@@ -615,20 +644,41 @@ function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof
  * blocage cumulé. Les barres portent la série principale, rien d'autre.
  */
 function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<ScriptBloquant[]>; label: string }) {
-  const titre = "Scripts qui bloquent le fil principal (Long Animation Frames)";
+  const titre = "Scripts qui bloquent le fil principal (trames longues)";
   if (!scripts.ok) return <Figure titre={titre} id="scripts-bloquants" etat={{ kind: "erreur", titre }} />;
 
+  // Un script intégré à la page n'a pas de fichier : la lecture le regroupe par
+  // fonction sur toutes les pages (recette du 26/09/2026 : la même fonction
+  // occupait huit lignes, une par URL de page), ses routes passent en détail.
+  const routesDe = (s: ScriptBloquant) =>
+    s.nbRoutes === 0
+      ? null
+      : s.nbRoutes === 1
+        ? `route ${s.routes[0]}`
+        : `${s.nbRoutes.toLocaleString("fr-FR")} routes (${s.routes.join(", ")}${s.nbRoutes > s.routes.length ? "…" : ""})`;
+  const fonction = (s: ScriptBloquant) => s.quoi ?? "exécution au chargement";
   const lignes: RankDatum[] = scripts.data.map((s) => {
+    const trames = `${pluriel(s.n, "trame")} · pire ${formater("ms", s.worstMs)}`;
+    if (s.url === null) {
+      const routes = routesDe(s);
+      return {
+        label: s.quoi ?? "Script de la page, au chargement",
+        value: s.totalMs,
+        display: formater("ms", s.totalMs),
+        title: `Script intégré à la page — ${fonction(s)}${routes ? ` — ${routes}` : ""}`,
+        sub: `script intégré à la page${routes ? ` · ${routes}` : ""} · ${trames}`,
+      };
+    }
     // Nom de fichier en évidence, hôte en sous-texte : une troncature de fin n'aurait
     // montré que le préfixe, identique pour tous les scripts du même site. L'URL
     // entière et la fonction restent en infobulle de la ligne.
     const { fichier, hote } = decouperUrlScript(s.url);
     return {
-      label: fichier,
+      label: `${fichier} · ${fonction(s)}`,
       value: s.totalMs,
       display: formater("ms", s.totalMs),
-      title: `${s.url} — ${s.quoi}`,
-      sub: `${hote ? `${hote} · ` : ""}${s.quoi} · ${formater("count", s.n)} frames · pire ${formater("ms", s.worstMs)}`,
+      title: `${s.url} — ${fonction(s)}`,
+      sub: `${hote ? `${hote} · ` : ""}${trames}`,
     };
   });
 
@@ -638,22 +688,22 @@ function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<ScriptBloqua
       id="scripts-bloquants"
       meta={
         <>
-          <span>{formater("count", scripts.data.length)} couples script × fonction, 20 au plus</span>
+          <span>{pluriel(scripts.data.length, "paire script et fonction", "paires script et fonction")}, 20 au plus</span>
           <span>{label}</span>
           <span>classement par blocage cumulé</span>
         </>
       }
       etat={
         lignes.length === 0
-          ? { kind: "vide", population: "frame bloquante attribuée à un script", plage: label }
+          ? { kind: "vide", population: "trame bloquante attribuée à un script", plage: label }
           : undefined
       }
       lecture={
         <>
           Classé par blocage <strong>cumulé</strong>, pas par pire cas : un script qui bloque 400 ms une fois est un
           incident, un script qui bloque 60 ms à chaque frappe est le problème — et c&apos;est le second qui décide de
-          l&apos;INP. Un cumul de visiteurs différents n&apos;est le temps vécu de personne. L&apos;API Long Animation
-          Frames n&apos;existe que sur Chromium : les visiteurs Safari et Firefox n&apos;en produisent pas, et une
+          l&apos;INP. Un cumul de visiteurs différents n&apos;est le temps vécu de personne. La mesure des trames
+          longues n&apos;existe que sur Chromium : les visiteurs Safari et Firefox n&apos;en produisent pas, et une
           absence de ligne ne veut donc pas dire qu&apos;ils n&apos;attendent pas.
         </>
       }
@@ -661,10 +711,11 @@ function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<ScriptBloqua
         lignes.length > 0
           ? {
               legende: `Blocage attribué par script et par fonction, ${label}`,
-              colonnes: ["Script", "Fonction / invocation", "Frames", "Blocage cumulé", "Pire"],
+              colonnes: ["Script", "Fonction / invocation", "Routes", "Trames", "Blocage cumulé", "Pire"],
               lignes: scripts.data.map((s) => [
-                s.url,
-                s.quoi,
+                s.url ?? "intégré à la page",
+                fonction(s),
+                routesDe(s) ?? "—",
                 s.n,
                 formater("ms", s.totalMs),
                 formater("ms", s.worstMs),

@@ -68,7 +68,10 @@ describe("MatriceCohortes", () => {
   it("échelle SEQUENTIELLE : aucune couleur de verdict", () => {
     for (const hex of Object.values(RATING_HEX)) expect(html.toLowerCase()).not.toContain(hex.toLowerCase());
     expect(html).not.toMatch(/rgba\(16, 185, 129/);
-    expect(texte(html)).toContain("sans verdict");
+    // La légende dit ce que mesure la couleur, en français courant (recette du
+    // 26/09/2026 : « Part revenue (intensité, sans verdict) »).
+    expect(texte(html)).toContain("Part des visiteurs revenus :");
+    expect(texte(html)).not.toContain("sans verdict");
   });
 
   it("la zone défilante est positionnée : ses sr-only n'élargissent pas la page (piège 16)", () => {

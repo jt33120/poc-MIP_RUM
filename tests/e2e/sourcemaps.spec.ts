@@ -202,8 +202,10 @@ test("admin : jeton de CI, upload direct, manifeste, stack source et révocation
   await expect(page.getByTestId("code-context")).toContainText('throw new TypeError("panier sans lignes");');
 
   await page.goto(`${CONSOLE}/admin/sourcemaps?app=${APP}`);
-  page.once("dialog", (dialog) => dialog.accept());
+  // Deux gestes : le déclencheur déplie l'encadré qui nomme le jeton, puis on confirme.
   await page.getByRole("button", { name: "Révoquer le jeton CI E2E" }).click();
+  await expect(page.getByRole("group", { name: /Révoquer le jeton «\s*CI E2E\s*»/ })).toBeVisible();
+  await page.getByRole("button", { name: "Révoquer le jeton", exact: true }).click();
   await expect(page.getByRole("row", { name: /CI E2E/ })).toContainText("révoqué");
   const apresRevocation = await request.post(`${INGEST}/v1/sourcemaps`, { data: corps, headers: { authorization: `Bearer ${secret}` } });
   expect(apresRevocation.status()).toBe(401);

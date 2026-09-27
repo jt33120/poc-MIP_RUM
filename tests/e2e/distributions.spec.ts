@@ -201,8 +201,8 @@ test("heatmap : aucune couleur de verdict ; une case ouvre son heure en instants
   expect(Date.parse(to) - Date.parse(from)).toBeLessThanOrEqual(2 * 3_600_000); // 2 h : recul d'heure
   expect(cible.searchParams.get("period")).toBeNull();
   expect(cible.searchParams.get("app")).toBe(APP_ID);
-  // L'annonce de la case dit les deux fuseaux.
-  expect(await cases.first().getAttribute("title")).toMatch(/\(.+ UTC\) : /);
+  // L'annonce de la case nomme le fuseau d'affichage.
+  expect(await cases.first().getAttribute("title")).toMatch(/heure de Paris\) : /);
 
   // Le clavier suffit, et l'écran d'arrivée accepte la plage (pas de refus de filtre).
   await cases.first().focus();
@@ -210,8 +210,8 @@ test("heatmap : aucune couleur de verdict ; une case ouvre son heure en instants
   await page.waitForURL((u) => u.searchParams.get("from") === from, { timeout: 15_000 });
   await expect(page.locator("h1").first()).toHaveText(/Vue d'ensemble/);
   await expect(page.getByTestId("impact-table")).toBeVisible();
-  // L'écran d'arrivée dit la plage dans les deux fuseaux (R-T).
-  await expect(page.getByTestId("plage-deux-fuseaux")).toContainText(/\d{2}:\d{2}-\d{2}:\d{2} .+ \(.+ UTC\)/);
+  // L'écran d'arrivée dit la plage, fuseau nommé (R-T).
+  await expect(page.getByTestId("plage-deux-fuseaux")).toContainText(/\d{2}:\d{2}-\d{2}:\d{2}.*heure de Paris\)/);
 });
 
 test("`/` : aucun débordement à 390, 768 et 1440 px", async ({ page }) => {

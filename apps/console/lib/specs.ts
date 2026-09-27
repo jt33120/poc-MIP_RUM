@@ -12,8 +12,7 @@
 // D'où trois dispositifs, tous vérifiés par tests/unit/specs.test.ts :
 //
 //   1. Ce qui existe ailleurs est IMPORTÉ, jamais recopié — l'hébergement vient
-//      de lib/legal.ts (les mêmes chaînes que /legal/confidentialite), l'adresse du
-//      serveur MCP de lib/mcp-public.ts, les mesures non couvertes de
+//      de lib/legal.ts (les mêmes chaînes que /legal/confidentialite), les mesures non couvertes de
 //      lib/dashboard-blocs.ts (celles-là mêmes que montre la roue des blocs).
 //   2. Ce qui décrit le dépôt porte le CHEMIN qui le prouve (`preuve`,
 //      `module`) : le test ouvre le fichier. Un service renommé, un module
@@ -33,8 +32,7 @@ import {
   koTexte,
 } from "./sdk-poids";
 import { HOSTS } from "./legal";
-import { MCP_ORIGINE } from "./mcp-public";
-import { INGEST_SUPPRIME_LE, MIGRATIONS_CONSTATEES, TOPOLOGIE_RELEVEE } from "./presentation-topologie";
+import { MIGRATIONS_CONSTATEES, TOPOLOGIE_RELEVEE } from "./presentation-topologie";
 import { RN_VERSION } from "./versions";
 
 export type Statut = "atteint" | "partiel" | "manque" | "non-mesure";
@@ -87,7 +85,12 @@ export interface GroupeInfra {
 export const INFRA: GroupeInfra[] = [
   {
     titre: "Hébergement",
-    sous: "Les mêmes chaînes que la politique de confidentialité (lib/legal.ts) — elles ne peuvent pas diverger.",
+    // PAS AFFICHÉ DANS LES SPÉCIFICATIONS (recette du 26/09/2026) : l'hébergement se lit
+    // une seule fois, dans le tableau « Où sont les données, et sous quel droit » de la
+    // présentation (components/presentation/Hebergement.tsx) ; l'onglet y renvoie. Le
+    // groupe reste ici parce qu'il porte la ligne « Souveraineté », que lisent
+    // lib/presentation-topologie.ts et ses tests.
+    sous: "Les mêmes chaînes que la politique de confidentialité — elles ne peuvent pas diverger.",
     lignes: [
       // Importées de lib/legal.ts, qui alimente aussi /legal/confidentialite : une
       // seule rédaction de l'hébergement. Les retaper ici aurait recréé la
@@ -103,7 +106,7 @@ export const INFRA: GroupeInfra[] = [
     ],
   },
   {
-    titre: "Backend — collecteur sur Vercel, travaux planifiés et MCP sur Railway",
+    titre: "Services — la collecte dans la console, les travaux planifiés et le serveur MCP à part",
     // La date est celle du relevé que portent docs/TOPOLOGIE_BACKEND.md et le document
     // de couverture (API Railway, le jour de la suppression d'`ingest`), lue dans la
     // même constante que la légende du chemin de la mesure : tests/unit/presentation-
@@ -111,28 +114,33 @@ export const INFRA: GroupeInfra[] = [
     // Les quatre autres services sont déclarés dans `.railway/railway.ts` (groupes
     // 1 · Collecte, 2 · Restitution, 3 · Traitements) ; tant que l'opérateur n'a pas
     // appliqué cette déclaration, ils n'existent pas sur Railway (relu le 26/09/2026).
-    sous: `La collecte passe par la route de la console, sur Vercel. Projet Railway ${RAILWAY.projet}, environnement production : deux services, scheduler et mcp (relevé le ${TOPOLOGIE_RELEVEE.railway} par l'API Railway). Le dépôt en déclare quatre autres — collector, api, console-api, notifier — qui ne sont pas encore créés : leur code est livré, il ne tourne pas. Ni framework, ni serverless : du Node et du PostgreSQL, dans des images construites depuis ce dépôt.`,
+    sous: `Les mesures arrivent par la console. Deux services tournent à part en production : les travaux planifiés et le serveur MCP (relevé le ${TOPOLOGIE_RELEVEE.railway}). Quatre autres sont livrés dans le code : le collecteur autonome, décrit ci-dessous, une API, un service de console et un service de notification. Ni framework, ni fonction à la demande : du Node et du PostgreSQL, dans des images construites depuis le code source.`,
     lignes: [
       {
-        k: "ingest",
+        k: "Collecteur autonome",
         // Supprimé de Railway (INGEST_SUPPRIME_LE, docs/TOPOLOGIE_BACKEND.md) : aucun domaine
         // public ne pointait dessus, et son seul rôle réel — les migrations — était
         // déjà repris par le scheduler. Le receveur reste dans le dépôt, et revient
         // comme service `collector` de `.railway/railway.ts`, que la console relaiera
         // (lib/ingest-relay.ts, drapeau `ingest_relay_pct`, 0 par défaut — ADR 0005).
-        v: `Receveur OTLP autonome (services/collector/server.mjs), construit et démarré par la CI. Le dépôt le déclare comme service Railway collector, pas encore créé, et le relais de la console vers lui est livré éteint : en production, le trafic passe par la route de la console. L'ancien service Railway ingest, qui l'exécutait sans domaine public, a été supprimé le ${INGEST_SUPPRIME_LE}.`,
+        // La SEULE place où le dossier raconte ce service (contre-recette du 26/09/2026 :
+        // quatre fois) ; « Le chemin de la mesure » et le point R6 y renvoient.
+        v: "Un receveur OpenTelemetry autonome, construit et démarré à chaque intégration continue, mais pas encore mis en service. Le relais de la console vers lui est livré éteint : en production, les mesures arrivent par la console. La résolution du pays par adresse IP l'attend (voir « Ce qui reste »).",
         s: "partiel",
         preuve: "services/collector/server.mjs",
       },
       {
-        k: "scheduler",
-        v: `Seul migrateur : lance les migrations au pré-déploiement — vérifié le ${MIGRATIONS_CONSTATEES.le} sur un vrai déploiement (${MIGRATIONS_CONSTATEES.deploiement} : « migrations à jour », aucune en attente ce jour-là). Puis les travaux planifiés : évaluation des alertes, SLO, sondes uptime, purge de rétention, comptage du volume. Bail d'exclusion en base (scheduler_lease) pour qu'une seule instance travaille à la fois.`,
+        k: "Travaux planifiés",
+        v: `Seul service qui modifie le schéma : il applique les migrations avant chaque déploiement — vérifié le ${MIGRATIONS_CONSTATEES.le} sur un vrai déploiement. Puis les travaux planifiés : évaluation des alertes et des objectifs de service, sondes de disponibilité, purge de rétention, comptage du volume. Un verrou en base garantit qu'une seule instance travaille à la fois.`,
         s: "atteint",
         preuve: "services/scheduler/worker.mjs",
       },
       {
-        k: "mcp",
-        v: `Serveur Model Context Protocol, lecture seule, ouvert sur ${MCP_ORIGINE}. Image SÉPARÉE, volontairement sans « pg » ni DATABASE_URL : c'est le seul service pilotable par un modèle de langage, il ne doit pas pouvoir atteindre la base.`,
+        k: "Serveur MCP",
+        // Sans son adresse (recette du 26/09/2026) : une URL d'infrastructure sur une page
+        // publique dessine la carte de la plateforme. Les clients la trouvent dans
+        // « API et MCP », derrière la connexion.
+        v: "Serveur Model Context Protocol en lecture seule, pour interroger la console depuis un assistant d'IA. Son image n'a volontairement aucun accès à la base : c'est le seul service qu'un modèle de langage pilote.",
         s: "atteint",
         preuve: "services/mcp/http.mjs",
       },
@@ -141,36 +149,38 @@ export const INFRA: GroupeInfra[] = [
         // Six Dockerfiles (services/*/Dockerfile) ; .github/workflows/docker-smoke.yml
         // les construit et les démarre tous, et vérifie l'uid et l'absence de `pg`
         // dans l'image mcp.
-        v: "Un Dockerfile par service — collector, api, console-api, mcp, scheduler, notifier —, chacun avec sa commande de démarrage explicite, sur un Node épinglé par empreinte et sans droits root. Un test de CI construit et démarre chaque image, et vérifie que « pg » est absent de celle du serveur MCP. Seules les images du scheduler et de mcp tournent en production.",
+        v: "Une image conteneur par service, chacune avec sa commande de démarrage explicite, sur une version de Node figée et sans droits d'administration. L'intégration continue construit et démarre chaque image, et vérifie que celle du serveur MCP ne sait pas joindre la base. Seules les images des travaux planifiés et du serveur MCP tournent en production.",
         s: "atteint",
         preuve: "services/mcp/Dockerfile",
       },
       {
         k: "Déploiement",
-        v: `Branche ${RAILWAY.branche}, région ${RAILWAY.region} (Amsterdam) — relevé le ${RAILWAY.releve} dans la console Railway (DEPLOY.md, « Région et branche »).`,
+        // La région n'est pas redite ici : elle est dans le tableau d'hébergement de la
+        // présentation, la seule place où l'hébergement s'écrit.
+        v: `Déploiement automatique depuis la branche principale — relevé le ${RAILWAY.releve} chez l'hébergeur.`,
         s: "atteint",
       },
     ],
   },
   {
     titre: "Capteurs posés chez le client",
-    sous: "Deux façons de mesurer : une balise dans la page, ou une extension sur le poste. Même SDK, même pipeline.",
+    sous: "Deux façons de mesurer : une balise dans la page, ou une extension sur le poste. Même SDK, même chaîne de traitement.",
     lignes: [
       {
-        k: "Snippet SDK",
+        k: "SDK web",
         v: `${koTexte(SDK_GZIP_KO)} ko gzip pour le cœur — mesuré sur le bundle publié, contre un budget de ${SDK_BUDGET_KO} ko que le build refuse de dépasser.`,
         s: "atteint",
         preuve: "apps/console/public/mip-rum.js",
       },
       {
         k: "Modules à la demande",
-        v: `Le rejeu (${koTexte(REPLAY_GZIP_KO)} ko gzip, rrweb) et le widget d'avis (${koTexte(FEEDBACK_GZIP_KO)} ko gzip) sont des bundles SÉPARÉS, chargés seulement si l'app les active. Le cœur ne les porte pas.`,
+        v: `Le rejeu (${koTexte(REPLAY_GZIP_KO)} ko gzip) et le widget d'avis (${koTexte(FEEDBACK_GZIP_KO)} ko gzip) sont des modules séparés, chargés seulement si l'application les active. Le cœur ne les porte pas.`,
         s: "atteint",
         preuve: "apps/console/public/mip-rum-replay.js",
       },
       {
         k: "Extension navigateur",
-        v: `Manifest V3, version ${EXT_VERSION}, Chrome et Edge. Quatre permissions (${EXT_PERMISSIONS.join(", ")}) et JAMAIS <all_urls> : le capteur ne s'active que sur les domaines d'un registre déclaré côté MIP.`,
+        v: `Manifest V3, version ${EXT_VERSION}, Chrome et Edge. Quatre permissions (${EXT_PERMISSIONS.join(", ")}), jamais l'accès à tous les sites : le capteur ne s'active que sur les domaines déclarés dans un registre tenu par MIP.`,
         s: "atteint",
         preuve: "apps/extension/manifest.json",
       },
@@ -178,7 +188,7 @@ export const INFRA: GroupeInfra[] = [
         k: "Compte développeur Chrome",
         // Le point que l'utilisateur voulait voir écrit noir sur blanc : le kit
         // est prêt, la marche restante n'est pas technique.
-        v: "Inexistant. Le kit de soumission est prêt (paquet, visuels, textes, justification de chaque permission, page de confidentialité publique), mais aucun compte n'est ouvert et les 5 $ d'inscription ne sont pas payés. L'extension ne s'installe donc qu'en sideload ou par politique d'entreprise — pas pour le grand public.",
+        v: "Pas encore ouvert. Le dossier de soumission au Chrome Web Store est prêt (paquet, visuels, textes, justification de chaque permission, page de confidentialité publique), mais l'extension n'y est pas publiée : elle s'installe par politique d'entreprise ou manuellement, pas pour le grand public.",
         s: "manque",
         preuve: "docs/CHROME_WEB_STORE.md",
       },
@@ -200,7 +210,10 @@ export const INFRA: GroupeInfra[] = [
         // îlot client. Elle est le SEUL de la vitrine — les onglets de cette
         // section eux-mêmes sont en CSS pur. On dit donc l'exception plutôt que
         // de l'omettre.
-        v: "Next.js 15 / React 19, rendu serveur. Sur la vitrine publique, la bascule clair/sombre est le seul îlot client : cette page, onglets de cette section compris, ne coûte pas une ligne de JavaScript applicatif.",
+        // « seul îlot client » n'est plus vrai depuis la recette du 26/09/2026 : les
+        // tableaux larges défilent dans un cadre qui mesure son débordement. On dit donc
+        // ce qui s'exécute, pas une absence.
+        v: "Next.js 15 / React 19, rendu côté serveur. Les pages publiques n'envoient au navigateur que de petits îlots interactifs — la bascule clair/sombre, le défilement des tableaux larges — ; les onglets de ces spécifications sont en CSS, sans script.",
         s: "atteint",
         preuve: "apps/console/app/presentation/page.tsx",
       },
@@ -213,7 +226,7 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "Migrations",
-        v: "Registre schema_migration à empreintes, chaque fichier dans sa propre transaction, adoption d'une base existante sans rejeu. Rejouées en CI contre un PostgreSQL vierge.",
+        v: "Registre des migrations à empreintes, chaque fichier dans sa propre transaction, adoption d'une base existante sans rejeu. Rejouées à chaque intégration continue contre une base vierge.",
         s: "atteint",
         preuve: "packages/db/migrate.mjs",
       },
@@ -222,7 +235,7 @@ export const INFRA: GroupeInfra[] = [
         // Une écriture : POST /api/v1/deploys (app/api/v1/deploys/route.ts). Un jeton
         // de CONSOLE_API_TOKENS vaut toutes les applications, ou celles qu'il nomme
         // après « @ » (lib/api/auth.ts, parseTokenConfig).
-        v: "API v1 de lecture — sa seule écriture est le marqueur de déploiement qu'envoie une CI —, jeton porteur limitable à certaines applications, spécification OpenAPI dont la liste des endpoints est DÉRIVÉE (l'annonce ne peut plus décrire une route qui n'existe pas).",
+        v: "API v1 de lecture — sa seule écriture est le marqueur de déploiement qu'envoie une chaîne d'intégration continue —, jeton limitable à certaines applications, description OpenAPI dérivée des routes elles-mêmes (elle ne peut pas décrire une route qui n'existe pas).",
         s: "atteint",
         preuve: "apps/console/lib/api/openapi.ts",
       },
@@ -264,7 +277,7 @@ export const MESURES: Mesure[] = [
     table: "rum_metric",
     module: "packages/rum-sdk/src/navtiming.ts",
     detail:
-      "Redirection, DNS, TCP, TLS, requête, réponse. C'est la CAUSE d'un TTFB lent, pas seulement son symptôme : trois problèmes opposés produisent le même TTFB. Sans note de qualité — Google ne publie pas de seuil par phase.",
+      "Redirection, DNS, TCP, TLS, requête, réponse. C'est la cause d'un TTFB lent, pas seulement son symptôme : trois problèmes opposés produisent le même TTFB. Sans note de qualité — Google ne publie pas de seuil par phase.",
   },
   {
     quoi: "Pages vues et routes",
@@ -272,7 +285,7 @@ export const MESURES: Mesure[] = [
     table: "rum_pageview",
     module: "packages/rum-sdk/src/index.ts",
     detail:
-      "Route normalisée (les identifiants deviennent :id, sinon chaque page produirait sa propre statistique), navigations SPA comprises — pushState, replaceState et retour arrière. La normalisation du SDK ne couvre que les entiers, les UUID et les hexadécimaux longs : depuis le 10/09/2026 chaque application peut ajouter ses propres règles (`route_pattern`, expressions POSIX), appliquées EN BASE — donc quel que soit le chemin d'ingestion — et rejouables sur l'historique pour que la série d'une route ne se coupe pas en deux le jour où la règle est écrite. Au-delà de 2 000 routes distinctes par application, les routes inédites sont regroupées sous `(other)` et /admin/health le signale : la dimension cesse de croître, et la perte de détail est visible.",
+      "Route normalisée (les identifiants deviennent :id, sinon chaque page produirait sa propre statistique), navigations SPA comprises — pushState, replaceState et retour arrière. La normalisation du SDK ne couvre que les entiers, les UUID et les hexadécimaux longs : depuis le 10/09/2026 chaque application peut ajouter ses propres règles, appliquées en base — donc quel que soit le chemin d'arrivée des mesures — et rejouables sur l'historique pour que la série d'une route ne se coupe pas en deux le jour où la règle est écrite. Au-delà de 2 000 routes distinctes par application, les routes inédites sont regroupées sous « (other) » et l'écran de santé interne le signale : la dimension cesse de croître, et la perte de détail est visible.",
   },
   {
     quoi: "Sessions pseudonymes",
@@ -280,7 +293,7 @@ export const MESURES: Mesure[] = [
     table: "rum_session",
     module: "packages/rum-sdk/src/index.ts",
     detail:
-      "Type d'appareil, navigateur déduit du user-agent, pays déduit du FUSEAU HORAIRE — et à défaut de l'en-tête pays que pose le CDN, quand il y en a un devant. Aucune adresse IP n'est stockée côté MIP ; « ni même résolue » serait faux, puisque c'est bien une résolution IP→pays que fait le CDN dans ce second cas. Le visiteur porte un identifiant TIRÉ AU HASARD par le SDK (attribut `mip.visitor_id`), persisté dans le stockage local du navigateur : ni cookie, ni dérivation du terminal, effaçable par le visiteur. Jusqu'au 09/09/2026 c'était une empreinte de user-agent+langue+résolution+fuseau — donc partagée par tout un parc homogène ; les sessions d'avant restent marquées comme telles et sortent des comptes de personnes. Source de collecte (balise ou extension), version déployée, qualité du lien.",
+      "Type d'appareil, navigateur déduit du user-agent, pays déduit du fuseau horaire — et à défaut de l'en-tête pays que pose le CDN, quand il y en a un devant. Aucune adresse IP n'est stockée côté MIP ; « ni même résolue » serait faux, puisque c'est bien une résolution IP→pays que fait le CDN dans ce second cas. Le visiteur porte un identifiant tiré au hasard par le SDK, gardé dans le stockage local du navigateur : ni cookie, ni dérivation du terminal, effaçable par le visiteur. Les sessions antérieures au 09/09/2026, identifiées par une empreinte du terminal partagée par tout un parc homogène, restent marquées comme telles et sortent des comptes de personnes. Source de collecte (balise ou extension), version déployée, qualité du lien.",
   },
   {
     quoi: "Erreurs JavaScript",
@@ -288,7 +301,7 @@ export const MESURES: Mesure[] = [
     table: "rum_error",
     module: "packages/rum-sdk/src/errors.ts",
     detail:
-      "Erreurs non capturées et promesses rejetées, groupées par empreinte (type, message, première frame) pour qu'un même bug ne compte qu'une fois. Message et pile nettoyés de la PII à l'émission ET à l'ingestion.",
+      "Erreurs non capturées et promesses rejetées, groupées par empreinte (type, message, première frame) pour qu'un même bug ne compte qu'une fois. Message et pile nettoyés des données personnelles à l'émission ET à l'ingestion.",
   },
   {
     quoi: "Erreurs navigateur sur option",
@@ -296,7 +309,7 @@ export const MESURES: Mesure[] = [
     table: "rum_error",
     module: "packages/rum-sdk/src/error-capture.ts",
     detail:
-      "Activées voie par voie (captureErrors), jamais par défaut : console.error, ressources qui échouent à charger, violations CSP, appels fetch/XHR en échec, en délai dépassé ou en 5xx — les 4xx et les abandons volontaires seulement sur demande. Chaque voie a son plafond par page, et ses pertes sont comptées dans le navigateur, pas encore à l'ingestion. Ni query string, ni corps, ni en-tête de requête ; ni l'extrait inline d'une violation CSP ; aucun statut HTTP deviné pour une ressource.",
+      "Activées voie par voie, jamais par défaut : console.error, ressources qui échouent à charger, violations CSP, appels fetch/XHR en échec, en délai dépassé ou en 5xx — les 4xx et les abandons volontaires seulement sur demande. Chaque voie a son plafond par page, et ses pertes sont comptées dans le navigateur, pas encore à l'ingestion. Ni query string, ni corps, ni en-tête de requête ; ni l'extrait inline d'une violation CSP ; aucun statut HTTP deviné pour une ressource.",
   },
   {
     quoi: "Ressources lentes",
@@ -312,7 +325,7 @@ export const MESURES: Mesure[] = [
     table: "rum_longtask",
     module: "packages/rum-sdk/src/loaf.ts",
     detail:
-      "Long Animation Frames : non seulement QUE le fil a bloqué, mais QUEL SCRIPT le tenait — URL, nom de fonction, et ce qui l'a invoqué (un clic, un minuteur). C'est le chaînon qui manquait entre « INP à 900 ms » et un correctif. API Chromium ; ailleurs le SDK retombe sur les Long Tasks, qui disent la durée sans la cause.",
+      "Long Animation Frames : non seulement que le fil a bloqué, mais quel script le tenait — URL, nom de fonction, et ce qui l'a invoqué (un clic, un minuteur). C'est le chaînon qui manquait entre « INP à 900 ms » et un correctif. API Chromium ; ailleurs le SDK retombe sur les Long Tasks, qui disent la durée sans la cause.",
   },
   {
     quoi: "Tâches longues (repli)",
@@ -320,7 +333,7 @@ export const MESURES: Mesure[] = [
     table: "rum_longtask",
     module: "packages/rum-sdk/src/longtasks.ts",
     detail:
-      "Les blocages de plus de 50 ms, sans attribution. Utilisé UNIQUEMENT là où Long Animation Frames n'existe pas : les deux ensemble compteraient deux fois le même blocage. L'API est elle-même absente de Safari.",
+      "Les blocages de plus de 50 ms, sans attribution. Utilisé uniquement là où Long Animation Frames n'existe pas : les deux ensemble compteraient deux fois le même blocage. L'API est elle-même absente de Safari.",
   },
   {
     quoi: "Fil d'Ariane",
@@ -331,12 +344,12 @@ export const MESURES: Mesure[] = [
       "Les clics et navigations qui précèdent une erreur, dans l'ordre — ce qui manquait pour reproduire un bug. Des libellés, jamais des valeurs saisies.",
   },
   {
-    quoi: "Appels réseau et tracing distribué",
+    quoi: "Appels réseau et traces distribuées",
     otlp: "http.client",
     table: "rum_span",
     module: "packages/rum-sdk/src/apispans.ts",
     detail:
-      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un ARBRE enraciné. Elle n'est pas encore une CHRONOLOGIE — un span part avec un début et une fin sur la même milliseconde, et la durée réelle ne voyage que dans un attribut propriétaire (http.duration_ms). Un seul saut : front → back, pas back → back.",
+      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un arbre enraciné. Elle n'est pas encore une chronologie — un span part avec un début et une fin sur la même milliseconde, et la durée réelle ne voyage que dans un attribut propre à MIP. Un seul saut : du navigateur au serveur, pas d'un serveur à l'autre.",
   },
   {
     quoi: "Traces serveur",
@@ -344,7 +357,7 @@ export const MESURES: Mesure[] = [
     table: "rum_span",
     module: "packages/agent-node/src/core.ts",
     detail:
-      "L'agent Node referme la corrélation côté serveur : il patche node:http, donc sans changement de code dans l'application, et rattache à la trace de la page vue un span par requête plus un span enfant par requête SQL. Côté Python, un middleware FastAPI/Starlette d'un seul fichier fait la même chose.",
+      "L'agent Node referme la corrélation côté serveur : il s'accroche au module HTTP de Node, donc sans changement de code dans l'application, et rattache à la trace de la page vue un span par requête plus un span enfant par requête SQL. Côté Python, un middleware FastAPI/Starlette d'un seul fichier fait la même chose.",
   },
   {
     quoi: "Logs applicatifs",
@@ -352,7 +365,7 @@ export const MESURES: Mesure[] = [
     table: "rum_log",
     module: "packages/agent-node/src/core.ts",
     detail:
-      "Le troisième signal OpenTelemetry, qu'aucun de nos capteurs n'émettait : les logs serveur au-dessus d'un niveau plancher, porteurs du trace_id, donc lisibles à côté de la trace qui les a produits.",
+      "Le troisième signal OpenTelemetry, qu'aucun de nos capteurs n'émettait : les journaux serveur au-dessus d'un niveau plancher, porteurs de l'identifiant de trace, donc lisibles à côté de la trace qui les a produits.",
   },
   {
     quoi: "Signaux de frustration",
@@ -368,7 +381,7 @@ export const MESURES: Mesure[] = [
     table: "rum_event",
     module: "packages/rum-sdk/src/forms.ts",
     detail:
-      "Ordre des champs, temps passé sur chacun, abandon. JAMAIS les valeurs saisies : identifiants et durées seulement, et un champ mot de passe est réduit au libellé « [password] ».",
+      "Ordre des champs, temps passé sur chacun, abandon. jamais les valeurs saisies : identifiants et durées seulement, et un champ mot de passe est réduit au libellé « [password] ».",
   },
   {
     quoi: "Événements métier et avis utilisateur",
@@ -376,7 +389,7 @@ export const MESURES: Mesure[] = [
     table: "rum_event",
     module: "packages/rum-sdk/src/index.ts",
     detail:
-      "MIPRum.track() pour ce que l'app veut compter, et la note de 1 à 5 du widget d'avis. Les propriétés passent au même filtre PII que le reste.",
+      "MIPRum.track() pour ce que l'app veut compter, et la note de 1 à 5 du widget d'avis. Les propriétés passent au même filtre des données personnelles que le reste.",
   },
   {
     quoi: "Rejeu de session",
@@ -384,7 +397,7 @@ export const MESURES: Mesure[] = [
     table: "replay_chunk",
     module: "packages/rum-sdk/src/replay.ts",
     detail:
-      "rrweb, activé application par application, sur un canal séparé. Masqué PAR DÉFAUT : saisies, texte de la page et médias (images, vidéos, canvas, SVG) ; les blocs marqués par l'app ne sont jamais capturés. Plafonné à 2 minutes et 1 Mo par session.",
+      "rrweb, activé application par application, sur un canal séparé. Masqué par défaut : saisies, texte de la page et médias (images, vidéos, canvas, SVG) ; les blocs marqués par l'app ne sont jamais capturés. Plafonné à 2 minutes et 1 Mo par session.",
   },
 ];
 
@@ -416,13 +429,13 @@ export const ANGLES_MORTS: AngleMort[] = [
     // vit maintenant dans le critère « Format sur le fil », où elle est prose et
     // n'a pas à se falsifier par un marqueur d'absence.
     raison:
-      "Les spans sont standard dans leur structure — parenté, nature, issue — mais pas dans leur vocabulaire. Une erreur est émise comme un span nommé « exception » là où OpenTelemetry attend un ÉVÉNEMENT porté par le span concerné, et les attributs HTTP suivent l'ancienne convention http.method / http.url, dépréciée au profit de http.request.method / url.full. Un backend tiers ne comptera donc pas nos erreurs comme des erreurs.",
+      "Les spans sont standard dans leur structure — parenté, nature, issue — mais pas dans leur vocabulaire. Une erreur est émise comme un span nommé « exception » là où OpenTelemetry attend un événement porté par le span concerné, et les attributs HTTP suivent l'ancienne convention http.method / http.url, dépréciée au profit de http.request.method / url.full. Un backend tiers ne comptera donc pas nos erreurs comme des erreurs.",
     marqueur: ["packages/rum-sdk/src", "http.request.method"],
   },
   {
     label: "Supervision d'un serveur vocal (SVI)",
     raison:
-      "La chaîne d'ingestion, le schéma et les écrans existent ; aucun capteur de ce dépôt n'émet cette télémétrie. Elle doit venir de la plateforme vocale du client — rien ne se mesure tout seul aujourd'hui.",
+      "La chaîne d'ingestion, le schéma et les écrans existent ; aucun capteur de MIP RUM n'émet cette télémétrie. Elle doit venir de la plateforme vocale du client — rien ne se mesure tout seul aujourd'hui.",
     // Les CAPTEURS seulement. Le marqueur fouillait tout `packages/` quand ce
     // dossier ne contenait qu'eux ; depuis le remodelage P1, le noyau backend y
     // vit aussi (`packages/backend`), et lui SAIT lire `svi.*` — c'est la chaîne

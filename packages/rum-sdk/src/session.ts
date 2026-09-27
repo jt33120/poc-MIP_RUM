@@ -1,3 +1,5 @@
+import { marqueIdentite, type MarquesIdentite } from "./identite-session";
+
 const STORAGE_KEY = "mip_rum_session";
 const INACTIVITY_TTL_MS = 30 * 60 * 1000;
 
@@ -42,6 +44,21 @@ export interface Session {
   sessionId: string;
   /** Identifiant de visiteur : un tirage aléatoire, jamais dérivé du terminal. */
   visitorId: string;
+  /**
+   * Marques des identités métier rattachées à la session (voir `marqueIdentite`),
+   * persistées avec elle. Absentes : session anonyme jusqu'ici.
+   */
+  identites?: MarquesIdentite;
+}
+
+// Les marques d'identité (qui décident quand une identité métier ouvre une nouvelle
+// session) : ./identite-session.ts.
+
+function ecrire(session: Session): void {
+  const enregistrement: Record<string, unknown> = { sid: session.sessionId, last: Date.now() };
+  if (session.identites?.user) enregistrement.u = session.identites.user;
+  if (session.identites?.account) enregistrement.a = session.identites.account;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(enregistrement));
 }
 
 function uuid(): string {
@@ -58,28 +75,41 @@ function uuid(): string {
 /** Stable session id with 30 min inactivity TTL, persisted in localStorage. */
 export function getOrCreateSession(): Session {
   const now = Date.now();
-  let stored: { sid: string; last: number } | null = null;
+  let stored: { sid: string; last: number; u?: unknown; a?: unknown } | null = null;
   try {
     stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
   } catch {
     /* storage unavailable or corrupt -> new session */
   }
-  const sid =
-    stored && now - stored.last < INACTIVITY_TTL_MS ? stored.sid : uuid();
+  const reprise = stored !== null && typeof stored.sid === "string" && now - stored.last < INACTIVITY_TTL_MS;
+  const sid = reprise ? stored!.sid : uuid();
+  // Les marques d'identité ne valent que pour LEUR session : une session neuve est anonyme.
+  const marque = (v: unknown) => (reprise && typeof v === "string" ? v : null);
+  const session: Session = {
+    sessionId: sid,
+    visitorId: getOrCreateVisitor(),
+    identites: { user: marque(stored?.u), account: marque(stored?.a) },
+  };
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sid, last: now }));
+    ecrire(session);
   } catch {
     /* private mode: session lives for the page only */
   }
-  return { sessionId: sid, visitorId: getOrCreateVisitor() };
+  return session;
 }
 
 /** Ouvre une nouvelle session technique en conservant le visiteur. Utilisé
  * quand l'identité métier change pour qu'une session ne mélange jamais A/B. */
-export function rotateSession(visitorId: string): Session {
-  const session = { sessionId: uuid(), visitorId };
+export function rotateSession(visitorId: string, identites: { user: string | null; account: string | null } = { user: null, account: null }): Session {
+  const sessionId = uuid();
+  // Les identités en cours sont rattachées à la nouvelle session, marquées pour ELLE.
+  const session: Session = {
+    sessionId,
+    visitorId,
+    identites: { user: marqueIdentite(sessionId, "user", identites.user), account: marqueIdentite(sessionId, "account", identites.account) },
+  };
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sid: session.sessionId, last: Date.now() }));
+    ecrire(session);
   } catch {
     /* session volatile */
   }
@@ -130,10 +160,9 @@ export function forgetVisitor(): void {
 /** Refresh the inactivity window (called on each emitted event). */
 export function touchSession(session: Session): void {
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ sid: session.sessionId, last: Date.now() }),
-    );
+    // Les marques d'identité voyagent avec la session : sans elles, la page suivante
+    // prendrait la session pour anonyme.
+    ecrire(session);
   } catch {
     /* ignore */
   }

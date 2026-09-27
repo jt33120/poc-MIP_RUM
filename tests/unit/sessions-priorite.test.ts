@@ -101,7 +101,7 @@ describe("F42 — raisonEcrite", () => {
         frustration: [{ kind: "dead", cible: "", n: 1 }],
         api: [{ methode: "GET", chemin: "/api/stock", statut: null }],
       }),
-    ).toEqual(["1 occurrence de type inconnu", "1 clic mort sur une cible inconnue", "1 appel GET /api/stock sans statut lu"]);
+    ).toEqual(["1 occurrence de type inconnu", "1 clic sans réaction sur une cible inconnue", "1 appel GET /api/stock sans statut lu"]);
   });
 
   it("aucun signal : aucun fragment (la ligne le dira elle-même)", () => {
@@ -135,14 +135,21 @@ describe("F42 — durée, parcours, dimensions", () => {
     expect(navigateurDeSession({ browser: null, user_agent: null })).toEqual({ texte: "Inconnu", deduit: false });
   });
 
+  it("une session React Native n'a pas de navigateur : « application native », jamais « Autre * »", () => {
+    expect(navigateurDeSession({ browser: null, user_agent: "MIP-RN/0.4 (ios 18.6)", runtime: "react_native" })).toEqual({
+      texte: "application native",
+      deduit: false,
+    });
+  });
+
   it("une dimension absente se lit « Inconnu », jamais une chaîne vide (V3)", () => {
     expect(valeurOuInconnu(null)).toBe("Inconnu");
     expect(valeurOuInconnu("  ")).toBe("Inconnu");
     expect(valeurOuInconnu("mobile")).toBe("mobile");
   });
 
-  it("les instants sont datés en UTC (V6), et un instant illisible rend « — »", () => {
-    expect(instantUtc(new Date(T0))).toBe("21/09 14:00");
+  it("les instants sont datés à l'heure de Paris, et un instant illisible rend « — »", () => {
+    expect(instantUtc(new Date(T0))).toBe("21/09 16:00");
     expect(instantUtc(null)).toBe("—");
     expect(instantUtc("pas une date")).toBe("—");
   });

@@ -231,7 +231,8 @@ describe("trierSansRobot (CR11)", () => {
 
 describe("F58 — regleAngleMort (CR9)", () => {
   it("la borne vient de THRESHOLDS au moment de l'appel : changer la borne change le texte", () => {
-    expect(regleAngleMort(30)).toContain("au-dessus de 2,5 s (borne Bon de lib/rating.ts)");
+    expect(regleAngleMort(30)).toContain("au-dessus de 2,5 s (seuil Bon du LCP)");
+    expect(regleAngleMort(30)).not.toContain("lib/");
     expect(regleAngleMort(30)).toContain("heures d'au moins 30 mesures");
     const avant = THRESHOLDS.LCP;
     try {
@@ -284,11 +285,11 @@ describe("F58 — frise robot (CR7-b)", () => {
     expect(aucunPassageSurLaGrille([null, robot("ok", 800, null)])).toBe(false);
   });
 
-  it("états de la frise : forme et glyphe portent l'état, ok est neutre (pas un verdict)", () => {
+  it("états de la frise : forme et glyphe portent l'état, ok est en vert (recette du 26/09/2026)", () => {
     const parCle = Object.fromEntries(ETATS_FRISE_ROBOT.map((e) => [e.cle, e]));
     expect(parCle.incident).toMatchObject({ libelle: "incident", forme: "haute", glyphe: "×" });
     expect(parCle.warn).toMatchObject({ forme: "moyenne", glyphe: "!" });
-    expect(parCle.ok).toMatchObject({ forme: "basse", ton: "neutre" });
+    expect(parCle.ok).toMatchObject({ forme: "basse", ton: "good" });
     expect(parCle.absent).toMatchObject({ libelle: "aucun passage", forme: "hachure" });
     expect(parCle.inconnu).toMatchObject({ forme: "contour" });
   });

@@ -5,8 +5,8 @@
 // optionnel, vérification live, accès scopé. Contenu statique (tutoriel), une
 // seule entrée dynamique : `isAdmin` décide du call-to-action vers l'écran admin.
 //
-// Monté sur la vitrine (/presentation, partie « Ce qu'il contient », connecté
-// seulement) : un chemin PUBLIC, hors coquille de la console. Son lien vers
+// Monté sur le dossier technique (/presentation/dossier, partie « Ce qu'il
+// contient », connecté seulement) : un chemin PUBLIC, hors coquille de la console. Son lien vers
 // l'administration est donc un <a> (même raison que « Ouvrir la console »,
 // components/presentation/Landing.tsx), et son texte ne promet rien que la page
 // démente : plus d'accès « en toute étanchéité », quand l'onglet « Écart au
@@ -35,12 +35,12 @@ const STEPS: Step[] = [
         <p>
           <strong>Administration → Clients → « Ajouter un client »</strong>. On renseigne le nom, un{" "}
           <strong>identifiant</strong> (<code className="chip-mono">app_id</code> : minuscules, chiffres
-          et tirets — ex. <code className="chip-mono">plateforme-client</code>) et les{" "}
+          et tirets — ex. <code className="chip-mono">mon-application</code>) et les{" "}
           <strong>domaines du site</strong> (les origines autorisées pour le CORS).
         </p>
         <p className="mt-2 text-ink-soft">
-          À la validation, l'outil génère la <strong>clé d'API</strong> (affichée une seule fois !) et
-          autorise le domaine — pris en compte en ≤ 60 s, sans redéploiement.
+          À la validation, l'outil génère la <strong>clé d'API</strong> (affichée une seule fois) et
+          autorise le domaine — pris en compte en 60 s au plus, sans redéploiement.
         </p>
         <p className="mt-2 text-ink-soft">
           Tant que l'ingestion n'est pas fermée par défaut, une requête sans clé valide n'est pas
@@ -57,8 +57,8 @@ const STEPS: Step[] = [
         <p>
           La fiche du client ouvre un guide qui génère <strong>deux balises</strong>{" "}
           <code className="chip-mono">&lt;script&gt;</code> pré-remplies : le SDK ({SDK_POIDS_TEXTE}) et l'appel{" "}
-          <code className="chip-mono">MIPRum.init</code> (endpoint, <code className="chip-mono">app_id</code>,
-          clé). Exemple :
+          <code className="chip-mono">MIPRum.init</code> (adresse de collecte, identifiant, clé
+          facultative). Exemple :
         </p>
         <div className="mt-3">
           <CopyBlock code={EXAMPLE_SNIPPET} />
@@ -82,9 +82,9 @@ const STEPS: Step[] = [
           sont captés automatiquement.
         </p>
         <p className="mt-2 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-ink-soft">
-          🚀 Le client ne peut (ou ne veut) pas modifier son code ? <strong>Injection zéro-touch</strong>{" "}
-          depuis l'infra : Cloudflare Worker, nginx (<code className="chip-mono">sub_filter</code>) ou
-          Google Tag Manager — configs générées dans le guide de la fiche client.
+          Le client ne peut (ou ne veut) pas modifier son code ? <strong>Injection sans toucher au
+          code</strong>, depuis son infrastructure : Cloudflare Worker, nginx ou Google Tag Manager —
+          configurations générées dans le guide de la fiche client.
         </p>
       </>
     ),
@@ -96,8 +96,8 @@ const STEPS: Step[] = [
     body: (
       <>
         <p>
-          Pour décomposer chaque appel API en <strong>navigateur / réseau / serveur</strong> (tracing
-          front → back, la démo qui vend), poser un middleware prêt à l'emploi (<strong>FastAPI</strong> ou{" "}
+          Pour décomposer chaque appel API en <strong>navigateur / réseau / serveur</strong> (le lien
+          du navigateur au serveur), poser un middleware prêt à l'emploi (<strong>FastAPI</strong> ou{" "}
           <strong>Express</strong>) ou lancer l'app sous l'<strong>auto-instrumentation OpenTelemetry</strong>{" "}
           (Python, Java, .NET, Go, Node…).
         </p>
@@ -114,8 +114,9 @@ const STEPS: Step[] = [
     body: (
       <>
         <p>
-          La <strong>checklist live</strong> de la fiche client passe au vert toute seule
-          (rafraîchissement 5 s) : premières Web Vitals, sessions sur 24 h, spans front/back. Il suffit
+          La <strong>liste de vérification</strong> de la fiche client passe au vert toute seule
+          (rafraîchie toutes les 5 s) : premières Web Vitals, sessions sur 24 h, appels tracés côté
+          navigateur et côté serveur. Il suffit
           d'ouvrir le site du client dans un onglet et de la regarder se remplir.
         </p>
         <p className="mt-2">
@@ -131,7 +132,7 @@ const STEPS: Step[] = [
     optional: true,
     body: (
       <p>
-        Créer un compte <strong>viewer scopé</strong> : il ne voit que cette app (dashboards, sessions,
+        Créer un compte <strong>en lecture, limité à cette application</strong> : il ne voit qu'elle (tableaux de bord, sessions,
         erreurs, tracing), rien d'autre. Pratique pour offrir au client un accès en lecture à ses propres
         données.
       </p>

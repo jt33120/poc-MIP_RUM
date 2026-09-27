@@ -8,8 +8,8 @@
 // toutes lettres ce que la règle surveille (métrique, route, env), comment elle se
 // déclenche (mode, seuil ou sensibilité, fenêtre), et ce que la dernière évaluation
 // a trouvé — `no_data` avec sa raison, jamais confondu avec « normale ».
-import { fmtDate } from "@/lib/format";
-import { libelleDeRegle, reglageDeRegle } from "@/lib/alertes-ecran";
+import { fmtDate, accord } from "@/lib/format";
+import { libelleDeRegle, reglageDeRegle, valeurDeMetrique } from "@/lib/alertes-ecran";
 import { type AlertRuleRow, type RuleState } from "@/lib/queries-v2";
 import { toggleRuleAction, updateRuleAction } from "@/app/alerts/actions";
 import { RuleFields, type ModeRelease } from "./RuleFields";
@@ -48,7 +48,7 @@ function RuleEvaluation({ rule }: { rule: AlertRuleRow }) {
           écart) ; une valeur seule ne dirait pas contre quelle release. */}
       {rule.last_state !== "no_data" && rule.mode === "release" && rule.last_reason ? ` — ${rule.last_reason}` : ""}
       {rule.last_state !== "no_data" && !(rule.mode === "release" && rule.last_reason) && rule.last_value !== null
-        ? ` (${rule.last_value.toLocaleString("fr-FR")})`
+        ? ` (${valeurDeMetrique(rule.metric, rule.last_value)})`
         : ""}
       <span className="ml-1 text-ink-faint">· évaluée {fmtDate(rule.last_evaluated_at)}</span>
     </span>
@@ -80,7 +80,7 @@ export function RuleRow({
         <RuleEvaluation rule={rule} />
         {rule.unacked > 0 && (
           <span className="shrink-0 rounded-full bg-bad/10 px-2 py-0.5 text-xs font-bold text-bad-ink">
-            {rule.unacked} non acquittée(s)
+            {rule.unacked} non {accord(rule.unacked, "acquittée", "acquittées")}
           </span>
         )}
         <span

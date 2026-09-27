@@ -34,7 +34,7 @@ export function TokenCreateForm({ appId }: { appId: string }) {
       form.reset();
       router.refresh();
     } catch {
-      setErreur("Réseau indisponible : réessayer.");
+      setErreur("Réseau indisponible : réessayez.");
     } finally {
       setEnvoi(false);
     }
@@ -53,11 +53,11 @@ export function TokenCreateForm({ appId }: { appId: string }) {
             className={`${INPUT_CLASS} w-56 max-w-full`}
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-          Privilège
-          <select name="scope" defaultValue="sourcemaps:write" className={`${INPUT_CLASS} w-52`}>
-            <option value="sourcemaps:write">source maps (sourcemaps:write)</option>
-            <option value="deploys:write">marqueurs de déploiement (deploys:write)</option>
+        <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs font-medium text-ink-soft">
+          Usage
+          <select name="scope" defaultValue="sourcemaps:write" className={`${INPUT_CLASS} max-w-full`}>
+            <option value="sourcemaps:write">Envoi de source maps</option>
+            <option value="deploys:write">Déclaration de déploiements</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
@@ -80,7 +80,7 @@ export function TokenCreateForm({ appId }: { appId: string }) {
           className="mt-4 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
         >
           <p className="mb-2">
-            Jeton <strong>{secret.name}</strong> : affiché une seule fois, copie-le maintenant. À placer dans la variable
+            Jeton <strong>{secret.name}</strong> : affiché une seule fois, copiez-le maintenant. À placer dans la variable
             secrète{" "}
             <code className="chip-mono">{secret.privilege === "deploys:write" ? "MIP_DEPLOY_TOKEN" : "MIP_SOURCEMAP_TOKEN"}</code> de la
             CI, jamais dans le dépôt ni dans un bundle client.

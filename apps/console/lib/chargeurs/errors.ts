@@ -23,6 +23,7 @@ import { analyserFiltres } from "../filtres-ecran";
 import { ERRORS_BREAKDOWN_DATASETS, errorsBreakdown } from "../queries-breakdowns";
 import { listDeploys } from "../queries-deploys";
 import {
+  distinctionsDesGroupes,
   listErrorGroups,
   nouveauxGroupes,
   parseErrorListPage,
@@ -152,6 +153,11 @@ export const chargerErrors = (async (principal, sp) => {
     : panneau !== null && f.app
       ? { app_id: f.app, fingerprint: panneau }
       : null;
-  const panneauLu = ouvert ? { groupe: ouvert, lecture: await lirePanneauErreur(ouvert, f, ecran.filters) } : null;
-  return { etat: "groupes", ...commun, page, liste, panneau: panneauLu } as const;
+  // Ce qui distingue les groupes de la page (ligne de pile, route principale) : une
+  // section à part — son échec laisse la liste lisible, sans la phrase.
+  const [panneauLu, distinctions] = await Promise.all([
+    ouvert ? lirePanneauErreur(ouvert, f, ecran.filters).then((lecture) => ({ groupe: ouvert, lecture })) : Promise.resolve(null),
+    section(() => distinctionsDesGroupes(f, liste.groups)),
+  ]);
+  return { etat: "groupes", ...commun, page, liste, panneau: panneauLu, distinctions } as const;
 }) satisfies Chargeur<unknown>;

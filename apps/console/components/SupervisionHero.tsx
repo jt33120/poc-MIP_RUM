@@ -91,9 +91,12 @@ export function SupervisionHero({
 
   return (
     <section className="card mb-6 overflow-hidden">
-      {/* filet de séparation via gap-px sur fond `line` : deux panneaux jointifs */}
-      <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
-        <div className="flex flex-col gap-4 bg-panel p-5">{children}</div>
+      {/* filet de séparation via gap-px sur fond `line` : deux panneaux jointifs.
+          `grid-cols-1` et `min-w-0` sous `lg` : une colonne implicite (`auto`) prend
+          la largeur de son plus long contenu, que l'`overflow-hidden` de la carte
+          (là pour les coins arrondis) coupait alors sans rien dire sur mobile. */}
+      <div className="grid grid-cols-1 gap-px bg-line lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
+        <div className="flex min-w-0 flex-col gap-4 bg-panel p-5">{children}</div>
         <div className="flex min-w-0 flex-col bg-panel p-5">
           {title}
           <div className="min-w-0 flex-1">{zone}</div>

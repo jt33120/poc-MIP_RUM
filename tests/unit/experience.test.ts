@@ -96,26 +96,34 @@ describe("nuageRessenti (F26)", () => {
 
 describe("repartitionNotes (F26)", () => {
   it("trois parts d'un même tout ; sans avis, des parts null", () => {
-    expect(repartitionNotes({ count: 10, promoters: 5, passives: 3, detractors: 2 }).map((r) => r.part)).toEqual([0.5, 0.3, 0.2]);
-    expect(repartitionNotes({ count: 0, promoters: 0, passives: 0, detractors: 0 }).every((r) => r.part === null && r.n === 0)).toBe(true);
+    expect(repartitionNotes({ count: 10, positives: 5, detractors: 2 }).map((r) => r.part)).toEqual([0.5, 0.3, 0.2]);
+    expect(repartitionNotes({ count: 0, positives: 0, detractors: 0 }).every((r) => r.part === null && r.n === 0)).toBe(true);
+  });
+  // Recette du 26/09/2026 : « 5 / 3-4 / 1-2 » ne permettait pas de retrouver le CSAT
+  // (notes 4-5) de la tuile voisine. Les tranches sont celles du CSAT.
+  it("la première tranche EST le CSAT (notes 4-5) ; la note 3 est seule au milieu", () => {
+    const parts = repartitionNotes({ count: 49, positives: 17, detractors: 20 });
+    expect(parts.map((r) => r.libelle)).toEqual(["Notes 4-5", "Note 3", "Notes 1-2"]);
+    expect(parts[0].part).toBe(partPositive(17, 49));
+    expect(parts.map((r) => r.n)).toEqual([17, 12, 20]);
   });
 });
 
-import { frustrationPour1000 } from "../../apps/console/lib/experience";
+import { frustrationParSession } from "../../apps/console/lib/experience";
 // La garde de capteur est celle de F22 (`etatCapteurFrustration`) : mêmes textes.
 import { MANQUE_CAPTEUR_MOBILE, RAISON_RUNTIME_ABSENT } from "../../apps/console/lib/perf-domain";
 
-describe("frustrationPour1000 — garde de capteur R-F de F22 (F26, revue)", () => {
+describe("frustrationParSession — garde de capteur R-F de F22 (F26, revue)", () => {
   it("app React Native seule → null et « Non collecté », jamais « 0,00 »", () => {
-    const r = frustrationPour1000({ sessions: 600, sessionsCouvertes: 0, signaux: 0, runtimeLu: true }, "24 h");
+    const r = frustrationParSession({ sessions: 600, sessionsCouvertes: 0, signaux: 0, runtimeLu: true }, "24 h");
     expect(r.valeur).toBeNull();
     expect(r.etat).toEqual({ kind: "non_collecte", manque: MANQUE_CAPTEUR_MOBILE });
     expect(r.raisonNull).toContain("non collecté");
   });
 
   it("400 navigateur + 600 React Native → taux sur les 400 seules, partiel « 400 sur 1 000 »", () => {
-    const r = frustrationPour1000({ sessions: 1000, sessionsCouvertes: 400, signaux: 20, runtimeLu: true });
-    expect(r.valeur).toBe(50); // 20 / 400 × 1 000, pas 20 / 1 000 × 1 000
+    const r = frustrationParSession({ sessions: 1000, sessionsCouvertes: 400, signaux: 20, runtimeLu: true });
+    expect(r.valeur).toBe(0.05); // 20 / 400, pas 20 / 1 000
     expect(r.n).toBe(400);
     // Séparateur de milliers de `fr-FR` : une espace fine insécable, écrite par le formateur.
     expect(r.etat).toEqual({
@@ -125,18 +133,25 @@ describe("frustrationPour1000 — garde de capteur R-F de F22 (F26, revue)", () 
   });
 
   it("colonne runtime absente → taux sur toutes les sessions, partiel « capteur non identifiable »", () => {
-    const r = frustrationPour1000({ sessions: 50, sessionsCouvertes: 50, signaux: 5, runtimeLu: false });
-    expect(r.valeur).toBe(100);
+    const r = frustrationParSession({ sessions: 50, sessionsCouvertes: 50, signaux: 5, runtimeLu: false });
+    expect(r.valeur).toBe(0.1);
     expect(r.etat).toEqual({ kind: "partiel", raison: RAISON_RUNTIME_ABSENT });
   });
 
   it("aucune session commencée → null, sans état ; tout navigateur → le taux, sans état", () => {
-    expect(frustrationPour1000({ sessions: 0, sessionsCouvertes: 0, signaux: 0, runtimeLu: true }, "1 h")).toEqual({
+    expect(frustrationParSession({ sessions: 0, sessionsCouvertes: 0, signaux: 0, runtimeLu: true }, "1 h")).toEqual({
       valeur: null,
       raisonNull: "aucune session commencée sur 1 h",
       n: 0,
       etat: null,
     });
-    expect(frustrationPour1000({ sessions: 3, sessionsCouvertes: 3, signaux: 0, runtimeLu: true })).toMatchObject({ valeur: 0, etat: null });
+    expect(frustrationParSession({ sessions: 3, sessionsCouvertes: 3, signaux: 0, runtimeLu: true })).toMatchObject({ valeur: 0, etat: null });
+  });
+
+  // Recette du 26/09/2026 : « Frustration pour 1 000 sessions : 3 303,45 ». Un signal
+  // se répète dans une session : le taux se dit PAR session, pas pour mille.
+  it("un taux par session : 3 303 signaux sur 1 000 sessions → 3,3 par session, pas 3 303", () => {
+    const r = frustrationParSession({ sessions: 1000, sessionsCouvertes: 1000, signaux: 3303, runtimeLu: true });
+    expect(r.valeur).toBeCloseTo(3.303, 10);
   });
 });

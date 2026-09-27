@@ -103,6 +103,6 @@ describe("ChargeErreursLcp — occurrences sans source déclarée (CP14)", () =>
         }}
       />,
     );
-    expect(texte(html)).toContain("3 occurrence(s) sans source déclarée, non comptée(s).");
+    expect(texte(html)).toContain("3 occurrences sans source déclarée, non comptées.");
   });
 });

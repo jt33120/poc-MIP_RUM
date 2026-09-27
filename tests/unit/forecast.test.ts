@@ -276,3 +276,15 @@ describe("echeanceLcp — la borne « Bon » est incluse", () => {
     expect(echeanceLcp(plat, null)).toBeNull();
   });
 });
+
+// Recette du 26/09/2026 : l'état vide disait « 0 sur 14, 7 requis » sans dire QUAND
+// l'écran servirait.
+describe("premiereTendancePossible", () => {
+  it("collecte commencée aujourd'hui (26/09, dernier jour complet 25/09) : au plus tôt le 03/10", async () => {
+    const { premiereTendancePossible } = await import("../../apps/console/lib/forecast");
+    expect(premiereTendancePossible("2026-09-25", 0)).toBe("2026-10-03");
+    expect(premiereTendancePossible("2026-09-25", 5)).toBe("2026-09-28");
+    expect(premiereTendancePossible("2026-09-25", 7)).toBeNull();
+    expect(premiereTendancePossible(undefined, 0)).toBeNull();
+  });
+});

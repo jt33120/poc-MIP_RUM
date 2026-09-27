@@ -140,3 +140,43 @@ describe("errorFingerprint — un même bug ne compte qu'une fois", () => {
     expect(errorFingerprint(null, null, null)).toMatch(/^[0-9a-f]{8}$/);
   });
 });
+
+// ─────────── Recette du 26/09/2026 : un script intégré, un groupe par page ───────────
+//
+// « Uncaught Error: Erreur de démo MIP RUM » faisait neuf groupes : le script intégré
+// du gabarit levait depuis la ligne 79 de CHAQUE page, et l'URL de la page tenait lieu
+// de module. La page n'est plus un module ; un vrai fichier de script, si.
+describe("script intégré — l'URL de la page n'éclate plus le groupe", () => {
+  const pileIntegree = (page: string) =>
+    `Error: Erreur de démo MIP RUM
+    at HTMLButtonElement.<anonymous> (${page}:79:13)`;
+  const pages = [
+    "http://localhost:8080/",
+    "http://localhost:8080/?utm_source=google&utm_medium=cpc",
+    "http://localhost:8080/partners",
+    "http://localhost:8080/partners/42",
+    "http://localhost:8080/partners/108",
+    "http://localhost:8080/partners/256/documents",
+    "http://localhost:8080/contact",
+    "http://localhost:8080/recherche?q=menuiserie",
+  ];
+
+  it("une seule empreinte pour la même erreur du même script, quelle que soit la page", () => {
+    const vues = new Set(pages.map((p) => errorFingerprint("Error", "Erreur de démo MIP RUM", pileIntegree(p))));
+    expect(vues.size).toBe(1);
+  });
+
+  it("un fichier de script garde son chemin : deux modules restent deux groupes", () => {
+    expect(normalizeModulePath("https://app.fr/partners/42")).toBe("(page)");
+    expect(normalizeModulePath("https://app.fr/assets/panier.js")).toBe("/assets/panier.js");
+    const panier = errorFingerprint("TypeError", "x", "TypeError: x\n    at go (https://app.fr/assets/panier.js:1:2)");
+    const paiement = errorFingerprint("TypeError", "x", "TypeError: x\n    at go (https://app.fr/assets/paiement.js:1:2)");
+    expect(panier).not.toBe(paiement);
+  });
+
+  it("le message et le type distinguent toujours deux bugs de scripts intégrés", () => {
+    const a = errorFingerprint("Error", "Erreur de démo MIP RUM", pileIntegree(pages[3]));
+    const b = errorFingerprint("Error", "Rejet de promesse de démo", pileIntegree(pages[3]));
+    expect(a).not.toBe(b);
+  });
+});

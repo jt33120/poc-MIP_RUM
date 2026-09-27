@@ -15,7 +15,7 @@ import { booleen, chaine, facultatif, nulle, objet, parmi } from "@mip/console-c
 import { MOBILE_CAPABILITIES } from "@mip/backend/shared/mobile-capabilities.mjs";
 import { PRIVILEGES_JETON } from "@mip/backend/lib/sourcemap-upload.mjs";
 import { tx } from "../db";
-import { generateToken } from "../read-tokens";
+import { generateToken, VALIDITE_LECTURE_MAX_JOURS, validiteLecture } from "../read-tokens";
 import { allowOriginForApp, appDuDomaine, createExtensionScope, toggleExtensionScope } from "../queries-extension-scope";
 import { forgetInstall } from "../queries-extension-installs";
 import { createReadToken, revokeReadToken } from "../queries-read-tokens";
@@ -29,15 +29,27 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // ─── Jetons de lecture (API `/api/rum/summary`) ──────────────────────────────
 
 export const creerJetonLecture = commande(
-  { regle: { auth: "admin", portee: "app", audit: "read_token.create" }, corps: objet({ label: chaine({ min: 0, max: 200 }) }) },
+  {
+    regle: { auth: "admin", portee: "app", audit: "read_token.create" },
+    corps: objet({
+      label: chaine({ min: 0, max: 200 }),
+      // Recette du 26/09/2026 : un jeton de lecture a une échéance, comme un jeton
+      // de CI. Absente, la durée par défaut (90 jours) : jamais « sans fin » à la création.
+      expiresInDays: facultatif(chaine({ max: 3, motif: /^[0-9]{1,3}$/ })),
+    }),
+  },
   async ({ app, corps, auditer }) => {
+    const validite = validiteLecture(corps.expiresInDays);
+    if (validite === null) return { etat: "refus", message: `validité de 1 à ${VALIDITE_LECTURE_MAX_JOURS} jours` } as const;
     const jeton = generateToken();
     const label = corps.label.trim();
-    await tx(async (c) => {
-      await createReadToken(app!, label, jeton, c);
-      await auditer(c, `${app} "${label || "-"}"`);
+    const cree = await tx(async (c) => {
+      const r = await createReadToken(app!, label, jeton, c, validite);
+      await auditer(c, `${app} "${label || "-"}"${r.expire ? ` validite=${validite}j` : ""}`);
+      return r;
     });
-    return { etat: "cree", app: app!, jeton } as const;
+    // `expire` null : la base ne porte pas encore l'échéance (migration en attente).
+    return { etat: "cree", app: app!, jeton, expire: cree.expire ? new Date(cree.expire).toISOString() : null } as const;
   },
 );
 

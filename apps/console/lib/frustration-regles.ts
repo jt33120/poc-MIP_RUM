@@ -41,23 +41,28 @@ export interface RegleFrustration {
   texte: string;
 }
 
-/** Les trois règles, dans l'ordre des tuiles. */
+/**
+ * Les trois règles, dans l'ordre des tuiles. Libellés en français, les mêmes mots que
+ * le détail de session (« clic de rage », « clic sans réaction ») : la recette du
+ * 26/09/2026 lisait « Rage », « Dead », « Error » ici et « clics morts » ailleurs.
+ */
 export function reglesFrustration(): RegleFrustration[] {
   return [
     {
       kind: "rage",
-      libelle: "Rage",
+      libelle: "Clic de rage",
       texte: `${RAGE_MIN_CLICKS} clics sur la même cible en ${secondes(RAGE_WINDOW_MS)}.`,
     },
     {
       kind: "dead",
-      libelle: "Dead",
-      texte: `élément d'aspect actionnable sans mutation, navigation ni défilement en ${secondes(DEAD_CLICK_WINDOW_MS)}.`,
+      libelle: "Clic sans réaction",
+      // « sans mutation » : aucune modification du contenu de la page (DOM).
+      texte: `clic sur un élément d'apparence cliquable qui ne change rien à la page (ni contenu, ni navigation, ni défilement) en ${secondes(DEAD_CLICK_WINDOW_MS)}.`,
     },
     {
       kind: "error",
-      libelle: "Error",
-      texte: `première exception rattachée à l'action dans les ${secondes(ERROR_CLICK_WINDOW_MS)}.`,
+      libelle: "Clic suivi d'une erreur",
+      texte: `première erreur JavaScript rattachée au clic dans les ${secondes(ERROR_CLICK_WINDOW_MS)}.`,
     },
   ];
 }
@@ -67,7 +72,7 @@ export function reglesFrustration(): RegleFrustration[] {
  * choix (un dead click faux coûte plus cher qu'un dead click manqué).
  */
 export const LIMITES_FRUSTRATION =
-  `Seuls les clics sont observés : les frappes au clavier ne sont pas comptées. Règles conservatrices, sous-report assumé ; au plus ${FRUSTRATION_CAP_PER_PAGE} signaux par page vue.`;
+  `Seuls les clics sont observés : les frappes au clavier ne sont pas comptées. Règles prudentes, qui préfèrent manquer un signal plutôt que d'en compter un faux ; au plus ${FRUSTRATION_CAP_PER_PAGE} signaux par page vue.`;
 
 /**
  * Pluriel des mots que les tuiles écrivent. « signal » est IRRÉGULIER : coller un

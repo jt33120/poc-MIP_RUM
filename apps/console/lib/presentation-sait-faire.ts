@@ -327,11 +327,11 @@ export const CARTES: readonly CarteCapacite[] = [
     ],
     // Le rôle propriétaire de la production : la procédure de déploiement le dit, et
     // l'onglet « Écart au marché » des Specs le reprend (le plan citait ses lignes
-    // 160-163 ; le texte est aujourd'hui aux lignes 166-170).
+    // 160-163 ; le texte est aujourd'hui aux lignes 172-176).
     sources: [
       { ligne: "D6" },
       { fichier: "DEPLOY.md:272-278" },
-      { fichier: "components/presentation/Specs.tsx:166-170" },
+      { fichier: "components/presentation/Specs.tsx:172-176" },
     ],
   },
   {
@@ -472,7 +472,7 @@ export const METHODE: readonly EnonceMethode[] = [
     sources: [{ passage: 253 }, { passage: 254 }, { passage: 255 }],
   },
   {
-    titre: "Aucune adresse IP n'est conservée.",
+    titre: "Aucune adresse IP de visiteur n'est conservée.",
     texte: "Le pays est estimé, et nommé « Pays estimé » partout.",
     // § 6.4.
     sources: [{ passage: 319 }, { passage: 326 }],

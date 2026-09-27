@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { TableDefilante } from "@/components/TableDefilante";
+import { CopyBlock } from "@/components/CopyBlock";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { SourcemapUploadForm } from "@/components/sourcemaps/SourcemapUploadForm";
 import { TokenCreateForm } from "@/components/sourcemaps/TokenCreateForm";
@@ -9,7 +11,7 @@ import type { Fil } from "@mip/console-contract";
 import { chargerSourcemaps } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, pluriel } from "@/lib/format";
 import type { ReleaseManifest, SourcemapFileStatus, SourcemapRelease } from "@/lib/queries-sourcemap";
 import type { SourcemapToken } from "@/lib/queries-sourcemap-tokens";
 
@@ -27,6 +29,7 @@ type Donnees =
       releases: Fil<SourcemapRelease>[];
       manifest: Fil<ReleaseManifest> | null;
       tokens: Fil<SourcemapToken>[];
+      deployees: string[];
     }
   | { kind: "schema"; apps: App[]; app: string }
   | { kind: "error"; app: string | null };
@@ -34,7 +37,13 @@ type Donnees =
 const STATUT_FICHIER: Record<SourcemapFileStatus, { label: string; className: string }> = {
   ok: { label: "validée", className: "bg-good/10 text-good-ink" },
   replaced: { label: "remplacée (auditée)", className: "bg-warn/10 text-warn-ink" },
-  legacy: { label: "antérieure à v71", className: "bg-panel2 text-ink-soft" },
+  legacy: { label: "ancienne, non validée", className: "bg-panel2 text-ink-soft" },
+};
+
+/** Le privilège d'un jeton, en mots : le code (`sourcemaps:write`) reste celui de l'API. */
+const PRIVILEGES: Record<string, string> = {
+  "sourcemaps:write": "Envoi de source maps",
+  "deploys:write": "Déclaration de déploiements",
 };
 
 const param = (v: string | string[] | undefined) => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -55,7 +64,7 @@ export default async function SourcemapsAdmin({ searchParams }: { searchParams: 
   const ecran = accesAdmin(await chargerEcran(ECRANS_ADMIN.sourcemaps, chargerSourcemaps, sp));
   const donnees: Donnees =
     ecran.etat === "ok"
-      ? { kind: "ok", apps: ecran.apps, app: ecran.app, releases: ecran.releases, manifest: ecran.manifeste, tokens: ecran.jetons }
+      ? { kind: "ok", apps: ecran.apps, app: ecran.app, releases: ecran.releases, manifest: ecran.manifeste, tokens: ecran.jetons, deployees: ecran.deployees }
       : ecran.etat === "schema"
         ? { kind: "schema", apps: ecran.apps, app: ecran.app }
         : { kind: "error", app: ecran.app };
@@ -69,8 +78,9 @@ export default async function SourcemapsAdmin({ searchParams }: { searchParams: 
         title="Source maps"
         sub={
           <>
-            Maps par application et release, empreintes et jetons de CI. Le contenu des maps n&apos;est jamais
-            affiché ; un secret de jeton ne l&apos;est qu&apos;à sa création.
+            Les source maps rendent lisibles les piles d&apos;erreurs de vos versions publiées (fichiers, lignes,
+            noms de fonctions). Leur contenu n&apos;est jamais affiché ; le secret d&apos;un jeton ne l&apos;est
+            qu&apos;à sa création.
           </>
         }
       />
@@ -85,7 +95,13 @@ export default async function SourcemapsAdmin({ searchParams }: { searchParams: 
       )}
 
       {donnees.kind !== "error" && !app && (
-        <p className="card p-6 text-sm text-ink-soft">Aucune application enregistrée : créer d&apos;abord un client.</p>
+        <p className="card p-6 text-sm text-ink-soft">
+          Aucune application enregistrée :{" "}
+          <Link href="/admin/customers" className={LINK}>
+            ajoutez d&apos;abord une application
+          </Link>
+          .
+        </p>
       )}
 
       {donnees.kind !== "error" && app && (
@@ -110,7 +126,7 @@ export default async function SourcemapsAdmin({ searchParams }: { searchParams: 
 
           {donnees.kind === "schema" && (
             <p role="status" className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
-              Migration v71 en attente : empreintes, upload et jetons de CI indisponibles jusqu&apos;à son application.
+              La base n&apos;est pas encore à jour : empreintes, envoi de maps et jetons de CI sont indisponibles.
             </p>
           )}
 
@@ -125,7 +141,7 @@ export default async function SourcemapsAdmin({ searchParams }: { searchParams: 
                   <h2 id="upload-title" className="mb-3 text-sm font-semibold text-ink">
                     Envoyer des maps
                   </h2>
-                  <SourcemapUploadForm appId={app} release={release} />
+                  <SourcemapUploadForm appId={app} release={release} suggestions={donnees.deployees} />
                 </section>
                 <Jetons app={app} tokens={donnees.tokens} maintenant={maintenant} />
               </div>
@@ -144,7 +160,7 @@ function Releases({ app, releases, courante }: { app: string; releases: Sourcema
         Releases
       </h2>
       {releases.length ? (
-        <div className="relative overflow-x-auto">
+        <TableDefilante label="Releases">
           <table className="w-full text-sm">
             <caption className="sr-only">Releases de {app} portant des source maps, la plus récente d&apos;abord</caption>
             <thead className="bg-panel2">
@@ -174,9 +190,14 @@ function Releases({ app, releases, courante }: { app: string; releases: Sourcema
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       ) : (
-        <p className="px-4 py-8 text-center text-sm text-ink-faint">Aucune source map pour cette application.</p>
+        // L'enjeu, pas seulement l'absence (recette du 26/09/2026).
+        <p className="px-4 py-8 text-center text-sm text-ink-soft" data-testid="sourcemaps-vide">
+          Aucune source map pour cette application : ses erreurs s&apos;affichent avec des piles minifiées,
+          sans nom de fichier ni de fonction lisible. Envoyez les maps de chaque version depuis la CI, ou avec le
+          formulaire « Envoyer des maps ».
+        </p>
       )}
     </section>
   );
@@ -202,20 +223,20 @@ function Manifeste({ release, manifest }: { release: string; manifest: ReleaseMa
             {manifest.files.length === 0
               ? "Aucun fichier pour cette release."
               : anciennes
-                ? `${anciennes} fichier(s) antérieur(s) à v71 : contenu jamais validé, à renvoyer par la CI.`
-                : "Toutes les maps ont été validées à l'upload. Comparer l'empreinte à celle affichée par le CLI : égales, la release est complète."}
+                ? `${pluriel(anciennes, "fichier ancien", "fichiers anciens")} : contenu jamais validé, à renvoyer depuis la CI.`
+                : "Toutes les maps ont été validées à l'envoi. Comparez l'empreinte à celle qu'affiche la commande de CI : si elles sont égales, la release est complète."}
           </dd>
         </dl>
       </div>
       {manifest.files.length > 0 && (
-        <div className="relative overflow-x-auto">
+        <TableDefilante label="Fichiers de la release">
           <table className="w-full text-sm">
             <caption className="sr-only">Fichiers de la release {release}, par nom</caption>
             <thead className="bg-panel2">
               <tr>
                 <th scope="col" className="th">Fichier</th>
                 <th scope="col" className="th">Taille</th>
-                <th scope="col" className="th">Checksum</th>
+                <th scope="col" className="th">Somme de contrôle</th>
                 <th scope="col" className="th">Mise en ligne</th>
                 <th scope="col" className="th">Statut</th>
               </tr>
@@ -243,7 +264,7 @@ function Manifeste({ release, manifest }: { release: string; manifest: ReleaseMa
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       )}
     </section>
   );
@@ -257,23 +278,26 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
           Jetons de CI
         </h2>
         <p className="mb-3 text-xs text-ink-soft">
-          Un privilège par jeton sur {app} : <code className="chip-mono">sourcemaps:write</code> (source maps) ou{" "}
-          <code className="chip-mono">deploys:write</code> (marqueur de déploiement, <code className="chip-mono">POST /api/v1/deploys</code>),
-          expiration de 1 à 90 jours. Rotation : créer un nouveau jeton, basculer la CI, révoquer l&apos;ancien. En CI :{" "}
-          <code className="chip-mono break-all">
-            node scripts/upload-sourcemaps.mjs --app {app} --release RELEASE --dir dist --url URL_UPLOAD
-          </code>
+          Un jeton par usage, pour {app} : envoyer des source maps, ou déclarer un déploiement (
+          <code className="chip-mono">POST /api/v1/deploys</code>). Validité de 1 à 90 jours. Pour le renouveler :
+          créez-en un nouveau, placez-le dans la CI, puis révoquez l&apos;ancien. Commande à lancer dans la CI :
         </p>
+        {/* Bloc copiable qui défile, plutôt qu'un `break-all` en ligne : la commande
+            se coupait au milieu des mots (« n / ode », « --di / r ») et ne se
+            copiait qu'à la main (recette 26/09). */}
+        <div className="mb-3 min-w-0">
+          <CopyBlock code={`node scripts/upload-sourcemaps.mjs --app ${app} --release RELEASE --dir dist --url URL_UPLOAD`} />
+        </div>
         <TokenCreateForm appId={app} />
       </div>
       {tokens.length ? (
-        <div className="relative overflow-x-auto">
+        <TableDefilante label="Jetons de CI">
           <table className="w-full text-sm">
             <caption className="sr-only">Jetons de CI de {app}, actifs d&apos;abord</caption>
             <thead className="bg-panel2">
               <tr>
                 <th scope="col" className="th">Nom</th>
-                <th scope="col" className="th">Privilège</th>
+                <th scope="col" className="th">Usage</th>
                 <th scope="col" className="th">Expire</th>
                 <th scope="col" className="th">Dernier usage</th>
                 <th scope="col" className="th">Statut</th>
@@ -292,7 +316,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
                       <span className="block">{t.name}</span>
                       <span className="block font-mono text-[11px] text-ink-faint">créé le {fmtDate(t.createdAt)}</span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-ink-soft">{t.scope}</td>
+                    <td className="whitespace-nowrap px-4 py-2 text-xs text-ink-soft">{PRIVILEGES[t.scope] ?? t.scope}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-xs text-ink-soft">{fmtDate(t.expiresAt)}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-xs text-ink-soft">
                       {t.lastUsedAt ? fmtDate(t.lastUsedAt) : "jamais"}
@@ -309,14 +333,14 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
                       </span>
                     </td>
                     <td className="px-4 py-2 text-right">
-                      {!t.revokedAt && <TokenRevokeButton id={t.id} name={t.name} appId={t.appId} />}
+                      {!t.revokedAt && <TokenRevokeButton id={t.id} name={t.name} appId={t.appId} scope={t.scope} />}
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       ) : (
         <p className="px-4 py-6 text-center text-sm text-ink-faint">Aucun jeton de CI pour cette application.</p>
       )}

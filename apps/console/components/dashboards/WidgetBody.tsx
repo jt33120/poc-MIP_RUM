@@ -15,14 +15,22 @@
 // LE VERDICT SUIT R-V. La prop `vital` ne reçoit que ce que `vitalDeVerdict` a
 // autorisé — le p75 d'un Web Vital. Une moyenne ou un p95 n'a ni badge, ni bande,
 // et la carte écrit pourquoi.
+//
+// LECTURE COMPACTE (recette du 26/09/2026). Une carte montre sa valeur, son verdict
+// et son graphique ; ce qu'elle ne dit pas (notes de la lecture, absence de verdict,
+// comparaison non calculée) passe dans son pied de page unique (`APropos`), le même
+// que celui des analyses — plus de paragraphes répétés d'une carte à l'autre.
 import Link from "next/link";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
+import { APropos } from "@/components/explorer/APropos";
+import { TableDefilante } from "@/components/TableDefilante";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { ResultatAnalyse } from "@/components/explorer/ResultatAnalyse";
 import { groupeHref } from "@/lib/explorer-page-params";
 import { formater } from "@/lib/fmt-ids";
+import { accord } from "@/lib/format";
 import { classerParGravite, ecartALaReference, estFaible } from "@/lib/impact";
 import { hrefWithQuery, type AnalyticsQuery } from "@/lib/query-contract";
 import type { WidgetData, WidgetErreur, WidgetRoutes } from "@/lib/widget-data";
@@ -53,8 +61,8 @@ export function WidgetBody({ data, query }: { data: WidgetData; query: Analytics
           precedent={precedent}
           hrefs={{ groupe: (key) => groupeHref(query, plan, key, {}) }}
           taille="carte"
+          notes={data.notes}
         />
-        <Notes notes={data.notes} />
       </div>
     );
   }
@@ -92,7 +100,8 @@ export function WidgetBody({ data, query }: { data: WidgetData; query: Analytics
       {/* Table v1 conservée (W-B10) : une cible de frustration est un texte long,
           qu'un classement en barres tronquerait. */}
       {!data.trafic && !data.routes && !data.erreurs && data.columns?.length ? (
-        <div className="relative overflow-x-auto">
+        // Défilement signalé : une carte de tableau de bord est étroite.
+        <TableDefilante label="Données de la carte">
           <table className="w-full text-sm">
             <thead>
               <tr>
@@ -115,28 +124,11 @@ export function WidgetBody({ data, query }: { data: WidgetData; query: Analytics
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       ) : null}
 
-      {data.sansVerdict && (
-        <p role="note" className="mt-2 text-xs text-ink-soft">
-          {data.sansVerdict}
-        </p>
-      )}
-      <Notes notes={data.notes} />
+      <APropos lignes={[...(data.sansVerdict ? [data.sansVerdict] : []), ...(data.notes ?? [])]} className="mt-2" />
     </div>
-  );
-}
-
-function Notes({ notes }: { notes?: string[] }) {
-  return (
-    <>
-      {notes?.map((note) => (
-        <p key={note} role="note" className="mt-2 text-xs text-ink-faint">
-          {note}
-        </p>
-      ))}
-    </>
   );
 }
 
@@ -152,6 +144,10 @@ function PanneauxTrafic({ trafic }: { trafic: NonNullable<WidgetData["trafic"]> 
   const JOUR = 86_400;
   return (
     <div className="flex min-w-0 flex-col gap-3" data-testid="widget-trafic">
+      {/* Sa fenêtre n'est PAS celle de l'écran (W-B7) : c'est dit en tête, pas seulement dans le pied de page. */}
+      <p className="text-[11px] text-ink-soft">
+        14 jours fixes (13 complets + la journée en cours), quelle que soit la période de l’écran.
+      </p>
       <div className="min-w-0">
         <p className="mb-1 text-[11px] font-medium text-ink-soft">Pages vues</p>
         <ThresholdSeries
@@ -219,7 +215,10 @@ function ClassementRoutes({ routes, query }: { routes: WidgetRoutes; query: Anal
   return (
     <ImpactTable
       titre="Routes les plus lentes"
-      tri="gravite"
+      // Un seul ordre sur une carte : il est écrit, plutôt qu'une bascule dont deux
+      // options sur trois seraient grisées (recette du 26/09/2026).
+      tri="fourni"
+      ordreLibelle="Classées du LCP p75 le plus élevé au plus bas ; les échantillons faibles en fin de liste."
       triHref={{ gravite: null, volume: null, impact: null, fourni: null }}
       reference={
         routes.referenceLcp === null
@@ -268,7 +267,8 @@ function ListeErreurs({ lignes, query }: { lignes: WidgetErreur[]; query: Analyt
           </Link>
           <span className="shrink-0 text-[11px] text-ink-faint">{l.statut}</span>
           <span className="shrink-0 tabular-nums text-xs text-ink-soft">
-            {l.occurrences.toLocaleString("fr-FR")} occ. · {l.sessions.toLocaleString("fr-FR")} sessions
+            {l.occurrences.toLocaleString("fr-FR")} {accord(l.occurrences, "occurrence")} ·{" "}
+            {l.sessions.toLocaleString("fr-FR")} {accord(l.sessions, "session")}
           </span>
           <span className="shrink-0">
             {l.serie ? (

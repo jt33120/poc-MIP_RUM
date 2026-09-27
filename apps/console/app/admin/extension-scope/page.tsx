@@ -1,6 +1,7 @@
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { ExtensionActivationGuide } from "@/components/ExtensionActivationGuide";
 import { PageHeader } from "@/components/PageHeader";
+import { TableDefilante } from "@/components/TableDefilante";
 import { chargerDomaines } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
@@ -9,7 +10,7 @@ import { createExtensionScopeAction, toggleExtensionScopeAction } from "./action
 
 export const dynamic = "force-dynamic";
 
-/** Registre domaine -> app_id pour l'extension navigateur (Ext-C) — admin only. */
+/** Registre domaine -> application pour l'extension navigateur (Ext-C) — administrateurs. */
 export default async function ExtensionScope({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   // Le chargeur : les domaines et les applications de son périmètre (C9).
@@ -22,40 +23,43 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
         title="Domaines de l'extension"
         sub={
           <>
-            Domaines observés par l&apos;extension navigateur (2ᵉ capteur RUM). Un domaine
-            absent de cette liste — ou désactivé — n&apos;est <strong>jamais</strong> observé
-            par l&apos;extension. Voir <code className="chip-mono">docs/CADRAGE_EXTENSION.md</code>.
+            Les domaines que l&apos;extension navigateur a le droit d&apos;observer, et l&apos;application
+            à laquelle chacun envoie ses mesures. Un domaine absent de cette liste, ou désactivé,
+            n&apos;est <strong>jamais</strong> observé par l&apos;extension.
           </>
         }
       />
 
       {error && (
         <div className="mb-6 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink">
-          Domaine et app requis.
+          Renseignez le domaine et choisissez une application.
         </div>
       )}
 
-      <ExtensionActivationGuide />
-
+      {/* L'action principale d'abord : le formulaire, puis la liste ; le parcours
+          d'activation, replié, vient après (recette du 26/09/2026). */}
       <div className="card mb-8 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-ink-soft">Enregistrer un domaine</h2>
+        <h2 className="mb-3 text-sm font-semibold text-ink">Enregistrer un domaine</h2>
         <form
           action={createExtensionScopeAction}
           className="flex flex-wrap items-end gap-3"
           data-testid="create-extension-scope"
         >
-          <label className="text-xs font-medium text-ink-soft">
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
             Domaine
             <input
               name="domain"
               required
-              placeholder="app.client.fr"
-              className="field mt-1 block w-56"
+              placeholder="app.exemple.fr"
+              className="field mt-1 block w-56 max-w-full"
             />
           </label>
-          <label className="text-xs font-medium text-ink-soft">
-            App
-            <select name="app" required defaultValue="" className="field mt-1 block">
+          {/* `min-w-0 max-w-full` + `w-full` : la liste prend la largeur de son plus
+              long libellé (« Console MIP RUM (dogfooding) (mip-rum-console) ») et
+              portait la page à 417 px sur 390 ; elle se borne désormais à la carte. */}
+          <label className="min-w-0 max-w-full text-xs font-medium text-ink-soft">
+            Application
+            <select name="app" required defaultValue="" className="field mt-1 block w-full max-w-full">
               <option value="" disabled>
                 choisir…
               </option>
@@ -72,13 +76,14 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
         </form>
       </div>
 
-      <div className="card overflow-hidden">
+      {/* Défilant et signalé : `overflow-hidden` coupait Statut et Actions à 390 px. */}
+      <TableDefilante className="card mb-8" label="Domaines enregistrés">
         <table className="w-full text-sm">
           <thead className="bg-panel2">
             <tr>
               <th className="th">Domaine</th>
-              <th className="th">App</th>
-              <th className="th">Créé</th>
+              <th className="th">Application</th>
+              <th className="th">Enregistré le</th>
               <th className="th">Statut</th>
               <th className="th">Actions</th>
             </tr>
@@ -88,7 +93,7 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
               <tr key={s.id} className="transition hover:bg-panel2/60">
                 <td className="px-4 py-2 font-mono text-xs">{s.domain}</td>
                 <td className="px-4 py-2 text-ink-soft">{s.app_id}</td>
-                <td className="px-4 py-2 text-xs tabular-nums text-ink-faint">{fmtDate(s.created_at)}</td>
+                <td className="whitespace-nowrap px-4 py-2 text-xs tabular-nums text-ink-soft">{fmtDate(s.created_at)}</td>
                 <td className="px-4 py-2">
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -118,13 +123,15 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
             {!scopes.length && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-ink-faint">
-                  Aucun domaine — enregistres-en un ci-dessus
+                  Aucun domaine : enregistrez-en un ci-dessus.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
+
+      <ExtensionActivationGuide />
     </div>
   );
 }

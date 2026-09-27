@@ -10,6 +10,8 @@
 //     atteint » (S4) ; aucune trace de ce bandeau sous le plafond.
 //   - Une table croisée qui compterait autre chose que les canaux : la route
 //     d'entrée se croise avec les MÊMES sessions que le hero (B31).
+//   - Le retour du lien « Sessions passées par cette route » répété sur chaque
+//     ligne (recette du 26/09/2026) : le nom de la route est le lien.
 //
 // Données EXPLICITEMENT SYNTHÉTIQUES, dans deux apps dédiées, et un compte admin
 // dédié à ce fichier (jamais le compte de seed-admin).
@@ -116,9 +118,11 @@ test.describe("F48 — Acquisition", () => {
     await expect(hero.locator('[title^="Recherche :"]')).toContainText(/2 · 28,6\s%/);
     // Aucun anneau : les barres sont des blocs, la figure ne contient aucun SVG.
     await expect(hero.locator("svg")).toHaveCount(0);
-    // Tuiles : sessions lues, part hors direct (3 / 7), référents distincts.
+    // Tuiles : sessions, part hors direct (3 / 7), référents distincts. Le texte d'une
+    // tuile commence par son libellé (sa méthode, rangée derrière l'aide, contient aussi
+    // « sessions » : d'où l'ancre en début de texte).
     const tuiles = page.getByTestId("kpi-tile");
-    await expect(tuiles.filter({ hasText: "Sessions lues" }).getByTestId("kpi-valeur")).toHaveText("7");
+    await expect(tuiles.filter({ hasText: /^Sessions/ }).getByTestId("kpi-valeur")).toHaveText("7");
     await expect(tuiles.filter({ hasText: "Part hors direct" })).toContainText(/42,9\s%/);
     await expect(tuiles.filter({ hasText: "Référents externes distincts" }).getByTestId("kpi-valeur")).toHaveText("2");
     // Sous le plafond : aucun bandeau de plafond.
@@ -141,10 +145,12 @@ test.describe("F48 — Acquisition", () => {
     const ligne = page.getByTestId("acquisition-entrees-table").getByTestId("acquisition-entree").filter({ hasText: "/f48-entree" });
     await expect(ligne).toHaveCount(1);
     await expect(ligne.getByRole("cell")).toHaveText(["3", "2", "0", "1", "1", "7"]);
-    await expect(ligne.getByRole("link", { name: "Sessions passées par cette route" })).toHaveAttribute(
+    await expect(ligne.getByRole("link", { name: "/f48-entree", exact: true })).toHaveAttribute(
       "href",
       /\/sessions\?.*qf=route&q=%2Ff48-entree/,
     );
+    await expect(ligne.getByRole("link")).toHaveCount(1);
+    await expect(page.locator("#acquisition-entrees")).not.toContainText("Sessions passées par cette route");
     await expect(page.locator("#acquisition-entrees")).not.toContainText("à créer");
     // A6 : la série, sur la grille du contrat (un graphique recharts).
     const serie = page.locator("#acquisition-serie");

@@ -18,6 +18,8 @@ export type Etat =
       kind: "vide";
       /** Groupe nominal accordé avec « Aucune » : « session commencée », « mesure LCP »… */
       population: string;
+      /** Groupe nominal masculin (« SLO actif ») : « Aucun » (recette du 26/09/2026 : « Aucune SLO actif »). */
+      masculin?: boolean;
       plage: string;
       geste?: { libelle: string; href: string };
       /** P*.2 : ce que le zéro exclut, à 95 % (« Aucune erreur sur 210 sessions… »). */
@@ -131,7 +133,7 @@ export function EtatSurface({ etat, compact = false }: { etat: Etat; compact?: b
       return (
         <CadreEtat ton="neutre" role={role} compact={compact} testId={testId} etat={etat.kind} className="text-center">
           <p>
-            Aucune {etat.population} sur {etat.plage}.
+            {etat.masculin ? "Aucun" : "Aucune"} {etat.population} sur {etat.plage}.
           </p>
           {etat.borne && <p className="mt-1 text-ink-soft">{etat.borne}</p>}
           {etat.geste && (

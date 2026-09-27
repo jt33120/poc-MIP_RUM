@@ -16,7 +16,7 @@ import {
   VERROU_INGESTION_NS,
   // @ts-expect-error module .mjs sans déclaration de types
 } from "../../packages/backend/lib/privacy-barriere.mjs";
-import { DSAR_BARRIERE_MESSAGES, DSAR_LIMITES } from "../../apps/console/lib/dsar";
+import { DSAR_BARRIERE_MESSAGES, DSAR_LIMITES, phraseBarriere } from "../../apps/console/lib/dsar";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(join(RACINE, rel), "utf8");
@@ -237,6 +237,23 @@ describe("la politique manquante est ÉCRITE, pas sous-entendue", () => {
     expect(DSAR_LIMITES.join(" ")).toContain("Aucune suppression");
     expect(DSAR_BARRIERE_MESSAGES.off).toContain("NON ACTIVÉE");
     expect(DSAR_BARRIERE_MESSAGES.off).toContain("décision de politique");
-    expect(DSAR_BARRIERE_MESSAGES.indisponible).toContain("v81");
+    expect(DSAR_BARRIERE_MESSAGES.indisponible).toContain("pas encore à jour");
+  });
+
+  it("l'avertissement tient en une phrase qui nomme l'application, sans jargon", () => {
+    // Recette du 26/09/2026 : quatre lignes (writer, sérialisé, HMAC app-scopés…) sans
+    // le nom de l'application, pour un état qui est pourtant propre à chacune.
+    expect(phraseBarriere("off", "Mini-site de démo")).toBe(
+      "Mini-site de démo : après un effacement, une nouvelle visite de la même personne sera de nouveau collectée.",
+    );
+    for (const etat of ["enforce", "off", "indisponible"] as const) {
+      const phrase = phraseBarriere(etat, "Boutique");
+      expect(phrase.startsWith("Boutique : ")).toBe(true);
+      expect(phrase.split(". ").length).toBe(1);
+    }
+    const tout = [...DSAR_LIMITES, ...Object.values(DSAR_BARRIERE_MESSAGES)].join(" ");
+    for (const jargon of ["writer", "sérialisé", "HMAC", "app-scopé", "user-agent", "v81"]) {
+      expect(tout, jargon).not.toContain(jargon);
+    }
   });
 });

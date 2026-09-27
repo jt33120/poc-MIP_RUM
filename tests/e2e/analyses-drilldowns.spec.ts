@@ -267,7 +267,8 @@ test("ressources : l'avertissement de seuil et le partage première/tierce parti
   await page.goto(`${BASE}/pages?app=${APP_ID}&period=24h`);
 
   const seuil = page.getByTestId("ressources-seuil");
-  await expect(seuil).toContainText("Ressources collectées selon seuil SDK");
+  await expect(seuil).toContainText("Ressources retenues par le capteur");
+  await expect(seuil).toContainText("seuil du SDK");
 
   const ressources = page.getByTestId("ressources");
   await expect(ressources).toContainText("Première partie");
@@ -282,7 +283,7 @@ test("blocages : la série, son alternative textuelle et le lien vers la session
   await page.goto(`${BASE}/pages?app=${APP_ID}&period=24h`);
 
   const blocages = page.getByTestId("longtasks");
-  await expect(blocages).toContainText("Long Animation Frames");
+  await expect(blocages).toContainText("Trames longues (LoAF)");
   await expect(blocages).toContainText("recalculerTotal");
   // Aucun cumul de durées présenté comme du temps utilisateur.
   await expect(blocages).toContainText("Aucun cumul de durées");

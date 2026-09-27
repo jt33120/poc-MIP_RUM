@@ -13,6 +13,13 @@
 //   - la couleur par défaut vient de `lib/palette.ts` (la série principale).
 // Sans lien dans ses lignes, le bloc des barres est une image (`role="img"`) ;
 // avec des liens, c'est une liste — un `role="img"` masquerait les liens.
+//
+// RIEN N'EST COUPÉ (recette du 26/09/2026) : « Direct ou référen… » à 390 px. Le
+// libellé et le sous-texte passent à la ligne dans leur colonne, y compris une
+// route sans espace (coupure au caractère) ; le libellé entier reste en infobulle.
+// Une ligne peut être ACTIVE (`actif`) : celle dont le détail est affiché en dessous
+// (le formulaire dont on lit les champs, le canal ouvert) — marquée pour les yeux
+// ET pour le lecteur d'écran (`aria-current`).
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { TableAlternative } from "./Figure";
@@ -45,6 +52,8 @@ export interface RankDatum {
   segments?: RankSegment[];
   /** Infobulle de la ligne. */
   title?: string;
+  /** Ligne dont le détail est affiché : fond marqué et `aria-current`. */
+  actif?: boolean;
 }
 
 /** Le texte de valeur d'une ligne, tel qu'affiché à droite de la barre. */
@@ -93,29 +102,34 @@ export function RankBar({
       >
         {data.map((d, i) => {
           const w = d.value === null ? 0 : base > 0 ? Math.max(2, (d.value / base) * 100) : 0;
-          const label = (
-            // `block` : `truncate` ne coupe pas un élément en ligne — une route longue
-            // sans espace sortait de sa colonne de 7rem et portait la page à 725 px à 390.
-            <span className="block truncate" title={d.label}>
-              {d.label}
-            </span>
-          );
+          // `block` + coupure au caractère : une route longue SANS espace sortait de sa
+          // colonne de 7rem et portait la page à 725 px à 390 ; elle passe à la ligne.
+          const coupe = "block min-w-0 [overflow-wrap:anywhere]";
           return (
             <div
               key={`${d.label}-${i}`}
-              className="flex items-center gap-3"
+              className={`flex items-center gap-3 ${d.actif ? "-mx-1.5 rounded-md bg-perf/10 px-1.5 py-0.5 ring-1 ring-perf/40" : ""}`}
               title={d.title}
               role={avecLiens ? "listitem" : undefined}
+              aria-current={d.actif ? "true" : undefined}
+              data-actif={d.actif ? "" : undefined}
             >
-              <div className="w-[min(7rem,var(--rank-label))] shrink-0 text-xs text-ink sm:w-[var(--rank-label)]">
+              <div className="w-[min(7rem,var(--rank-label))] shrink-0 text-xs leading-snug text-ink sm:w-[var(--rank-label)]">
                 {d.href ? (
-                  <Link href={d.href} className="block truncate font-medium hover:text-accent hover:underline">
+                  <Link
+                    href={d.href}
+                    title={d.label}
+                    aria-current={d.actif ? "true" : undefined}
+                    className={`${coupe} font-medium hover:text-accent hover:underline`}
+                  >
                     {d.label}
                   </Link>
                 ) : (
-                  <div className="block font-medium">{label}</div>
+                  <span className={`${coupe} font-medium`} title={d.label}>
+                    {d.label}
+                  </span>
                 )}
-                {d.sub && <div className="truncate text-[10px] text-ink-faint">{d.sub}</div>}
+                {d.sub && <div className={`${coupe} text-[10px] text-ink-faint`}>{d.sub}</div>}
               </div>
               <div className={`relative h-6 min-w-0 flex-1 overflow-hidden rounded bg-panel2 ${barClassName}`}>
                 {d.segments ? (

@@ -77,7 +77,7 @@ describe("LongtasksView — états", () => {
 
   it("aucun blocage : la phrase Chromium, et aucun cumul de durées n'est jamais affiché", () => {
     const html = vue({});
-    expect(texte(html)).toContain("Long Animation Frames n'existe que sur Chromium");
+    expect(texte(html)).toContain("La mesure des trames longues (LoAF) n'existe que sur Chromium");
     expect(texte(html)).toContain("Aucun cumul de durées");
     expect(texte(html)).not.toMatch(/temps d'attente total|cumul : /);
   });

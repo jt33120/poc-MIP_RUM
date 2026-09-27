@@ -16,25 +16,25 @@ export const dynamic = "force-dynamic";
 // Lien vers la console publique du partenaire (CTA). Configurable ; défaut = prod xSOM.
 const XSOM_CONSOLE_URL = process.env.XSOM_CONSOLE_URL ?? "https://xsom-ai-guard-production.up.railway.app";
 
+/** Titre et sujet de l'écran, les mêmes fermé ou ouvert : la sidebar dit « Supervision IA ». */
+const TITRE = "Supervision IA";
+const SUJET = "Supervision des agents et modèles en production.";
+
 export default async function AiPartner({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   // La sidebar n'y mène plus, mais l'URL reste tapable : le refus doit vivre ICI
   // aussi, sinon le cadenas n'est qu'un décor. Aucun appel à la façade xSOM n'est
   // émis tant que la capacité est fermée.
   if (estFermee("/ai")) {
-    return (
-      <CapaciteFermee
-        titre="Supervision IA"
-        sujet="Supervision des agents et modèles en production."
-      />
-    );
+    return <CapaciteFermee titre={TITRE} sujet={SUJET} />;
   }
 
   // Le chargeur (`lib/chargeurs/ai.ts`) lit la façade xSOM, app par app.
   const ecran = await chargerEcran(ECRANS.ai, chargerAi, (await searchParams) ?? {});
   if (ecran.etat === "fermee") {
-    return <CapaciteFermee titre="Supervision IA" sujet="Supervision des agents et modèles en production." />;
+    return <CapaciteFermee titre={TITRE} sujet={SUJET} />;
   }
-  if (ecran.etat === "refus") return <FilterProblemNotice title="Assistant IA" problem={ecran.problem} />;
+  // Même titre que la sidebar et l'écran ouvert (« Assistant IA » n'existait nulle part ailleurs).
+  if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const { ai, periode } = ecran;
   const f = { app: ecran.app };
 
@@ -42,7 +42,7 @@ export default async function AiPartner({ searchParams }: { searchParams?: Promi
     <div className="animate-fade-up">
       <PageHeader
         domain="ai"
-        title="Supervision IA"
+        title={TITRE}
         sub="Espace partenaire — propulsé par xSOM AI Guard, distinct du RUM MIP."
       >
         <span className="rounded-full border border-ai/40 bg-ai/10 px-2.5 py-1 text-[11px] font-semibold text-ai">
@@ -59,9 +59,9 @@ export default async function AiPartner({ searchParams }: { searchParams?: Promi
           <h3 className="text-sm font-bold text-ink">Supervision IA indisponible ici</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm text-ink-soft">
             {f.app
-              ? "xSOM AI Guard n'a pas (encore) de données pour cette application, ou le service est momentanément injoignable."
+              ? "xSOM AI Guard n'a pas encore de données pour cette application, ou le service est momentanément injoignable."
               : "Sélectionnez une application couverte par xSOM pour afficher sa supervision IA."}{" "}
-            La supervision IA complète (coût, tokens, qualité, alertes) se consulte sur la console xSOM.
+            La supervision IA complète (coût, jetons, qualité, alertes) se consulte sur la console xSOM.
           </p>
           <a
             href={XSOM_CONSOLE_URL}

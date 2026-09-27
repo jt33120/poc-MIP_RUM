@@ -13,8 +13,12 @@
 //     exclu des barres et compté dans un bandeau « Partiel ».
 //   - Un zéro pour une absence : une app sans aucun événement `form.*` affiche
 //     « — » et la raison sur chaque tuile, pas des zéros (V3).
-//   - Une figure dessinée pour un patch absent : « Abandons dans le temps » attend
-//     B34 et le dit, sans axe.
+//   - Une fonction non livrée montrée comme présente : « Abandons dans le temps »
+//     attend B34 ; la carte n'est pas rendue du tout (recette du 26/09/2026), ni
+//     bandeau « Partiel », ni code de lot à l'écran.
+//   - Un formulaire sélectionné qu'on ne voit pas : la ligne dont les champs sont
+//     affichés est marquée (`aria-current`), et l'écran dit qu'un clic en affiche
+//     d'autres.
 //
 // Données EXPLICITEMENT SYNTHÉTIQUES, dans deux apps dédiées, et un compte admin
 // dédié à ce fichier (jamais `scripts/seed-admin.mjs`).
@@ -150,6 +154,19 @@ test.describe("F51 — Formulaires", () => {
     // 402 entamés, 8 abandons pour « inscription » ; 12 / 12 pour « contact ».
     await expect(hero.locator('[title^="f51-inscription :"]')).toContainText("402 entamés");
     await expect(hero.locator('[title^="f51-contact :"]')).toContainText("12 entamés");
+    // « échantillon faible » est une marque à part, sur la seule ligne concernée.
+    await expect(hero.locator('[title^="f51-contact :"]').getByTestId("forms-echantillon-faible")).toBeVisible();
+    await expect(hero.locator('[title^="f51-inscription :"]').getByTestId("forms-echantillon-faible")).toHaveCount(0);
+    // Sans `form=`, les champs affichés sont ceux du premier du classement : sa ligne
+    // est marquée, et l'écran dit qu'un clic sur une autre en affiche les champs.
+    await expect(hero.locator('[aria-current="true"]')).toHaveCount(1);
+    await expect(hero.locator('[aria-current="true"]')).toContainText("f51-inscription");
+    await expect(hero.getByTestId("forms-indication")).toContainText("Cliquez sur un formulaire pour afficher ses champs");
+    await expect(hero.getByTestId("forms-legende")).toContainText("Abandons");
+    await hero.locator('[title^="f51-contact :"]').click();
+    await page.waitForURL((u) => u.searchParams.get("form") === "f51-contact", { timeout: 15_000 });
+    await expect(page.locator('#forms-classement [aria-current="true"]')).toContainText("f51-contact");
+    await expect(page.locator("#forms-champs")).toContainText("Champs de f51-contact dans l'ordre de remplissage");
   });
 
   test("quatre tuiles : médiane des soumissions, conversion sans verdict coloré", async ({ page }) => {
@@ -180,6 +197,9 @@ test.describe("F51 — Formulaires", () => {
     });
     const champs = page.locator("#forms-champs");
     await expect(champs).toContainText("Champs de f51-inscription dans l'ordre de remplissage");
+    // Une légende visible dit ce que porte chaque couleur de la barre.
+    await expect(champs.getByTestId("forms-legende")).toContainText("Abandons dont c'est le dernier champ");
+    await expect(champs.getByTestId("forms-legende")).toContainText("Autres tentatives");
     // Ordre médian : nom, email, carte — et surtout PAS « email » en tête, alors
     // que c'est le champ qui porte tous les abandons localisés.
     const lignes = champs.getByTestId("alternative").locator("tbody tr");
@@ -203,30 +223,36 @@ test.describe("F51 — Formulaires", () => {
     );
   });
 
-  test("définition de l'abandon, garde du SDK mobile, série B34 dite et non dessinée", async ({ page }) => {
+  test("définition de l'abandon, garde du SDK mobile, série non livrée absente de l'écran", async ({ page }) => {
     await login(page);
     await page.goto(`${consoleUrl}/forms?app=${APP_F51}&period=7d`, { waitUntil: "domcontentloaded" });
     const definition = page.getByTestId("forms-definition");
     await expect(definition).toContainText(
-      "un abandon est émis quand la page passe en arrière-plan avec un formulaire entamé et non soumis",
+      "Un abandon est émis quand la page passe en arrière-plan avec un formulaire entamé et non soumis",
     );
     await expect(definition).toContainText(
-      "changer d'onglet puis revenir soumettre compte un abandon et pas la soumission",
+      "Changer d'onglet puis revenir soumettre compte un abandon et pas la soumission",
     );
     await expect(definition).toContainText(
-      "un envoi sans événement submit (bouton géré en JavaScript) compte comme un abandon",
+      "Un envoi sans événement submit (bouton géré en JavaScript) compte comme un abandon",
     );
-    // R-F : le SDK React Native n'émet aucun `form.*` (vérifié en F51).
+    // R-F : le SDK React Native n'émet aucun `form.*` (vérifié en F51). Dit UNE fois.
     await expect(page.getByTestId("forms-garde-mobile")).toContainText(
       "Le SDK React Native n'émet aucun événement de formulaire",
     );
+    await expect(page.getByText("Le SDK React Native n'émet aucun événement de formulaire")).toHaveCount(1);
+    // La population (des tentatives, pas des sessions) est dite une fois, ici.
+    await expect(definition).toContainText("tentatives de formulaire");
+    await expect(page.locator("body")).not.toContainText("Population :");
     // F53 (B31) : la lecture est celle du contrat ; la méta écrit la plage lue, la
     // note « lecture non migrée » a disparu.
     await expect(page.getByTestId("lecture-non-migree")).toHaveCount(0);
     await expect(page.locator("#forms-classement").getByTestId("figure-meta")).toContainText("7 j");
-    // B34 : dit, jamais dessiné.
-    await expect(page.locator("#forms-serie")).toContainText("série à créer (B34)");
-    await expect(page.locator("#forms-serie .recharts-wrapper")).toHaveCount(0);
+    // B34 non livré : la carte « Abandons dans le temps » n'est pas rendue, et aucun
+    // code de lot n'apparaît à l'écran.
+    await expect(page.locator("#forms-serie")).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText("Abandons dans le temps");
+    await expect(page.locator("body")).not.toContainText("B34");
     // Sous le plafond de 5 000 événements : aucun bandeau.
     await expect(page.getByTestId("forms-plafond")).toHaveCount(0);
   });

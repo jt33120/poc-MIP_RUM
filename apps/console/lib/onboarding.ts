@@ -14,10 +14,9 @@ export const EXAMPLE_SNIPPET = `<!-- MIP RUM -->
 <script>
   MIPRum.init({
     endpoint: "https://<console>${ingestPath("traces")}",
-    appId: "plateforme-client",
-    clientId: "groupement-it",
+    appId: "mon-application",
     env: "prod",
-    apiKey: "mip_xxxxxxxx", // affichée une seule fois à la création
+    apiKey: "mip_xxxxxxxx", // facultative tant que la collecte ne l'exige pas
   });
 </script>`;
 
@@ -98,7 +97,10 @@ export function buildSnippet(opts: {
   ];
   if (opts.clientId) init.push(`    clientId: ${JSON.stringify(opts.clientId)},`);
   init.push(`    env: "prod",`);
-  init.push(`    apiKey: "COLLE_ICI_LA_CLE_API", // placeholder : ne jamais versionner une vraie clé`);
+  // Une clé posée dans une balise <script> est publique de toute façon : le repère ne
+  // protège rien, il dit seulement où la mettre. Elle n'est exigée que si la collecte
+  // ferme l'accès sans clé (REQUIRE_API_KEY) ; sinon la ligne peut disparaître.
+  init.push(`    apiKey: "COLLE_ICI_LA_CLE_API", // facultative : retirez la ligne si le projet n'a pas de clé`);
   if (opts.withConsent)
     init.push(`    requireConsent: true, // rien ne part avant MIPRum.consent(true)`);
   return [

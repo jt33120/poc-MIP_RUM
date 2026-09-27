@@ -40,9 +40,9 @@ describe("les dix points, dans l'ordre fixe du plan", () => {
   it("titres exacts, R1 à R10", () => {
     expect(POINTS_RESTE.map((p) => [p.id, p.titre])).toEqual([
       ["R1", "Une recette sur une vraie application"],
-      ["R2", "P8.3 — Reprise de l'historique"],
-      ["R3", "P8.4 — Source maps dans l'intégration continue du client"],
-      ["R4", "P8.5 — Crashes natifs iOS et Android"],
+      ["R2", "Reprise de l'historique des erreurs"],
+      ["R3", "Source maps dans l'intégration continue du client"],
+      ["R4", "Crashes natifs iOS et Android"],
       ["R5", "React Native : une matrice de compatibilité vide"],
       ["R6", "Le pays par adresse IP, inerte tant que la collecte passe par Vercel"],
       ["R7", "Tickets : le connecteur existe, la cible ITSM n'est pas confirmée"],
@@ -50,6 +50,13 @@ describe("les dix points, dans l'ordre fixe du plan", () => {
       ["R9", "Une chaîne de livraison qui dit vrai"],
       ["R10", "Une base dimensionnée pour un vrai produit"],
     ]);
+  });
+
+  it("recette du 26/09/2026 : ni code de lot dans un titre, ni renvoi par code (« voir R10 »)", () => {
+    for (const p of POINTS_RESTE) {
+      expect(p.titre, p.id).not.toMatch(/\bP\d+(\.\d+)?\b/);
+      expect(affiche(p.id), p.id).not.toMatch(/\(voir R\d+\)/);
+    }
   });
 
   it("chaque point dit ce qui manque, ce qui le débloque et qui décide", () => {
@@ -72,8 +79,10 @@ describe("R10 — la base gratuite, une limite dite", () => {
   it("dit le quota, la coupure, la latence qui en découle, et que le déblocage est un budget", () => {
     const r10 = point("R10");
     expect(r10.manque).toContain("100 heures de calcul par mois");
-    expect(r10.manque).toContain("1er octobre 2026");
+    expect(r10.manque).toContain("la base est suspendue jusqu'au mois suivant, et la collecte avec elle");
     expect(r10.manque).toContain("jusqu'à 15 minutes après sa cause");
+    // Recette du 26/09/2026 : le mécanisme, pas le journal de la coupure en cours ni un montant.
+    expect(affiche("R10")).not.toMatch(/\$|octobre|Neon/);
     expect(r10.debloque).toContain("sans changement de code");
     expect(r10.decide).toMatch(/budget/);
   });

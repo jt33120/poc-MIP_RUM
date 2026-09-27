@@ -19,7 +19,7 @@ describe("facteurAnomalies", () => {
   it("des routes testées sans anomalie : 10/10, et le texte dit combien ont été testées", () => {
     expect(facteurAnomalies({ filtree: false, eligibles: 3, anomalies: 0 })).toMatchObject({
       earned: 10,
-      detail: "aucune anomalie détectée sur 3 route(s) testable(s)",
+      detail: "aucune anomalie détectée sur 3\u00a0routes testables",
     });
   });
 

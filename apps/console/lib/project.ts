@@ -21,12 +21,12 @@ export async function selectedProjectId(): Promise<string | null> {
 // pas une paraphrase du nom. Un projet inconnu retombe sur un descriptif neutre.
 const KNOWN: Record<string, { tag: string; hint: string }> = {
   "mip-rum-console": {
-    tag: "Dogfooding",
+    tag: "Interne",
     hint: "La console RUM s'observe elle-même — trafic interne de l'équipe.",
   },
   "gip-plateforme": {
     tag: "Production",
-    hint: "Plateforme UTI (plateforme.groupement-it.com) — utilisateurs réels.",
+    hint: "Application d'un client en production — utilisateurs réels.",
   },
   "insight-performance": {
     tag: "Extension",

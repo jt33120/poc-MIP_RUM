@@ -86,9 +86,9 @@ describe("PS4 — l'hébergement est lu dans lib/legal.ts, jamais retapé", () =
 
   it("la table : une ligne par hébergeur, dans l'ordre de lib/legal.ts", () => {
     expect(HEBERGEMENT).toEqual([
-      { piece: "Base de données", hebergeur: "Neon (sur AWS)", lieu: "Francfort, Allemagne (aws-eu-central-1)", droit: "américain" },
-      { piece: "Console et collecteur", hebergeur: "Vercel Inc.", lieu: "Francfort, Allemagne (fra1)", droit: "américain" },
-      { piece: "Travaux planifiés, serveur MCP", hebergeur: "Railway Corp.", lieu: "Amsterdam, Pays-Bas (europe-west4)", droit: "américain" },
+      { piece: "Base de données", hebergeur: "Neon (sur AWS)", lieu: "Francfort, Allemagne", droit: "américain" },
+      { piece: "Console et collecteur", hebergeur: "Vercel Inc.", lieu: "Francfort, Allemagne", droit: "américain" },
+      { piece: "Travaux planifiés, serveur MCP", hebergeur: "Railway Corp.", lieu: "Amsterdam, Pays-Bas", droit: "américain" },
     ]);
   });
 });
@@ -152,17 +152,19 @@ describe("PS3 — le chemin de la mesure", () => {
 // Revue de fin de vague 7 : la page a porté deux dates pour un même relevé Railway
 // (21/09 dans la légende du chemin de la mesure, 22/09 dans les Specs). Les Specs
 // lisent désormais chaque fait d'exploitation daté dans CES constantes, les mêmes que
-// la légende — et que le test ci-dessus retrouve dans les deux documents.
+// la légende — et que le test ci-dessus retrouve dans les deux documents. Depuis la
+// recette du 26/09/2026, la page publique ne publie plus le journal (suppression
+// d'`ingest`, identifiant de déploiement) : les constantes restent vérifiées contre
+// leurs sources, les Specs n'en disent que le relevé et la migration constatée.
 describe("une seule source pour les dates d'exploitation Railway", () => {
-  const backend = INFRA.find((g) => g.titre.startsWith("Backend"))!;
-  const ligne = (k: string) => backend.lignes.find((l) => l.k === k)!;
+  const services = INFRA.find((g) => g.titre.startsWith("Services"))!;
+  const ligne = (k: string) => services.lignes.find((l) => l.k === k)!;
 
-  it("les Specs disent les dates de la légende : relevé, suppression d'ingest, migrations constatées", () => {
-    expect(backend.sous).toContain(`relevé le ${TOPOLOGIE_RELEVEE.railway} par l'API Railway`);
-    expect(ligne("ingest").v).toContain(`a été supprimé le ${INGEST_SUPPRIME_LE}.`);
-    expect(ligne("scheduler").v).toContain(
-      `vérifié le ${MIGRATIONS_CONSTATEES.le} sur un vrai déploiement (${MIGRATIONS_CONSTATEES.deploiement} :`,
-    );
+  it("les Specs disent les dates de la légende : relevé et migrations constatées, sans le journal", () => {
+    expect(services.sous).toContain(`relevé le ${TOPOLOGIE_RELEVEE.railway}`);
+    expect(ligne("Travaux planifiés").v).toContain(`vérifié le ${MIGRATIONS_CONSTATEES.le} sur un vrai déploiement`);
+    expect(ligne("Collecteur autonome").v).not.toContain(INGEST_SUPPRIME_LE);
+    for (const l of services.lignes) expect(l.v).not.toContain(MIGRATIONS_CONSTATEES.deploiement);
   });
 
   it("aucune de ces dates n'est retapée dans lib/specs.ts, hors commentaires", () => {

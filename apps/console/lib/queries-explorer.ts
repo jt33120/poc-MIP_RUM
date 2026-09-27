@@ -173,6 +173,10 @@ function avertissements(plan: ExplorerPlan): string[] {
   if (definition.variant && !definition.variant.required && plan.variant === null && definition.variant.mixedNotice) {
     sorties.push(definition.variant.mixedNotice);
   }
+  // Une limite propre au CLS et à l'INP ne se lit pas sous une carte LCP.
+  for (const note of definition.variant?.valueNotices ?? []) {
+    if (plan.variant === null || note.values.includes(plan.variant)) sorties.push(note.text);
+  }
   return sorties;
 }
 

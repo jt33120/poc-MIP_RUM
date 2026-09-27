@@ -50,12 +50,16 @@ function arcPath(cx: number, cy: number, rOuter: number, rInner: number, a0: num
   ].join(" ");
 }
 
+// Espace insécable avant « % » : « 100 % » ne se coupe plus en deux lignes dans la
+// colonne étroite de la légende (recette du 26/09/2026).
+const NBSP = String.fromCharCode(0xa0);
+
 /** « 42 % », « < 1 % » pour une part non nulle qui s'arrondirait à 0, « — » sans total. */
 export function partAffichee(value: number, total: number): string {
   if (total <= 0) return "—";
   const pct = (value / total) * 100;
-  if (value > 0 && pct < 0.5) return "< 1 %";
-  return `${Math.round(pct)} %`;
+  if (value > 0 && pct < 0.5) return `<${NBSP}1${NBSP}%`;
+  return `${Math.round(pct)}${NBSP}%`;
 }
 
 export function Donut({
@@ -122,11 +126,17 @@ export function Donut({
           )}
         </svg>
         {(centerValue != null || centerLabel != null) && (
+          // Le centre tient DANS l'anneau : largeur bornée au diamètre intérieur, texte
+          // qui passe à la ligne (« SESSIONS ACTIVES » était rogné par l'anneau).
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            {centerValue != null && (
-              <span className="text-2xl font-bold tabular-nums tracking-tight text-ink">{centerValue}</span>
-            )}
-            {centerLabel != null && <span className="text-[10px] uppercase tracking-wider text-ink-faint">{centerLabel}</span>}
+            <div className="flex flex-col items-center text-center" style={{ maxWidth: Math.max(rInner * 2 - 12, 40) }}>
+              {centerValue != null && (
+                <span className="text-2xl font-bold tabular-nums tracking-tight text-ink">{centerValue}</span>
+              )}
+              {centerLabel != null && (
+                <span className="text-[10px] uppercase leading-tight tracking-wider text-ink-faint">{centerLabel}</span>
+              )}
+            </div>
           </div>
         )}
       </div>

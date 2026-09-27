@@ -140,7 +140,7 @@ export function BudgetBars({
   alternative = true,
 }: BudgetBarsProps) {
   // Aucun SLO : l'état vide, jamais un axe sans barre (l'écran y ajoute son geste).
-  if (lignes.length === 0) return <EtatSurface etat={{ kind: "vide", population: "SLO actif", plage: "ce périmètre" }} />;
+  if (lignes.length === 0) return <EtatSurface etat={{ kind: "vide", population: "SLO actif", masculin: true, plage: "ce périmètre" }} />;
   const pos = (v: number) => `${(Math.min(Math.max(v, 0), echelleMax) / echelleMax) * 100}%`;
   const reperesVisibles = reperes.filter((r) => r > 0 && r < echelleMax && r !== epuise);
 

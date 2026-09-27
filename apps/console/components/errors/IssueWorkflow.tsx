@@ -23,7 +23,7 @@ function personne(ref: IssueUserRef | null, emails: boolean): string {
 
 function reference(release: string | null, env: string | null): string {
   if (!release) return "release inconnue";
-  return `release ${release}${env ? ` (env ${env})` : " (env inconnu)"}`;
+  return `release ${release}${env ? ` (env ${env})` : " (environnement inconnu)"}`;
 }
 
 /**
@@ -49,37 +49,43 @@ export function IssueTriageCard({
       </h2>
       {!workflow ? (
         <p role="status" className={`mt-3 ${NOTICE}`}>
-          Triage indisponible : migration-v73 non appliquée. L&apos;état de l&apos;issue reste lisible.
+          Triage indisponible pour le moment. L&apos;état du groupe reste lisible.
         </p>
       ) : (
         <>
-          <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-xs text-ink-faint">Assignée à</dt>
-              <dd data-testid="issue-assignee">{personne(workflow.assignee, canWrite)}</dd>
-            </div>
-            {issue.status === "resolved" && issue.resolved_at && (
-              <div>
-                <dt className="text-xs text-ink-faint">Résolution</dt>
-                <dd data-testid="issue-resolution">
-                  le {fmtDate(issue.resolved_at)} par {personne(workflow.resolved_by, canWrite)} — référence{" "}
-                  {reference(issue.resolved_release, issue.resolved_env)}
-                </dd>
-              </div>
-            )}
-          </dl>
+          {(!canWrite || (issue.status === "resolved" && issue.resolved_at)) && (
+            <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+              {/* L'administrateur lit l'assigné dans le sélecteur du formulaire, juste
+                  dessous : le répéter en texte le disait deux fois (recette du 26/09/2026). */}
+              {!canWrite && (
+                <div>
+                  <dt className="text-xs text-ink-faint">Assigné à</dt>
+                  <dd data-testid="issue-assignee">{personne(workflow.assignee, canWrite)}</dd>
+                </div>
+              )}
+              {issue.status === "resolved" && issue.resolved_at && (
+                <div>
+                  <dt className="text-xs text-ink-faint">Résolution</dt>
+                  <dd data-testid="issue-resolution">
+                    le {fmtDate(issue.resolved_at)} par {personne(workflow.resolved_by, canWrite)} — référence{" "}
+                    {reference(issue.resolved_release, issue.resolved_env)}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          )}
           {workflow.regression && issue.status !== "resolved" && (
             <p role="status" className={`mt-3 ${NOTICE}`} data-testid="issue-regression">
               Régression confirmée le {fmtDate(workflow.regression.created_at)} : une occurrence de la{" "}
               {reference(workflow.regression.release, workflow.regression.env)} est arrivée après la résolution, sur une
-              release déployée après la référence {workflow.regression.reference_release}. L&apos;issue a été rouverte.
+              release déployée après la référence {workflow.regression.reference_release}. Le groupe a été rouvert.
             </p>
           )}
           {issue.reappeared && (
             <p role="status" className={`mt-3 ${NOTICE}`} data-testid="issue-reappeared">
-              Réapparition à vérifier : l&apos;issue est revue depuis sa résolution sans régression confirmée — même
+              Réapparition à vérifier : le groupe est revu depuis sa résolution sans régression confirmée — même
               release que la référence ({reference(issue.resolved_release, issue.resolved_env)}), release plus ancienne,
-              sans marqueur de déploiement ou autre env. Elle reste résolue.
+              sans marqueur de déploiement ou autre environnement. Il reste résolu.
             </p>
           )}
           {canWrite ? (
@@ -94,7 +100,7 @@ export function IssueTriageCard({
                 comptes={workflow.assignable_users.map((u) => ({ value: u.user_id, label: u.email ?? u.user_id }))}
               />
               <Link href={alertHref} className={`inline-block text-sm ${ERROR_LINK}`} data-testid="issue-alert-link">
-                Créer une alerte de pic sur cette issue
+                Créer une alerte de pic sur ce groupe
               </Link>
             </div>
           ) : (
@@ -145,14 +151,14 @@ function Evenement({ activite, emails }: { activite: IssueActivity; emails: bool
     case "status":
       return (
         <>
-          <strong>{acteur}</strong> a passé l&apos;issue de {statut(activite.old_status)} à {statut(activite.new_status)}
+          <strong>{acteur}</strong> a passé le groupe de {statut(activite.old_status)} à {statut(activite.new_status)}
           {activite.new_status === "resolved" && ` — référence ${reference(activite.release, activite.env)}`}.
         </>
       );
     case "assignee":
       return activite.new_assignee ? (
         <>
-          <strong>{acteur}</strong> a assigné l&apos;issue à {personne(activite.new_assignee, emails)}.
+          <strong>{acteur}</strong> a assigné le groupe à {personne(activite.new_assignee, emails)}.
         </>
       ) : (
         <>
@@ -164,7 +170,7 @@ function Evenement({ activite, emails }: { activite: IssueActivity; emails: bool
         <>
           {activite.legacy_fingerprint ? (
             <>
-              Note de triage du groupe historique <code className="chip-mono break-all">{activite.legacy_fingerprint}</code>,
+              Note de triage de l&apos;ancienne signature <code className="chip-mono break-all">{activite.legacy_fingerprint}</code>,
               reprise dans l&apos;historique :
             </>
           ) : (
@@ -191,7 +197,7 @@ function Evenement({ activite, emails }: { activite: IssueActivity; emails: bool
       return (
         <>
           <strong>Régression confirmée</strong> : {reference(activite.release, activite.env)} déployée après la référence{" "}
-          {activite.reference_release} — l&apos;issue est rouverte.
+          {activite.reference_release} — le groupe est rouvert.
         </>
       );
   }
@@ -218,7 +224,7 @@ export function IssueActivitySection({
       </h2>
       {activities === null ? (
         <p role="status" className={`mt-3 ${NOTICE}`}>
-          Historique indisponible : migration-v73 non appliquée.
+          Historique indisponible pour le moment.
         </p>
       ) : (
         <>

@@ -54,6 +54,7 @@ import {
   resumeDeSession,
 } from "@/lib/session-detail";
 import { instantUtc } from "@/lib/sessions-priorite";
+import { pluriel } from "@/lib/format";
 
 /** Ce que le panneau a pu lire, tel que le chargeur de `/sessions` le rend (sur le fil). */
 export type LecturePanneauSession = Fil<LecturePanneauSessionBrute>;
@@ -178,7 +179,7 @@ export function PanneauSession({
       <div className="space-y-5" data-testid="panneau-session">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
           <p className="min-w-0 basis-full text-xs text-ink-soft sm:basis-auto sm:flex-1" data-testid="panneau-session-portee">
-            Session entière, du {instantUtc(meta.started_at)} au {instantUtc(meta.last_seen_at)} (UTC)
+            Session entière, du {instantUtc(meta.started_at)} au {instantUtc(meta.last_seen_at)}
             {active ? ", encore active" : ""} : ces chiffres ne dépendent pas de la plage de l&apos;écran ({plage}), qui
             n&apos;a servi qu&apos;à la lister.
           </p>
@@ -252,7 +253,7 @@ export function PanneauSession({
                     ? `Les ${formater("count", premiers.montres)} premiers événements sur ${formater("count", premiers.total)}${
                         resume?.tronquee ? ` lus (chronologie limitée à ${LIMITE_CHRONOLOGIE} lignes)` : ""
                       }, groupés par page vue ; la suite est sur la page de la session.`
-                    : `${formater("count", premiers.total)} événement(s), groupés par page vue.`}
+                    : `${pluriel(premiers.total, "événement")}, ${premiers.total < 2 ? "rattaché à sa" : "groupés par"} page vue.`}
                 </p>
               )}
             </>

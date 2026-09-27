@@ -14,7 +14,7 @@ import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, pluriel } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { chargerSviAppels } from "@/lib/chargeurs/svi";
@@ -38,19 +38,24 @@ const SERIES: StackSeries[] = [
   { key: "failed", name: "échecs", color: "#ef4444" },
 ];
 
+/** L'écran fermé des appels : son titre, et ce que la liste montrera. */
+function SviFermee() {
+  return (
+    <CapaciteFermee
+      titre="Appels SVI"
+      sujet="La liste des appels de votre serveur vocal : leur issue, leur durée et le détail de chacun."
+    />
+  );
+}
+
 export default async function AppelsSvi({ searchParams }: { searchParams?: Promise<SearchParams> }) {
-  if (estFermee("/svi")) {
-    return (
-      <CapaciteFermee
-        titre="Supervision SVI"
-        sujet="Supervision du serveur vocal interactif."
-      />
-    );
-  }
+  // Fermée, la page garde SON titre (recette du 26/09/2026 : les trois routes SVI
+  // affichaient la même page) ; le sous-titre dit ce que la liste apportera.
+  if (estFermee("/svi")) return <SviFermee />;
 
   // Le chargeur (`lib/chargeurs/svi.ts`) lit les appels, la synthèse et les issues par heure.
   const ecran = await chargerEcran(ECRANS.sviAppels, chargerSviAppels, (await searchParams) ?? {});
-  if (ecran.etat === "fermee") return <CapaciteFermee titre="Supervision SVI" sujet="Supervision du serveur vocal interactif." />;
+  if (ecran.etat === "fermee") return <SviFermee />;
   if (ecran.etat === "refus") return <FilterProblemNotice title="Appels SVI" problem={ecran.problem} />;
   const { rows, sum, parHeure, periode } = ecran;
 
@@ -77,7 +82,7 @@ export default async function AppelsSvi({ searchParams }: { searchParams?: Promi
         chartTitle={`Issues des appels par heure — ${periode}`}
         chartMeta={
           <span className="text-xs text-ink-soft">
-            {sum.total.toLocaleString("fr-FR")} appel(s)
+            {pluriel(sum.total, "appel")}
           </span>
         }
         chart={<StackedBars data={data} xKey="heure" series={SERIES} />}

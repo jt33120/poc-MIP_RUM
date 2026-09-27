@@ -116,7 +116,7 @@ const BUDGETS: BudgetLigne[] = [
 // ─────────────────────────────── FriseEtats ───────────────────────────────
 
 const ETATS_ROBOT: EtatDef[] = [
-  { cle: "ok", libelle: "ok", forme: "basse", ton: "neutre" },
+  { cle: "ok", libelle: "ok", forme: "basse", ton: "good" },
   { cle: "warn", libelle: "avertissement", forme: "moyenne", glyphe: "!", ton: "warn" },
   { cle: "incident", libelle: "incident", forme: "haute", glyphe: "×", ton: "bad" },
   { cle: "inconnu", libelle: "état inconnu", forme: "contour", ton: "vide" },
@@ -349,10 +349,10 @@ export function SectionsFiabilite() {
       <Bloc
         id="frise-etats"
         titre="FriseEtats"
-        sous="Une case par seau, alignée sur la série au-dessus (mêmes marges) : l'état se lit par la hauteur, le glyphe, le contour ou les hachures ; aucune bande ; un seul arrêt de tabulation, flèches de case en case."
+        sous="Une case par tranche, alignée sur la série au-dessus (mêmes marges) : l'état se lit par la hauteur, le glyphe, le contour ou les hachures ; aucune bande ; un seul arrêt de tabulation, flèches de case en case."
       >
         <div className="grid min-w-0 gap-4">
-          <Figure titre="Robot et réel, par heure" meta={<span>24 h, seau d&apos;une heure, UTC</span>}>
+          <Figure titre="Robot et réel, par heure" meta={<span>24 h, tranche d&apos;une heure, UTC</span>}>
             <ThresholdSeries
               grille={grille24}
               points={pointsRobot}
@@ -374,7 +374,7 @@ export function SectionsFiabilite() {
             />
             <p className="mt-1 text-[11px] text-ink-soft">État du robot, pas une note du LCP.</p>
           </Figure>
-          <Exemple etat="300 heures : sous 2 px par case (390 px), cases regroupées par 3 seaux, pire état">
+          <Exemple etat="300 heures : sous 2 px par case (390 px), cases regroupées par 3 tranches, pire état">
             <FriseEtats
               grille={grille300}
               seauSecondes={3600}

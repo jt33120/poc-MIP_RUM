@@ -16,14 +16,32 @@
 // Les occurrences d'erreur d'une session viennent de `SessionRow.err_count`, qui
 // est un `sum(occurrences)` (`listSessions`, `lib/queries.ts`) : V1 est tenu à la
 // source, et le libellé de la colonne dit « Occurrences d'erreur ».
-import { browserFromUA } from "./format";
+import { browserFromUA, fmtDate } from "./format";
 import type { SessionRow } from "./queries";
+import { RUNTIME_MOBILE } from "./session-detail";
 
-/** Texte du hero tant que `sessionsAPrioriser` (B30, § 6.3) n'est pas livrée. */
-export const RAISON_PRIORITE = "classement indisponible : lecture à créer (B30)";
+// Textes montrés à l'utilisateur : aucun code de lot (recette du 26/09/2026, où
+// « lecture à créer (B30) » s'affichait dans le hero, une tuile et chaque bascule).
 
-/** Texte des cellules Frustration / Rejeu et des filtres rapides avant B30. */
-export const SIGNAUX_A_CREER = "lecture à créer (B30)";
+/**
+ * Raison du hero tant que `sessionsAPrioriser` (B30, § 6.3) n'est pas livrée. L'écran
+ * n'affiche plus le hero sans elle ; la vitrine des composants la montre.
+ */
+export const RAISON_PRIORITE = "classement pas encore disponible";
+
+/** Un filtre rapide (`avec=`) demandé par l'URL, dont la lecture (B30) manque. */
+export const FILTRE_AVEC_INDISPONIBLE = "ce filtre n'est pas encore disponible";
+
+/** Cellule Frustration / Rejeu quand la lecture des signaux de la page a échoué. */
+export const SIGNAL_NON_LU = "lecture en échec : valeur inconnue";
+
+/** Cellule Frustration d'une session mobile : son capteur n'en émet pas (garde R-F). */
+export const FRUSTRATION_NON_COLLECTEE = "Non collecté : le capteur mobile n'émet pas de signal de frustration";
+
+/** Session d'une application mobile (React Native) : pas de signal de frustration. */
+export function sessionMobile(s: Pick<SessionRow, "runtime">): boolean {
+  return s.runtime === RUNTIME_MOBILE;
+}
 
 /** Ce qu'une raison de priorité énumère, tel que B30 le rendra (§ 5.11.4). */
 export interface RaisonPriorite {
@@ -45,7 +63,7 @@ export type SessionPrioritaire = SessionRow & {
   raison: RaisonPriorite;
 };
 
-/** Signaux d'une ligne de la table ; `null` = non lu (B30 absent), jamais 0. */
+/** Signaux d'une ligne de la table ; `null` = non lu ou non collecté, jamais 0. */
 export interface SignauxLigne {
   frustration: number | null;
   rejeu: boolean | null;
@@ -79,13 +97,13 @@ export function ordonnerPrioritaires<T extends Pick<SessionPrioritaire, "err_cou
 
 const PLURIEL_FRUSTRATION: Record<string, [string, string]> = {
   rage: ["clic de rage", "clics de rage"],
-  dead: ["clic mort", "clics morts"],
+  dead: ["clic sans réaction", "clics sans réaction"],
   error: ["erreur perçue", "erreurs perçues"],
 };
 
 function libelleFrustration(kind: string, n: number): string {
   const paire = PLURIEL_FRUSTRATION[kind];
-  if (!paire) return `${n} signal(aux) ${kind}`;
+  if (!paire) return `${n} ${n > 1 ? "signaux" : "signal"} ${kind}`;
   return `${n} ${n > 1 ? paire[1] : paire[0]}`;
 }
 
@@ -145,9 +163,15 @@ export function parcoursResume(routes: string[] | null): { premiere: string; der
  * sans elle, l'user-agent est lu, et `deduit` le dit à l'écran (infobulle), pour
  * qu'une ligne ne se compare pas silencieusement à un groupe d'une autre source.
  */
-export function navigateurDeSession(s: Pick<SessionRow, "browser" | "user_agent">): { texte: string; deduit: boolean } {
+export function navigateurDeSession(
+  s: Pick<SessionRow, "browser" | "user_agent"> & Partial<Pick<SessionRow, "runtime">>,
+): { texte: string; deduit: boolean } {
   const collecte = s.browser?.trim();
   if (collecte) return { texte: collecte, deduit: false };
+  // Une application React Native n'a pas de navigateur : son user-agent (« MIP-RN/0.4 »)
+  // se lisait « Autre * », avec un renvoi à une déduction qui n'a pas de sens ici
+  // (contre-recette du 26/09/2026).
+  if (s.runtime === RUNTIME_MOBILE) return { texte: "application native", deduit: false };
   const deduit = browserFromUA(s.user_agent ?? null);
   return deduit === "—" ? { texte: "Inconnu", deduit: false } : { texte: deduit, deduit: true };
 }
@@ -158,19 +182,14 @@ export function valeurOuInconnu(v: string | null | undefined): string {
   return texte ? texte : "Inconnu";
 }
 
-const DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-/** Instant daté en UTC (V6) : la fenêtre de l'écran est UTC, ses lignes aussi. */
+/**
+ * Instant daté dans le fuseau d'affichage (heure de Paris, nommé dans la barre du
+ * haut). Le nom `instantUtc` est historique (V6 : tout était en UTC) : il est gardé
+ * parce que la liste des sessions l'importe, et elle relève d'un autre lot.
+ */
 export function instantUtc(d: Date | string | null | undefined): string {
   if (d == null) return "—";
-  const ms = new Date(d).getTime();
-  return Number.isFinite(ms) ? DATE_UTC.format(ms) : "—";
+  return fmtDate(d);
 }
 
 /**

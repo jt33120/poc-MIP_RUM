@@ -232,8 +232,8 @@ export const OUTILS = [
   },
   {
     nom: "mip_rum_list_events",
-    titre: "Explorer les événements custom",
-    resume: "Journal, total, tendance et facettes des événements custom scrubbed.",
+    titre: "Explorer les événements personnalisés",
+    resume: "Journal, total, tendance et facettes des événements personnalisés, propriétés nettoyées des données sensibles.",
     description:
       "Explore les événements RUM avec une pagination stable. Pour les événements métier, passer kind='event' et éventuellement un nom exact. " +
       "Les filtres d'attribut portent uniquement sur une primitive top-level de props ou context : aucun JSONPath, regex ou SQL n'est accepté. " +
@@ -245,7 +245,7 @@ export const OUTILS = [
   },
   {
     nom: "mip_rum_mobile_summary",
-    titre: "Runtime React Native",
+    titre: "Application mobile React Native",
     resume: "Ce que la couche JS mobile observe — et ce qu'elle n'observe PAS.",
     description:
       "Résumé d'un périmètre React Native : capacités DÉCLARÉES par le SDK, sessions et visiteurs observés, erreurs JavaScript, " +
@@ -262,8 +262,8 @@ export const OUTILS = [
   },
   {
     nom: "mip_rum_get_tracing",
-    titre: "Tracing front → back",
-    resume: "Couverture du tracing, appels d'API et routes backend vues depuis le navigateur.",
+    titre: "Traçage navigateur → serveur",
+    resume: "Couverture du traçage, appels d'API et routes serveur vues depuis le navigateur.",
     description:
       "Ce que le navigateur voit du backend : taux de couverture du tracing distribué, appels d'API les plus lents ou les plus en erreur, " +
       "et routes backend correspondantes. " +
@@ -284,7 +284,7 @@ export const OUTILS = [
   },
   {
     nom: "mip_rum_get_health_grid",
-    titre: "Heatmap de santé",
+    titre: "Carte de chaleur de la santé",
     resume: "Santé par jour × heure, et trafic quotidien.",
     description:
       "Grille de santé jour × heure (168 cases sur une semaine) et trafic quotidien. " +

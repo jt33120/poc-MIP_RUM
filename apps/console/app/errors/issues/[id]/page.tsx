@@ -19,9 +19,10 @@
 //
 // DEUX SOURCES PROPRES À L'ISSUE, dites à l'écran. La part des sessions touchées
 // compte les lignes DE L'ISSUE (`partSessionsTouchees` sur une `IssueRef`, même
-// rattachement qu'`issueDetail`) ; les versions touchées sont celles que l'issue
-// persiste (`first_release`, `last_release`), que ni la fenêtre ni les filtres ne
-// bornent.
+// rattachement qu'`issueDetail`) ; les versions touchées sont TOUTES les releases
+// de ses lignes, de la plus récente à la plus ancienne (`releasesDeLIssue`), que ni
+// la fenêtre ni les filtres ne bornent — plus les releases de sa première et de sa
+// dernière occurrence dans le temps (recette du 26/09/2026).
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
@@ -36,7 +37,6 @@ import {
   VersionsTouchees,
   comptesTouches,
   porteeOccurrences,
-  versionsDeLIssue,
 } from "@/components/errors/DetailErreur";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
@@ -47,6 +47,7 @@ import { IssueActivitySection, IssueTriageCard } from "@/components/errors/Issue
 import { IssueTicketCard } from "@/components/errors/IssueTickets";
 import { errorGroupHref, errorSearchParams, errorsHref, issueHref } from "@/lib/error-view";
 import { SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import { annotationsDeploiements } from "@/lib/annotations";
 import { ISSUE_STATUS_LABELS, type IssueDetailResult } from "@/lib/error-issues";
 import type { SearchParams } from "@/lib/filters";
@@ -62,8 +63,8 @@ import { type ErrorFilters } from "@/lib/queries-errors";
 export const dynamic = "force-dynamic";
 
 const SOURCE_STATUT = {
-  system: "statut initial d'une issue nouvelle, ou rouverte par une régression confirmée",
-  migration: "hérité des groupes historiques repris",
+  system: "statut initial d'un groupe nouveau, ou rouvert par une régression confirmée",
+  migration: "hérité des anciennes signatures reprises",
   user: "décision de triage",
 } as const;
 
@@ -97,7 +98,7 @@ export default async function IssuePage({
     );
   }
 
-  const { label, bucketLabel, query, cursor, detail, part, deploys, admin, workflow, activite, activiteCurseur, pile, livraisons } = d;
+  const { label, bucketLabel, query, cursor, detail, part, deploys, versions, admin, workflow, activite, activiteCurseur, pile, livraisons } = d;
   const { range } = query;
   const url = errorSearchParams(sp);
   const { impact, trend, last_sample: last, occurrences, sampling, enrichment } = detail;
@@ -123,15 +124,15 @@ export default async function IssuePage({
   return (
     <div className="animate-fade-up">
       <BackLink f={f} />
-      <h1 className="mb-1 flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight">
+      <h1 className="mb-1 flex min-w-0 items-start gap-3 text-xl font-bold tracking-tight">
         <ErrorTypeBadge type={detail.error_type} large />
-        <span className="min-w-0 truncate" title={detail.sample_message ?? ""}>
+        <span className="line-clamp-3 min-w-0 break-words" title={detail.sample_message ?? ""}>
           {detail.sample_message ?? "(aucune occurrence sur cette période)"}
         </span>
       </h1>
       <div className="mb-6 flex min-w-0 flex-wrap items-center gap-2">
         <span className="min-w-0 break-all font-mono text-xs text-ink-faint">
-          issue {issue.id} · app {issue.app_id}
+          groupe {issue.id} · application {issue.app_id}
         </span>
         <IssueStatusBadge status={issue.status} testid="issue-status" />
         <ReappearedBadge reappeared={issue.reappeared} />
@@ -167,18 +168,18 @@ export default async function IssuePage({
       <ErrorNotices sampling={sampling} enrichment={enrichment} />
 
       {/* ── Bloc 2 : phrase d'impact, puis quatre tuiles ── */}
-      <SectionErreur titre="Impact de cette issue">
+      <SectionErreur titre="Impact de ce groupe">
         <PhraseImpact impact={impact} plage={label} part={part} hrefSessions={null} />
         <TuilesDetailErreur impact={impact} plage={label} prefixe="issue" />
         <p className="mb-6 text-xs text-ink-soft" data-testid="issue-vues">
-          Première vue {fmtDate(issue.first_seen)} · Dernière vue {fmtDate(issue.last_seen)} — dates de l&apos;issue,
-          depuis toujours, groupes historiques repris compris : elles ne suivent pas la fenêtre.
+          Première vue {fmtDate(issue.first_seen)} · Dernière vue {fmtDate(issue.last_seen)} — dates du groupe,
+          depuis toujours, anciennes signatures reprises comprises : elles ne suivent pas la période.
         </p>
       </SectionErreur>
 
-      {/* ── Bloc 3 : versions touchées, celles que l'issue persiste ── */}
+      {/* ── Bloc 3 : versions touchées, toutes les releases de l'issue ── */}
       <SectionErreur titre="Versions touchées">
-        <VersionsTouchees issue={versionsDeLIssue(issue)} />
+        <VersionsTouchees releases={versions} />
       </SectionErreur>
 
       {/* ── Bloc 4 : occurrences dans le temps ── */}
@@ -192,7 +193,7 @@ export default async function IssuePage({
             seauSecondes={range.bucketSeconds}
             annotations={annotations.annotations}
             annotationsIndisponibles={
-              deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement non lus"
+              deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement indisponibles"
             }
             zoomHref={zoomHref}
           />
@@ -219,13 +220,13 @@ export default async function IssuePage({
       </div>
 
       {/* ── Bloc 6 : pile du dernier exemplaire ── */}
-      <ErrorStackCard last={last} pile={pile} />
+      <ErrorStackCard last={last} pile={pile} appId={issue.app_id} admin={admin} />
 
       {/* ── Bloc 7 : occurrences ── */}
       <ErrorOccurrences
         appId={issue.app_id}
         occurrences={occurrences}
-        caption={`Occurrences de l'issue ${issue.id} dans ${issue.app_id} sur ${label}, les plus récentes d'abord`}
+        caption={`Occurrences du groupe ${issue.id} dans ${issue.app_id} sur ${label}, les plus récentes d'abord`}
         firstHref={cursor ? issueHref(issue, f, pageExtra) : null}
         nextHref={detail.next_cursor ? issueHref(issue, f, { ...pageExtra, cursor: detail.next_cursor }) : null}
       />
@@ -248,7 +249,7 @@ export default async function IssuePage({
 function BackLink({ f }: { f: ErrorFilters }) {
   return (
     <Link href={errorsHref("/errors", f, f.app)} className={`mb-4 inline-block text-sm ${ERROR_LINK}`}>
-      ← Toutes les issues
+      ← Tous les groupes
     </Link>
   );
 }
@@ -263,30 +264,32 @@ function IssueState({ detail, f }: { detail: IssueDetailResult; f: ErrorFilters 
   return (
     <section className="card mb-6 p-4" aria-labelledby="issue-state-title" data-testid="issue-state">
       <h2 id="issue-state-title" className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-        État de l&apos;issue
+        État du groupe
       </h2>
       <p className="mt-2 text-sm text-ink-soft">
         {ISSUE_STATUS_LABELS[issue.status]} — {SOURCE_STATUT[issue.status_source]}.
         {issue.status === "for_review" &&
           issue.status_source === "migration" &&
-          " Les groupes historiques repris portaient des statuts différents : la décision reste à prendre."}
+          " Les anciennes signatures reprises portaient des statuts différents : la décision reste à prendre."}
       </p>
       {!actif && (
         <p role="status" className="mt-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-ink-soft">
-          Regroupement v2 désactivé pour cette application : l&apos;issue reste lisible, ses nouvelles occurrences ne
-          lui sont plus rattachées.
+          Regroupement avancé désactivé pour cette application : ce groupe reste lisible, mais ses nouvelles
+          occurrences ne lui sont plus rattachées.
         </p>
       )}
       {groupes.length > 0 && (
-        <div className="mt-4 overflow-x-auto">
+        // Défilement signalé : « Statut à la reprise » était coupé à 390 px sans
+        // indice (recette 26/09).
+        <TableDefilante className="mt-4" label="Anciennes signatures reprises">
           <table className="w-full min-w-table text-sm" data-testid="issue-legacy-groups">
             <caption className="mb-2 text-left text-xs text-ink-faint">
-              Groupes historiques repris ({groupes.length})
+              Anciennes signatures reprises ({groupes.length})
             </caption>
             <thead className="bg-panel2">
               <tr>
                 <th scope="col" className="th">Signature</th>
-                <th scope="col" className="th">Statut au rattachement</th>
+                <th scope="col" className="th">Statut à la reprise</th>
                 <th scope="col" className="th">Statut actuel</th>
                 <th scope="col" className="th">Note de triage</th>
               </tr>
@@ -302,7 +305,7 @@ function IssueState({ detail, f }: { detail: IssueDetailResult; f: ErrorFilters 
                       {g.fingerprint}
                     </Link>
                     {g.issues > 1 && (
-                      <span className="block text-xs text-ink-faint">répartie sur {g.issues} issues</span>
+                      <span className="block text-xs text-ink-faint">répartie sur {g.issues} groupes</span>
                     )}
                   </td>
                   <td className="px-4 py-2 text-xs text-ink-soft">
@@ -314,7 +317,7 @@ function IssueState({ detail, f }: { detail: IssueDetailResult; f: ErrorFilters 
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       )}
     </section>
   );

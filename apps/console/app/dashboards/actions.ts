@@ -30,6 +30,8 @@ function revisionFromForm(fd: FormData, nom = "revision"): string {
 /**
  * Contexte de filtres à reporter dans la redirection. Seuls les paramètres du
  * contrat sont repris : un champ inventé par un formulaire n'entre pas dans l'URL.
+ * S'y ajoute le mode édition du tableau (`edition=1`, et cette seule valeur) : une
+ * écriture refusée ramène la page en édition, là où le geste a été fait.
  */
 function contexteFromForm(fd: FormData): URLSearchParams {
   const entrant = new URLSearchParams(String(fd.get("ctx") ?? ""));
@@ -38,6 +40,7 @@ function contexteFromForm(fd: FormData): URLSearchParams {
     const valeur = entrant.get(nom);
     if (valeur !== null) sortie.set(nom, valeur);
   }
+  if (entrant.get("edition") === "1") sortie.set("edition", "1");
   return sortie;
 }
 
@@ -64,6 +67,8 @@ function retour(
  */
 function retourListe(ctx: URLSearchParams, creation: "nom-vide" | "refus" | "modele-inconnu"): string {
   const p = new URLSearchParams(ctx);
+  // La liste n'a pas de mode édition.
+  p.delete("edition");
   p.set("creation", creation);
   return `/dashboards?${p.toString()}`;
 }

@@ -176,6 +176,34 @@ export function normalizeFunctionName(raw) {
   return dernier.slice(0, 100);
 }
 
+// ─────────────── Script intégré à la page : la PAGE n'est pas le module ──────────
+//
+// Une erreur levée par un `<script>` intégré porte, dans sa pile, l'URL de la PAGE
+// qui le contient : `at HTMLButtonElement.<anonymous> (https://site.fr/partners/42:79:13)`.
+// Chaque page devenait un « module » : la recette du 26/09/2026 comptait neuf groupes
+// « Uncaught Error: Erreur de démo MIP RUM » — un par page (/partners/42,
+// /partners/108, /contact…) — pour UN script du gabarit, à la même ligne partout.
+//
+// La règle : une URL http(s) dont le dernier segment n'a pas d'extension désigne
+// un DOCUMENT, pas un fichier de script ; elle est remplacée par `DOCUMENT_INTEGRE`.
+// Le nom de fonction, le type et le message continuent de distinguer deux bugs.
+// Limites connues, assumées : deux scripts intégrés de deux pages différentes qui
+// lèvent le même message depuis la même fonction se regroupent ; un script servi
+// SANS extension (`/gtag/js`) est lu comme une page. Les lignes déjà en base gardent
+// leur empreinte : UNE scission au déploiement, comme pour les bundles hachés.
+
+/** Ce qui remplace l'URL d'une page dans une frame de script intégré (v1, `otlp.mjs:normalizeModulePath`, et v2). */
+export const DOCUMENT_INTEGRE = "(page)";
+
+/** L'URL http(s) d'une page, et non d'un fichier : dernier segment sans extension. */
+export function estUrlDePage(url) {
+  const brut = String(url ?? "");
+  if (!/^https?:\/\/[^/]+/i.test(brut)) return false;
+  const chemin = brut.replace(/^https?:\/\/[^/]+/i, "").split("?")[0].split("#")[0];
+  const dernier = chemin.split("/").at(-1) ?? "";
+  return !dernier.includes(".");
+}
+
 // ─────────────────────── Chemins de modules et builds ─────────────────────────
 //
 // PRUDENCE, reprise de la v1 (otlp.mjs:normalizeModulePath). Trop normaliser est
@@ -250,6 +278,9 @@ function nomSansEmpreinte(nom, repertoire) {
 export function normalizeFramePath(file) {
   if (typeof file !== "string" || !file || CONTROLE.test(file)) return null;
   if (/\beval at\b|<anonymous>|\[native code\]|^native$/.test(file)) return null;
+  // Script intégré : l'URL est celle de la PAGE, pas d'un module — une par page vue
+  // faisait un groupe par page (recette du 26/09/2026). Règle partagée avec la v1.
+  if (estUrlDePage(file)) return DOCUMENT_INTEGRE;
   let chemin = file
     .replace(/^blob:/i, "")
     .replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "")

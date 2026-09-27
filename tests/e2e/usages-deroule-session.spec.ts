@@ -128,6 +128,7 @@ test.describe("F45 — Détail de session : déroulé groupé par vue", () => {
     await expect(phases.locator("summary")).toHaveText("Phases réseau (8)");
     // Preuve de fin : le RTT n'est plus une ligne étiquetée « Vital ».
     await expect(chronologie.getByText("Vital", { exact: true })).toHaveCount(0);
+    await expect(chronologie.getByText("Web Vital", { exact: true })).toHaveCount(0);
     await phases.locator("summary").click();
     await expect(phases).toContainText("RTT");
   });
@@ -180,14 +181,16 @@ test.describe("F45 — Détail de session : déroulé groupé par vue", () => {
     await expect(tuile("Signaux de frustration")).toHaveAttribute("href", /voir=frustration/);
 
     await page.goto(adresse("&voir=frustration"), { waitUntil: "domcontentloaded" });
-    await expect(page.locator("#chronologie")).toContainText("frustration.rage");
+    // Le nom SDK de l'événement se lit en français (recette du 26/09/2026).
+    await expect(page.locator("#chronologie")).toContainText("Clics de rage");
+    await expect(page.locator("#chronologie")).not.toContainText("frustration.rage");
     await expect(page.locator("#chronologie")).not.toContainText("TypeError");
   });
 
-  test("B32 non livré : aucun lien mort vers l'erreur groupée ni vers la trace, et la raison est dite", async ({ page }) => {
+  test("B32 non livré : aucun lien mort vers l'erreur groupée ni vers la trace, et aucune note de conception", async ({ page }) => {
     await connexion(page);
     await page.goto(adresse(), { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("liens-sortants-b32")).toContainText("non disponibles");
+    await expect(page.getByTestId("liens-sortants-b32")).toHaveCount(0);
     const chronologie = page.locator("#chronologie");
     await expect(chronologie.locator('a[href*="/errors/"]')).toHaveCount(0);
     await expect(chronologie.locator('a[href*="/tracing/"]')).toHaveCount(0);

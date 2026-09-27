@@ -22,7 +22,14 @@ export async function internalHealth(): Promise<HealthSnapshot> {
        (select count(*) from alert_delivery where status = 'queued')::int as deliveries_queued,
        (select count(*) from alert_delivery where status = 'failed')::int as deliveries_failed,
        (select count(*) from alert_delivery where status = 'dead')::int as deliveries_dead,
-       (select extract(epoch from (now() - max(metered_at))) / 3600.0 from tenant_usage_daily)::float as metering_lag_hours,
+       -- Dernier comptage de la consommation : la ligne la plus récente, OU le dernier
+       -- passage abouti du travail quotidien (son battement, qui inclut le métrage).
+       -- Un jour sans trafic n'écrit aucune ligne : sans le battement, l'écran disait
+       -- « jamais exécuté » après un passage réussi (contre-recette du 26/09/2026).
+       (select extract(epoch from (now() - greatest(
+           (select max(metered_at) from tenant_usage_daily),
+           (select max(expires_at) from scheduler_lease where job = 'quotidien' and expires_at <= now())
+         ))) / 3600.0)::float as metering_lag_hours,
        -- Plafond de cardinalité de route (migration-v62). Une app au plafond
        -- n'est pas en panne : elle a cessé de distinguer ses nouvelles routes.
        -- Sans ce compteur, la perte de détail serait silencieuse.

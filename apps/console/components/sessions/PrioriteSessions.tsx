@@ -46,7 +46,7 @@ export const ANCRE_TOUTES_SESSIONS = "toutes-les-sessions";
 export function alternativePriorite(lignes: SessionPrioritaire[], plage: string): AlternativeTexte {
   return {
     legende: `Sessions à regarder d'abord, ${plage} — ordre : occurrences d'erreur, signaux de frustration, appels API en échec, dernière activité`,
-    colonnes: ["Session", "Début (UTC)", "Durée observée", "Occurrences d'erreur", "Signaux de frustration", "Appels en échec", "Raison"],
+    colonnes: ["Session", "Début", "Durée observée", "Occurrences d'erreur", "Signaux de frustration", "Appels en échec", "Raison"],
     lignes: lignes.map((s) => [
       `${s.session_id.slice(0, 8)}…`,
       instantUtc(s.started_at),
@@ -114,7 +114,7 @@ function Ligne({ s, hrefs }: { s: SessionPrioritaire; hrefs: HrefsPriorite | und
         </span>
       )}
       <span className="shrink-0 text-xs tabular-nums text-ink-faint">
-        {instantUtc(s.started_at)} UTC · {formater("s-auto", dureeObservee(s))}
+        {instantUtc(s.started_at)} · {formater("s-auto", dureeObservee(s))}
       </span>
       <span className="flex min-w-0 flex-wrap items-center gap-1">
         <Puce>{valeurOuInconnu(s.device_type)}</Puce>

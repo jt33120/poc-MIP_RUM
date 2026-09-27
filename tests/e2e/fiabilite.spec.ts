@@ -217,13 +217,12 @@ test.describe("F63 — Écran SLO", () => {
     await expect(ligne).not.toContainText("objectif manqué");
   });
 
-  test("SL4 « Consommation du budget dans le temps » : Non collecté, aucune série", async ({ page }) => {
+  test("SL4 « Consommation du budget dans le temps » : non livrée, donc non rendue (recette du 26/09/2026)", async ({ page }) => {
     await login(page);
     await page.goto(ecran, { waitUntil: "domcontentloaded" });
-    const figure = page.locator("#consommation-temps");
-    await expect(figure).toContainText("Non collecté");
-    await expect(figure).toContainText("historique de consommation non conservé");
-    await expect(figure.locator(".recharts-wrapper, svg")).toHaveCount(0);
+    await expect(page.locator("#budget")).toBeVisible();
+    // Une fonction absente ne se montre pas comme présente : ni carte « Non collecté », ni série.
+    await expect(page.locator("#consommation-temps")).toHaveCount(0);
   });
 
   test("viewer : aucun bouton d'écriture dans le DOM", async ({ page }) => {
@@ -244,6 +243,8 @@ test.describe("F63 — Écran SLO", () => {
     await login(page);
     await page.goto(ecran, { waitUntil: "domcontentloaded" });
     const ligne = page.getByTestId("table-slo").locator("tbody tr", { hasText: "INP dépassé (e2e)" });
+    // Les actions sont rangées dans un menu replié (recette du 26/09/2026 : onze colonnes).
+    await ligne.locator('[data-testid^="actions-slo-"] > summary').click();
     await expect(ligne.getByRole("button", { name: "Désactiver" })).toBeVisible();
     await expect(ligne.getByRole("link", { name: "Créer une alerte" })).toHaveAttribute("href", /regle_metrique=INP/);
   });
@@ -654,7 +655,7 @@ test.describe("F64 — Écran Alertes", () => {
     await expect(tuileF64(page, "Non acquittées")).toHaveText("2");
     await expect(tuileF64(page, "Règles franchies")).toHaveText("1");
     await expect(tuileF64(page, "Règles sans données")).toHaveText("2");
-    await expect(kpi).toContainText("1 jamais évaluée(s)");
+    await expect(kpi).toContainText("dont 1 règle jamais évaluée");
   });
 
   test("le hero lit 30 jours FIXES et le dit ; une piste par source, l'état de chaque règle", async ({ page }) => {
@@ -690,7 +691,9 @@ test.describe("F64 — Écran Alertes", () => {
     expect(ordre.indexOf(`alert-event-${identifiants.evtIssue}`)).toBeLessThan(
       ordre.indexOf(`alert-event-${identifiants.evtErreurs}`),
     );
-    await expect(page.getByTestId("motif-mtta")).toContainText("acknowledged_at");
+    // Le manque est dit en mots, sans le nom de la colonne absente (recette du 26/09/2026).
+    await expect(page.getByTestId("motif-mtta")).toContainText("délai d'acquittement n'est pas encore enregistré");
+    await expect(page.getByTestId("motif-mtta")).not.toContainText("acknowledged_at");
   });
 
   test("« Voir la mesure » porte from/to = la fenêtre ÉVALUÉE, pas la plage de l'écran", async ({ page }) => {
@@ -1324,8 +1327,9 @@ test.describe("F68 — Règle de régression de release", () => {
       await page.goto(ecranF68(), { waitUntil: "domcontentloaded" });
       const formulaire = await formulaireF68(page);
       await expect(formulaire.getByTestId("mode-release")).toBeDisabled();
-      await expect(formulaire.getByTestId("raison-release")).toContainText("migration-v86");
-      await expect(formulaire.getByTestId("raison-release")).toContainText("check_alerts");
+      // La raison en mots d'utilisateur : ni migration, ni fonction, ni code de lot.
+      await expect(formulaire.getByTestId("raison-release")).toContainText("ne sait pas encore comparer deux releases");
+      await expect(formulaire.getByTestId("raison-release")).not.toContainText("migration-v86");
       await expect(formulaire.getByTestId("champs-release")).toHaveCount(0);
     } finally {
       await retablirF68();
@@ -1379,7 +1383,8 @@ test.describe("F68 — Règle de régression de release", () => {
     );
     // Le déclenchement du flux porte la phrase du § 3.2.
     const evt = Number((await pool.query("select id from alert_event where rule_id = $1", [id])).rows[0].id);
-    await expect(page.getByTestId(`alert-event-${evt}`)).toContainText("d'une release à l'autre : 1.1.0 = 2600 contre 1.0.0 = 2000");
+    // En phrase (recette du 26/09/2026) : valeurs dans leur unité, plus de « = » ni de clé brute.
+    await expect(page.getByTestId(`alert-event-${evt}`)).toContainText("d'une release à l'autre, 1.1.0 à 2,6 s contre 1.0.0 à 2,0 s");
     await expect(page.getByTestId(`alert-event-${evt}`)).toContainText(PHRASE_F68);
   });
 

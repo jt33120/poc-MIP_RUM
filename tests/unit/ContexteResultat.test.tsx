@@ -114,7 +114,7 @@ describe("F33 — W-E2 « Volume du résultat »", () => {
     );
     const series = JSON.parse(html.match(/data-series="([^"]*)"/)![1].replace(/&quot;/g, '"'));
     expect(series).toHaveLength(1);
-    expect(series[0]).toMatchObject({ forme: "barres", role: "principale", libelle: "vues", additive: true });
+    expect(series[0]).toMatchObject({ forme: "barres", role: "categorie", categorieIndex: 4, libelle: "vues", additive: true });
     expect(html).toContain('data-vital="aucun"');
     expect(html).toContain('data-hauteur="120"');
     expect(texte(html)).toContain("Volume du résultat");
@@ -137,7 +137,7 @@ describe("F33 — W-E2 « Volume du résultat »", () => {
   it("budget dépassé : un bandeau « Partiel », aucune barre, et le résultat reste hors de cause", () => {
     const html = renderToStaticMarkup(<VolumeResultat plan={p} unite="vues" lecture={{ etat: "budget" }} />);
     expect(html).toContain('data-testid="etat-partiel"');
-    expect(texte(html)).toContain("Volume non lu : budget de lecture dépassé");
+    expect(texte(html)).toContain("Volume non lu : la lecture a pris trop de temps");
     expect(texte(html)).toContain("Le résultat ci-dessus, lui, a été lu");
     expect(html).not.toContain('data-testid="temoin-threshold"');
     expect(html).not.toContain('data-testid="alternative"');
@@ -235,7 +235,7 @@ describe("F33 — W-E7 « Répartition par … »", () => {
         limite={10}
       />,
     );
-    expect(texte(html)).toContain("Répartition non lue : budget de lecture dépassé");
+    expect(texte(html)).toContain("Répartition non lue : la lecture a pris trop de temps");
     expect(html).toContain('data-testid="repartition-onglets"');
     expect(html).not.toContain('role="list"');
   });

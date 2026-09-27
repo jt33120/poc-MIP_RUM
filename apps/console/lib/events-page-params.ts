@@ -48,6 +48,50 @@ export function totalJournal(
   return query.name || query.attribute ? null : r.total;
 }
 
+/**
+ * Le diagnostic de `exploreEvents`, tel qu'un utilisateur le lit. L'API le rend
+ * avec le numéro de migration manquante (« migration v68 absente : … »), utile à
+ * l'exploitant ; l'écran, lui, écrivait ce numéro tel quel (recette du 26/09/2026).
+ * Le texte de l'API ne change pas : seule sa traduction affichée vit ici.
+ */
+export function diagnosticJournal(diagnostic: string | null | undefined): string {
+  const d = diagnostic ?? "";
+  if (d.startsWith(SANS_PROJECTION)) return "le journal des événements n'est pas encore tenu sur cette installation";
+  if (/^migration v68 absente : compteur/.test(d)) return "le total n'est pas encore calculé sur cette installation";
+  if (/^migration v68 absente/.test(d)) {
+    return "sur cette installation, le journal n'a encore ni volume dans le temps, ni facettes, ni filtre par nom ou attribut";
+  }
+  if (d === "") return "lecture incomplète";
+  // Un diagnostic inconnu garde son texte, sans son éventuel préfixe de migration.
+  return d.replace(/^migration v\d+ absente\s*:\s*/i, "");
+}
+
+/** Nature d'une ligne du journal (`kind` de l'index), en français. */
+export const LIBELLES_NATURE: Record<string, string> = {
+  pageview: "Page vue",
+  vital: "Web Vital",
+  error: "Erreur",
+  resource: "Ressource",
+  longtask: "Tâche longue",
+  breadcrumb: "Fil d'Ariane",
+  event: "Événement",
+  span: "Appel tracé",
+};
+
+/** Source d'un attribut (`props`, `context`), telle que le formulaire la propose. */
+export const LIBELLES_SOURCE_ATTRIBUT: Record<string, string> = {
+  props: "Propriétés (props)",
+  context: "Contexte (context)",
+};
+
+/** Type d'une valeur exacte, tel que le formulaire le propose. */
+export const LIBELLES_TYPE_ATTRIBUT: Record<string, string> = {
+  string: "Texte",
+  number: "Nombre",
+  boolean: "Booléen (vrai ou faux)",
+  null: "Vide (null)",
+};
+
 /** Lignes par page du Journal (§ 5.23.2) ; `limit` explicite dans l'URL l'emporte. */
 export const LIGNES_JOURNAL = 50;
 

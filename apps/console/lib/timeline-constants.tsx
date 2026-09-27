@@ -11,7 +11,7 @@ export const KIND_STYLE: Record<TimelineKind, { label: string; dot: string; badg
       "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-400/10 dark:text-blue-300 dark:border-blue-400/30",
   },
   vital: {
-    label: "Vital",
+    label: "Web Vital",
     dot: "bg-good",
     badge:
       "bg-good/10 text-good-ink border-good/30",
@@ -21,20 +21,22 @@ export const KIND_STYLE: Record<TimelineKind, { label: string; dot: string; badg
     dot: "bg-bad",
     badge: "bg-bad/10 text-bad-ink border-bad/30",
   },
+  // Libellés en français (recette du 26/09/2026 : « Breadcrumb », « Long task » et
+  // « Event métier » côtoyaient « Tâches longues » et « Événements » du filtre).
   breadcrumb: {
-    label: "Breadcrumb",
+    label: "Repère",
     dot: "bg-violet-500",
     badge:
       "bg-violet-100 text-violet-800 border-violet-300 dark:bg-violet-400/10 dark:text-violet-300 dark:border-violet-400/30",
   },
   longtask: {
-    label: "Long task",
+    label: "Tâche longue",
     dot: "bg-orange-500",
     badge:
       "bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-400/10 dark:text-orange-300 dark:border-orange-400/30",
   },
   event: {
-    label: "Event métier",
+    label: "Événement",
     dot: "bg-cyan-600",
     badge:
       "bg-cyan-100 text-cyan-800 border-cyan-300 dark:bg-cyan-400/10 dark:text-cyan-300 dark:border-cyan-400/30",
@@ -76,3 +78,21 @@ export const KIND_ICON: Record<TimelineKind, React.ReactNode> = {
   resource: <Icon d="M3 4h12v10H3zM6 7h6" />,
   api: <Icon d="M2 9h5m4 0h5M7 9l2-3m0 6 2-3" />,
 };
+
+/**
+ * Nom lisible d'un événement émis par le SDK (`frustration.dead`, `form.abandon`…) ;
+ * un événement métier déclaré par l'application garde son nom. La recette du
+ * 26/09/2026 lisait « frustration.dead » et « form.abandon » dans la chronologie.
+ */
+const EVENEMENTS_SDK: Record<string, string> = {
+  "frustration.rage": "Clics de rage",
+  "frustration.dead": "Clic sans réaction",
+  "frustration.error": "Erreur pendant l'action",
+  "form.submit": "Formulaire envoyé",
+  "form.abandon": "Formulaire abandonné",
+};
+
+export function libelleEvenement(nom: string | null | undefined): string {
+  if (!nom) return "Événement sans nom";
+  return EVENEMENTS_SDK[nom] ?? nom;
+}

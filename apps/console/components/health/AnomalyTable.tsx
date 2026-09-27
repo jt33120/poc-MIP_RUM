@@ -8,8 +8,9 @@
 // ligne ouvre la route à l'heure de l'anomalie (`lien`).
 import Link from "next/link";
 import { GlossaryTip } from "@/components/GlossaryTip";
+import { TableDefilante } from "@/components/TableDefilante";
 import { type AnomalyRow, type Health } from "@/lib/health";
-import { fmtDate, fmtVital } from "@/lib/format";
+import { fmtDate, fmtVital, pluriel } from "@/lib/format";
 
 export const REGLE_ANOMALIES = "règle : z > 3, ≥ 5 h d'historique";
 
@@ -30,7 +31,7 @@ export function AnomalyTable({
     <details id="anomalies" className="card mb-6 min-w-0 overflow-hidden" data-testid="anomalies" data-compte={n}>
       <summary className="flex cursor-pointer flex-wrap items-center gap-1.5 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
         <GlossaryTip id="anomaly" />
-        Anomalies LCP (24 h) — {filtree ? "non cherchées sous filtre" : `${n.toLocaleString("fr-FR")} anomalie(s)`}
+        Anomalies LCP (24 h) — {filtree ? "non cherchées sous filtre" : pluriel(n, "anomalie")}
       </summary>
       {filtree ? (
         <p className="border-t border-line px-4 py-3 text-sm text-ink-soft" role="note">
@@ -42,7 +43,8 @@ export function AnomalyTable({
           Aucune anomalie ({REGLE_ANOMALIES}).
         </p>
       ) : (
-        <div className="overflow-x-auto border-t border-line">
+        // 36 rem de large : à 390 px, le tableau défile — et le signale.
+        <TableDefilante className="border-t border-line" label="Anomalies LCP">
           <table className="w-full min-w-[36rem] text-sm">
             <caption className="sr-only">
               Anomalies LCP des 24 dernières heures : p75 horaire contre la moyenne des 7 jours glissants, |z| &gt; 3
@@ -85,7 +87,7 @@ export function AnomalyTable({
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       )}
     </details>
   );

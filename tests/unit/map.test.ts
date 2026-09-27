@@ -7,11 +7,13 @@ import {
   apiHealth,
   atRisk,
   carteAffichee,
+  comptesARisque,
   idAutres,
   layoutGraph,
   pageHealth,
   tendancePct,
   texteRegleSanteApi,
+  texteARisque,
   texteSanteNoeud,
   texteTendance,
   trend,
@@ -133,6 +135,34 @@ describe("F52 — tendancePct / texteTendance (tendance chiffrée)", () => {
   it("sans base ancienne : null, jamais « +∞ % » (une division par zéro n'est pas une mesure)", () => {
     expect(tendancePct(30, 0)).toBeNull();
     expect(texteTendance(30, 0)).toBeUndefined();
+  });
+  // Recette du 26/09/2026 : collecte commencée 20 minutes avant la lecture, moitié
+  // ancienne de la plage vide — `trend` concluait « hausse » sur chaque route, et la
+  // carte annonçait 10 routes « à risque » dont aucune tendance n'était chiffrée.
+  it("sans base ancienne, AUCUNE direction : une collecte qui commence n'est pas une hausse", () => {
+    expect(trend(30, 0)).toBe("flat");
+    expect(atRisk(trend(30, 0), "bad")).toBe(false);
+    // La direction et le chiffre suivent la même règle : l'une ne conclut pas sans l'autre.
+    for (const [r, o] of [[30, 0], [2, 1], [20, 5], [3, 20]] as const) {
+      expect(trend(r, o) !== "flat" ? tendancePct(r, o) !== null : true).toBe(true);
+    }
+  });
+});
+
+describe("recette 26/09 — pages et services à risque comptés à part", () => {
+  const n = (tier: "front" | "back", risk: boolean, tendance?: string) => ({ tier, risk, tendance });
+  it("les pages ne gonflent plus les services ; la tendance conclue est comptée par colonne", () => {
+    const c = comptesARisque([n("front", true, "+40 %"), n("front", false), n("back", true, "+60 %"), n("back", false, "+2 %")]);
+    expect(c).toEqual({ pages: 1, services: 1, conclues: { pages: 1, services: 2 } });
+  });
+  it("aucune tendance conclue : le compte ne peut pas dire « 0 à risque »", () => {
+    const c = comptesARisque([n("front", false), n("back", false)]);
+    expect(c.conclues).toEqual({ pages: 0, services: 0 });
+  });
+  it("le bandeau accorde ses pluriels et ne cite pas un compte nul", () => {
+    expect(texteARisque(2, 1)).toBe("2\u00a0pages et 1\u00a0service en hausse à surveiller");
+    expect(texteARisque(0, 3)).toBe("3\u00a0services en hausse à surveiller");
+    expect(texteARisque(0, 0)).toBeNull();
   });
 });
 

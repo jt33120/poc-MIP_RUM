@@ -8,7 +8,10 @@
 //     échantillonnage, troncature, « approché ») — P11 ;
 //   - la même chose sans les yeux : une alternative textuelle, tableau construit
 //     avec les MÊMES lignes que le dessin, repliée sous la figure — P10 ;
-//   - où creuser : « Ouvrir dans l'Explorer » quand la figure s'y exprime (§ 3.4).
+//   - où creuser : « Ouvrir dans l'Explorer » quand la figure s'y exprime (§ 3.4) ;
+//   - comment le chiffre est calculé : la `methode`, repliée sous le dessin, APRÈS
+//     lui (recette du 26/09/2026 : la méthode passait avant l'information). Chaque
+//     écran en avait sa copie locale ; elle vit ici.
 //
 // UN ÉTAT REMPLACE LE DESSIN. Si `etat` est fourni, les enfants ne sont pas rendus :
 // un axe vide à côté d'un « Aucune mesure » se lirait comme une période calme, et
@@ -55,15 +58,20 @@ function cellule(v: ReactNode): ReactNode {
  */
 export function TableAlternative({
   alternative,
+  titre = "Alternative textuelle",
 }: {
   alternative: { legende: string; colonnes: string[]; lignes: ReactNode[][] };
+  /**
+   * Libellé du repli. Deux alternatives dans une même carte (les barres par jour, la
+   * frise par source sur /alerts) s'appelaient toutes deux « Alternative textuelle » :
+   * chacune dit alors ce qu'elle double (« Alternative textuelle — par jour »).
+   */
+  titre?: string;
 }) {
   const [premiere, ...autres] = alternative.colonnes;
   return (
     <details className="mt-3 text-xs" data-testid="alternative">
-      <summary className="cursor-pointer select-none font-medium text-ink-soft hover:text-ink">
-        Alternative textuelle
-      </summary>
+      <summary className="cursor-pointer select-none font-medium text-ink-soft hover:text-ink">{titre}</summary>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-max text-left">
           <caption className="caption-top pb-1 text-left text-ink-soft">{alternative.legende}</caption>
@@ -102,13 +110,37 @@ export function TableAlternative({
   );
 }
 
+/**
+ * La méthode d'une figure, repliée : un `<details>` et non un paragraphe, pour
+ * qu'elle puisse porter des listes ou des liens. Exportée pour les figures qui ne
+ * passent pas par `Figure`.
+ */
+export function MethodeRepliee({
+  children,
+  titre = "Méthode",
+  testId = "figure-methode",
+}: {
+  children: ReactNode;
+  titre?: string;
+  testId?: string;
+}) {
+  return (
+    <details className="mt-3 text-xs" data-testid={testId}>
+      <summary className="cursor-pointer select-none font-medium text-ink-soft hover:text-ink">{titre}</summary>
+      <div className="mt-2 leading-relaxed text-ink-soft">{children}</div>
+    </details>
+  );
+}
+
 export function Figure({
   titre,
   aide,
   meta,
   etat,
   alternative,
+  titreAlternative,
   lecture,
+  methode,
   explorer,
   id,
   children,
@@ -122,8 +154,16 @@ export function Figure({
   etat?: Etat;
   /** Obligatoire quand children dessine des données (P10). */
   alternative?: AlternativeTexte;
+  /** Libellé du repli de l'alternative (défaut « Alternative textuelle »). */
+  titreAlternative?: string;
   /** Phrase « ce que montre / ne montre pas ». */
   lecture?: ReactNode;
+  /**
+   * Comment le chiffre est calculé (définition, pondération, règle), repliée sous
+   * le dessin dans un « Méthode » : après l'information, jamais avant. Absente
+   * quand un état remplace le dessin, comme l'alternative.
+   */
+  methode?: ReactNode;
   /** href « Ouvrir dans l'Explorer », calculé côté serveur. */
   explorer?: string;
   /** Ancre, cible des tests e2e. */
@@ -174,7 +214,8 @@ export function Figure({
         {zone}
       </div>
       {lecture && <p className="mt-3 text-xs leading-relaxed text-ink-soft">{lecture}</p>}
-      {alternative && !etat && <TableAlternative alternative={alternative} />}
+      {methode && !etat && <MethodeRepliee>{methode}</MethodeRepliee>}
+      {alternative && !etat && <TableAlternative alternative={alternative} titre={titreAlternative} />}
     </section>
   );
 }

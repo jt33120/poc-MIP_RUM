@@ -65,7 +65,7 @@ describe("FriseDeclenchements", () => {
     // Milieu de la période : 50 %.
     expect(html).toMatch(/x="50%"/);
     expect(html).toContain('stroke-width="2.5"');
-    expect(texte(html)).toContain("Déclenchement du 10/09 00:00 UTC : avertissement, non livré, non acquitté");
+    expect(texte(html)).toContain("Déclenchement du 10/09 02:00 : avertissement, non livré, non acquitté");
     // Sévérité : couleur ET taille.
     expect(html).toMatch(/class="text-bad"[\s\S]*?r="5.5"/);
   });
@@ -110,7 +110,7 @@ describe("FriseDeclenchements", () => {
     expect(html).toContain('data-etat="partiel"');
     expect(texte(html)).toContain("2 000 déclenchements affichés sur 30 j");
     expect(html).toContain('data-testid="alternative"');
-    expect(texte(html)).toContain("LCP /checkout 2 1 1 07/09 00:00 UTC Franchie");
+    expect(texte(html)).toContain("LCP /checkout 2 1 1 07/09 02:00 Franchie");
   });
 
   it("aucune piste : état vide", () => {

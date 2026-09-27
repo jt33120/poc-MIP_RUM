@@ -14,6 +14,9 @@
 // serveur comme une RÉFÉRENCE client, pas comme sa valeur. `SERIE_MARGES` sert aussi à
 // des SVG rendus serveur (FriseEtats, F56), qui doivent l'importer d'ici.
 import { formater, formatDuVital, type FormatId, type VitalName } from "./fmt-ids";
+import { accord } from "./format";
+import { nomFuseau } from "./fuseau-local";
+import { graduationsAxe, type Graduations } from "./graduations";
 import type { RoleSerie } from "./palette";
 import { THRESHOLDS } from "./rating";
 
@@ -38,6 +41,8 @@ export interface SerieDef {
   cle: string;
   /** « LCP p75 », « Release 1.4.2 », « Période précédente ». */
   libelle: string;
+  /** Texte entier quand `libelle` est abrégé (message d'erreur) : infobulle de la légende. */
+  libelleComplet?: string;
   role: RoleSerie;
   /** Couleur dans CATEGORIELLE si role = "categorie". */
   categorieIndex?: number;
@@ -269,11 +274,49 @@ export function domaineY(
   return [0, haut > 0 ? haut : 1];
 }
 
+/**
+ * Échelle y d'une figure temporelle, en graduations RONDES (recette du 26/09/2026) :
+ * le haut de l'axe est le maximum des données arrondi vers le haut à un pas rond
+ * (`graduationsAxe`), l'axe part de 0. La marge × 1,2 de `domaineY` n'est plus
+ * nécessaire : l'arrondi au pas rond en donne une.
+ *
+ * UN VITAL SE CALE AUSSI SUR SES DONNÉES (recette du 26/09/2026). L'axe montait
+ * jusqu'à `seuilBon × 1,1` pour garder « À améliorer » visible : un LCP à 92 ms
+ * s'écrasait sur l'axe, sous une échelle de 0 à 2,8 s. La bande de seuil reste
+ * dessinée là où elle tombe (toute la hauteur quand tout est « Bon »), et la borne
+ * hors échelle est écrite sous la figure (`bandesSeuils`). Sans aucune donnée,
+ * l'axe garde la bande « Bon » entière.
+ */
+export function echelleY(
+  lignes: LignePreparee[],
+  series: SerieDef[],
+  format: FormatId,
+  { vital, bande, empile = false }: { vital?: VitalName; bande?: { basseCle: string; hauteCle: string }; empile?: boolean } = {},
+): Graduations {
+  let maxDonnees = 0;
+  for (const l of lignes) {
+    if (empile) {
+      // Des barres empilées montent jusqu'à la SOMME des segments du seau.
+      maxDonnees = Math.max(maxDonnees, series.reduce((a, s) => a + Math.max(nombreOuNull(l[s.cle]) ?? 0, 0), 0));
+      continue;
+    }
+    for (const c of [...series.map((s) => s.cle), ...(bande ? [bande.hauteCle] : [])]) {
+      maxDonnees = Math.max(maxDonnees, nombreOuNull(l[c]) ?? 0);
+    }
+  }
+  const bon = vital ? THRESHOLDS[vital][0] : null;
+  return graduationsAxe(maxDonnees > 0 ? maxDonnees : bon !== null ? bon * 1.1 : 0, format);
+}
+
 export interface BandesSeuils {
   bon: { y1: number; y2: number };
   ameliorer: { y1: number; y2: number } | null;
   mauvais: { y1: number; y2: number } | null;
-  /** « seuil Mauvais à 4,0 s, hors échelle » quand la borne haute sort du domaine. */
+  /**
+   * « seuil Mauvais à 4,0 s, hors échelle » quand la borne haute sort du domaine ;
+   * « seuil À améliorer à 2,5 s et seuil Mauvais à 4,0 s, hors échelle » quand
+   * tout le domaine est « Bon » (échelle calée sur des données toutes bonnes).
+   */
   horsEchelle: string | null;
   /** Bornes lues dans `lib/rating.ts` (P2 : un seul fichier de seuils). */
   seuils: [number, number];
@@ -291,7 +334,12 @@ export function bandesSeuils(vital: VitalName, haut: number): BandesSeuils {
     bon: { y1: 0, y2: Math.min(bon, haut) },
     ameliorer: bon < haut ? { y1: bon, y2: Math.min(mauvais, haut) } : null,
     mauvais: mauvais < haut ? { y1: mauvais, y2: haut } : null,
-    horsEchelle: mauvais > haut ? `seuil Mauvais à ${formater(formatDuVital(vital), mauvais)}, hors échelle` : null,
+    horsEchelle:
+      bon >= haut
+        ? `seuil À améliorer à ${formater(formatDuVital(vital), bon)} et seuil Mauvais à ${formater(formatDuVital(vital), mauvais)}, hors échelle`
+        : mauvais > haut
+          ? `seuil Mauvais à ${formater(formatDuVital(vital), mauvais)}, hors échelle`
+          : null,
     seuils,
   };
 }
@@ -336,7 +384,11 @@ export function libelleSeau(t: string, seauSecondes: number, fuseau: string): st
   return formateur("fr-FR", fuseau, heure).format(ms);
 }
 
-/** Libellé complet d'un seau (infobulle, alternative) : « 22/09 14:00 → 15:00 UTC », « 10/09 ». */
+/**
+ * Libellé complet d'un seau (infobulle, alternative) : « 22/09 14:00 → 15:00
+ * (heure de Paris) », « 10/09 ». Le fuseau est NOMMÉ (`nomFuseau`), pas écrit en
+ * identifiant IANA.
+ */
 export function libelleSeauComplet(t: string, seauSecondes: number, fuseau: string): string {
   if (estJour(t)) return jjmm(t);
   const debut = Date.parse(t);
@@ -353,7 +405,118 @@ export function libelleSeauComplet(t: string, seauSecondes: number, fuseau: stri
     jourDans(debut, fuseau) === jourDans(fin, fuseau)
       ? formateur("fr-FR", fuseau, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(fin)
       : complet.format(fin);
-  return `${complet.format(debut)} → ${finTexte} ${fuseau}`;
+  const nom = nomFuseau(fuseau);
+  return `${complet.format(debut)} → ${finTexte} ${nom === "UTC" ? nom : `(${nom})`}`;
+}
+
+/** Pas candidats d'une graduation temporelle, en secondes : des heures rondes. */
+const PAS_TEMPS = [300, 600, 900, 1800, 3600, 7200, 10_800, 21_600, 43_200, 86_400] as const;
+
+/** Secondes écoulées depuis minuit, dans le fuseau d'affichage. */
+function secondesDuJour(ms: number, fuseau: string): number {
+  const [h, mi] = formateur("en-GB", fuseau, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    .format(ms)
+    .split(":")
+    .map(Number);
+  return h * 3600 + mi * 60;
+}
+
+/**
+ * Graduations de l'axe du temps : des éléments de la grille à intervalle RÉGULIER
+ * et sur des heures RONDES (« 00:00, 03:00, 06:00… ») — jamais « 03:00 → 12:00 →
+ * 17:00 », que donnait le choix de recharts (garder le premier et le dernier seau,
+ * boucher entre les deux). Au plus `cible` graduations ; le composant les passe à
+ * recharts avec `interval="equidistantPreserveStart"`, qui en saute un nombre
+ * CONSTANT quand la largeur manque (390 px) : le pas reste régulier.
+ *
+ *   - seaux infra-journaliers : le plus petit pas rond (5 min … 24 h), multiple du
+ *     seau, qui donne au plus `cible` graduations ; une graduation tombe sur un
+ *     multiple de ce pas depuis minuit, dans le fuseau d'affichage ;
+ *   - jours : un jour sur 1, 2 ou 7 (les lundis), 14 au-delà.
+ */
+export function graduationsTemps(grille: string[], seauSecondes: number, fuseau: string, cible = 8): string[] {
+  if (grille.length <= 2) return [...grille];
+  if (estJour(grille[0]) || seauSecondes >= 86_400) {
+    const pas = [1, 2, 7, 14, 28].find((p) => Math.ceil(grille.length / p) <= cible) ?? Math.ceil(grille.length / cible);
+    if (pas === 7 && estJour(grille[0])) {
+      const lundis = grille.filter((t) => new Date(`${t}T00:00:00Z`).getUTCDay() === 1);
+      if (lundis.length >= 2) return lundis;
+    }
+    // Le dernier jour (aujourd'hui) est une graduation : on compte à rebours depuis lui.
+    const depart = (grille.length - 1) % pas;
+    return grille.filter((_t, i) => i >= depart && (i - depart) % pas === 0);
+  }
+  // Durée couverte par les débuts de seau (24 h pour une grille glissante de 25 heures).
+  const duree = (grille.length - 1) * seauSecondes;
+  const pas = PAS_TEMPS.find((p) => p >= seauSecondes && p % seauSecondes === 0 && duree / p <= cible);
+  if (pas !== undefined) {
+    const alignees = grille.filter((t) => {
+      const ms = Date.parse(t);
+      return Number.isFinite(ms) && secondesDuJour(ms, fuseau) % pas === 0;
+    });
+    if (alignees.length >= 2) return alignees;
+  }
+  // Grille non alignée sur des heures rondes : un seau sur k, depuis le premier.
+  const k = Math.max(1, Math.ceil(grille.length / cible));
+  return grille.filter((_t, i) => i % k === 0);
+}
+
+/**
+ * Le seau en cours, dit en français : « heure en cours (incomplète) », « jour en
+ * cours (incomplet) »… Le mot « seau » (traduction de *bucket*) ne s'affiche plus :
+ * la recette l'a trouvé obscur partout où il apparaissait.
+ */
+export function libellePeriodeEnCours(seauSecondes: number, jours = false): string {
+  if (jours || seauSecondes === 86_400) return "jour en cours (incomplet)";
+  if (seauSecondes === 3600) return "heure en cours (incomplète)";
+  if (seauSecondes === 604_800) return "semaine en cours (incomplète)";
+  if (seauSecondes === 60) return "minute en cours (incomplète)";
+  return "période en cours (incomplète)";
+}
+
+/**
+ * Indice du premier seau porteur de données quand SEULS les deux derniers seaux en
+ * ont (une collecte qui vient de commencer), `null` sinon. Une valeur additive à 0
+ * n'est pas une donnée (aucun événement) ; une mesure `null` non plus. Sous six
+ * seaux, la figure n'est pas « vide en pratique » : `null`.
+ *
+ * POURQUOI. Avec 20 minutes de collecte, les six graphiques 24 h de la vue
+ * d'ensemble n'avaient qu'une barre pâle collée à droite de 23 heures vides : ils
+ * étaient vides en pratique, et ressemblaient à un espace réservé.
+ */
+export function premiereDonneeTardive(lignes: LignePreparee[], cles: string[]): number | null {
+  if (lignes.length < 6) return null;
+  const premier = lignes.findIndex((l) =>
+    cles.some((c) => {
+      const v = nombreOuNull(l[c]);
+      return v !== null && v !== 0;
+    }),
+  );
+  if (premier < 0) return null;
+  return premier >= lignes.length - 2 ? premier : null;
+}
+
+/** Nombre de tranches de la grille où au moins une des séries `cles` porte une valeur. */
+export function tranchesMesurees(lignes: LignePreparee[], cles: string[]): number {
+  if (cles.length === 0) return 0;
+  return lignes.filter((l) => cles.some((c) => nombreOuNull(l[c]) !== null)).length;
+}
+
+/** Le nom d'une tranche et son genre : « heure » (f.), « jour » (m.)… */
+function nomDeTranche(seauSecondes: number, jours: boolean): { nom: string; masculin: boolean } {
+  if (jours || seauSecondes === 86_400) return { nom: "jour", masculin: true };
+  if (seauSecondes === 3600) return { nom: "heure", masculin: false };
+  if (seauSecondes === 604_800) return { nom: "semaine", masculin: false };
+  if (seauSecondes === 60) return { nom: "minute", masculin: false };
+  return { nom: "tranche", masculin: false };
+}
+
+/** « Une seule heure mesurée », « Deux jours mesurés » : ce que dit une figure presque vide. */
+export function phrasePeuDePoints(n: number, seauSecondes: number, jours = false): string {
+  const { nom, masculin } = nomDeTranche(seauSecondes, jours);
+  const mesure = masculin ? "mesuré" : "mesurée";
+  if (n <= 1) return `${masculin ? "Un seul" : "Une seule"} ${nom} ${mesure} sur la période`;
+  return `${n === 2 ? "Deux" : n.toLocaleString("fr-FR")} ${nom}s ${mesure}s sur la période`;
 }
 
 /**
@@ -431,4 +594,68 @@ export function placerAnnotations(
     placees.push({ annotation, index, fraction: (ms - Date.parse(grille[index])) / largeur });
   }
   return placees;
+}
+
+/** Des annotations assez proches sur l'axe pour partager UNE étiquette. */
+export interface GroupeAnnotations {
+  /** Abscisse (px) de l'étiquette : celle de la première annotation du groupe. */
+  x: number;
+  /** Abscisses (px) de chaque annotation : chaque trait reste à son instant. */
+  xs: number[];
+  annotations: Annotation[];
+  /** « v1.4.2 » seule ; « 3 alertes à 14:14 » pour un groupe. */
+  libelle: string;
+  /** Le lien de l'annotation seule, ou celui que partage tout le groupe. */
+  href?: string;
+}
+
+const NOMS_TYPE: Record<Annotation["type"], [string, string]> = {
+  deploiement: ["déploiement", "déploiements"],
+  alerte: ["alerte", "alertes"],
+  anomalie: ["anomalie", "anomalies"],
+  rupture: ["rupture", "ruptures"],
+};
+
+/**
+ * Regroupe les annotations qui tomberaient à moins de `ecart` px l'une de l'autre
+ * (distance à la PREMIÈRE du groupe : un groupe ne s'étire pas de proche en proche).
+ * Un groupe a une seule étiquette — « 3 alertes à 14:14 », « 2 alertes (14:14–14:40) »,
+ * « 3 événements » s'ils sont de types différents — et le détail reste dans
+ * l'infobulle et la légende. Avant, trois alertes simultanées écrivaient leurs trois
+ * libellés au même endroit : « Alerte eAlerte log_errors… ».
+ */
+export function regrouperAnnotations(
+  positions: { annotation: Annotation; x: number }[],
+  { ecart, fuseau }: { ecart: number; fuseau: string },
+): GroupeAnnotations[] {
+  const tries = positions.filter((p) => Number.isFinite(p.x)).sort((a, b) => a.x - b.x);
+  const groupes: { annotation: Annotation; x: number }[][] = [];
+  for (const p of tries) {
+    const dernier = groupes[groupes.length - 1];
+    if (dernier && p.x - dernier[0].x <= ecart) dernier.push(p);
+    else groupes.push([p]);
+  }
+  const heure = (ms: number) => formateur("fr-FR", fuseau, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(ms);
+  return groupes.map((g) => {
+    const annotations = g.map((p) => p.annotation);
+    const xs = g.map((p) => p.x);
+    if (g.length === 1) return { x: g[0].x, xs, annotations, libelle: annotations[0].libelle, href: annotations[0].href };
+    const types = new Set(annotations.map((a) => a.type));
+    const [sing, plur] = types.size === 1 ? NOMS_TYPE[annotations[0].type] : ["événement", "événements"];
+    const instants = annotations.map((a) => Date.parse(a.t)).filter(Number.isFinite).sort((a, b) => a - b);
+    let quand = "";
+    if (instants.length > 0) {
+      const debut = instants[0];
+      const fin = instants[instants.length - 1];
+      if (jourDans(debut, fuseau) !== jourDans(fin, fuseau)) {
+        quand = ` (${jjmm(jourDans(debut, fuseau))}–${jjmm(jourDans(fin, fuseau))})`;
+      } else {
+        const [hd, hf] = [heure(debut), heure(fin)];
+        quand = hd === hf ? ` à ${hd}` : ` (${hd}–${hf})`;
+      }
+    }
+    const hrefs = new Set(annotations.map((a) => a.href));
+    const href = hrefs.size === 1 ? annotations[0].href : undefined;
+    return { x: g[0].x, xs, annotations, libelle: `${g.length} ${accord(g.length, sing, plur)}${quand}`, href };
+  });
 }

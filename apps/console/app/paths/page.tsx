@@ -16,19 +16,32 @@
 //     jamais les tuiles ni les tables.
 //   - Deux conventions de pourcentage sans étiquette dans l'entonnoir : chaque
 //     taux est écrit avec son dénominateur (« du départ », « de l'étape précédente »).
-//     Les étapes de type vue ou action attendent B33 et le disent (§ 0.5).
+//   - Une fonction absente montrée comme présente : les étapes de type vue ou action
+//     (B33) ne sont pas livrées ; le bandeau « Partiel » qui les annonçait se lisait
+//     comme un incident (recette du 26/09/2026). L'écran dit seulement ce qu'il
+//     propose : « Étapes : événements personnalisés ».
+//
+// RECETTE DU 26/09/2026. Plus aucun code interne ni vocabulaire de conception à
+// l'écran (B33, R-P, « méta », « tuiles et tables ») ; la méthode de chaque figure
+// est repliée sous elle (`Methode`), le chiffre d'abord. Les routes des tables ne
+// sont plus coupées à quatre caractères : elles passent à la ligne, coupées au
+// milieu au-delà de `ROUTE_AFFICHEE_MAX`, et l'accès à Pages est une icône à côté
+// du nom, et non plus un second lien texte qui prenait sa place.
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { FunnelChart, StepPicker } from "@/components/Funnel";
-import { Sankey } from "@/components/Sankey";
-import { Figure } from "@/components/charts/Figure";
+import { ICON_PATHS, Icon } from "@/components/icons";
+import { Sankey, routeCoupable, tronquerMilieu } from "@/components/Sankey";
+import { Figure, MethodeRepliee as Methode } from "@/components/charts/Figure";
 import { KpiLibelle } from "@/components/charts/KpiLibelle";
 import { KpiTile } from "@/components/charts/KpiTile";
+import { RangeeKpi } from "@/components/charts/RangeeKpi";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
-import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { TableDefilante } from "@/components/TableDefilante";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { chargerPaths, etapesDeLEntonnoir, TOP_BORDS, TOP_TRANSITIONS } from "@/lib/chargeurs/paths";
@@ -46,15 +59,22 @@ export const dynamic = "force-dynamic";
 const ANCRES_PROPOSEES = 8;
 
 /** Les populations de l'écran, nommées dans chaque méta (S1, R-P). */
-const POPULATION_VUES = "sessions ayant au moins une vue sur la fenêtre";
-const POPULATION_TRANSITIONS = "passages d'une route à une autre (boucles A→A exclues)";
+const POPULATION_VUES = "sessions ayant vu au moins une page sur la période";
+// Les boucles A→A (rechargement, navigation vers la même route) sont exclues par la lecture.
+const POPULATION_TRANSITIONS = "passages d'une route à une autre route";
 
-const PART_LECTURE =
-  "Part de toutes les sessions = sessions de la ligne / sessions ayant au moins une vue sur la même plage (une seule définition, R-P) : jamais la somme des routes affichées. « Sessions à une vue » : sessions dont cette route est la SEULE vue de la plage — elles y entrent et en sortent. « LCP p75 » : toutes les mesures LCP de la route sur la plage, pas seulement celles de ces sessions.";
+/** Méthode des deux tables de bords : le dénominateur des parts est UNE définition (R-P). */
+const METHODE_BORDS =
+  "« Part de toutes les sessions » rapporte les sessions de la ligne à toutes les sessions ayant vu au moins une page sur la période, jamais à la somme des routes affichées. « Sessions à une vue » : sessions dont cette route est la seule page vue — elles y entrent et en sortent. « LCP p75 de la route » : toutes les mesures LCP de la route sur la période, pas seulement celles de ces sessions.";
 
-/** Les étapes typées de l'entonnoir attendent B33 (§ 0.5) : dit, jamais rendu inerte. */
-const ETAPES_TYPEES_ABSENTES =
-  "étapes de type vue ou action à créer : seuls les événements custom sont proposés comme étapes (B33)";
+/**
+ * Au-delà, une route de table est coupée AU MILIEU (son début et sa fin l'identifient,
+ * « /partners/…/documents ») ; en deçà, elle passe entière à la ligne.
+ */
+const ROUTE_AFFICHEE_MAX = 48;
+
+/** « Accueil (/) » : seule, la route racine se lisait comme un séparateur (« / · 89 sessions »). */
+const libelleRoute = (route: string) => (route === "/" ? "Accueil (/)" : route);
 
 const compte = (n: number, un: string, plusieurs: string) => `${formater("count", n)} ${n > 1 ? plusieurs : un}`;
 
@@ -139,9 +159,13 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
         </div>
       )}
 
-      {/* P2 — trois tuiles : les deux bords n°1 (avec leur part), et le nombre de transitions lues. */}
+      {/* P2 — trois tuiles : les deux bords n°1 (avec leur part), et le nombre de transitions lues.
+          Une période précédente incomplète se dit une fois, au-dessus de la rangée. */}
       <SectionErreur titre="Chiffres clés">
-        <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3">
+        <RangeeKpi
+          couvertures={[comparaisonTransitions.couverturePrecedente]}
+          className="mb-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3"
+        >
           <TuileBord
             label="Page d'entrée n°1"
             ligne={bords.ok ? (bords.data.entries[0] ?? null) : null}
@@ -163,7 +187,7 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
             <KpiLibelle
               label="Transitions distinctes"
               texte={`≥ ${formater("count", TOP_TRANSITIONS)}`}
-              lecture={`Seules les ${formater("count", TOP_TRANSITIONS)} transitions les plus fréquentes sont renvoyées par la lecture.`}
+              lecture={`Seules les ${formater("count", TOP_TRANSITIONS)} transitions les plus fréquentes sont comptées.`}
             />
           ) : (
             <KpiTile
@@ -171,11 +195,11 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
               valeur={transitions.ok ? transitions.data.length : null}
               format="count"
               raisonNull="lecture des transitions en échec"
-              lecture="Paires route → route, boucles A→A exclues."
+              lecture="Paires de routes différentes, « départ → arrivée »."
               {...comparaisonTransitions}
             />
           )}
-        </div>
+        </RangeeKpi>
       </SectionErreur>
 
       <BandeauEchantillonnage lecture={echantillonnage} />
@@ -188,7 +212,9 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
             titre="Flux entre routes"
             meta={meta(
               POPULATION_TRANSITIONS,
-              sankey ? `${formater("count", sankey.shownFlow)} / ${formater("count", sankey.totalFlow)} passages représentés` : undefined,
+              sankey
+                ? `${compte(sankey.shownFlow, "passage représenté", "passages représentés")} sur ${formater("count", sankey.totalFlow)}`
+                : undefined,
             )}
             etat={
               !flux?.ok
@@ -199,9 +225,28 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
                     : { kind: "vide", population: "transition entre deux routes", plage: dansPhrase, geste: elargir }
                   : undefined
             }
-            lecture="Épaisseur d'un ruban = nombre de passages ; un ruban ouvre les sessions passées par la route d'arrivée ; un nœud de gauche ancre le flux à partir de sa route, un nœud de droite ouvre la route dans /pages. Les boucles (rechargement, navigation vers la même route) sont exclues ; les routes hors des huit premières de chaque côté ne sont pas dessinées — la méta dit la part représentée. L'ancrage ne change que ce dessin : tuiles et tables portent sur toutes les routes."
           >
-            {sankey && <Sankey model={sankey} ancre={depuis} liens={liensSankey} />}
+            {sankey && (
+              <>
+                <Sankey model={sankey} ancre={depuis} liens={liensSankey} />
+                {/* Deux lectures : le dessin (au-delà de 640 px) et sa liste (en deçà). */}
+                <Lecture>
+                  <span className="hidden sm:inline">
+                    Épaisseur d&apos;un ruban = nombre de passages. Cliquez un ruban pour voir les sessions passées par
+                    la route d&apos;arrivée, une route de gauche pour ne garder que les passages qui en partent, une route
+                    de droite pour l&apos;ouvrir dans Pages.
+                  </span>
+                  <span className="sm:hidden">Touchez une transition pour voir les sessions passées par sa route d&apos;arrivée.</span>
+                </Lecture>
+                <Methode>
+                  Un passage relie deux pages vues successives d&apos;une même session ; un passage d&apos;une route vers
+                  elle-même (rechargement, changement de paramètre) n&apos;est pas compté. Seules les huit routes les plus
+                  fréquentes de chaque côté sont dessinées : le nombre de passages représentés est écrit au-dessus du
+                  dessin. Choisir une route de départ ne change que le dessin : les chiffres clés et les tableaux portent
+                  toujours sur toutes les routes.
+                </Methode>
+              </>
+            )}
           </Figure>
         </SectionErreur>
         <SelecteurAncrage
@@ -225,7 +270,7 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
               titre={table.titre}
               meta={meta(
                 POPULATION_VUES,
-                `${table.hint} · ${compte(table.rows.length, "route affichée", "routes affichées")}, ${formater("count", TOP_BORDS)} au plus${
+                `${table.hint} · ${compte(table.rows.length, "route affichée", "routes affichées")} (${formater("count", TOP_BORDS)} au plus)${
                   denominateur !== null ? ` · ${compte(denominateur, "session avec vue", "sessions avec vue")}` : ""
                 }`,
               )}
@@ -236,9 +281,10 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
                     ? { kind: "vide", population: "session avec vue", plage: dansPhrase, geste: elargir }
                     : undefined
               }
-              lecture={PART_LECTURE}
             >
               <TableBords rows={table.rows} titre={table.titre} query={query} denominateur={denominateur} lcp={lcpParRoute} />
+              <Lecture>Cliquez une route pour voir les sessions passées par elle ; l&apos;icône à côté l&apos;ouvre dans Pages.</Lecture>
+              <Methode>{METHODE_BORDS}</Methode>
             </Figure>
           </SectionErreur>
         ))}
@@ -249,26 +295,27 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
         <Figure
           id="paths-entonnoir"
           titre="Entonnoir de conversion"
-          meta={meta("sessions ayant réalisé l'étape 1 sur la fenêtre", events.ok ? compte(events.data.length, "événement proposé", "événements proposés") : undefined)}
+          meta={meta("sessions ayant réalisé l'étape 1 sur la période", events.ok ? compte(events.data.length, "événement proposé", "événements proposés") : undefined)}
           etat={!events.ok ? { kind: "erreur", titre: "Entonnoir de conversion" } : undefined}
-          lecture="Une session atteint l'étape k si elle a réalisé les étapes 1 à k dans l'ordre, première occurrence de chaque étape ; la fenêtre de conversion est la session. Chaque taux est écrit avec son dénominateur ; l'abandon est un nombre de sessions, jamais un pourcentage."
         >
           <div className="flex flex-col gap-3">
-            <p className="text-xs text-ink-faint">
-              Choisis 2 à 4 événements custom dans l&apos;ordre : conversion et abandon à chaque étape, par session
-              (ordre temporel respecté).
+            {/* Seul ce qui est proposé est dit : les étapes de type vue ou action (B33)
+                ne sont pas livrées, et un bandeau « Partiel » les montrait présentes. */}
+            <p className="text-xs text-ink-soft" data-testid="entonnoir-consigne">
+              <span className="font-medium text-ink">Étapes : événements personnalisés.</span> Choisissez-en 2 à 4, dans
+              l&apos;ordre du parcours : l&apos;entonnoir montre combien de sessions atteignent chaque étape et combien
+              abandonnent.
             </p>
             {events.ok && events.data.length > 0 ? (
               <StepPicker events={events.data} selected={steps} sp={sp} />
             ) : (
               events.ok && (
-                <p className="text-sm text-ink-faint">
-                  Aucun événement custom sur {dansPhrase}. Émets-en via{" "}
+                <p className="text-sm text-ink-soft">
+                  Aucun événement personnalisé sur {dansPhrase}. Envoyez-en avec{" "}
                   <code className="chip-mono">MIPRum.track(&quot;nom&quot;)</code> pour construire un entonnoir.
                 </p>
               )
             )}
-            <EtatSurface etat={{ kind: "partiel", raison: ETAPES_TYPEES_ABSENTES }} compact />
             {funnel && !funnel.ok && <EchecLecture titre="Entonnoir de conversion" compact />}
             {funnel?.ok && funnel.data.length > 0 && (
               <>
@@ -277,11 +324,21 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
                   lienJournal={(nom) => hrefWithQuery("/events", query, { kind: "event", name: nom })}
                 />
                 {funnel.data[0].reached === 0 && (
-                  <p className="text-xs text-ink-faint">
+                  <p className="text-xs text-ink-soft">
                     Aucune session n&apos;a réalisé l&apos;étape 1 sur {dansPhrase} : les taux n&apos;ont pas de
                     dénominateur.
                   </p>
                 )}
+                <p className="text-xs leading-relaxed text-ink-soft">
+                  Chaque étape donne deux taux, l&apos;un rapporté à l&apos;étape précédente, l&apos;autre au départ ;
+                  l&apos;abandon est un nombre de sessions.
+                </p>
+                <Methode>
+                  Une session atteint une étape si elle a réalisé toutes les étapes précédentes, dans l&apos;ordre, au
+                  cours de la même session ; seule la première occurrence de chaque événement compte. L&apos;abandon
+                  d&apos;une étape est le nombre de sessions qui ont atteint l&apos;étape précédente sans atteindre
+                  celle-ci.
+                </Methode>
               </>
             )}
           </div>
@@ -295,6 +352,12 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
 function lienSessions(query: AnalyticsQuery, route: string): string {
   return hrefWithQuery("/sessions", query, { qf: "route", q: route });
 }
+
+/** La phrase de lecture d'une figure : ce qu'il faut regarder, et où mène un clic. */
+function Lecture({ children }: { children: ReactNode }) {
+  return <p className="mt-3 text-xs leading-relaxed text-ink-soft">{children}</p>;
+}
+
 
 /**
  * P3 — « À partir de : [route] » (§ 5.13.3). Des liens plutôt qu'un formulaire : un
@@ -360,10 +423,10 @@ function TuileBord({
       label={label}
       texte={
         ligne
-          ? `${ligne.route} · ${compte(ligne.n, "session", "sessions")}${denominateur !== null ? ` sur ${formater("count", denominateur)}` : ""}`
+          ? `${libelleRoute(ligne.route)} · ${compte(ligne.n, "session", "sessions")}${denominateur !== null ? ` sur ${formater("count", denominateur)}` : ""}`
           : null
       }
-      raisonNull={echec ? "lecture des pages d'entrée et de sortie en échec" : "aucune session avec vue sur la fenêtre"}
+      raisonNull={echec ? "lecture des pages d'entrée et de sortie en échec" : "aucune session avec vue sur la période"}
       lecture={
         ligne
           ? part !== null
@@ -377,6 +440,36 @@ function TuileBord({
 }
 
 const TH = "py-1 text-right text-[11px] font-semibold uppercase tracking-wider text-ink-soft";
+
+/**
+ * Le nom d'une route de table, lien vers ses sessions, et l'accès à Pages en ICÔNE à
+ * côté : le lien texte « Ouvrir /pages » se posait sous le nom et en prenait la place
+ * (recette du 26/09/2026). Une route plus longue que `ROUTE_AFFICHEE_MAX` est coupée
+ * au milieu ; elle reste entière dans l'infobulle et dans le nom annoncé du lien.
+ */
+function RouteDeTable({ route, sessions, pages }: { route: string; sessions: string; pages: string }) {
+  const affichee = tronquerMilieu(route, ROUTE_AFFICHEE_MAX);
+  return (
+    <span className="flex min-w-0 items-start gap-1">
+      <Link
+        href={sessions}
+        className="min-w-0 font-mono text-xs text-ink [overflow-wrap:anywhere] hover:text-accent hover:underline"
+        title={`Sessions passées par ${route}`}
+        aria-label={affichee !== route ? route : undefined}
+      >
+        {routeCoupable(affichee)}
+      </Link>
+      <Link
+        href={pages}
+        className="shrink-0 rounded p-0.5 text-ink-soft transition hover:bg-panel2 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+        title={`Ouvrir ${route} dans Pages`}
+        aria-label={`Ouvrir ${route} dans Pages`}
+      >
+        <Icon paths={ICON_PATHS.timer} className="h-3.5 w-3.5" />
+      </Link>
+    </span>
+  );
+}
 
 /**
  * Les deux tables de bords ont les MÊMES colonnes et le MÊME ordre : entrées et
@@ -397,7 +490,8 @@ function TableBords({
   lcp: Map<string, LcpDeRoute> | null;
 }) {
   return (
-    <div className="relative -mx-1 overflow-x-auto px-1">
+    // Défilement signalé sous 30 rem ; la zone reste `relative` pour la légende `sr-only`.
+    <TableDefilante label={titre}>
       <table className="w-full min-w-[30rem] text-sm">
         <caption className="sr-only">
           {titre} : route, sessions, part de toutes les sessions, sessions à une vue, LCP p75 de la route
@@ -427,30 +521,22 @@ function TableBords({
             const mesure = lcp?.get(r.route) ?? null;
             return (
               <tr key={r.route} className="border-b border-line/60 last:border-0">
-                <th scope="row" className="max-w-0 py-1.5 pr-3 font-normal">
-                  {/* `truncate` ne coupe qu'un élément `block` : une route longue sans
-                      espace élargirait la page à 390 px. */}
-                  <Link
-                    href={lienSessions(query, r.route)}
-                    className="block truncate font-mono text-xs text-ink hover:text-accent hover:underline"
-                    title={`Sessions passées par ${r.route}`}
-                  >
-                    {r.route}
-                  </Link>
-                  <Link
-                    href={hrefWithQuery("/pages", query, { route: r.route })}
-                    className="text-[10px] text-ink-soft hover:text-accent hover:underline"
-                  >
-                    Ouvrir /pages
-                  </Link>
+                {/* `max-w-0` seul réduisait la colonne à rien (« /par… », recette
+                    26/09) : `w-2/5 min-w-[10rem]` lui garde 40 % de la table. La route
+                    y passe à la ligne (`overflow-wrap: anywhere`) au lieu d'être coupée
+                    à la largeur : trois « /par… » ne se distinguaient plus. `text-left` :
+                    un `th` centre par défaut, la route flottait au-dessus de son icône. */}
+                <th scope="row" className="w-2/5 min-w-[10rem] max-w-0 py-1.5 pr-3 text-left align-top font-normal">
+                  <RouteDeTable route={r.route} sessions={lienSessions(query, r.route)} pages={hrefWithQuery("/pages", query, { route: r.route })} />
                 </th>
                 <td className="py-1.5 pr-3 text-right text-xs tabular-nums text-ink">{formater("count", r.n)}</td>
                 <td
                   className="relative py-1.5 pr-3 text-right text-xs tabular-nums text-ink"
                   title={part === null ? "part non calculée : le nombre de sessions avec vue n'a pas pu être lu" : undefined}
                 >
+                  {/* Un volume est neutre : le bleu `perf` se lisait comme le domaine Performance. */}
                   {part !== null && (
-                    <span aria-hidden="true" className="absolute inset-y-1 right-3 rounded-sm bg-perf/15" style={{ width: `calc(${(part * 100).toFixed(1)}% - 0.75rem)` }} />
+                    <span aria-hidden="true" className="absolute inset-y-1 right-3 rounded-sm bg-ink-faint/20" style={{ width: `calc(${(part * 100).toFixed(1)}% - 0.75rem)` }} />
                   )}
                   <span className="relative">{formater("pct", part)}</span>
                 </td>
@@ -461,8 +547,8 @@ function TableBords({
                     lcp === null
                       ? "lecture du LCP en échec"
                       : mesure
-                        ? `p75 de ${compte(mesure.n, "mesure LCP", "mesures LCP")} de la route sur la plage`
-                        : "aucune mesure LCP de cette route sur la plage"
+                        ? `p75 de ${compte(mesure.n, "mesure LCP", "mesures LCP")} de la route sur la période`
+                        : "aucune mesure LCP de cette route sur la période"
                   }
                 >
                   {formater("ms", mesure?.p75 ?? null)}
@@ -472,6 +558,6 @@ function TableBords({
           })}
         </tbody>
       </table>
-    </div>
+    </TableDefilante>
   );
 }

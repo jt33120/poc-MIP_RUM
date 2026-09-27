@@ -1,6 +1,7 @@
 // GET /api/auth/oidc/callback — retour de l'IdP : vérifie state, échange le code,
 // valide l'ID token, mappe les claims → rôle/apps, PROVISIONNE en JIT le
-// console_user, ouvre la session (cookie JWT). Erreur → /login?error=1.
+// console_user (sans jamais réactiver un compte désactivé), ouvre la session
+// (cookie JWT). Erreur ou refus → /login?error=1.
 import { type NextRequest, NextResponse } from "next/server";
 import { FIN_SSO } from "@mip/console-contract";
 import { SESSION_COOKIE, SESSION_HOURS, signJwt } from "@/lib/auth";
@@ -16,6 +17,19 @@ function fail(req: NextRequest, e: unknown): NextResponse {
   const res = NextResponse.redirect(new URL("/login?error=1", req.url), 302);
   for (const c of ["oidc_state", "oidc_verifier", "oidc_nonce"]) res.cookies.delete(c);
   return res;
+}
+
+/**
+ * Le refus d'un compte désactivé : le même `?error=1` que tout échec du SSO, et
+ * la raison au journal d'audit seulement (le navigateur n'apprend pas qu'un
+ * compte existe sous cette adresse).
+ */
+async function refusCompteDesactive(req: NextRequest, email: string, fournisseur: string): Promise<NextResponse> {
+  await q(`insert into audit_log (user_email, action, detail) values ($1, 'login_failed', $2)`, [
+    email,
+    JSON.stringify({ method: "sso", provider: fournisseur, raison: "compte_desactive" }),
+  ]);
+  return fail(req, "compte désactivé");
 }
 
 /**
@@ -78,22 +92,31 @@ export async function GET(req: NextRequest) {
 
     // provisioning JIT : le rôle/apps de l'IdP font autorité s'ils sont fournis,
     // sinon on préserve ce qui est géré dans la console (1re connexion → viewer).
-    const [existing] = await q<{ role: "admin" | "viewer"; apps: string[] | null }>(
-      `select role, apps from console_user where email = $1`,
+    const [existing] = await q<{ role: "admin" | "viewer"; apps: string[] | null; active: boolean }>(
+      `select role, apps, active from console_user where email = $1`,
       [mapped.email],
     );
+    // Un compte DÉSACTIVÉ le reste : l'IdP dit qui se présente, pas qu'il a de
+    // nouveau accès. Ce retour réactivait le compte (recette du 26/09/2026) ; même
+    // règle que console-api (`compteSso`, raison `compte_desactive`).
+    if (existing && existing.active !== true) return refusCompteDesactive(req, mapped.email, cfg.issuer);
     const role = mapped.role ?? existing?.role ?? "viewer";
     const apps = mapped.appsProvided ? mapped.apps : (existing?.apps ?? null);
 
     // password_hash sentinelle 'sso:oidc' → bcrypt.compare échoue toujours
     // (connexion par mot de passe impossible pour un compte SSO).
-    await q(
+    // `where console_user.active` : un compte désactivé ENTRE la lecture ci-dessus
+    // et cette écriture n'est ni réactivé ni mis à jour, et aucune ligne ne revient.
+    const ecrit = await q(
       `insert into console_user (email, password_hash, role, apps, active, last_login_at)
        values ($1, 'sso:oidc', $2, $3, true, now())
        on conflict (email) do update
-         set role = $2, apps = $3, active = true, last_login_at = now()`,
+         set role = $2, apps = $3, last_login_at = now()
+         where console_user.active
+       returning email`,
       [mapped.email, role, apps],
     );
+    if (!ecrit.length) return refusCompteDesactive(req, mapped.email, cfg.issuer);
     await q(`insert into audit_log (user_email, action, detail) values ($1, 'login', $2)`, [
       mapped.email,
       JSON.stringify({ method: "sso", provider: cfg.issuer }),

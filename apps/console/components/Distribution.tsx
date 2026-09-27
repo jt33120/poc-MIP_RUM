@@ -6,6 +6,7 @@
 // effectif (colonne n) ; `Histogram` est remplacé à l'usage par
 // `DistributionSeuils` (repères p50 / p75 / p95, barre « ≥ plafond » dite) mais
 // reste disponible, ses couleurs lues dans lib/palette.ts.
+import { TableDefilante } from "@/components/TableDefilante";
 import {
   histogramBins,
   labelPercentiles,
@@ -45,7 +46,9 @@ export function PercentileTable({
   if (!present.length) return null;
   const avecIntervalle = rows.some((r) => r.intervalle != null);
   return (
-    <div className="card overflow-x-auto" data-testid="percentile-table">
+    // Défilement signalé : à 390 px la table s'arrêtait à P95 sans indice que P99,
+    // l'intervalle et l'effectif suivaient (recette 26/09).
+    <TableDefilante className="card" testId="percentile-table" label="Percentiles par Web Vital">
       <table className="w-full text-sm">
         <caption className="sr-only">
           Percentiles de chaque Web Vital et nombre de mesures ; verdict web.dev donné pour le p75 seulement
@@ -119,7 +122,7 @@ export function PercentileTable({
           })}
         </tbody>
       </table>
-    </div>
+    </TableDefilante>
   );
 }
 

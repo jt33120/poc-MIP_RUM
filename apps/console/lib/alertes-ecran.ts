@@ -12,7 +12,8 @@
 //     (un marqueur = un événement), jamais une « state timeline ».
 //   - Les 30 jours de la frise et des barres sont FIXES : la plage de l'écran ne
 //     s'y applique pas (une règle est évaluée sur SA fenêtre).
-import { ruleModeLabel, type Severity } from "./alerting";
+import { type Severity } from "./alerting";
+import { libelleCourtMetrique, libelleSeverite } from "./alertes-metriques";
 import { formater } from "./fmt-ids";
 import { metricLabel, type AlertDayRow, type AlertEventRow, type AlertFiringRow, type AlertRuleRow } from "./queries-v2";
 import type { PisteDeclenchements, Severite } from "../components/charts/FriseDeclenchements";
@@ -22,11 +23,16 @@ import { PHRASE_FENETRE } from "../components/ReleaseCompare";
 // Bornes des lectures de l'écran : dans `lib/alerting.ts` (sans rendu), que le
 // chargeur de l'écran (`lib/chargeurs/alertes.ts`) lit aussi.
 export { JOURS_DECLENCHEMENTS, PLAFOND_DECLENCHEMENTS, PLAFOND_FLUX } from "./alerting";
+export { libelleSeverite } from "./alertes-metriques";
 import { JOURS_DECLENCHEMENTS } from "./alerting";
+import { pluriel } from "./format";
 
-/** Pourquoi le délai d'acquittement n'est pas affiché (B50). */
-export const MOTIF_MTTA =
-  "Délai d'acquittement non affiché : la base ne garde qu'un booléen d'acquittement, pas son horodatage (colonne alert_event.acknowledged_at absente).";
+/**
+ * Pourquoi le délai d'acquittement n'est pas affiché (B50) : la base ne garde qu'un
+ * booléen, pas l'heure (`alert_event.acknowledged_at` n'existe pas). Le nom de la
+ * colonne reste ici : l'écran dit le manque en mots (recette du 26/09/2026).
+ */
+export const MOTIF_MTTA = "Le délai d'acquittement n'est pas encore enregistré : seul le fait d'avoir acquitté est gardé, pas l'heure.";
 
 /**
  * Sévérité RAMENÉE aux trois sévérités du domaine (`ALERT_SEVERITIES`). La colonne
@@ -39,6 +45,8 @@ export function severiteConnue(severity: string): Severite {
   if (severity === "warning" || severity === "warn") return "warning";
   return "info";
 }
+
+const VITAUX: readonly string[] = ["LCP", "INP", "CLS", "FCP", "TTFB"];
 
 /** Libellé lisible d'une sévérité, dans l'ordre d'importance décroissante. */
 export const SEVERITES_AFFICHEES: readonly { cle: Severite; libelle: string; ton: "bad" | "warn" | "neutre" }[] = [
@@ -110,12 +118,13 @@ export function totalDeclenchements(parJour: readonly Pick<AlertDayRow, "n">[]):
 export function alternativeParJour(parJour: readonly AlertDayRow[]) {
   const points = pointsParJour(parJour);
   return {
-    legende: `Déclenchements par jour UTC et par sévérité, sur ${JOURS_DECLENCHEMENTS} jours fixes.`,
-    colonnes: ["Jour (UTC)", ...SEVERITES_AFFICHEES.map((s) => s.libelle), "Total"],
+    legende: `Déclenchements par jour et par sévérité, sur ${JOURS_DECLENCHEMENTS} jours fixes.`,
+    colonnes: ["Jour", ...SEVERITES_AFFICHEES.map((s) => s.libelle), "Total"],
     lignes: points.map((p) => {
       const valeurs = SEVERITES_AFFICHEES.map((s) => Number(p[s.cle]) || 0);
+      // Le jour calendaire du compte, écrit à la française (« 26/09 », pas « 2026-09-26 »).
       return [
-        p.t.slice(0, 10),
+        `${p.t.slice(8, 10)}/${p.t.slice(5, 7)}`,
         ...valeurs.map((v) => formater("count", v)),
         formater(
           "count",
@@ -227,22 +236,56 @@ export function libelleDeRegle(r: Pick<AlertRuleRow, "metric" | "route">): strin
   return `${metricLabel(r.metric)}${r.route ? ` · ${r.route}` : ""}`;
 }
 
+/**
+ * Le seuil d'une règle dans l'unité de SA métrique. `formater("count")` arrondissait
+ * à l'entier : le seuil 0,1 d'un taux d'erreur s'affichait « > 0 », une règle qui
+ * semblait se déclencher à la première erreur (recette du 26/09/2026). Un taux
+ * s'écrit en pour cent, un CLS avec ses trois décimales, le reste sans perdre ses
+ * décimales.
+ */
+export function seuilDeRegle(metric: string, seuil: number): string {
+  if (metric === "error_rate") return formater("pct", seuil);
+  if (metric === "CLS") return formater("cls", seuil);
+  return Number.isFinite(seuil) ? seuil.toLocaleString("fr-FR", { maximumFractionDigits: 3 }) : "—";
+}
+
+/** Le mode d'une règle en mots (le formulaire dit « Écart à l'habitude », pas « baseline »). */
+function modeEnClair(mode: string): string {
+  return mode === "baseline" ? "écart à l'habitude" : mode === "release" ? "régression de release" : "seuil";
+}
+
 /** Ce que la règle évalue, en une phrase : mode, seuil ou sensibilité, fenêtre, env. */
 export function reglageDeRegle(
-  r: Pick<AlertRuleRow, "mode" | "comparator" | "threshold" | "sensitivity" | "window_minutes" | "severity" | "env">,
+  r: Pick<AlertRuleRow, "metric" | "mode" | "comparator" | "threshold" | "sensitivity" | "window_minutes" | "severity" | "env">,
 ): string {
+  const severite = `sévérité ${libelleSeverite(r.severity)}`;
   // B52 : une règle de release compare deux p75 ; son seuil est une hausse EN POUR
   // CENT (décimales gardées : « +12,5 % » n'est pas « +13 % »), et la phrase du
   // § 3.2 l'accompagne partout où elle s'affiche.
   if (r.mode === "release") {
-    return `${ruleModeLabel(r.mode)} : p75 en hausse de +${r.threshold.toLocaleString("fr-FR")} % ou plus contre la release précédente, sur ${formater("count", r.window_minutes)} min · sévérité ${r.severity} · ${PHRASE_FENETRE}`;
+    return `${modeEnClair(r.mode)} : p75 en hausse de +${r.threshold.toLocaleString("fr-FR")} % ou plus contre la release précédente, sur ${formater("count", r.window_minutes)} min · ${severite} · ${PHRASE_FENETRE}`;
   }
+  // `sensitivity` multiplie l'écart absolu médian des semaines passées (MAD, `check_alerts`) :
+  // « 3 sigma » n'était ni français ni exact.
   const declenche =
     r.mode === "baseline"
-      ? `écart à l'habitude au-delà de ${formater("count", r.sensitivity)} sigma`
-      : `${r.comparator} ${formater("count", r.threshold)}`;
+      ? `${r.comparator === "<" ? "baisse" : "hausse"} au-delà de ${formater("count", r.sensitivity)} fois l'écart habituel`
+      : `${r.comparator} ${seuilDeRegle(r.metric, r.threshold)}`;
   const env = r.env ? ` · env ${r.env}` : "";
-  return `${ruleModeLabel(r.mode)} : ${declenche} sur ${formater("count", r.window_minutes)} min · sévérité ${r.severity}${env}`;
+  return `${modeEnClair(r.mode)} : ${declenche} sur ${formater("count", r.window_minutes)} min · ${severite}${env}`;
+}
+
+/**
+ * Une valeur d'alerte dans l'unité de SA métrique, pour une phrase : un taux en pour
+ * cent sans décimale inutile (« 37 % »), un vital avec son unité, un compte en
+ * chiffres français (« 16 », pas « 16.0 »).
+ */
+export function valeurDeMetrique(metric: string, v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  if (metric === "error_rate") return `${(v * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })}\u00a0%`;
+  if (metric === "CLS") return formater("cls", v);
+  if (VITAUX.includes(metric)) return formater("ms", v);
+  return v.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
 }
 
 // ───────────────────────────── Flux « À traiter » (A6) ────────────────────────
@@ -267,24 +310,78 @@ export function etatLivraison(e: Pick<AlertEventRow, "delivered" | "pending">): 
     return {
       etat: "livree",
       libelle: `livrée ×${formater("count", e.delivered)}`,
-      detail: `${e.delivered} notification(s) livrée(s) — code 2xx confirmé`,
+      detail: `${pluriel(e.delivered, "notification livrée", "notifications livrées")} — code 2xx confirmé`,
     };
   }
   if (e.pending > 0) {
     return {
       etat: "en_attente",
       libelle: `en attente ×${formater("count", e.pending)}`,
-      detail: `${e.pending} notification(s) transmise(s), résultat pas encore confirmé`,
+      detail: `${pluriel(e.pending, "notification transmise", "notifications transmises")}, résultat pas encore confirmé`,
     };
   }
   return { etat: "non_livree", libelle: "non livrée", detail: "Aucune notification n'est partie pour cette alerte" };
 }
 
-/** Le titre d'un événement : son message, sinon sa métrique et sa source. */
+// Les messages que `check_alerts`, `check_slo_burn` et `check_new_errors` écrivent en
+// base (migrations v45, v74, v86) sont des expressions techniques : « error_rate >
+// 0.4 (seuil 0.1, fenêtre 60 min, app demo) ». Ils partent tels quels dans les
+// webhooks ; l'écran, lui, en tire une phrase (recette du 26/09/2026). Un message
+// qu'aucun motif ne reconnaît reste affiché tel quel plutôt que perdu.
+const NOMBRE = "(-?\\d+(?:\\.\\d+)?)";
+const MSG_SEUIL = new RegExp(`^(\\S+) ([<>]) ${NOMBRE} \\(seuil ${NOMBRE},`);
+const MSG_HABITUDE = new RegExp(`^(\\S+) ([<>]) ${NOMBRE} anormal \\(normal(?: stable)?≈${NOMBRE}`);
+const MSG_RELEASE = new RegExp(
+  `^(\\S+) p75 en hausse de ${NOMBRE} % d'une release à l'autre : (.+?) = ${NOMBRE} contre (.+?) = ${NOMBRE} \\(seuil \\+${NOMBRE} %`,
+);
+const MSG_SLO = new RegExp(`^SLO « (.+) » en burn rapide : atteinte ${NOMBRE}% \\(objectif ${NOMBRE}%`);
+const MSG_NOUVELLE_ERREUR = /^nouvelle erreur \S+ \/ app \S+ — (.+) \((\d+) occurrence\(s\) depuis \d\d:\d\d\)$/s;
+
+const pctMessage = (v: string) => `${Number(v).toLocaleString("fr-FR", { maximumFractionDigits: 1 })}\u00a0%`;
+
+/**
+ * Le titre d'un événement, en phrase : « Taux d'erreur JS : 37 % (seuil 10 %) ». La
+ * valeur et le seuil viennent de la règle et de l'événement, sinon du message ; la
+ * sévérité est dite par son badge, à côté.
+ */
 export function titreEvenement(
-  e: Pick<AlertEventRow, "message" | "metric" | "rule_id" | "slo_id">,
+  e: Pick<AlertEventRow, "message" | "metric" | "rule_id" | "slo_id"> & Partial<Pick<AlertEventRow, "value">>,
   source?: Pick<AlertFiringRow, "source" | "libelle">,
+  regle?: Pick<AlertRuleRow, "mode" | "comparator" | "threshold"> | null,
 ): string {
+  const message = e.message ?? "";
+  const seuil = MSG_SEUIL.exec(message);
+  const habitude = MSG_HABITUDE.exec(message);
+  const release = MSG_RELEASE.exec(message);
+  const metrique = e.metric ?? seuil?.[1] ?? habitude?.[1] ?? release?.[1] ?? null;
+
+  if (metrique && (e.rule_id != null || seuil || habitude || release)) {
+    const libelle = libelleCourtMetrique(metrique);
+    const mode = regle?.mode ?? (release ? "release" : habitude ? "baseline" : seuil ? "threshold" : null);
+    const valeur = valeurDeMetrique(metrique, e.value ?? (seuil ?? habitude ? Number((seuil ?? habitude)![3]) : null));
+    if (mode === "release") {
+      if (release) {
+        return `${libelle} : p75 en hausse de ${pctMessage(release[2])} d'une release à l'autre, ${release[3]} à ${valeurDeMetrique(metrique, Number(release[4]))} contre ${release[5]} à ${valeurDeMetrique(metrique, Number(release[6]))} (seuil +${pctMessage(release[7])}) — ${PHRASE_FENETRE}`;
+      }
+      // La phrase du § 3.2 accompagne toute comparaison de releases, ici comme dans le réglage.
+      return `${libelle} : p75 en hausse d'une release à l'autre${regle ? ` (seuil +${pctMessage(String(regle.threshold))})` : ""} — ${PHRASE_FENETRE}`;
+    }
+    if (mode === "baseline") {
+      const habituel = habitude ? `, habituellement ${valeurDeMetrique(metrique, Number(habitude[4]))}` : "";
+      return `${libelle} : ${valeur}, inhabituel${habituel}`;
+    }
+    if (mode === "threshold") {
+      const comparateur = regle?.comparator ?? seuil?.[2] ?? ">";
+      const s = regle?.threshold ?? (seuil ? Number(seuil[4]) : null);
+      const texteSeuil = s == null ? "" : ` (seuil${comparateur === "<" ? " bas" : ""} ${valeurDeMetrique(metrique, s)})`;
+      return `${libelle} : ${valeur}${texteSeuil}`;
+    }
+  }
+
+  const slo = MSG_SLO.exec(message);
+  if (slo) return `SLO « ${slo[1]} » : le budget brûle trop vite, atteinte ${pctMessage(slo[2])} pour un objectif de ${pctMessage(slo[3])}`;
+  const nouvelle = MSG_NOUVELLE_ERREUR.exec(message);
+  if (nouvelle) return `Nouvelle erreur : ${nouvelle[1]} (${pluriel(Number(nouvelle[2]), "occurrence")})`;
   if (e.message) return e.message;
   if (e.metric) return metricLabel(e.metric);
   if (source) return source.libelle;
@@ -301,7 +398,6 @@ export interface CibleMesure {
   fenetre: string | null;
 }
 
-const VITAUX: readonly string[] = ["LCP", "INP", "CLS", "FCP", "TTFB"];
 const ISSUE_UUID = /^issue:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 /**

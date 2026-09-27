@@ -16,8 +16,9 @@
 // trafic réel sur la plage » ; une route robot sans aucun trafic réel appelle une
 // vérification de la correspondance `route_hint` ↔ route (cas `/partners/:id`).
 import Link from "next/link";
+import { TableDefilante } from "@/components/TableDefilante";
 import { LIBELLE_ETAT_ROBOT } from "@/lib/correlation";
-import { fmtLatency } from "@/lib/format";
+import { fmtLatency, pluriel } from "@/lib/format";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
 
 export interface LigneRoute {
@@ -71,7 +72,9 @@ function Verdict({ vital, valeur }: { vital: "LCP" | "INP"; valeur: number | nul
 
 export function TableRoutes({ lignes, avecApp }: { lignes: LigneRoute[]; avecApp: boolean }) {
   return (
-    <div className="relative overflow-x-auto">
+    // Défilement signalé : robot et réel côte à côte ne tiennent pas à 390 px ; la
+    // zone reste `relative`, un `sr-only` ne doit pas élargir la page.
+    <TableDefilante label="Routes, robot et réel">
       <table className="w-full min-w-max text-sm" data-testid="table-routes">
         <caption className="sr-only">Routes : robot et réel côte à côte, une ligne par couple app et route</caption>
         <thead className="bg-panel2">
@@ -157,7 +160,7 @@ export function TableRoutes({ lignes, avecApp }: { lignes: LigneRoute[]; avecApp
                   pas de trafic réel sur la plage
                   {l.robot && (
                     <span className="mt-0.5 block text-warn-ink" data-testid="verifier-correspondance">
-                      vérifier la correspondance route_hint ↔ route
+                      vérifier que le scénario robot vise bien cette route
                     </span>
                   )}
                 </td>
@@ -166,7 +169,7 @@ export function TableRoutes({ lignes, avecApp }: { lignes: LigneRoute[]; avecApp
                 <span className="block tabular-nums">{l.concordance.texte}</span>
                 {l.concordance.issue && (
                   <span className="mt-0.5 block text-xs text-ink-soft">
-                    {l.concordance.issue} · {l.concordance.jours} jours communs
+                    {l.concordance.issue} · {pluriel(l.concordance.jours ?? 0, "jour commun", "jours communs")}
                   </span>
                 )}
               </td>
@@ -181,6 +184,6 @@ export function TableRoutes({ lignes, avecApp }: { lignes: LigneRoute[]; avecApp
           ))}
         </tbody>
       </table>
-    </div>
+    </TableDefilante>
   );
 }

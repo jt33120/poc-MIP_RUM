@@ -45,7 +45,7 @@ describe("echelleCommune", () => {
 describe("noteEchelle — le maximum est DIT", () => {
   it("nomme le haut de l'échelle et la largeur du seau", () => {
     expect(noteEchelle(1240, "1 h").replace(/[\u00a0\u202f]/g, " ")).toBe(
-      "Tendances à l'échelle commune, de 0 à 1 240 occurrence(s) par seau de 1 h : deux lignes à la même valeur ont la même hauteur.",
+      "Tendances à l'échelle commune, de 0 à 1 240 occurrences par tranche de 1 h : deux lignes à la même valeur ont la même hauteur.",
     );
   });
 

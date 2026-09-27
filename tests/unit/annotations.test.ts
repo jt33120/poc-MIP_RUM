@@ -176,13 +176,32 @@ describe("F67 — annotations d'alerte : périmètre de la figure", () => {
     expect(r.annotations.map((a) => a.href)).toEqual(["/alerts?app=a&evt=1#evt-1"]);
   });
 
-  it("une clé de métrique trop longue est abrégée (elle est dessinée au-dessus de la série)", () => {
+  it("la métrique est nommée comme la règle, jamais par sa clé (recette du 26/09/2026)", () => {
     const r = annotationsAlertes(
-      [evt(1, "2026-09-22T09:00:00Z", { metric: "issue:3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d" })],
+      [
+        evt(4, "2026-09-22T09:03:00Z", { metric: "issue:3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", route: null }),
+        evt(3, "2026-09-22T09:02:00Z", { metric: "event:frustration.rage", route: null }),
+        evt(2, "2026-09-22T09:01:00Z", { metric: "log_errors", route: null }),
+        evt(1, "2026-09-22T09:00:00Z", { metric: "error_rate", route: null }),
+      ],
       RANGE_F67,
       { lien: lienEvtF67 },
     );
-    expect(r.annotations[0].libelle).toBe("Alerte issue:3f2b1c4d-5e…");
+    expect(r.liste.map((a) => a.libelle)).toEqual([
+      "Alerte Taux d'erreur JS",
+      "Alerte Logs en erreur",
+      "Alerte Événement « frustration.rage »",
+      "Alerte Issue 3f2b1c4d",
+    ]);
+  });
+
+  it("un nom d'événement trop long est abrégé (il est dessiné au-dessus de la série)", () => {
+    const r = annotationsAlertes(
+      [evt(1, "2026-09-22T09:00:00Z", { metric: "event:un.nom.d.evenement.vraiment.tres.long", route: null })],
+      RANGE_F67,
+      { lien: lienEvtF67 },
+    );
+    expect(r.annotations[0].libelle).toBe("Alerte Événement « un.nom.d.evenement.…");
   });
 });
 

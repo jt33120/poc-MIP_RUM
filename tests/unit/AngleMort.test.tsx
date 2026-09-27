@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { TuileAngleMort } from "@/components/vue-ensemble/AngleMort";
 
-const REGLE = "Robot à l'état ok ET LCP p75 réel au-dessus de 2,5 s (borne Bon de lib/rating.ts) sur la même heure et la même route.";
+const REGLE = "Robot à l'état ok et LCP p75 réel au-dessus de 2,5 s (seuil Bon du LCP) sur la même heure et la même route.";
 
 describe("TuileAngleMort", () => {
   it("compte, règle, lien vers /correlation#angles-morts ; pire route dans un second lien", () => {
@@ -19,7 +19,9 @@ describe("TuileAngleMort", () => {
     );
     expect(html).toContain('href="/correlation?app=a#angles-morts"');
     expect(html).toContain(">60<");
-    expect(html).toContain("borne Bon de lib/rating.ts");
+    // La règle est la méthode de la tuile (infobulle du lien), jamais un chemin du dépôt.
+    expect(html).toContain("seuil Bon du LCP");
+    expect(html).not.toContain("lib/rating.ts");
     expect(html).toContain('href="/correlation?serie=a%3A%252Flent"');
     // Neutre : aucun ton « bad » sur un compte sans seuil publié.
     expect(html).toContain('data-ton="neutre"');

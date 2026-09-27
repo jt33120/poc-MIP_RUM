@@ -90,6 +90,8 @@ describe("BudgetBars", () => {
   it("aucune ligne : état vide, pas d'axe", () => {
     const html = renderToStaticMarkup(<BudgetBars lignes={[]} ariaLabel="Budget" />);
     expect(html).toContain('data-etat="vide"');
+    // « SLO » est masculin (recette du 26/09/2026 : « Aucune SLO actif »).
+    expect(html).toContain("Aucun SLO actif sur ce périmètre.");
     expect(html).not.toContain("budget-axe");
   });
 

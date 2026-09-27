@@ -27,6 +27,8 @@ import { ECRANS } from "@mip/console-contract";
 import { Figure } from "@/components/charts/Figure";
 import { FriseEtats } from "@/components/charts/FriseEtats";
 import { KpiTile } from "@/components/charts/KpiTile";
+import { RangeeKpi } from "@/components/charts/RangeeKpi";
+import { Methode } from "@/components/perf/Methode";
 import { MatriceConcordance } from "@/components/charts/MatriceConcordance";
 import { RankBar } from "@/components/charts/RankBar";
 import { ScatterPlot } from "@/components/charts/ScatterPlot";
@@ -64,20 +66,22 @@ import { ecrireSerie, libelleSerie } from "@/lib/correlation-serie";
 import { explorerHref } from "@/lib/explorer-page-params";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import { fmtLatency } from "@/lib/format";
+import { fmtLatency, fmtInstant, pluriel } from "@/lib/format";
 import { chargerCorrelation } from "@/lib/chargeurs/correlation";
 import { chargerEcran } from "@/lib/ecran";
-import { RATING_HEX } from "@/lib/palette";
 import { hrefWithQuery, paramReader, previousRange, queryToSearchParams, rangeLabel } from "@/lib/query-contract";
 import { sessionsDeLaRoute } from "@/lib/breakdowns";
 import { EFFECTIF_MIN_HEURE } from "@/lib/queries-v2";
 import { RATING_LABEL, THRESHOLDS } from "@/lib/rating";
 import { alignerSeaux, libelleSeauComplet, type PointSerie, type SerieDef } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, lireComparaison, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 export const dynamic = "force-dynamic";
 
-const TITRE = "Corrélation synthétique ↔ RUM";
+// Le vocabulaire de l'écran est « robot » et « réel », celui du menu (recette du
+// 26/09/2026 : le titre disait « synthétique ↔ RUM », la catégorie « Robot et réel »).
+const TITRE = "Robot et réel";
 const H = 3_600_000;
 /** Couples listés au plus dans « Routes à trafic réel sans scénario robot » (P14). */
 const TOP_SANS_ROBOT = 10;
@@ -102,7 +106,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
   const comparaison = lireComparaison("/correlation", lecteur).valeur;
   const prev = comparaison.mode === "prev";
   const rangePrec = previousRange(query.range);
-  const reference = `vs période précédente (${rangeLabel({ ...rangePrec, preset: null }, "UTC")} UTC)`;
+  const reference = `vs période précédente (${rangeLabel({ ...rangePrec, preset: null }, FUSEAU_AFFICHAGE)})`;
 
   // Liens qui restent sur l'écran : contrat canonique + réglages de vue de l'URL
   // (comparaison, releases), jamais le panneau ni le curseur.
@@ -318,23 +322,34 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
         )
       )}
 
-      {/* ── Zone 3 : KPI (CR2 à CR6). ── */}
+      {/* ── Zone 3 : KPI (CR2 à CR6). Une rangée (`RangeeKpi`) : si la période
+             précédente est incomplète, la raison est dite une fois au-dessus. ── */}
       <SectionErreur titre="Chiffres clés robot et réel">
-        <div className="mb-6 grid min-w-0 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" data-testid="kpi-correlation">
+        <div className="mb-6 min-w-0">
+        <RangeeKpi
+          couvertures={prev ? [couverturePrec] : []}
+          className="grid min-w-0 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5"
+          testId="kpi-correlation"
+        >
           <KpiTile
             label="Routes suivies par le robot"
             valeur={routesRobot}
             format="count"
             raisonNull="lecture en échec"
-            lecture="sans référence : configuration du robot"
+            lecture="au moins un passage du robot sur la plage"
             href="#routes"
           />
+          {/* Mesurées des deux côtés sur la PLAGE, pas forcément à la même heure
+              (`correlationRoutes`) : la matrice, elle, ne compte que les heures communes
+              — la tuile le dit, sinon « 3 routes » côtoyait « aucune heure commune ». */}
           <KpiTile
             label="Routes vues des deux côtés"
             valeur={couples.ok ? couples.data.length : null}
             format="count"
             raisonNull="lecture en échec"
-            lecture={sousAppAll ? "une route présente dans deux apps compte deux fois" : "au moins une heure avec robot et réel"}
+            lecture={`mesurées par le robot et par le réel sur la plage, pas forcément à la même heure${
+              sousAppAll ? " ; une route présente dans deux apps compte deux fois" : ""
+            }`}
             href="#hero"
           />
           <KpiTile
@@ -361,8 +376,9 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
             valeur={ageDernier}
             format="s-auto"
             raisonNull={fraicheurs.ok ? "Aucun passage du robot sur la plage" : "lecture en échec"}
-            lecture={plusRecent ? `le ${plusRecent.toISOString().replace(/\.\d{3}Z$/, "Z")} (UTC), compté à la fin de la plage` : undefined}
+            lecture={plusRecent ? `le ${fmtInstant(plusRecent)}, compté à la fin de la plage` : undefined}
           />
+        </RangeeKpi>
         </div>
       </SectionErreur>
 
@@ -391,16 +407,11 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                   aide="robotVsReal"
                   meta={
                     <>
-                      <span>seau d&apos;une heure, UTC</span>
+                      <span>par heure</span>
                       <span>{plage}</span>
                     </>
                   }
-                  lecture={
-                    <span data-testid="concordance-hero">
-                      {phraseConcordanceHero}{" "}
-                      <span className="text-ink-soft">{regleConcordance()}</span>
-                    </span>
-                  }
+                  lecture={<span data-testid="concordance-hero">{phraseConcordanceHero}</span>}
                   etat={
                     !couples.ok
                       ? { kind: "erreur", titre: "Robot face au réel" }
@@ -411,10 +422,10 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                           : undefined
                   }
                   alternative={{
-                    legende: `Réel · LCP p75 par heure — ${libelleChoisi ?? ""}, un seau par ligne (UTC)`,
-                    colonnes: ["Heure (UTC)", "Réel · LCP p75", "Mesures LCP"],
+                    legende: `Réel · LCP p75 par heure — ${libelleChoisi ?? ""}, une tranche par ligne`,
+                    colonnes: ["Heure", "Réel · LCP p75", "Mesures LCP"],
                     lignes: points.map((p) => [
-                      libelleSeauComplet(p.t, 3600, "UTC"),
+                      libelleSeauComplet(p.t, 3600, FUSEAU_AFFICHAGE),
                       typeof p.reel === "number" ? fmtLatency(p.reel) : null,
                       typeof p.n === "number" ? p.n : null,
                     ]),
@@ -461,7 +472,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                         etat={{
                           kind: "partiel",
                           raison:
-                            "Seaux horaires : les 300 dernières heures de la plage sont affichées (plafond de points du contrat). La matrice et les angles morts portent sur toute la plage.",
+                            "Tranches horaires : les 300 dernières heures de la plage sont affichées (plafond de points du contrat). La matrice et les angles morts portent sur toute la plage.",
                         }}
                         compact
                       />
@@ -484,7 +495,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                     vital="LCP"
                     faibleSous={EFFECTIF_MIN_HEURE}
                     seauSecondes={3600}
-                    fuseau="UTC"
+                    fuseau={FUSEAU_AFFICHAGE}
                     annotations={annotationsHero}
                     annotationsIndisponibles={annotationsAbsentes}
                     zoomHref={zoomHref}
@@ -512,6 +523,11 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                     État du robot (pire état de l&apos;heure), pas une note du LCP : aucune bande de seuil ne
                     s&apos;applique au robot.
                   </p>
+                  {/* La règle de la concordance, derrière un repli : écrite une fois pour
+                      l'écran (la colonne « Concordance » de la table y renvoie). */}
+                  <Methode className="mt-2" testId="methode-concordance">
+                    {regleConcordance()}
+                  </Methode>
                 </Figure>
               </SectionErreur>
             </div>
@@ -533,7 +549,18 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                       : concordance.data.cellules.every((c) => c.heures === 0) &&
                           concordance.data.reelInsuffisant === 0 &&
                           concordance.data.robotInconnu === 0
-                        ? { kind: "vide", population: "heure vue à la fois par le robot et par le réel", plage, geste: elargir }
+                        ? {
+                            kind: "vide",
+                            population: "heure vue à la fois par le robot et par le réel",
+                            plage,
+                            // La tuile « Routes vues des deux côtés » compte la plage, pas
+                            // l'heure : sans cette phrase, les deux semblaient se contredire.
+                            borne:
+                              couples.ok && couples.data.length > 0
+                                ? `${pluriel(couples.data.length, "route a été mesurée", "routes ont été mesurées")} par les deux, mais à des heures différentes.`
+                                : undefined,
+                            geste: elargir,
+                          }
                         : undefined
                   }
                   lecture={
@@ -609,8 +636,9 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                 {lignesAngles.length > 0 ? (
                   <TableAnglesMorts lignes={lignesAngles} avecApp={plusieursApps(lignesAngles)} />
                 ) : (
+                  // La règle est écrite juste au-dessus : pas une seconde fois ici.
                   <p className="py-4 text-center text-sm text-ink-soft" data-testid="aucun-angle-mort">
-                    Aucun angle mort sur la plage (règle : {regleAngleMort(EFFECTIF_MIN_HEURE)})
+                    Aucun angle mort sur la plage.
                   </p>
                 )}
               </Figure>
@@ -680,7 +708,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
               id="sans-robot"
               meta={
                 <>
-                  <span>barre = mesures LCP réelles · tri : verdict Mauvais d&apos;abord, puis volume</span>
+                  <span>barre = mesures LCP réelles (un volume, sans couleur de verdict) · tri : verdict Mauvais d&apos;abord, puis volume</span>
                   {sansRobot.length > TOP_SANS_ROBOT && (
                     <span>
                       {TOP_SANS_ROBOT} premières sur {sansRobot.length}
@@ -697,8 +725,9 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                   return {
                     label: c.route === null ? `${c.app_id} · (sans route)` : libelleSerie({ app_id: c.app_id, route: c.route }, sansRobot.map((s) => ({ app_id: s.app_id, route: s.route ?? "" }))),
                     value: c.rum_lcp_n,
-                    display: `${formater("count", c.rum_lcp_n)} mesures`,
-                    color: c.verdict ? RATING_HEX[c.verdict] : undefined,
+                    display: pluriel(c.rum_lcp_n ?? 0, "mesure"),
+                    // Un volume n'est ni vert ni orange (recette du 26/09/2026) : la barre
+                    // reste neutre, le verdict du LCP est ÉCRIT dans la sous-ligne.
                     sub: `LCP p75 ${fmtLatency(lcp)}${c.verdict ? ` · ${RATING_LABEL[c.verdict]}` : ""}${c.faible ? " · échantillon faible" : ""}`,
                     href: c.route !== null ? lienPages(c.app_id, c.route) : undefined,
                   };
@@ -725,7 +754,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                   ? { kind: "vide", population: "route mesurée par le robot ou le réel", plage, geste: elargir }
                   : undefined
             }
-            lecture={`L'état robot est le PIRE état de la plage, le score une MOYENNE : un score de 92 peut côtoyer un état incident. Les deux mesures sont posées côte à côte, jamais divisées l'une par l'autre. ${regleConcordance()} ${MENTION_RHO}`}
+            lecture={`L'état robot est le pire état de la plage, le score une moyenne : un score de 92 peut côtoyer un état incident. Les deux mesures sont posées côte à côte, jamais divisées l'une par l'autre. ${MENTION_RHO}`}
           >
             <TableRoutes lignes={lignesRoutes} avecApp={plusieursApps(lignesRoutes)} />
           </Figure>

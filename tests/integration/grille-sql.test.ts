@@ -218,7 +218,7 @@ const filtres = (app = A): Filters => ({
     it("B, collectée depuis J−3 seulement : J−8 est partiel, date lue en base ; B n'hérite pas de l'historique de A", async () => {
       const c = await lib.couvertureJour(lib.queryOf(filtres(B)), lib.SOURCES_TENDANCES.lcp, jours[6], TZ, 0);
       expect(c.etat).toBe("partielle");
-      expect(c.raison).toMatch(/^mesures de performance collectées depuis le \d{2}\/\d{2} \d{2}:\d{2} UTC seulement$/);
+      expect(c.raison).toMatch(/^mesures de performance collectées depuis le \d{2}\/\d{2} à \d{2}:\d{2} seulement$/);
     });
 
     it("B : aucune page vue ni erreur collectée → partielle, jamais « complète »", async () => {

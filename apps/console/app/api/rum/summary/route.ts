@@ -23,7 +23,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!token) return err(401, "token requis (Authorization: Bearer <token>)");
 
   const resolved = await resolveReadToken(token);
-  if (!resolved) return err(401, "token invalide ou révoqué");
+  if (!resolved) return err(401, "jeton invalide, révoqué ou expiré");
 
   const url = new URL(req.url);
   const app = (url.searchParams.get("app") ?? "").trim() || resolved.app_id;

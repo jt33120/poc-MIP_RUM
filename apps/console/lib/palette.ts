@@ -54,12 +54,29 @@ const PALIERS_SEQUENTIELS = ["#e0e7ff", "#a5b4fc", "#818cf8", "#6366f1", "#4338c
  * de 90 % n'est pas « verte » : 0,9 et 0,5 ne sont pas des seuils publiés (R-S).
  */
 export function SEQUENTIELLE(t: number): string {
+  return PALIERS_SEQUENTIELS[palierSequentiel(t)];
+}
+
+/** Le rang du palier (0 à 4) d'une intensité t ∈ [0 ; 1], bornée hors de l'intervalle. */
+export function palierSequentiel(t: number): number {
   const borne = Number.isFinite(t) ? Math.min(Math.max(t, 0), 1) : 0;
-  return PALIERS_SEQUENTIELS[Math.min(PALIERS_SEQUENTIELS.length - 1, Math.floor(borne * PALIERS_SEQUENTIELS.length))];
+  return Math.min(PALIERS_SEQUENTIELS.length - 1, Math.floor(borne * PALIERS_SEQUENTIELS.length));
 }
 
 /** Les paliers eux-mêmes, pour une légende. */
 export const PALIERS_SEQUENTIELLE: readonly string[] = PALIERS_SEQUENTIELS;
+
+/**
+ * Les mêmes paliers en JETONS de `app/globals.css` (`--c-seq-0` … `--c-seq-4`) :
+ * ils suivent le thème. En sombre, la rampe est inversée en luminance — le palier
+ * le plus fort reste le plus contrasté sur le fond, au lieu de s'y fondre.
+ */
+export const PALIERS_SEQUENTIELLE_JETONS: readonly string[] = PALIERS_SEQUENTIELS.map((_c, i) => `rgb(var(--c-seq-${i}))`);
+
+/** L'intensité t en jeton de thème (voir `PALIERS_SEQUENTIELLE_JETONS`). */
+export function sequentielleJeton(t: number): string {
+  return PALIERS_SEQUENTIELLE_JETONS[palierSequentiel(t)];
+}
 
 /**
  * Sévérités d'alerte : un jeton de couleur ET un motif, parce qu'aucune

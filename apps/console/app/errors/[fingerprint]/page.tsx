@@ -99,16 +99,18 @@ export default async function ErrorGroup({
     <div className="animate-fade-up">
       <BackLink f={f} />
 
-      {/* ── Bloc 1 : en-tête, et le rejeu au premier niveau ── */}
-      <h1 className="mb-1 flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight">
+      {/* ── Bloc 1 : en-tête, triage et rejeu au premier niveau ── */}
+      {/* Titre sur trois lignes au plus (recette du 26/09/2026 : tronqué à 390 px en
+          « Uncaught TypeError: Can… », le message complet n'était que dans la pile). */}
+      <h1 className="mb-1 flex min-w-0 items-start gap-3 text-xl font-bold tracking-tight">
         <ErrorTypeBadge type={group.error_type} large />
-        <span className="min-w-0 truncate" title={group.sample_message ?? ""}>
+        <span className="line-clamp-3 min-w-0 break-words" title={group.sample_message ?? ""}>
           {group.sample_message ?? "(sans message)"}
         </span>
       </h1>
-      <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2">
+      <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
         <span className="min-w-0 break-all font-mono text-xs text-ink-faint">
-          fingerprint {group.fingerprint} · app {group.app_id}
+          empreinte {group.fingerprint} · application {group.app_id}
         </span>
         {/* Source et caractère géré sont ceux du dernier exemplaire, pas une moyenne du groupe. */}
         <ErrorSourceBadge source={last?.error_source ?? null} />
@@ -118,6 +120,17 @@ export default async function ErrorGroup({
         </span>
       </div>
 
+      {/* Triage en tête, comme sur la page d'une issue (recette du 26/09/2026 : statut et
+          boutons étaient sous les 55 lignes d'occurrences). */}
+      <ErrorTriage
+        appId={group.app_id}
+        fingerprint={group.fingerprint}
+        status={group.status}
+        regressed={group.regressed}
+        resolvedAt={group.resolved_at}
+        lectureSeule={lectureSeule}
+      />
+
       <ErrorNotices sampling={sampling} enrichment={enrichment} />
 
       {/* ── Bloc 2 : phrase d'impact, puis quatre tuiles ── */}
@@ -125,7 +138,7 @@ export default async function ErrorGroup({
         <PhraseImpact impact={group} plage={label} part={part} hrefSessions={null} />
         <TuilesDetailErreur impact={group} plage={label} />
         <p className="mb-6 text-xs text-ink-soft" data-testid="detail-vues">
-          Première vue {fmtDate(group.first_seen)} (depuis toujours, hors fenêtre) · Dernière vue{" "}
+          Première vue {fmtDate(group.first_seen)} (depuis toujours, hors période) · Dernière vue{" "}
           {fmtDate(group.last_seen)}
         </p>
       </SectionErreur>
@@ -146,14 +159,14 @@ export default async function ErrorGroup({
             seauSecondes={range.bucketSeconds}
             annotations={annotations.annotations}
             annotationsIndisponibles={
-              deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement non lus"
+              deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement indisponibles"
             }
             zoomHref={zoomHref}
           />
         </SectionErreur>
       </div>
 
-      {/* ── Bloc 5 : ce que les sessions touchées ont en commun (repli tant que B3 manque) ── */}
+      {/* ── Bloc 5 : où surviennent les occurrences affichées (repli tant que B3 manque) ── */}
       <div className="mb-4">
         <SectionErreur titre="Qu'ont en commun les sessions touchées ?">
           <QuOntEnCommun
@@ -173,7 +186,7 @@ export default async function ErrorGroup({
       </div>
 
       {/* ── Bloc 6 : pile du dernier exemplaire ── */}
-      <ErrorStackCard last={last} pile={pile} />
+      <ErrorStackCard last={last} pile={pile} appId={group.app_id} admin={!lectureSeule} />
 
       {/* ── Bloc 7 : occurrences ── */}
       <ErrorOccurrences
@@ -184,17 +197,6 @@ export default async function ErrorGroup({
         nextHref={page.next_cursor ? errorGroupHref(group, f, { ...pageExtra, cursor: page.next_cursor }) : null}
       />
 
-      {/* ── Bloc 8 : triage ── */}
-      <div className="mt-4">
-        <ErrorTriage
-          appId={group.app_id}
-          fingerprint={group.fingerprint}
-          status={group.status}
-          regressed={group.regressed}
-          resolvedAt={group.resolved_at}
-          lectureSeule={lectureSeule}
-        />
-      </div>
     </div>
   );
 }
@@ -232,7 +234,7 @@ function GroupChooser({
             ? "Cette signature existe dans plusieurs applications"
             : "Cette signature existe dans une autre application"}
         </h1>
-        <p className="mt-1 break-all font-mono text-xs text-ink-faint">fingerprint {fingerprint}</p>
+        <p className="mt-1 break-all font-mono text-xs text-ink-faint">empreinte {fingerprint}</p>
         {absentFrom && (
           <p className="mt-3 text-sm text-ink-soft">
             Absente de <span className="font-mono">{absentFrom}</span> sur cette période.
@@ -264,19 +266,19 @@ function IssueChooser({ groupRef, f, issues }: { groupRef: ErrorGroupRef; f: Err
       <BackLink f={f} />
       <section className="card max-w-2xl p-6" data-testid="error-issue-chooser" aria-labelledby="issue-chooser-title">
         <h1 id="issue-chooser-title" className="text-lg font-bold tracking-tight">
-          Ce groupe est réparti sur plusieurs issues
+          Cette signature est répartie sur plusieurs groupes
         </h1>
         <p className="mt-1 break-all font-mono text-xs text-ink-faint">
-          fingerprint {groupRef.fingerprint} · app {groupRef.app_id}
+          empreinte {groupRef.fingerprint} · application {groupRef.app_id}
         </p>
         <p className="mt-3 text-sm text-ink-soft">
-          Le regroupement v2 distingue des erreurs que cette signature historique réunissait.
+          Le regroupement actuel distingue des erreurs que cette ancienne signature réunissait.
         </p>
         <ul className="mt-4 divide-y divide-line/60">
           {issues.map((issue) => (
             <li key={issue.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
               <Link href={issueHref({ id: issue.id, app_id: groupRef.app_id }, f)} className={`break-all font-mono text-sm ${ERROR_LINK}`}>
-                issue {issue.id}
+                groupe {issue.id}
               </Link>
               <span className="flex flex-wrap items-center gap-1 text-xs text-ink-faint">
                 <IssueStatusBadge status={issue.status} />
@@ -288,7 +290,7 @@ function IssueChooser({ groupRef, f, issues }: { groupRef: ErrorGroupRef; f: Err
         </ul>
         <p className="mt-4 text-sm">
           <Link href={errorGroupHref(groupRef, f, { legacy: "1" })} className={ERROR_LINK}>
-            Voir le détail historique de la signature
+            Voir le détail de l&apos;ancienne signature
           </Link>
         </p>
       </section>

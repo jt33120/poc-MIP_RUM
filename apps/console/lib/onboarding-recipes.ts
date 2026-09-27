@@ -35,7 +35,7 @@ opentelemetry-instrument uvicorn main:app --host 0.0.0.0 --port 8000
 # réémet en OTLP/HTTP JSON vers ${endpoint}. L'ingestion MIP accepte nativement
 # les spans serveur OpenTelemetry standard (Java/.NET/Go/Node/Ruby/PHP de même).`;
 
-  const fastapi = `# 1. Pose mip_rum_middleware.py à côté de main.py (télécharge-le ci-dessous)
+  const fastapi = `# 1. Posez mip_rum_middleware.py à côté de main.py (téléchargement ci-dessus)
 # 2. Dans config.py (pydantic-settings) — ATTENTION : le .env chargé par
 #    pydantic-settings ne remplit PAS os.environ, il faut passer par Settings :
 class Settings(BaseSettings):
@@ -56,17 +56,17 @@ app.add_middleware(
 # 4. Dans le .env du serveur :
 MIP_RUM_ENDPOINT=${endpoint}
 MIP_RUM_APP_ID=${appId}
-MIP_RUM_API_KEY=<la clé affichée à la création>`;
+MIP_RUM_API_KEY=<la clé du projet, facultative tant que la collecte ne l'exige pas>`;
 
-  const express = `// 1. Pose mip-rum-express.js dans ton projet (télécharge-le ci-dessous)
+  const express = `// 1. Posez mip-rum-express.js dans le projet (téléchargement ci-dessus)
 // 2. Dans app.js / server.js (Node >= 18) :
 const mipRum = require("./mip-rum-express");
-app.use(mipRum()); // AVANT tes routes
+app.use(mipRum()); // AVANT les routes
 
 // 3. Dans l'environnement du serveur :
 MIP_RUM_ENDPOINT=${endpoint}
 MIP_RUM_APP_ID=${appId}
-MIP_RUM_API_KEY=<la clé affichée à la création>`;
+MIP_RUM_API_KEY=<la clé du projet, facultative tant que la collecte ne l'exige pas>`;
 
   const other = `Protocole (toute stack) — 3 règles :
 1. Lire le header "traceparent" entrant : 00-<trace_id 32hex>-<parent_span_id 16hex>-01

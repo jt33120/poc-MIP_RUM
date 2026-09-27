@@ -97,7 +97,9 @@ export async function loginAction(fd: FormData): Promise<void> {
   const ip = await clientIp();
   const key = `login:${ip}:${email}`;
   if (recentFails(key, Date.now()).length >= LOGIN_MAX_FAILS) {
-    after(() => auditFail(email, "login_blocked", JSON.stringify({ ip })));
+    // Pas d'adresse IP au journal : il est en ajout seul (migration-v90), donc une IP
+    // y resterait pour toujours. Le blocage se décide sur le compteur en mémoire.
+    after(() => auditFail(email, "login_blocked", JSON.stringify({ raison: "trop_d_echecs" })));
     redirect("/login?error=1");
   }
 

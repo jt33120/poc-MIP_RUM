@@ -10,6 +10,7 @@
 // Les valeurs utilisateur restent des paramètres liés ; seules les largeurs de
 // seau calculées par le contrat sont interpolées dans le SQL.
 import { parsePagination } from "./api/pagination";
+import { RELEASES_LUES, avecReleasePersistee, resumerReleases, type ReleasesDuGroupe, type ReleaseTouchee } from "./releases-touchees";
 import { q, tx } from "./db";
 import { DEBUT_SAMPLE_RATE } from "./echantillonnage";
 import { queryOf, type FiltersLike } from "./filters";
@@ -29,6 +30,7 @@ import { dimensionSchema } from "./query-schema";
 import { sqlContext } from "./query-sql";
 import { bucketStarts } from "./query-contract";
 import { type ErrorSource } from "./erreurs-sources";
+import { cleGroupe, type DistinctionLue } from "./erreurs-distinction";
 // Les sources d'erreurs, leurs libellés et `stackSymbolisable` vivent dans
 // `erreurs-sources.ts`, SANS la base ; réexportés ici pour les lectures.
 export * from "./erreurs-sources";
@@ -961,6 +963,73 @@ export async function listErrorGroups(
   });
 }
 
+/**
+ * Ce qui distingue les groupes d'une page de la liste (recette du 26/09/2026 : neuf
+ * groupes au même titre, qu'une empreinte hexadécimale seule séparait). Deux faits
+ * par groupe, sur la MÊME base filtrée que la liste (fenêtre, filtres, périmètre) :
+ *   · la pile — ou, sans pile, le fichier et la ligne — du dernier exemplaire qui en
+ *     porte : l'empreinte tient à sa première ligne applicative ;
+ *   · la route qui porte le plus d'occurrences, et sa part.
+ * La mise en forme est dans lib/erreurs-distinction.ts (pure, testée).
+ *
+ * Deux instructions, comme partout ici : `filtered_errors` citée deux fois dans une
+ * même instruction serait matérialisée (voir l'en-tête du module). Restreintes aux
+ * empreintes de la page (au plus `ERROR_LIST_MAX_LIMIT`). Hors de la liste de
+ * l'API v1 : c'est une aide de lecture de l'écran, pas un champ du contrat.
+ */
+export async function distinctionsDesGroupes(
+  f: ErrorFilters,
+  groupes: readonly ErrorGroupRef[],
+): Promise<Record<string, DistinctionLue>> {
+  if (groupes.length === 0) return {};
+  const schema = await errorSchema();
+  const resolved: ErrorFilters = { ...f, query: queryOf(f) };
+  const restriction: ErrorRestriction = { fingerprints: [...new Set(groupes.map((g) => g.fingerprint))] };
+  return snapshot(async (lire) => {
+    const pileBase = errorBase(resolved, schema, restriction);
+    const piles = await lire<ErrorGroupRef & { stack: string | null; source: string | null; lineno: number | null }>(
+      `${pileBase.sql}
+       select distinct on (app_id, fingerprint) app_id, fingerprint, stack, source, lineno
+         from filtered_errors
+        where fingerprint is not null and (nullif(stack, '') is not null or source is not null)
+        order by app_id, fingerprint, (nullif(stack, '') is not null) desc, ts desc, id desc`,
+      pileBase.params,
+    );
+    const routeBase = errorBase(resolved, schema, restriction);
+    const routes = await lire<ErrorGroupRef & { route: string | null; part: number | null }>(
+      `${routeBase.sql}, r as (
+         select app_id, fingerprint, route, sum(occurrences)::float8 as n
+           from filtered_errors
+          where fingerprint is not null
+          group by app_id, fingerprint, route
+       )
+       select distinct on (app_id, fingerprint) app_id, fingerprint, route,
+              n / nullif(sum(n) over (partition by app_id, fingerprint), 0) as part
+         from r
+        order by app_id, fingerprint, (route is not null) desc, n desc, route`,
+      routeBase.params,
+    );
+    const sortie: Record<string, DistinctionLue> = {};
+    const attendus = new Set(groupes.map(cleGroupe));
+    const entree = (g: ErrorGroupRef): DistinctionLue | null => {
+      const cle = cleGroupe(g);
+      // Une même empreinte peut exister dans une app absente de la page : ignorée.
+      if (!attendus.has(cle)) return null;
+      return (sortie[cle] ??= { pile: null, fichier: null, ligne: null, route: null, partRoute: null });
+    };
+    for (const p of piles) {
+      const d = entree(p);
+      if (d) Object.assign(d, { pile: p.stack || null, fichier: p.source, ligne: p.lineno });
+    }
+    for (const r of routes) {
+      const d = entree(r);
+      // Une route inconnue n'est pas « la route principale » : rien n'est écrit.
+      if (d && r.route !== null) Object.assign(d, { route: r.route, partRoute: r.part });
+    }
+    return sortie;
+  });
+}
+
 /** Les totaux d'une population à partir des deux lignes de `totalsSql` (avec / sans empreinte). */
 function totauxDe(totalsRows: TotalsSqlRow[]): ErrorTotals {
   const population = totalsRows.find((row) => !row.unfingerprinted_rows);
@@ -1385,22 +1454,40 @@ export async function topGroupesSeries(f: ErrorFilters, n: 4): Promise<{ groupes
 
 // ═════════════════ Détail d'un groupe : versions touchées (F20) ═════════════════
 
-export interface ReleaseVue {
-  release: string;
-  ts: Date | string;
-}
+// Types et ordre des releases : lib/releases-touchees.ts (logique pure, testée).
+export type { ReleasesDuGroupe, ReleaseTouchee, ReleaseVue } from "./releases-touchees";
 
-export interface ReleasesDuGroupe {
-  /** Première occurrence du groupe PORTANT une release ; `null` si aucune n'en porte. */
-  premiere: ReleaseVue | null;
-  derniere: ReleaseVue | null;
-  /** Releases distinctes portées par le groupe (plafonné) : « apparue puis restée ». */
-  distinctes: number;
+/** Une ligne par release touchée, et le nombre total de releases (avant le plafond). */
+type LigneRelease = ReleaseTouchee & { total: number };
+
+/** Les lignes sans leur compte total, qui n'est pas une propriété d'une release. */
+const sansTotal = (rows: readonly LigneRelease[]): ReleaseTouchee[] => rows.map(({ total: _total, ...r }) => r);
+
+/**
+ * Les releases d'une population d'occurrences `rum_error e` (prédicat `where`
+ * complet, paramètres liés), une ligne par release, avec son dernier marqueur de
+ * déploiement DANS L'APP `app` (paramètre lié). Au plus `RELEASES_LUES`, les plus
+ * récemment vues ; `total` dit combien il y en a en tout.
+ */
+function releasesSql(from: string, where: string, app: string): string {
+  return `select e.release,
+            sum(e.occurrences)::int as occurrences,
+            min(e.ts) as premiere_ts,
+            max(e.ts) as derniere_ts,
+            (select max(d.ts) from deploy_marker d where d.app_id = ${app} and d.version = e.release) as deploiement_ts,
+            count(*) over ()::int as total
+       ${from}
+      where e.release is not null${where}
+      group by e.release
+      order by max(e.ts) desc
+      limit ${RELEASES_LUES}`;
 }
 
 /**
- * « Versions touchées » du bloc 3 du détail (§ 5.3.3) : première et dernière
- * release vues pour ce groupe, avec leur date.
+ * « Versions touchées » du bloc 3 du détail (§ 5.3.3) : TOUTES les releases qui
+ * portent le groupe, chacune avec ses occurrences, de la plus récente à la plus
+ * ancienne ; « Première » est la plus ancienne, « Dernière » la plus récente
+ * (ordre et raison : lib/releases-touchees.ts — recette du 26/09/2026).
  *
  * NON BORNÉ PAR LA FENÊTRE, délibérément — comme `origine.first_seen` : la question
  * est « depuis quelle version ? », qui distingue une RÉGRESSION (première release
@@ -1420,28 +1507,32 @@ export async function releasesDuGroupe(ref: ErrorGroupRef, f: ErrorFilters): Pro
   // même population que ses autres chiffres.
   const where = sql.where({ dataset: "errors", row: "e", session: "s", time: null });
   const empreinte = sql.bind(ref.fingerprint);
-  const [row] = await q<{
-    premiere_release: string | null;
-    premiere_ts: Date | null;
-    derniere_release: string | null;
-    derniere_ts: Date | null;
-    distinctes: number;
-  }>(
-    `select (array_agg(e.release order by e.ts asc, e.id asc))[1] as premiere_release,
-            min(e.ts) as premiere_ts,
-            (array_agg(e.release order by e.ts desc, e.id desc))[1] as derniere_release,
-            max(e.ts) as derniere_ts,
-            count(distinct e.release)::int as distinctes
-       from rum_error e
-       ${sessionJoin("e", "s")}
-      where e.fingerprint = ${empreinte} and e.release is not null${where}`,
+  const app = sql.bind(ref.app_id);
+  const rows = await q<LigneRelease>(
+    releasesSql(`from rum_error e ${sessionJoin("e", "s")}`, ` and e.fingerprint = ${empreinte}${where}`, app),
     sql.params,
   );
-  const vue = (release: string | null, ts: Date | null): ReleaseVue | null =>
-    release === null || ts === null ? null : { release, ts };
-  return {
-    premiere: vue(row?.premiere_release ?? null, row?.premiere_ts ?? null),
-    derniere: vue(row?.derniere_release ?? null, row?.derniere_ts ?? null),
-    distinctes: row?.distinctes ?? 0,
-  };
+  return resumerReleases(sansTotal(rows), rows[0]?.total ?? 0);
+}
+
+/**
+ * Les releases d'une ISSUE (P5.5), même forme que `releasesDuGroupe` : ses lignes
+ * sont celles qu'elle rattache (identifiant, ou alias UNIQUE d'une empreinte
+ * historique — `lignesDeLIssue`, la règle de sa page). Ni la fenêtre ni les filtres
+ * de l'écran : une issue dit ses versions depuis toujours, comme ses dates.
+ *
+ * Avant, l'écran lisait `first_release` / `last_release`, les releases de la
+ * première et de la dernière occurrence dans le TEMPS : « 4.12.0 · 4.12.0 » pour une
+ * issue dont 4.13.0 portait la moitié des occurrences (recette du 26/09/2026).
+ */
+export async function releasesDeLIssue(
+  issue: IssueRef & { first_release: string | null; first_seen: Date | string | null },
+): Promise<ReleasesDuGroupe> {
+  const rows = await q<LigneRelease>(
+    releasesSql("from rum_error e", ` and e.app_id = $1 and ${lignesDeLIssue("e", "$2")}`, "$1"),
+    [issue.app_id, issue.issue_id],
+  );
+  // La release PERSISTÉE de la première occurrence survit à la purge des lignes.
+  const lignes = avecReleasePersistee(sansTotal(rows), { release: issue.first_release, ts: issue.first_seen });
+  return resumerReleases(lignes, Math.max(rows[0]?.total ?? 0, lignes.length));
 }

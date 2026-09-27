@@ -24,12 +24,17 @@ import { formater, referenceSansVs, libelleReference, type FormatId, type VitalN
 import { RATING_CLASS, RATING_LABEL, THRESHOLDS } from "@/lib/rating";
 import type { Ecart, IntervalleP75 } from "@/lib/stats/incertitude";
 import { GlossaryTip } from "../GlossaryTip";
+import { InfoTip } from "../InfoTip";
+import { pluriel } from "@/lib/format";
 import { lireVital, texteVerdict } from "@/lib/vital-lecture";
 
 export type SensMeilleur = "bas" | "haut" | "neutre";
 
 /** Sous ce nombre de mesures, « échantillon faible » (§ 3.12 : 100 pour un vital). */
 export const FAIBLE_SOUS_DEFAUT = 100;
+
+/** Espace insécable : « ≈ » ne se sépare jamais du chiffre en fin de ligne. */
+const NBSP = String.fromCharCode(0xa0);
 
 /** Sous ±2 %, un delta est « stable » : reprise de `DeltaBadge`. */
 const SEUIL_STABLE_PCT = 2;
@@ -44,10 +49,15 @@ export interface AlerteTuile {
   regle: string;
 }
 
-/** Ce que la tuile dit de la comparaison : un delta chiffré, ou pourquoi il n'y en a pas. */
+/**
+ * Ce que la tuile dit de la comparaison : un delta chiffré, ou pourquoi il n'y en a
+ * pas. `motif: "periode-incomplete"` marque le silence dû à une période précédente
+ * incomplète : c'est la raison qu'une rangée dit UNE fois au-dessus de ses tuiles
+ * (`RangeeKpi`), plutôt que chaque tuile la répète.
+ */
 export type Comparaison =
   | { kind: "delta"; pct: number; reference: string }
-  | { kind: "silence"; texte: string }
+  | { kind: "silence"; texte: string; motif?: "periode-incomplete" }
   | null;
 
 function alerteVraie(valeur: number, a: AlerteTuile): boolean {
@@ -87,6 +97,7 @@ export function comparaisonDeTuile({
     return {
       kind: "silence",
       texte: `période précédente incomplète : ${couverturePrecedente.raison ?? "raison non lue"}`,
+      motif: "periode-incomplete",
     };
   }
   // Un précédent non fini (un 0/0 calculé en amont) n'est pas une mesure : il se
@@ -119,12 +130,15 @@ export function CadreTuile({
   ariaLabel,
   alerte = false,
   testId,
+  titre,
   children,
 }: {
   href?: string;
   ariaLabel: string;
   alerte?: boolean;
   testId: string;
+  /** Infobulle native d'une tuile-lien (sa méthode, qu'un bouton « ? » ne peut pas porter). */
+  titre?: string;
   children: ReactNode;
 }) {
   const classes = `card flex min-w-0 flex-col gap-1 p-4 ${alerte ? "border-bad/50" : ""}`;
@@ -133,6 +147,7 @@ export function CadreTuile({
       <Link
         href={href}
         aria-label={ariaLabel}
+        title={titre}
         data-testid={testId}
         data-ton={alerte ? "bad" : "neutre"}
         className={`${classes} transition hover:shadow-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf`}
@@ -161,11 +176,13 @@ export function KpiTile({
   serie,
   couverture,
   lecture,
+  methode,
   alerte,
   intervalle,
   ecart,
   href,
   testid,
+  approchee = false,
 }: {
   /** « LCP p75 », « Sessions commencées ». */
   label: string;
@@ -187,8 +204,15 @@ export function KpiTile({
   serie?: (number | null)[];
   /** Effectif ; défaut faibleSous 100. */
   couverture?: { n: number | null; unite: string; faibleSous?: number };
-  /** Phrase sous la valeur (définition, sous-texte chiffré). */
+  /** Phrase sous la valeur : un sous-texte CHIFFRÉ court (« 42 sur 1 240 sessions »). */
   lecture?: string;
+  /**
+   * La méthode (définition, pondération, ce que le chiffre laisse de côté), rangée
+   * DERRIÈRE l'aide « ? » à côté du libellé : la recette du 26/09/2026 a relevé des
+   * tuiles de 6 à 18 lignes où le chiffre se perdait. Dans une tuile-lien, pas de
+   * bouton (HTML invalide) : la méthode passe dans l'infobulle native du lien.
+   */
+  methode?: string;
   /** Ton bad SEULEMENT si la condition est vraie, avec la règle écrite. */
   alerte?: AlerteTuile;
   /** Intervalle à 95 % (P*.1), ou pourquoi il n'est pas calculé. */
@@ -207,11 +231,21 @@ export function KpiTile({
    * l'attacher au cadre (dont le texte porte aussi le libellé et la lecture).
    */
   testid?: string;
+  /**
+   * Valeur lue sur une distribution par tranches, pas mesure par mesure : le chiffre
+   * s'écrit « ≈ 93 ms », et le lecteur d'écran dit « environ ». Une mention sous la
+   * valeur (« ≈ valeur approchée ») se lisait comme une ligne de plus, détachée du
+   * chiffre qu'elle qualifie (recette du 26/09/2026).
+   */
+  approchee?: boolean;
 }) {
   const connue = valeur != null && Number.isFinite(valeur);
   const faibleSous = couverture?.faibleSous ?? FAIBLE_SOUS_DEFAUT;
   const sens: SensMeilleur = sensMeilleur ?? (vital ? "bas" : "neutre");
-  const texteValeur = formater(format, connue ? valeur : null);
+  const brute = formater(format, connue ? valeur : null);
+  // « — » n'est pas approché : un inconnu reste un inconnu.
+  const approche = approchee && connue;
+  const texteValeur = approche ? `≈${NBSP}${brute}` : brute;
 
   // Verdict (vital au p75 seulement) : la logique de VitalCard, partagée.
   const verdict =
@@ -255,7 +289,7 @@ export function KpiTile({
         : `${formater("count", couverture.n)} ${couverture.unite}`;
 
   const ariaLabel = [
-    `${label} ${texteValeur}`,
+    `${label} ${approche ? `environ ${brute}` : brute}`,
     !connue ? raisonNull : null,
     verdict ? texteVerdict(verdict) : null,
     texteIntervalle,
@@ -268,10 +302,15 @@ export function KpiTile({
     .join(", ");
 
   return (
-    <CadreTuile href={href} ariaLabel={ariaLabel} alerte={enAlerte} testId="kpi-tile">
+    <CadreTuile href={href} ariaLabel={ariaLabel} alerte={enAlerte} testId="kpi-tile" titre={href ? methode : undefined}>
       <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
-        <span className="min-w-0 break-words text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-          {label}
+        <span className="flex min-w-0 items-start gap-1 break-words text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+          <span className="min-w-0">{label}</span>
+          {methode && !href && (
+            <InfoTip label={`Méthode : ${label}`} align="start" className="shrink-0 normal-case">
+              <span data-testid="kpi-methode">{methode}</span>
+            </InfoTip>
+          )}
         </span>
         {verdict?.kind === "etabli" && (
           <span
@@ -324,7 +363,12 @@ export function KpiTile({
         <DeltaBadge pct={comparaison.pct} reference={comparaison.reference} sensMeilleur={sens} />
       )}
       {comparaison?.kind === "silence" && (
-        <p className="text-xs text-ink-soft" data-testid="kpi-comparaison" data-ecart="silence">
+        <p
+          className="text-xs text-ink-soft"
+          data-testid="kpi-comparaison"
+          data-ecart="silence"
+          data-motif={comparaison.motif}
+        >
           {comparaison.texte}
         </p>
       )}
@@ -353,7 +397,7 @@ export function KpiTile({
         <div className="mt-1">
           <Sparkline
             valeurs={serie}
-            label={`${label}, évolution sur ${serie.length} seaux`}
+            label={`${label}, évolution sur ${pluriel(serie.length, "période")}`}
             seuils={vital ? THRESHOLDS[vital] : undefined}
           />
         </div>

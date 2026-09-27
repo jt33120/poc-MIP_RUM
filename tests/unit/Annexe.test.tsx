@@ -1,12 +1,15 @@
-// P**.6 — L'annexe de la vitrine : le document de couverture tel quel, puis les Specs
+// P**.6 — L'annexe du dossier technique : le registre des capacités, puis les Specs
 // sous <Suspense> (plan § 8.2, PS11).
 //
 // Ce que ces tests tiennent, en rendu SSR réel (`renderToStaticMarkup`) :
 //   - une famille du document par `<details>`, toutes ses capacités, dans son ordre,
-//     avec leur verdict ÉCRIT et leur limite — rien de tapé, tout lu dans
-//     lib/couverture.ts ;
-//   - le Markdown des cellules est rendu (gras, code), jamais montré brut, et une
-//     balise dans une cellule reste du texte ;
+//     avec leur verdict ÉCRIT — rien de tapé, tout lu dans lib/couverture.ts ;
+//   - la limite de chaque ligne n'est plus la note de travail du document (chemins,
+//     variables, tables : recette du 26/09/2026) mais un RENVOI vers la carte ou le
+//     point de cette page qui la dit en français courant ; aucune ligne sans renvoi,
+//     et chaque cible existe ;
+//   - le Markdown du nom d'une capacité est rendu (gras, code), jamais montré brut,
+//     et une balise reste du texte ;
 //   - Specs est derrière une frontière <Suspense> dont le repli est le squelette
 //     `aria-busy` : le composant Specs est remplacé ici par un composant qui reste
 //     suspendu, et c'est le squelette qui s'affiche à sa place.
@@ -22,7 +25,9 @@ vi.mock("@/components/presentation/Specs", () => ({
   },
 }));
 
-import { Annexe, DetailCouverture, SpecsChargement } from "@/components/presentation/Annexe";
+import { Annexe, DetailCouverture, SpecsChargement, renvoiLimite } from "@/components/presentation/Annexe";
+import { Reste } from "@/components/presentation/Reste";
+import { SaitFaire } from "@/components/presentation/SaitFaire";
 import { CAPACITES, RELEVE, VERDICT_LABEL, parFamille, type Capacite } from "@/lib/couverture";
 import { lireEnLigne, texteDe } from "@/lib/markdown-en-ligne";
 
@@ -74,8 +79,8 @@ describe("PS11 — le document de couverture, tel quel", () => {
     expect(tables).toHaveLength(familles.length);
     for (const t of tables) {
       const entetes = [...t.matchAll(/<th role="columnheader" scope="col"[^>]*>(.*?)<\/th>/g)].map((m) => texte(m[1]));
-      expect(entetes).toEqual(["#Identifiant", "Capacité", "Verdict", "Limite"]);
-      expect(t).toMatch(/<caption class="sr-only">[^<]+ : chaque capacité, son verdict et sa limite<\/caption>/);
+      expect(entetes).toEqual(["#Identifiant", "Capacité", "Verdict", "Sa limite"]);
+      expect(t).toMatch(/<caption class="sr-only">[^<]+ : chaque capacité, son verdict et où lire sa limite<\/caption>/);
     }
     lignes(html).forEach((l, i) => {
       expect(l).toContain(`<th role="rowheader" scope="row"`);
@@ -83,7 +88,7 @@ describe("PS11 — le document de couverture, tel quel", () => {
     });
   });
 
-  it("chaque ligne écrit son verdict avec les mots du document, et reprend capacité et limite", () => {
+  it("chaque ligne écrit son verdict avec les mots du document, reprend la capacité, et renvoie à sa limite", () => {
     const vues = lignes(html);
     expect(vues).toHaveLength(CAPACITES.length);
     vues.forEach((l, i) => {
@@ -91,13 +96,28 @@ describe("PS11 — le document de couverture, tel quel", () => {
       const t = texte(l);
       expect(t, c.id).toContain(VERDICT_LABEL[c.verdict]);
       expect(t, c.id).toContain(lu(c.capacite));
-      expect(t, c.id).toContain(lu(c.limite));
+      const renvoi = renvoiLimite(c.id);
+      expect(renvoi, `${c.id} : aucune carte ni aucun point ne dit sa limite`).not.toBeNull();
+      expect(l, c.id).toContain(`<a href="${renvoi!.href}"`);
+      expect(t, c.id).toContain(renvoi!.libelle);
     });
   });
 
-  it("le Markdown des cellules du relevé est rendu, jamais montré brut", () => {
+  it("chaque renvoi vise une ancre qui existe sur la page : une carte de « Ce qu'il sait faire » ou un point de « Ce qui reste »", () => {
+    const page = renderToStaticMarkup(<SaitFaire />) + renderToStaticMarkup(<Reste />);
+    for (const c of CAPACITES) {
+      const cible = renvoiLimite(c.id)!.href.slice(1);
+      expect(page, `${c.id} → #${cible}`).toContain(`id="${cible}"`);
+    }
+  });
+
+  it("la note de travail du document n'est pas recopiée : ni chemin, ni variable, ni table", () => {
+    const t = texte(html);
+    expect(t).not.toMatch(/CONSOLE_API_TOKENS|MAX_WIDGETS|BENCH_DATABASE_URL|apps\/console\/|\.test\.ts|scrubé/);
+  });
+
+  it("le Markdown des noms de capacités est rendu, jamais montré brut", () => {
     expect(texte(html)).not.toMatch(/\*\*|`/);
-    expect(html).toContain('<strong class="font-semibold text-ink">');
     expect(html).toMatch(/<code class="[^"]*font-mono[^"]*">/);
   });
 
@@ -105,10 +125,10 @@ describe("PS11 — le document de couverture, tel quel", () => {
     const piege: Capacite = {
       id: "Z1",
       famille: "Piège",
-      capacite: "<script>alert(1)</script>",
+      capacite: "<script>alert(1)</script> **gras avec `code`**, *italique* et <b>balise</b>",
       verdict: "non_commence",
       preuve: "",
-      limite: "**gras avec `code`**, *italique* et <b>balise</b>",
+      limite: "",
       ligne: 1,
     };
     const rendu = renderToStaticMarkup(<DetailCouverture familles={[{ famille: "Piège", capacites: [piege] }]} />);
@@ -117,6 +137,8 @@ describe("PS11 — le document de couverture, tel quel", () => {
     expect(rendu).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(rendu).toContain("&lt;b&gt;balise&lt;/b&gt;");
     expect(rendu).toMatch(/<strong class="font-semibold text-ink">gras avec <code [^>]*>code<\/code><\/strong>, <em>italique<\/em> et &lt;b&gt;/);
+    // Une ligne que rien ne détaille le dit, plutôt qu'un lien mort.
+    expect(texte(rendu)).toContain("Non détaillée sur cette page");
     // Une famille d'une seule capacité le dit au singulier.
     expect(texte(rendu)).toContain("1 capacité");
     expect(texte(rendu)).not.toContain("1 capacités");
@@ -133,7 +155,7 @@ describe("PS11 — les Specs derrière une frontière <Suspense>", () => {
     const html = renderToStaticMarkup(<Annexe />);
     expect(html).toContain('<section id="detail" aria-labelledby="detail-titre"');
     expect(texte(html)).toContain(
-      `Le document de couverture du ${RELEVE}, tel quel : une ligne par capacité, son verdict et sa limite.`,
+      `Le registre des capacités au ${RELEVE} : une ligne par capacité, son verdict, et où cette page dit sa limite.`,
     );
     const familles = html.indexOf('data-testid="annexe-couverture"');
     const squelette = html.indexOf('data-testid="specs-chargement"');

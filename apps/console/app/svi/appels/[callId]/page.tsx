@@ -46,20 +46,32 @@ export default async function FicheAppel({
   params: Promise<{ callId: string }>;
   searchParams?: Promise<SearchParams>;
 }) {
+  const { callId } = await params;
+  // Une URL de détail garde l'identifiant demandé à l'écran : sans lui, un lien
+  // partagé vers un appel précis ne disait plus lequel on cherchait.
+  const identifiant = { libelle: "l'appel", valeur: callId };
   if (estFermee("/svi")) {
     return (
       <CapaciteFermee
-        titre="Supervision SVI"
-        sujet="Supervision du serveur vocal interactif."
+        titre="Appel SVI"
+        sujet="Le déroulé d'un appel : menus, saisies, attente, transfert et raccroché."
+        identifiant={identifiant}
       />
     );
   }
 
-  const { callId } = await params;
   // Le chargeur (`lib/chargeurs/svi.ts`) lit l'appel DANS l'app de l'écran : un appel
   // d'une autre app est introuvable, pas « interdit ». On ne révèle pas son existence.
   const ecran = await chargerEcran(ECRANS.sviAppel, chargerSviAppel, (await searchParams) ?? {}, { callId });
-  if (ecran.etat === "fermee") return <CapaciteFermee titre="Supervision SVI" sujet="Supervision du serveur vocal interactif." />;
+  if (ecran.etat === "fermee") {
+    return (
+      <CapaciteFermee
+        titre="Appel SVI"
+        sujet="Le déroulé d'un appel : menus, saisies, attente, transfert et raccroché."
+        identifiant={identifiant}
+      />
+    );
+  }
   if (ecran.etat === "refus") return <FilterProblemNotice title="Appel SVI" problem={ecran.problem} />;
   if (ecran.etat === "introuvable") notFound();
   const { call, steps } = ecran.detail;

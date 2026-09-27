@@ -75,3 +75,21 @@ export async function releaseManifest(appId: string, release: string): Promise<R
     fingerprint: empreinteManifeste(files),
   };
 }
+
+/**
+ * Les versions que l'application a déclarées en déployant, la plus récente
+ * d'abord : l'écran les propose comme release d'un envoi. Le champ était vide
+ * alors que des déploiements étaient en base (recette du 26/09/2026) — et une
+ * release mal saisie ne symbolise jamais rien.
+ */
+export async function releasesDeployees(appId: string): Promise<string[]> {
+  const lignes = await q<{ version: string }>(
+    `select version from deploy_marker
+      where app_id = $1 and version is not null and version <> ''
+      group by version
+      order by max(ts) desc
+      limit 20`,
+    [appId],
+  );
+  return lignes.map((l) => l.version);
+}

@@ -27,8 +27,9 @@ Authorization: Bearer <token>
 ```
 
 - **Auth** : le token est cherché par son **hash** (sha256) dans `read_tokens`, doit
-  être **non révoqué**, et son `app_id` doit **égaler** le paramètre `app` — sinon
-  `401` (token invalide/révoqué) ou `403` (mauvaise app). Si `app` est omis, il est
+  être **non révoqué** et **non échu** (échéance `expires_at`, migration-v95 ; NULL pour
+  un jeton antérieur, sans échéance), et son `app_id` doit **égaler** le paramètre `app`
+  — sinon `401` (jeton invalide, révoqué ou expiré) ou `403` (mauvaise app). Si `app` est omis, il est
   déduit du token.
 - **`window`** : `24h` | `7d` | `30d` (défaut `30d` ; `7j` toléré, toute autre valeur vaut `30d`).
 - **Rate-limit** : `RUM_READ_RATE_LIMIT` req/min/token (défaut 60), par instance → `429` +
@@ -216,7 +217,8 @@ section « Non exposé » de `docs/API_CONSOLE.md`) — nous les ouvrons sur dem
 ## Gestion des tokens (console admin)
 
 `/admin/read-tokens` (administrateur de l'application du jeton, C9) : générer un token pour
-un `app_id` (affiché **une seule fois** — seul le hash est stocké) et révoquer. Les server
+un `app_id`, valable 30, 90 (défaut), 180 ou 365 jours (affiché **une seule fois** — seul
+le hash est stocké), et révoquer. Les server
 actions appellent les commandes `creerJetonLecture` et `revoquerJetonLecture`
 (`apps/console/lib/commandes/raccordements.ts`) ; chaque action est tracée dans `audit_log`
 (`read_token.create`, `read_token.revoke`). Ces jetons ne valent que pour `/api/rum/summary` :

@@ -1,4 +1,7 @@
 // Badge de sévérité (critical=rouge, warning=ambre, info=slate) — rendu serveur.
+// Le badge écrit la sévérité en français (« critique ») : la clé de la base
+// (« critical ») se lisait telle quelle à l'écran (recette du 26/09/2026).
+import { libelleSeverite } from "@/lib/alertes-metriques";
 
 /** Classes Tailwind d'un badge de sévérité (critical=rouge, warning=ambre, info=slate). */
 const SEVERITY_BADGE: Record<string, string> = {
@@ -12,7 +15,7 @@ export function SeverityBadge({ severity }: { severity: string }) {
     <span
       className={`rounded px-2 py-0.5 text-xs font-medium ${SEVERITY_BADGE[severity] ?? SEVERITY_BADGE.info}`}
     >
-      {severity}
+      {libelleSeverite(severity)}
     </span>
   );
 }

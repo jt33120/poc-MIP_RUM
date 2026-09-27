@@ -15,6 +15,7 @@
 // AU-DELÀ DE 6, ON REGROUPE. Sept traits verticaux sur une série de 220 px ne se
 // lisent plus : une seule annotation « N déploiements » les remplace, et son lien
 // ouvre la liste (tous les marqueurs restent atteignables, rien n'est tronqué).
+import { libelleCourtMetrique } from "./alertes-metriques";
 import type { AlertEventRow } from "./queries-v2";
 import type { DeployRow } from "./queries-deploys";
 import type { ResolvedRange } from "./query-contract";
@@ -172,10 +173,15 @@ export interface AnnotationsAlertes {
   indisponible: string | null;
 }
 
-/** Clé de métrique abrégée : `issue:<uuid>` ne tient pas au-dessus d'une série. */
-const METRIQUE_MAX = 18;
+/**
+ * Métrique écrite comme la règle la nomme (« Taux d'erreur JS », pas « error_rate »),
+ * abrégée au-delà de 32 caractères : le nom d'un événement peut être long, et
+ * l'annotation est dessinée au-dessus de la série.
+ */
+const METRIQUE_MAX = 32;
 function abregerMetrique(metric: string): string {
-  return metric.length > METRIQUE_MAX ? `${metric.slice(0, METRIQUE_MAX - 1)}…` : metric;
+  const libelle = libelleCourtMetrique(metric);
+  return libelle.length > METRIQUE_MAX ? `${libelle.slice(0, METRIQUE_MAX - 1)}…` : libelle;
 }
 
 /**

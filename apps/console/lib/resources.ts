@@ -30,7 +30,7 @@ export const PARTY_HINTS: Record<ResourceParty, string> = {
 };
 
 export const RESOURCE_THRESHOLD_NOTICE =
-  "Ressources collectées selon le seuil du SDK : une ressource n'est envoyée que si elle dépasse le seuil de lenteur configuré (300 ms par défaut) ou si elle bloque le rendu, et au plus vingt par page vue. Ces chiffres décrivent donc les ressources RETENUES, pas tout le trafic réseau — et ne sont pas extrapolés.";
+  "Ressources collectées selon le seuil du SDK : une ressource n'est envoyée que si elle dépasse le seuil de lenteur configuré (300 ms par défaut) ou si elle bloque le rendu, et au plus vingt par page vue. Ces chiffres décrivent donc les ressources retenues, pas tout le trafic réseau — et ne sont pas extrapolés.";
 
 /**
  * Hôte d'une origine déclarée : minuscules, sans schéma, sans identifiants et

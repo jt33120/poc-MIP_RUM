@@ -85,7 +85,48 @@ export function partServeur(a: Pick<ApiCallDecomposition, "n_suivis" | "part_ser
 export function texteDecomposition(a: Pick<ApiCallDecomposition, "n" | "n_suivis" | "part_serveur_p50">): string {
   const part = partServeur(a);
   if (part === null) return "non décomposé : aucun jumeau serveur";
-  return `part serveur ${part} % (médiane, ${formater("count", a.n_suivis)} appels suivis sur ${formater("count", a.n)})`;
+  return `part serveur ${part}\u00a0% (médiane, ${suivisSur(a)})`;
+}
+
+/** « 120 appels suivis sur 150 », accordé (« 1 appel suivi sur 3 »). */
+function suivisSur(a: Pick<ApiCallDecomposition, "n" | "n_suivis">): string {
+  return `${pluriel(a.n_suivis, "appel")} suivi${a.n_suivis > 1 ? "s" : ""} sur ${formater("count", a.n)}`;
+}
+
+/** Une ligne de « Traces les plus lentes » : une trace, ou ce qui en est replié pour son appel. */
+export type LigneTraceLente<T> = { kind: "trace"; trace: T } | { kind: "reste"; appel: Appel; n: number };
+
+/**
+ * « Traces les plus lentes » regroupées par appel (recette du 26/09/2026) : les
+ * vingt lignes étaient toutes « GET /api/demo/items/42 ». Au plus `max` traces par
+ * appel, dans l'ordre lu (durée décroissante) ; les suivantes sont comptées sur une
+ * ligne qui mène à toutes les traces de l'appel. Filtré sur un appel (`appel=`),
+ * l'écran passe `max = Infinity` : rien n'est replié.
+ *
+ * Le plafond est posé EN SQL (`slowTraces`) : chaque trace porte alors `traces_appel`,
+ * le nombre de traces de son appel sur toute la plage, qui fait le compte du reste.
+ * Sans lui (lignes d'un autre lecteur), le compte se fait sur les lignes reçues.
+ */
+export function tracesParAppel<T extends { method: string; url: string; traces_appel?: number }>(
+  traces: readonly T[],
+  max: number,
+): LigneTraceLente<T>[] {
+  const cle = (t: T) => `${t.method} ${t.url}`;
+  const totaux = new Map<string, number>();
+  for (const t of traces) totaux.set(cle(t), (totaux.get(cle(t)) ?? 0) + 1);
+  for (const t of traces) if (t.traces_appel !== undefined) totaux.set(cle(t), Math.max(totaux.get(cle(t)) ?? 0, t.traces_appel));
+  const vues = new Map<string, number>();
+  const lignes: LigneTraceLente<T>[] = [];
+  for (const t of traces) {
+    const k = cle(t);
+    const n = (vues.get(k) ?? 0) + 1;
+    vues.set(k, n);
+    if (n > max) continue;
+    lignes.push({ kind: "trace", trace: t });
+    const total = totaux.get(k) ?? 0;
+    if (n === max && total > max) lignes.push({ kind: "reste", appel: { method: t.method, url: t.url }, n: total - max });
+  }
+  return lignes;
 }
 
 /**
@@ -110,7 +151,7 @@ function sousLigne(a: ApiCallDecomposition, hrefTraces: string): ReactNode {
           createElement(
             "span",
             { className: "block truncate" },
-            `médiane, ${formater("count", a.n_suivis)} appels suivis sur ${formater("count", a.n)}`,
+            `médiane, ${suivisSur(a)}`,
           ),
         ),
   );

@@ -11,20 +11,33 @@
 // arrive entre deux pages. La priorité est portée par le hero, borné à 10 lignes
 // et dit comme tel (§ 5.11.6).
 //
-// FRUSTRATION ET REJEU AVANT B30 : « — » avec sa raison en infobulle. Jamais
-// « 0 », qui affirmerait une absence de signal qu'aucune lecture n'a établie (V3).
+// FRUSTRATION ET REJEU : lus pour les lignes de la page (recette du 26/09/2026).
+// Une lecture en échec rend « — » avec sa raison en infobulle ; une session mobile,
+// dont le capteur n'émet aucun signal de frustration, « non collecté ». Jamais « 0 »,
+// qui affirmerait une absence de signal qu'aucune lecture n'a établie (V3).
+//
+// DIX COLONNES, PLUS QUATORZE (même recette : 1 704 px dans une carte de 1 086 px,
+// Parcours, Erreurs, Frustration et Rejeu hors champ). « Capteur » (toujours « SDK »)
+// devient une pastille à côté de l'identifiant, seulement quand il n'est pas le SDK
+// web ; « Début » se lit de la dernière activité et de la durée ; appareil,
+// navigateur et système tiennent dans une colonne ; erreurs, rejeu et frustration
+// remontent juste après la durée.
 //
 // AUCUNE FONCTION EN PROP : tous les liens sont calculés par la page et passés en
 // dictionnaires indexés par identifiant (ou par route).
 import Link from "next/link";
+import { TableDefilante } from "@/components/TableDefilante";
 import { formater } from "@/lib/fmt-ids";
 import { geoSourceLabel } from "@/lib/geo";
+import { pluriel } from "@/lib/format";
 import {
-  SIGNAUX_A_CREER,
+  FRUSTRATION_NON_COLLECTEE,
+  SIGNAL_NON_LU,
   dureeObservee,
   instantUtc,
   navigateurDeSession,
   parcoursResume,
+  sessionMobile,
   valeurOuInconnu,
   type LigneSessions,
 } from "@/lib/sessions-priorite";
@@ -56,11 +69,27 @@ export interface SessionsTableProps {
   vide: string;
 }
 
-/** Capteur de la session : « SDK » par défaut, « Extension » pour l'extension navigateur (CP16). */
-function capteur(v: string | null): string {
+/**
+ * Capteur de la session, nommé seulement quand il n'est pas le SDK web (le cas de
+ * presque toutes les lignes) : « Extension » (CP16), « Mobile », ou la valeur telle
+ * quelle. `null` : rien à signaler.
+ */
+function capteur(s: Pick<LigneSessions, "collection_source" | "runtime">): string | null {
+  if (sessionMobile(s)) return "Mobile";
+  const v = s.collection_source;
   if (v === "extension") return "Extension";
-  if (!v || v === "sdk") return "SDK";
+  if (!v || v === "sdk") return null;
   return v;
+}
+
+function PastilleCapteur({ s }: { s: LigneSessions }) {
+  const nom = capteur(s);
+  if (!nom) return null;
+  return (
+    <span className="ml-1.5 rounded-full border border-line bg-panel2 px-1.5 py-0.5 text-[10px] font-medium text-ink-soft" data-testid="capteur-session">
+      {nom}
+    </span>
+  );
 }
 
 function Pays({ pays, source }: { pays: string | null; source: string | null | undefined }) {
@@ -82,12 +111,22 @@ function NonLu({ raison }: { raison: string }) {
   );
 }
 
-function Frustration({ n }: { n: number | null }) {
-  return n === null ? <NonLu raison={SIGNAUX_A_CREER} /> : <>{formater("count", n)}</>;
+function Frustration({ s }: { s: LigneSessions }) {
+  if (s.frustration !== null) return <>{formater("count", s.frustration)}</>;
+  // Une session mobile : non collecté, dit en toutes lettres (et pas « — », qui se
+  // lirait comme une lecture manquée).
+  if (sessionMobile(s)) {
+    return (
+      <span data-testid="signal-non-collecte" title={FRUSTRATION_NON_COLLECTEE} className="text-ink-faint">
+        non collecté
+      </span>
+    );
+  }
+  return <NonLu raison={SIGNAL_NON_LU} />;
 }
 
 function Rejeu({ present, href }: { present: boolean | null; href: string | undefined }) {
-  if (present === null) return <NonLu raison={SIGNAUX_A_CREER} />;
+  if (present === null) return <NonLu raison={SIGNAL_NON_LU} />;
   if (present === false) return <span className="text-ink-faint">Non</span>;
   return href ? (
     <Link href={href} className="text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
@@ -171,32 +210,34 @@ function Rangee(props: SessionsTableProps & { s: LigneSessions }) {
       data-testid="ligne-session"
       data-ouvert={estOuverte ? "1" : undefined}
     >
-      <th scope="row" className="px-3 py-2 text-left align-top font-normal">
+      <th scope="row" className="whitespace-nowrap px-3 py-2 text-left align-top font-normal">
         <LienSession s={s} panelHrefs={panelHrefs} pageHrefs={pageHrefs} ouvert={estOuverte} />
+        <PastilleCapteur s={s} />
       </th>
       <td className={`${TD} whitespace-nowrap tabular-nums`}>{instantUtc(s.last_seen_at)}</td>
-      <td className={`${TD} whitespace-nowrap tabular-nums text-ink-soft`}>{instantUtc(s.started_at)}</td>
       <td className={`${TD} whitespace-nowrap tabular-nums`}>{formater("s-auto", dureeObservee(s))}</td>
-      <td className={TD}>{valeurOuInconnu(s.device_type)}</td>
-      <td className={TD} title={navigateur.deduit ? "Navigateur déduit de l'user-agent : la colonne collectée est absente" : undefined}>
-        {navigateur.texte}
-        {navigateur.deduit ? " *" : ""}
+      <td className={`${TD} tabular-nums`} data-colonne="erreurs">
+        {formater("count", s.err_count)}
       </td>
-      <td className={TD}>{valeurOuInconnu(s.os)}</td>
+      <td className={`${TD} whitespace-nowrap`} data-colonne="rejeu">
+        <Rejeu present={s.rejeu} href={rejeuHrefs[s.session_id]} />
+      </td>
+      <td className={`${TD} tabular-nums`} data-colonne="frustration">
+        <Frustration s={s} />
+      </td>
+      <td
+        className={TD}
+        title={navigateur.deduit ? "Navigateur déduit de l'user-agent : la colonne collectée est absente" : undefined}
+      >
+        {valeurOuInconnu(s.device_type)} · {navigateur.texte}
+        {navigateur.deduit ? " *" : ""} · {valeurOuInconnu(s.os)}
+      </td>
       <td className={TD}>
         <Pays pays={s.geo_country} source={s.geo_source} />
       </td>
-      <td className={TD}>{capteur(s.collection_source)}</td>
       <td className={`${TD} tabular-nums`}>{formater("count", s.page_count)}</td>
       <td className={TD}>
         <Parcours routes={s.routes} hrefs={routeHrefs} />
-      </td>
-      <td className={`${TD} tabular-nums`}>{formater("count", s.err_count)}</td>
-      <td className={`${TD} tabular-nums`}>
-        <Frustration n={s.frustration} />
-      </td>
-      <td className={TD}>
-        <Rejeu present={s.rejeu} href={rejeuHrefs[s.session_id]} />
       </td>
     </tr>
   );
@@ -216,9 +257,11 @@ function Carte(props: SessionsTableProps & { s: LigneSessions }) {
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <LienSession s={s} panelHrefs={panelHrefs} pageHrefs={pageHrefs} ouvert={estOuverte} />
         <span className="text-xs tabular-nums text-ink-faint">
-          {instantUtc(s.last_seen_at)} UTC · {formater("s-auto", dureeObservee(s))}
+          {instantUtc(s.last_seen_at)} · {formater("s-auto", dureeObservee(s))}
         </span>
-        <span className="ml-auto text-xs text-ink-soft">{capteur(s.collection_source)}</span>
+        <span className="ml-auto">
+          <PastilleCapteur s={s} />
+        </span>
       </div>
       <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-soft">
         <span>{valeurOuInconnu(s.device_type)}</span>
@@ -229,15 +272,15 @@ function Carte(props: SessionsTableProps & { s: LigneSessions }) {
         <span>·</span>
         <Pays pays={s.geo_country} source={s.geo_source} />
         <span>·</span>
-        <span className="tabular-nums">{formater("count", s.page_count)} page(s)</span>
+        <span className="tabular-nums">{pluriel(s.page_count, "page")}</span>
       </div>
       <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <Parcours routes={s.routes} hrefs={routeHrefs} />
         <span className="tabular-nums text-ink-soft">
-          {formater("count", s.err_count)} occurrence(s) d&apos;erreur
+          {pluriel(s.err_count, "occurrence")} d&apos;erreur
         </span>
         <span className="tabular-nums text-ink-soft">
-          Frustration : <Frustration n={s.frustration} />
+          Frustration : <Frustration s={s} />
         </span>
         <span className="text-ink-soft">
           Rejeu : <Rejeu present={s.rejeu} href={rejeuHrefs[s.session_id]} />
@@ -249,19 +292,15 @@ function Carte(props: SessionsTableProps & { s: LigneSessions }) {
 
 const COLONNES = [
   "Session",
-  "Dernière activité (UTC)",
-  "Début (UTC)",
+  "Dernière activité",
   "Durée observée",
-  "Appareil",
-  "Navigateur",
-  "Système",
+  "Occurrences d'erreur",
+  "Rejeu",
+  "Frustration",
+  "Appareil · navigateur · système",
   "Pays estimé",
-  "Capteur",
   "Pages vues",
   "Parcours",
-  "Occurrences d'erreur",
-  "Frustration",
-  "Rejeu",
 ];
 
 export function SessionsTable(props: SessionsTableProps) {
@@ -276,10 +315,12 @@ export function SessionsTable(props: SessionsTableProps) {
   }
   return (
     <div className="min-w-0">
-      {/* Table à partir de `sm` ; le conteneur défilant porte `relative` — un
-          `sr-only` (position absolue) sans ancêtre positionné se placerait par
-          rapport à la PAGE et l'élargirait (vécu en vague 5). */}
-      <div className="relative hidden overflow-x-auto sm:block">
+      {/* Table à partir de `sm`, dans une zone défilante SIGNALÉE (recette 26/09 :
+          à 1 440 px, Parcours, Erreurs, Frustration et Rejeu étaient hors champ sans
+          barre visible). La zone porte `relative` — un `sr-only` (position absolue)
+          sans ancêtre positionné se placerait par rapport à la PAGE et l'élargirait
+          (vécu en vague 5). */}
+      <TableDefilante className="hidden sm:block" label="Sessions">
         <table className="w-full text-left text-sm" data-testid="sessions-table">
           <thead className="bg-panel2">
             <tr>
@@ -296,9 +337,9 @@ export function SessionsTable(props: SessionsTableProps) {
             ))}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
 
-      {/* 390 px : cartes de trois lignes, pas de table défilante à treize colonnes. */}
+      {/* 390 px : cartes de trois lignes, pas de table défilante à dix colonnes. */}
       <ul className="min-w-0 sm:hidden" data-testid="sessions-cartes">
         {lignes.map((s) => (
           <Carte key={`${s.app_id}:${s.session_id}`} {...props} s={s} />
@@ -314,8 +355,7 @@ export function SessionsTable(props: SessionsTableProps) {
 
       <nav className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm" aria-label="Pagination des sessions">
         <span className="min-w-0 text-xs text-ink-faint">
-          {formater("count", lignes.length)} session(s) affichée(s) · pagination par clé stable (dernière activité,
-          identifiant) : aucune ligne n&apos;est répétée ni sautée entre deux pages.
+          {pluriel(lignes.length, "session affichée", "sessions affichées")}, de la plus récemment active à la plus ancienne
         </span>
         <span className="flex gap-4">
           {debutHref && (

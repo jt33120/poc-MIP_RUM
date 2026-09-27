@@ -115,7 +115,7 @@ export const DATASET_REGISTRY: Record<DatasetId, DatasetDefinition> = {
   },
   custom_events: {
     table: "rum_event",
-    label: "les événements custom",
+    label: "les événements personnalisés",
     sessioned: true,
     dimensions: { ...SESSION_DIMENSIONS, ...occurrenceDimensions("rum_event") },
   },

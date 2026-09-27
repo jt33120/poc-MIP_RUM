@@ -1,9 +1,11 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { contextHref } from "@/lib/view-state";
+import { ICON_PATHS, Icon } from "./icons";
 import { activeCategory, ongletActif, sousOnglets } from "./nav-items";
+import { useDebordementHorizontal } from "./TableDefilante";
 
 /** Barre de sous-onglets d'une catégorie (rien si la catégorie est mono-page).
  * Rend la hiérarchie visible sans multiplier les titres dans la sidebar. */
@@ -13,23 +15,11 @@ export function SubNav() {
   const sp = useSearchParams();
   const cat = activeCategory(pathname);
   const rangee = useRef<HTMLDivElement>(null);
-  // Onglets coupés à droite : un dégradé le signale. Sans lui, à 390 px, le
-  // dernier onglet visible semblait être le dernier tout court.
-  const [coupe, setCoupe] = useState(false);
-
-  useEffect(() => {
-    const el = rangee.current;
-    if (!el) return;
-    const mesurer = () => setCoupe(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
-    mesurer();
-    el.addEventListener("scroll", mesurer, { passive: true });
-    const obs = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(mesurer);
-    obs?.observe(el);
-    return () => {
-      el.removeEventListener("scroll", mesurer);
-      obs?.disconnect();
-    };
-  }, [cat]);
+  // Onglets coupés : un dégradé ET un chevron le signalent, du côté où il en reste.
+  // Le dégradé seul se lisait comme un libellé tronqué (« Int… » à 390 px, recette
+  // du 26/09) : le dernier onglet visible semblait être le dernier tout court.
+  // `cat` relance la mesure quand la barre change de catégorie.
+  const { gauche, droite } = useDebordementHorizontal(rangee, cat);
 
   // Les liens `sousOnglet: false` (/actions) allument la catégorie sans être rendus.
   const onglets = cat ? sousOnglets(cat) : [];
@@ -39,13 +29,19 @@ export function SubNav() {
   // verrouiller — la sidebar n'y mène plus, cette barre ne doit pas y mener non plus.
   if (cat.verrouille) return null;
   const actif = ongletActif(cat, pathname);
+  // Le nom de la catégorie à gauche des onglets redit un onglet du même nom
+  // (« Explorer » : catégorie, onglet, surtitre et titre, recette du 26/09/2026) :
+  // il n'est écrit que s'il dit autre chose que ses onglets.
+  const libelleUtile = !onglets.some((t) => t.label === cat.label);
 
   return (
     <nav aria-label={`Onglets ${cat.label}`} className="relative border-b border-line bg-panel" data-testid="subnav">
       <div ref={rangee} className="flex items-center gap-1 overflow-x-auto px-4 sm:px-6">
-        <span className="mr-2 hidden shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint md:inline">
-          {cat.label}
-        </span>
+        {libelleUtile && (
+          <span className="mr-2 hidden shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint md:inline">
+            {cat.label}
+          </span>
+        )}
         {onglets.map((t) => {
           const active = t.href === actif;
           return (
@@ -62,12 +58,23 @@ export function SubNav() {
           );
         })}
       </div>
-      {coupe && (
+      {gauche && (
+        <span
+          aria-hidden
+          data-testid="subnav-debordement-gauche"
+          className="pointer-events-none absolute inset-y-0 left-0 flex w-12 items-center justify-start bg-gradient-to-r from-panel via-panel/90 to-transparent pl-1 text-ink-soft"
+        >
+          <Icon paths={ICON_PATHS.chevronLeft} className="h-4 w-4" />
+        </span>
+      )}
+      {droite && (
         <span
           aria-hidden
           data-testid="subnav-debordement"
-          className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-panel to-transparent"
-        />
+          className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-end bg-gradient-to-l from-panel via-panel/90 to-transparent pr-1 text-ink-soft"
+        >
+          <Icon paths={ICON_PATHS.chevronRight} className="h-4 w-4" />
+        </span>
       )}
     </nav>
   );

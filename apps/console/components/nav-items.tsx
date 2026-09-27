@@ -44,8 +44,9 @@ export const CATEGORIES: NavCategory[] = [
       // « lentes » présupposait le verdict que le tri par gravité établit.
       { href: "/pages", label: "Pages" },
       // « JS » était faux : error_source couvre réseau, CSP, console, Node,
-      // Python et React Native, et les issues v2 vivent sous /errors/issues.
-      { href: "/errors", label: "Erreurs et issues" },
+      // Python et React Native. « et issues » est retiré (contre-recette du
+      // 26/09/2026) : les écrans disent « groupe », jamais « issue ».
+      { href: "/errors", label: "Erreurs" },
       // Frustration et Actions : UNE question (« quels gestes échouent ou font
       // attendre »), donc une entrée ; les deux routes restent, l'onglet Actions
       // vit dans la page (§ 5.4).
@@ -69,7 +70,9 @@ export const CATEGORIES: NavCategory[] = [
     icon: "compare",
     domain: "perf",
     children: [
-      { href: "/correlation", label: "Corrélation synthétique ↔ RUM" },
+      // Le nom de l'écran (« Robot et réel ») : « Corrélation synthétique ↔ RUM » était
+      // du vocabulaire de fournisseur, et la seule entrée qui ne disait pas son titre.
+      { href: "/correlation", label: "Robot et réel" },
       { href: "/tracing", label: "Tracing" },
       { href: "/map", label: "Carte" },
     ],
@@ -153,6 +156,42 @@ export const CATEGORIES: NavCategory[] = [
   { href: "/api-docs", label: "API et MCP", icon: "grid", domain: "neutral" },
 ];
 
+/**
+ * Le bloc Administration de la sidebar (admin seulement). Déclaré ICI, à côté des
+ * catégories, pour que la sidebar et le surtitre des pages lisent la même liste :
+ * rendu en dur dans le layout, il n'avait ni état actif ni `aria-current`, et ses
+ * icônes reprenaient celles de la navigation principale (recette du 26/09/2026).
+ * `seulementSi` : entrée conditionnelle, que le layout décide (connecteurs de
+ * tickets : seulement quand un fournisseur est branché).
+ */
+export type LienAdministration = { href: string; label: string; icon: IconName; seulementSi?: "tickets" };
+
+export const ADMINISTRATION: readonly LienAdministration[] = [
+  { href: "/admin/customers", label: "Clients", icon: "building" },
+  { href: "/admin/users", label: "Utilisateurs", icon: "user" },
+  { href: "/admin/privacy", label: "Vie privée · RGPD", icon: "shield" },
+  { href: "/admin/read-tokens", label: "Jetons de lecture", icon: "key" },
+  { href: "/admin/sourcemaps", label: "Source maps", icon: "fileCode" },
+  { href: "/admin/ticket-integrations", label: "Connecteurs de tickets", icon: "bell", seulementSi: "tickets" },
+  { href: "/admin/extension-scope", label: "Extension navigateur", icon: "puzzle" },
+  { href: "/admin/extension-installs", label: "Postes équipés", icon: "monitor" },
+  // Le titre de l'écran, en français : « Uptime » à la barre latérale, « Sondes de
+  // disponibilité » sur la page (recette du 26/09/2026).
+  { href: "/admin/uptime", label: "Sondes de disponibilité", icon: "signal" },
+  { href: "/admin/audit", label: "Audit", icon: "list" },
+  { href: "/admin/usage", label: "Consommation", icon: "barChart" },
+  { href: "/admin/health", label: "Santé interne", icon: "heartPulse" },
+];
+
+/** Entrée d'administration active pour ce chemin (préfixe le plus long), ou undefined. */
+export function lienAdministrationActif(pathname: string): LienAdministration | undefined {
+  let best: LienAdministration | undefined;
+  for (const l of ADMINISTRATION) {
+    if (hrefMatches(l.href, pathname) && (!best || l.href.length > best.href.length)) best = l;
+  }
+  return best;
+}
+
 /** Clé de domaine d'en-tête (`PageHeader.domain`, § 2.4) de chaque catégorie RUM,
  *  indexée par sa landing. Une page sans `domain` explicite prend celle-ci. */
 export const DOMAINE_DE_CATEGORIE = {
@@ -169,6 +208,35 @@ export function domaineDe(pathname: string): DomaineRum | null {
   const c = activeCategory(pathname);
   if (!c) return null;
   return (DOMAINE_DE_CATEGORIE as Record<string, DomaineRum>)[c.href] ?? null;
+}
+
+/**
+ * Surtitres HORS des cinq catégories RUM. Avant la recette du 26/09/2026, tout
+ * écran qui n'y était pas rangé retombait sur « Performance » : l'administration,
+ * « API et MCP », et les trois écrans fermés (Logs, Supervision SVI, Supervision
+ * IA), alors que la sidebar les range ailleurs.
+ */
+export type DomaineHorsRum = "admin" | "integrations" | "logs" | "svi" | "ai";
+
+const DOMAINES_HORS_RUM: readonly (readonly [string, DomaineHorsRum])[] = [
+  ["/admin", "admin"],
+  ["/api-docs", "integrations"],
+  ["/logs", "logs"],
+  ["/svi", "svi"],
+  ["/ai", "ai"],
+];
+
+/**
+ * Surtitre d'un chemin : le domaine de sa catégorie RUM, sinon celui de sa zone
+ * (administration, intégrations, écrans fermés), sinon null (repli du composant).
+ */
+export function surtitreDe(pathname: string): DomaineRum | DomaineHorsRum | null {
+  const rum = domaineDe(pathname);
+  if (rum) return rum;
+  for (const [prefixe, domaine] of DOMAINES_HORS_RUM) {
+    if (hrefMatches(prefixe, pathname)) return domaine;
+  }
+  return null;
 }
 
 /** Sous-onglets RENDUS par la barre : les liens `sousOnglet: false` en sont retirés. */

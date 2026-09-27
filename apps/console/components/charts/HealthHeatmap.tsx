@@ -25,8 +25,8 @@ import Link from "next/link";
 import { TableAlternative } from "./Figure";
 import { formater } from "@/lib/fmt-ids";
 import { cleJour } from "@/lib/forecast";
-import { bornesHeureLocale, libelleDeuxFuseaux } from "@/lib/fuseau-local";
-import { PALIERS_SEQUENTIELLE, SEQUENTIELLE } from "@/lib/palette";
+import { bornesHeureLocale, libelleDeuxFuseaux, nomFuseau } from "@/lib/fuseau-local";
+import { PALIERS_SEQUENTIELLE_JETONS, sequentielleJeton } from "@/lib/palette";
 
 /** Une case telle que la rend `healthGrid` : jour et heure LOCAUX (fuseau de l'app). */
 export interface CaseSante {
@@ -128,7 +128,7 @@ export function HealthHeatmap({
         <div
           className="min-w-[640px]"
           role="group"
-          aria-label={`Historique de santé : ${rangees.length} jours × ${heures.length} heures, fuseau ${fuseau}`}
+          aria-label={`Historique de santé : ${rangees.length} jours × ${heures.length} heures, ${nomFuseau(fuseau)}`}
           data-testid="heatmap"
         >
           {/* en-tête : repères horaires tous les 3 h */}
@@ -167,7 +167,10 @@ export function HealthHeatmap({
                 }
                 const lien = lienDeCase(jour, h, fuseau, zoomHref, maintenant);
                 const annonce = `${lien.libelle} : ${texteCase(part)}`;
-                const style = { backgroundColor: SEQUENTIELLE(part) };
+                // Jeton de thème, pas un hexadécimal : en sombre, la rampe s'inverse en
+                // luminance (app/globals.css) — le palier pâle du thème clair, posé sur
+                // le fond nuit, faisait crier les cases faibles et effaçait les bonnes.
+                const style = { backgroundColor: sequentielleJeton(part) };
                 // Le `title` est à la fois l'infobulle et le nom accessible du lien (une
                 // case n'a pas de texte) : pas d'`aria-label` en double, la heatmap porte
                 // 336 cases et l'écran se relit toutes les 5 s.
@@ -200,19 +203,19 @@ export function HealthHeatmap({
           {/* légende */}
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-ink-soft">
             <span className="flex items-center gap-1.5">
-              % de mesures « Bon » (pondéré) :<span>0 %</span>
-              {PALIERS_SEQUENTIELLE.map((c) => (
+              % de mesures « Bon » (pondéré){"\u00a0"}:<span>{"0\u00a0%"}</span>
+              {PALIERS_SEQUENTIELLE_JETONS.map((c) => (
                 <span key={c} className="h-3 w-3 rounded-[3px]" style={{ backgroundColor: c }} aria-hidden="true" />
               ))}
-              <span>100 %</span>
+              <span>{"100\u00a0%"}</span>
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-3 w-3 rounded-[3px] bg-panel2 opacity-60" aria-hidden="true" />
               aucune donnée
             </span>
             <span className="sm:ml-auto">
-              jours et heures en {fuseau}
-              {zoomHref ? " · une case ouvre son heure (bornes converties en UTC)" : ""} · LCP pondéré ×2
+              jours et heures : {nomFuseau(fuseau)}
+              {zoomHref ? " · une case ouvre son heure" : ""} · LCP pondéré ×2
             </span>
           </div>
         </div>
@@ -220,7 +223,7 @@ export function HealthHeatmap({
       {alternative && (
         <TableAlternative
           alternative={{
-            legende: `Part pondérée de mesures « Bon » par jour et par heure (${fuseau}) ; « — » : aucune donnée`,
+            legende: `Part pondérée de mesures « Bon » par jour et par heure (${nomFuseau(fuseau)}) ; « — » : aucune donnée`,
             colonnes: ["Jour", ...heures.map((h) => `${h} h`)],
             lignes: rangees.map((jour) => [
               libelleJour(jour),

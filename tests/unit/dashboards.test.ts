@@ -198,6 +198,17 @@ describe("serializeLayout — chaque widget repart dans SA version", () => {
     expect(Object.keys(json.query as object)).not.toContain("range");
     expect(json.rangeOverride).toBeUndefined();
   });
+
+  it("sans titre saisi, une carte prend le titre de sa figure, jamais les identifiants du registre", () => {
+    const plan = parseExplorerPlan(
+      { dataset: "views", measure: { aggregation: "count", field: "rows" }, visualization: "value" },
+      null,
+    );
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    // Recette du 26/09/2026 : « rows · views » s'affichait dans le champ « Titre de la carte ».
+    expect(widgetFromPlan(plan.value).title).toBe("Pages vues — Nombre");
+  });
 });
 
 // F35 (W-D1, § 5.24.5) — chaque carte de chaque modèle est un plan que le registre
@@ -236,16 +247,16 @@ describe("F35 — modèles de tableaux de bord", () => {
     expect(usages.map((w) => w.title)).toEqual(expect.arrayContaining(["Sessions commencées", "Visiteurs"]));
   });
 
-  it("puces de type d'une carte (W-D2) : représentation pour une analyse, « v1 : … » pour le catalogue historique", () => {
+  it("puces de type d'une carte (W-D2) : représentation pour une analyse, son nom pour une carte du catalogue historique", () => {
     const cartes = f35CartesDuModele(F35_MODELES[1]);
     expect(f35PucesDuTableau(cartes)).toEqual([
       { libelle: "Valeur", n: 2 },
       { libelle: "Série", n: 1 },
       { libelle: "Classement", n: 2 },
-      { libelle: "v1 : Erreurs principales", n: 1 },
+      { libelle: "Erreurs principales", n: 1 },
     ]);
     expect(f35PucesDuTableau(normalizeLayout([{ type: "vital_p75", metric: "LCP" }, { type: "inconnu" }]))).toEqual([
-      { libelle: "v1 : LCP p75", n: 1 },
+      { libelle: "LCP p75", n: 1 },
       { libelle: "illisible", n: 1 },
     ]);
   });
@@ -435,7 +446,7 @@ describe("F37 — sections de tableau de bord", () => {
     expect(layout).toHaveLength(4);
     expect(nombreDeCartes(layout)).toBe(2);
     expect(f35PucesDuTableau(layout)).toEqual([
-      { libelle: "v1 : Trafic", n: 1 },
+      { libelle: "Trafic", n: 1 },
       { libelle: "Classement", n: 1 },
     ]);
     expect(nombreDeCartes(normalizeLayout([SECTION_F37]))).toBe(0);

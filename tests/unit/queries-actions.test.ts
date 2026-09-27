@@ -15,6 +15,7 @@ import {
   hasNextActionsPage,
   MANQUE_TABLE_ACTIONS,
   parseActionsPage,
+  parseOrdreActions,
   topActions,
   topActionsSummary,
 } from "../../apps/console/lib/queries-actions";
@@ -83,6 +84,28 @@ describe("Top Actions", () => {
     expect(sql).toContain("app_id asc, name asc, type asc, coalesce(route, '') asc");
   });
 
+  it("classer=reseau : même lecture, seul l'ORDER BY change (temps réseau cumulé d'abord), tri total", async () => {
+    q.mockResolvedValueOnce([{ present: true }]).mockResolvedValueOnce([]);
+    await topActions({ app: "app-a", period: "24h", device: null, segment: [] });
+    const [parErreurs, paramsErreurs] = q.mock.calls[1] as [string, unknown[]];
+    q.mockReset();
+    q.mockResolvedValueOnce([{ present: true }]).mockResolvedValueOnce([]);
+    await topActions({ app: "app-a", period: "24h", device: null, segment: [] }, { limit: 50, offset: 0 }, "reseau");
+    const [parReseau, paramsReseau] = q.mock.calls[1] as [string, unknown[]];
+    expect(parReseau).toContain("order by total_ms desc, lie_p75_ms desc nulls last, errors desc, actions desc");
+    // Même départage final : une page suivante ne saute ni ne répète aucune ligne.
+    expect(parReseau).toContain("app_id asc, name asc, type asc, coalesce(route, '') asc");
+    // Aucun calcul ne change : le SQL avant l'ORDER BY est identique, paramètres compris.
+    const corps = (sql: string) => sql.slice(0, sql.indexOf("order by"));
+    expect(corps(parReseau)).toBe(corps(parErreurs));
+    expect(paramsReseau.slice(2)).toEqual(paramsErreurs.slice(2));
+  });
+
+  it("parseOrdreActions : « reseau » seul change l'ordre ; toute autre valeur garde les erreurs", () => {
+    expect(parseOrdreActions("reseau")).toBe("reseau");
+    for (const v of [null, undefined, "", "erreurs", "impact", "RESEAU"]) expect(parseOrdreActions(v)).toBe("erreurs");
+  });
+
   it("borne l'offset à 10 000", () => {
     expect(parseActionsPage(new URLSearchParams("limit=999&offset=999999")))
       .toEqual({ limit: 200, offset: 10_000 });
@@ -139,7 +162,9 @@ describe("Top Actions", () => {
 describe("F24 — état, période précédente et p75 par action", () => {
   it("table absente : non_collecte nommé, jamais un « 0 action »", () => {
     expect(etatActions(false)).toEqual({ kind: "non_collecte", manque: MANQUE_TABLE_ACTIONS });
-    expect(MANQUE_TABLE_ACTIONS).toContain("table des actions");
+    // Dit à l'utilisateur ce qui manque, sans nom de table (recette du 26/09/2026).
+    expect(MANQUE_TABLE_ACTIONS).toContain("actions des visiteurs ne sont pas encore collectées");
+    expect(MANQUE_TABLE_ACTIONS).not.toMatch(/table|déploiement|migration/);
     // Un zéro dirait « aucun geste dans la fenêtre » : ce n'est pas la même chose (V3).
     expect(JSON.stringify(etatActions(false))).not.toContain("0");
   });

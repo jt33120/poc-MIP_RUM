@@ -45,7 +45,7 @@ import { EtenduePercentiles } from "@/components/charts/EtenduePercentiles";
 import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar } from "@/components/charts/RankBar";
-import { StabiliteParRelease, type TriStabilite } from "@/components/mobile/StabiliteParRelease";
+import { StabiliteParRelease, faibleUneFois, type TriStabilite } from "@/components/mobile/StabiliteParRelease";
 import { MobileDansLeTemps } from "@/components/mobile/MobileDansLeTemps";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
@@ -84,6 +84,10 @@ import { annotationsDeploiementsCohorte } from "@/lib/mobile-capabilities";
 import { PLAN_SESSIONS_COMMENCEES } from "@/lib/queries-sessions";
 import { bucketStarts } from "@/lib/query-contract";
 import { gabaritZoom } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { accord, fmtInstant, pluriel } from "@/lib/format";
+import { categorie } from "@/lib/palette";
+import { RangeeKpi } from "@/components/charts/RangeeKpi";
 
 export const dynamic = "force-dynamic";
 
@@ -99,27 +103,32 @@ const BADGE: Record<CapabilityStatus["state"], string> = {
 /** Les trois capacités qu'aucune version du SDK JavaScript n'observe (P8.5). */
 const NATIVES: readonly MobileCapability[] = ["native_crashes", "anr", "native_start"];
 
-const DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-const dateUtc = (iso: string) => `${DATE_UTC.format(new Date(iso))} UTC`;
+// Heure de Paris, comme toute la console (le nom `dateUtc` est historique).
+const dateUtc = (iso: string) => fmtInstant(iso, { annee: true, sansA: true });
 const nombre = (n: number) => n.toLocaleString("fr-FR");
 
-/** W-M1 : l'angle mort, écrit AVANT le premier chiffre. */
-function texteAnglesMorts(capacites: CapabilityStatus[] | null): string {
+/** Teinte des barres de volume (écrans consultés) : neutre (ardoise), ni orange ni verdict. */
+const TEINTE_VOLUME = categorie(4);
+
+/**
+ * W-M1 : l'angle mort, écrit AVANT le premier chiffre. `ecransDeclares` : l'écran
+ * affiche des écrans que l'application déclare elle-même ; sans suivi automatique,
+ * on le dit, sinon « Suivi… : non collecté » contredisait la liste d'écrans
+ * juste en dessous (recette du 26/09/2026).
+ */
+function texteAnglesMorts(capacites: CapabilityStatus[] | null, ecransDeclares: boolean): string {
   const natives = NATIVES.map((c) => CAPABILITY_LABELS[c]).join(", ");
-  const parties = [`${natives} : non mesurés par cette version du SDK, qui n'observe que la couche JavaScript`];
+  const parties = [`${natives} : non mesurés par le capteur actuel, qui n'observe que la couche JavaScript`];
   if (capacites) {
     const autres = capacites.filter((c) => !NATIVES.includes(c.capability));
     const refusees = autres.filter((c) => c.state === "unavailable").map((c) => c.label);
     const inconnues = autres.filter((c) => c.state === "unknown").map((c) => c.label);
     if (refusees.length) parties.push(`déclaré non collecté : ${refusees.join(", ")}`);
     if (inconnues.length) parties.push(`aucune déclaration, état inconnu : ${inconnues.join(", ")}`);
+    const suiviEcrans = autres.find((c) => c.capability === "screen_tracking");
+    if (ecransDeclares && suiviEcrans?.state === "unavailable") {
+      parties.push("les écrans que l'application déclare elle-même restent affichés plus bas");
+    }
   }
   return `${parties.join(" ; ")}.`;
 }
@@ -153,7 +162,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
 
   const precedente = prev ? previousRange(query.range) : null;
   const reference = precedente
-    ? `vs période précédente (${rangeLabel({ ...precedente, preset: null }, "UTC")} UTC)`
+    ? `vs période précédente (${rangeLabel({ ...precedente, preset: null }, FUSEAU_AFFICHAGE)})`
     : undefined;
 
   const schemaLu = d.schema;
@@ -236,14 +245,16 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
     capaciteJs === "unavailable"
       ? "Non collecté : les erreurs JavaScript sont déclarées non collectées sur ce périmètre"
       : data
-        ? "Inconnu : source d'erreur non lisible sur ce schéma (migration v69)"
+        ? // v69 absente (`error_source`) : l'origine des erreurs n'est pas lisible.
+          "Inconnu : l'origine des erreurs n'est pas encore enregistrée sur cette installation"
         : "lecture du résumé mobile en échec";
 
   const taux = releasesLues?.declarantes ?? null;
   const tauxPrec = releasesPrec?.declarantes ?? null;
   // Repli (§ 5.6.4, W-M5) : sans lecture par release, le taux global de `mobileSummary`,
-  // dont l'état de collecte est lu sur TOUT le parc — et on le dit.
-  const repliTaux = !taux && data !== null;
+  // dont l'état de collecte est lu sur TOUT le parc — et on le dit (lecture ci-dessous).
+  // L'effectif s'écrit « sessions comptées » dans les deux cas : « de releases
+  // déclarantes » était un terme de conception (recette du 26/09/2026).
   const declarationJsNonActive = (data?.declarations ?? []).some((d) => d.capability === "js_errors" && !d.declared);
   const tuileTaux = taux
     ? {
@@ -257,7 +268,11 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
         lecture:
           taux.rate === null
             ? undefined
-            : `${nombre(taux.touchees)} session${taux.touchees > 1 ? "s" : ""} touchée${taux.touchees > 1 ? "s" : ""} sur ${nombre(taux.sessions)}, releases déclarantes seulement ; ${nombre(taux.exclues)} session${taux.exclues > 1 ? "s" : ""} de releases non déclarantes exclue${taux.exclues > 1 ? "s" : ""}.`,
+            : `${pluriel(taux.touchees, "session touchée", "sessions touchées")} sur ${nombre(taux.sessions)}.${
+                taux.exclues > 0
+                  ? ` ${pluriel(taux.exclues, "session exclue", "sessions exclues")} : ${accord(taux.exclues, "sa release ne déclare", "leurs releases ne déclarent")} pas collecter les erreurs JS.`
+                  : ""
+              }`,
       }
     : data
       ? {
@@ -269,13 +284,17 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
           kPrec: dataPrec ? dataPrec.sessions.sessions - (dataPrec.js_errors?.sessions_affected ?? 0) : 0,
           nPrec: dataPrec?.sessions.sessions ?? 0,
           lecture: declarationJsNonActive
-            ? "État de collecte lu sur tout le parc : des sessions de releases non déclarantes peuvent être comptées sans erreur."
+            ? "Certaines releases ne déclarent pas collecter les erreurs JS : leurs sessions peuvent être comptées sans erreur."
             : undefined,
         }
       : null;
 
   const tuiles = (
-    <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="mobile-kpi">
+    <RangeeKpi
+      couvertures={prev ? [couvSessions, couvErreurs] : []}
+      className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      testId="mobile-kpi"
+    >
       <div className="grid min-w-0" data-testid="mobile-sessions">
         <KpiTile
           label="Sessions React Native commencées"
@@ -308,13 +327,15 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
           couverturePrecedente={couvSessions}
           lecture={
             data
-              ? `${
-                  data.sessions.sessions_without_visitor > 0
-                    ? `${nombre(data.sessions.sessions_without_visitor)} session(s) sans identifiant, non rattachables. `
-                    : ""
-                }Surestimés : identifiant d'installation tenu en mémoire, renouvelé à chaque lancement (parité C3).`
+              ? data.sessions.sessions_without_visitor > 0
+                ? `${pluriel(data.sessions.sessions_without_visitor, "session sans identifiant", "sessions sans identifiant")}, non ${accord(data.sessions.sessions_without_visitor, "rattachable", "rattachables")}.`
+                : undefined
               : undefined
           }
+          // Vérifié dans `packages/rum-mobile/src/index.ts` (bootstrapIdentite) : l'identifiant
+          // d'installation est CONSERVÉ quand le stockage le permet. La phrase d'avant
+          // (« renouvelé à chaque lancement ») décrivait le capteur d'avant P7.2.
+          methode="Un visiteur est une installation de l'application : un identifiant aléatoire, conservé sur l'appareil. Quand l'appareil ne peut pas le conserver (stockage absent ou plein), il en reçoit un nouveau à chaque lancement et y est compté plusieurs fois."
         />
       </div>
       <div className="grid min-w-0" data-testid="mobile-erreurs">
@@ -330,9 +351,13 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
           href={lienErreurs}
           lecture={
             erreurs && occurrences !== null
-              ? `dont ${nombre(erreurs.crashes)} non interceptée(s), ${nombre(erreurs.unhandled_rejections)} rejet(s) de promesse · fatales : ${
-                  erreurs.fatal === null ? "Inconnu" : nombre(erreurs.fatal)
-                }${capaciteJs === "unknown" ? " — capacité non déclarée par le SDK : 0 ne prouve pas l'absence d'erreur" : ""}`
+              ? `dont ${nombre(erreurs.crashes)} non ${accord(erreurs.crashes, "interceptée", "interceptées")}, ${pluriel(
+                  erreurs.unhandled_rejections,
+                  "rejet de promesse",
+                  "rejets de promesse",
+                )} · ${accord(erreurs.fatal ?? 0, "fatale", "fatales")} : ${erreurs.fatal === null ? "inconnu" : nombre(erreurs.fatal)}${
+                  capaciteJs === "unknown" ? " — collecte non déclarée par le capteur : 0 ne prouve pas l'absence d'erreur" : ""
+                }`
               : undefined
           }
         />
@@ -356,7 +381,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
           }
           couverture={
             tuileTaux && tuileTaux.valeur !== null
-              ? { n: tuileTaux.n, unite: repliTaux ? "sessions" : "sessions de releases déclarantes", faibleSous: 30 }
+              ? { n: tuileTaux.n, unite: accord(tuileTaux.n, "session comptée", "sessions comptées"), faibleSous: 30 }
               : undefined
           }
           lecture={[
@@ -367,16 +392,18 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             .join(" ")}
         />
       </div>
-    </div>
+    </RangeeKpi>
   );
 
   // ── Zones ──
   const capacites = data?.capabilities ?? null;
+  // Suivi automatique DÉCLARÉ non collecté : les écrans listés sont ceux que l'app déclare elle-même.
+  const suiviEcransInactif = capacites?.find((c) => c.capability === "screen_tracking")?.state === "unavailable";
   const zones: Record<ZoneMobile, ReactNode> = {
     "angles-morts": (
       <div className="mb-4 flex min-w-0 flex-wrap items-start gap-2" data-testid="mobile-angles-morts">
         <div className="min-w-0 flex-1 basis-64">
-          <EtatSurface etat={{ kind: "non_collecte", manque: texteAnglesMorts(capacites) }} compact />
+          <EtatSurface etat={{ kind: "non_collecte", manque: texteAnglesMorts(capacites, (data?.screens.length ?? 0) > 0) }} compact />
         </div>
         <Link
           href="#capacites"
@@ -458,12 +485,24 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             }
             lecture={
               <>
-                Depuis l&apos;initialisation du SDK jusqu&apos;au premier écran que l&apos;application déclare rendu. Ce
-                n&apos;est pas le démarrage natif : ni le lancement du processus, ni le pré-main, ni l&apos;écran de
-                lancement n&apos;y figurent. Aucun seuil de démarrage n&apos;est publié : aucune couleur de verdict.
-                {data && (!data.startup.cold || !data.startup.warm) && (
-                  <> Non mesuré : l&apos;application n&apos;a déclaré aucun premier écran sur la fenêtre.</>
-                )}
+                Depuis le démarrage du capteur jusqu&apos;au premier écran que l&apos;application déclare affiché. Ce
+                n&apos;est pas le démarrage natif : ni le lancement du processus, ni l&apos;écran de lancement n&apos;y
+                figurent. Aucun seuil de démarrage n&apos;est publié : aucune couleur de verdict.
+                {/* « Non mesuré » rattaché à SA ligne : écrit en général, il semblait
+                    contredire la ligne « À froid » mesurée juste au-dessus (recette du 26/09/2026). */}
+                {data &&
+                  [
+                    !data.startup.cold ? "à froid" : null,
+                    !data.startup.warm ? "à chaud" : null,
+                  ]
+                    .filter(Boolean)
+                    .map((ligne) => (
+                      <span key={ligne}>
+                        {" "}
+                        Démarrage {ligne} non mesuré : aucun démarrage {ligne} n&apos;a atteint un premier écran déclaré sur
+                        la fenêtre.
+                      </span>
+                    ))}
               </>
             }
           >
@@ -489,11 +528,18 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             titre="Écrans les plus consultés"
             id="mobile-ecrans"
             etat={data ? undefined : { kind: "erreur", titre: "Écrans les plus consultés" }}
-            meta={data ? <span>{d.label} · 10 écrans au plus, par consultations</span> : undefined}
+            meta={
+              data ? (
+                <>
+                  <span>{d.label} · 10 écrans au plus, par consultations</span>
+                  {suiviEcransInactif && <span>écrans déclarés par l&apos;application (suivi automatique non collecté)</span>}
+                </>
+              ) : undefined
+            }
             lecture={
               raisonLienEcrans === null
-                ? "Une consultation par écran déclaré. Chaque écran ouvre /pages filtré sur sa route et sur la cohorte React Native (runtime = react_native) : les pages web de même route n'y entrent pas."
-                : `Une consultation par écran déclaré. Pas de lien vers /pages : ${raisonLienEcrans}.`
+                ? "Une consultation par écran affiché. Chaque écran ouvre l'écran Pages filtré sur sa route et sur l'application mobile : les pages web de même route n'y entrent pas."
+                : `Une consultation par écran affiché. Pas de lien vers l'écran Pages : ${raisonLienEcrans}.`
             }
           >
             {data &&
@@ -506,7 +552,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
                       href: s.route === null ? undefined : lienEcran(s.route),
                       value: s.views,
                       display: `${nombre(s.views)}${total > 0 ? ` · ${formater("pct", s.views / total)}` : ""}`,
-                      sub: `${nombre(s.sessions)} session(s)`,
+                      sub: pluriel(s.sessions, "session"),
+                      color: TEINTE_VOLUME,
                     }))}
                     legende="Écrans consultés : consultations, part des consultations des 10 premiers écrans, sessions"
                     emptyLabel={`Aucun écran observé sur la fenêtre. ${CAPABILITY_NOTES.screen_tracking}`}
@@ -525,7 +572,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
           </div>
         ) : (
           (() => {
-            const lignes: ImpactLigne[] = data.resources.map((r) => {
+            const construites: ImpactLigne[] = data.resources.map((r) => {
               const libelle = `${r.method ?? "—"} ${r.path || "—"}`;
               const partErreurs = r.calls > 0 ? r.errors / r.calls : null;
               return {
@@ -542,21 +589,27 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
                 echantillonFaible: r.calls < SEUIL_ECHANTILLON_FAIBLE,
               };
             });
+            // « échantillon faible » dit une fois, en tête, quand toutes les lignes le sont.
+            const { lignes, toutesFaibles } = faibleUneFois(
+              classerParGravite(construites, { pilote: (l) => l.pilote, effectif: (l) => l.volume, tri: "gravite" }).lignes,
+            );
             return (
               <ImpactTable
                 titre="Appels réseau les plus lents"
                 tri="fourni"
                 triHref={{ gravite: null, volume: null, impact: null, fourni: null }}
-                ordreLibelle="Ordre : les 10 appels au p75 le plus élevé, du plus lent au plus rapide ; moins de 30 appels en fin de liste. La lecture s'arrête à 10 appels distincts."
+                ordreLibelle={`Ordre : les 10 appels au p75 le plus élevé, du plus lent au plus rapide ; moins de ${SEUIL_ECHANTILLON_FAIBLE} appels en fin de liste.`}
                 reference={null}
-                referenceRaison="p75 de l'ensemble des appels non calculé : aucune lecture ne le rend."
-                lignes={classerParGravite(lignes, { pilote: (l) => l.pilote, effectif: (l) => l.volume, tri: "gravite" }).lignes}
+                referenceRaison="p75 de l'ensemble des appels non calculé."
+                lignes={lignes}
                 colonnes={["Max", "Réponses ≥ 400"]}
                 unitePilote="ms"
                 volumeLibelle="Appels"
                 groupes={lignes.length}
                 tronque={false}
-                notice="Appels réseau émis par l'application, origine retirée du chemin. Mesurer la latence d'une origine tierce n'expose rien à ce tiers : aucun en-tête MIP n'est envoyé hors des origines déclarées. Pas de lien : le tracing ne filtre pas par chemin."
+                notice={`Appels réseau émis par l'application, chemin sans son domaine ; les identifiants du chemin sont regroupés (:id). Mesurer la latence d'un service tiers ne lui transmet rien.${
+                  toutesFaibles ? ` Chaque appel compte moins de ${SEUIL_ECHANTILLON_FAIBLE} mesures : échantillon faible.` : ""
+                }`}
               />
             );
           })()
@@ -586,9 +639,9 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
           Ce qui est collecté, et ce qui ne l&apos;est pas
         </h2>
         <p className="mt-1 text-xs text-ink-soft">
-          Déclaré par le SDK, par application, runtime et release, sans fenêtre : une déclaration n&apos;est pas une
-          occurrence. Une capacité activée n&apos;est pas un test natif passé : seule une recette d&apos;opérateur
-          renseigne la colonne « Vérifié ».
+          Ce que le capteur de chaque release déclare collecter, toutes périodes confondues : une déclaration n&apos;est
+          pas une mesure. La colonne « Vérifié » n&apos;est remplie que lorsqu&apos;un opérateur a constaté la collecte
+          sur un appareil.
         </p>
         {!data ? (
           <div className="mt-3">
@@ -597,7 +650,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
         ) : (
           // Une seule table ; sous 640 px chaque ligne devient une carte (libellés en tête de cellule).
           <table className="mt-3 block w-full text-sm sm:table">
-            <caption className="sr-only">Capacités de collecte déclarées par le runtime mobile</caption>
+            <caption className="sr-only">Capacités de collecte déclarées par le capteur mobile</caption>
             <thead className="hidden bg-panel2 sm:table-header-group">
               <tr>
                 <th scope="col" className="th text-ink-soft">Capacité</th>
@@ -720,7 +773,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
       <PageHeader
         title="Mobile"
         domain="perf"
-        sub={`Comment se comporte l'app React Native sur ${d.label}, et que ne mesurons-nous pas ?`}
+        sub={`Comment se comporte l'app React Native sur ${d.label}, et que ne mesurons-nous pas\u00a0?`}
       />
       <div className="mb-4 min-w-0">
         <PresetBar vues={vues} actif={null} />

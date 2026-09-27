@@ -17,16 +17,21 @@ export type GroupingBasis = (typeof GROUPING_BASES)[number];
 
 export type IssueOrigin = "new" | "migration";
 
+// L'écran dit « groupe » (masculin) pour une issue comme pour un groupe historique
+// (recette du 26/09/2026 : « issue », « groupe », « signature » et « fingerprint »
+// désignaient la même chose selon l'application). Les statuts s'accordent.
 export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
-  open: "Ouverte",
+  open: "Ouvert",
   for_review: "À revoir",
-  resolved: "Résolue",
-  ignored: "Ignorée",
+  resolved: "Résolu",
+  ignored: "Ignoré",
 };
 
+// Libellés affichés en infobulle ; seule « Regroupement approximatif » se montre
+// en badge, car elle change la lecture du groupe.
 export const GROUPING_BASIS_LABELS: Record<GroupingBasis, string> = {
-  override: "Clé déclarée",
-  symbolicated_frame: "Frame source",
-  normalized_frame: "Frame normalisée",
-  low_confidence: "Faible confiance",
+  override: "Clé déclarée par l'application",
+  symbolicated_frame: "Ligne de code source",
+  normalized_frame: "Ligne de pile",
+  low_confidence: "Regroupement approximatif",
 };

@@ -29,7 +29,7 @@ describe("TableRoutes — colonne « Concordance robot ↔ réel »", () => {
     const html = renderToStaticMarkup(<TableRoutes lignes={[BASE]} avecApp={false} />);
     expect(html).toContain("Concordance robot ↔ réel");
     expect(html).toContain("ρ 0,71 (0,21 à 0,92)");
-    expect(html).toContain("suit · 12 jours communs");
+    expect(html).toContain("suit · 12\u00a0jours communs");
     expect(html).toContain('data-issue="suit"');
     // Aucun écart entre les deux mesures : ni pourcentage, ni soustraction.
     expect(html).not.toContain("écart");
@@ -64,7 +64,9 @@ describe("TableRoutes — colonne « Concordance robot ↔ réel »", () => {
 
   it("le conteneur défilant reste positionné (un `sr-only` ne doit pas élargir la page)", () => {
     const html = renderToStaticMarkup(<TableRoutes lignes={[BASE]} avecApp />);
-    expect(html).toContain('class="relative overflow-x-auto"');
+    // La zone défilante de TableDefilante : `relative`, puis `overflow-x-auto`
+    // (suivi des classes de focus clavier).
+    expect(html).toMatch(/role="region"[^>]*class="relative overflow-x-auto[ "]/);
     expect(html).toContain("Liens");
   });
 });

@@ -339,3 +339,19 @@ describe("KpiTile — intervalle et écart (P*.1)", () => {
     expect(texte(html)).not.toContain("écart non établi");
   });
 });
+
+// Recette du 26/09/2026 : une valeur approchée s'écrivait sous le chiffre (« ≈ valeur
+// approchée ») ; elle se lit désormais dans le chiffre lui-même.
+describe("KpiTile — valeur approchée", () => {
+  it("préfixe « ≈ » et espace insécable ; « environ » pour le lecteur d'écran", () => {
+    const html = rendu({ approchee: true, valeur: 93, precedent: undefined, reference: undefined });
+    const valeur = /data-testid="kpi-valeur"[^>]*>([^<]*)</.exec(html)?.[1] ?? "";
+    expect(valeur).toBe("≈ 93 ms");
+    expect(html).toMatch(/aria-label="LCP p75 environ 93 ms/);
+  });
+
+  it("une valeur inconnue n'est pas approchée : « — » seul", () => {
+    const html = rendu({ approchee: true, valeur: null, raisonNull: "aucune mesure", precedent: undefined, reference: undefined });
+    expect(/data-testid="kpi-valeur"[^>]*>([^<]*)</.exec(html)?.[1]).toBe("—");
+  });
+});

@@ -21,6 +21,7 @@ import { StackedBars, type SerieEmpilee } from "@/components/charts/StackedBars"
 import { EchecLecture } from "@/components/states/SectionErreur";
 import type { CouverturePrecedente } from "@/lib/comparaison";
 import { formater } from "@/lib/fmt-ids";
+import { pluriel } from "@/lib/format";
 import type { SectionLue } from "@/lib/lecture";
 import { autresGroupes, libelleGroupeErreur, partTouchees } from "@/lib/perf-domain";
 import type { GroupeFrequent, PartSessionsTouchees, TotauxErreurs } from "@/lib/queries-errors";
@@ -30,6 +31,8 @@ import { FAIBLE_SOUS_PROPORTION, ecartProportions, intervalleWilson } from "@/li
 // Nombre de groupes dessinés dans le hero : dans `lib/error-view.ts`, que le
 // chargeur de l'écran lit aussi (il en demande autant à la base).
 import { GROUPES_DU_HERO } from "@/lib/error-view";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { RangeeKpi } from "@/components/charts/RangeeKpi";
 export { GROUPES_DU_HERO };
 
 /** Part lue, ou le refus du contrat (un filtre que les pages vues ne portent pas). */
@@ -100,13 +103,21 @@ export function TuilesErreurs({
     !part.ok ? null : "refus" in part.data ? { valeur: null, raison: `part non calculable : ${part.data.refus}` } : partTouchees(part.data.lu, plage);
   const partAvant = partPrec?.ok && "lu" in partPrec.data ? partPrec.data.lu : null;
   const valeurPartAvant = partAvant ? partTouchees(partAvant).valeur : null;
+  // Couvertures de la période précédente, dites UNE fois au-dessus des tuiles.
+  const couvertures = ref
+    ? [
+        precedente(totauxPrec, couvErreurs, () => null).couverturePrecedente,
+        precedente(partPrec, couvPart, () => null).couverturePrecedente,
+        precedente(nouveauxPrec, couvErreurs, () => null).couverturePrecedente,
+      ]
+    : [];
 
   return (
     <section aria-label={`Erreurs sur ${plage}`} className="mb-6" data-testid="kpi-erreurs">
       <p className="mb-2 text-xs text-ink-soft" data-testid="kpi-erreurs-plage">
         Occurrences d&apos;erreurs sur {plage}
       </p>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <RangeeKpi couvertures={couvertures} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {totaux.ok ? (
           <>
             <KpiTile
@@ -117,7 +128,7 @@ export function TuilesErreurs({
               serie={totaux.data.trend.map((p) => p.occurrences)}
               reference={ref}
               {...precedente(totauxPrec, couvErreurs, (d) => d.totals.occurrences)}
-              lecture={LECTURE_OCCURRENCES}
+              methode={LECTURE_OCCURRENCES}
             />
             <KpiTile
               label="Sessions touchées"
@@ -183,20 +194,20 @@ export function TuilesErreurs({
             sensMeilleur="bas"
             reference={ref}
             {...precedente(nouveauxPrec, couvErreurs, (d) => d)}
-            lecture={LECTURE_NOUVEAUX}
+            methode={LECTURE_NOUVEAUX}
             href={hrefNouveaux ?? undefined}
           />
         ) : (
           <EchecLecture compact titre="Groupes apparus sur la période" />
         )}
-      </div>
+      </RangeeKpi>
     </section>
   );
 }
 
 /** Une ligne de l'alternative du hero : seau, chaque série, total. */
 function ligneAlternative(t: string, seauSecondes: number, valeurs: number[], total: number): (string | number)[] {
-  return [libelleSeauComplet(t, seauSecondes, "UTC"), ...valeurs, total];
+  return [libelleSeauComplet(t, seauSecondes, FUSEAU_AFFICHAGE), ...valeurs, total];
 }
 
 export function HeroGroupesErreurs({
@@ -263,6 +274,9 @@ export function HeroGroupesErreurs({
         fingerprint: g.ref.fingerprint,
         app_id: plusieursApps ? g.ref.app_id : null,
       }),
+      // Le message ENTIER en infobulle de la légende : le libellé en retire « Uncaught »
+      // et coupe au-delà de 90 caractères.
+      libelleComplet: g.message ?? undefined,
       categorieIndex: i,
       href: hrefGroupe(g),
     })),
@@ -287,26 +301,25 @@ export function HeroGroupesErreurs({
                 ? `${groupes.length} groupes les plus fréquents sur ${plage}`
                 : `${groupes.length} groupe sur ${plage}`}
             </span>
-            <span>seau de {bucketLabel}</span>
-            <span>{formater("count", total)} occurrences en tout</span>
+            <span>tranches de {bucketLabel}</span>
+            <span>{pluriel(total, "occurrence")} en tout</span>
           </>
         }
+        // Recette du 26/09/2026 : quatre lignes de méthode sous le graphique. Il en reste
+        // l'essentiel — ce qu'est « Autres », ce que fait un clic — en une phrase.
         lecture={
           <>
-            Barres empilées : des occurrences s&apos;additionnent, la hauteur d&apos;une colonne est le total du seau. Les
-            groupes sont les {GROUPES_DU_HERO} plus fréquents de la fenêtre, quel que soit leur statut — pas les premiers
-            de la liste, rangée pour le triage.
-            {avecAutres && " « Autres groupes (somme) » = total du seau moins ces groupes : ce n'est pas un groupe."} Un
-            clic sur un segment ouvre son groupe, un clic sur un seau zoome sur sa plage. La période précédente n&apos;est
-            pas superposée (une pile de référence ne se lit pas) : son écart est dans la tuile « Occurrences ».{" "}
+            Les {GROUPES_DU_HERO} groupes les plus fréquents de la période, quel que soit leur statut
+            {avecAutres ? ", et la somme des autres" : ""}. Un clic sur un segment ouvre son groupe ; sur une tranche,
+            zoome sur sa plage.{" "}
             <Link href="#groupes-erreurs" className="text-perf underline-offset-2 hover:underline">
               Tous les groupes
             </Link>
           </>
         }
         alternative={{
-          legende: `Occurrences par seau de ${bucketLabel} et par groupe, sur ${plage}`,
-          colonnes: ["Seau (UTC)", ...series.map((s) => s.libelle), "Total"],
+          legende: `Occurrences par tranche de ${bucketLabel} et par groupe, sur ${plage}`,
+          colonnes: ["Période", ...series.map((s) => s.libelle), "Total"],
           lignes: grille.map((t, k) =>
             ligneAlternative(
               t,
@@ -325,10 +338,10 @@ export function HeroGroupesErreurs({
           annotations={annotations}
           annotationsIndisponibles={annotationsIndisponibles ?? undefined}
           seauSecondes={seauSecondes}
-          fuseau="UTC"
+          fuseau={FUSEAU_AFFICHAGE}
           zoomHref={zoomHref}
           hauteur={240}
-          ariaLabel={`Occurrences d'erreurs par seau de ${bucketLabel} sur ${plage}, ${series.length} séries empilées`}
+          ariaLabel={`Occurrences d'erreurs par tranche de ${bucketLabel} sur ${plage}, ${series.length} séries empilées`}
         />
       </Figure>
     </div>

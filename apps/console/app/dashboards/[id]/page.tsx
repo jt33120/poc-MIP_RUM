@@ -1,3 +1,11 @@
+// Un tableau de bord (§ 5.25). Rendu serveur.
+//
+// LIRE PAR DÉFAUT, ÉDITER SUR DEMANDE (recette du 26/09/2026). La page s'ouvre en
+// lecture : chaque carte montre sa valeur, son verdict et son graphique, sans
+// bouton d'écriture. « Éditer » (`?edition=1`, pour qui peut écrire) fait paraître
+// ↑ ↓ ✕ sur les cartes et le panneau d'édition ; « Terminer l'édition » les retire.
+// Le mode vit dans l'URL : une écriture réussie revalide la même adresse, et une
+// écriture refusée y revient (`ctx` le transporte), sans sortir de l'édition.
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ECRANS } from "@mip/console-contract";
@@ -35,11 +43,14 @@ import { PrintButton } from "./PrintButton";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { WidgetCard } from "@/components/dashboards/WidgetCard";
+import { ConfirmationDanger } from "@/components/ConfirmationDanger";
+import { entreGuillemets } from "@/lib/format";
 // F36 — barre de population (W-B1) et réglages d'affichage de l'écran (§ 3.1).
 import { PopulationBar } from "@/components/PopulationBar";
 import { resumePopulation, retraitsDePopulation } from "@/lib/explorer-page-params";
 import { paramReader, rangeLabel } from "@/lib/query-contract";
-import { lireComparaison } from "@/lib/view-state";
+import { contextHref, lireComparaison } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +73,8 @@ interface ContexteCartes {
   ctx: string;
   query: AnalyticsQuery;
   editable: boolean;
+  /** Mode édition (`?edition=1`) : seul lui montre ↑ ↓ ✕ et les réglages de carte. */
+  edition: boolean;
   /** Donnée résolue, rangée dans l'ordre du layout (une entrée par élément), telle que le fil la porte. */
   data: Fil<WidgetData>[];
 }
@@ -73,12 +86,21 @@ interface ContexteCartes {
  * n'est stocké, donc aucun changement de schéma.
  */
 function GrilleDeCartes({ cartes, c }: { cartes: GroupeDeCartes["cartes"]; c: ContexteCartes }) {
+  // Deux cartes étroites dans une grille de trois colonnes laissaient un tiers vide,
+  // et la dernière carte collée à son texte (« Par segment », recette du 26/09/2026) :
+  // deux cartes, deux colonnes.
+  const etroites = cartes.filter(({ index }) => !pleineLargeur(c.data[index])).length;
+  const deuxColonnes = etroites === 2;
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${deuxColonnes ? "" : "xl:grid-cols-3"}`}>
       {cartes.map(({ index, widget }) => (
         <div
           key={index}
-          className={pleineLargeur(c.data[index]) ? "min-w-0 md:col-span-2 xl:col-span-3" : "min-w-0"}
+          className={
+            pleineLargeur(c.data[index])
+              ? `min-w-0 md:col-span-2 ${deuxColonnes ? "" : "xl:col-span-3"}`
+              : "min-w-0"
+          }
         >
           <WidgetCard
             id={c.id}
@@ -90,6 +112,7 @@ function GrilleDeCartes({ cartes, c }: { cartes: GroupeDeCartes["cartes"]; c: Co
             ctx={c.ctx}
             query={c.query}
             editable={c.editable}
+            edition={c.edition}
           />
         </div>
       ))}
@@ -140,7 +163,7 @@ function SectionDuTableau({
         ) : (
           <p className="rounded-lg border border-dashed border-line px-4 py-4 text-sm text-ink-soft">
             Aucune carte dans cette section.
-            {c.editable ? " Une carte y entre par ses boutons ↑ ↓." : ""}
+            {c.editable && c.edition ? " Une carte y entre par ses boutons ↑ ↓." : ""}
           </p>
         )}
       </div>
@@ -162,8 +185,10 @@ export default async function D({
   const ecran = await chargerEcran(ECRANS.tableau, chargerTableau, sp, { id });
   if (ecran.etat === "introuvable") notFound();
   if (ecran.etat === "refus") return <FilterProblemNotice title={ecran.titre} problem={ecran.problem} />;
-  const { tableau: dash, timeZone, data, apps } = ecran;
-  const reglages = lireComparaison(`/dashboards/${dash.id}`, paramReader(sp));
+  const { tableau: dash, timeZone, data, apps, nomsApps } = ecran;
+  const reader = paramReader(sp);
+  const reglages = lireComparaison(`/dashboards/${dash.id}`, reader);
+  const nomApp = (appId: string) => nomsApps[appId] ?? appId;
 
   // W-B1 — la population lue, écrite au-dessus de la grille, y compris à « toutes
   // les apps » : chaque carte en hérite. La requête affichée est celle des cartes,
@@ -172,15 +197,22 @@ export default async function D({
   const retraits = retraitsDePopulation(populationQuery, (sans) =>
     hrefWithQuery(`/dashboards/${dash.id}`, sans),
   );
-  const puces = resumePopulation(populationQuery, timeZone).map((libelle) => ({
+  const puces = resumePopulation(populationQuery, timeZone, nomApp).map((libelle) => ({
     libelle,
     ...(retraits[libelle] ? { retirerHref: retraits[libelle] } : {}),
   }));
 
-  const contexte = queryToSearchParams(ecran.query).toString();
   const exportHref = hrefWithQuery(`/api/dashboards/${dash.id}/export`, ecran.query);
-  const scope = dash.app_id ?? "toutes les apps";
+  const scope = dash.app_id === null ? "toutes les applications" : nomApp(dash.app_id);
   const { editable, clonable, global: canUseGlobal } = ecran.droits;
+  // Le mode édition n'existe que pour qui peut écrire : `?edition=1` tapé par un
+  // lecteur (ou une démo, V9) ne rend aucun geste d'écriture.
+  const edition = editable && reader.get("edition") === "1";
+  const lienLecture = contextHref(`/dashboards/${dash.id}`, reader);
+  const lienEdition = `${lienLecture}${lienLecture.includes("?") ? "&" : "?"}edition=1`;
+  // Les filtres de l'écran voyagent avec chaque formulaire ; en édition, le mode
+  // aussi : une écriture refusée ramène sur la page en édition, pas en lecture.
+  const contexte = [queryToSearchParams(ecran.query).toString(), edition ? "edition=1" : ""].filter(Boolean).join("&");
   // Intersection vide : le tableau de bord porte sur une autre app que celle de l'écran.
   const horsPerimetre = populationQuery.scope.effectiveApps?.length === 0;
   const conflit = sp.conflit === "1";
@@ -202,6 +234,7 @@ export default async function D({
     ctx: contexte,
     query: ecran.query,
     editable,
+    edition,
     data,
   };
 
@@ -211,14 +244,23 @@ export default async function D({
         title={dash.name}
         sub={
           <>
-            Scope : {scope} · Propriétaire : {ecran.proprietaire} · {ecran.label}
-            {ecran.query.filters.device ? ` · ${ecran.query.filters.device}` : ""}
+            Application : {scope} · Propriétaire : {ecran.proprietaire} · {ecran.label}
           </>
         }
       >
         <Link href="/dashboards" className="btn-ghost">
           ← Tous
         </Link>
+        {editable &&
+          (edition ? (
+            <Link href={lienLecture} className="btn-accent" data-testid="terminer-edition">
+              Terminer l’édition
+            </Link>
+          ) : (
+            <Link href={lienEdition} className="btn-ghost" data-testid="mode-edition">
+              Éditer
+            </Link>
+          ))}
         {clonable && (
           <form action={cloneDashboardAction}>
             <input type="hidden" name="id" value={dash.id} />
@@ -233,7 +275,7 @@ export default async function D({
         <PrintButton />
       </PageHeader>
 
-      <PopulationBar puces={puces} plage={rangeLabel(populationQuery.range, timeZone)} fuseau="UTC" />
+      <PopulationBar puces={puces} plage={rangeLabel(populationQuery.range, timeZone)} fuseau={FUSEAU_AFFICHAGE} />
 
       {reglages.ignores.map((ligne) => (
         <p key={ligne} role="note" className="mb-4 text-xs text-ink-soft">
@@ -282,8 +324,9 @@ export default async function D({
 
       {horsPerimetre && (
         <p role="status" data-testid="dashboard-hors-perimetre" className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
-          Ce tableau de bord porte sur {dash.app_id}, hors de l&apos;app sélectionnée : ses widgets ne remplacent pas
-          l&apos;app de l&apos;écran et restent vides. Change de projet pour le lire.
+          Ce tableau de bord porte sur {dash.app_id === null ? "toutes les applications" : nomApp(dash.app_id)}, hors de
+          l&apos;application sélectionnée : ses cartes ne remplacent pas l&apos;application de l&apos;écran et restent
+          vides. Changez de projet pour le lire.
         </p>
       )}
 
@@ -293,6 +336,13 @@ export default async function D({
           configuration est conservée telle quelle et affichée en diagnostic. {editable
             ? "La corriger revient à la retirer puis à l’enregistrer de nouveau depuis l’Explorer."
             : "Un administrateur de cette app peut la corriger."}
+        </p>
+      )}
+
+      {edition && (
+        <p role="note" data-testid="bandeau-edition" className="mb-6 rounded-lg border border-line bg-panel2/60 px-4 py-3 text-sm text-ink-soft">
+          Mode édition : ↑ ↓ rangent les cartes, ✕ en retire une. Ajouter une carte ou une section, renommer ou
+          supprimer le tableau : en bas de page.
         </p>
       )}
 
@@ -311,17 +361,19 @@ export default async function D({
           )}
         </div>
       ) : (
-        <p className="card px-4 py-8 text-center text-sm text-ink-faint">
-          Aucun widget — ajoute-en via « Éditer le tableau de bord » ci-dessous, ou enregistre une analyse depuis
-          l&apos;Explorer.
+        <p className="card px-4 py-8 text-center text-sm text-ink-soft">
+          Aucune carte dans ce tableau de bord.
+          {editable
+            ? " Ajoutez-en une en mode édition, ou enregistrez une analyse depuis l’Explorer."
+            : ""}
         </p>
       )}
 
-      {/* ----- Édition ----- */}
-      {editable && <details className="card mt-8" data-testid="edit-panel">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-soft transition hover:text-ink">
+      {/* ----- Édition : seulement en mode édition, pour qui peut écrire ----- */}
+      {edition && <section className="card mt-8" data-testid="edit-panel" aria-labelledby="edition-titre">
+        <h2 id="edition-titre" className="px-4 py-3 text-sm font-semibold text-ink">
           Éditer le tableau de bord
-        </summary>
+        </h2>
         <div className="flex flex-col gap-6 border-t border-line p-4">
           {/* F37 — 24 éléments, sections comprises : plus rien ne s'ajoute, et la page
               le dit au lieu de proposer un geste que l'action refuserait. */}
@@ -337,7 +389,7 @@ export default async function D({
             <input type="hidden" name="revision" value={dash.revision} />
             <input type="hidden" name="ctx" value={contexte} />
             <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-              Type
+              Type de carte
               <select name="type" defaultValue={WIDGET_TYPES[0]} className={INPUT_CLASS}>
                 {WIDGET_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -357,11 +409,11 @@ export default async function D({
               </select>
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-              Nom d’événement (widget événements)
+              Nom d’événement (carte « Événements »)
               <input name="event_name" placeholder="checkout" maxLength={100} className={`${INPUT_CLASS} w-44`} />
             </label>
             <button type="submit" data-testid="add-widget" className="btn-accent">
-              + Ajouter un widget
+              + Ajouter une carte
             </button>
           </form>}
 
@@ -431,18 +483,24 @@ export default async function D({
                               ↓
                             </button>
                           </form>
+                          {/* Retirer une section se confirme, comme retirer une carte
+                              (contre-recette du 26/09/2026) : le ✕ partait en un clic. */}
                           <form action={removeWidgetAction}>
                             <input type="hidden" name="id" value={dash.id} />
                             <input type="hidden" name="index" value={index} />
                             <input type="hidden" name="revision" value={dash.revision} />
                             <input type="hidden" name="ctx" value={contexte} />
-                            <button
-                              type="submit"
-                              aria-label={`Retirer la section « ${widget.title} » — ses cartes restent`}
-                              className="btn-ghost px-2 py-1 text-bad-ink"
-                            >
-                              ✕
-                            </button>
+                            <ConfirmationDanger
+                              libelle="✕"
+                              libelleAccessible={`Retirer la section ${entreGuillemets(widget.title)} — ${position}`}
+                              question={`Retirer la section ${entreGuillemets(widget.title)} de ce tableau de bord\u00a0?`}
+                              consequence="Seul le titre de section disparaît : ses cartes restent sur le tableau de bord."
+                              confirmer="Retirer la section"
+                              enCours="Retrait…"
+                              flottant
+                              classeDeclencheur="btn-ghost px-2 py-1 text-bad-ink"
+                              testid={`section-${index}-retirer`}
+                            />
                           </form>
                         </span>
                       </li>
@@ -512,12 +570,12 @@ export default async function D({
               />
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-              App
+              Application
               <select name="app_id" defaultValue={dash.app_id ?? ""} className={INPUT_CLASS}>
-                {canUseGlobal && <option value="">(toutes apps)</option>}
+                {canUseGlobal && <option value="">Toutes les applications</option>}
                 {apps.map((a) => (
                   <option key={a} value={a}>
-                    {a}
+                    {nomApp(a)}
                   </option>
                 ))}
               </select>
@@ -528,18 +586,20 @@ export default async function D({
           </form>
 
           {/* Supprimer */}
+          {/* La suppression efface la ligne (aucune corbeille) : elle se confirme. */}
           <form action={deleteDashboardAction}>
             <input type="hidden" name="id" value={dash.id} />
-            <button
-              type="submit"
-              data-testid="delete-dashboard"
-              className="rounded-lg bg-bad-fond px-3 py-1.5 text-xs font-medium text-white transition hover:bg-bad-fond/90"
-            >
-              Supprimer ce tableau de bord
-            </button>
+            <ConfirmationDanger
+              libelle="Supprimer ce tableau de bord"
+              question={`Supprimer le tableau de bord ${entreGuillemets(dash.name)}\u00a0?`}
+              consequence="Ses cartes et ses sections seront effacées définitivement ; les données collectées, elles, restent."
+              confirmer="Supprimer le tableau de bord"
+              enCours="Suppression…"
+              testid="delete-dashboard"
+            />
           </form>
         </div>
-      </details>}
+      </section>}
     </div>
   );
 }

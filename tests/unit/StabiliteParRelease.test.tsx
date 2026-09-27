@@ -1,6 +1,8 @@
 // Hero « Stabilité par release » de `/mobile` (F38, W-M6) : une release qui ne
 // déclare pas collecter les erreurs JS n'affiche aucun « % » ni aucun zéro ; la
 // release inconnue s'appelle « Inconnue » ; la référence porte sur les déclarantes.
+// Recette du 26/09/2026 : la barre est la part SANS erreur, comme la tuile (plus haut
+// = mieux), et la ligne de référence vaut la tuile ; l'écart suit le même sens.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { StabiliteParRelease, lignesStabilite } from "@/components/mobile/StabiliteParRelease";
@@ -90,22 +92,38 @@ describe("StabiliteParRelease", () => {
     expect(html).toContain("seg=v2%3Arelease%3Ais_null");
   });
 
-  it("la 1.4 porte sa part, son intervalle et un lien release=", () => {
-    expect(texte(html)).toContain("33,3 %");
+  it("la 1.4 porte sa part SANS erreur (1 touchée sur 3 → 66,7 %), son intervalle et un lien release=", () => {
+    expect(texte(html)).toContain("66,7 %");
     expect(texte(html)).toMatch(/entre .* et .* \(95 %\)/);
     expect(html).toContain('href="/mobile?release=1.4"');
   });
 
-  it("la référence « Releases déclarantes » est une ligne, pas une barre, sur Σ touchées / Σ sessions", () => {
+  it("la référence est une ligne, pas une barre, et vaut la tuile « Sessions sans erreur JS » (Σ sans erreur / Σ sessions)", () => {
     expect(html).toContain('data-testid="impact-reference"');
-    expect(texte(html)).toMatch(/Releases déclarantes 33,3 %/);
+    // declarantes.rate = 2/3 : le taux de la tuile, jamais son complément.
+    expect(texte(html)).toMatch(/Ensemble des releases qui collectent les erreurs JS 66,7 %/);
+  });
+
+  it("l'écart suit le sens de la tuile : plus de sessions touchées = écart négatif", () => {
+    const [l] = lignesStabilite([ligne({ release: "1.4", release_precedente: "1.2", ecart_precedente_pts: 5.6 })], href);
+    const ecart = l.mesures.find((m) => m.cle === "ecart")!;
+    expect(ecart.valeur).toBe(-5.6);
+    expect(texte(ecart.affichage)).toBe("−5,6 pt vs 1.2");
+  });
+
+  it("« échantillon faible » dit une fois en tête quand toutes les releases le sont, pas sur chaque ligne", () => {
+    // Les trois releases ont moins de 30 sessions.
+    expect(html).not.toContain('data-faible="1"');
+    expect(texte(html)).toContain("Toutes les releases ont moins de 30 sessions : échantillon faible.");
+    expect(texte(html).match(/échantillon faible/g)).toHaveLength(1);
   });
 
   it("ordre fourni écrit ; bascule vers gravité et volume", () => {
     expect(texte(html)).toContain("par première session vue sur la fenêtre, la plus récente en tête");
     expect(html).toContain('href="/mobile?tri=gravite"');
     expect(html).toContain('href="/mobile?tri=volume"');
-    expect(texte(html)).toContain("même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte");
+    expect(texte(html)).toContain("il mêle le code et le contexte");
+    expect(texte(html)).toContain("plus haut = plus stable");
   });
 
   it("aucune déclarante : pas de ligne de référence, la raison à la place", () => {
@@ -136,9 +154,12 @@ describe("StabiliteParRelease", () => {
     expect(vide).not.toContain('data-testid="impact-table"');
   });
 
-  it("tri gravité : part la plus forte en tête, part non calculable en fin", () => {
+  it("tri gravité : la release la moins stable en tête, part non calculable en fin", () => {
     const lignes = lignesStabilite(LIGNES, href);
-    expect(lignes.map((l) => l.pilote)).toEqual([1 / 3, null, 0]);
+    // 1 − part touchée, en flottants : comparés à 1e-12 près.
+    const pilotes = lignes.map((l) => l.pilote);
+    expect(pilotes[0]).toBeCloseTo(2 / 3, 12);
+    expect(pilotes.slice(1)).toEqual([null, 1]);
     const g = renderToStaticMarkup(
       <StabiliteParRelease
         resultat={RESULTAT}

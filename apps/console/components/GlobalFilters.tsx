@@ -10,8 +10,10 @@
 //
 // Chaque contrôle suit les capacités de l'écran (lib/surfaces.ts) : un filtre que
 // les mesures affichées ne savent pas appliquer est désactivé avec sa raison, et
-// celui que l'URL porte déjà y est marqué « non appliqué ». Le projet (?app) se
-// choisit en amont (/select) : il est seulement préservé.
+// celui que l'URL porte déjà y est marqué « non appliqué ». La PÉRIODE, elle, n'est
+// pas affichée sur un écran qui ne l'applique pas (`range: "none"`) : désactivée,
+// elle semblait choisie. Le projet (?app) se choisit en amont (/select) : il est
+// seulement préservé.
 //
 // Comparaison (F06) : `CompareToggle` à droite des presets. La liste des releases
 // dépend de la population et de la plage de l'URL ; le layout qui monte cette barre
@@ -21,6 +23,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { CompareToggle } from "@/components/CompareToggle";
 import { INPUT_CLASS } from "@/components/forms/Field";
+import { estFermee } from "@/lib/capacites";
+import { FUSEAU_AFFICHAGE, nomFuseau } from "@/lib/fuseau-local";
 import { lireComparaison } from "@/lib/view-state";
 import {
   DEVICES,
@@ -49,7 +53,9 @@ import {
   type FilterAvailability,
 } from "@/lib/surfaces";
 
-const DEVICE_LABELS: Record<Device, string> = { desktop: "Desktop", mobile: "Mobile", tablet: "Tablette" };
+// « Ordinateur » et non « Desktop » : un seul vocabulaire, français, d'un écran à
+// l'autre (la Rétention écrit déjà « ordinateurs, mobiles, tablettes »).
+const DEVICE_LABELS: Record<Device, string> = { desktop: "Ordinateur", mobile: "Mobile", tablet: "Tablette" };
 
 /** Paramètres d'une page de résultats : un changement de filtre les invalide. */
 const PAGINATION_PARAMS = ["cursor", "offset"];
@@ -83,8 +89,19 @@ export function GlobalFilters({
   // Comparer deux périodes n'a de sens que sur un écran qui a une plage.
   const comparable = !!surface && surface.range !== "none";
   const releases = useReleases(comparable ? contextSearchParams(sp).toString() : null);
-  // Écrans sans filtres globaux (administration…) : rien à proposer.
-  if (!surface) return null;
+  // Écrans sans filtres globaux (administration…) : rien à proposer. Écran d'une
+  // capacité fermée (Logs, SVI, IA) : rien à filtrer non plus — une période et une
+  // comparaison actives au-dessus d'une page vide faisaient croire à des données
+  // (recette du 26/09/2026).
+  if (!surface || estFermee(pathname)) return null;
+  // Une période que l'écran n'applique pas n'est pas montrée (recette du 26/09/2026) :
+  // grisée, « 24 h » paraissait sélectionnée à côté de la fenêtre propre à l'écran
+  // (« 8 sem. » sur la Rétention), deux périodes contradictoires. Et un écran qui
+  // n'applique NI période NI filtre (une session, une trace, la liste des tableaux,
+  // les SLO, les alertes, les tendances à fenêtre fixe) n'a pas de barre du tout :
+  // elle n'était qu'une rangée grisée.
+  const sansPeriode = surface.range === "none";
+  if (sansPeriode && (surface.noFilters || surface.legacy)) return null;
   const comparaison = lireComparaison(pathname, sp);
 
   const app = sp.get("app");
@@ -154,17 +171,19 @@ export function GlobalFilters({
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2" data-testid="global-filters">
-      <Segmented
-        label="Période"
-        testid="filter-period"
-        availability={presetAvailability}
-        items={[
-          ...RANGE_PRESETS.map((key) => ({ key, label: PRESET_LABELS[key] })),
-          { key: "custom", label: "Personnalisée", availability: customAvailability },
-        ]}
-        value={custom ? "custom" : preset}
-        onChange={(key) => (key === "custom" ? toggleRangeEditor() : choosePreset(key as RangePreset))}
-      />
+      {!sansPeriode && (
+        <Segmented
+          label="Période"
+          testid="filter-period"
+          availability={presetAvailability}
+          items={[
+            ...RANGE_PRESETS.map((key) => ({ key, label: PRESET_LABELS[key] })),
+            { key: "custom", label: "Personnalisée", availability: customAvailability },
+          ]}
+          value={custom ? "custom" : preset}
+          onChange={(key) => (key === "custom" ? toggleRangeEditor() : choosePreset(key as RangePreset))}
+        />
+      )}
       {comparable && (
         <CompareToggle
           mode={comparaison.valeur.mode}
@@ -205,7 +224,11 @@ export function GlobalFilters({
           testid="filter-chip-range"
           label={
             customReadable
-              ? `${rangeLabel({ from, to, preset: null, bucketSeconds: 0 }, timeZone)} (${timeZone})`
+              ? // Le fuseau d'affichage est nommé une fois dans la barre ; seul un autre
+                // fuseau (application réglée ailleurs) se dit ici.
+                timeZone === FUSEAU_AFFICHAGE
+                ? rangeLabel({ from, to, preset: null, bucketSeconds: 0 }, timeZone)
+                : `${rangeLabel({ from, to, preset: null, bucketSeconds: 0 }, timeZone)} (${nomFuseau(timeZone)})`
               : "Plage personnalisée illisible"
           }
           availability={customReadable ? customAvailability : { available: false, reason: "Plage illisible : retirez-la." }}
@@ -239,7 +262,7 @@ export function GlobalFilters({
           </p>
         ))}
 
-      {rangeDraft && customAvailability.available && (
+      {rangeDraft && !sansPeriode && customAvailability.available && (
         <RangeEditor
           initialFrom={rangeDraft.from}
           initialTo={rangeDraft.to}
@@ -374,8 +397,8 @@ function RangeEditor({
       className="flex basis-full flex-wrap items-end gap-3 rounded-lg border border-line bg-panel2 p-3"
       data-testid="filter-range-editor"
     >
-      {field("from", `Début (${timeZone})`, fromValue, setFromValue)}
-      {field("to", `Fin, exclue (${timeZone})`, toValue, setToValue)}
+      {field("from", `Début (${nomFuseau(timeZone)})`, fromValue, setFromValue)}
+      {field("to", `Fin, exclue (${nomFuseau(timeZone)})`, toValue, setToValue)}
       <p className="basis-full text-[11px] text-ink-faint sm:basis-auto">30 jours au plus, fin au plus tard maintenant.</p>
       <div className="flex gap-2">
         <button type="submit" className="btn-accent" data-testid="filter-range-apply">
@@ -486,11 +509,17 @@ export function Chip({
       data-applied={applied}
       title={applied ? undefined : availability.reason}
       className={`flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${
-        applied ? "border-perf/30 bg-perf/10 text-perf" : "border-warn/40 bg-warn/10 text-ink-soft line-through decoration-warn/60"
+        // Non appliqué : bordure pointillée et mention écrite, jamais barré (un filtre
+        // barré se lit « retiré », alors qu'il reste dans l'URL et s'appliquera ailleurs).
+        applied ? "border-perf/30 bg-perf/10 text-perf" : "border-dashed border-warn/60 bg-warn/10 text-ink-soft"
       }`}
     >
       <span className="truncate">{label}</span>
-      {!applied && <span className="sr-only">— non appliqué sur cet écran : {availability.reason}</span>}
+      {!applied && (
+        <span className="shrink-0 text-[10px] font-normal text-warn-ink">
+          (non appliqué)<span className="sr-only"> sur cet écran : {availability.reason}</span>
+        </span>
+      )}
       <button
         type="button"
         onClick={onRemove}

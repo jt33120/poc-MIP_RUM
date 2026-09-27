@@ -8,6 +8,7 @@ import { InsightStrip } from "@/components/InsightStrip";
 import { PageHeader } from "@/components/PageHeader";
 import { PresetBar } from "@/components/PresetBar";
 import { ReleaseCompare, statsDeVersion, type ReleaseStats } from "@/components/ReleaseCompare";
+import { Methode } from "@/components/perf/Methode";
 import { ChargeErreursLcp, HeroCwv, type AnnotationsFigure, type ModeSeries } from "@/components/vue-ensemble/SeriesVueEnsemble";
 import { LIBELLE_ANGLE_MORT, TuileAngleMort, type EtatAngleMort } from "@/components/vue-ensemble/AngleMort";
 import { blocsDe } from "@/lib/chargeurs/commun";
@@ -31,7 +32,7 @@ import {
 } from "@/lib/breakdowns";
 import { etatLectureEchantillonnage } from "@/lib/echantillonnage";
 import { type SectionLue } from "@/lib/lecture";
-import { joursLocaux, libelleDeuxFuseaux } from "@/lib/fuseau";
+import { joursLocaux, libelleDeuxFuseaux, nomFuseau } from "@/lib/fuseau";
 import { formatDuVital, formater, VITAUX, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import { bucketStarts, hrefWithQuery, paramReader } from "@/lib/query-contract";
 import { grilleIso, isoSansMs } from "@/lib/series";
@@ -59,6 +60,7 @@ import {
   phraseSansRupture,
 } from "@/lib/stats/rupture";
 import { explorerHref } from "@/lib/explorer-page-params";
+import { accord } from "@/lib/format";
 import { ecrirePanel, gabaritZoom, lireComparaison, lireEtatDeVue, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
 import {
   constatsVueEnsemble,
@@ -201,6 +203,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     vitalsA,
     seriesRelease,
     releasesLues,
+    vitauxReleasesLus,
   } = ecran;
   const dispoNavigateur = dispoDecoupage("browser");
   const dispoPays = dispoDecoupage("country");
@@ -489,10 +492,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     (lcpQuotidienP7.ok ? lcpQuotidienP7.data : []).map((r) => r.p75),
     (lcpQuotidienP7.ok ? lcpQuotidienP7.data : []).map((r) => r.n),
   );
+  // Refus : une phrase utile d'abord (recette du 26/09/2026 : six lignes de méthode
+  // avant l'information) ; le détail du test est dans le repli « Méthode ».
   const phraseDatationP7 = !lcpQuotidienP7.ok
     ? "Datation d'une rupture : LCP quotidien non lu."
     : !datationP7.ok
-      ? datationP7.raison
+      ? `Pas encore assez d'historique pour dater une dégradation : ${datationP7.manque.observe} ${accord(datationP7.manque.observe, "jour valide", "jours valides")} sur les ${datationP7.manque.requis} requis.`
       : datationP7.rupture
         ? phraseRupture(datationP7.rupture, "Le LCP p75", (v) => formater("ms", v), ruptureDeploiementP7) +
           (ruptureDeploiementP7 ? " Coïncidence de date, pas une cause établie." : "") +
@@ -539,23 +544,26 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     const lu = seriesPrecedentes[i];
     return !lu.ok ? lu : lu.data ? { ok: true, data: lu.data } : null;
   };
-  const lectureHero =
+  // Ce qui se lit AU-DESSUS des graphiques : ce qu'ils comparent, s'ils comparent. Le
+  // mode d'emploi (points creux, trous, zoom) passe dans « Méthode ».
+  const noteHero =
     modeSeries.kind === "release"
-      ? `p75 par seau ; orange = release ${modeSeries.relB}, gris pointillé = release ${modeSeries.relA}, même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte. Règle : ${releases.ok ? releases.regle : ""}.`
+      ? `Orange = release ${modeSeries.relB}, gris pointillé = release ${modeSeries.relA}, même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte.`
       : modeSeries.kind === "prev"
-        ? `p75 par seau sur les zones Bon / À améliorer / Mauvais ; gris pointillé = ${referencePrev.replace(/^vs /, "")}, aligné par rang de seau. Un seau sous 30 mesures est un point creux ; un seau sans mesure, un trou ; un clic zoome sur le seau.`
-        : `p75 par seau sur les zones Bon / À améliorer / Mauvais. Un seau sous 30 mesures est un point creux ; un seau sans mesure, un trou ; un clic zoome sur le seau.${
-            comparaison.mode === "release" && !releases.ok
-              ? ` Comparaison de releases indisponible : ${releases.raison}.`
-              : prev && !deltasVitaux.deltas && deltasVitaux.note
-                ? ` Aucune série de référence : ${deltasVitaux.note}.`
-                : ""
-          }`;
-  // P*.7 : la phrase de datation complète la lecture du hero, avec SA fenêtre (elle
-  // n'est pas celle de la plage choisie) et SA règle (RM4). `blocs.hero` éteint : rien.
-  const lectureHeroP7 = !blocs.hero
+        ? `Gris pointillé = ${referencePrev.replace(/^vs /, "")}, aligné tranche à tranche.`
+        : comparaison.mode === "release" && !releases.ok
+          ? `Comparaison de releases indisponible : ${releases.raison}.`
+          : prev && !deltasVitaux.deltas && deltasVitaux.note
+            ? `Aucune série de référence : ${deltasVitaux.note}.`
+            : null;
+  const guideHero = `p75 par tranche sur les zones Bon / À améliorer / Mauvais. Une tranche sous 30 mesures est un point creux ; une tranche sans mesure, un trou ; un clic zoome sur la tranche.${
+    modeSeries.kind === "release" && releases.ok ? ` Choix des releases : ${releases.regle}.` : ""
+  }`;
+  // P*.7 : la phrase de datation complète la lecture du hero ; SA fenêtre (elle n'est
+  // pas celle de la plage choisie) et SA règle (RM4) restent à côté, repliées.
+  const methodeHeroP7 = !blocs.hero
     ? null
-    : `${phraseDatationP7} Fenêtre de cette datation : ${GRID_DAYS} jours complets, fuseau de l'app (${fuseau}), journée en cours exclue ; la plage choisie en haut ne s'y applique pas. Règle : ${REGLE_RUPTURE}.`;
+    : `Fenêtre de cette datation : ${GRID_DAYS} jours complets, fuseau de l'app (${nomFuseau(fuseau)}), journée en cours exclue ; la plage choisie en haut ne s'y applique pas. Règle : ${REGLE_RUPTURE}.`;
   // ─── Zone 6 — heures × route en angle mort (F13, F57) ───
   const etatAngle: EtatAngleMort | null = !blocs.angles
     ? null
@@ -601,7 +609,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             decoupage === "route" && valeur !== null
               ? lien("/pages", { panel: ecrirePanel({ type: "route", id: valeur }), vital: vitalClasse })
               : breakdownDrillHref("/pages", query, decoupage, valeur, schema),
-          description: (valeur, mesures) => groupDescription(decoupage, valeur, mesures, `mesure(s) ${vitalClasse}`),
+          description: (valeur, mesures) =>
+            groupDescription(decoupage, valeur, mesures, `${accord(mesures, "mesure", "mesures")} ${vitalClasse}`),
         })
       : null;
   const ensembleVital = vitals.ok ? byName[vitalClasse] : undefined;
@@ -623,11 +632,17 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // n'aurait aucune session, et la comparaison ne dirait rien.
   // Lue explicitement : aucune ligne pour cette release, c'est réellement aucune session
   // de cette release sur la fenêtre (et plus « hors des 12 plus vues »).
-  const statsRelease = (v: string, lu: ComparaisonVersions): ReleaseStats => {
+  // Les intervalles des p75 de la release : le verdict de la zone 8 suit la règle des
+  // tuiles. Lecture en échec : aucun verdict affirmé (« intervalle non lu »).
+  const intervallesDe = (lu: SectionLue<VitalAgg[]> | null | undefined): ReleaseStats["intervalles"] =>
+    lu?.ok ? Object.fromEntries(lu.data.map((v) => [v.name, v.intervalle])) : {};
+  const statsRelease = (v: string, lu: ComparaisonVersions, vitaux: SectionLue<VitalAgg[]> | null | undefined): ReleaseStats => {
     const ligne = lu.rows.find((r) => r.version === v);
-    return ligne ? statsDeVersion(ligne) : { release: v, sessions: 0, lcp_p75: null, inp_p75: null, sessionsEnErreur: null };
+    const stats = ligne ? statsDeVersion(ligne) : { release: v, sessions: 0, lcp_p75: null, inp_p75: null, sessionsEnErreur: null };
+    return { ...stats, intervalles: intervallesDe(vitaux) };
   };
   const [lueB, lueA] = releasesLues ?? [null, null];
+  const [vitauxB, vitauxA] = vitauxReleasesLus ?? [null, null];
   const lienRelease = (v: string) => lien("/", { release: v, cmp: null, rel_a: null, rel_b: null });
 
   return (
@@ -666,9 +681,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {(blocs.vitals || blocs.trafic) &&
         (notesComparaison.length > 0 || precedenteIllisible || comparaison.mode === "release") && (
           <div role="note" data-testid="note-comparaison" className="mb-4 space-y-1 text-xs text-ink-soft">
-            {notesComparaison.map((note) => (
-              <p key={note}>Aucun écart affiché — {note}.</p>
-            ))}
+            {/* UN bandeau, même quand les deux rangées ont chacune leur raison (recette du
+                26/09/2026 : deux phrases presque identiques l'une sous l'autre). */}
+            {notesComparaison.length > 0 && <p>Aucun écart affiché — {fusionnerNotes(notesComparaison)}.</p>}
             {precedenteIllisible && <p>Aucun écart affiché — {precedenteIllisible}</p>}
             {comparaison.mode === "release" &&
               (releases.ok ? (
@@ -757,13 +772,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             mode={modeSeries}
             lecture={
               <>
-                {lectureHero}
-                {lectureHeroP7 && (
-                  <>
-                    {" "}
-                    <span data-testid="datation-rupture">{lectureHeroP7}</span>
-                  </>
-                )}
+                {noteHero && <p>{noteHero}</p>}
+                <div data-testid="datation-rupture">
+                  <p>{phraseDatationP7}</p>
+                  <Methode className="mt-1" testId="methode-hero">
+                    {guideHero} {methodeHeroP7}
+                  </Methode>
+                </div>
               </>
             }
             vitaux={VITAUX_HERO.map((nom, i) => ({
@@ -827,8 +842,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {/* Zone 7 — segments classés par GRAVITÉ (P3, IP-Label « top offenders ») :
           p75 du vital choisi, écart à l'ensemble, échantillon faible en fin. Une
           route ouvre son panneau sur `/pages`, une autre dimension `/pages` filtré. */}
+      {/* « Segments classés », pas « les plus dégradés » : la liste compte aussi des
+          segments MEILLEURS que l'ensemble (recette du 26/09/2026), rangés après. */}
       {decoupage && (
-        <SectionErreur titre="Segments les plus dégradés">
+        <SectionErreur titre="Segments classés">
           {triLu.ignore && (
             <p role="note" className="mb-2 text-xs text-ink-soft" data-testid="impact-avertissement">
               {triLu.ignore}
@@ -841,60 +858,63 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           )}
           {!decoupe.ok ? (
             <div className="mb-6">
-              <EchecLecture titre="Segments les plus dégradés" />
+              <EchecLecture titre="Segments classés" />
             </div>
           ) : (
             decoupe.data &&
             segments && (
-              <>
-                <nav aria-label="Vital qui classe les segments" className="mb-2 flex flex-wrap items-center gap-1 text-xs">
-                  <span className="text-ink-soft">Classé par :</span>
-                  {VITAUX_DECOUPES.map((v) => (
-                    <Link
-                      key={v}
-                      href={`/?${new URLSearchParams([...baseParams.entries()].filter(([k]) => k !== "vital").concat(v === "LCP" ? [] : [["vital", v]])).toString()}`}
-                      scroll={false}
-                      aria-current={v === vitalClasse ? "true" : undefined}
-                      data-testid={`impact-vital-${v}`}
-                      className={`rounded-md border px-2 py-0.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
-                        // TEXTE en `perf-ink` sur la teinte `bg-perf/10` (4,5:1 en clair, F01).
-                        v === vitalClasse
-                          ? "border-perf/50 bg-perf/10 text-perf-ink dark:text-perf"
-                          : "border-line text-ink-soft hover:text-ink"
-                      }`}
-                    >
-                      {v} p75
-                    </Link>
-                  ))}
-                </nav>
-                <ImpactTable
-                  titre="Segments les plus dégradés"
-                  onglets={breakdownTabs("/", query, decoupage, dispoDecoupage, {
-                    ...contexte,
-                    hours: businessHours ? "business" : null,
-                    tri: triDecoupage === "volume" ? "volume" : null,
-                    vital: vitalClasse === "LCP" ? null : vitalClasse,
-                  })}
-                  tri={triDecoupage}
-                  // `impact` attend le compte des mesures « Mauvais » par groupe (B2) : barré, avec sa raison.
-                  triHref={{ gravite: hrefTri(null), volume: hrefTri("volume"), impact: null, fourni: null }}
-                  reference={referenceSegments}
-                  referenceRaison={
-                    vitals.ok ? `aucune mesure ${vitalClasse} sur ${period.label}` : "le p75 de l'ensemble n'a pas pu être lu"
-                  }
-                  lignes={segments.lignes}
-                  colonnes={["LCP p75", "INP p75", "CLS p75"]}
-                  unitePilote={vitalClasse === "CLS" ? "cls" : "ms"}
-                  volumeLibelle={`Mesures ${vitalClasse}`}
-                  groupes={decoupe.data.groups}
-                  tronque={decoupe.data.truncated}
-                  notice={
-                    decoupe.data.truncated
-                      ? `${BREAKDOWN_NOTICES[decoupage]} Les ${formater("count", DECOUPAGE_LUS)} groupes les plus mesurés sont classés ; ${formater("count", decoupe.data.groups - decoupe.data.rows.length)} autres, moins mesurés, ne le sont pas.`
-                      : BREAKDOWN_NOTICES[decoupage]
-                  }
-                />
-              </>
+              <ImpactTable
+                titre="Segments classés"
+                // « Vital », et non « Classé par » : le vital et l'ordre (gravité, volume)
+                // sont DEUX réglages, rangés dans la même rangée de la table — deux
+                // sélecteurs « classer par » l'un au-dessus de l'autre se confondaient.
+                commandes={
+                  <nav aria-label="Vital qui classe les segments" className="flex flex-wrap items-center gap-1 text-xs">
+                    <span className="text-ink-soft">Vital :</span>
+                    {VITAUX_DECOUPES.map((v) => (
+                      <Link
+                        key={v}
+                        href={`/?${new URLSearchParams([...baseParams.entries()].filter(([k]) => k !== "vital").concat(v === "LCP" ? [] : [["vital", v]])).toString()}`}
+                        scroll={false}
+                        aria-current={v === vitalClasse ? "true" : undefined}
+                        data-testid={`impact-vital-${v}`}
+                        className={`rounded-md border px-2 py-0.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
+                          // TEXTE en `perf-ink` sur la teinte `bg-perf/10` (4,5:1 en clair, F01).
+                          v === vitalClasse
+                            ? "border-perf/50 bg-perf/10 text-perf-ink dark:text-perf"
+                            : "border-line text-ink-soft hover:text-ink"
+                        }`}
+                      >
+                        {v} p75
+                      </Link>
+                    ))}
+                  </nav>
+                }
+                onglets={breakdownTabs("/", query, decoupage, dispoDecoupage, {
+                  ...contexte,
+                  hours: businessHours ? "business" : null,
+                  tri: triDecoupage === "volume" ? "volume" : null,
+                  vital: vitalClasse === "LCP" ? null : vitalClasse,
+                })}
+                tri={triDecoupage}
+                // `impact` attend le compte des mesures « Mauvais » par groupe : non proposé, donc non affiché.
+                triHref={{ gravite: hrefTri(null), volume: hrefTri("volume"), impact: null, fourni: null }}
+                reference={referenceSegments}
+                referenceRaison={
+                  vitals.ok ? `aucune mesure ${vitalClasse} sur ${period.label}` : "le p75 de l'ensemble n'a pas pu être lu"
+                }
+                lignes={segments.lignes}
+                colonnes={["LCP p75", "INP p75", "CLS p75"]}
+                unitePilote={vitalClasse === "CLS" ? "cls" : "ms"}
+                volumeLibelle={`Mesures ${vitalClasse}`}
+                groupes={decoupe.data.groups}
+                tronque={decoupe.data.truncated}
+                notice={
+                  decoupe.data.truncated
+                    ? `${BREAKDOWN_NOTICES[decoupage]} Les ${formater("count", DECOUPAGE_LUS)} groupes les plus mesurés sont classés ; ${formater("count", decoupe.data.groups - decoupe.data.rows.length)} autres, moins mesurés, ne le sont pas.`
+                    : BREAKDOWN_NOTICES[decoupage]
+                }
+              />
             )
           )}
         </SectionErreur>
@@ -922,8 +942,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               <EchecLecture titre="Nouvelle release face à la précédente" />
             ) : (
               <ReleaseCompare
-                a={statsRelease(releases.relA, lueA.data)}
-                b={statsRelease(releases.relB, lueB.data)}
+                a={statsRelease(releases.relA, lueA.data, vitauxA)}
+                b={statsRelease(releases.relB, lueB.data, vitauxB)}
                 plage={period.label}
                 source={lueB.data.source}
                 regleChoix={releases.regle}
@@ -959,7 +979,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                   <span data-testid="historique-fenetre">
                     {GRID_DAYS} jours fixes, indépendants de la période ; le jour en cours est incomplet
                   </span>
-                  <span>une case = une heure, fuseau de l&apos;app ({fuseau})</span>
+                  <span>une case = une heure, fuseau de l&apos;app ({nomFuseau(fuseau)})</span>
                   <span>légende : % de mesures Bon, pondéré (LCP ×2)</span>
                 </>
               }
@@ -1035,6 +1055,17 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {!Object.values(blocs).some(Boolean) && <TousEteints />}
     </div>
   );
+}
+
+/**
+ * Les raisons de plusieurs rangées en une phrase : « période précédente incomplète :
+ * mesures … ; sessions … » plutôt que deux phrases qui répètent leur début.
+ */
+function fusionnerNotes(notes: readonly string[]): string {
+  const PREFIXE = "période précédente incomplète : ";
+  const incompletes = notes.filter((n) => n.startsWith(PREFIXE)).map((n) => n.slice(PREFIXE.length));
+  const autres = notes.filter((n) => !n.startsWith(PREFIXE));
+  return [...(incompletes.length ? [`${PREFIXE}${incompletes.join(" ; ")}`] : []), ...autres].join(" ; ");
 }
 
 /**

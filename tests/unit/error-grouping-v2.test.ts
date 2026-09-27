@@ -511,3 +511,23 @@ describe("toute redéfinition, v72 comprise, emporte les issues", () => {
     }
   });
 });
+
+// Recette du 26/09/2026 : un script intégré levait depuis chaque page, et l'URL de la
+// page tenait lieu de chemin de module — un groupe par page. La v2 suit la v1.
+describe("v2 — script intégré : la page n'est pas un module", () => {
+  const pile = (page: string) => `Error: Erreur de démo MIP RUM\n    at HTMLButtonElement.<anonymous> (${page}:79:13)`;
+  const cleDe = (page: string) =>
+    errorGrouping({ appId: "demo-app", errorType: "Error", message: "Erreur de démo MIP RUM", stack: pile(page) });
+
+  it("même clé sur /partners/42, /partners/108 et /contact ; frame applicative, pas un repli", () => {
+    const a = cleDe("http://localhost:8080/partners/42");
+    expect(a.basis).toBe("normalized_frame");
+    expect(cleDe("http://localhost:8080/partners/108").key).toBe(a.key);
+    expect(cleDe("http://localhost:8080/contact?x=1").key).toBe(a.key);
+    expect(normalizeFramePath("http://localhost:8080/partners/42")).toBe("(page)");
+  });
+
+  it("un vrai fichier garde son chemin", () => {
+    expect(normalizeFramePath("https://app.fr/static/js/panier.js")).toBe("/static/js/panier.js");
+  });
+});

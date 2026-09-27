@@ -151,7 +151,7 @@ describe("PanneauSession — en-tête et identité", () => {
 
   it("la session entière, pas la plage de l'écran : le panneau le dit", () => {
     const t = texte(rendu(lue()));
-    expect(t).toContain("Session entière, du 21/09 14:00 au 21/09 14:06 (UTC)");
+    expect(t).toContain("Session entière, du 21/09 16:00 au 21/09 16:06");
     expect(t).toContain("ne dépendent pas de la plage de l'écran (24 dernières heures)");
   });
 
@@ -218,7 +218,7 @@ describe("PanneauSession — cascade, événements, rejeu", () => {
     const html = rendu(lue());
     expect(html.match(/data-testid="entete-vue"/g)).toHaveLength(2);
     expect(html).toContain('href="/pages?app=app-a&amp;route=%2Fpanier"');
-    expect(texte(html)).toContain("6 événement(s), groupés par page vue");
+    expect(texte(html)).toContain("6 événements, groupés par page vue");
     const beaucoup = [item("pageview", 0, { title: "/" }), ...Array.from({ length: 30 }, (_, i) => item("action", 1 + i, { title: `a${i}` }))];
     expect(texte(rendu(lue({ timeline: beaucoup })))).toContain("Les 15 premiers événements sur 31, groupés par page vue");
   });

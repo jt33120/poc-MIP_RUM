@@ -52,6 +52,8 @@ import {
   type ResolvedRange,
 } from "./query-contract";
 import { estVital, formatDuVital, type FormatId, type VitalName } from "./fmt-ids";
+import { fmtPlage } from "./format";
+import { FUSEAU_AFFICHAGE, nomFuseau } from "./fuseau-local";
 import { CORE_VITALS } from "./rating";
 
 /** Paramètres propres à l'écran : tout le reste appartient au contrat commun. */
@@ -425,9 +427,54 @@ export function explorerHrefFromAst(ast: unknown): { ok: true; href: string } | 
   return { ok: true, href: `/explorer?${params.toString()}` };
 }
 
-/** Libellé lisible d'une clé de groupe : un tuple, « Inconnu » pour une valeur absente. */
-export function libelleCle(key: Array<string | null>): string {
-  return key.length ? key.map((valeur) => valeur ?? "Inconnu").join(" · ") : "Ensemble de la population";
+/**
+ * Les classes d'appareil telles que les filtres de la console les écrivent. La base
+ * garde `desktop` / `mobile` / `tablet` ; les afficher bruts faisait lire
+ * « desktop » dans un résultat quand le filtre au-dessus disait « Ordinateur »
+ * (recette du 26/09/2026).
+ */
+const LIBELLES_APPAREIL: Record<string, string> = { desktop: "Ordinateur", mobile: "Mobile", tablet: "Tablette" };
+
+/**
+ * Libellé lisible d'une clé de groupe : un tuple, « Inconnu » pour une valeur absente.
+ * `groupBy`, quand il est connu, traduit les valeurs d'appareil ; les liens, eux,
+ * gardent la valeur brute (ce libellé ne sert qu'à l'affichage).
+ */
+export function libelleCle(key: Array<string | null>, groupBy: readonly Dimension[] = []): string {
+  if (!key.length) return "Ensemble de la population";
+  return key
+    .map((valeur, rang) => {
+      if (valeur === null) return "Inconnu";
+      return groupBy[rang] === "device" ? (LIBELLES_APPAREIL[valeur] ?? valeur) : valeur;
+    })
+    .join(" · ");
+}
+
+/**
+ * Une valeur APPROCHÉE s'écrit « ≈ 93 ms », partout où elle apparaît (recette du
+ * 26/09/2026). Un p75 lu sur la distribution horaire par tranches de 2 % (hybride,
+ * `meta.approximate`) et le même p75 lu sur chaque mesure donnaient 93 ms et 92 ms
+ * sur le même tableau de bord, sans rien pour les distinguer. L'espace est
+ * insécable : « ≈ » ne se sépare jamais de son nombre. Une valeur inconnue (« — »)
+ * n'est pas approchée : elle n'existe pas.
+ */
+export function valeurApprochee(texte: string, approchee: boolean): string {
+  return approchee && texte !== "—" ? `≈\u00a0${texte}` : texte;
+}
+
+/**
+ * Ce que compte l'effectif d'un résultat (`data.samples`) : une ligne de la
+ * population lue, nommée par ce qu'elle est (« 186 mesures », « 674 vues »). Une
+ * ligne d'erreur porte plusieurs occurrences : elle se dit « signalement », pour ne
+ * pas être confondue avec le total d'occurrences affiché à côté.
+ */
+export function uniteEffectif(dataset: ExplorerDatasetId): string {
+  const fields = datasetDefinition(dataset).fields;
+  const lignes = Object.hasOwn(fields, "rows") ? fields.rows : undefined;
+  if (lignes) return lignes.unit;
+  if (dataset === "sessions") return "sessions";
+  if (dataset === "errors") return "signalements d’erreur";
+  return "lignes";
 }
 
 // ───────────────────────── F32 — représentations du résultat ─────────────────────────
@@ -519,20 +566,14 @@ export function titreResultat(plan: ExplorerPlan): string {
 
 /**
  * Référence d'une comparaison à la période précédente, écrite en clair (P4, § 3.12) :
- * « vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC) ». Les bornes sont celles
- * de `previousRange`, en UTC — le fuseau des fenêtres du contrat (V6).
+ * « vs 24 h précédentes (20/09 14:00 → 21/09 14:00) ». Les bornes sont celles de
+ * `previousRange`, écrites dans le fuseau d'affichage (heure de Paris, nommé dans la
+ * barre du haut) ; les fenêtres du contrat, elles, restent en UTC.
  */
 export function referencePrecedente(range: ResolvedRange): string {
   const precedente = previousRange(range);
-  const fmt = new Intl.DateTimeFormat("fr-FR", {
-    timeZone: "UTC",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
   const duree = range.preset ? `${PRESET_LABELS[range.preset]} précédentes` : "période précédente";
-  return `vs ${duree} (${fmt.format(new Date(precedente.from))} → ${fmt.format(new Date(precedente.to))} UTC)`;
+  return `vs ${duree} (${fmtPlage(precedente.from, precedente.to)})`;
 }
 
 /**
@@ -598,7 +639,9 @@ export const LIBELLES_REPRESENTATION: Record<Visualization, string> = {
   value: "Valeur",
   toplist: "Classement",
   timeseries: "Série",
-  table: "Journal",
+  // « Lignes » et non « Journal » : l'onglet « Journal » de la navigation mène déjà
+  // aux événements bruts — le même mot désignait deux choses sur un seul écran.
+  table: "Lignes",
 };
 
 /**
@@ -750,24 +793,37 @@ export function planDeRepartition(
 // barre de variables visible en permanence, `datadog-images-2.md` § 2.4).
 
 /**
- * W-B1 — la population lue, en toutes lettres : apps effectives, appareil, chaque
- * condition de filtre, robots et apps internes, puis le fuseau dans lequel les
- * lectures à découpe locale rendent leurs jours (R-T). La PLAGE et le fuseau
- * d'axe (UTC) ne sont pas dans cette liste : ce sont les props dédiées `plage` et
+ * W-B1 — la population lue, en toutes lettres : apps effectives (par leur nom),
+ * appareil, chaque condition de filtre, robots et apps internes, puis — s'il
+ * diffère de celui des axes — le fuseau dans lequel les lectures à découpe locale
+ * rendent leurs jours (R-T), NOMMÉ (« heure de New York »).
+ * La PLAGE et le fuseau d'axe ne sont pas dans cette liste : ce sont les props dédiées `plage` et
  * `fuseau` de `PopulationBar` (§ 4.2), qui ne les écrit donc pas deux fois.
  *
  * Sans aucune condition, la liste dit « Tous les visiteurs · Robots exclus » : une
  * population non restreinte reste une population, elle ne se tait pas.
  */
-export function resumePopulation(query: AnalyticsQuery, timeZone: string): string[] {
+export function resumePopulation(
+  query: AnalyticsQuery,
+  timeZone: string,
+  nomApp: (appId: string) => string = (appId) => appId,
+): string[] {
   const apps = query.scope.effectiveApps;
-  const puces: string[] = [apps === null ? "Toutes les apps autorisées" : `Apps : ${apps.join(", ")}`];
+  // Le NOM de l'application (« Mini-site de démo »), celui du sélecteur de projet :
+  // l'identifiant technique (« demo-app ») ne se lisait nulle part ailleurs.
+  const puces: string[] = [
+    apps === null
+      ? "Toutes les applications autorisées"
+      : `${apps.length > 1 ? "Applications" : "Application"} : ${apps.map(nomApp).join(", ")}`,
+  ];
   const conditions = conditionsRetirables(query.filters);
   if (conditions.length === 0) puces.push("Tous les visiteurs");
   for (const { condition } of conditions) puces.push(libelleCondition(condition));
   puces.push(query.filters.includeBots ? "Robots inclus" : "Robots exclus");
   if (query.filters.includeInternal) puces.push("Applications internes incluses");
-  puces.push(`Jours et heures locales lus en ${timeZone}`);
+  // Le fuseau des axes est déjà écrit par la barre (« axes : heure de Paris ») : les
+  // jours et heures locaux ne se redisent que s'ils sont lus dans un AUTRE fuseau.
+  if (timeZone !== FUSEAU_AFFICHAGE) puces.push(`Jours et heures : ${nomFuseau(timeZone)}`);
   return puces;
 }
 

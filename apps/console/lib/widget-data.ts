@@ -47,6 +47,7 @@ import {
 // F36 — imports du lot : le format et le verdict d'une carte sont ceux de l'Explorer.
 import type { CouverturePrecedente } from "./comparaison";
 import { estVital, formatDuVital, type FormatId, type VitalName } from "./fmt-ids";
+import { nomFuseau } from "./fuseau-local";
 import { formatDeMesure, phraseSansVerdict, referencePrecedente, vitalDeVerdict } from "./explorer-page-params";
 import type { ModeComparaison } from "./view-state";
 
@@ -419,7 +420,7 @@ function cellule(valeur: unknown): string | number {
 }
 
 /** Texte d'une carte dont la lecture a échoué : le même pour les cartes v1 et v2. */
-export const RAISON_LECTURE_INDISPONIBLE = "lecture indisponible — réessayer dans un instant";
+export const RAISON_LECTURE_INDISPONIBLE = "données indisponibles — réessayez dans un instant";
 
 /**
  * Résout la donnée d'un widget. `ctx.filters` = filtres effectifs de l'écran
@@ -590,7 +591,9 @@ async function lireLegacy(w: Extract<Widget, { kind: "v1" }>, ctx: WidgetContext
           fuseau: ctx.timeZone,
         },
         notes: [
-          `14 jours fixes (13 complets + la journée en cours), quelle que soit la plage de l’écran ; jours dans le fuseau de l’app (${ctx.timeZone}).`,
+          // La fenêtre propre (14 jours fixes) est écrite EN CLAIR sur la carte
+          // (`PanneauxTrafic`) ; la note, rangée dans le pied de page, dit le découpage.
+          `Jours découpés dans le fuseau de l’application (${nomFuseau(ctx.timeZone)}) ; la dernière barre est la journée en cours, incomplète.`,
           `${pv.toLocaleString("fr-FR")} pages vues et ${er.toLocaleString("fr-FR")} occurrences d’erreurs sur ces 14 jours — deux populations, jamais additionnées.`,
         ],
         columns: ["Jour", "Pages vues", "Erreurs"],
@@ -782,7 +785,9 @@ export function widgetToCsv(
     // Valeur non calculable pour ce groupe : cellule VIDE, jamais « 0 » (CE2, V3).
     for (const rang of d.ranks) if (!pousser([rang.label, cellVide(rang.value), rang.sub ?? ""])) break;
   } else if (d.series) {
-    lines.push(["Seau", ...d.series.groups.map((g) => g.label)].map(csvCell).join(","));
+    // « Période », le mot des alternatives textuelles : l'en-tête d'un export se lit
+    // dans un tableur, « Seau » y était du vocabulaire interne.
+    lines.push(["Période", ...d.series.groups.map((g) => g.label)].map(csvCell).join(","));
     for (const [i, seau] of d.series.buckets.entries()) {
       // Seau sans mesure : cellule VIDE, jamais « 0 » — un tableur en ferait un zéro
       // dans une moyenne (CE1).

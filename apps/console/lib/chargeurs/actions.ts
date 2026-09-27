@@ -11,6 +11,7 @@ import {
   actionsDisponible,
   etatActions,
   parseActionsPage,
+  parseOrdreActions,
   topActions,
   topActionsSummary,
 } from "../queries-actions";
@@ -39,6 +40,10 @@ export const chargerActions = (async (principal, sp) => {
   const { filters: f, query, label } = ecran;
   const page = parseActionsPage(urlDeLaPage(sp));
   const prev = lireEtatDeVue("/actions", paramReader(sp)).etat.cmp === "prev";
+  // `classer` (erreurs | reseau) : l'ordre du hero ET de la table, lu par la même
+  // fonction que la page. Pas `tri` : ce paramètre commun n'accepte, sur chaque
+  // écran, que les tris déclarés dans lib/view-state.ts (gravité, volume…).
+  const ordre = parseOrdreActions(paramReader(sp).get("classer"));
 
   // Sans la table, les lectures rendraient des zéros : on ne les lance pas.
   const nonCollecte = etatActions(await actionsDisponible());
@@ -48,9 +53,9 @@ export const chargerActions = (async (principal, sp) => {
   // emporter les autres — et jamais par un « 0 ».
   const pageLargeAuDebut = page.offset === 0 && page.limit >= LIGNES_HERO;
   const [lignes, heroSeul, resume, resumePrec, couverture, schema] = await Promise.all([
-    section(() => topActions(f, page)),
-    // La page 1 contient déjà les lignes du hero : on ne relit pas la même chose.
-    pageLargeAuDebut ? Promise.resolve(null) : section(() => topActions(f, { limit: LIGNES_HERO, offset: 0 })),
+    section(() => topActions(f, page, ordre)),
+    // La page 1 contient déjà les lignes du hero (même ordre) : on ne relit pas la même chose.
+    pageLargeAuDebut ? Promise.resolve(null) : section(() => topActions(f, { limit: LIGNES_HERO, offset: 0 }, ordre)),
     section(() => topActionsSummary(f)),
     prev ? section(() => topActionsSummary(f, true)) : Promise.resolve(null),
     prev ? couvertureDe(query, SOURCE_ACTIONS) : Promise.resolve(null),
@@ -63,6 +68,7 @@ export const chargerActions = (async (principal, sp) => {
     label,
     page,
     prev,
+    ordre,
     lignes,
     hero,
     resume,

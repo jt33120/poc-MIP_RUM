@@ -82,7 +82,7 @@ export function nommerVue(facettes: readonly (string | null | undefined)[]): str
     .join(SEPARATEUR_FACETTES);
 }
 
-const APPAREILS: Record<string, string> = { mobile: "Mobile", desktop: "Desktop", tablet: "Tablette" };
+const APPAREILS: Record<string, string> = { mobile: "Mobile", desktop: "Ordinateur", tablet: "Tablette" };
 
 /**
  * Facette d'une condition : la VALEUR seule pour une égalité (« Mobile », « Chrome »,
@@ -287,7 +287,7 @@ function produit(id: string, libelle: string, params: Record<string, string | nu
  * l'appelant (serveur) ; ici, seulement la règle de chaque vue.
  */
 export function vuesProduit(entrees: EntreesVuesProduit): VuePrereglee[] {
-  const vues: VuePrereglee[] = [produit("p:mobile", "Mobile", { device: "mobile" }), produit("p:desktop", "Desktop", { device: "desktop" })];
+  const vues: VuePrereglee[] = [produit("p:mobile", "Mobile", { device: "mobile" }), produit("p:desktop", "Ordinateur", { device: "desktop" })];
 
   // Dernière release et comparaison : la règle du § 3.2, une seule fois.
   if ("indisponible" in entrees.releases) {

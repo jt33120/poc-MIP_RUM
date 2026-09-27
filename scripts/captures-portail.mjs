@@ -2,7 +2,7 @@
 //
 //   overview-light.png, overview-dark.png   /                          V-A, en-tête de la vitrine (PS0)
 //   issue-light.png,    issue-dark.png      /errors/issues/<issue>     V-B, illustre K1
-//   mobile-light.png                        /mobile                    V-C, « Non collecté » (K10, PS8)
+//   mobile-light.png,   mobile-dark.png     /mobile                    V-C, « Non collecté » (K10, PS8)
 //
 // Toutes en 1440 × 900 (le cadre de la vitrine est au ratio 8/5), écrites dans
 // apps/console/public/portail/ avec manifest.json : route, thème, dimensions, jour de
@@ -55,7 +55,7 @@
 //
 // ── Garde-fous : si l'un échoue, le script s'arrête en erreur et N'ÉCRIT RIEN ──
 //
-// Les cinq images sont prises en mémoire ; les fichiers ne sont écrits qu'une fois
+// Les six images sont prises en mémoire ; les fichiers ne sont écrits qu'une fois
 // toutes vérifiées, le manifeste en dernier.
 //   - Aucune adresse IPv4 ni électronique dans le texte affiché (document.body.innerText)
 //     — invariant « ni identité brute ni IP à l'écran » (plan § 1.3, V9). L'adresse
@@ -76,7 +76,7 @@
 //     présents au build (les images d'issue et du mobile sont nouvelles).
 //   - `pnpm test:unit` (tests/unit/portail-visuels.test.ts : chaque fichier cité et
 //     ≤ 250 Ko) et la recette TP8 : la légende porte désormais une date.
-//   - Regarder les cinq images, relire l'alt de la vue d'ensemble
+//   - Regarder les six images, relire l'alt de la vue d'ensemble
 //     (components/presentation/Landing.tsx) contre la nouvelle capture, versionner
 //     images ET manifeste dans le même commit.
 //   - Si le regroupement v2 a été activé pour l'étape 4, le désactiver (base locale) :
@@ -100,18 +100,32 @@ export const JEU = "scripts/gen-traffic.mjs";
 export const COMPTE_DEDIE = "captures-portail@mip-rum.local";
 
 /**
- * Les cinq images : une vue, ses thèmes, et le témoin qui prouve que l'écran capturé
+ * Les six images : une vue, ses thèmes, et le témoin qui prouve que l'écran capturé
  * est le bon. `issue` est l'identifiant choisi pour V-B.
  */
 export const VUES = [
-  { nom: "overview", chemin: () => "/", themes: ["light", "dark"], temoin: { selecteur: "h1" } },
+  {
+    nom: "overview",
+    chemin: () => "/",
+    themes: ["light", "dark"],
+    temoin: { selecteur: "h1" },
+    // Les tuiles Web Vitals commencent à 730 px et finissaient tranchées par le bas de
+    // la capture (contre-recette du 26/09/2026) : la capture défile jusqu'à elles.
+    ancre: '[data-testid="tuile-LCP"]',
+  },
   {
     nom: "issue",
     chemin: (issue) => `/errors/issues/${issue}`,
     themes: ["light", "dark"],
     temoin: { selecteur: '[data-testid="issue-status"]' },
+    // La phrase d'impact et ses tuiles sont sous la ligne de flottaison depuis la
+    // recette du 26/09/2026 (état du groupe et triage au-dessus) : la capture défile
+    // jusqu'à elles, c'est ce que la vitrine montre de cet écran.
+    ancre: '[data-testid="phrase-impact"]',
   },
-  { nom: "mobile", chemin: () => "/mobile", themes: ["light"], temoin: { texte: "Non collecté" } },
+  // En sombre aussi (contre-recette du 26/09/2026) : la vitrine en thème sombre
+  // montrait la capture claire du mobile, seule image claire de la section.
+  { nom: "mobile", chemin: () => "/mobile", themes: ["light", "dark"], temoin: { texte: "Non collecté" } },
 ];
 
 const IPV4 = /\b\d{1,3}(\.\d{1,3}){3}\b/;
@@ -316,6 +330,20 @@ async function principal() {
         await page.evaluate(async () => {
           await document.fonts.ready;
         });
+        if (vue.ancre) {
+          const trouvee = await page.evaluate((selecteur) => {
+            const el = document.querySelector(selecteur);
+            if (!el) return false;
+            // Sous la barre du haut, qui reste collée en défilant (sa hauteur, plus une
+            // marge) ; instantané, pas « smooth » : la capture suit immédiatement.
+            const barre = Math.max(0, ...[...document.querySelectorAll("body *")]
+              .filter((n) => ["sticky", "fixed"].includes(getComputedStyle(n).position) && n.getBoundingClientRect().top <= 0)
+              .map((n) => n.getBoundingClientRect().bottom));
+            window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - barre - 24, behavior: "instant" });
+            return true;
+          }, vue.ancre);
+          if (!trouvee) throw new Error(`${fichier} : ancre absente (${vue.ancre}) — ce n'est pas l'écran attendu.`);
+        }
         await page.waitForTimeout(600);
 
         const sombre = await page.evaluate(() => document.documentElement.classList.contains("dark"));

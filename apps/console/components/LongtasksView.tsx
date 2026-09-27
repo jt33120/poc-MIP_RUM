@@ -22,18 +22,28 @@ import { Figure } from "@/components/charts/Figure";
 import { StackedBars } from "@/components/charts/StackedBars";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EchecLecture } from "@/components/states/SectionErreur";
+import { Methode } from "@/components/perf/Methode";
+import { TableDefilante } from "@/components/TableDefilante";
 import { formater } from "@/lib/fmt-ids";
-import { fmtDate, fmtVital } from "@/lib/format";
+import { fmtDate, fmtVital, pluriel } from "@/lib/format";
 import type { SectionLue } from "@/lib/lecture";
 import type { LongtaskBucket, LongtaskWorst } from "@/lib/queries-longtasks";
 import { alignerSeaux, isoSansMs, libelleSeauComplet, type Annotation } from "@/lib/series";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
-/** Les trois origines d'un blocage, jamais additionnées entre elles en durée. */
+/**
+ * Les trois origines d'un blocage, jamais additionnées entre elles en durée. Noms
+ * français (recette du 26/09/2026) ; le sigle LoAF reste, c'est celui de la doc
+ * des navigateurs.
+ */
 const API_BLOCAGE = [
-  { cle: "loaf", libelle: "Long Animation Frames", categorieIndex: 0 },
-  { cle: "longtask", libelle: "Long Tasks", categorieIndex: 1 },
-  { cle: "inconnu", libelle: "API non distinguée", categorieIndex: 4 },
+  { cle: "loaf", libelle: "Trames longues (LoAF)", categorieIndex: 0 },
+  { cle: "longtask", libelle: "Tâches longues", categorieIndex: 1 },
+  { cle: "inconnu", libelle: "Origine non distinguée", categorieIndex: 4 },
 ] as const;
+
+/** L'API d'un blocage, en mots : le badge affichait la clé brute (« loaf »). */
+const LIBELLE_SOURCE: Record<string, string> = { loaf: "trame longue", longtask: "tâche longue" };
 
 /** Les deux panneaux se survolent ensemble (recharts `syncId`) : un seul par écran. */
 const SYNCHRO = "blocages-fil-principal";
@@ -78,7 +88,14 @@ export function LongtasksView({
   annotations,
   annotationsIndisponibles,
   sessionHref,
+  partie = "tout",
 }: {
+  /**
+   * Ce qui est rendu : la série, la table des pires blocages, ou les deux. L'écran
+   * /pages pose la table sur toute la largeur, sous la rangée TTFB · série : dans la
+   * colonne de la série, elle laissait 500 px vides à côté (recette du 26/09/2026).
+   */
+  partie?: "tout" | "serie" | "pires";
   /** `longtaskSeries(f)` ; en échec, la figure le dit (les pires cas restent). */
   serie: SectionLue<LongtaskBucket[]>;
   /** `worstLongtasks(f)` ; en échec, la table le dit (la figure reste). */
@@ -101,8 +118,8 @@ export function LongtasksView({
   const total = points.reduce((s, p) => s + p.n, 0);
 
   return (
-    <section className="mb-6 min-w-0" data-testid="longtasks">
-      {!serie.ok ? (
+    <section className="mb-6 min-w-0" data-testid={partie === "tout" ? "longtasks" : `longtasks-${partie}`}>
+      {partie === "pires" ? null : !serie.ok ? (
         <Figure titre={titre} id="figure-taches-longues" etat={{ kind: "erreur", titre }} />
       ) : (
         <Figure
@@ -110,27 +127,24 @@ export function LongtasksView({
           id="figure-taches-longues"
           meta={
             <>
-              <span>{formater("count", total)} blocage(s)</span>
+              <span>{pluriel(total, "blocage")}</span>
               <span>{periodLabel}</span>
               <span>une colonne = {bucketLabel}</span>
             </>
           }
           lecture={
             <>
-              En haut, les blocages comptés par API de mesure : les deux API ne sont jamais actives ensemble sur un
-              même navigateur, un blocage n&apos;est donc compté qu&apos;une fois ; elles restent séparées parce
-              qu&apos;un parc mixte produit les deux. En bas, le p75 de la durée de blocage du seau (aucun seuil
-              publié : pas de couleur de verdict). <strong>Aucun cumul de durées n&apos;est affiché</strong> : des
-              blocages concurrents de plusieurs visiteurs ne s&apos;additionnent pas en temps d&apos;attente vécu.
+              En haut, les blocages comptés par API de mesure ; en bas, le p75 de leur durée, sans couleur de verdict
+              (aucun seuil publié). <strong>Aucun cumul de durées n&apos;est affiché</strong>.
             </>
           }
           alternative={
             total > 0
               ? {
                   legende: `Blocages par ${bucketLabel} sur ${periodLabel}, par API de mesure, et p75 du blocage`,
-                  colonnes: ["Seau", ...API_BLOCAGE.map((a) => a.libelle), "Blocage p75"],
+                  colonnes: ["Tranche", ...API_BLOCAGE.map((a) => a.libelle), "Blocage p75"],
                   lignes: points.map((p) => [
-                    libelleSeauComplet(p.t, bucketSeconds, "UTC"),
+                    libelleSeauComplet(p.t, bucketSeconds, FUSEAU_AFFICHAGE),
                     p.loaf,
                     p.longtask,
                     p.inconnu,
@@ -142,6 +156,13 @@ export function LongtasksView({
         >
           {total > 0 ? (
             <div className="flex min-w-0 flex-col gap-3">
+              {/* La méthode, repliée : elle précédait le graphique sur cinq lignes. */}
+              <Methode>
+                Les deux API de mesure ne sont jamais actives ensemble sur un même navigateur : un blocage n&apos;est
+                compté qu&apos;une fois ; elles restent séparées parce qu&apos;un parc mixte produit les deux. Des
+                blocages concurrents de plusieurs visiteurs ne s&apos;additionnent pas en temps d&apos;attente vécu :
+                aucun cumul n&apos;est donc calculé.
+              </Methode>
               <div className="min-w-0">
                 <p className="mb-1 text-[11px] font-medium text-ink-soft">Blocages par API de mesure</p>
                 <StackedBars
@@ -150,43 +171,46 @@ export function LongtasksView({
                   series={API_BLOCAGE.map((a) => ({ cle: a.cle, libelle: a.libelle, categorieIndex: a.categorieIndex }))}
                   format="count"
                   seauSecondes={bucketSeconds}
-                  fuseau="UTC"
+                  fuseau={FUSEAU_AFFICHAGE}
                   hauteur={150}
                   zoomHref={zoomHref}
                   annotations={annotations}
                   legendeAnnotations={false}
                   synchro={SYNCHRO}
-                  ariaLabel={`Blocages du fil principal par API de mesure, ${grilleIso.length} seaux`}
+                  ariaLabel={`Blocages du fil principal par API de mesure, ${grilleIso.length} tranches de ${bucketLabel}`}
                 />
               </div>
               <div className="min-w-0">
-                <p className="mb-1 text-[11px] font-medium text-ink-soft">Blocage p75 par seau</p>
+                <p className="mb-1 text-[11px] font-medium text-ink-soft">Blocage p75 par tranche de {bucketLabel}</p>
                 <ThresholdSeries
                   grille={grilleIso}
                   points={points}
                   series={[{ cle: "p75", libelle: "Blocage p75", role: "principale", effectifCle: "n" }]}
                   format="ms"
                   seauSecondes={bucketSeconds}
-                  fuseau="UTC"
+                  fuseau={FUSEAU_AFFICHAGE}
                   hauteur={150}
                   zoomHref={zoomHref}
                   annotations={annotations}
                   annotationsIndisponibles={annotationsIndisponibles}
                   synchro={SYNCHRO}
-                  ariaLabel={`p75 de la durée de blocage par seau, ${grilleIso.length} seaux`}
+                  noteCollecte={false}
+                  ariaLabel={`p75 de la durée de blocage par tranche de ${bucketLabel}, ${grilleIso.length} tranches`}
                 />
               </div>
             </div>
           ) : (
             <p className="py-10 text-center text-sm text-ink-soft">
-              Aucun blocage mesuré sur {periodLabel}. Long Animation Frames n&apos;existe que sur Chromium ;
-              ailleurs, le SDK retombe sur l&apos;API Long Tasks.
+              Aucun blocage mesuré sur {periodLabel}. La mesure des trames longues (LoAF) n&apos;existe que sur
+              Chromium ; ailleurs, le SDK retombe sur celle des tâches longues.
             </p>
           )}
         </Figure>
       )}
 
-      <h3 className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+      {partie === "serie" ? null : (
+      <>
+      <h3 className={`mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft ${partie === "pires" ? "" : "mt-4"}`}>
         Les blocages les plus longs, et leur session
       </h3>
       {!worst.ok ? (
@@ -194,7 +218,9 @@ export function LongtasksView({
           <EchecLecture compact titre="Les blocages les plus longs" />
         </div>
       ) : (
-        <div className="card overflow-x-auto">
+        // Défilement signalé : à 390 px, ni la route ni la durée ne se voyaient, sans
+        // indice qu'elles suivaient (recette 26/09).
+        <TableDefilante className="card" label="Les blocages les plus longs">
           <table className="w-full text-sm">
             <caption className="sr-only">Blocages les plus longs sur {periodLabel}, avec leur session</caption>
             <thead className="bg-panel2">
@@ -212,9 +238,11 @@ export function LongtasksView({
                   key={`${ligne.session_id ?? "-"}|${new Date(ligne.ts).toISOString()}|${ligne.quoi}`}
                   className="border-t border-line/60 transition hover:bg-panel2/60"
                 >
-                  <td className="max-w-xs px-4 py-2 font-mono text-xs text-ink" title={ligne.quoi}>
+                  {/* `[overflow-wrap:anywhere]` : une URL de script sans espace se coupe
+                      au lieu d'occuper toute la largeur visible. */}
+                  <td className="max-w-xs px-4 py-2 font-mono text-xs text-ink [overflow-wrap:anywhere]" title={ligne.quoi}>
                     {ligne.quoi}
-                    {ligne.source && <span className="ml-2 chip-mono text-[10px]">{ligne.source}</span>}
+                    {ligne.source && <span className="ml-2 chip-mono text-[10px]">{LIBELLE_SOURCE[ligne.source] ?? ligne.source}</span>}
                   </td>
                   <td className="px-4 py-2 font-mono text-xs text-ink-soft">{ligne.route ?? "—"}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-xs text-ink-soft">{fmtDate(ligne.ts)}</td>
@@ -244,7 +272,9 @@ export function LongtasksView({
               )}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
+      )}
+      </>
       )}
     </section>
   );

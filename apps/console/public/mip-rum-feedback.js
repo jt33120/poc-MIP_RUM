@@ -27,6 +27,9 @@
  *     appId: "gip-plateforme",             // sinon lu via MIPRum.appId().
  *     compactBelow: 768,                   // sous cette largeur (px), lanceur
  *                                          // replié en pastille « 💬 ».
+ *     compact: true,                       // toujours replié en pastille.
+ *     discreet: true,                      // pastille neutre, accent au survol.
+ *     exceptPaths: ["/login"],             // jamais sur ces préfixes.
  *   };
  * (via le SDK : MIPRum.init({ feedback: { onlyPaths: [...] } }).)
  *
@@ -72,6 +75,11 @@
   var OFFSET = typeof cfg.offset === "number" && cfg.offset >= 0 ? cfg.offset : 20;
   var Z = 2147483000;
   var COMPACT = typeof cfg.compactBelow === "number" ? cfg.compactBelow : 0;
+  // 26/09/2026 : options facultatives (sans elles, rien ne change) — le lanceur
+  // orange masquait du contenu sur les écrans de la console.
+  var PLIE = cfg.compact === true || cfg.discreet === true;
+  var DISCRET = cfg.discreet === true;
+  var EXCEPT = Array.isArray(cfg.exceptPaths) ? cfg.exceptPaths : null;
 
   // Marqueur lu par le détecteur de frustration du SDK : tout clic à l'intérieur
   // d'un élément qui le porte est ignoré. Doit rester identique à MIP_UI_ATTR
@@ -162,10 +170,13 @@
     }
   }
 
-  /** Le chemin courant est-il autorisé ? (préfixe de onlyPaths ; true si non borné). */
+  /** Le chemin courant est-il autorisé ? exceptPaths par segment (« /login » n'exclut pas « /logins »), puis onlyPaths. */
   function pathAllowed() {
-    if (!ONLY || !ONLY.length) return true;
     var p = location.pathname;
+    for (var k = 0; EXCEPT && k < EXCEPT.length; k++) {
+      if (typeof EXCEPT[k] === "string" && (p === EXCEPT[k] || p.indexOf(EXCEPT[k] + "/") === 0)) return false;
+    }
+    if (!ONLY || !ONLY.length) return true;
     for (var i = 0; i < ONLY.length; i++) {
       if (typeof ONLY[i] === "string" && p.indexOf(ONLY[i]) === 0) return true;
     }
@@ -209,14 +220,27 @@
     "font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;";
 
   // --- bouton flottant ---
+  // Discret : pastille de 36 px, fond clair ; l'accent au survol ou au focus seulement.
   var btn = el(
     "button",
     base +
-      "display:flex;align-items:center;gap:8px;padding:10px 14px;border:0;border-radius:999px;" +
-      "background:" + ACCENT + ";color:#0a1430;font-size:13px;font-weight:700;cursor:pointer;" +
-      "box-shadow:0 4px 14px rgba(0,0,0,.18);transition:transform .12s ease;",
-    "💬 " + LABEL
+      (DISCRET
+        ? "display:flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;" +
+          "border:1px solid #d4d9e1;border-radius:999px;background:#fff;font-size:16px;cursor:pointer;" +
+          "box-shadow:0 2px 8px rgba(0,0,0,.12);"
+        : "display:flex;align-items:center;gap:8px;padding:10px 14px;border:0;border-radius:999px;" +
+          "background:" + ACCENT + ";color:#0a1430;font-size:13px;font-weight:700;cursor:pointer;" +
+          "box-shadow:0 4px 14px rgba(0,0,0,.18);transition:transform .12s ease;"),
+    PLIE ? "💬" : "💬 " + LABEL
   );
+  if (DISCRET) {
+    ["mouseenter", "focus", "mouseleave", "blur"].forEach(function (ev, i) {
+      btn.addEventListener(ev, function () {
+        btn.style.background = i < 2 ? ACCENT : "#fff";
+      });
+    });
+  }
+  if (PLIE) btn.setAttribute("title", LABEL); // plus de libellé visible : infobulle
   // type=button : sans lui, un widget monté dans un <form> hôte (applications
   // d'entreprise qui enveloppent toute la page) soumettrait ce formulaire à
   // chaque clic — l'avis serait perdu et la page rechargée.
@@ -227,7 +251,7 @@
 
   // Replié sur écran étroit : le libellé masquait le contenu du coin bas-droit.
   // Le nom accessible (aria-label) reste entier.
-  if (COMPACT && window.matchMedia) {
+  if (COMPACT && !PLIE && window.matchMedia) {
     var mq = window.matchMedia("(max-width:" + (COMPACT - 1) + "px)");
     var plier = function () {
       btn.textContent = mq.matches ? "💬" : "💬 " + LABEL;
@@ -497,8 +521,8 @@
   }
 
   // SPA : ré-évaluer le garde à chaque changement de route (popstate + patch des
-  // méthodes history). Sans onlyPaths, on ne touche à rien (widget partout).
-  if (ONLY && ONLY.length) {
+  // méthodes history). Sans onlyPaths ni exceptPaths, on ne touche à rien.
+  if ((ONLY && ONLY.length) || (EXCEPT && EXCEPT.length)) {
     var fire = function () { setTimeout(refreshGate, 0); };
     window.addEventListener("popstate", fire);
     ["pushState", "replaceState"].forEach(function (m) {

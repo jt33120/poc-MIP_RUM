@@ -82,7 +82,7 @@ if (!url) console.warn("[sante-anomalies-sql] SAUTÉ — définir SQL_TEST_DATAB
     (await healthScore({ app, period: "7d", device: null, segment: [] })).factors.find((x) => x.key === "anomalies")!;
 
   it("une route testée sans anomalie : la composante est notée, et dit combien de routes", async () => {
-    expect(await anomalies(TESTABLE)).toMatchObject({ earned: 10, detail: "aucune anomalie détectée sur 1 route(s) testable(s)" });
+    expect(await anomalies(TESTABLE)).toMatchObject({ earned: 10, detail: "aucune anomalie détectée sur 1\u00a0route testable" });
   });
 
   it("aucune route avec 5 heures de mesures : non testable, hors du score", async () => {

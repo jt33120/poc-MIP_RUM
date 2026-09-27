@@ -59,13 +59,17 @@ export function Nav({ reglages }: { reglages?: Record<string, React.ReactNode> }
         // Une catégorie verrouillée n'est PAS un lien désactivé mais un <span> :
         // un <a> qu'on se contente de griser reste atteignable au clavier et par
         // « ouvrir dans un nouvel onglet ».
+        // Sur son propre chemin (URL tapée ou partagée), l'entrée fermée est tout de
+        // même marquée comme l'écran courant : sinon aucune entrée de la sidebar ne
+        // l'était (recette du 26/09/2026, écrans Logs, SVI, IA).
         if (c.verrouille) {
           return (
             <span
               key={c.href}
               aria-disabled
+              aria-current={isActive ? "page" : undefined}
               title="Bientôt disponible — accès fermé"
-              className={`${BASE} cursor-not-allowed text-ink-faint`}
+              className={`${BASE} cursor-not-allowed ${isActive ? "bg-panel2 text-ink-soft" : "text-ink-faint"}`}
             >
               <Pastille c={c} isActive={false} />
               {c.label}

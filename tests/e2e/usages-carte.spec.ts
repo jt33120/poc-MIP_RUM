@@ -121,7 +121,7 @@ test.describe("F52 — Carte d'expérience", () => {
     await page.goto(urlCarte(APP_F52), { waitUntil: "domcontentloaded" });
     const graphe = page.locator("#carte-graphe");
     await expect(graphe).toContainText("Autres routes (2)");
-    await expect(page.getByTestId("carte-autres")).toContainText("2 route(s) moins actives regroupées");
+    await expect(page.getByTestId("carte-autres")).toContainText("2 routes moins actives regroupées");
     // 12 routes back → 10 détaillées + l'agrégat ; 1 route front. Le graphe des
     // largeurs ≥ sm est le seul compté (le repli à 390 px porte le sien).
     const svg = page.getByTestId("carte-graphe-svg");
@@ -152,12 +152,12 @@ test.describe("F52 — Carte d'expérience", () => {
     // (hors d'une `Figure`, rien ne la portait) : une ligne par seau de la grille.
     await expect(panneau.locator('[data-testid="threshold-series"] [role="img"]').first()).toHaveAttribute(
       "aria-label",
-      /^Latence p75 et volume d'appels de \/api\/r12 par seau de /,
+      /^Latence p75 et volume d'appels de \/api\/r12 par tranche de /,
     );
     const alternative = panneau.getByTestId("alternative");
     await expect(alternative).toHaveCount(1);
-    await expect(alternative.locator("caption")).toContainText("Latence p75 et appels de /api/r12 par seau de");
-    await expect(alternative.locator("thead th")).toHaveText(["Seau (UTC)", "Latence p75", "Appels"]);
+    await expect(alternative.locator("caption")).toContainText("Latence p75 et appels de /api/r12 par tranche de");
+    await expect(alternative.locator("thead th")).toHaveText(["Période", "Latence p75", "Appels"]);
     expect(await alternative.locator("tbody tr").count()).toBeGreaterThan(0);
     await expect(panneau.getByRole("link", { name: "Traces lentes de ce service" })).toBeVisible();
     // Fermer retire le paramètre, sans quitter l'écran.

@@ -212,8 +212,9 @@ describe("F46 — fenetreDeSession : la fenêtre est ancrée sur la session, pas
     expect(Date.parse(f.to)).toBeLessThanOrEqual(MAINTENANT + 789);
   });
 
-  it("libelleFenetre : « du JJ/MM au JJ/MM », en UTC", () => {
-    expect(libelleFenetre("2026-09-03T22:30:00Z", "2026-09-11T22:30:00Z")).toBe("du 03/09 au 11/09");
+  it("libelleFenetre : « du JJ/MM au JJ/MM », jours de Paris (le fuseau d'affichage)", () => {
+    expect(libelleFenetre("2026-09-03T22:30:00Z", "2026-09-11T22:30:00Z")).toBe("du 04/09 au 12/09");
+    expect(libelleFenetre("2026-09-03T12:00:00Z", "2026-09-11T12:00:00Z")).toBe("du 03/09 au 11/09");
   });
 });
 

@@ -124,9 +124,9 @@ describe("F64 — barres par jour (A5 haut)", () => {
 
   it("l'alternative textuelle a une ligne par jour et un total par ligne", () => {
     const a = alternativeParJour(jours);
-    expect(a.colonnes).toEqual(["Jour (UTC)", "Critique", "Avertissement", "Information", "Total"]);
+    expect(a.colonnes).toEqual(["Jour", "Critique", "Avertissement", "Information", "Total"]);
     expect(a.lignes).toHaveLength(2);
-    expect(a.lignes[0][0]).toBe("2026-09-20");
+    expect(a.lignes[0][0]).toBe("20/09");
     expect(a.lignes[1][4]).toBe("3");
   });
 });
@@ -150,10 +150,22 @@ describe("F64 — état d'une règle (A7, frise)", () => {
     // `formater("count")` sépare les milliers par une espace fine insécable : on
     // compare le texte NORMALISÉ, pas l'octet de l'espace.
     const sansFine = (texte: string) => texte.replace(/[\u202f\u00a0]/g, " ");
-    expect(sansFine(reglageDeRegle(regle({})))).toBe("seuil : > 2 500 sur 15 min · sévérité warning");
+    expect(sansFine(reglageDeRegle(regle({})))).toBe("seuil : > 2 500 sur 15 min · sévérité avertissement");
+    // Ni « baseline », ni « sigma », ni la clé de sévérité : des mots (recette du 26/09/2026).
     expect(sansFine(reglageDeRegle(regle({ mode: "baseline", env: "prod" })))).toBe(
-      "anomalie (baseline) : écart à l'habitude au-delà de 3 sigma sur 15 min · sévérité warning · env prod",
+      "écart à l'habitude : hausse au-delà de 3 fois l'écart habituel sur 15 min · sévérité avertissement · env prod",
     );
+  });
+
+  // Recette du 26/09/2026 : la règle « Taux d'erreur JS » (seuil 0,1 en base)
+  // s'affichait « seuil : > 0 » — `formater("count")` arrondissait un taux à l'entier.
+  it("le seuil s'écrit dans l'unité de sa métrique : un taux en pour cent, jamais arrondi à 0", () => {
+    const sansFine = (texte: string) => texte.replace(/[\u202f\u00a0]/g, " ");
+    const taux = sansFine(reglageDeRegle(regle({ metric: "error_rate", route: null, threshold: 0.1, window_minutes: 60 })));
+    expect(taux).toContain("> 10,0 %");
+    expect(taux).not.toMatch(/> 0 /);
+    expect(sansFine(reglageDeRegle(regle({ metric: "CLS", threshold: 0.1 })))).toContain("> 0,100");
+    expect(sansFine(reglageDeRegle(regle({ metric: "log_errors", threshold: 2.5 })))).toContain("> 2,5");
   });
 });
 
@@ -233,11 +245,74 @@ describe("F64 — flux « À traiter » (A6)", () => {
   });
 
   it("le titre retombe sur la métrique, puis sur la source, jamais sur du vide", () => {
-    expect(titreEvenement({ message: "LCP franchi", metric: "LCP", rule_id: 7, slo_id: null })).toBe("LCP franchi");
-    expect(titreEvenement({ message: null, metric: "LCP", rule_id: 7, slo_id: null })).toBe("LCP (ms)");
+    expect(titreEvenement({ message: "LCP franchi", metric: "LCP", rule_id: null, slo_id: null })).toBe("LCP franchi");
+    expect(titreEvenement({ message: null, metric: "LCP", rule_id: null, slo_id: null })).toBe("LCP (ms)");
     expect(
       titreEvenement({ message: null, metric: null, rule_id: null, slo_id: null }, { source: "issue", libelle: "Issue 1111" }),
     ).toBe("Issue 1111");
+  });
+
+  // Recette du 26/09/2026 : « error_rate > 0.4 (seuil 0.1, fenêtre 60 min, app demo) »,
+  // décimales anglaises et clés internes. L'écran écrit une phrase, la règle nommée
+  // comme dans la liste des règles.
+  const nbsp = (t: string) => t.replace(/[\u202f\u00a0]/g, " ");
+  it("un déclenchement de règle s'écrit en phrase : métrique, valeur, seuil, dans leur unité", () => {
+    const taux = titreEvenement(
+      { message: "error_rate > 0.4 (seuil 0.1, fenêtre 60 min, app demo)", metric: "error_rate", rule_id: 2, slo_id: null, value: 0.37 },
+      undefined,
+      { mode: "threshold", comparator: ">", threshold: 0.1 },
+    );
+    expect(nbsp(taux)).toBe("Taux d'erreur JS : 37 % (seuil 10 %)");
+    const rage = titreEvenement(
+      { message: "event:frustration.rage > 16.0 (seuil 1, fenêtre 60 min, app demo)", metric: "event:frustration.rage", rule_id: 3, slo_id: null, value: 16 },
+      undefined,
+      { mode: "threshold", comparator: ">", threshold: 1 },
+    );
+    expect(rage).toBe("Événement « frustration.rage » : 16 (seuil 1)");
+    const lcp = titreEvenement({ message: null, metric: "LCP", rule_id: 7, slo_id: null, value: 3120 }, undefined, {
+      mode: "threshold",
+      comparator: ">",
+      threshold: 2500,
+    });
+    expect(nbsp(lcp)).toBe("LCP : 3,1 s (seuil 2,5 s)");
+  });
+
+  it("sans la règle (supprimée, hors périmètre), la phrase se tire du message ; aucune clé brute", () => {
+    const logs = titreEvenement({ message: "log_errors > 31.0 (seuil 5, fenêtre 15 min, app demo)", metric: "log_errors", rule_id: 9, slo_id: null, value: null });
+    expect(logs).toBe("Logs en erreur : 31 (seuil 5)");
+    const habitude = titreEvenement({
+      message: "INP > 420.0 anormal (normal≈180.0, écart 4.2σ_MAD, fenêtre 60 min, app demo)",
+      metric: "INP",
+      rule_id: 4,
+      slo_id: null,
+      value: 420,
+    });
+    expect(nbsp(habitude)).toBe("INP : 420 ms, inhabituel, habituellement 180 ms");
+    const slo = titreEvenement({
+      message: "SLO « LCP 99 % » en burn rapide : atteinte 91.2% (objectif 99%, budget consommé 880%, app demo)",
+      metric: null,
+      rule_id: null,
+      slo_id: 3,
+    });
+    expect(nbsp(slo)).toBe("SLO « LCP 99 % » : le budget brûle trop vite, atteinte 91,2 % pour un objectif de 99 %");
+    const release = titreEvenement({
+      message:
+        "LCP p75 en hausse de 30.0 % d'une release à l'autre : 1.1.0 = 2600 contre 1.0.0 = 2000 (seuil +20 %, 120 et 120 mesures, fenêtre 60 min, app demo) — même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte",
+      metric: "LCP",
+      rule_id: 5,
+      slo_id: null,
+      value: null,
+    });
+    expect(nbsp(release)).toBe(
+      "LCP : p75 en hausse de 30 % d'une release à l'autre, 1.1.0 à 2,6 s contre 1.0.0 à 2,0 s (seuil +20 %) — même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte",
+    );
+    const nouvelle = titreEvenement({
+      message: "nouvelle erreur 9f8e7d / app demo — TypeError « x is undefined » (3 occurrence(s) depuis 12:02)",
+      metric: null,
+      rule_id: null,
+      slo_id: null,
+    });
+    expect(nbsp(nouvelle)).toBe("Nouvelle erreur : TypeError « x is undefined » (3 occurrences)");
   });
 });
 
@@ -298,7 +373,7 @@ describe("F68 — réglage d'une règle de release", () => {
 
   it("dit la hausse tolérée, la fenêtre et la phrase obligatoire", () => {
     expect(sansFineF68(reglageDeRegle(regle({ mode: "release", threshold: 20, window_minutes: 1440 })))).toBe(
-      "régression de release : p75 en hausse de +20 % ou plus contre la release précédente, sur 1 440 min · sévérité warning · " +
+      "régression de release : p75 en hausse de +20 % ou plus contre la release précédente, sur 1 440 min · sévérité avertissement · " +
         "même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte",
     );
   });

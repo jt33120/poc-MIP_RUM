@@ -1,82 +1,55 @@
-// Vitrine PUBLIQUE (/presentation) : UNE page pour tous (plan § 8.2, P**.2).
+// La présentation PUBLIQUE (/presentation) : une vitrine de deux à trois écrans,
+// pour une DSI qui découvre le produit.
 //
-// Visiteur et connecté lisent les mêmes parties ; le connecté a seulement une autre
-// action (« Ouvrir la console ») et, dans la partie 1, des écrans cliquables. Il
-// n'y a plus de seconde rédaction pour le connecté : elle se croyait rendue dans la
-// coquille de la console, alors que /presentation est un chemin public que le
-// layout n'enveloppe jamais (lib/chemins-publics.ts), et elle disait autre chose.
+// POURQUOI SI COURTE (recette du 26/09/2026). La page faisait 15 400 px à 1440 et
+// environ 10 700 mots : le message clé — ce que fait l'outil, où sont les données, où
+// en est le POC — se perdait sous les cartes, les codes de lot et les chemins du code.
+// Elle garde désormais, dans cet ordre : la promesse et le statut daté (premier
+// écran), trois preuves visuelles lisibles, le tableau « Où sont les données, et sous
+// quel droit » (seule source de l'hébergement), puis l'invitation à la démo. Le
+// détail vérifiable — capacités, limites, ce qui reste, registre, spécifications —
+// est dans le dossier technique (/presentation/dossier, Dossier.tsx), en un clic.
 //
-// Ordre : en-tête (PS0) → sommaire (PS1) → « Ce qu'il contient » → « Ce qu'il sait
-// faire » → « Ce qui reste » → « Le détail » → pied de page (PS12). Chaque partie
-// est un fichier à elle, rempli par son lot (P**.3 à P**.6) : ce montage ne change
-// pas quand elles se remplissent.
-//
-// Rendu serveur ; seule la bascule de thème est un îlot client. Le fond texturé vit
-// dans globals.css (.mip-sci), pas ici : /select et /select/new le réutilisent, et
-// importer ce module pour une chaîne CSS y tirerait toute la vitrine.
-import Image from "next/image";
+// Visiteur ou connecté, la même page : seule l'action change (« Ouvrir la console »
+// au lieu de la démo et de la connexion). /presentation est un chemin public
+// (lib/chemins-publics.ts), que le layout ne met jamais dans la coquille de la
+// console. Rendu serveur ; les seuls îlots client sont la bascule de thème et le
+// cadre défilant de la table d'hébergement.
 import Link from "next/link";
-import { Ancres } from "@/components/presentation/Ancres";
-import { Annexe } from "@/components/presentation/Annexe";
-import { Contient } from "@/components/presentation/Contient";
-import { LegendeCapture } from "@/components/presentation/LegendeCapture";
-import { Releve } from "@/components/presentation/Releve";
-import { Reste } from "@/components/presentation/Reste";
-import { SaitFaire } from "@/components/presentation/SaitFaire";
+import { EnTete, Pied, PocLabel } from "@/components/presentation/Cadre";
+import { Hebergement } from "@/components/presentation/Hebergement";
+import { Preuves } from "@/components/presentation/Preuves";
+import { StatutPoc } from "@/components/presentation/StatutPoc";
 import { ICON_PATHS, Icon } from "@/components/icons";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import type { SessionUser } from "@/lib/auth";
 import { demoConfig } from "@/lib/demo";
-import { DATA_SOURCES } from "@/lib/legal";
-import { CAPTURES_VUE_ENSEMBLE, dateDesCaptures, lireManifestePortail } from "@/lib/portail-manifeste";
-
-/** Marque MIP RUM — pouls sur carré orange + wordmark. */
-function BrandMark() {
-  return (
-    <span className="flex items-center gap-2.5">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-deep shadow-glow">
-        <Icon paths={ICON_PATHS.activity} className="h-5 w-5 text-white" strokeWidth={2.4} />
-      </span>
-      <span className="leading-tight">
-        <span className="block text-base font-bold tracking-tight text-ink">
-          MIP <span className="text-accent">RUM</span>
-        </span>
-        <span className="block text-[10px] uppercase tracking-[0.18em] text-ink-faint">
-          Real User Monitoring
-        </span>
-      </span>
-    </span>
-  );
-}
-
-/** Label « POC » — une étiquette apposée sur le produit, pas un badge de marque :
- *  légèrement de travers, bord pointillé, comme collée là en attendant. */
-function PocLabel({ className = "" }: { className?: string }) {
-  return (
-    <span
-      className={`inline-flex -rotate-[5deg] items-center rounded-md border border-dashed border-accent/70 bg-accent/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-accent-ink shadow-sm dark:bg-accent/15 ${className}`}
-    >
-      POC
-    </span>
-  );
-}
 
 const PLEIN =
   "bg-gradient-to-r from-accent via-[#fca62b] to-accent-deep text-navy-950 shadow-[0_8px_22px_-10px_rgba(248,145,1,0.9)] hover:brightness-110 hover:shadow-[0_10px_26px_-8px_rgba(248,145,1,0.95)]";
 const CONTOUR = "border border-line bg-panel/70 text-ink backdrop-blur-sm hover:border-accent/50";
-const VERROUILLE =
-  "cursor-not-allowed border border-dashed border-line bg-panel/40 text-ink-faint";
+const VERROUILLE = "cursor-not-allowed border border-dashed border-line bg-panel/40 text-ink-soft";
 
 /**
- * Les actions de la vitrine, en haut à droite (`size="sm"`) et sous le titre.
+ * Les actions de la présentation, dans l'en-tête (`size="sm"`) et sous le titre.
  *
  * Connecté : une seule, ouvrir la console. Visiteur : démo et connexion côte à
  * côte, toujours dans cet ordre ; sans DEMO_USER_APPS, la démo reste affichée mais
  * verrouillée — pas de lien mort, juste une promesse pas encore tenue, avec l'info
  * au survol.
  */
-export function Actions({ size = "md", user, demoOuverte }: { size?: "sm" | "md"; user: SessionUser | null; demoOuverte?: boolean }) {
-  const suffixe = size === "sm" ? "-top" : "";
+export function Actions({
+  size = "md",
+  user,
+  demoOuverte,
+  fin = false,
+}: {
+  size?: "sm" | "md";
+  user: SessionUser | null;
+  demoOuverte?: boolean;
+  /** Le rappel en bas de page : ses repères de test ne doivent pas doubler ceux du titre. */
+  fin?: boolean;
+}) {
+  const suffixe = fin ? "-fin" : size === "sm" ? "-top" : "";
   if (user) {
     // <a>, PAS <Link>, pour la même raison que /demo plus bas : la vitrine est rendue
     // sans la coquille de la console, et une navigation client ne re-rend pas le
@@ -129,96 +102,78 @@ export function Actions({ size = "md", user, demoOuverte }: { size?: "sm" | "md"
   );
 }
 
+/** Coche des promesses (le jeu d'icônes partagé n'en a pas). */
+const COCHE = <path d="M20 6 9 17l-5-5" />;
+
+/** Ce que l'outil apporte, en trois phrases vérifiables (le dossier technique en donne les limites). */
+const PROMESSES: readonly string[] = [
+  "Une balise dans les pages du site, ou une extension installée sur les postes de l'entreprise, sans toucher au site.",
+  "Chaque erreur remonte à la session, à l'action et à l'appel serveur qui l'ont produite.",
+  "Une collecte au format OpenTelemetry, un standard ouvert.",
+];
+
 export function Landing({ user, demoOuverte }: { user: SessionUser | null; demoOuverte?: boolean }) {
   return (
     <div className="mip-sci flex min-h-screen flex-col">
-      {/* Barre ------------------------------------------------------------- */}
-      <header className="border-b border-line bg-panel/60 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
-          <Link href="/presentation" aria-label="MIP RUM — accueil">
-            <BrandMark />
-          </Link>
-          {/* Doublon du label du titre : masqué sous sm, où la barre déborderait
-              — le H1 juste dessous le porte déjà. */}
-          <PocLabel className="hidden sm:inline-flex" />
-          <div className="ml-auto flex items-center gap-2.5">
-            <ThemeToggle />
-            <Actions size="sm" user={user} demoOuverte={demoOuverte} />
-          </div>
-        </div>
-      </header>
+      <EnTete>
+        <Actions size="sm" user={user} demoOuverte={demoOuverte} />
+      </EnTete>
 
       <main className="flex-1">
-        {/* PS0 — ce que c'est, de quand date l'état décrit, et une vraie capture */}
-        <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 py-14 lg:grid-cols-[minmax(0,27rem)_minmax(0,1fr)] lg:py-20">
+        {/* Premier écran : la promesse, les actions, et où en est le POC. */}
+        <div className="mx-auto grid max-w-6xl items-start gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)] lg:py-16">
           <div className="min-w-0 animate-fade-up">
-            <h1 className="flex flex-wrap items-center gap-x-3 gap-y-2 text-4xl font-bold tracking-tight text-ink sm:text-5xl">
-              MIP <span className="text-accent">RUM</span>
+            <h1 className="flex flex-wrap items-center gap-x-4 gap-y-2 text-4xl font-bold tracking-tight text-ink sm:text-5xl">
+              <span>
+                MIP <span className="text-accent">RUM</span>
+              </span>
               <PocLabel className="translate-y-1" />
             </h1>
-            <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink-soft">
-              Mesure de l&apos;expérience vécue par les visiteurs réels d&apos;un site ou d&apos;une
-              application : vitesse d&apos;affichage, réactivité, erreurs, parcours. Collecte au format
-              OpenTelemetry, données hébergées en Union européenne.
+            <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink">
+              Voir ce que vivent vraiment les visiteurs d&apos;un site ou d&apos;une application : vitesse
+              d&apos;affichage, réactivité, erreurs et parcours, mesurés dans leurs propres navigateurs.
             </p>
-            <Releve />
+            <ul className="mt-6 max-w-xl space-y-2.5">
+              {PROMESSES.map((p) => (
+                <li key={p} className="flex gap-3 text-[15px] leading-relaxed text-ink-soft">
+                  <Icon paths={COCHE} className="mt-1 h-4 w-4 shrink-0 text-accent-ink" strokeWidth={2.4} />
+                  {p}
+                </li>
+              ))}
+            </ul>
             <div className="mt-8">
               <Actions user={user} demoOuverte={demoOuverte} />
             </div>
           </div>
-
-          {/* Capture réelle du portail (vue d'ensemble, V-A), une par thème.
-              Le cadre reste DANS sa colonne, au ratio 8/5 des captures 1440 × 900
-              de scripts/captures-portail.mjs : elles y entrent entières. Une
-              capture plus large (celles d'avant P**.7) est recadrée depuis son
-              coin haut gauche. La légende n'est datée que par le manifeste des
-              captures (lib/portail-manifeste.ts) : sans lui, la date n'est pas
-              établie, et la légende n'en porte aucune. */}
           <div className="min-w-0 animate-fade-up">
-            <div className="relative aspect-[8/5] overflow-hidden rounded-xl border border-line shadow-pop">
-              <Image
-                src="/portail/overview-light.png"
-                alt="La vue d'ensemble de la console : score de santé, sessions commencées, pages vues, erreurs pour 100 pages vues et Core Web Vitals au p75."
-                fill
-                sizes="(min-width: 1024px) 40rem, 100vw"
-                priority
-                className="object-cover object-left-top dark:hidden"
-              />
-              <Image
-                src="/portail/overview-dark.png"
-                alt=""
-                aria-hidden
-                fill
-                sizes="(min-width: 1024px) 40rem, 100vw"
-                className="hidden object-cover object-left-top dark:block"
-              />
-            </div>
-            <LegendeCapture date={dateDesCaptures(lireManifestePortail(), CAPTURES_VUE_ENSEMBLE)} />
+            <StatutPoc />
           </div>
         </div>
 
-        <Ancres />
-        <Contient user={user} />
-        <SaitFaire />
-        <Reste />
-        <Annexe />
+        <Preuves />
+        <Hebergement />
+
+        {/* Dernier écran : l'invitation, sans rien redire de ce qui précède. */}
+        <section aria-labelledby="suite-titre" className="border-t border-line">
+          <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-12 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:py-16">
+            <div className="max-w-2xl">
+              <h2 id="suite-titre" className="text-2xl font-bold tracking-tight text-ink">
+                Voir par vous-même
+              </h2>
+              <p className="mt-2 leading-relaxed text-ink-soft">
+                La démo ouvre la console en lecture seule, sur un jeu de données de démonstration. Le{" "}
+                <Link href="/presentation/dossier" className="font-medium text-ink underline decoration-line underline-offset-2 hover:decoration-ink">
+                  dossier technique
+                </Link>{" "}
+                détaille chaque capacité, ses limites et ce qui reste à faire.
+              </p>
+            </div>
+            <Actions user={user} demoOuverte={demoOuverte} fin />
+          </div>
+        </section>
       </main>
 
-      {/* Pied de page (PS12) ------------------------------------------------ */}
-      <footer className="border-t border-line bg-panel/60 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-4 gap-y-2 px-6 py-5 text-xs text-ink-soft">
-          <span>MIP RUM — POC · OpenTelemetry · données hébergées en UE, hébergeurs de droit américain</span>
-          <Link href="/legal/cgu" className="hover:text-ink">CGU</Link>
-          <Link href="/legal/cgv" className="hover:text-ink">CGV</Link>
-          <Link href="/legal/confidentialite" className="hover:text-ink">Confidentialité</Link>
-          {/* CC BY 4.0 : l'attribution de la base GeoIP doit être visible (lib/legal.ts). */}
-          {DATA_SOURCES.map((s) => (
-            <a key={s.name} href={s.url} className="hover:text-ink" rel="noopener noreferrer">
-              {s.attribution}
-            </a>
-          ))}
-        </div>
-      </footer>
+      <Pied />
     </div>
   );
 }

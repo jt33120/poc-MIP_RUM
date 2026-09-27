@@ -6,7 +6,7 @@ import { q } from "./db";
 import { type FiltersLike } from "./filters";
 import { bucketExpr, bucketSeriesSql, sessionJoin } from "./query-compiler";
 import { sqlContext } from "./query-sql";
-import type { Appel } from "./tracing-ancres";
+import { TRACES_PAR_APPEL, type Appel } from "./tracing-ancres";
 
 export interface TraceCoverage {
   total: number; // appels API vus du navigateur (spans front)
@@ -44,11 +44,30 @@ const JUMEAU_BACK =
   "left join rum_span b on b.app_id = fr.app_id and b.trace_id = fr.trace_id and b.tier = 'back' and b.parent_span_id = fr.span_id";
 
 /**
- * Chemin vu du navigateur, origine retirée. UNE expression pour le regroupement
- * des appels, le filtre `appel` des traces lentes et leur affichage : un appel
- * classé et les traces qu'il ouvre ne peuvent pas diverger sur la normalisation.
+ * Chemin d'un appel vu du navigateur, NORMALISÉ comme une route : origine, requête
+ * et fragment retirés, puis chaque segment d'identifiant — nombre entier, UUID,
+ * hexadécimal de 16 caractères ou plus, les règles de `normalizeRoute` du SDK —
+ * remplacé par `:id`. `/api/demo/items/42` devient `/api/demo/items/:id`, comme la
+ * route que le serveur déclare pour le même appel.
+ *
+ * POURQUOI. Sans elle, chaque identifiant faisait sa ligne : 24 appels « distincts »
+ * sur /tracing à la recette du 26/09/2026, dont une dizaine vus une seule fois, et
+ * 8 lignes sur 10 des « appels réseau les plus lents » de /mobile. Sur une vraie
+ * application aux milliers d'identifiants, le classement devenait inutilisable.
+ * Normalisé à la LECTURE : l'historique déjà reçu en profite, et aucun SDK (web,
+ * mobile, extension) n'a à être redéployé.
+ *
+ * UNE expression pour le regroupement des appels, le filtre `appel` des traces
+ * lentes et leur affichage (`/tracing`), et la liste de `/mobile` : un appel classé
+ * et les traces qu'il ouvre ne peuvent pas diverger sur la normalisation.
  */
-const CHEMIN = "regexp_replace(coalesce(fr.url, ''), '^https?://[^/]+', '')";
+export function cheminAppelSql(colonne: string): string {
+  const sansOrigine = `regexp_replace(coalesce(${colonne}, ''), '^https?://[^/]+', '')`;
+  const sansRequete = `regexp_replace(${sansOrigine}, '[?#].*$', '')`;
+  return `regexp_replace(${sansRequete}, '/([0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,})(?=/|$)', '/:id', 'gi')`;
+}
+
+const CHEMIN = cheminAppelSql("fr.url");
 
 /** Échec d'un appel front : statut ≥ 400, ou 0 / absent (coupure réseau, requête annulée). */
 const ECHEC = "coalesce(fr.status_code, 0) >= 400 or coalesce(fr.status_code, 0) = 0";
@@ -260,6 +279,12 @@ export interface SlowTrace {
   back_ms: number | null;
   network_ms: number | null;
   ts: Date | string;
+  /**
+   * Nombre de traces de CET appel (même méthode, même chemin) sur toute la plage
+   * filtrée, et pas seulement parmi les lignes rendues : la ligne « N autres traces »
+   * le dit sans compter sur les 20 lues.
+   */
+  traces_appel: number;
 }
 
 export interface TraceSpanRow {
@@ -360,10 +385,17 @@ export async function errorsOfTrace(traceId: string, opts: { apps: string[] | nu
 /**
  * Les appels les plus lents de la plage, décomposés front / serveur / réseau.
  *
+ * AU PLUS `TRACES_PAR_APPEL` TRACES PAR APPEL, EN SQL (recette du 26/09/2026). Les 20
+ * plus lentes étaient toutes « GET /api/demo/items/42 », et le regroupement par appel
+ * se faisait APRÈS, sur ces 20 : les autres appels lents n'y entraient jamais. Chaque
+ * appel (même méthode, même chemin) est désormais classé à part (`row_number`), et
+ * `traces_appel` compte toutes ses traces de la plage.
+ *
  * `opts.appel` restreint à UN appel (paramètre d'écran `appel=<méthode> <chemin>`,
  * lu par `lireAppel`) : même méthode et même chemin — l'expression `CHEMIN` qui
- * regroupe les appels de `apiCallsDecomposition` —, valeurs liées. Filtre
- * d'écran : il ne change aucun chiffre d'une autre section.
+ * regroupe les appels de `apiCallsDecomposition` —, valeurs liées, et ses 20 traces
+ * les plus lentes, sans plafond par appel. Filtre d'écran : il ne change aucun
+ * chiffre d'une autre section.
  */
 export async function slowTraces(f: FiltersLike, opts?: { appel?: Appel }): Promise<SlowTrace[]> {
   const sql = await sqlContext(f);
@@ -371,19 +403,26 @@ export async function slowTraces(f: FiltersLike, opts?: { appel?: Appel }): Prom
   const appel = opts?.appel
     ? ` and fr.method = ${sql.bind(opts.appel.method)} and ${CHEMIN} = ${sql.bind(opts.appel.url)}`
     : "";
+  const plafond = opts?.appel ? "" : ` where t.rang <= ${sql.bind(TRACES_PAR_APPEL)}`;
   return q<SlowTrace>(
-    `select fr.trace_id, fr.span_id, fr.session_id,
-            ${CHEMIN} as url,
-            fr.method, fr.status_code as front_status, fr.duration_ms as front_ms,
-            b.duration_ms as back_ms,
-            case when b.duration_ms is not null then greatest(fr.duration_ms - b.duration_ms, 0) end as network_ms,
-            fr.ts
-     from rum_span fr
-     ${JUMEAU_BACK}
-     ${sessionJoin("fr", "s")}
-     where fr.tier = 'front'${where}${appel}
-     order by fr.duration_ms desc
-     limit 20`,
+    `select t.trace_id, t.span_id, t.session_id, t.url, t.method, t.front_status, t.front_ms,
+            t.back_ms, t.network_ms, t.ts, t.traces_appel
+       from (
+         select fr.trace_id, fr.span_id, fr.session_id,
+                ${CHEMIN} as url,
+                fr.method, fr.status_code as front_status, fr.duration_ms as front_ms,
+                b.duration_ms as back_ms,
+                case when b.duration_ms is not null then greatest(fr.duration_ms - b.duration_ms, 0) end as network_ms,
+                fr.ts,
+                row_number() over (partition by fr.method, ${CHEMIN} order by fr.duration_ms desc, fr.span_id) as rang,
+                (count(*) over (partition by fr.method, ${CHEMIN}))::int as traces_appel
+         from rum_span fr
+         ${JUMEAU_BACK}
+         ${sessionJoin("fr", "s")}
+         where fr.tier = 'front'${where}${appel}
+       ) t${plafond}
+      order by t.front_ms desc, t.span_id
+      limit 20`,
     sql.params,
   );
 }

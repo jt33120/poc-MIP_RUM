@@ -5,23 +5,17 @@
 import type { ImpactLigne } from "@/components/ImpactTable";
 import type { Constat } from "@/components/InsightStrip";
 import { formater } from "./fmt-ids";
+import { fmtDate, fmtPlage, pluriel } from "./format";
 import { classerParGravite, ecartALaReference, estFaible } from "./impact";
 import type { AnomalyRow } from "./health";
 import type { AlertFiringRow } from "./queries-v2";
 import { verdictDeploiement, type DeployImpact } from "./deploys-verdict";
 import { RAISON_MOINS_DE_DEUX_RELEASES, type ChoixReleases } from "./presets";
 import type { AnalyticsQuery, ResolvedRange } from "./query-contract";
+import type { IntervalleP75 } from "./stats/incertitude";
 
 // ─────────────────────────────── Références (§ 3.12) ───────────────────────────────
 
-const JJMM_HHMM = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
 
 const NOM_PRECEDENTE: Record<string, string> = {
   "1h": "heure précédente",
@@ -31,7 +25,7 @@ const NOM_PRECEDENTE: Record<string, string> = {
 
 /**
  * Référence d'un écart `cmp=prev`, écrite EN TOUTES LETTRES à côté du delta (P4,
- * § 3.12) : « vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC) ». La plage est
+ * § 3.12) : « vs 24 h précédentes (20/09 14:00 → 21/09 14:00) », heure de Paris. La plage est
  * celle de `previousRange` : même durée, immédiatement avant.
  */
 export function referencePrecedente(range: Pick<ResolvedRange, "from" | "to" | "preset">): string {
@@ -39,7 +33,7 @@ export function referencePrecedente(range: Pick<ResolvedRange, "from" | "to" | "
   const to = Date.parse(range.to);
   const debut = new Date(from - (to - from));
   const nom = (range.preset && NOM_PRECEDENTE[range.preset]) ?? "période précédente";
-  return `vs ${nom} (${JJMM_HHMM.format(debut)} → ${JJMM_HHMM.format(new Date(from))} UTC)`;
+  return `vs ${nom} (${fmtPlage(debut, from)})`;
 }
 
 /** Référence d'un écart `cmp=release` : même fenêtre, la release A (§ 3.12). */
@@ -63,11 +57,11 @@ export function lectureErreursPour100(e: {
 }): string {
   if (!e.restreint) return "toutes sources : inclut les erreurs serveur sans page vue (colonne de source absente)";
   const exclues = [
-    e.sansSource > 0 ? `${formater("count", e.sansSource)} occurrence(s) sans source déclarée` : null,
-    e.serveur > 0 ? `${formater("count", e.serveur)} occurrence(s) hors navigateur (serveur, mobile)` : null,
+    e.sansSource > 0 ? `${pluriel(e.sansSource, "occurrence")} sans source déclarée` : null,
+    e.serveur > 0 ? `${pluriel(e.serveur, "occurrence")} hors navigateur (serveur, mobile)` : null,
   ].filter((x): x is string => x !== null);
   return exclues.length
-    ? `erreurs navigateur seulement ; ${exclues.join(" et ")} non comptée(s)`
+    ? `erreurs navigateur seulement ; ${exclues.join(" et ")} non ${e.sansSource + e.serveur < 2 ? "comptée" : "comptées"}`
     : "erreurs navigateur seulement";
 }
 
@@ -234,7 +228,7 @@ export function estVitalDecoupe(v: string | null | undefined): v is VitalDecoupe
   return (VITAUX_DECOUPES as readonly string[]).includes(v ?? "");
 }
 
-/** Une ligne de `vitalsBreakdown` : les trois p75 et leurs effectifs. */
+/** Une ligne de `vitalsBreakdown` : les trois p75, leurs effectifs et leurs intervalles. */
 export interface LigneDecoupage {
   valeur: string | null;
   samples: number;
@@ -244,10 +238,19 @@ export interface LigneDecoupage {
   lcp_n: number;
   inp_n: number;
   cls_n: number;
+  /** Intervalle à 95 % de chaque p75 : le verdict suit alors la règle des tuiles. */
+  lcp_intervalle?: IntervalleP75;
+  inp_intervalle?: IntervalleP75;
+  cls_intervalle?: IntervalleP75;
 }
 
 const P75: Record<VitalDecoupe, "lcp_p75" | "inp_p75" | "cls_p75"> = { LCP: "lcp_p75", INP: "inp_p75", CLS: "cls_p75" };
 const N: Record<VitalDecoupe, "lcp_n" | "inp_n" | "cls_n"> = { LCP: "lcp_n", INP: "inp_n", CLS: "cls_n" };
+const INTERVALLE: Record<VitalDecoupe, "lcp_intervalle" | "inp_intervalle" | "cls_intervalle"> = {
+  LCP: "lcp_intervalle",
+  INP: "inp_intervalle",
+  CLS: "cls_intervalle",
+};
 
 /** « +1,2 s vs ensemble », « −0,012 vs ensemble » : un écart de p75, jamais une contribution. */
 function texteEcart(vital: VitalDecoupe, ecart: number): string {
@@ -289,6 +292,10 @@ export function lignesSegments(
         affichage: formater(v === "CLS" ? "cls" : "ms", r[P75[v]]),
         vital: v,
         n: r[N[v]],
+        // Le verdict tient sur l'intervalle, comme sur la tuile du même vital : « À
+        // améliorer » affirmé sur 312 ms quand la tuile disait « incertain » pour la
+        // même valeur se contredisait (recette du 26/09/2026).
+        ...(r[INTERVALLE[v]] ? { intervalle: r[INTERVALLE[v]] } : {}),
       });
       return {
         cle: cle(r.valeur),
@@ -321,7 +328,7 @@ export function heuresAngleMort(cellules: readonly { robot: string; reel: string
 
 /** La règle d'un angle mort, écrite avec la borne de `lib/rating.ts` (jamais recopiée). */
 export function regleAngleMort(borneBon: number): string {
-  return `Robot à l'état ok ET LCP p75 réel au-dessus de ${formater("ms", borneBon)} (borne Bon de lib/rating.ts) sur la même heure et la même route.`;
+  return `Robot à l'état ok et LCP p75 réel au-dessus de ${formater("ms", borneBon)} (seuil Bon du LCP) sur la même heure et la même route.`;
 }
 
 // ─────────────────────────────── Constats (§ 5.1.2, zone 4) ───────────────────────────────
@@ -408,10 +415,9 @@ export interface ConstatsCalcules {
 
 const pct = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v} %`);
 
-/** « 22/09 14:00 UTC » */
+/** « 22/09 14:00 », heure de Paris (le fuseau d'affichage, nommé dans la barre du haut). */
 function horodatage(ts: Date | string): string {
-  const d = ts instanceof Date ? ts : new Date(ts);
-  return `${JJMM_HHMM.format(d)} UTC`;
+  return fmtDate(ts);
 }
 
 function constatDeploiement(
@@ -447,7 +453,7 @@ function constatsAlertes(
     return [
       {
         type: "alerte",
-        titre: `${formater("count", alertes.n)} alerte(s) non acquittée(s)`,
+        titre: `${pluriel(alertes.n, "alerte non acquittée", "alertes non acquittées")}`,
         regle: REGLE_ALERTES,
         href: liens.alertes,
       },
@@ -475,8 +481,8 @@ function constatsAlertes(
       type: "alerte",
       titre:
         nommees.length > 0
-          ? `et ${formater("count", reste)} autre(s) alerte(s) non acquittée(s)`
-          : `${formater("count", reste)} alerte(s) non acquittée(s)`,
+          ? `et ${pluriel(reste, "autre alerte non acquittée", "autres alertes non acquittées")}`
+          : `${pluriel(reste, "alerte non acquittée", "alertes non acquittées")}`,
       regle: REGLE_ALERTES,
       href: liens.alertes,
     });
@@ -531,7 +537,7 @@ export function constatsVueEnsemble(e: EntreesConstats, liens: LiensConstats): C
       const nom = g.sample_message ?? g.error_type ?? `empreinte ${g.fingerprint.slice(0, 8)}`;
       constats.push({
         type: "regression",
-        titre: `Erreur réapparue : ${nom} (${formater("count", g.occurrences)} occurrence(s) sur la période)`,
+        titre: `Erreur réapparue : ${nom} (${pluriel(g.occurrences, "occurrence")} sur la période)`,
         regle: REGLE_REGRESSION,
         href: liens.erreur(g),
       });
@@ -540,7 +546,7 @@ export function constatsVueEnsemble(e: EntreesConstats, liens: LiensConstats): C
     if (reste > 0) {
       constats.push({
         type: "regression",
-        titre: `et ${formater("count", reste)} autre(s) groupe(s) d'erreurs régressé(s)`,
+        titre: `et ${pluriel(reste, "autre groupe d'erreurs régressé", "autres groupes d'erreurs régressés")}`,
         regle: REGLE_REGRESSION,
         href: liens.regresses,
       });

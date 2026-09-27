@@ -1,20 +1,30 @@
 // Page « API et MCP » — les deux manières de sortir la donnée du portail :
-//   · l'API REST v1, pour un front ou un partenaire ;
+//   · l'API REST, pour un tableau de bord partenaire ou une chaîne d'intégration ;
 //   · le serveur MCP, pour un agent IA.
 // Une seule page parce qu'un seul socle : le serveur MCP est un CLIENT de
 // l'API v1. Il n'ouvre aucun accès qu'un jeton n'ouvrait pas déjà.
 //
-// LA LISTE DES ENDPOINTS N'EST PLUS ÉCRITE ICI. Elle l'était, et elle a menti :
+// LA LISTE DES ROUTES N'EST PAS ÉCRITE ICI. Elle l'était, et elle a menti :
 // elle annonçait `GET /api/v1/ai`, route supprimée du produit (la supervision IA
 // est passée chez xSOM AI Guard, cf. ADR-0001). C'était la troisième copie de la
 // même liste — spec OpenAPI, descripteur /api/v1, cette page — et la troisième
-// avait dérivé. Elle vient maintenant de `endpointsDeclares()`, comme le
-// descripteur : une seule source, celle qui sert aussi les schémas.
+// avait dérivé. Elle vient de la spec (`buildOpenApi`), comme le descripteur :
+// une seule source, celle qui sert aussi les schémas.
+//
+// CE QUE LA RECETTE DU 26/09/2026 A CHANGÉ. La page faisait 4 300 px et présentait
+// le MCP trois fois (bloc « Brancher une IA », carte, section « Serveur MCP ») ;
+// elle renvoyait à une variable serveur pour obtenir un jeton ; elle titrait
+// « lecture seule » une liste qui contient `POST /deploys` ; deux styles de blocs
+// de code coexistaient. D'où : un sommaire à ancres, un encart « Obtenir un
+// jeton », une seule section MCP, et `CopyBlock` pour tout bloc de code.
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { CopyBlock } from "@/components/CopyBlock";
 import { PageHeader } from "@/components/PageHeader";
-import { endpointsDeclares } from "@/lib/api/openapi";
+import { TableDefilante } from "@/components/TableDefilante";
+import { buildOpenApi, endpointsDeclares } from "@/lib/api/openapi";
 import {
+  CONSOLE_ORIGINE,
   MCP_ENDPOINT,
   commandeCli,
   configDistante,
@@ -26,45 +36,43 @@ import { OUTILS } from "@mip/mcp-tools/lib/catalogue.mjs";
 
 export const dynamic = "force-dynamic";
 
-const PROD_BASE = "https://mip-rum-console.vercel.app";
-// Le dépôt s'appelle poc-MIP_RUM. Il était écrit `mip-rum` ici : les deux liens
-// « Documentation → » de cette page tombaient donc en 404 sur GitHub.
+// Le dépôt s'appelle poc-MIP_RUM. Il était écrit `mip-rum` ici : les liens
+// « Documentation » de cette page tombaient donc en 404 sur GitHub.
 const GH_BASE = "https://github.com/jt33120/poc-MIP_RUM/blob/master/docs";
 
-const ENDPOINTS = endpointsDeclares();
-
-function LinkCard({
-  href,
-  title,
-  desc,
-  external = true,
-}: {
-  href: string;
-  title: string;
+/** Une route de la référence : méthode, chemin, description, et si elle écrit. */
+interface Route {
+  method: string;
+  path: string;
   desc: string;
-  external?: boolean;
-}) {
-  const cls =
-    "card flex flex-col gap-1 p-4 transition hover:shadow-pop hover:border-accent/40";
-  const inner = (
-    <>
-      <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-        {title}
-        <span className="text-ink-faint">→</span>
-      </span>
-      <span className="text-xs leading-relaxed text-ink-soft">{desc}</span>
-    </>
-  );
-  return external ? (
-    <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
-      {inner}
-    </a>
-  ) : (
-    <Link href={href} className={cls}>
-      {inner}
-    </Link>
-  );
+  ecriture?: boolean;
 }
+
+/**
+ * Les routes /api/v1 : les lectures GET de la spec, la lecture en POST de
+ * l'Explorer (l'AST ne tient pas dans une URL), et l'unique écriture, le marqueur
+ * de déploiement — hors spec, décrit ici à la main (cf. `buildOpenApi`).
+ */
+function routes(): Route[] {
+  const paths = buildOpenApi().paths as Record<string, { post?: { summary?: string } }>;
+  const posts: Route[] = Object.entries(paths)
+    .filter(([, op]) => op.post)
+    .map(([chemin, op]) => ({ method: "POST", path: `/api/v1${chemin}`, desc: op.post?.summary ?? "" }));
+  return [
+    ...endpointsDeclares(),
+    ...posts,
+    {
+      method: "POST",
+      path: "/api/v1/deploys",
+      desc:
+        "Marqueur de déploiement (intégration continue), avec le jeton de CI « deploys:write » d'une application ; " +
+        "un jeton d'API y est encore accepté jusqu'au 31/12/2026. Le serveur MCP ne l'expose pas.",
+      ecriture: true,
+    },
+  ];
+}
+
+const ROUTES = routes();
 
 /** Dérivé du catalogue réellement enregistré par le serveur MCP. */
 const OUTILS_MCP: { nom: string; desc: string }[] = OUTILS.map((outil) => ({
@@ -72,96 +80,211 @@ const OUTILS_MCP: { nom: string; desc: string }[] = OUTILS.map((outil) => ({
   desc: outil.resume,
 }));
 
+/** Le sommaire : une ancre par section, dans l'ordre de la page. */
+const SOMMAIRE = [
+  { id: "jeton", titre: "Obtenir un jeton" },
+  { id: "mcp", titre: "Brancher un agent IA (MCP)" },
+  { id: "api", titre: "API REST" },
+  { id: "routes", titre: "Routes /api/v1" },
+  { id: "exemples", titre: "Exemples" },
+] as const;
+
+/** Titre de section à ancre ; `scroll-mt` : l'ancre ne passe pas sous le haut de page. */
+function Section({ id, titre, children, badge }: { id: string; titre: string; children: ReactNode; badge?: ReactNode }) {
+  return (
+    <section id={id} aria-labelledby={`${id}-titre`} className="card mb-6 min-w-0 scroll-mt-6 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id={`${id}-titre`} className="text-sm font-semibold text-ink">
+          {titre}
+        </h2>
+        {badge}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function SousTitre({ children }: { children: ReactNode }) {
+  return <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{children}</h3>;
+}
+
+// Cellules empilées sous 640 px : une route ou un outil se lit en fiche plutôt
+// que dans une colonne tronquée (« Liveness (san… », recette du 26/09/2026).
+const CELLULE_TETE = "block px-4 pt-2.5 font-mono text-xs text-ink sm:table-cell sm:whitespace-nowrap sm:py-2.5";
+const CELLULE_DESC = "block px-4 pb-2.5 text-xs text-ink-soft sm:table-cell sm:py-2.5";
+
 export default async function ApiDocs() {
   // L'adresse du serveur est une constante du dépôt ; son état, non. La page
   // interroge /health à chaque rendu pour ne pas distribuer une URL morte comme
   // si elle marchait. Échec doux : « pas pu vérifier » n'est pas « en panne ».
   const etat = await sonderMcp();
+  const lectures = ROUTES.filter((r) => !r.ecriture).length;
+
   return (
     <div className="animate-fade-up">
       <PageHeader
         title="API et MCP"
         sub={
           <>
-            Les agrégats RUM exposés de deux façons : en <strong>API REST de lecture</strong> pour brancher un
-            tableau de bord partenaire, et en <strong>serveur MCP</strong> pour qu'un agent IA interroge le portail
-            en langage naturel. Des agrégats, et des identifiants pseudonymes (visiteur, identité hachée) :
-            aucune adresse IP.
+            Les agrégats RUM exposés de deux façons&nbsp;: une <strong>API REST</strong>, pour brancher un tableau de
+            bord partenaire ou une chaîne d&apos;intégration, et un <strong>serveur MCP</strong>, pour qu&apos;un agent
+            IA interroge la console en langage naturel. Des agrégats et des identifiants pseudonymes (visiteur,
+            identité hachée)&nbsp;: aucune adresse IP.
           </>
         }
       />
 
-      {/* Brancher une IA — EN HAUT, parce que c'est ce qu'on vient chercher --- */}
-      <section className="card mb-6 border-perf/30 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-ink">Brancher une IA sur MIP RUM</h2>
-          {/* L'état est MESURÉ, pas affirmé : une pastille verte sur un service
-              mort serait pire que pas de pastille du tout. */}
+      <nav aria-label="Sommaire de la page" className="card mb-6 p-4">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Sur cette page</p>
+        <ol className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
+          {SOMMAIRE.map((s, i) => (
+            <li key={s.id}>
+              <a href={`#${s.id}`} className="text-accent-ink underline-offset-2 hover:underline">
+                {i + 1}. {s.titre}
+              </a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      {/* 1. Obtenir un jeton ---------------------------------------------------- */}
+      <Section id="jeton" titre="Obtenir un jeton">
+        <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+          Trois jetons, trois usages. Chacun se passe dans l&apos;en-tête{" "}
+          <code className="chip-mono">Authorization: Bearer &lt;jeton&gt;</code>, d&apos;un serveur à un autre&nbsp;:
+          un jeton reste côté serveur, jamais dans un navigateur. Un jeton limité à une application ne voit que
+          celle-là, ici comme ailleurs.
+        </p>
+        <TableDefilante className="mt-3 rounded-xl border border-line" label="Jetons et usages">
+          <table className="w-full text-left text-xs">
+            <thead className="hidden bg-panel2 sm:table-header-group">
+              <tr>
+                <th scope="col" className="th">Jeton</th>
+                <th scope="col" className="th">Sert à</th>
+                <th scope="col" className="th">Qui le délivre</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line/60">
+              <tr className="block sm:table-row">
+                <th scope="row" className="block px-4 pt-2.5 font-semibold text-ink sm:table-cell sm:py-2.5">
+                  Jeton de lecture
+                </th>
+                <td className="block px-4 py-1 text-ink-soft sm:table-cell sm:py-2.5">
+                  La synthèse d&apos;une application&nbsp;: <code className="chip-mono">GET /api/rum/summary</code>
+                </td>
+                <td className="block px-4 pb-2.5 text-ink-soft sm:table-cell sm:py-2.5">
+                  Un administrateur, depuis l&apos;écran{" "}
+                  <Link href="/admin/read-tokens" className="text-accent-ink underline-offset-2 hover:underline">
+                    Jetons de lecture
+                  </Link>
+                  . Affiché une seule fois.
+                </td>
+              </tr>
+              <tr className="block sm:table-row">
+                <th scope="row" className="block px-4 pt-2.5 font-semibold text-ink sm:table-cell sm:py-2.5">
+                  Jeton d&apos;API
+                </th>
+                <td className="block px-4 py-1 text-ink-soft sm:table-cell sm:py-2.5">
+                  Les routes <code className="chip-mono">/api/v1</code> et le serveur MCP, sur toutes les applications
+                  ou sur une liste.
+                </td>
+                <td className="block px-4 pb-2.5 text-ink-soft sm:table-cell sm:py-2.5">
+                  L&apos;exploitant de la plateforme, sur demande&nbsp;: il ne se crée pas depuis la console.
+                </td>
+              </tr>
+              <tr className="block sm:table-row">
+                <th scope="row" className="block px-4 pt-2.5 font-semibold text-ink sm:table-cell sm:py-2.5">
+                  Jeton de CI
+                </th>
+                <td className="block px-4 py-1 text-ink-soft sm:table-cell sm:py-2.5">
+                  Poser un marqueur de déploiement (<code className="chip-mono">POST /api/v1/deploys</code>) ou
+                  envoyer des source maps.
+                </td>
+                <td className="block px-4 pb-2.5 text-ink-soft sm:table-cell sm:py-2.5">
+                  Un administrateur, depuis l&apos;écran{" "}
+                  <Link href="/admin/sourcemaps" className="text-accent-ink underline-offset-2 hover:underline">
+                    Source maps
+                  </Link>
+                  , un privilège par jeton.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </TableDefilante>
+        <p className="mt-3 text-xs text-ink-faint">
+          Connecté à la console, votre navigateur appelle aussi les routes de lecture{" "}
+          <code className="chip-mono">/api/v1</code> avec votre session, dans la limite de vos applications.
+        </p>
+      </Section>
+
+      {/* 2. MCP — présenté une seule fois ------------------------------------------ */}
+      <Section
+        id="mcp"
+        titre="Brancher un agent IA (serveur MCP)"
+        badge={
+          // L'état est MESURÉ, pas affirmé : une pastille verte sur un service
+          // mort serait pire que pas de pastille du tout.
           <span
             className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
               etat.joignable ? "bg-good/15 text-good-ink" : "bg-warn/15 text-warn-ink"
             }`}
           >
-            {etat.joignable
-              ? `en ligne${etat.version ? ` · v${etat.version}` : ""}`
-              : `état non vérifié — ${etat.motif}`}
+            {etat.joignable ? `En ligne${etat.version ? ` · v${etat.version}` : ""}` : `État non vérifié — ${etat.motif}`}
           </span>
-        </div>
+        }
+      >
         <p className="mt-2 text-xs leading-relaxed text-ink-soft">
-          Copiez l'adresse ci-dessous dans un client compatible <strong>Model Context Protocol</strong> (Claude Code,
-          Claude Desktop, un IDE). L'agent obtient alors {OUTILS_MCP.length} outils de lecture et peut répondre à
-          « quelles routes se sont dégradées cette semaine ? » sans que personne n'écrive une requête.
+          Le <strong>Model Context Protocol</strong> est la prise standard entre un modèle et un système. Copiez
+          l&apos;adresse ci-dessous dans un client compatible (Claude Code, Claude Desktop, un IDE)&nbsp;: l&apos;agent
+          obtient {OUTILS_MCP.length} outils de lecture et peut répondre à «&nbsp;quelles routes se sont dégradées
+          cette semaine, et sur quels appareils&nbsp;?&nbsp;» sans que personne n&apos;écrive une requête. Le serveur
+          est un <strong>client de l&apos;API v1</strong>&nbsp;: il n&apos;accède pas à la base et n&apos;ouvre aucun
+          droit qu&apos;un jeton n&apos;ouvrait pas déjà.
         </p>
 
         <div className="mt-4">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Adresse du serveur
-          </h3>
+          <SousTitre>Adresse du serveur</SousTitre>
           <div className="mt-1.5">
-            <CopyBlock code={MCP_ENDPOINT} label="Copier l'URL" />
+            <CopyBlock code={MCP_ENDPOINT} label="Copier l'adresse" />
           </div>
           <p className="mt-1.5 text-xs text-ink-faint">
-            Le chemin <code className="chip-mono">/mcp</code> fait partie de l'adresse. La racine et{" "}
-            <code className="chip-mono">/health</code> ne servent qu'aux sondes de l'hébergeur.
+            Le chemin <code className="chip-mono">/mcp</code> fait partie de l&apos;adresse. La racine et{" "}
+            <code className="chip-mono">/health</code> ne servent qu&apos;aux sondes.
           </p>
         </div>
 
         <div className="mt-4 rounded-xl border border-warn/30 bg-warn/5 p-3">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-warn-ink">
-            Il vous faut un jeton
-          </h3>
+          <SousTitre>Un jeton est requis</SousTitre>
           <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-            Remplacez <code className="chip-mono">VOTRE_JETON</code> par une entrée de{" "}
-            <code className="chip-mono">CONSOLE_API_TOKENS</code> — le même jeton que l'API v1. Le serveur MCP n'en
-            détient aucun : il <strong>relaie le vôtre</strong>. Un jeton scopé à une app
-            (<code className="chip-mono">jeton@mon-app</code>) ne voit que celle-là, ici comme ailleurs.
+            Remplacez <code className="chip-mono">VOTRE_JETON</code> par votre{" "}
+            <a href="#jeton" className="text-accent-ink underline-offset-2 hover:underline">
+              jeton d&apos;API
+            </a>
+            , le même que pour <code className="chip-mono">/api/v1</code>. Le serveur n&apos;en détient aucun&nbsp;: il{" "}
+            <strong>relaie le vôtre</strong> à l&apos;API sans le conserver. Une adresse MCP découverte par un tiers ne
+            donne donc rien sans jeton.
           </p>
         </div>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <div>
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              Configuration du client (fichier JSON)
-            </h3>
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="min-w-0">
+            <SousTitre>Configuration du client (fichier JSON)</SousTitre>
             <div className="mt-1.5">
-              <CopyBlock code={configDistante()} label="Copier la config" />
+              <CopyBlock code={configDistante()} label="Copier la configuration" />
             </div>
             <p className="mt-1.5 text-xs text-ink-faint">
-              Le champ <code className="chip-mono">&quot;type&quot;: &quot;http&quot;</code> est
-              <strong> obligatoire</strong> : une entrée qui porte <code className="chip-mono">url</code> sans{" "}
+              Le champ <code className="chip-mono">&quot;type&quot;: &quot;http&quot;</code> est{" "}
+              <strong>obligatoire</strong>&nbsp;: une entrée qui porte <code className="chip-mono">url</code> sans{" "}
               <code className="chip-mono">type</code> est lue comme un serveur local et échoue.
             </p>
           </div>
-          <div>
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              Ou en une commande
-            </h3>
+          <div className="min-w-0">
+            <SousTitre>Ou en une commande</SousTitre>
             <div className="mt-1.5">
               <CopyBlock code={commandeCli()} label="Copier" />
             </div>
             <p className="mt-1.5 text-xs text-ink-faint">
-              Le client garde alors l'en-tête et l'envoie à chaque appel. Le jeton ne transite que par le serveur
-              MCP, qui le relaie à l'API v1 sans le conserver.
+              Le client garde alors l&apos;en-tête et l&apos;envoie à chaque appel.
             </p>
           </div>
         </div>
@@ -169,66 +292,66 @@ export default async function ApiDocs() {
         {/* Pleine largeur : ces lignes sont longues, les serrer dans une colonne
             les rendrait illisibles avant même d'être copiées. */}
         <div className="mt-4">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Vérifier soi-même — le troisième appel DOIT échouer
-          </h3>
+          <SousTitre>Vérifier soi-même — le troisième appel doit échouer</SousTitre>
           <div className="mt-1.5">
             <CopyBlock code={curlVerification()} label="Copier les tests" />
           </div>
           <p className="mt-1.5 text-xs text-ink-faint">
-            Ne tester que le cas qui passe ne dit pas si le serveur est ouvert à tous. Le troisième appel, sans
-            jeton, doit répondre <code className="chip-mono">401</code>.
+            Ne tester que le cas qui passe ne dit pas si le serveur est ouvert à tous. Le troisième appel, sans jeton,
+            doit répondre <code className="chip-mono">401</code>.
           </p>
         </div>
 
         <details className="mt-4 rounded-xl border border-line bg-panel2/50 p-3">
           <summary className="cursor-pointer text-xs font-semibold text-ink">
-            En local plutôt qu'en distant (transport stdio)
+            Sur votre poste plutôt qu&apos;à distance (transport stdio)
           </summary>
           <p className="mt-2 text-xs leading-relaxed text-ink-soft">
-            Pour faire tourner le serveur sur votre poste depuis une copie du dépôt. Le jeton vient alors de
-            l'environnement : il n'y a pas de requête HTTP entrante pour le porter.
+            Le serveur tourne alors sur votre poste, depuis une copie du code source, et le jeton vient de
+            l&apos;environnement&nbsp;: il n&apos;y a pas de requête HTTP entrante pour le porter.
           </p>
           <div className="mt-2">
-            <CopyBlock code={configLocale()} label="Copier la config locale" />
+            <CopyBlock code={configLocale()} label="Copier la configuration locale" />
           </div>
         </details>
-      </section>
 
-      {/* Liens clés ---------------------------------------------------------- */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <LinkCard
-          href="/api/v1/docs"
-          title="Explorer dans Swagger UI"
-          desc="Interface interactive : tous les endpoints, paramètres et schémas de réponse, testables en direct."
-        />
-        <LinkCard
-          href="/api/v1/openapi"
-          title="Spec OpenAPI 3.0 (JSON)"
-          desc="Le contrat machine — à brancher dans un générateur de client ou Postman/Insomnia."
-        />
-        <LinkCard
-          href={`${GH_BASE}/MCP.md`}
-          title="Brancher un agent IA (MCP)"
-          desc={`Configuration du serveur MCP : les ${OUTILS_MCP.length} outils, les deux transports, et le modèle d'authentification.`}
-        />
-      </div>
+        <div className="mt-4">
+          <SousTitre>{OUTILS_MCP.length} outils, tous en lecture</SousTitre>
+          <TableDefilante className="mt-1.5 rounded-xl border border-line" label="Outils du serveur MCP">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-line/60">
+                {OUTILS_MCP.map((o) => (
+                  <tr key={o.nom} className="block transition hover:bg-panel2/60 sm:table-row">
+                    <td className={CELLULE_TETE}>{o.nom}</td>
+                    <td className={CELLULE_DESC}>{o.desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableDefilante>
+          <p className="mt-3 text-xs text-ink-faint">
+            Ce que le serveur ne fait pas, et le dit au modèle&nbsp;: aucune écriture, trois fenêtres seulement (1&nbsp;h,
+            24&nbsp;h, 7&nbsp;jours), et aucun total sur la liste des sessions (les groupes d&apos;erreurs et
+            l&apos;Explorer d&apos;événements en fournissent un). Une application demandée hors périmètre est refusée
+            (403), jamais remplacée par une autre&nbsp;; et quand le détail d&apos;un groupe d&apos;erreurs ou d&apos;une
+            issue porte une autre application que celle demandée, l&apos;outil le signale, pour qu&apos;un chiffre
+            d&apos;une autre application ne passe jamais pour celui demandé.
+          </p>
+        </div>
+      </Section>
 
-      {/* Deux points d'entrée ------------------------------------------------ */}
-      <section className="card mb-6 p-5">
-        <h2 className="text-sm font-semibold text-ink">Deux points d'entrée REST</h2>
-        <div className="mt-3 grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-line bg-panel2/50 p-4">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent-ink">
-                recommandé partenaire
-              </span>
-            </div>
+      {/* 3. API REST ---------------------------------------------------------- */}
+      <Section id="api" titre="API REST">
+        <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="min-w-0 rounded-xl border border-line bg-panel2/50 p-4">
+            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent-ink">
+              Recommandé pour un partenaire
+            </span>
             <h3 className="mt-2 font-mono text-sm font-semibold text-ink">GET /api/rum/summary</h3>
             <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
-              <strong>Un seul appel</strong> : trafic, Core Web Vitals, top routes, top erreurs et coûts IA
-              agrégés dans une réponse stable. Idéal pour un tableau de bord « Supervision » côté client.
-              Auth par <strong>jeton en base</strong> scopé à une app.
+              <strong>Un seul appel</strong>, une application&nbsp;: trafic, Core Web Vitals, routes et erreurs
+              principales, dans une réponse stable. Fenêtre <code className="chip-mono">window=24h|7d|30d</code> (30
+              jours par défaut). Avec un <a href="#jeton" className="text-accent-ink underline-offset-2 hover:underline">jeton de lecture</a>.
             </p>
             <a
               href={`${GH_BASE}/RUM_READ_API.md`}
@@ -236,185 +359,115 @@ export default async function ApiDocs() {
               rel="noopener noreferrer"
               className="mt-2 inline-block text-xs font-medium text-accent-ink underline-offset-2 hover:underline"
             >
-              Documentation RUM_READ_API.md →
+              Documentation détaillée de la synthèse →
             </a>
           </div>
-          <div className="rounded-xl border border-line bg-panel2/50 p-4">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-perf/15 px-2 py-0.5 text-[11px] font-semibold text-perf">
-                détail par domaine
-              </span>
-            </div>
-            <h3 className="mt-2 font-mono text-sm font-semibold text-ink">GET /api/v1/*</h3>
+          <div className="min-w-0 rounded-xl border border-line bg-panel2/50 p-4">
+            <span className="rounded-full bg-panel px-2 py-0.5 text-[11px] font-semibold text-ink-soft ring-1 ring-line">
+              Détail par domaine
+            </span>
+            <h3 className="mt-2 font-mono text-sm font-semibold text-ink">/api/v1/*</h3>
             <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
-              {ENDPOINTS.length} endpoints granulaires (vitals en série, heatmap, tracing…). Auth par
-              <strong> jeton machine</strong> (<code className="chip-mono">Authorization: Bearer</code>) ou cookie
-              de session. Enveloppe stable <code className="chip-mono">{"{ meta, data }"}</code>. C'est cette API
-              que consomme le serveur MCP.
+              {lectures} routes de lecture détaillées (vitals en série, carte de santé, traçage…) et une route
+              d&apos;écriture, le marqueur de déploiement. Avec un{" "}
+              <a href="#jeton" className="text-accent-ink underline-offset-2 hover:underline">jeton d&apos;API</a> ou la
+              session de la console. Enveloppe stable <code className="chip-mono">{"{ meta, data }"}</code>. C&apos;est
+              cette API que consomme le serveur MCP.
             </p>
             <a
               href={`${GH_BASE}/API_CONSOLE.md`}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-block text-xs font-medium text-perf underline-offset-2 hover:underline"
+              className="mt-2 inline-block text-xs font-medium text-accent-ink underline-offset-2 hover:underline"
             >
-              Documentation API_CONSOLE.md →
+              Documentation détaillée de l&apos;API →
             </a>
           </div>
         </div>
-      </section>
 
-      {/* Serveur MCP --------------------------------------------------------- */}
-      <section className="card mb-6 p-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold text-ink">Serveur MCP — interroger le portail avec une IA</h2>
-          <span className="rounded-full bg-perf/15 px-2 py-0.5 text-[11px] font-semibold text-perf">
-            lecture seule
-          </span>
-        </div>
-        <p className="mt-2 text-xs leading-relaxed text-ink-soft">
-          Le <strong>Model Context Protocol</strong> est la prise standard entre un modèle et un système. Branché sur
-          MIP RUM, il permet de demander « quelles routes se sont dégradées cette semaine, et sur quels appareils ? »
-          plutôt que d'enchaîner des appels REST à la main. Le serveur est un <strong>client de l'API v1</strong> :
-          il n'accède pas à la base, et n'ouvre aucun droit qu'un jeton n'ouvrait pas déjà.
-        </p>
-
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-line bg-panel2/50 p-4">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              Authentification
-            </h3>
-            <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
-              <strong>Oui, un jeton est requis</strong> — le même que l'API v1. Le serveur distant n'en détient
-              aucun : il <strong>relaie celui de l'appelant</strong>. Un jeton scopé à une app ne voit donc que la
-              sienne, ici comme ailleurs, et une URL MCP découverte par un tiers ne donne rien sans jeton.
-            </p>
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="min-w-0">
+            <SousTitre>Filtres communs des routes /api/v1</SousTitre>
+            <div className="mt-1.5 flex flex-wrap gap-2 text-xs">
+              {["app=<application>|all", "period=1h|24h|7d", "from=…&to=… (30 jours au plus)", "device=mobile|desktop|tablet|all"].map(
+                (c) => (
+                  <span key={c} className="chip-mono">
+                    {c}
+                  </span>
+                ),
+              )}
+            </div>
           </div>
-          <div className="rounded-xl border border-line bg-panel2/50 p-4">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              Deux transports
-            </h3>
-            <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
-              <strong>stdio</strong> pour un poste de travail (Claude Desktop, un IDE) : le jeton vient de
-              l'environnement. <strong>HTTP</strong> (Streamable HTTP, sans session) pour l'usage distant, déployé
-              sur Railway à côté des travaux planifiés.
-            </p>
+          <div className="min-w-0">
+            <SousTitre>Explorer et tester</SousTitre>
+            <ul className="mt-1.5 space-y-1 text-xs">
+              <li>
+                <a href="/api/v1/docs" target="_blank" rel="noopener noreferrer" className="text-accent-ink underline-offset-2 hover:underline">
+                  Swagger UI →
+                </a>{" "}
+                <span className="text-ink-faint">toutes les routes, leurs paramètres et leurs réponses, testables.</span>
+              </li>
+              <li>
+                <a href="/api/v1/openapi" target="_blank" rel="noopener noreferrer" className="text-accent-ink underline-offset-2 hover:underline">
+                  Spécification OpenAPI 3.0 (JSON) →
+                </a>{" "}
+                <span className="text-ink-faint">à brancher dans un générateur de client, Postman ou Insomnia.</span>
+              </li>
+            </ul>
           </div>
         </div>
+      </Section>
 
-        <div className="mt-4 overflow-hidden rounded-xl border border-line">
-          <div className="border-b border-line bg-panel2 px-4 py-2">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              {OUTILS_MCP.length} outils — tous en lecture, aucun n'écrit
-            </h3>
-          </div>
+      {/* 4. Routes /api/v1 — une écriture y figure : pas de « lecture seule » ---- */}
+      <Section id="routes" titre="Routes /api/v1">
+        <TableDefilante className="mt-3 rounded-xl border border-line" label="Routes /api/v1">
           <table className="w-full text-sm">
             <tbody className="divide-y divide-line/60">
-              {OUTILS_MCP.map((o) => (
-                <tr key={o.nom} className="transition hover:bg-panel2/60">
-                  <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-ink">{o.nom}</td>
-                  <td className="px-4 py-2 text-xs text-ink-soft">{o.desc}</td>
+              {ROUTES.map((e) => (
+                <tr
+                  key={`${e.method} ${e.path}`}
+                  className={`block transition hover:bg-panel2/60 sm:table-row ${e.ecriture ? "bg-panel2/40" : ""}`}
+                >
+                  <td className={CELLULE_TETE}>
+                    {e.method} {e.path}
+                    {e.ecriture && (
+                      <span className="ml-2 rounded-full bg-warn/15 px-2 py-0.5 font-sans text-[11px] font-semibold text-warn-ink">
+                        écriture
+                      </span>
+                    )}
+                  </td>
+                  <td className={CELLULE_DESC}>{e.desc}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
+      </Section>
 
+      {/* 5. Exemples — le même bloc de code que partout ailleurs sur la page ----- */}
+      <Section id="exemples" titre="Exemples">
+        <div className="mt-3">
+          <CopyBlock
+            label="Copier"
+            code={[
+              "# La synthèse d'une application, en un appel (jeton de lecture)",
+              `curl -s -H "Authorization: Bearer $JETON_LECTURE" \\`,
+              `  "${CONSOLE_ORIGINE}/api/rum/summary?app=mon-app&window=30d"`,
+              "",
+              "# Le détail : LCP p75 dans le temps, sur 7 jours (jeton d'API)",
+              `curl -s -H "Authorization: Bearer $JETON_API" \\`,
+              `  "${CONSOLE_ORIGINE}/api/v1/vitals?app=mon-app&period=7d&series=LCP"`,
+            ].join("\n")}
+          />
+        </div>
         <p className="mt-3 text-xs text-ink-faint">
-          Ce que le serveur ne fait pas, et le dit au modèle : aucune écriture, trois fenêtres seulement
-          (1h / 24h / 7d), et aucun total sur la liste des sessions (les groupes d’erreurs et l’Explorer
-          d’événements en fournissent un). Une app demandée hors périmètre est refusée par l'API
-          (403), jamais remplacée par une autre ; et quand le détail d'un groupe d'erreurs ou d'une issue
-          porte une autre app que celle demandée, l'outil le signale explicitement, pour qu'un chiffre
-          d'une autre app ne passe jamais pour celui demandé.
+          La synthèse prend une fenêtre (<code className="chip-mono">window</code>)&nbsp;; les routes{" "}
+          <code className="chip-mono">/api/v1</code>, une période (<code className="chip-mono">period</code>) ou une
+          plage (<code className="chip-mono">from</code>, <code className="chip-mono">to</code>). La correspondance
+          entre les graphiques de la console, les routes et les champs à tracer est détaillée dans la documentation de
+          l&apos;API.
         </p>
-      </section>
-
-      {/* Auth & filtres ------------------------------------------------------ */}
-      <section className="card mb-6 p-5">
-        <h2 className="text-sm font-semibold text-ink">Authentification &amp; filtres</h2>
-        <div className="mt-3 grid gap-4 text-sm md:grid-cols-2">
-          <div>
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Authentification</h3>
-            <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
-              En-tête <code className="chip-mono">Authorization: Bearer &lt;jeton&gt;</code> (appel
-              serveur-à-serveur : le jeton reste côté backend, jamais dans le navigateur). Un jeton partenaire
-              est <strong>scopé à une app</strong> — il ne voit que ses données.
-            </p>
-          </div>
-          <div>
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Filtres communs</h3>
-            <div className="mt-1.5 flex flex-wrap gap-2 text-xs">
-              {["app=<slug>|all", "period=1h|24h|7d", "device=mobile|desktop|tablet|all"].map((c) => (
-                <span key={c} className="chip-mono">{c}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Liste des endpoints ------------------------------------------------- */}
-      <section className="card mb-6 overflow-hidden">
-        <div className="border-b border-line bg-panel2 px-4 py-3">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Endpoints /api/v1 (lecture seule)
-          </h2>
-        </div>
-        <table className="w-full text-sm">
-          <tbody className="divide-y divide-line/60">
-            {ENDPOINTS.map((e) => (
-              <tr key={e.path} className="transition hover:bg-panel2/60">
-                <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-ink">
-                  {e.method} {e.path}
-                </td>
-                <td className="px-4 py-2.5 text-xs text-ink-soft">{e.desc}</td>
-              </tr>
-            ))}
-            <tr className="bg-panel2/40">
-              <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-ink">POST /api/v1/deploys</td>
-              <td className="px-4 py-2.5 text-xs text-ink-soft">
-                Marqueur de déploiement (intégration CI/CD), au jeton de CI « deploys:write » d&apos;une application ;
-                un jeton d&apos;API y est encore accepté jusqu&apos;au 31/12/2026. Seule route en écriture, et le
-                serveur MCP ne l&apos;expose pas.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      {/* Exemples ------------------------------------------------------------ */}
-      <section className="card p-5">
-        <h2 className="text-sm font-semibold text-ink">Exemples</h2>
-        <pre className="mt-3 overflow-x-auto rounded-lg bg-panel2 p-3 font-mono text-xs text-ink-soft">
-{`# tableau de bord partenaire en un appel
-curl -s -H "Authorization: Bearer $MIP_RUM_READ_TOKEN" \\
-  "${PROD_BASE}/api/rum/summary?app=gip-plateforme&window=30d"
-
-# détail : LCP p75 dans le temps (série)
-curl -s -H "Authorization: Bearer $MIP_API_TOKEN" \\
-  "${PROD_BASE}/api/v1/vitals?app=gip-plateforme&period=7d&series=LCP"`}
-        </pre>
-        <p className="mt-3 text-xs font-semibold text-ink">Brancher un agent IA en local (transport stdio)</p>
-        <pre className="mt-2 overflow-x-auto rounded-lg bg-panel2 p-3 font-mono text-xs text-ink-soft">
-{`{
-  "mcpServers": {
-    "mip-rum": {
-      "command": "node",
-      "args": ["services/mcp/stdio.mjs"],
-      "env": {
-        "MIP_CONSOLE_URL": "${PROD_BASE}",
-        "MIP_API_TOKEN": "<jeton listé dans CONSOLE_API_TOKENS>"
-      }
-    }
-  }
-}`}
-        </pre>
-        <p className="mt-3 text-xs text-ink-faint">
-          La correspondance <strong>graphe → endpoint → champs à tracer</strong> (pour reproduire les visuels
-          de la console) est détaillée dans les docs liées ci-dessus ; la configuration MCP complète, transport
-          distant compris, est dans <code className="chip-mono">docs/MCP.md</code>.
-        </p>
-      </section>
+      </Section>
     </div>
   );
 }

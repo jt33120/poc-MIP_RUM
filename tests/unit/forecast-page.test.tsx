@@ -199,7 +199,7 @@ describe("/forecast — vérité des libellés et des liens", () => {
     dailyTraffic.mockResolvedValue(JOURS.map((day) => ({ day, pageviews: 20, errors: 30 })));
     dailyLcpSeries.mockResolvedValue(lcpDe(DERIVE));
     const html = await rendre();
-    expect(html).toContain("14 jours complets, du 01/09 au 14/09, fuseau de l&#x27;app (Europe/Paris)");
+    expect(html).toContain("14 jours complets, du 01/09 au 14/09, fuseau de l&#x27;app (heure de Paris)");
     expect(html).toContain("la journée en cours est exclue");
     expect(html).toContain("150\u00a0pour\u00a0100");
     expect(html).not.toMatch(/150\s?%/);
@@ -208,7 +208,7 @@ describe("/forecast — vérité des libellés et des liens", () => {
     expect(html).not.toContain("Prévisions");
   });
 
-  it("un point ouvre les bornes UTC du jour local, et l'infobulle dit les deux fuseaux", async () => {
+  it("un point ouvre les bornes UTC du jour local, et l'infobulle nomme le fuseau", async () => {
     dailyTraffic.mockResolvedValue(trafic());
     dailyLcpSeries.mockResolvedValue(lcpDe(DERIVE));
     const html = await rendre();
@@ -218,7 +218,7 @@ describe("/forecast — vérité des libellés et des liens", () => {
     expect(url.searchParams.get("from")).toBe("2026-09-09T22:00:00Z");
     expect(url.searchParams.get("to")).toBe("2026-09-10T22:00:00Z");
     expect(attribut(html, "LCP p75 quotidien", "data-libelle-10")).toBe(
-      "10/09 00:00-24:00 Europe/Paris (09/09 22:00 - 10/09 22:00 UTC)",
+      "10/09 00:00-24:00 (heure de Paris)",
     );
     const erreurs = new URL(attribut(html, "Occurrences", "data-lien-10")!.replace(/&amp;/g, "&"), "http://console.local");
     expect(erreurs.pathname).toBe("/errors");
@@ -227,7 +227,7 @@ describe("/forecast — vérité des libellés et des liens", () => {
   it("« Créer une alerte » : rendu pour un administrateur, jamais pour un lecteur", async () => {
     dailyTraffic.mockResolvedValue(trafic());
     dailyLcpSeries.mockResolvedValue(lcpDe(DERIVE));
-    expect(await rendre()).toContain("Créer une alerte sur ce seuil");
+    expect(await rendre()).toContain("Créer une alerte LCP &gt; 2,5");
     getUser.mockResolvedValue({ email: "v@b", role: "viewer", apps: ["demo"] });
     expect(await rendre()).not.toContain("Créer une alerte");
     getUser.mockResolvedValue({ email: "d@b", role: "admin", apps: null, demo: true });

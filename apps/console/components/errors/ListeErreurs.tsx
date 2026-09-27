@@ -18,6 +18,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { STATUTS_ERREUR, type StatutErreur } from "@/lib/view-state";
+import { pluriel } from "@/lib/format";
 
 /** Une cellule de table au-dessus de 640 px, une ligne de carte en dessous. */
 export const CELLULE_GROUPE = "sm:table-cell sm:px-4 sm:py-3 sm:align-top";
@@ -35,7 +36,10 @@ export function CelluleGroupe({
   testId?: string;
 }) {
   return (
-    <td className={`mt-1 flex min-w-0 items-baseline gap-2 text-xs ${CELLULE_GROUPE} ${className}`} data-testid={testId}>
+    // En carte, les cellules s'enchaînent sur une ligne (`inline-flex`) : une carte de
+    // six lignes empilées faisait 230 px, et 22 groupes une page de 8 460 px à 390 px
+    // (recette du 26/09/2026).
+    <td className={`mr-4 mt-1 inline-flex min-w-0 items-baseline gap-1.5 text-xs sm:mr-0 ${CELLULE_GROUPE} ${className}`} data-testid={testId}>
       <span className="shrink-0 text-ink-soft sm:hidden">{libelle}</span>
       {children}
     </td>
@@ -64,10 +68,10 @@ export function echelleCommune(lignes: { series?: number[] }[]): number | undefi
  * tendance nulle.
  */
 export function noteEchelle(max: number | undefined, parSeau: string | null = null): string {
-  const seau = parSeau ? ` par seau de ${parSeau}` : "";
+  const seau = parSeau ? ` par tranche de ${parSeau}` : "";
   return max === undefined
     ? "Tendances à l'échelle commune : aucune occurrence sur la période, aucune hauteur à comparer."
-    : `Tendances à l'échelle commune, de 0 à ${max.toLocaleString("fr-FR")} occurrence(s)${seau} : deux lignes à la même valeur ont la même hauteur.`;
+    : `Tendances à l'échelle commune, de 0 à ${pluriel(max, "occurrence")}${seau} : deux lignes à la même valeur ont la même hauteur.`;
 }
 
 /** Libellés des statuts de triage de la liste historique (badges de `ErrorBadges`). */

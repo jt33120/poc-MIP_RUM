@@ -29,7 +29,9 @@ describe("F22 — règles de frustration = constantes du SDK", () => {
     const [rage, dead, error] = console.reglesFrustration();
     expect(rage.texte).toBe(`${sdk.RAGE_MIN_CLICKS} clics sur la même cible en ${secondes(sdk.RAGE_WINDOW_MS)}.`);
     expect(dead.texte).toContain(`en ${secondes(sdk.DEAD_CLICK_WINDOW_MS)}`);
-    expect(dead.texte).toContain("sans mutation, navigation ni défilement");
+    expect(dead.texte).toContain("ne change rien à la page (ni contenu, ni navigation, ni défilement)");
+    // Libellés français, les mots du détail de session (recette du 26/09/2026).
+    expect([rage.libelle, dead.libelle, error.libelle]).toEqual(["Clic de rage", "Clic sans réaction", "Clic suivi d'une erreur"]);
     expect(error.texte).toContain(`dans les ${secondes(ACTION_WINDOW_MS)}`);
     // Valeurs actuelles, en clair : « 3 clics … 1 s », « 1,5 s », « 5 s ».
     expect(clair(rage.texte)).toBe("3 clics sur la même cible en 1 s.");
@@ -55,7 +57,7 @@ describe("F22 — règles de frustration = constantes du SDK", () => {
   });
 
   it("les limites disent le sous-report et le plafond", () => {
-    expect(console.LIMITES_FRUSTRATION).toContain("sous-report assumé");
+    expect(console.LIMITES_FRUSTRATION).toContain("préfèrent manquer un signal plutôt que d'en compter un faux");
     expect(console.LIMITES_FRUSTRATION).toContain(`${sdk.FRUSTRATION_CAP_PER_PAGE} signaux par page vue`);
     expect(console.LIMITES_FRUSTRATION).toContain("frappes au clavier ne sont pas comptées");
   });

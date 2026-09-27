@@ -428,7 +428,8 @@ suite("P7.5 — v82, capacités et lectures /mobile sur PostgreSQL", () => {
     // a aucune cohorte identifiable.
     const etat = { runtime: false, capabilities: false, errorSource: true, dimensions: new Set<string>() };
     const r = await lib.mobileSummary(filtres(), etat);
-    expect(r.unavailable[0]).toContain("v82");
+    // Libellé utilisateur (recette du 26/09/2026) : plus de numéro de migration à l'écran.
+    expect(r.unavailable[0]).toContain("pas encore enregistré");
     expect(r.sessions.visitors).toBeNull();
     expect(r.js_errors).toBeNull();
     expect(r.js_error_free_session_rate).toBeNull();

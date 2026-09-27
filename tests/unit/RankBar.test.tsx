@@ -42,4 +42,21 @@ describe("RankBar", () => {
     const couleur = SERIE.principale.toLowerCase();
     expect(html.toLowerCase().match(new RegExp(`background-color:${couleur}`, "g"))).toHaveLength(1);
   });
+
+  // Recette du 26/09/2026 : « Direct ou référen… » à 390 px.
+  it("libellé et sous-texte passent à la ligne, jamais coupés", () => {
+    const html = renderToStaticMarkup(
+      <RankBar data={[{ label: "Direct ou référent inconnu", value: 12, sub: "12 sessions · 7,1 % du total", href: "/x" }]} />,
+    );
+    expect(html).not.toContain("truncate");
+    expect(html.match(/\[overflow-wrap:anywhere\]/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("ligne active : marquée et annoncée (aria-current)", () => {
+    const html = renderToStaticMarkup(
+      <RankBar data={[{ label: "form-contact", value: 4, href: "/forms?form=a", actif: true }, { label: "form-b", value: 2, href: "/forms?form=b" }]} />,
+    );
+    expect(html.match(/aria-current="true"/g)?.length).toBeGreaterThanOrEqual(1);
+    expect(html.match(/data-actif=""/g)).toHaveLength(1);
+  });
 });

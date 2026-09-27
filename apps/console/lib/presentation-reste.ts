@@ -40,6 +40,11 @@
 //     pastilles : ce que leurs lignes disent manquer est fait.
 // Les autres points ont été relus contre le code le même jour et gardent le texte
 // du plan. Les numéros de ligne cités hors du document ont été relevés à nouveau.
+//
+// RECETTE DU 26/09/2026. La page est publique : les titres ne portent plus les codes
+// de lot (« P8.3 — … »), un renvoi nomme le point par son titre et non par « R10 »,
+// et R10 dit le mécanisme du quota (ce qu'un lecteur doit savoir pour décider) sans
+// le journal de la coupure en cours ni le montant d'une offre.
 import { capaciteParId, type Capacite } from "./couverture";
 import type { PointReste } from "./couverture-controle";
 
@@ -52,9 +57,9 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R1",
     titre: "Une recette sur une vraie application",
     manque:
-      "Aucun écran n'a été relu sur des données réellement ingérées. Du trafic arrive pourtant : le relevé lu en base le 23/09/2026 compte 378 événements pour l'application du client, le dernier reçu ce jour-là à 13:01 UTC, et 33 pour la console elle-même. Le volume reste faible, et la production est coupée du 24 septembre au 1er octobre 2026, faute de quota (voir R10).",
+      "Aucun écran n'a été relu sur des données réellement ingérées. Du trafic arrive pourtant : le relevé lu en base le 23/09/2026 compte 378 événements pour l'application du client, le dernier reçu ce jour-là à 13:01 UTC, et 33 pour la console elle-même. Le volume reste faible, et la base, sur une offre gratuite, plafonne la collecte (voir « Une base dimensionnée pour un vrai produit »).",
     debloque:
-      "Une fois la base rouverte, relire les erreurs, l'Explorer et un tableau de bord sur le trafic reçu ; faire émettre une application de recette pour ce qu'il ne couvre pas, dont l'écran mobile.",
+      "Relire les erreurs, l'Explorer et un tableau de bord sur le trafic reçu ; faire émettre une application de recette pour ce qu'il ne couvre pas, dont l'écran mobile.",
     decide: "L'équipe MIP ; c'est le point le moins coûteux.",
     // § 6.2 (aucun écran éprouvé sur des données réellement ingérées) ; § 11, étape 1 ;
     // le relevé de production du 23/09, lu en base : le « dernier événement le 17/09 »
@@ -68,7 +73,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
   },
   {
     id: "R2",
-    titre: "P8.3 — Reprise de l'historique",
+    titre: "Reprise de l'historique des erreurs",
     manque:
       "L'outil de reprise est livré et testé (dry-run, vérification), et sa migration v83 est appliquée en production : le registre des migrations, lu en base le 23/09/2026, l'inscrit le 18/09/2026 à 11:46 UTC. Aucun environnement ne lance l'outil, qui est une ligne de commande, et son exécution en production a été écartée le 18/09/2026 : environ 97 lignes étaient concernées (chiffre non recontrôlé).",
     debloque:
@@ -90,7 +95,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
   },
   {
     id: "R3",
-    titre: "P8.4 — Source maps dans l'intégration continue du client",
+    titre: "Source maps dans l'intégration continue du client",
     manque: "Jamais entamé.",
     debloque:
       "Un accès au dépôt et au build du client, un identifiant d'application, une convention de release, un jeton d'upload rangé dans les secrets de sa CI.",
@@ -99,7 +104,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
   },
   {
     id: "R4",
-    titre: "P8.5 — Crashes natifs iOS et Android",
+    titre: "Crashes natifs iOS et Android",
     manque:
       "Rien n'est livré, volontairement : aucune table de crash natif n'existe, pour qu'aucun écran ne lise un zéro.",
     debloque:
@@ -121,7 +126,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R6",
     titre: "Le pays par adresse IP, inerte tant que la collecte passe par Vercel",
     manque:
-      "La résolution et sa base (DB-IP Lite, téléchargée à la construction de l'image) sont livrées dans le collecteur, un service Railway que le dépôt déclare mais qui n'est pas encore créé. Le trafic entre par la route de la console sur Vercel, qui ne l'appelle pas ; et le relais de la console vers le collecteur, livré éteint, ne lui transmettra que le pays posé par Vercel, jamais l'adresse : la résolution y est sautée. Cette résolution ne donne donc aucun pays aujourd'hui.",
+      "La résolution et sa base (DB-IP Lite, téléchargée à la construction de l'image) sont livrées dans le collecteur autonome, qui n'est pas en service (voir les spécifications, « Services »). Même allumé, le relais de la console ne lui transmettra que le pays posé par Vercel, jamais l'adresse : la résolution y est sautée. Cette résolution ne donne donc aucun pays aujourd'hui.",
     debloque:
       "Le chemin est choisi : une collecte directe vers le collecteur, pour les sites dont la politique de sécurité du contenu (CSP) le permet, une fois que le relais porte tout le trafic depuis 7 jours sans repli. Avant, prouver sur un environnement de recette que la façade Railway écrase une adresse forgée par le client. Rien de cela n'est livré.",
     decide: "L'équipe MIP.",
@@ -164,10 +169,10 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // REQUIRE_API_KEY vaut « true », six apps sur sept sans clé (relevé du 23/09,
     // R8a), l'outil de provisionnement ; aucune certification acquise.
     sources: [
-      "apps/console/lib/specs.ts:98-102",
-      "apps/console/lib/specs.ts:207-213",
-      "apps/console/components/presentation/Specs.tsx:161-165",
-      "apps/console/components/presentation/Specs.tsx:186-195",
+      "apps/console/lib/specs.ts:101-105",
+      "apps/console/lib/specs.ts:218-224",
+      "apps/console/components/presentation/Specs.tsx:167-171",
+      "apps/console/components/presentation/Specs.tsx:192-201",
       "docs/architecture/console-api/README.md:221",
       "apps/console/lib/ingest.ts:16",
       "docs/operations/releve-p0-2026-09-23.md:14",
@@ -206,9 +211,9 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R10",
     titre: "Une base dimensionnée pour un vrai produit",
     manque:
-      "La base tourne sur l'offre gratuite de Neon : 100 heures de calcul par mois. Son épuisement a coupé la production du 24 septembre au 1er octobre 2026 : passé le quota, le calcul reste suspendu jusqu'au mois suivant. Pour tenir, les tâches planifiées et la livraison des alertes passent toutes les 15 minutes au lieu de 5 : une alerte part jusqu'à 15 minutes après sa cause. La collecte continue d'un vrai site suffirait à épuiser le quota, et l'offre plafonne aussi le stockage à 0,5 Go, déjà occupés à 60 % le 24/09/2026.",
+      "La base tourne sur une offre gratuite : 100 heures de calcul par mois et 0,5 Go de stockage, déjà occupés à 60 % le 24/09/2026. Passé le quota de calcul, la base est suspendue jusqu'au mois suivant, et la collecte avec elle. Pour tenir, les tâches planifiées et la livraison des alertes passent toutes les 15 minutes au lieu de 5 : une alerte part jusqu'à 15 minutes après sa cause. La collecte continue d'un vrai site suffirait à épuiser le quota.",
     debloque:
-      "Passer la base sur une offre payante (de l'ordre de 20 à 40 $ par mois avec tous les services), puis remettre les cadences à 5 minutes et la livraison à 15 secondes : deux variables, sans changement de code.",
+      "Passer la base sur une offre payante, puis remettre les cadences à 5 minutes et la livraison à 15 secondes : deux réglages, sans changement de code.",
     decide: "Le responsable du produit : c'est une ligne de budget.",
     // Le calcul (quota, veille à 5 min, CU-h par cadence) et le réglage ; la
     // vitrine lit la cadence effective publiée par le scheduler (etat-latence).

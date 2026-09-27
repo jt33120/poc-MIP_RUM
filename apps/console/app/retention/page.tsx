@@ -16,6 +16,14 @@
 //     lecture sans source que l'écran n'a pas à poser.
 //   - Laisser la période du haut active sans effet : la surface est en
 //     `range: "none"`, la fenêtre se choisit ici en semaines (F40).
+//   - Montrer une fonction non livrée : la tuile « Sessions sans identifiant, hors
+//     matrice » attend B35 (aucune lecture n'existe) ; elle n'est pas rendue — elle
+//     n'affichait que « — non lu : la lecture est à créer » (recette du 26/09/2026).
+//     Que ces sessions sortent des cohortes est dit dans la méthode de la 1re tuile.
+//   - Signaler un historique court comme une panne : une cohorte trop récente pour
+//     avoir une semaine complète de recul est NORMALE. L'écran le dit dans un cadre
+//     neutre, avec la date où S+1 deviendra lisible ; « Partiel » (orange) est
+//     réservé aux données partielles (recette du 26/09/2026).
 //   - Lire hors du périmètre, ou ignorer la tablette : depuis B31, la lecture lie les
 //     apps EFFECTIVES du principal et applique tous les filtres de session (tablette,
 //     « Inconnu ») ; le refus « une application à la fois » de F40 est levé (F53) et
@@ -24,11 +32,12 @@ import Link from "next/link";
 import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
-import { Figure } from "@/components/charts/Figure";
+import { Figure, MethodeRepliee as Methode } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { LineTrend } from "@/components/charts/LineTrend";
 import { MatriceCohortes } from "@/components/charts/MatriceCohortes";
 import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
+import { CadreEtat } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import {
   cellulesDeCohorte,
@@ -41,22 +50,57 @@ import {
 } from "@/lib/cohorts";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import { APPAREILS, chargerRetention, FENETRE_DEFAUT, FENETRES, fenetreDeRetention } from "@/lib/chargeurs/retention";
+import { APPAREILS, chargerRetention, fenetreDeRetention } from "@/lib/chargeurs/retention";
 import { chargerEcran } from "@/lib/ecran";
 import { hrefWithQuery } from "@/lib/query-contract";
+import { accord, fmtJour, pluriel } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-// Lundi de la cohorte, lu en UTC : les semaines sont des semaines UTC, et un
-// serveur à l'ouest de Greenwich afficherait sinon le dimanche.
-const fmtSemaine = (d: Date) => d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
-const nombre = (n: number) => n.toLocaleString("fr-FR");
+// Lundi de la cohorte, écrit dans le fuseau d'affichage (heure de Paris) : le lundi
+// 00:00 UTC d'une cohorte y est encore un lundi. Sans fuseau fixé, un serveur à
+// l'ouest de Greenwich afficherait le dimanche.
+const fmtSemaine = (d: Date) => fmtJour(d);
+/** Espace insécable, avant « : », « ; » et « % » dans les phrases construites ici. */
+const NBSP = "\u00a0";
 /** Un taux en pourcentage pour la courbe (0..100, une décimale) ; `null` reste un trou. */
 const enPct = (t: number | null) => (t === null ? null : Math.round(t * 1000) / 10);
+const RAISON_ECHEC = "les cohortes n'ont pas pu être chargées";
 
-/** Tuile « Retour en S+n » : le point de la courbe à cet offset, ou pourquoi il n'existe pas. */
-function tuileRetour(point: PointRetention | undefined, offset: number, lu: boolean) {
+/** La semaine de retour « à un mois » que le plan demande en seconde tuile. */
+const SEMAINE_LONGUE = 4;
+
+/**
+ * Tuile « Retour en S+n » : le point de la courbe à cet offset, ou pourquoi il
+ * n'existe pas — et, s'il existera, À QUELLE DATE (`lisibleLe`). Un offset que la
+ * fenêtre ne couvre pas (S+4 sur 4 semaines : S+0 à S+3) ne deviendra jamais
+ * lisible : la tuile dirait la fenêtre, pas une date qu'elle ne tiendrait pas. La
+ * page ne lui en passe plus : la seconde tuile lit la dernière semaine lisible, et
+ * le dit (`note`).
+ */
+function tuileRetour({
+  point,
+  offset,
+  lu,
+  weeks,
+  lisibleLe,
+  note,
+}: {
+  point: PointRetention | undefined;
+  offset: number;
+  lu: boolean;
+  weeks: number;
+  lisibleLe: string | null;
+  /** Dit pourquoi la tuile lit cette semaine-là plutôt que celle du plan. */
+  note?: string;
+}) {
   const complet = point && point.taux !== null ? point : null;
+  const cohortesLues = complet
+    ? `${pluriel(complet.cohortes, "cohorte complète", "cohortes complètes")}${
+        complet.exclues > 0 ? ` (${pluriel(complet.exclues, "exclue")}${NBSP}: semaine incomplète)` : ""
+      }`
+    : null;
+  const lecture = [note, cohortesLues].filter(Boolean).join(" · ") || undefined;
   return (
     <KpiTile
       label={`Retour en S+${offset}`}
@@ -64,21 +108,36 @@ function tuileRetour(point: PointRetention | undefined, offset: number, lu: bool
       format="pct"
       raisonNull={
         !lu
-          ? "lecture des cohortes en échec"
-          : offset === 1
-            ? "pas encore une semaine complète de recul"
-            : `pas encore ${offset} semaines complètes de recul`
+          ? RAISON_ECHEC
+          : offset >= weeks
+            ? `au-delà de la fenêtre de ${weeks} semaines`
+            : lisibleLe
+              ? `lisible à partir du ${lisibleLe}`
+              : "aucun visiteur identifié sur la fenêtre"
       }
       sensMeilleur="neutre"
-      couverture={complet ? { n: complet.taille, unite: "visiteurs", faibleSous: 30 } : undefined}
-      lecture={
-        point
-          ? `${nombre(point.cohortes)} cohorte${point.cohortes > 1 ? "s" : ""} complète${point.cohortes > 1 ? "s" : ""} (${nombre(point.exclues)} exclue${point.exclues > 1 ? "s" : ""} : semaine incomplète).`
-          : undefined
-      }
+      couverture={complet ? { n: complet.taille, unite: accord(complet.taille, "visiteur"), faibleSous: 30 } : undefined}
+      lecture={lecture}
+      methode={`Part des visiteurs d'une cohorte revenus ${
+        offset === 1 ? "la semaine qui suit" : `${offset} semaines après`
+      } leur semaine d'arrivée. Moyenne pondérée par la taille des cohortes dont cette semaine est terminée${NBSP}; la semaine en cours est exclue.`}
     />
   );
 }
+
+/**
+ * Un historique encore court n'est pas une panne : cadre NEUTRE, et la date où la
+ * première cohorte aura une semaine complète de recul. Les deux bandeaux orange
+ * « Partiel » qu'il remplace faisaient penser à un incident (recette du 26/09/2026).
+ */
+function PasEncoreDeRecul({ lisibleLe }: { lisibleLe: string | null }) {
+  return (
+    <CadreEtat ton="neutre" role="note" testId="retention-recul">
+      Historique encore court{NBSP}: {lisibleLe ? `S+1 lisible à partir du ${lisibleLe}.` : "S+1 pas encore lisible."}
+    </CadreEtat>
+  );
+}
+
 
 export default async function Retention({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
@@ -89,9 +148,10 @@ export default async function Retention({ searchParams }: { searchParams: Promis
 
   // `weeks` est un réglage de l'écran (§ 3.1) : une valeur hors des fenêtres
   // proposées est ignorée ET signalée, jamais appliquée à moitié.
-  const { weeks, ignore } = fenetreDeRetention(sp);
+  // Seules les fenêtres que l'historique conservé remplit sont proposées.
+  const { weeks, ignore, disponibles, defaut, jours } = fenetreDeRetention(sp);
   /** La fenêtre retenue, telle qu'un lien la reporte (le défaut ne s'écrit pas). */
-  const weeksParam = weeks === FENETRE_DEFAUT ? null : String(weeks);
+  const weeksParam = weeks === defaut ? null : String(weeks);
   const semaineCourante = indexSemaine(Date.now());
   // Toute condition d'appareil, `device=` OU segment (`seg=v2:device:is_null`…) :
   // une condition de segment se cumulerait avec chaque série et la viderait.
@@ -105,14 +165,23 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   const colonnes = Math.min(weeks, Math.max(0, ...rows.map((r) => semaineCourante - r.cohort + 1)));
   const courbe = courbeRetention(rows, semaineCourante, colonnes);
   const totalVisiteurs = rows.reduce((s, r) => s + r.size, 0);
+  // La semaine S+n de la PREMIÈRE cohorte est la première à se terminer : S+n devient
+  // lisible le lundi (UTC, écrit en heure de Paris) qui suit, `lundi(c0 + n + 1)`.
+  const premiereCohorte = rows.length ? Math.min(...rows.map((r) => r.cohort)) : null;
+  const lisibleLe = (offset: number) =>
+    premiereCohorte === null ? null : fmtSemaine(lundiDeSemaine(premiereCohorte + offset + 1));
+  // La seconde tuile de retour : S+4, ramenée à la dernière semaine de la fenêtre.
+  const semaineLongue = Math.max(1, Math.min(SEMAINE_LONGUE, weeks - 1));
+  // Aucun point complet au-delà de S+0 (toujours 100 %) : la courbe ne dirait rien.
+  const sansRecul = !courbe.some((p) => p.offset > 0 && p.taux !== null);
 
   const selecteur = (
     <nav aria-label="Fenêtre de rétention" className="relative flex min-w-0 max-w-full items-center gap-1.5 overflow-x-auto py-0.5 text-xs">
-      <span className="shrink-0 text-ink-soft">Fenêtre :</span>
-      {FENETRES.map((w) => (
+      <span className="shrink-0 text-ink-soft">Fenêtre{NBSP}:</span>
+      {disponibles.map((w) => (
         <Link
           key={w}
-          href={hrefWithQuery("/retention", ecran.query, { weeks: w === FENETRE_DEFAUT ? null : String(w) })}
+          href={hrefWithQuery("/retention", ecran.query, { weeks: w === defaut ? null : String(w) })}
           aria-current={w === weeks ? "true" : undefined}
           data-testid="retention-fenetre"
           className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
@@ -122,6 +191,9 @@ export default async function Retention({ searchParams }: { searchParams: Promis
           {w} sem.
         </Link>
       ))}
+      <span className="shrink-0 text-ink-faint" data-testid="retention-historique">
+        historique conservé{NBSP}: {jours} jours
+      </span>
     </nav>
   );
 
@@ -130,7 +202,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
       <PageHeader
         title="Rétention"
         domain="usages"
-        sub="Les visiteurs identifiés reviennent-ils, et au bout de combien de semaines décrochent-ils ?"
+        sub={`Les visiteurs identifiés reviennent-ils, et au bout de combien de semaines décrochent-ils${NBSP}?`}
       >
         {selecteur}
       </PageHeader>
@@ -141,30 +213,38 @@ export default async function Retention({ searchParams }: { searchParams: Promis
         </p>
       )}
 
-      {/* R2 — une rangée, une population : les visiteurs identifiés (sauf la 4e tuile, dite). */}
+      {/* R2 — une rangée, une population : les visiteurs identifiés. La 4e tuile du
+          plan (« Sessions sans identifiant, hors matrice ») attend B35 : non rendue. */}
       <SectionErreur titre="Chiffres clés">
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="retention-kpi">
+        <div className="mb-6 grid gap-4 sm:grid-cols-3" data-testid="retention-kpi">
           <KpiTile
             label="Visiteurs identifiés suivis"
             valeur={cohortes.ok ? totalVisiteurs : null}
             format="count"
-            raisonNull="lecture des cohortes en échec"
+            raisonNull={RAISON_ECHEC}
             sensMeilleur="neutre"
             lecture={
               cohortes.ok
-                ? `${nombre(totalVisiteurs)} visiteurs identifiés, en ${nombre(rows.length)} cohorte${rows.length > 1 ? "s" : ""} hebdomadaire${rows.length > 1 ? "s" : ""}, sur ${weeks} semaines.`
+                ? `en ${pluriel(rows.length, "cohorte hebdomadaire", "cohortes hebdomadaires")}, sur ${weeks} semaines`
                 : undefined
             }
+            methode="Visiteurs dont les sessions portent un identifiant de visiteur, sur la fenêtre choisie. Les sessions sans identifiant (dont toutes celles collectées avant le 09/09/2026) n'entrent dans aucune cohorte."
           />
-          {tuileRetour(courbe[1], 1, cohortes.ok)}
-          {tuileRetour(courbe[4], 4, cohortes.ok)}
-          <KpiTile
-            label="Sessions sans identifiant, hors matrice"
-            valeur={null}
-            format="count"
-            raisonNull="non lu : la lecture est à créer (B35)"
-            sensMeilleur="neutre"
-          />
+          {tuileRetour({ point: courbe[1], offset: 1, lu: cohortes.ok, weeks, lisibleLe: lisibleLe(1) })}
+          {/* S+4, ou la dernière semaine que la fenêtre contient : sous une fenêtre de 4
+              semaines (30 jours conservés), S+4 n'avait JAMAIS de valeur — une tuile vide
+              par construction (contre-recette du 26/09/2026). */}
+          {tuileRetour({
+            point: courbe[semaineLongue],
+            offset: semaineLongue,
+            lu: cohortes.ok,
+            weeks,
+            lisibleLe: lisibleLe(semaineLongue),
+            note:
+              semaineLongue < SEMAINE_LONGUE
+                ? `S+${SEMAINE_LONGUE} dépasse la fenêtre de ${weeks} semaines : dernière semaine lisible`
+                : undefined,
+          })}
         </div>
       </SectionErreur>
 
@@ -186,27 +266,37 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                 <Figure
                   titre="Courbe de rétention"
                   id="retention-courbe"
-                  etat={colonnes <= 1 ? { kind: "partiel", raison: "une seule semaine observée : pas encore de recul" } : undefined}
-                  meta={
-                    <>
-                      <span>{weeks} semaines, semaines UTC</span>
-                      <span>moyenne pondérée par la taille des cohortes dont la semaine est complète ; semaine en cours exclue</span>
-                    </>
+                  meta={<span>{weeks} semaines</span>}
+                  alternative={
+                    sansRecul
+                      ? undefined
+                      : {
+                          legende: "Rétention pondérée par semaine depuis l'arrivée",
+                          colonnes: ["Semaine", "Taux", "Cohortes complètes", "Exclues", "Visiteurs"],
+                          lignes: courbe.map((p) => [`S+${p.offset}`, formater("pct", p.taux), p.cohortes, p.exclues, p.taille]),
+                        }
                   }
-                  lecture="Part des visiteurs de chaque cohorte revenus n semaines après leur arrivée. Un point sans cohorte complète est un trou, jamais 0."
-                  alternative={{
-                    legende: "Rétention pondérée par semaine depuis l'arrivée",
-                    colonnes: ["Semaine", "Taux", "Cohortes complètes", "Exclues", "Visiteurs"],
-                    lignes: courbe.map((p) => [`S+${p.offset}`, formater("pct", p.taux), p.cohortes, p.exclues, p.taille]),
-                  }}
                 >
-                  <LineTrend
-                    data={courbe.map((p) => ({ label: `S+${p.offset}`, value: enPct(p.taux) }))}
-                    valueName="Rétention"
-                    valueUnit="%"
-                    domain={[0, 100]}
-                    ariaLabel={`Rétention pondérée par semaine depuis l'arrivée, de S+0 à S+${Math.max(0, colonnes - 1)}, fenêtre de ${weeks} semaines UTC ; un point sans cohorte complète est un trou`}
-                  />
+                  {sansRecul ? (
+                    <PasEncoreDeRecul lisibleLe={lisibleLe(1)} />
+                  ) : (
+                    <>
+                      <LineTrend
+                        data={courbe.map((p) => ({ label: `S+${p.offset}`, value: enPct(p.taux) }))}
+                        valueName="Rétention"
+                        valueUnit="%"
+                        domain={[0, 100]}
+                        ariaLabel={`Rétention pondérée par semaine depuis l'arrivée, de S+0 à S+${Math.max(0, colonnes - 1)}, fenêtre de ${weeks} semaines ; un point sans cohorte complète est un trou`}
+                      />
+                      <p className="mt-3 text-xs leading-relaxed text-ink-soft">
+                        Part des visiteurs de chaque cohorte revenus n semaines après leur arrivée.
+                      </p>
+                      <Methode>
+                        Moyenne pondérée par la taille des cohortes dont la semaine est terminée{NBSP}; la semaine en
+                        cours est exclue. Un point sans cohorte complète est un trou, jamais 0.
+                      </Methode>
+                    </>
+                  )}
                 </Figure>
               </SectionErreur>
             </div>
@@ -215,17 +305,10 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                 <Figure
                   titre="Par appareil"
                   id="retention-appareils"
-                  etat={
-                    parAppareil && !parAppareil.ok
-                      ? { kind: "erreur", titre: "Par appareil" }
-                      : !appareilFiltre && colonnes <= 1
-                        ? { kind: "partiel", raison: "une seule semaine observée : pas encore de recul" }
-                        : undefined
-                  }
-                  meta={<span>visiteurs identifiés, même calcul que la courbe ; ordinateurs, mobiles et tablettes (appareil inconnu : dans la courbe, pas ici)</span>}
-                  lecture="Un visiteur mobile peut être surcompté : son identifiant est tenu en mémoire et renouvelé à chaque lancement (parité C3)."
+                  etat={parAppareil && !parAppareil.ok ? { kind: "erreur", titre: "Par appareil" } : undefined}
+                  meta={<span>ordinateurs, mobiles et tablettes</span>}
                   alternative={
-                    parAppareil?.ok
+                    parAppareil?.ok && !sansRecul
                       ? {
                           legende: "Rétention pondérée par appareil et par semaine depuis l'arrivée",
                           colonnes: ["Semaine", ...APPAREILS.map((a) => a.libelle)],
@@ -239,7 +322,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                 >
                   {appareilFiltre ? (
                     <p className="py-8 text-center text-sm text-ink-soft" data-testid="retention-deja-filtre">
-                      Déjà filtré sur {appareilFiltre.libelle} : la comparaison par appareil ne
+                      Déjà filtré sur {appareilFiltre.libelle}{NBSP}: la comparaison par appareil ne
                       s&apos;applique pas.{" "}
                       <Link
                         className="font-medium text-brand hover:underline"
@@ -248,6 +331,8 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                         Retirer le filtre
                       </Link>
                     </p>
+                  ) : sansRecul ? (
+                    <PasEncoreDeRecul lisibleLe={lisibleLe(1)} />
                   ) : parAppareil?.ok ? (
                     (() => {
                       const courbes = parAppareil.data.map((r) => courbeRetention(r, semaineCourante, colonnes));
@@ -262,7 +347,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                             valueUnit="%"
                             domain={[0, 100]}
                             series={APPAREILS.map((a) => ({ cle: a.cle, libelle: a.libelle, role: "categorie" as const }))}
-                            ariaLabel={`Rétention pondérée par appareil (${APPAREILS.map((a) => a.libelle.toLowerCase()).join(", ")}) et par semaine depuis l'arrivée, fenêtre de ${weeks} semaines UTC`}
+                            ariaLabel={`Rétention pondérée par appareil (${APPAREILS.map((a) => a.libelle.toLowerCase()).join(", ")}) et par semaine depuis l'arrivée, fenêtre de ${weeks} semaines`}
                           />
                           <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
                             {APPAREILS.map((a, i) => (
@@ -272,10 +357,22 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                                 className="font-medium text-brand hover:underline"
                                 href={hrefWithQuery("/retention", ecran.query, { device: a.cle, weeks: weeksParam })}
                               >
-                                Rétention des {a.libelle.toLowerCase()} ({nombre(parAppareil.data[i].reduce((s, r) => s + r.size, 0))} visiteurs)
+                                {`Rétention des ${a.libelle.toLowerCase()} (${pluriel(
+                                  parAppareil.data[i].reduce((s, r) => s + r.size, 0),
+                                  "visiteur",
+                                )})`}
                               </Link>
                             ))}
                           </p>
+                          {/* Vérifié dans `packages/rum-mobile/src/index.ts` (bootstrapIdentite) :
+                              l'identifiant est persisté quand le stockage le permet ; sinon il
+                              reste en mémoire et se renouvelle à chaque lancement. */}
+                          <Methode>
+                            Même calcul que la courbe, par type d&apos;appareil. Les sessions d&apos;appareil inconnu
+                            comptent dans la courbe, pas ici. Un visiteur mobile est compté plusieurs fois quand son
+                            appareil ne peut pas conserver son identifiant (stockage absent ou plein){NBSP}: il en
+                            reçoit un nouveau à chaque lancement.
+                          </Methode>
                         </>
                       );
                     })()
@@ -293,17 +390,9 @@ export default async function Retention({ searchParams }: { searchParams: Promis
               meta={
                 <>
                   <span>
-                    {nombre(rows.length)} cohorte{rows.length > 1 ? "s" : ""}, {nombre(totalVisiteurs)} visiteurs identifiés
+                    {pluriel(rows.length, "cohorte")}, {pluriel(totalVisiteurs, "visiteur identifié", "visiteurs identifiés")}
                   </span>
-                  <span>semaines UTC, étiquetées par leur lundi</span>
-                </>
-              }
-              lecture={
-                <>
-                  Cohorte = première semaine d&apos;activité <strong>dans la fenêtre lue</strong> (au plus 30 jours
-                  conservés), pas première visite absolue. S+0 est la semaine de la cohorte (100 %) ; les cases vides
-                  sont des semaines encore à venir pour une cohorte récente (matrice triangulaire). Moins de 10
-                  visiteurs : effectif faible.
+                  <span>semaines étiquetées par leur lundi</span>
                 </>
               }
             >
@@ -315,6 +404,15 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                   cellules: cellulesDeCohorte(r, semaineCourante, colonnes),
                 }))}
               />
+              <p className="mt-3 text-xs leading-relaxed text-ink-soft">
+                Chaque ligne suit les visiteurs arrivés la même semaine{NBSP}; S+0 est leur semaine d&apos;arrivée
+                (100{NBSP}%).
+              </p>
+              <Methode>
+                Cohorte = première semaine d&apos;activité <strong>dans la fenêtre choisie</strong> (au plus {jours}{" "}
+                jours conservés), pas la première visite absolue. Les cases vides sont des semaines encore à venir pour
+                une cohorte récente. Moins de 10 visiteurs{NBSP}: effectif faible.
+              </Methode>
             </Figure>
           </SectionErreur>
         </>

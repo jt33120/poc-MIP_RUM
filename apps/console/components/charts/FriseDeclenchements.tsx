@@ -24,6 +24,8 @@
 import Link from "next/link";
 import { TableAlternative } from "./Figure";
 import { EtatSurface } from "../states/EtatSurface";
+import { fmtDate, fmtJour } from "@/lib/format";
+import { pluriel } from "@/lib/format";
 import { SEVERITE } from "@/lib/palette";
 import { SERIE_MARGES } from "@/lib/series";
 
@@ -85,20 +87,13 @@ const TON_ETAT: Record<"good" | "bad" | "neutre", string> = {
 
 const HAUTEUR_PISTE = 18;
 
-const HEURE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
-const JOUR_UTC = new Intl.DateTimeFormat("fr-FR", { timeZone: "UTC", day: "2-digit", month: "2-digit" });
-
-/** « 12/09 14:03 UTC ». */
+/**
+ * « 12/09 14:03 », heure de Paris : le fuseau d'affichage de toute la console,
+ * nommé une fois dans la barre du haut. (Le nom `instantUtc` est historique.)
+ */
 export function instantUtc(t: string): string {
   const ms = Date.parse(t);
-  return Number.isFinite(ms) ? `${HEURE_UTC.format(ms)} UTC` : t;
+  return Number.isFinite(ms) ? fmtDate(ms) : t;
 }
 
 /** La livraison en toutes lettres, dans l'ordre où elle se décide. */
@@ -213,7 +208,7 @@ export function FriseDeclenchements({ debut, fin, pistes, maxPistes = 12, tronqu
             height={HAUTEUR_PISTE}
             className="block overflow-visible"
             role="group"
-            aria-label={`${p.libelle} : ${p.marqueurs.length} déclenchement(s)`}
+            aria-label={`${p.libelle} : ${pluriel(p.marqueurs.length, "déclenchement")}`}
           >
             <line x1="0" x2="100%" y1={HAUTEUR_PISTE / 2} y2={HAUTEUR_PISTE / 2} stroke="currentColor" strokeWidth={1} className="text-line" />
             {places.length === 0 && (
@@ -277,9 +272,9 @@ export function FriseDeclenchements({ debut, fin, pistes, maxPistes = 12, tronqu
       {/* Axe commun, dans la même zone de tracé que les pistes. */}
       <div style={marges} className="mt-2 min-w-0" aria-hidden="true">
         <div className="relative h-4 border-t border-line text-[10px] tabular-nums text-ink-soft">
-          <span className="absolute left-0 top-0.5">{JOUR_UTC.format(jours[0])}</span>
-          <span className="absolute left-1/2 top-0.5 -translate-x-1/2">{JOUR_UTC.format(jours[1])}</span>
-          <span className="absolute right-0 top-0.5">{JOUR_UTC.format(jours[2])} UTC</span>
+          <span className="absolute left-0 top-0.5">{fmtJour(jours[0])}</span>
+          <span className="absolute left-1/2 top-0.5 -translate-x-1/2">{fmtJour(jours[1])}</span>
+          <span className="absolute right-0 top-0.5">{fmtJour(jours[2])}</span>
         </div>
       </div>
 
@@ -293,7 +288,9 @@ export function FriseDeclenchements({ debut, fin, pistes, maxPistes = 12, tronqu
         </span>
       </p>
 
-      <TableAlternative alternative={alternativeDeclenchements(ordonnees)} />
+      {/* Nommée par ce qu'elle double : sur /alerts, la carte porte aussi l'alternative
+          des barres par jour, et deux « Alternative textuelle » se confondaient. */}
+      <TableAlternative alternative={alternativeDeclenchements(ordonnees)} titre="Alternative textuelle — déclenchements par source" />
     </div>
   );
 }

@@ -171,12 +171,15 @@ export function buildOpenApi(): Record<string, unknown> {
       version: "1.0.0",
       // `POST /deploys` (l'unique écriture, jeton de CI) n'est pas dans cette spec : le
       // descripteur `GET /api/v1` la liste à part (`write`), et docs/API_CONSOLE.md la décrit.
+      // Cette description est PUBLIQUE (Swagger, /api-docs) : ni nom de variable
+      // d'environnement, ni chemin du dépôt, ni code de lot (recette du 26/09/2026).
       description:
         "API REST de lecture des agrégats RUM (Real User Monitoring), consommée par le serveur MCP et " +
-        "destinée au front MIP (Angular) ou à tout autre client. Auth Bearer (CONSOLE_API_TOKENS) ou cookie " +
-        "de session (RBAC). Enveloppe stable { meta, data }. Cette spec décrit les lectures ; la seule " +
-        "écriture, POST /api/v1/deploys (marqueur de déploiement d'une CI), est décrite dans " +
-        "docs/API_CONSOLE.md. Voir aussi docs/DEPLOY_API.md.",
+        "destinée à tout client : tableau de bord partenaire, outil de supervision, script. Authentification " +
+        "par jeton d'API (en-tête Bearer, délivré par l'exploitant de la plateforme) ou par la session de la " +
+        "console, dans la limite de ses applications. Enveloppe stable { meta, data }. Cette spécification " +
+        "décrit les lectures ; la seule écriture, POST /api/v1/deploys (marqueur de déploiement posé par une " +
+        "intégration continue, avec un jeton de CI), est décrite sur la page « API et MCP » de la console.",
     },
     servers: [{ url: "/api/v1", description: "Base de l'API (relative à l'origine de la console)" }],
     tags: [
@@ -186,24 +189,24 @@ export function buildOpenApi(): Record<string, unknown> {
     ],
     paths: {
       "/health": {
-        get: get("Liveness (sans auth)", "meta", ref("HealthCheck"), { public: true }),
+        get: get("État du service (sans authentification)", "meta", ref("HealthCheck"), { public: true }),
       },
       "/openapi": {
-        get: get("Spec OpenAPI (JSON, sans auth)", "meta", o({}), { public: true }),
+        get: get("Spécification OpenAPI (JSON, sans authentification)", "meta", o({}), { public: true }),
       },
       "/": {
-        get: get("Découverte : version + endpoints", "meta", ref("Discovery")),
+        get: get("Découverte : version et liste des routes", "meta", ref("Discovery")),
       },
       "/apps": {
-        get: get("Catalogue des apps monitorées", "rum", o({ apps: arr(ref("AppItem")) }, ["apps"])),
+        get: get("Catalogue des applications supervisées", "rum", o({ apps: arr(ref("AppItem")) }, ["apps"])),
       },
       "/overview": {
-        get: get("Health score + vitals p75 + stats (période précédente incluse)", "rum", ref("Overview"), {
+        get: get("Score de santé, p75 des Core Web Vitals et statistiques (période précédente incluse)", "rum", ref("Overview"), {
           params: commonFilters,
         }),
       },
       "/vitals": {
-        get: get("p75 par vital + séries temporelles", "rum", ref("Vitals"), {
+        get: get("p75 de chaque Core Web Vital, et séries temporelles", "rum", ref("Vitals"), {
           params: [
             ...commonFilters,
             {
@@ -222,7 +225,7 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       "/errors": {
         get: get(
-          "Groupes d'erreurs (app + fingerprint) sur la fenêtre : impact, totaux, tendance, échantillonnage",
+          "Groupes d'erreurs (application et empreinte) sur la fenêtre : impact, totaux, tendance, échantillonnage",
           "rum",
           ref("ErrorGroupList"),
           {
@@ -293,7 +296,7 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       "/issues/{id}/activity": {
         get: get(
-          "Historique d'une issue (P5.6) : statuts, assignations, commentaires, liens de ticket et régressions confirmées",
+          "Historique d'une issue : statuts, assignations, commentaires, liens de ticket et régressions confirmées",
           "rum",
           ref("IssueActivityPage"),
           {
@@ -308,8 +311,7 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       "/issues/{id}/tickets": {
         get: get(
-          "Demandes de création de ticket d'une issue (P8.6) et leur état de livraison ; " +
-            "GitHub Issues est l'implémentation actuelle, la cible reste l'outil ITSM de MIP",
+          "Demandes de création de ticket d'une issue, et leur état de livraison chez le fournisseur de tickets",
           "rum",
           ref("IssueTicketDeliveries"),
           {
@@ -328,7 +330,7 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       "/sessions/{id}": {
         get: get(
-          "Métadonnées + timeline d'une session",
+          "Métadonnées et chronologie d'une session",
           "rum",
           o({ meta: ref("SessionMeta"), timeline: arr(ref("TimelineItem")) }, ["meta", "timeline"]),
           {
@@ -404,7 +406,7 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       "/tracing": {
         get: get(
-          "Couverture tracing + appels API + routes back",
+          "Couverture du traçage, appels d'API et routes serveur",
           "rum",
           o(
             { coverage: ref("TraceCoverage"), apiCalls: arr(ref("ApiCallRow")), backRoutes: arr(ref("BackRouteRow")) },
@@ -415,7 +417,7 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       "/correlation": {
         get: get(
-          "Corrélation front/back + angles morts",
+          "Corrélation entre navigateur et serveur, et angles morts",
           "rum",
           o({ cards: arr(ref("CorrCardRow")), blindSpots: arr(ref("BlindSpotRow")) }, ["cards", "blindSpots"]),
           { params: commonFilters },
@@ -423,7 +425,7 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       "/health-grid": {
         get: get(
-          "Heatmap santé (jour×heure) + trafic quotidien",
+          "Carte de santé (jour × heure) et trafic quotidien",
           "rum",
           o({ grid: arr(ref("HealthGridCell")), dailyTraffic: arr(ref("DailyTraffic")) }, ["grid", "dailyTraffic"]),
           { params: commonFilters },
@@ -461,7 +463,7 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       "/explorer/views": {
         get: get(
-          "Vues enregistrées lisibles par la session (les siennes, plus celles de ses apps si admin)",
+          "Vues enregistrées lisibles par la session : les siennes, et celles de ses applications pour un administrateur",
           "explorer",
           o({ views: arr(ref("SavedView")) }, ["views"]),
           { params: [{ $ref: "#/components/parameters/app" }] },
@@ -477,7 +479,7 @@ export function buildOpenApi(): Record<string, unknown> {
           scheme: "bearer",
           // lib/api/auth.ts, parseTokenConfig : `jeton` ou `jeton@app1;app2`.
           description:
-            "Jeton machine listé dans CONSOLE_API_TOKENS (lecture seule) : toutes les apps, ou celles qu'il nomme après « @ » (jeton@app1;app2).",
+            "Jeton d'API délivré par l'exploitant de la plateforme, en lecture : sur toutes les applications, ou sur une liste d'applications.",
         },
         sessionCookie: {
           type: "apiKey",
@@ -533,7 +535,8 @@ export function buildOpenApi(): Record<string, unknown> {
         ServerError: { description: "Erreur interne", content: { "application/json": { schema: ref("Error") } } },
         PayloadTooLarge: { description: "Corps de requête au-delà de 32 Kio (code body_too_large)", content: { "application/json": { schema: ref("Error") } } },
         BudgetExceeded: { description: "Budget de lecture dépassé (code query_budget_exceeded) : la requête n'a pas abouti — ce n'est jamais un résultat à zéro", content: { "application/json": { schema: ref("Error") } } },
-        Unavailable: { description: "Schéma requis non migré (ex. migration-v73 pour le workflow des issues, migration-v79 pour les vues enregistrées)", content: { "application/json": { schema: ref("Error") } } },
+        // migration-v73 (workflow des issues), migration-v79 (vues enregistrées) : dits ici, pas au client.
+        Unavailable: { description: "Fonction pas encore disponible : la base n'est pas à jour pour cette route (suivi des issues, vues enregistrées…)", content: { "application/json": { schema: ref("Error") } } },
       },
       schemas: {
         Error: o(
@@ -702,7 +705,7 @@ export function buildOpenApi(): Record<string, unknown> {
             stack_symbolicated: nul({
               type: "string",
               description:
-                "stack réécrite en positions source par les source maps de la release, scrubbed ; `stack` reste la stack brute",
+                "pile réécrite en positions source par les source maps de la release, expurgée des données personnelles ; `stack` reste la pile brute",
             }),
             symbolication_status: symbolicationStatus,
           },
@@ -788,7 +791,7 @@ export function buildOpenApi(): Record<string, unknown> {
         IssueCoverage: o(
           {
             grouping_version: { type: "integer", enum: [2] },
-            available: { type: "boolean", description: "migration v72 appliquée ; sinon toutes les entrées sont des groupes historiques" },
+            available: { type: "boolean", description: "regroupement v2 disponible ; sinon toutes les entrées sont des groupes historiques" },
             active_apps: arr(str),
             issues: int,
             legacy_groups: int,
@@ -872,7 +875,7 @@ export function buildOpenApi(): Record<string, unknown> {
             new_status: nul({ ...issueStatus, enum: [...issueStatus.enum, null] }),
             old_assignee: nul(ref("IssueUserRef")),
             new_assignee: nul(ref("IssueUserRef")),
-            body: nul({ type: "string", maxLength: 2000, description: "commentaire scrubbé à l'enregistrement" }),
+            body: nul({ type: "string", maxLength: 2000, description: "commentaire expurgé des données personnelles à l'enregistrement" }),
             legacy_fingerprint: nul({ type: "string", description: "commentaire système : note du groupe historique reprise une fois" }),
             link: nul(ref("IssueLink")),
             release: nul({ type: "string", description: "status → resolved : release de référence ; regression : release qui rouvre" }),
@@ -1054,7 +1057,7 @@ export function buildOpenApi(): Record<string, unknown> {
                   occurrences: { ...num, description: "somme des répétitions reçues, pas un nombre de lignes" },
                   crashes: num,
                   unhandled_rejections: num,
-                  fatal: nul({ ...num, description: "null = aucune ligne ne renseigne la fatalité (SDK antérieur à P7.3)" }),
+                  fatal: nul({ ...num, description: "null = aucune ligne ne renseigne la fatalité (SDK trop ancien pour la transmettre)" }),
                   sessions_affected: int,
                 },
                 ["occurrences", "crashes", "unhandled_rejections", "fatal", "sessions_affected"],
@@ -1227,7 +1230,7 @@ export function buildOpenApi(): Record<string, unknown> {
             measure: str,
             unit: str,
             aggregation: str,
-            additive: { ...bool, description: "false : ni seau à zéro, ni ligne « Autres » (percentile, distincts)" },
+            additive: { ...bool, description: "false : ni intervalle à zéro, ni ligne « Autres » (percentile, distincts)" },
             counting: str,
             source: {
               type: "string",
@@ -1237,7 +1240,7 @@ export function buildOpenApi(): Record<string, unknown> {
             },
             approximate: {
               ...bool,
-              description: "true : valeur lue sur une distribution en seaux, approchée à une largeur de seau près",
+              description: "true : valeur lue sur une distribution par intervalles, approchée à la largeur d'un intervalle près",
             },
             rollup: o(
               {

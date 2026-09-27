@@ -14,11 +14,13 @@
 // d'affichage restent. La vue active est celle dont l'URL porte exactement les
 // paramètres ; elle est marquée `aria-current`.
 //
-// À 390 px la rangée défile horizontalement ; un dégradé à droite indique qu'il
-// reste des vues hors champ.
+// Les vues PASSENT À LA LIGNE, à toute largeur (recette du 26/09/2026) : à 390 px,
+// la rangée défilante coupait sa dernière vue visible (« Dernie… ») contre
+// « Enregistrer la vue », et le chevron de défilement ne suffisait pas à dire qu'il
+// en restait. Chaque vue garde son libellé entier, sur une ou plusieurs lignes.
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   EVENEMENT_SEGMENTS,
   ajouterSegment,
@@ -30,16 +32,16 @@ import type { SavedSegment } from "@/lib/query-contract";
 
 export type { VuePrereglee };
 
+// `max-w-full` + coupure au caractère : une vue personnelle au nom long passe à la
+// ligne dans sa pastille au lieu de dépasser la page à 390 px.
 const PASTILLE =
-  "inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf";
+  "inline-flex max-w-full items-center rounded-full border px-2.5 py-0.5 text-xs font-medium [overflow-wrap:anywhere] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf";
 
 export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string | null }) {
   const pathname = usePathname();
   const sp = useSearchParams();
   const [enregistrees, setEnregistrees] = useState<SavedSegment[]>([]);
   const [saisie, setSaisie] = useState<string | null>(null);
-  const [deborde, setDeborde] = useState(false);
-  const rangee = useRef<HTMLDivElement>(null);
 
   // localStorage n'est lu qu'au montage client ; l'autre barre prévient quand elle écrit.
   useEffect(() => {
@@ -52,21 +54,6 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
       window.removeEventListener("storage", relire);
     };
   }, []);
-
-  // Indicateur de débordement : il reste des vues à droite de la zone visible.
-  useEffect(() => {
-    const el = rangee.current;
-    if (!el) return;
-    const mesurer = () => setDeborde(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
-    mesurer();
-    el.addEventListener("scroll", mesurer, { passive: true });
-    const observateur = typeof ResizeObserver !== "undefined" ? new ResizeObserver(mesurer) : null;
-    observateur?.observe(el);
-    return () => {
-      el.removeEventListener("scroll", mesurer);
-      observateur?.disconnect();
-    };
-  }, [vues, enregistrees]);
 
   const courants = useMemo(() => new URLSearchParams(sp.toString()), [sp]);
   const toutes = useMemo(() => [...vues, ...vuesPersonnelles(enregistrees)], [vues, enregistrees]);
@@ -84,13 +71,13 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
   }
 
   return (
-    <div className="flex min-w-0 items-center gap-2" data-testid="preset-bar">
+    <div className="flex min-w-0 flex-wrap items-center gap-2" data-testid="preset-bar">
       <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Vues</span>
       <div className="relative min-w-0 flex-1">
-        {/* `relative` : les textes sr-only (position absolue) des vues hors champ se
-            rangent DANS la rangée défilante ; sinon, positionnés par rapport au bloc
-            parent, ils échappaient au défilement et portaient la page à 695 px sur 390. */}
-        <div ref={rangee} className="relative flex min-w-0 items-center gap-1.5 overflow-x-auto py-0.5" role="list" aria-label="Vues préréglées">
+        {/* `relative` : les textes sr-only (position absolue) des vues indisponibles se
+            rangent dans la rangée ; positionnés par rapport au bloc parent, ils
+            portaient la page à 695 px sur 390. */}
+        <div className="relative flex min-w-0 flex-wrap items-center gap-1.5 py-0.5" role="list" aria-label="Vues préréglées">
           {toutes.map((vue) => {
             if (vue.indisponible) {
               return (
@@ -111,7 +98,7 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
             }
             const active = estActive(vue);
             return (
-              <span key={vue.id} role="listitem" className="shrink-0">
+              <span key={vue.id} role="listitem" className="max-w-full">
                 <Link
                   href={hrefDeVue(pathname, courants, vue)}
                   aria-current={active ? "true" : undefined}
@@ -133,13 +120,6 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
             );
           })}
         </div>
-        {deborde && (
-          <span
-            aria-hidden="true"
-            data-testid="preset-deborde"
-            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-app to-transparent"
-          />
-        )}
       </div>
 
       {saisie === null ? (

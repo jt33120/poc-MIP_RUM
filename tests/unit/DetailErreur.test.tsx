@@ -86,7 +86,7 @@ describe("F21 — comptesTouches : sessions et visiteurs touchés", () => {
 });
 
 describe("F21 — PhraseImpact sur l'impact d'une issue", () => {
-  it("issue muette sur la fenêtre : « 0 sessions et 0 visiteurs », aucun « Inconnu »", () => {
+  it("issue muette sur la fenêtre : « 0 session et 0 visiteur », aucun inconnu", () => {
     const html = renderToStaticMarkup(
       <PhraseImpact
         impact={impact({ occurrences: 0, sessions_affected: null, visitors_affected: null, identity_coverage: null })}
@@ -96,11 +96,11 @@ describe("F21 — PhraseImpact sur l'impact d'une issue", () => {
       />,
     );
     const t = texte(html);
-    expect(t).toContain("0 occurrences sur 24 h, touchant 0 sessions et 0 visiteurs");
-    expect(t).not.toContain("Inconnu");
+    expect(t).toContain("0 occurrence sur 24 h, touchant 0 session et 0 visiteur");
+    expect(t).not.toContain("inconnu");
   });
 
-  it("erreur backend : sessions et visiteurs « Inconnu » ; la part garde son dénominateur nommé", () => {
+  it("erreur backend : sessions et visiteurs en nombre inconnu ; la part garde son dénominateur nommé", () => {
     const t = texte(
       renderToStaticMarkup(
         <PhraseImpact
@@ -111,7 +111,8 @@ describe("F21 — PhraseImpact sur l'impact d'une issue", () => {
         />,
       ),
     );
-    expect(t).toContain("touchant Inconnu sessions et Inconnu visiteurs");
+    // Plus jamais « Inconnu sessions » (recette du 26/09/2026) : l'inconnu s'écrit en toutes lettres.
+    expect(t).toContain("touchant un nombre inconnu de sessions et un nombre inconnu de visiteurs");
     expect(t).toContain("des 4 sessions avec au moins une vue");
   });
 });
@@ -186,14 +187,14 @@ describe("F21 — VersionsTouchees", () => {
     expect(texte(valeurSous(html, "derniere-release") ?? "")).toBe(texte(`1.1.0 · ${fmtDate(DERNIERE)}`));
     const t = texte(html);
     expect(t).toContain("ni la fenêtre ni les filtres de l'écran ne s'y appliquent");
-    expect(t).toContain("groupes historiques repris compris");
+    expect(t).toContain("anciennes signatures reprises comprises");
     expect(t).not.toMatch(/versions? distinctes?|une seule version/);
   });
 
   it("issue sans version déclarée : dit, jamais une version devinée", () => {
     const html = renderToStaticMarkup(<VersionsTouchees issue={{ premiere: null, derniere: null }} />);
     expect(texte(html)).toContain(
-      "Release non déclarée : ni la première ni la dernière occurrence de l'issue ne porte de version.",
+      "Release non déclarée : ni la première ni la dernière occurrence ne porte de version.",
     );
     expect(html).not.toContain('data-testid="premiere-release"');
   });
@@ -206,7 +207,14 @@ describe("F21 — VersionsTouchees", () => {
     expect(texte(valeurSous(html, "derniere-release") ?? "")).toBe(texte(`1.1.0 · ${fmtDate(DERNIERE)}`));
   });
 
-  it("groupe (F20) : texte inchangé, nombre de versions distinctes lu", () => {
+  it("groupe (F20) : nombre de versions distinctes lu, et TOUTES les releases listées (recette du 26/09/2026)", () => {
+    const releaseTouchee = (release: string, occurrences: number | null) => ({
+      release,
+      occurrences,
+      premiere_ts: PREMIERE,
+      derniere_ts: DERNIERE,
+      deploiement_ts: null,
+    });
     const html = renderToStaticMarkup(
       <VersionsTouchees
         releases={{
@@ -215,16 +223,20 @@ describe("F21 — VersionsTouchees", () => {
             premiere: { release: "1.0.0", ts: PREMIERE },
             derniere: { release: "1.5.0", ts: DERNIERE },
             distinctes: 3,
+            parRelease: [releaseTouchee("1.5.0", 50), releaseTouchee("1.2.0", 7), releaseTouchee("1.0.0", null)],
           },
         }}
       />,
     );
     expect(html).toContain('data-portee="groupe"');
-    expect(texte(html)).toContain(
-      "3 versions distinctes ont porté ce groupe — depuis toujours, hors fenêtre. Une première release récente se lit comme une régression, une première release ancienne comme une dette.",
-    );
+    expect(texte(html)).toContain("3 versions distinctes ont porté ce groupe — depuis toujours, hors fenêtre.");
+    // Chaque release avec ses occurrences ; une release connue de l'issue seule : « — », jamais 0.
+    const lignes = html.match(/data-testid="release-touchee"/g) ?? [];
+    expect(lignes).toHaveLength(3);
+    expect(texte(html)).toMatch(/1\.2\.0 7 /);
+    expect(texte(html)).toMatch(/1\.0\.0 — /);
     const vide = renderToStaticMarkup(
-      <VersionsTouchees releases={{ ok: true, data: { premiere: null, derniere: null, distinctes: 0 } }} />,
+      <VersionsTouchees releases={{ ok: true, data: { premiere: null, derniere: null, distinctes: 0, parRelease: [] } }} />,
     );
     expect(texte(vide)).toContain("Release non déclarée : aucune occurrence de ce groupe ne porte de version.");
   });
@@ -279,7 +291,7 @@ describe("Revue v7 — portée des occurrences affichées : fenêtre, plus réce
   it("bloc 5 en paginant : « des N occurrences de cette page », jamais « dernières » ni « les plus récentes »", () => {
     const html = texte(repli("page"));
     expect(html).toContain("Répartition des 3 occurrences de cette page (pas de la population)");
-    expect(html).toContain("Ces parts sont celles des occurrences de CETTE PAGE : elles ne disent pas");
+    expect(html).toContain("Parts des occurrences de cette page — pas de toute la période");
     expect(html).not.toContain("dernières occurrences");
     expect(html).not.toContain("les plus récentes");
     // L'alternative de chaque répartition porte la même population.
@@ -290,7 +302,7 @@ describe("Revue v7 — portée des occurrences affichées : fenêtre, plus réce
     for (const portee of ["fenetre", "recentes"] as const) {
       const html = texte(repli(portee));
       expect(html, portee).toContain("Répartition des 3 dernières occurrences affichées (pas de la population)");
-      expect(html, portee).toContain("Ces parts sont celles des occurrences AFFICHÉES, les plus récentes : elles ne disent pas");
+      expect(html, portee).toContain("Parts des occurrences affichées, les plus récentes — pas de toute la période");
       expect(html, portee).not.toContain("cette page");
     }
   });

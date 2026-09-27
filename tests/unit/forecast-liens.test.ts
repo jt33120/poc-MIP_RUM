@@ -14,7 +14,7 @@ describe("lienJour — bornes UTC du jour local", () => {
     expect(url.searchParams.get("from")).toBe("2026-09-09T22:00:00Z");
     expect(url.searchParams.get("to")).toBe("2026-09-10T22:00:00Z");
     expect(url.searchParams.get("app")).toBe("demo");
-    expect(libelle).toBe("10/09 00:00-24:00 Europe/Paris (09/09 22:00 - 10/09 22:00 UTC)");
+    expect(libelle).toBe("10/09 00:00-24:00 (heure de Paris)");
   });
 
   it("Europe/Paris, jour d'hiver : 23:00:00Z la veille", () => {
@@ -39,6 +39,6 @@ describe("liensDesJours", () => {
   it("une entrée par jour, clé = le jour de la grille", () => {
     const liens = liensDesJours(GABARIT, ["2026-09-09", "2026-09-10"], "UTC");
     expect(Object.keys(liens)).toEqual(["2026-09-09", "2026-09-10"]);
-    expect(liens["2026-09-10"].libelle).toBe("10/09 00:00-24:00 UTC");
+    expect(liens["2026-09-10"].libelle).toBe("10/09 00:00-24:00 UTC (10/09 02:00 - 11/09 02:00, heure de Paris)");
   });
 });

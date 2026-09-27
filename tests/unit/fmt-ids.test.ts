@@ -24,7 +24,7 @@ describe("formater — exemples du plan (§ 4.0)", () => {
     ["count", 1240, "1 240"],
     ["bytes", 18_432, "18 Ko"],
     ["score", 72, "72"],
-    ["ratio", 3, "3,00"],
+    ["ratio", 3, "3,0"],
     ["pour100", 150, "150 pour 100"],
     ["pour100", 2.43, "2,4 pour 100"],
   ];
@@ -56,8 +56,11 @@ describe("formater — un ratio n'est pas une part", () => {
   it("pour100 ne contient jamais « % »", () => {
     for (const v of [150, 2.43, 0, 12_000]) expect(formater("pour100", v)).not.toContain("%");
   });
-  it("ratio : deux décimales, sans « % »", () => {
-    expect(formater("ratio", 3)).toBe("3,00");
+  it("ratio : une décimale dès 1 (« 3,3 par session »), deux dessous, sans « % »", () => {
+    expect(formater("ratio", 3)).toBe("3,0");
+    expect(formater("ratio", 3.303)).toBe("3,3");
+    expect(formater("ratio", 0.5)).toBe("0,50");
+    expect(formater("ratio", 0.04)).toBe("0,04");
     expect(formater("ratio", 1.005)).not.toContain("%");
   });
 });

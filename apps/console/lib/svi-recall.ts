@@ -20,6 +20,11 @@
 // On n'extrapole jamais le taux de rappel des appels évaluables vers les autres :
 // cela produirait un chiffre plus flatteur ET plus faux.
 
+import { pluriel } from "./format";
+
+/** Un pourcentage à une décimale, à la française : 70 → « 70,0 ». */
+const un = (v: number) => v.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
 export interface ContainmentCounts {
   /** Appels clos sur la période — dénominateur de tous les taux. */
   closed: number;
@@ -72,13 +77,14 @@ export function containment(c: ContainmentCounts): Containment {
 export function containmentReading(c: Containment, closed: number): string {
   if (closed === 0) return "Aucun appel clos sur la période : le containment n'est pas calculable.";
 
-  const base = `${c.net.toFixed(1)} % des ${closed.toLocaleString("fr-FR")} appels clos ont été résolus sans rappel sous 7 jours`;
+  // Décimales à la française et espace insécable avant « % » (recette du 26/09/2026).
+  const base = `${un(c.net)}\u00a0% des ${closed.toLocaleString("fr-FR")} appels clos ont été résolus sans rappel sous 7 jours`;
   const ecart =
     c.ecartPoints >= 0.05
-      ? ` — soit ${c.ecartPoints.toFixed(1)} point(s) de moins que le taux apparent de ${c.brut.toFixed(1)} %`
+      ? ` — soit ${un(c.ecartPoints)}\u00a0${c.ecartPoints < 2 ? "point" : "points"} de moins que le taux apparent de ${un(c.brut)}\u00a0%`
       : "";
   const borne = c.borneSuperieure
-    ? `. ${c.unevaluable.toLocaleString("fr-FR")} appel(s) résolu(s) sans empreinte d'appelant n'ont pas pu être vérifiés : le taux net est une borne supérieure.`
+    ? `. ${pluriel(c.unevaluable, "appel résolu", "appels résolus")} sans empreinte d'appelant ${c.unevaluable < 2 ? "n'a pas pu être vérifié" : "n'ont pas pu être vérifiés"} : le taux net est une borne supérieure.`
     : ".";
   return base + ecart + borne;
 }

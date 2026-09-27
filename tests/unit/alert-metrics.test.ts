@@ -40,7 +40,7 @@ describe("séparation ALERT_METRICS / SLO_METRICS", () => {
 
 describe("metricLabel", () => {
   it("libellé lisible avec unité pour chaque métrique connue", () => {
-    expect(metricLabel("log_errors")).toBe("Logs ERROR (nombre)");
+    expect(metricLabel("log_errors")).toBe("Logs en erreur (nombre)");
     expect(metricLabel("error_rate")).toBe("Taux d'erreur JS");
     expect(metricLabel("LCP")).toBe("LCP (ms)");
     expect(metricLabel("event:checkout")).toBe("Événement « checkout » (nombre)");

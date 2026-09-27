@@ -36,11 +36,13 @@ function png(largeur: number, hauteur: number, octets = 64): Buffer {
 
 const ISSUE = "0f8e4a52-3c1d-4b7e-9a60-1d2c3b4a5f6e";
 
-describe("les cinq images du plan", () => {
-  it("V-A et V-B en clair et en sombre, V-C en clair seulement", () => {
+describe("les six images du plan", () => {
+  // V-C en sombre aussi depuis la contre-recette du 26/09/2026 : la vitrine sombre
+  // montrait la capture claire du mobile.
+  it("V-A, V-B et V-C en clair et en sombre", () => {
     const fichiers = VUES.flatMap((v: { nom: string; themes: string[] }) => v.themes.map((t) => `${v.nom}-${t}.png`));
     expect(fichiers.sort()).toEqual(
-      ["issue-dark.png", "issue-light.png", "mobile-light.png", "overview-dark.png", "overview-light.png"].sort(),
+      ["issue-dark.png", "issue-light.png", "mobile-dark.png", "mobile-light.png", "overview-dark.png", "overview-light.png"].sort(),
     );
     expect(fichiers).toEqual(expect.arrayContaining([...CAPTURES_VUE_ENSEMBLE]));
   });

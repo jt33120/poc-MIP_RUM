@@ -14,6 +14,12 @@ export interface CustomerRow {
   notes: string | null;
   created_at: Date | string;
   sessions_7d: number;
+  /**
+   * Dernière donnée reçue : le plus récent des Web Vitals, des événements et de
+   * l'activité de session. Les seuls Web Vitals disaient « jamais » d'une app mobile
+   * qui envoie des sessions et des événements mais aucun Web Vital (recette du
+   * 26/09/2026) : l'administrateur croyait qu'elle ne remontait rien.
+   */
   last_event_at: Date | string | null;
 }
 
@@ -24,15 +30,22 @@ export async function listCustomers(): Promise<CustomerRow[]> {
            coalesce(a.allowed_origins, '{}') as allowed_origins,
            a.created_by, a.notes, a.created_at,
            coalesce(s.sessions_7d, 0)::int as sessions_7d,
-           m.last_event_at
+           greatest(m.dernier, ev.dernier, se.dernier) as last_event_at
     from app_registry a
     left join lateral (
       select count(distinct session_id) as sessions_7d
       from rum_session where app_id = a.app_id and started_at > now() - interval '7 days'
     ) s on true
     left join lateral (
-      select max(ts) as last_event_at from rum_metric where app_id = a.app_id
+      select max(ts) as dernier from rum_metric where app_id = a.app_id
     ) m on true
+    -- greatest() ignore les NULL : une source muette n'efface pas les autres.
+    left join lateral (
+      select max(ts) as dernier from rum_event where app_id = a.app_id
+    ) ev on true
+    left join lateral (
+      select max(last_seen_at) as dernier from rum_session where app_id = a.app_id
+    ) se on true
     order by a.created_at desc
   `);
 }

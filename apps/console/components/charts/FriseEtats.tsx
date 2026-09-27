@@ -24,6 +24,7 @@ import { useId, type ReactNode } from "react";
 import { TableAlternative } from "./Figure";
 import { FriseEtatsClavier } from "./FriseEtatsClavier";
 import { SERIE_MARGES, hrefZoom, libelleSeauComplet } from "@/lib/series";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 export interface EtatDef {
   /** "ok" | "warn" | "incident" | "inconnu" | "absent". */
@@ -34,8 +35,12 @@ export interface EtatDef {
   forme: "basse" | "moyenne" | "haute" | "contour" | "hachure";
   /** « ! » pour warn, « × » pour incident. */
   glyphe?: string;
-  /** Couleur, jamais seule porteuse du sens. */
-  ton: "neutre" | "warn" | "bad" | "vide";
+  /**
+   * Couleur, jamais seule porteuse du sens. `good` : l'état nominal d'un robot
+   * (« ok ») — gris, il ne se lisait pas comme le vert qui dit « tout va bien »
+   * partout ailleurs dans la console (recette du 26/09/2026).
+   */
+  ton: "good" | "neutre" | "warn" | "bad" | "vide";
 }
 
 export interface CaseEtat {
@@ -66,6 +71,7 @@ export const REGROUPEMENT = 3;
 const GLYPHE_SOUS_PX = 9;
 
 const TEINTE: Record<EtatDef["ton"], string> = {
+  good: "text-good",
   neutre: "text-ink-soft",
   warn: "text-warn",
   bad: "text-bad",
@@ -92,7 +98,7 @@ function definition(etats: EtatDef[], cle: string): EtatDef {
 
 /** Rang de gravité, pour le « pire état » d'un groupe : ton d'abord, puis forme. */
 export function gravite(def: EtatDef): number {
-  const ton = { bad: 3, warn: 2, neutre: 1, vide: 0 }[def.ton];
+  const ton = { bad: 3, warn: 2, good: 1, neutre: 1, vide: 0 }[def.ton];
   const forme = { haute: 4, moyenne: 3, basse: 2, contour: 1, hachure: 0 }[def.forme];
   return ton * 10 + forme;
 }
@@ -134,7 +140,7 @@ export function regrouperCases(placees: CasePlacee[], k = REGROUPEMENT): CasePla
       x: bloc[0].x,
       largeur: bloc.reduce((s, c) => s + c.largeur, 0),
       def: pire.def,
-      detail: `pire état des ${bloc.length} seaux ; ${bloc.map((c) => c.def.libelle).join(", ")}`,
+      detail: `pire état des ${bloc.length} tranches ; ${bloc.map((c) => c.def.libelle).join(", ")}`,
     });
   }
   return groupes;
@@ -142,7 +148,7 @@ export function regrouperCases(placees: CasePlacee[], k = REGROUPEMENT): CasePla
 
 /** Libellé complet d'une case : heure UTC, état en toutes lettres, détail. */
 export function libelleCase(c: CasePlacee): string {
-  return `${libelleSeauComplet(c.t, c.secondes, "UTC")} : ${c.def.libelle} — ${c.detail}`;
+  return `${libelleSeauComplet(c.t, c.secondes, FUSEAU_AFFICHAGE)} : ${c.def.libelle} — ${c.detail}`;
 }
 
 /** Le dessin d'un état, dans une case de `hauteur` px. */
@@ -272,16 +278,16 @@ export function FriseEtats({
         ))}
         {groupees && (
           <li className="fe-groupe" data-testid="frise-etats-regroupee">
-            cases regroupées par {REGROUPEMENT} seaux : pire état du groupe
+            cases regroupées par {REGROUPEMENT} tranches : pire état du groupe
           </li>
         )}
       </ul>
 
       <TableAlternative
         alternative={{
-          legende: `${ariaLabel} — un seau par ligne (UTC).`,
-          colonnes: ["Seau (UTC)", "État", "Détail"],
-          lignes: placees.map((c) => [libelleSeauComplet(c.t, c.secondes, "UTC"), c.def.libelle, c.detail]),
+          legende: `${ariaLabel} — une tranche par ligne.`,
+          colonnes: ["Période", "État", "Détail"],
+          lignes: placees.map((c) => [libelleSeauComplet(c.t, c.secondes, FUSEAU_AFFICHAGE), c.def.libelle, c.detail]),
         }}
       />
     </div>

@@ -16,6 +16,8 @@
 //   - Une moyenne : les percentiles viennent de la base, jamais recalculés ici (V5).
 import { TableAlternative } from "./Figure";
 import { formater, type FormatId } from "@/lib/fmt-ids";
+import { pluriel } from "@/lib/format";
+import { etiquettesGraduations, graduationsAxe } from "@/lib/graduations";
 
 export interface LigneEtendue {
   libelle: string;
@@ -37,11 +39,16 @@ function texteRepere(nom: string, v: number | null, format: FormatId): string {
   return connu(v) ? `${nom} ${formater(format, v)}` : `${nom} non calculable`;
 }
 
-/** Échelle commune : `axeMax` s'il est donné, sinon le plus grand percentile connu (+10 %). */
-function echelle(lignes: readonly LigneEtendue[], axeMax?: number): number {
-  if (axeMax != null && axeMax > 0) return axeMax;
+/**
+ * Échelle commune : `axeMax` s'il est donné, sinon le plus grand percentile connu
+ * arrondi à un pas rond — les graduations tombent sur des valeurs rondes, dans une
+ * seule unité (recette du 26/09/2026 : « 0 / 350 ms / 700 ms / 1,3 s »).
+ */
+function echelle(lignes: readonly LigneEtendue[], format: FormatId, axeMax?: number): { max: number; graduations: number[] } {
+  if (axeMax != null && axeMax > 0) return { max: axeMax, graduations: [0, axeMax / 2, axeMax] };
   const max = Math.max(0, ...lignes.flatMap((l) => [l.p50, l.p75, l.p95].filter(connu)));
-  return max > 0 ? max * 1.1 : 1;
+  const g = graduationsAxe(max, format);
+  return { max: g.haut, graduations: g.valeurs };
 }
 
 export function EtenduePercentiles({
@@ -56,7 +63,8 @@ export function EtenduePercentiles({
   /** Défaut 30 : « échantillon faible ». */
   faibleSous?: number;
 }) {
-  const max = echelle(lignes, axeMax);
+  const { max, graduations } = echelle(lignes, format, axeMax);
+  const textesAxe = etiquettesGraduations(graduations, format);
   const x = (v: number) => MARGE + (Math.min(Math.max(v, 0), max) / max) * (W - 2 * MARGE);
   const auDela = (v: number | null) => connu(v) && v > max;
 
@@ -69,7 +77,7 @@ export function EtenduePercentiles({
           const reperes = [texteRepere("p50", l.p50, format), texteRepere("p75", l.p75, format), texteRepere("p95", l.p95, format)];
           const debordes = (["p50", "p75", "p95"] as const).filter((k) => auDela(l[k]));
           const aria = mesuree
-            ? `${l.libelle} : ${reperes.join(", ")}, ${l.n.toLocaleString("fr-FR")} mesure(s)${faible ? ", échantillon faible" : ""}`
+            ? `${l.libelle} : ${reperes.join(", ")}, ${pluriel(l.n, "mesure")}${faible ? ", échantillon faible" : ""}`
             : `${l.libelle} : non mesuré`;
           // L'étendue court entre les extrémités CONNUES ; une extrémité inconnue n'a
           // ni moustache ni prolongement.
@@ -158,9 +166,9 @@ export function EtenduePercentiles({
         })}
       </ul>
       <div className="mt-1 flex justify-between text-[10px] tabular-nums text-ink-soft" aria-hidden="true">
-        <span>{formater(format, 0)}</span>
-        <span>{formater(format, max / 2)}</span>
-        <span>{formater(format, max)}</span>
+        {textesAxe.map((t, i) => (
+          <span key={i}>{t}</span>
+        ))}
       </div>
       <p className="mt-1 text-[11px] text-ink-soft">
         Barre : de p50 à p95 ; repère sombre : p75. Axe commun à toutes les lignes, sans seuil ni couleur de verdict.

@@ -191,7 +191,7 @@ export const chargerOverview = (async (principal, sp) => {
   // ─── Releases comparées (§ 3.2) : URL d'abord, sinon la règle du dernier déploiement ───
   const choix = deploys.ok && versionsFenetre.ok ? choisirReleases(deploys.data, versionsFenetre.data.rows) : null;
   const releases = releasesComparees({ relA: comparaison.relA, relB: comparaison.relB }, choix);
-  const [[vitalsB, vitalsA], seriesRelease, releasesLues] = await Promise.all([
+  const [[vitalsB, vitalsA], seriesRelease, releasesLues, vitauxReleasesLus] = await Promise.all([
     // `cmp=release` : les tuiles Web Vitals lisent la release B et la comparent à A.
     comparaison.mode === "release" && blocs.vitals && releases.ok
       ? Promise.all([
@@ -216,6 +216,11 @@ export const chargerOverview = (async (principal, sp) => {
       ? Promise.all(
           [releases.relB, releases.relA].map((v) => section(() => comparaisonVersions(avecCondition(fToutesReleases, "release", v), 12))),
         )
+      : Promise.resolve(null),
+    // …avec les intervalles de leurs p75 (recette du 26/09/2026) : le verdict de la
+    // zone 8 suit la règle des tuiles, affirmé seulement s'il tient sur l'intervalle.
+    blocs.versions && releases.ok
+      ? Promise.all([releases.relB, releases.relA].map((v) => section(() => vitalsP75(avecCondition(fToutesReleases, "release", v)))))
       : Promise.resolve(null),
   ]);
 
@@ -262,5 +267,6 @@ export const chargerOverview = (async (principal, sp) => {
     vitalsA,
     seriesRelease,
     releasesLues,
+    vitauxReleasesLus,
   } as const;
 }) satisfies Chargeur<unknown>;

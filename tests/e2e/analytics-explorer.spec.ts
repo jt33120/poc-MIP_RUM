@@ -151,7 +151,7 @@ test("rien ne part avant « Exécuter », puis la mesure composée est exacte", 
 
   // L'origine du chiffre est à l'écran (P6.6) : aucun agrégat ne porte les
   // occurrences d'erreurs, la somme vient donc des lignes, et l'écran le dit.
-  await expect(page.getByTestId("explorer-source")).toHaveText("lignes brutes");
+  await expect(page.getByTestId("explorer-source")).toHaveText("données détaillées");
 
   // 5. L'URL rejoue l'analyse, et ne transporte aucun curseur.
   const url = new URL(page.url());
@@ -173,11 +173,13 @@ test("zéro réel, refus explicite et retour à l'invitation après changement d
   await expect(page.getByTestId("kpi-valeur")).toHaveText("0", { timeout: 15_000 });
   await expect(page.getByTestId("explorer-vide")).toBeVisible();
 
-  // Une requête refusée dit POURQUOI et avec quel code, sans chiffre inventé.
+  // Une requête refusée dit POURQUOI, sans chiffre inventé ; son code reste dans le
+  // DOM (`data-code`) mais plus à l'écran (recette du 26/09/2026).
   await page.goto(`${base}&measure=message:count&viz=value&run=1`);
   const refus = page.getByTestId("explorer-invalide");
   await expect(refus).toBeVisible();
-  await expect(refus).toContainText("unsupported_measure");
+  await expect(refus).toHaveAttribute("data-code", "unsupported_measure");
+  await expect(refus).not.toContainText("unsupported_measure");
   await expect(page.getByTestId("explorer-total")).toHaveCount(0);
   await expect(page.getByTestId("kpi-valeur")).toHaveCount(0);
 
@@ -283,7 +285,7 @@ test.describe("F32 — représentations du résultat", () => {
     // Le journal EST un tableau : sa légende le décrit, et il se lit sans dessin.
     await page.goto(`${baseF32}&period=1h&measure=value:p75&viz=table&limit=25&run=1`);
     await expect(page.locator("#explorer-resultat table caption")).toBeAttached({ timeout: 15_000 });
-    await expect(page.locator("#explorer-resultat")).toContainText("le journal est ordonné par date");
+    await expect(page.locator("#explorer-resultat")).toContainText("lignes ordonnées par date, aucun tri par mesure");
   });
 
   test("R-V : bande « Bon » et badge au p75 ; ni badge ni bande pour la moyenne ou le p95", async ({ page }) => {
@@ -312,7 +314,7 @@ test.describe("F32 — représentations du résultat", () => {
     await page.goto(`${baseF32}&period=24h&measure=rows:count&viz=value&cmp=prev&run=1`);
     const delta = page.locator("#explorer-resultat").getByTestId("delta");
     await expect(delta).toBeVisible({ timeout: 15_000 });
-    await expect(delta).toContainText(/vs 24 h précédentes \(\d\d\/\d\d \d\d:\d\d → \d\d\/\d\d \d\d:\d\d UTC\)/);
+    await expect(delta).toContainText(/vs 24 h précédentes \(\d\d\/\d\d \d\d:\d\d → \d\d\/\d\d \d\d:\d\d\)/);
     // 12 mesures contre 8 la veille : +50 %.
     await expect(delta).toContainText("+50 %");
   });
@@ -323,9 +325,10 @@ test.describe("F32 — représentations du résultat", () => {
     const onglet = page.getByTestId("onglet-distribution");
     await expect(onglet).toBeVisible({ timeout: 15_000 });
     await expect(onglet).toHaveAttribute("aria-disabled", "true");
-    await expect(onglet).toContainText("B5");
+    // La raison est dans l'infobulle et le texte lu, sans code de lot interne (recette 26/09).
+    await expect(onglet).toHaveAttribute("title", /ne se lit pas encore dans l'Explorer/);
+    await expect(onglet).not.toContainText("B5");
     const raison = page.getByTestId("distribution-indisponible");
-    await expect(raison).toContainText("pas encore exposée par l'Explorer");
     await expect(raison.getByRole("link", { name: /Voir la distribution de LCP sur Pages/ })).toHaveAttribute("href", /vital=LCP/);
   });
 

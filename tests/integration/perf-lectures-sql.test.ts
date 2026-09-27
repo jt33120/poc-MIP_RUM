@@ -623,7 +623,7 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
   const f22 = (app: string) => lib22.filtersOfQuery(requete(`${FENETRE}&app=${app}`));
 
   async function nettoyerF22(): Promise<void> {
-    for (const table of ["rum_event", "rum_pageview", "rum_session"]) {
+    for (const table of ["rum_longtask", "rum_event", "rum_pageview", "rum_session"]) {
       await c22.query(`delete from ${table} where app_id = any($1::text[])`, [APPS_F22]);
     }
   }
@@ -672,6 +672,22 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
         [`f22-e-${n}`, sid, app, route, `frustration.${type}`, { target: cible, count: 1 }, ts],
       );
     }
+    // Trames longues attribuées : un script INTÉGRÉ à deux pages (même fonction), une
+    // invocation qui est l'URL de la page (avec sa query string), un fichier.
+    // [n, adresse du script, fonction, invocateur, route, blocage]
+    const trames: [number, string, string | null, string | null, string, number][] = [
+      [1, "https://site.example/partners/17", "BUTTON#go.onclick", null, "/partners/:id", 100],
+      [2, "https://site.example/partners/42", "BUTTON#go.onclick", null, "/partners/:id", 50],
+      [3, "https://site.example/partners", null, "https://site.example/partners?utm_source=lettre", "/partners", 30],
+      [4, "https://cdn.example/app.js", "render", null, "/", 40],
+    ];
+    for (const [n, script, fonction, invocateur, route, blocage] of trames) {
+      await c22.query(
+        `insert into rum_longtask (span_id, session_id, app_id, route, duration_ms, blocking_ms, script_url, script_function, invoker, ts)
+         values ($1, 'f22-w1', $2, $3, $4::float8, $4::real, $5, $6, $7, $8)`,
+        [`f22-lt-${n}`, WEB_F22, route, blocage, script, fonction, invocateur, H(0, 30)],
+      );
+    }
   }
 
   beforeAll(async () => {
@@ -687,6 +703,19 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
     await lib22?.pool.end();
     await nettoyerF22();
     await c22.end();
+  });
+
+  // Contre-recette du 26/09/2026 : la même fonction d'un script intégré occupait une
+  // ligne par URL de page (/partners/17, /42…) ; une URL avec query string servait de nom.
+  describe("scriptsBloquants", () => {
+    it("un script intégré se regroupe par fonction, routes en détail ; une invocation-URL devient « au chargement »", async () => {
+      const lignes = await frustration.scriptsBloquants(f22(WEB_F22));
+      expect(lignes).toEqual([
+        { url: null, quoi: "BUTTON#go.onclick", n: 2, totalMs: 150, worstMs: 100, routes: ["/partners/:id"], nbRoutes: 1 },
+        { url: "https://cdn.example/app.js", quoi: "render", n: 1, totalMs: 40, worstMs: 40, routes: ["/"], nbRoutes: 1 },
+        { url: null, quoi: null, n: 1, totalMs: 30, worstMs: 30, routes: ["/partners"], nbRoutes: 1 },
+      ]);
+    });
   });
 
   describe("frustrationTotaux", () => {
@@ -1187,7 +1216,7 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
 
     it("aucune occurrence ne déclare de version → null, jamais une version devinée", async () => {
       const r = await lib20.releasesDuGroupe({ app_id: APP_F20, fingerprint: "f20fp-sansrel" }, f20());
-      expect(r).toEqual({ premiere: null, derniere: null, distinctes: 0 });
+      expect(r).toEqual({ premiere: null, derniere: null, distinctes: 0, parRelease: [] });
     });
 
     it("l'app du groupe borne la lecture : la même empreinte dans une autre app n'y entre pas", async () => {
@@ -1207,9 +1236,9 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
       expect(vu.derniere?.release).toBe("9.9.9");
       // Une app hors du périmètre d'un viewer : rien, jamais un repli sur toutes les apps.
       const refuse = await lib20.releasesDuGroupe(refA, f20("", viewerB));
-      expect(refuse).toEqual({ premiere: null, derniere: null, distinctes: 0 });
+      expect(refuse).toEqual({ premiere: null, derniere: null, distinctes: 0, parRelease: [] });
       const vide = lib20.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${APP_F20}`)));
-      expect(await lib20.releasesDuGroupe(refA, vide)).toEqual({ premiere: null, derniere: null, distinctes: 0 });
+      expect(await lib20.releasesDuGroupe(refA, vide)).toEqual({ premiere: null, derniere: null, distinctes: 0, parRelease: [] });
     });
   });
 

@@ -6,7 +6,9 @@
 //   - un bloc h3 sous le h2 « Le détail », sans conteneur de page à lui ;
 //   - trois onglets qui sont trois radios d'un même groupe : le clavier les parcourt
 //     aux flèches, sans script ni URL (recette e2e TP6) ;
-//   - le groupe backend porte son nouveau nom ;
+//   - le groupe des services porte son nom en français courant, et l'hébergement n'est
+//     pas redit : un renvoi vers le tableau de la présentation (recette du 26/09/2026) ;
+//   - aucun chemin du code, aucune table, aucune adresse d'infrastructure à l'écran ;
 //   - la conclusion ne parle des tâches planifiées que si la LECTURE dit qu'elles
 //     sont à relancer ; une lecture en échec n'affirme rien.
 import { renderToStaticMarkup } from "react-dom/server";
@@ -53,24 +55,37 @@ describe("PS11 — Specs, un bloc de la partie « Le détail »", () => {
   it("un h3 nommé, sans h2 ni conteneur de page ; les titres internes passent en h4", async () => {
     const html = await rendre(ILLISIBLE);
     expect(html).toMatch(/^<section id="specs" aria-labelledby="specs-titre"/);
-    expect(html).toMatch(/<h3 id="specs-titre"[^>]*>Specs \/ Capacité technique<\/h3>/);
+    expect(html).toMatch(/<h3 id="specs-titre"[^>]*>Spécifications techniques<\/h3>/);
     expect(html).not.toContain("<h2");
     expect(html).not.toContain("max-w-6xl");
-    // Les groupes de l'infrastructure, « Ce qu'on capte », « Ce qu'on ne mesure pas », « Ce qui manque ».
-    expect((html.match(/<h4 /g) ?? []).length).toBe(INFRA.length + 3);
+    // Les groupes de l'infrastructure sauf l'hébergement, « Ce qu'on capte », « Ce qu'on
+    // ne mesure pas », « Ce qui manque ».
+    expect((html.match(/<h4 /g) ?? []).length).toBe(INFRA.length - 1 + 3);
     expect((html.match(/<h3 /g) ?? []).length).toBe(1);
   });
 
-  it("le groupe backend porte son nom de la topologie réelle", async () => {
-    const t = texte(await rendre(ILLISIBLE));
-    expect(t).toContain("Backend — collecteur sur Vercel, travaux planifiés et MCP sur Railway");
+  it("le groupe des services porte son nom en français courant ; l'hébergement renvoie à la présentation", async () => {
+    const html = await rendre(ILLISIBLE);
+    const t = texte(html);
+    expect(t).toContain("Services — la collecte dans la console, les travaux planifiés et le serveur MCP à part");
     expect(t).not.toContain("trois services autonomes");
+    // L'hébergement s'écrit une fois, dans la présentation : ni ses chaînes ni son groupe ici.
+    expect(html).toMatch(/<a href="\/presentation#hebergement"/);
+    for (const l of INFRA.find((g) => g.titre === "Hébergement")!.lignes) expect(t).not.toContain(l.v);
   });
 
-  it("le chapeau ne promet un fichier de preuve qu'aux lignes qui décrivent le dépôt", async () => {
-    const t = texte(await rendre(ILLISIBLE));
-    expect(t).toContain("les lignes qui décrivent le dépôt portent le fichier qui les prouve");
-    expect(t).not.toContain("chaque ligne porte le fichier");
+  it("aucun chemin du code, aucune table, aucune adresse d'infrastructure, aucun titre de chantier", async () => {
+    const t = texte(await rendre({ etat: "lu", date: new Date() }));
+    for (const l of INFRA.flatMap((g) => g.lignes)) if (l.preuve) expect(t).not.toContain(l.preuve);
+    expect(t).not.toMatch(/packages\/|services\/|apps\/|rum_\w+|replay_chunk|schema_migration|scheduler_lease|DATABASE_URL|railway\.app|europe-west4/);
+    expect(t).not.toMatch(/Specs \/|sans le maquiller|\bingest\b/);
+  });
+
+  it("le décompte face au marché est dans l'onglet qu'il résume, pas au-dessus des trois", async () => {
+    const html = await rendre(ILLISIBLE);
+    const decompte = html.indexOf('data-testid="specs-decompte"');
+    expect(decompte).toBeGreaterThan(html.indexOf('data-onglet="ecart"'));
+    expect(decompte).toBeGreaterThan(html.indexOf('data-onglet="mesures"'));
   });
 
   it("trois onglets = trois radios d'un même groupe, la première cochée, chacune étiquetée, chaque panneau repérable", async () => {
@@ -90,8 +105,10 @@ describe("PS11 — Specs, un bloc de la partie « Le détail »", () => {
     for (const id of ["specs-infra", "specs-mesures", "specs-ecart"]) expect(html).toContain(`<label for="${id}"`);
     const panneaux = [...html.matchAll(/data-testid="specs-panneau" data-onglet="([a-z]+)"/g)].map((m) => m[1]);
     expect(panneaux).toEqual(["infra", "mesures", "ecart"]);
-    // Ni lien ni formulaire : l'onglet choisi ne passe jamais par l'URL.
-    expect(html).not.toMatch(/<a |<form/);
+    // Aucun formulaire, et le seul lien est le renvoi vers l'hébergement : l'onglet choisi
+    // ne passe jamais par l'URL.
+    expect(html).not.toContain("<form");
+    expect([...html.matchAll(/<a href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/presentation#hebergement"]);
   });
 
   it("petits textes en ink-soft, pas ink-faint (§ 8.2)", async () => {
@@ -119,7 +136,7 @@ describe("PS11 — la conclusion suit la lecture du planificateur", () => {
     const t = texte(await rendre(ILLISIBLE));
     // Le pays est estimé (RUM_PARITY_STATUS.md:319-320), et le visiteur est un
     // pseudonyme, « pas une donnée anonyme » (:266).
-    expect(t).toContain("Pays estimé, scrub PII côté client et serveur");
+    expect(t).toContain("Pays estimé, données personnelles nettoyées côté client et côté serveur");
     expect(t).not.toMatch(/géolocalisation|anonym/i);
     // Tous les manques ne sont pas d'exploitation (C3, § 10) : la conclusion renvoie à
     // la partie qui les reprend, au lieu de les ranger sous un seul mot.

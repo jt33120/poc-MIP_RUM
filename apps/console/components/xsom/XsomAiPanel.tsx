@@ -4,6 +4,7 @@
 // par xSOM » — un placement partenaire, visuellement distinct du produit RUM natif.
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { LineTrend, type LineTrendPoint } from "@/components/charts/LineTrend";
+import { TableDefilante } from "@/components/TableDefilante";
 import { fmtLatency, fmtPct } from "@/lib/format";
 import type { XsomAiFields } from "@/lib/xsom-ai";
 
@@ -26,7 +27,8 @@ export function XsomSponsorBanner({ href }: { href: string }) {
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-ink">Supervision IA propulsée par xSOM AI Guard</div>
         <div className="text-xs text-ink-soft">
-          Le suivi de vos appels LLM (coût, tokens, latence, qualité) est fourni par notre partenaire{" "}
+          Le suivi de vos appels aux modèles de langage (coût, volume de texte traité, latence, qualité) est fourni par
+          notre partenaire{" "}
           <strong>xSOM AI Guard</strong> — service indépendant du RUM MIP.
         </div>
       </div>
@@ -72,7 +74,9 @@ export function XsomAiPanel({ ai, periodLabel }: { ai: XsomAiFields; periodLabel
       </SupervisionHero>
 
       <h2 className="mb-2 text-sm font-semibold text-ink">Par fonction IA · source xSOM</h2>
-      <div className="card overflow-hidden">
+      {/* Défilant et signalé : `overflow-hidden` coupait les colonnes chiffrées
+          (coût, latence, erreurs) sur petit écran. */}
+      <TableDefilante className="card" label="Par fonction IA">
         <table className="w-full text-sm">
           <thead className="bg-panel2">
             <tr>
@@ -104,7 +108,7 @@ export function XsomAiPanel({ ai, periodLabel }: { ai: XsomAiFields; periodLabel
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
     </>
   );
 }

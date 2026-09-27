@@ -82,7 +82,7 @@ test("Journal : filtre typé, échantillonnage, clavier, cartes à 390 px et pag
   const table = page.getByTestId("journal-table");
   const carte = table.getByTestId("journal-ligne").first();
   await expect(carte.getByRole("link", { name: "checkout", exact: true })).toBeVisible();
-  await expect(carte.getByText(/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} UTC/)).toBeVisible();
+  await expect(carte.getByText(/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}/)).toBeVisible();
   await expect(carte.getByText("/checkout-b", { exact: true })).toBeVisible();
   await expect(carte.getByRole("link", { name: /p4-e2e/ })).toBeVisible();
   // Colonne promue (clé sur 100 % des lignes de la page), libellée dans la carte.
@@ -94,7 +94,7 @@ test("Journal : filtre typé, échantillonnage, clavier, cartes à 390 px et pag
   await name.focus();
   await expect(name).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(page.getByLabel("Source attribut")).toBeFocused();
+  await expect(page.getByLabel("Source de l'attribut")).toBeFocused();
   // Le volume a son alternative textuelle (une ligne par seau).
   await expect(page.locator("#volume-du-resultat").getByText("Alternative textuelle")).toBeVisible();
   expect(await debordements(page)).toEqual([]);
@@ -127,7 +127,7 @@ test("facettes cliquables : un nom pose `name`, un attribut pose `attr_source` +
   expect(url.searchParams.get("attr_key")).toBe("plan");
   expect(url.searchParams.get("name")).toBe("checkout");
   expect(url.searchParams.has("attr_value")).toBe(false);
-  await expect(page.getByLabel("Source attribut")).toHaveValue("props");
+  await expect(page.getByLabel("Source de l'attribut")).toHaveValue("props");
   await expect(page.getByLabel("Clé", { exact: true })).toHaveValue("plan");
   // Une clé sans valeur ne filtre rien : même total que le nom seul.
   await expect(total(page)).toHaveText(/^\d/);

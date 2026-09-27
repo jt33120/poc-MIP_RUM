@@ -5,6 +5,7 @@
 // Le « score d'expérience /100 » qui vivait ici a été retiré : il pondérait au
 // jugé des paliers de LCP sans source. L'écran montre désormais ses constituants
 // côte à côte, chacun avec sa source.
+import type { IntervalleP75 } from "./stats/incertitude";
 
 /** Une note ≥ 4/5 (ou 👍) compte comme positive. */
 export const CSAT_POSITIVE = 4;
@@ -53,7 +54,7 @@ export function partPositive(k: number, n: number): number | null {
 }
 
 export interface RepartitionNote {
-  cle: "promoteurs" | "passifs" | "detracteurs";
+  cle: "positifs" | "neutres" | "detracteurs";
   libelle: string;
   n: number;
   /** Part des avis notés ; `null` sans avis. */
@@ -64,11 +65,17 @@ export interface RepartitionNote {
  * « Répartition des notes » (§ 5.5.3) : trois parts d'un même tout — l'empilement
  * est vrai. Le libellé nomme les notes, pas un état de mesure (aucune couleur de
  * verdict : une note n'est pas une mesure au regard d'un seuil).
+ *
+ * LES TRANCHES SONT CELLES DU CSAT. Le CSAT compte les notes 4 et 5 : découper en
+ * « 5 / 3-4 / 1-2 » (promoteurs d'un NPS) rendait le CSAT de la tuile introuvable
+ * dans la répartition juste à côté (recette du 26/09/2026). La première part EST
+ * donc le CSAT, la dernière la part de détracteurs de sa tuile.
  */
-export function repartitionNotes(s: { count: number; promoters: number; passives: number; detractors: number }): RepartitionNote[] {
+export function repartitionNotes(s: { count: number; positives: number; detractors: number }): RepartitionNote[] {
+  const neutres = Math.max(0, s.count - s.positives - s.detractors);
   return [
-    { cle: "promoteurs", libelle: "Notes 5", n: s.promoters, part: partPositive(s.promoters, s.count) },
-    { cle: "passifs", libelle: "Notes 3-4", n: s.passives, part: partPositive(s.passives, s.count) },
+    { cle: "positifs", libelle: "Notes 4-5", n: s.positives, part: partPositive(s.positives, s.count) },
+    { cle: "neutres", libelle: "Note 3", n: neutres, part: partPositive(neutres, s.count) },
     { cle: "detracteurs", libelle: "Notes 1-2", n: s.detractors, part: partPositive(s.detractors, s.count) },
   ];
 }
@@ -86,6 +93,8 @@ export interface LcpParPage {
   valeur: string | null;
   lcp_p75: number | null;
   lcp_n: number;
+  /** Intervalle à 95 % de la p75 : le verdict du LCP suit la règle des tuiles. */
+  lcp_intervalle?: IntervalleP75;
 }
 
 export interface LigneSatisfactionPage {
@@ -96,13 +105,17 @@ export interface LigneSatisfactionPage {
   positifs: number;
   /** CSAT de la page (part d'avis ≥ 4/5) ; `null` sans avis noté. */
   csat: number | null;
-  /** Pilote du classement : part d'avis NON positifs (1 − CSAT) ; `null` sans avis noté. */
+  /**
+   * Clé du classement « de la moins à la plus satisfaisante » : 1 − CSAT ; `null`
+   * sans avis noté. Jamais affichée : l'écran montre le CSAT, dans le sens de sa tuile.
+   */
   nonPositifs: number | null;
   /** Part de notes 1-2 ; `null` sans avis noté. */
   partDetracteurs: number | null;
   /** LCP p75 de la même route ; `null` si non mesuré (ou route inconnue). */
   lcp: number | null;
   lcpN: number | null;
+  lcpIntervalle?: IntervalleP75;
 }
 
 /**
@@ -124,6 +137,7 @@ export function lignesSatisfactionParPage(pages: readonly AvisParPage[], lcp: re
       partDetracteurs: partPositive(p.detracteurs, p.count),
       lcp: l?.lcp_p75 ?? null,
       lcpN: l ? l.lcp_n : null,
+      ...(l?.lcp_intervalle ? { lcpIntervalle: l.lcp_intervalle } : {}),
     };
   });
 }
@@ -152,7 +166,7 @@ export function nuageRessenti(
   return { points, eligibles: points.length, suffisant: points.length >= PAGES_MIN_NUAGE };
 }
 
-// ─────────────── Frustration pour 1 000 sessions : garde de capteur (R-F) ───────────────
+// ─────────────── Frustration par session : garde de capteur (R-F) ───────────────
 //
 // La garde est UNE règle de la console, écrite une fois par F22 pour `/ux`
 // (`etatCapteurFrustration`, lib/perf-domain.ts) : même capteur, mêmes textes, même
@@ -160,7 +174,7 @@ export function nuageRessenti(
 import { etatCapteurFrustration, type EtatCapteurFrustration } from "./perf-domain";
 
 /**
- * Taux « pour 1 000 sessions commencées », avec la garde de capteur de F22 :
+ * Signaux de frustration PAR SESSION commencée, avec la garde de capteur de F22 :
  *   - aucune session commencée → `null` « aucune session commencée » ;
  *   - la garde MASQUE (population entièrement React Native) → `null` et
  *     `non_collecte` : jamais « 0,00 », qui se lirait « personne ne s'acharne » là
@@ -168,8 +182,12 @@ import { etatCapteurFrustration, type EtatCapteurFrustration } from "./perf-doma
  *   - sinon le taux, sur les seules sessions dont le capteur émet (toutes, si la
  *     colonne `runtime` manque), et l'état `partiel` éventuel de la garde.
  * `n` est le dénominateur effectivement employé (règle d'échantillon faible).
+ *
+ * PAR SESSION, PAS « POUR 1 000 ». Un signal se répète dans une session (un clic
+ * mort par clic) : « pour 1 000 sessions » dépassait 1 000 et se lisait comme une
+ * part (« 3 303,45 » à la recette du 26/09/2026). « 3,30 par session » se lit.
  */
-export function frustrationPour1000(
+export function frustrationParSession(
   l: { sessions: number; sessionsCouvertes: number; signaux: number; runtimeLu: boolean },
   plage?: string,
 ): { valeur: number | null; raisonNull: string | null; n: number; etat: EtatCapteurFrustration | null } {
@@ -182,5 +200,5 @@ export function frustrationPour1000(
     return { valeur: null, raisonNull: `non collecté : ${manque}`, n: 0, etat: garde.etat };
   }
   const n = l.runtimeLu ? l.sessionsCouvertes : l.sessions;
-  return { valeur: n > 0 ? (l.signaux / n) * 1000 : null, raisonNull: null, n, etat: garde.etat };
+  return { valeur: n > 0 ? l.signaux / n : null, raisonNull: null, n, etat: garde.etat };
 }

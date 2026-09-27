@@ -46,12 +46,13 @@ describe("Donut", () => {
   });
 
   it("une part non nulle qui s'arrondirait à 0 s'écrit « < 1 % »", () => {
-    expect(partAffichee(1, 1000)).toBe("< 1 %");
+    // Espaces insécables : « < 1 % » ne se coupe pas en fin de ligne.
+    expect(partAffichee(1, 1000)).toBe("< 1 %");
   });
 
   it("nom accessible : l'énumération des parts par défaut, ou celui de l'appelant", () => {
     const parDefaut = renderToStaticMarkup(<Donut slices={[{ label: "A", value: 3, color: "#0891b2" }]} />);
-    expect(parDefaut).toMatch(/role="img" aria-label="Répartition : A 3 \(100 %\)"/);
+    expect(parDefaut).toMatch(/role="img" aria-label="Répartition : A 3 \(100\u00a0%\)"/);
     const nomme = renderToStaticMarkup(
       <Donut slices={[{ label: "A", value: 3, color: "#0891b2" }]} ariaLabel="Sessions actives par type" />,
     );

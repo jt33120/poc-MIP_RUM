@@ -116,9 +116,9 @@ dans `.railway/railway.ts` (liste des variables partagées en tête du fichier).
 | `WEBHOOK_SIGNING_SECRET` | `notifier` | non (secret, ≥ 32 caractères, deux valeurs pendant une rotation) | signe les webhooks (`x-mip-signature`) |
 | `TICKET_SECRET_KEY`, `TICKET_*` | `notifier` (et `scheduler` tant que `SCHEDULER_DELIVERY=on`) | selon les intégrations | clé des références `enc:v1:`, jetons `env:TICKET_…` |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `collector`, `scheduler`, `notifier`, `api`, `console-api` | **à poser** (15 à 30) | délai SIGTERM → SIGKILL ; défaut Railway 0, soit aucun arrêt propre. Le scheduler de production ne l'a pas en variable (son drainage Railway est réglé à 20 s ; le kit, sans la variable, compte 10 s et avertit au démarrage) |
-| `REQUIRE_API_KEY` | `collector` | non | `true` = rejeter toute app inconnue ou sans clé — provisionner d'abord : `scripts/ops/provisionner-cles.mjs` |
+| `REQUIRE_API_KEY` | `collector` | non | `true` = rejeter toute app inconnue ou sans clé — provisionner d'abord : `scripts/ops/provisionner-cles.mjs`. Une app inactive est refusée quel que soit ce réglage |
 | `IDENTITY_HASH_SECRET` + `IDENTITY_HASH_FINGERPRINT` | `collector` | non ; l'empreinte **oui** dès que le secret est posé | HMAC des identités ; empreinte par `scripts/ops/empreinte-identite.mjs` (écart : identité retirée, `/ready` refusé) |
-| `IDENTITY_HASH_SECRET` | `console-api` | pour le RGPD par identité | la **même** valeur que le collector : sans elle, la recherche, l'export et l'effacement par identité métier (C10) ne peuvent pas hacher la saisie. Pas encore déclarée pour ce service dans l'IaC (26/09/2026) |
+| `IDENTITY_HASH_SECRET` | `console-api` | pour le RGPD par identité | la **même** valeur que le collector : sans elle, la recherche, l'export et l'effacement par identité métier (C10) ne peuvent pas hacher la saisie. Déclarée dans l'IaC depuis #327 (26/09/2026) |
 | `EDGE_PROXY_SECRET` | `collector` | non (secret, 1 ou 2 valeurs) | secret du relais de la console (bord de confiance `mip-edge/1`) |
 | `RATE_LIMIT_PER_MIN` | `collector` | non | défaut 600, par app |
 | `PGPOOL_MAX` | `collector`, `scheduler`, `notifier`, `api`, `console-api` | non | taille du pool (défauts : 8, 4, 2, 6 et 8 ; l'IaC pose 6 pour `console-api`) |

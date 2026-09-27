@@ -16,7 +16,7 @@
 // obligatoire du § 3.2 : même fenêtre, sans normalisation de trafic.
 import { ALERT_MODES, ALERT_SEVERITIES } from "@/lib/alerting";
 import { MESURES_MIN_RELEASE, SEUIL_REGRESSION_DEFAUT } from "@/lib/alerting";
-import { ALERT_COMPARATORS, ALERT_METRICS, metricLabel } from "@/lib/alertes-metriques";
+import { ALERT_COMPARATORS, ALERT_METRICS, libelleSeverite, metricLabel } from "@/lib/alertes-metriques";
 import type { AlertRuleRow } from "@/lib/queries-v2";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
 import { PHRASE_FENETRE } from "@/components/ReleaseCompare";
@@ -24,12 +24,14 @@ import { PHRASE_FENETRE } from "@/components/ReleaseCompare";
 /** Seuil par défaut de la régression de release (§ 3.2) : +20 %, comme `assessRegression`. */
 export { SEUIL_REGRESSION_DEFAUT };
 
+// Sans nom de fonction, de migration ni de lot (recette du 26/09/2026) : ce qui manque
+// est la migration-v86 et sa fonction `check_alerts` en mode release (B52).
 export const RAISON_REGRESSION_RELEASE =
-  "Mode indisponible sur cette base : l'évaluateur check_alerts ne sait comparer deux releases qu'avec migration-v86 (B52). Seuil prévu : +20 %, aligné sur le verdict de déploiement de /tracing.";
+  "Mode indisponible sur cette base : l'évaluation des alertes ne sait pas encore comparer deux releases (mise à jour de la base en attente). Seuil prévu : +20 %, aligné sur le verdict de déploiement de l'écran Tracing.";
 
 /** La détection de v86 a échoué : on ne sait pas, donc on n'écrit pas. */
 export const RAISON_DETECTION_RELEASE =
-  "Mode indisponible : la présence de migration-v86 (B52) n'a pas pu être lue. Sans elle, une règle de release serait évaluée comme un seuil fixe.";
+  "Mode indisponible : la console n'a pas pu vérifier que la base sait évaluer une règle de release. Sans cela, elle serait évaluée comme un seuil fixe.";
 
 /** Ce que compare le mode, écrit sous son champ (phrase obligatoire du § 3.2). */
 export const PHRASE_REGLE_RELEASE = `Compare le p75 d'un Web Vital de la release en service en production à celui de la release qu'elle a remplacée, d'après les déploiements déclarés en « prod » (POST /api/v1/deploys ; un retour arrière compte comme un déploiement) : ${PHRASE_FENETRE}. Sans deux releases déclarées en prod, ou sous ${MESURES_MIN_RELEASE} mesures de chacune sur la fenêtre, la règle n'évalue pas et le dit : choisissez une fenêtre assez longue (jusqu'à 1 440 min).`;
@@ -39,7 +41,7 @@ export type ModeRelease = { disponible: true } | { disponible: false; raison: st
 
 const MODES: { valeur: string; libelle: string; aide: string }[] = [
   { valeur: "threshold", libelle: "Seuil fixe", aide: "la valeur franchit une borne que vous posez" },
-  { valeur: "baseline", libelle: "Écart à l'habitude (baseline)", aide: "la valeur s'écarte de ses semaines passées" },
+  { valeur: "baseline", libelle: "Écart à l'habitude", aide: "la valeur s'écarte de ses semaines passées" },
 ];
 
 /** Classe du bouton radio d'un mode : c'est elle que lit le masquage `:has()`. */
@@ -200,7 +202,7 @@ export function RuleFields({
                 <input type="radio" name="mode" value="release" disabled className="shrink-0" data-testid="mode-release" />
                 <span className="min-w-0">
                   <span className="font-medium">Régression de release</span>{" "}
-                  <span>— indisponible ({SEUIL_REGRESSION_DEFAUT} % prévu, B52)</span>
+                  <span>— indisponible (+{SEUIL_REGRESSION_DEFAUT} % prévu)</span>
                 </span>
               </label>
             )}
@@ -242,7 +244,7 @@ export function RuleFields({
 
           <div className="regle-champs-baseline mt-3 flex flex-wrap items-end gap-3" data-testid="champs-baseline">
             <span className="basis-full text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-              Écart à l’habitude (baseline)
+              Écart à l’habitude
             </span>
             <Field label="Sensibilité">
               <input
@@ -255,7 +257,7 @@ export function RuleFields({
                 data-testid="champ-sensibilite"
               />
             </Field>
-            <Field label="Semaines baseline">
+            <Field label="Semaines d’historique">
               <input
                 name="baseline_weeks"
                 type="number"
@@ -309,7 +311,7 @@ export function RuleFields({
         <select name="severity" defaultValue={rule?.severity ?? "warning"} className={INPUT_CLASS}>
           {ALERT_SEVERITIES.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {libelleSeverite(s)}
             </option>
           ))}
         </select>
@@ -324,10 +326,10 @@ export function RuleFields({
         />
       </Field>
       <p className="w-full min-w-0 break-words text-xs text-ink-faint">
-        <strong>Logs ERROR</strong> et <strong>Événement custom</strong> se cumulent sur la fenêtre —
-        les heures inactives valent zéro pour la baseline. <strong>Issue</strong> somme les occurrences
-        observées hors bots ; sa baseline ne retient que les fenêtres où l&apos;issue était suivie, et
-        rend « données insuffisantes » sous 4 fenêtres comparables.
+        <strong>Logs en erreur</strong> et <strong>Événement personnalisé</strong> se cumulent sur la
+        fenêtre — les heures inactives valent zéro pour l&apos;habitude. <strong>Issue</strong> somme les
+        occurrences observées hors robots ; son habitude ne retient que les fenêtres où l&apos;issue était
+        suivie, et rend « données insuffisantes » sous 4 fenêtres comparables.
       </p>
     </>
   );

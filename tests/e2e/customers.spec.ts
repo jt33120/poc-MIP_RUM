@@ -132,8 +132,8 @@ test("onboarding : créer un client -> clé one-shot -> snippet -> données reç
   await expect(snippetBlock).toContainText("COLLE_ICI_LA_CLE_API");
   await expect(snippetBlock).not.toContainText(key);
 
-  // checklist : tout en attente, badge « intégration en cours »
-  await expect(page.getByTestId("live-badge")).toContainText("intégration en cours");
+  // checklist : tout en attente, badge « Intégration en cours »
+  await expect(page.getByTestId("live-badge")).toContainText("Intégration en cours");
 
   // recharge sans le token : la clé n'est plus affichable (one-shot)
   await page.goto(page.url());
@@ -168,16 +168,99 @@ test("onboarding : créer un client -> clé one-shot -> snippet -> données reç
 
   // 5. la checklist passe au vert (snippet + trafic => live)
   await page.goto(`http://localhost:3000/admin/customers/${APP_ID}`);
-  await expect(page.getByTestId("live-badge")).toContainText("live");
+  await expect(page.getByTestId("live-badge")).toContainText("Données reçues");
   const checklist = page.getByTestId("onboarding-checklist");
   await expect(checklist).toContainText("Premières Web Vitals reçues");
-  await expect(checklist.locator("text=✅").first()).toBeVisible();
+  // L'état « fait » se lit par une icône et un mot, plus par un émoji (recette du 26/09/2026).
+  await expect(checklist.locator('[data-etat="done"]').first()).toBeVisible();
 });
 
-test("onboarding : lien « accès client » préremplit le viewer scopé", async ({ page }) => {
+test("onboarding : lien « accès client » préremplit le compte en lecture seule", async ({ page }) => {
   await loginConsole(page);
   await page.goto(`http://localhost:3000/admin/customers/${APP_ID}`);
-  await page.getByRole("link", { name: /compte viewer/i }).click();
+  await page.getByRole("link", { name: /compte en lecture seule/i }).click();
   await page.waitForURL((u) => u.pathname === "/admin/users");
-  await expect(page.locator('input[name="apps"]')).toHaveValue(APP_ID);
+  // Les applications se choisissent (recette du 26/09/2026) : celle de la fiche est
+  // cochée, et la portée « certaines applications » retenue — jamais « toutes ».
+  await expect(page.locator(`input[name="apps"][value="${APP_ID}"]`)).toBeChecked();
+  await expect(page.locator('input[name="portee"][value="liste"]')).toBeChecked();
+  await expect(page.locator('input[name="portee"][value="toutes"]')).not.toBeChecked();
+});
+
+// Recette du 26/09/2026 (revues E et F) : les gestes qui ne se défont pas se
+// confirment DANS la page — un clic déplie un encadré qui nomme la cible, un
+// second envoie. Sans navigateur, les tests unitaires ne voient que le HTML fermé :
+// le focus, Échap et l'envoi du formulaire parent ne s'éprouvent qu'ici.
+test("désactiver une application : confirmation sur place, Échap et « Annuler » n'envoient rien", async ({ page }) => {
+  await loginConsole(page);
+  await page.goto("http://localhost:3000/admin/customers");
+  const ligne = page.getByTestId(`customer-${APP_ID}`);
+  const declencheur = page.getByTestId(`desactiver-${APP_ID}`);
+  const actif = async () =>
+    (await pool.query<{ active: boolean }>(`select active from app_registry where app_id = $1`, [APP_ID])).rows[0].active;
+
+  // Le premier clic n'envoie rien : il déplie l'encadré, qui prend le focus.
+  await declencheur.click();
+  const encadre = page.getByRole("group", { name: /Désactiver l.application «\s*Client Pilote E2E\s*»/ });
+  await expect(encadre).toBeVisible();
+  await expect(encadre).toBeFocused();
+  await expect(declencheur).toHaveAttribute("aria-expanded", "true");
+
+  // Échap referme et rend le focus au déclencheur.
+  await page.keyboard.press("Escape");
+  await expect(encadre).toBeHidden();
+  await expect(declencheur).toBeFocused();
+
+  // « Annuler » referme sans rien envoyer.
+  await declencheur.click();
+  await encadre.getByRole("button", { name: "Annuler" }).click();
+  await expect(encadre).toBeHidden();
+  expect(await actif()).toBe(true);
+
+  // La confirmation envoie le formulaire parent, champs cachés compris.
+  await declencheur.click();
+  await page.getByTestId(`desactiver-${APP_ID}-confirmer`).click();
+  const reactiver = ligne.getByRole("button", { name: "Activer", exact: true });
+  await expect(reactiver).toBeVisible();
+  expect(await actif()).toBe(false);
+
+  // Réactiver ne coupe rien : un seul clic.
+  await reactiver.click();
+  await expect(ligne.getByTestId(`desactiver-${APP_ID}`)).toBeVisible();
+  expect(await actif()).toBe(true);
+});
+
+test("régénérer la clé d'API : confirmée, la nouvelle clé s'affiche une fois", async ({ page }) => {
+  await loginConsole(page);
+  await page.goto(`http://localhost:3000/admin/customers/${APP_ID}`);
+  const { rows: [avant] } = await pool.query<{ api_key_hash: string }>(`select api_key_hash from app_registry where app_id = $1`, [APP_ID]);
+
+  await page.getByTestId("regenerer-cle").click();
+  await expect(page.getByRole("group", { name: /Régénérer la clé d.API de «\s*Client Pilote E2E\s*»/ })).toBeVisible();
+  // Rien n'est parti au premier clic.
+  const { rows: [pendant] } = await pool.query<{ api_key_hash: string }>(`select api_key_hash from app_registry where app_id = $1`, [APP_ID]);
+  expect(pendant.api_key_hash).toBe(avant.api_key_hash);
+
+  await page.getByTestId("regenerer-cle-confirmer").click();
+  await expect(page.getByTestId("generated-key")).toHaveText(/^mip_[0-9a-f]{32}$/);
+  const { rows: [apres] } = await pool.query<{ api_key_hash: string }>(`select api_key_hash from app_registry where app_id = $1`, [APP_ID]);
+  expect(apres.api_key_hash).not.toBe(avant.api_key_hash);
+});
+
+test("utilisateurs : « Désactiver » est grisé sur son propre compte, et dit pourquoi", async ({ page }) => {
+  await loginConsole(page);
+  await page.goto("http://localhost:3000/admin/users");
+  const soi = page.getByTestId(`desactiver-${E2E_EMAIL}`);
+  // `aria-disabled` (pas `disabled`) : le bouton reste focalisable, Playwright le tient pour inactif.
+  await expect(soi).toHaveAttribute("aria-disabled", "true");
+  await expect(soi).toBeDisabled();
+  await expect(soi).not.toHaveAttribute("aria-expanded");
+  await expect(soi).toHaveAttribute("title", "Vous ne pouvez pas désactiver votre propre compte.");
+  // Au toucher (pas d'infobulle) : un appui affiche la raison, jusque-là réservée au lecteur d'écran.
+  const raison = page.getByText("Vous ne pouvez pas désactiver votre propre compte.");
+  await expect(raison).toHaveClass(/sr-only/);
+  await soi.click({ force: true });
+  await expect(raison).not.toHaveClass(/sr-only/);
+  // Aucun encadré ne s'ouvre, rien n'est envoyé.
+  await expect(page.getByRole("group", { name: /Désactiver le compte/ })).toHaveCount(0);
 });

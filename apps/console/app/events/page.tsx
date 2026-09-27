@@ -33,7 +33,16 @@ import { annotationsDeploiements } from "@/lib/annotations";
 import { chargerEvents, demandeDuJournal } from "@/lib/chargeurs/events";
 import { chargerEcran } from "@/lib/ecran";
 import type { Fil } from "@mip/console-contract";
-import { eventResetHref, lienJournal, lienPanneauJournal, totalJournal } from "@/lib/events-page-params";
+import {
+  diagnosticJournal,
+  eventResetHref,
+  lienJournal,
+  lienPanneauJournal,
+  LIBELLES_NATURE,
+  LIBELLES_SOURCE_ATTRIBUT,
+  LIBELLES_TYPE_ATTRIBUT,
+  totalJournal,
+} from "@/lib/events-page-params";
 import { type SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { colonnesPromues, valeurColonnePromue, type ColonnePromue } from "@/lib/perf-domain";
@@ -48,6 +57,10 @@ import {
 import { bucketStarts, hrefWithQuery, paramReader, queryToSearchParams, type AnalyticsQuery } from "@/lib/query-contract";
 import { alignerSeaux, grilleIso, libelleSeauComplet } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, ligneIgnoree, lireEtatDeVue } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { fmtInstant, pluriel } from "@/lib/format";
+import { LIBELLE_APPAREIL } from "@/lib/goals";
+import { categorie } from "@/lib/palette";
 
 export const dynamic = "force-dynamic";
 
@@ -59,36 +72,29 @@ type EventIndexRow = Fil<LigneJournalBrute>;
 const TITRE = "Journal";
 
 
-const DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hourCycle: "h23",
-});
-const DATE_UTC_COMPLETE = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hourCycle: "h23",
-});
-
-/** Instant d'un événement, en UTC (le fuseau des seaux du contrat) ; illisible → « — ». */
+/**
+ * Instant d'un événement, heure de Paris (le fuseau d'affichage, nommé dans la barre
+ * du haut) ; illisible → « — ». Le nom `dateUtc` est historique.
+ */
 function dateUtc(d: Date | string, complete = false): string {
-  const ms = new Date(d).getTime();
-  if (!Number.isFinite(ms)) return "—";
-  return complete ? `${DATE_UTC_COMPLETE.format(ms)} UTC` : DATE_UTC.format(ms);
+  return fmtInstant(d, { secondes: true, annee: complete, sansA: true });
 }
 
 function nomEvenement(e: EventIndexRow): string {
   return e.name ?? e.source_name ?? e.kind;
 }
+
+/** « Ordinateur », « Mobile », « Tablette » : jamais la valeur brute (`desktop`, `tablet`). */
+function appareil(e: EventIndexRow): string {
+  return e.device_type ? (LIBELLE_APPAREIL[e.device_type] ?? e.device_type) : "Inconnu";
+}
+
+/**
+ * Couleur des barres de VOLUME (volume du résultat, facette des noms) : une teinte
+ * catégorielle neutre (ardoise). Un compte n'a pas de seuil : ni l'orange de la
+ * série principale, ni une couleur de verdict (recette du 26/09/2026).
+ */
+const TEINTE_VOLUME = categorie(4);
 
 /** Lien vers la session d'un événement ; le panneau session arrive avec F43. */
 function lienSession(e: EventIndexRow, query: AnalyticsQuery): string | null {
@@ -105,8 +111,8 @@ export default async function Journal({ searchParams }: { searchParams: Promise<
   if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const sub = (
     <>
-      Que s&apos;est-il passé exactement, dans quel ordre ? Événements custom et signaux émis par le SDK, observés sur{" "}
-      {ecran.label} ; les vues et les vitals ont leurs écrans.
+      Que s&apos;est-il passé exactement, et dans quel ordre{"\u00a0"}? Les événements envoyés par votre application et les
+      signaux relevés par le capteur, sur {ecran.label} ; les pages vues et les Web Vitals ont leurs propres écrans.
     </>
   );
 
@@ -116,8 +122,9 @@ export default async function Journal({ searchParams }: { searchParams: Promise<
       <div className="animate-fade-up">
         <PageHeader title={TITRE} domain="explorer" sub={sub} />
         <div role="alert" className="card border-bad/30 p-6 text-sm text-bad-ink">
-          Filtre invalide. Les noms sont bornés à 100 caractères ; une facette exige une source, une clé sûre,
-          un type primitif et une valeur exacte.
+          Filtre invalide. Un nom d&apos;événement fait au plus 100 caractères ; un filtre sur un attribut demande
+          sa source, sa clé (une lettre, puis lettres, chiffres, point, tiret ou soulignement), son type et une
+          valeur exacte.
         </div>
       </div>
     );
@@ -182,6 +189,8 @@ export default async function Journal({ searchParams }: { searchParams: Promise<
               : { annotations: [], liste: [], indisponible: "déploiements non lus (lecture en échec)" }
           }
           ouvertId={ouvert?.ligne.id ?? null}
+          // Filtré sur UNE app, l'écran ne répète pas son nom sous chaque événement.
+          avecApp={ecran.query.scope.effectiveApps === null || ecran.query.scope.effectiveApps.length > 1}
         />
       )}
 
@@ -245,12 +254,12 @@ function FormulaireJournal({
         </datalist>
       </label>
       <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-        Source attribut
+        Source de l&apos;attribut
         <select name="attr_source" defaultValue={source} className={INPUT_CLASS}>
           <option value="">Aucune</option>
           {EVENT_ATTRIBUTE_SOURCES.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {LIBELLES_SOURCE_ATTRIBUT[s] ?? s}
             </option>
           ))}
         </select>
@@ -264,7 +273,7 @@ function FormulaireJournal({
         <select name="attr_type" defaultValue={attribut?.type ?? "string"} className={INPUT_CLASS}>
           {EVENT_ATTRIBUTE_TYPES.map((t) => (
             <option key={t} value={t}>
-              {t}
+              {LIBELLES_TYPE_ATTRIBUT[t] ?? t}
             </option>
           ))}
         </select>
@@ -365,6 +374,7 @@ function ResultatJournal({
   zoom,
   annotations,
   ouvertId,
+  avecApp,
 }: {
   r: EventExplorerResult;
   query: EventQuery;
@@ -376,9 +386,11 @@ function ResultatJournal({
   zoom: string;
   annotations: ReturnType<typeof annotationsDeploiements>;
   ouvertId: string | null;
+  avecApp: boolean;
 }) {
   const enrichi = r.enrichment.available;
-  const diagnostic = r.enrichment.diagnostic ?? "lecture incomplète";
+  // Le diagnostic de l'API nomme la migration manquante ; l'écran dit ce qui manque.
+  const diagnostic = diagnosticJournal(r.enrichment.diagnostic);
   // Sans projection (v65), ou sans enrichissements (v68) sous un filtre de nom ou
   // d'attribut, le total rendu vaut 0 PAR DÉFAUT : ce n'est pas un compte. Une seule
   // décision (`totalJournal`) pour la tuile ET la méta du volume.
@@ -426,29 +438,31 @@ function ResultatJournal({
                     {total === null ? "total non calculé" : `${formater("count", total)} événements`}
                   </span>
                   <span>{label}</span>
-                  <span>seaux de {bucketLabel} (UTC)</span>
-                  <span>journal indexé depuis la migration v65, sans rattrapage : les événements antérieurs n&apos;y sont pas</span>
+                  <span>tranches de {bucketLabel}</span>
+                  {/* La date de mise en service du journal n'est lue nulle part : la
+                      phrase le dit sans elle (jadis « depuis la migration v65 »). */}
+                  <span>journal tenu depuis sa mise en service : les événements plus anciens n&apos;y figurent pas</span>
                 </>
               }
-              lecture="Chaque barre compte les événements du résultat dans son seau, filtres compris ; un seau vide vaut 0. Un clic sur une barre zoome sur sa plage."
+              lecture="Chaque barre compte les événements du résultat dans sa tranche, filtres compris ; une tranche vide vaut 0. Un clic sur une barre zoome sur sa plage."
               alternative={{
-                legende: `Événements du résultat par seau de ${bucketLabel}`,
-                colonnes: ["Seau (UTC)", "Événements"],
-                lignes: points.map((p) => [libelleSeauComplet(p.t, range.bucketSeconds, "UTC"), p.n]),
+                legende: `Événements du résultat par tranche de ${bucketLabel}`,
+                colonnes: ["Période", "Événements"],
+                lignes: points.map((p) => [libelleSeauComplet(p.t, range.bucketSeconds, FUSEAU_AFFICHAGE), p.n]),
               }}
             >
               <ThresholdSeries
                 grille={grille}
                 points={points}
-                series={[{ cle: "n", libelle: "Événements", role: "principale", forme: "barres", additive: true }]}
+                series={[{ cle: "n", libelle: "Événements", role: "categorie", categorieIndex: 4, forme: "barres", additive: true }]}
                 format="count"
                 annotations={annotations.annotations}
                 annotationsIndisponibles={annotations.indisponible ?? undefined}
                 seauSecondes={range.bucketSeconds}
-                fuseau="UTC"
+                fuseau={FUSEAU_AFFICHAGE}
                 zoomHref={zoom}
                 hauteur={180}
-                ariaLabel={`Événements du résultat par seau de ${bucketLabel}, ${label}`}
+                ariaLabel={`Événements du résultat par tranche de ${bucketLabel}, ${label}`}
               />
             </Figure>
           </SectionErreur>
@@ -458,13 +472,9 @@ function ResultatJournal({
               valeur={total}
               raisonNull={`total non calculé : ${diagnostic}`}
               format="count"
-              lecture={
-                total === null
-                  ? undefined
-                  : total === 0
-                    ? "Aucun événement ne correspond à ces filtres."
-                    : "Même instantané que la liste, les facettes et le volume."
-              }
+              lecture={total === 0 ? "Aucun événement ne correspond à ces filtres." : undefined}
+              methode="Compté au même instant que la liste, les facettes et le volume : les quatre concordent."
+
             />
           </div>
         </div>
@@ -486,7 +496,14 @@ function ResultatJournal({
               <EtatSurface etat={{ kind: "partiel", raison: diagnostic }} />
             )
           ) : (
-            <TableJournal lignes={r.events} colonnes={colonnes} contexte={contexte} brut={brut} ouvertId={ouvertId} />
+            <TableJournal
+              lignes={r.events}
+              colonnes={colonnes}
+              contexte={contexte}
+              brut={brut}
+              ouvertId={ouvertId}
+              avecApp={avecApp}
+            />
           )}
           <nav className="mt-4 flex justify-end text-sm" aria-label="Pagination des événements">
             {suivante && (
@@ -550,7 +567,7 @@ function Facettes({
       </h2>
       <div className="mt-3 hidden min-w-0 space-y-5 peer-checked:block xl:block">
         {!enrichi ? (
-          <p className="text-xs text-ink-soft">Facettes indisponibles : {r.enrichment.diagnostic}.</p>
+          <p className="text-xs text-ink-soft">Facettes indisponibles : {diagnosticJournal(r.enrichment.diagnostic)}.</p>
         ) : (
           <>
             <section aria-labelledby="facette-noms" className="min-w-0">
@@ -564,6 +581,9 @@ function Facettes({
                   display: formater("count", n.count),
                   href: lienJournal(brut, { name: n.value }),
                   title: query.name === n.value ? "filtre actif" : `Filtrer le journal sur « ${n.value} »`,
+                  // Le nom filtré est marqué, pas seulement dit en infobulle.
+                  actif: query.name === n.value,
+                  color: TEINTE_VOLUME,
                 }))}
                 labelWidth="7rem"
                 legende="Événements par nom (20 noms au plus)"
@@ -575,7 +595,7 @@ function Facettes({
                 Attributs fréquents
               </h3>
               {r.facets.attributes.length === 0 ? (
-                <p className="text-xs text-ink-soft">Aucune facette primitive.</p>
+                <p className="text-xs text-ink-soft">Aucun attribut simple (texte, nombre ou booléen).</p>
               ) : (
                 <ul className="space-y-0.5 text-xs" data-testid="facette-attributs">
                   {r.facets.attributes.map((a) => {
@@ -636,12 +656,15 @@ function TableJournal({
   contexte,
   brut,
   ouvertId,
+  avecApp,
 }: {
   lignes: EventIndexRow[];
   colonnes: ColonnePromue[];
   contexte: AnalyticsQuery;
   brut: URLSearchParams;
   ouvertId: string | null;
+  /** Plusieurs apps lues : le nom de l'app sous chaque événement ; une seule : rien. */
+  avecApp: boolean;
 }) {
   return (
     <div className="card min-w-0 sm:overflow-x-auto" data-testid="journal-table">
@@ -649,7 +672,7 @@ function TableJournal({
           écran de 1 440 px ; en dessous, le conteneur défile sans élargir la page. */}
       <table className="block w-full text-sm sm:table sm:min-w-[44rem]">
         <caption className="sr-only">
-          Journal des événements custom correspondant aux filtres, du plus récent au plus ancien
+          Journal des événements correspondant aux filtres, du plus récent au plus ancien
           {colonnes.length > 0 ? ` ; colonnes promues : ${colonnes.map((c) => `${c.source}.${c.cle}`).join(", ")}` : ""}
         </caption>
         <thead className="hidden bg-panel2 sm:table-header-group">
@@ -667,10 +690,15 @@ function TableJournal({
               Session
             </th>
             <th scope="col" className="th">
-              Date (UTC)
+              Date
             </th>
             {colonnes.map((c) => (
-              <th key={`${c.source}.${c.cle}`} scope="col" className="th" title={`présente sur ${c.presence} ligne(s) de la page`}>
+              <th
+                key={`${c.source}.${c.cle}`}
+                scope="col"
+                className="th"
+                title={`présente sur ${pluriel(c.presence, "ligne")} de la page`}
+              >
                 <span className="font-mono normal-case">
                   {c.source}.{c.cle}
                 </span>
@@ -699,8 +727,8 @@ function TableJournal({
                   >
                     {nomEvenement(e)}
                   </Link>
-                  <div className="mt-1 break-all font-mono text-[11px] text-ink-soft">{e.app_id}</div>
-                  <div className="mt-1 text-xs text-ink-soft sm:hidden">{dateUtc(e.ts)} UTC</div>
+                  {avecApp && <div className="mt-1 break-all font-mono text-[11px] text-ink-soft">{e.app_id}</div>}
+                  <div className="mt-1 text-xs text-ink-soft sm:hidden">{dateUtc(e.ts)}</div>
                 </td>
                 <Cellule libelle="Route">
                   <span className="block min-w-0 truncate font-mono text-ink-soft sm:whitespace-normal sm:break-all">
@@ -708,7 +736,7 @@ function TableJournal({
                   </span>
                 </Cellule>
                 <Cellule libelle="Appareil">
-                  <span className="text-ink-soft">{e.device_type ?? "Inconnu"}</span>
+                  <span className="text-ink-soft">{appareil(e)}</span>
                 </Cellule>
                 <Cellule libelle="Session">
                   {session && e.session_id ? (
@@ -758,9 +786,9 @@ function PanneauEvenement({
 }) {
   const session = lienSession(e, contexte);
   const puces: PuceDetail[] = [
-    { label: "Appareil", valeur: e.device_type ?? "Inconnu" },
+    { label: "Appareil", valeur: appareil(e) },
     { label: "Route", valeur: e.route ?? "—" },
-    { label: "App", valeur: e.app_id },
+    { label: "Application", valeur: e.app_id },
   ];
   const ouvrir = (x: EventIndexRow | null) => (x ? lienPanneauJournal(brut, ecrirePanel({ type: "event", id: x.id })) : null);
   // « Ouvrir en page » : l'événement n'a pas de page à lui ; sa session en est une.
@@ -783,15 +811,14 @@ function PanneauEvenement({
     >
       <div className="space-y-4">
         <p className="text-xs text-ink-soft">
-          Plage de l&apos;écran : {label}. Le panneau n&apos;a pas de fenêtre de temps propre : il montre une ligne de la
-          page affichée du journal ; précédent et suivant parcourent cette page.
+          Une ligne du journal affiché ({label}) ; « précédent » et « suivant » parcourent cette page du journal.
         </p>
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm" data-testid="panneau-evenement">
           {ligne("Événement", nomEvenement(e))}
-          {ligne("Signal", `${e.kind}${e.source_name ? ` · ${e.source_name}` : ""}`)}
+          {ligne("Nature", LIBELLES_NATURE[e.kind] ?? e.kind)}
           {ligne("Date", dateUtc(e.ts, true))}
           {ligne("Route", <span className="font-mono">{e.route ?? "—"}</span>)}
-          {ligne("Appareil", e.device_type ?? "Inconnu")}
+          {ligne("Appareil", appareil(e))}
           {ligne("Application", <span className="font-mono">{e.app_id}</span>)}
           {ligne(
             "Session",
@@ -809,8 +836,7 @@ function PanneauEvenement({
             Voir le contexte
           </summary>
           <p className="mt-2 text-xs text-ink-soft">
-            Attributs et contexte tels qu&apos;enregistrés, nettoyés à l&apos;ingestion (« scrubbed ») : aucune donnée
-            brute n&apos;est relue.
+            Attributs et contexte tels qu&apos;enregistrés, données personnelles retirées dès la réception.
           </p>
           <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded bg-panel2 p-2 text-[11px] text-ink-soft">
             {JSON.stringify({ props: e.props ?? {}, context: e.context ?? {} }, null, 2)}

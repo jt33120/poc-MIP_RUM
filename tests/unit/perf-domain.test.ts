@@ -235,11 +235,19 @@ describe("F18 — autresGroupes", () => {
 });
 
 describe("F18 — libelleGroupeErreur", () => {
-  it("message tronqué à 40 caractères + empreinte courte : jamais le seul type", () => {
-    const long = "TypeError: Cannot read properties of undefined (reading 'panier')";
-    const libelle = libelleGroupeErreur({ message: long, fingerprint: "a1b2c3d4e5f6a7b8" });
-    expect(libelle).toBe(`${long.slice(0, 39)}… · a1b2c3d4`);
-    expect(libelle.split(" · ")[0]).toHaveLength(40);
+  // Recette du 26/09/2026 : « Cannot read propert… » ne disait plus quel groupe c'était.
+  it("message lisible : « Uncaught » retiré, ce qui distingue le groupe gardé, empreinte courte", () => {
+    const message = "Uncaught TypeError: Cannot read properties of undefined (reading 'panier')";
+    expect(libelleGroupeErreur({ message, fingerprint: "a1b2c3d4e5f6a7b8" })).toBe(
+      "TypeError: Cannot read properties of undefined (reading 'panier') · a1b2c3d4",
+    );
+  });
+
+  it("au-delà de 90 caractères : coupé à un mot, jamais au milieu", () => {
+    const long = `Échec de connexion au référentiel partenaires ${"très ".repeat(20)}long`;
+    const tete = libelleGroupeErreur({ message: long, fingerprint: "a1b2c3d4e5f6a7b8" }).split(" · ")[0];
+    expect(tete.length).toBeLessThanOrEqual(90);
+    expect(tete.endsWith("très…")).toBe(true);
   });
 
   it("cinq groupes du même type « Error » ont cinq libellés distincts", () => {
@@ -257,16 +265,16 @@ describe("F18 — libelleGroupeErreur", () => {
 });
 
 describe("F18 — referencePeriodePrecedente", () => {
-  it("24 h : la plage précédente, datée en UTC", () => {
+  it("24 h : la plage précédente, datée à l'heure de Paris", () => {
     expect(
       referencePeriodePrecedente({ from: "2026-09-21T14:00:00.000Z", to: "2026-09-22T14:00:00.000Z", preset: "24h" }),
-    ).toBe("vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC)");
+    ).toBe("vs 24 h précédentes (20/09 16:00 → 21/09 16:00)");
   });
 
   it("plage personnalisée : « période précédente », même durée, juste avant", () => {
     expect(
       referencePeriodePrecedente({ from: "2026-09-22T10:00:00.000Z", to: "2026-09-22T12:00:00.000Z", preset: null }),
-    ).toBe("vs période précédente (22/09 08:00 → 22/09 10:00 UTC)");
+    ).toBe("vs période précédente (22/09 10:00 → 22/09 12:00)");
   });
 });
 
@@ -457,11 +465,11 @@ describe("F14 — Pages : classement des routes et tuiles", () => {
     expect(pagesF14.ecartAEnsemblePages(null, 2500, "LCP")).toEqual({ valeur: null, affichage: "écart non calculable" });
   });
 
-  it("référence `cmp=prev` datée en UTC et accordée", () => {
+  it("référence `cmp=prev` datée à l'heure de Paris et accordée", () => {
     const range = { from: "2026-09-21T14:00:00.000Z", to: "2026-09-22T14:00:00.000Z", preset: "24h" as const, bucketSeconds: 3600 };
-    expect(pagesF14.referencePrecedentePages(range)).toBe("vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC)");
+    expect(pagesF14.referencePrecedentePages(range)).toBe("vs 24 h précédentes (20/09 16:00 → 21/09 16:00)");
     expect(pagesF14.referencePrecedentePages({ ...range, from: "2026-09-15T14:00:00.000Z", preset: "7d" })).toMatch(/^vs 7 j précédents \(/);
-    expect(pagesF14.referencePrecedentePages({ ...range, preset: null })).toMatch(/^vs période précédente \(20\/09 14:00/);
+    expect(pagesF14.referencePrecedentePages({ ...range, preset: null })).toMatch(/^vs période précédente \(20\/09 16:00/);
   });
 
   it("écart de p75 entre releases : établi seulement si les intervalles sont disjoints, libellé par la release", () => {

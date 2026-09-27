@@ -1,17 +1,20 @@
 // Connecteurs de tickets (P8.6) — configuration, activation, recette.
 //
-// CETTE PAGE RESTE CACHÉE tant qu'aucun fournisseur n'est branché et testé :
-// `surfaceTicketsOuverte()` décide, et un 404 est rendu sinon. Le lien de la
-// barre latérale suit la même décision. Montrer un écran d'intégrations à un
-// client qui n'en a aucune serait promettre une capacité qu'on n'a pas encore
-// tenue chez lui.
+// CETTE PAGE RESTE FERMÉE tant qu'aucun fournisseur n'est branché et testé :
+// `surfaceTicketsOuverte()` décide, et le lien de la barre latérale suit la même
+// décision. Montrer un formulaire d'intégrations à un client qui n'en a aucune
+// serait promettre une capacité qu'on n'a pas encore tenue chez lui. Fermée, elle
+// ne rend plus un 404 nu (recette du 26/09/2026 : « This page could not be
+// found. », sans explication ni retour) mais ce qu'est l'écran et qui l'ouvre.
 //
 // GITHUB AUJOURD'HUI, ITSM MIP DEMAIN. La mention est affichée en tête, dans les
 // mêmes termes que dans le corps des tickets créés et que sur l'écran d'une
 // issue — une seule définition, `MENTION_ETAPE`.
-import { notFound } from "next/navigation";
+import Link from "next/link";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { CadreEtat } from "@/components/states/EtatSurface";
+import { TableDefilante } from "@/components/TableDefilante";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { chargerConnecteurs } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
@@ -34,9 +37,9 @@ function secret(ref: TicketIntegration["credential"] | TicketIntegration["webhoo
 
 export default async function TicketIntegrationsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   // Le chargeur : les connecteurs et les applications de son périmètre (C9) ; la
-  // surface fermée tant qu'aucune recette réelle n'a été jouée (404, comme avant).
+  // surface fermée tant qu'aucune recette réelle n'a été jouée.
   const ecran = accesAdmin(await chargerEcran(ECRANS_ADMIN.connecteurs, chargerConnecteurs, {}));
-  if (ecran.etat === "fermee") notFound();
+  if (ecran.etat === "fermee") return <ConnecteursNonActives />;
   const sp = await searchParams;
   const erreur = typeof sp.erreur === "string" ? sp.erreur : null;
   const { migre, apps, connecteurs: integrations } = ecran;
@@ -60,8 +63,9 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
 
       {!migre && (
         <div role="alert" className={`mb-6 ${NOTICE}`}>
-          Schéma non migré : <code className="chip-mono">migration-v84</code> est requise. La configuration reste
-          lisible, aucune écriture n&apos;aboutira.
+          {/* migration-v84 : le nom reste ici, pas à l'écran. */}
+          La base n&apos;est pas à jour pour les connecteurs&nbsp;: la configuration reste lisible, mais aucune
+          écriture n&apos;aboutira tant que l&apos;exploitant n&apos;aura pas appliqué les migrations en attente.
         </div>
       )}
 
@@ -143,12 +147,15 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
           </button>
         </form>
         <p className="mt-3 text-xs text-ink-faint">
-          Le mapping de statut est explicite : sans choix, un ticket fermé ne change rien dans MIP. Une issue{" "}
-          <strong>ignorée</strong> n&apos;est jamais modifiée par le fournisseur — MIP en reste la source de vérité.
+          La correspondance des statuts est explicite&nbsp;: sans choix, un ticket fermé ne change rien dans la
+          console. Une issue{" "}
+          <strong>ignorée</strong> n&apos;est jamais modifiée par le fournisseur&nbsp;: la console reste la source
+          de vérité.
         </p>
       </div>
 
-      <div className="card overflow-x-auto">
+      {/* 70 rem, les actions en dernière colonne : défilement signalé. */}
+      <TableDefilante className="card" label="Connecteurs configurés">
         <table className="w-full min-w-table text-sm" data-testid="tickets-liste">
           <caption className="px-4 pt-4 text-left text-xs text-ink-faint">
             Connecteurs configurés ({integrations.length})
@@ -228,13 +235,45 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
             )}
           </tbody>
         </table>
-      </div>
+      </TableDefilante>
 
       <p className="mt-4 text-xs text-ink-faint">
         URL de webhook à déclarer chez le fournisseur :{" "}
         <code className="chip-mono">/api/webhooks/tickets/&lt;identifiant du connecteur&gt;</code>. La signature est
         vérifiée en temps constant ; une livraison rejouée est reconnue et sans effet.
       </p>
+    </div>
+  );
+}
+
+/**
+ * La surface fermée, dite. Le garde reste celui du chargeur (`fermee`) : aucune
+ * donnée de connecteur n'est lue ni rendue ici. L'ouverture est une décision
+ * d'exploitation (un fournisseur branché et éprouvé), pas un réglage de l'écran.
+ */
+function ConnecteursNonActives() {
+  return (
+    <div className="animate-fade-up">
+      <PageHeader
+        title="Connecteurs de tickets"
+        sub="Créer un ticket depuis une issue d'erreurs et suivre son état, application par application."
+      />
+      <CadreEtat ton="neutre" role="note" etat="ferme" testId="tickets-non-actives" className="flex max-w-2xl flex-col items-start gap-3">
+        <h2 className="text-base font-semibold text-ink">Connecteurs de tickets&nbsp;: non activés sur cette instance</h2>
+        <p className="text-sm leading-relaxed text-ink-soft">
+          <span className="font-medium text-ink">Ce qu&apos;ils apportent&nbsp;: </span>
+          depuis une issue d&apos;erreurs, créer un ticket chez votre outil de suivi, puis voir l&apos;issue changer
+          d&apos;état quand le ticket est fermé ou rouvert.
+        </p>
+        <p className="text-sm leading-relaxed text-ink-soft">
+          <span className="font-medium text-ink">Pour les activer&nbsp;: </span>
+          demandez-le à l&apos;exploitant de la plateforme. En attendant, chaque issue garde son lien de ticket
+          manuel.
+        </p>
+        <Link href="/errors" className="text-sm font-medium text-accent-ink underline-offset-2 hover:underline">
+          Retour aux erreurs
+        </Link>
+      </CadreEtat>
     </div>
   );
 }

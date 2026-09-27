@@ -3,15 +3,18 @@
 // Ce que cet écran répond : combien de postes sont équipés, lesquels remontent
 // encore, lesquels traînent une vieille version, et quelles applications ils
 // alimentent. Ce qu'il ne répond PAS : qui s'en sert. Un poste ne porte un nom
-// que si la DSI du client en pousse un par policy ; sinon il reste un
+// que si la DSI du client en pousse un par la politique du navigateur ; sinon il reste un
 // identifiant d'installation, et c'est le comportement voulu (cf. migration-v52).
+import Link from "next/link";
+import { headers } from "next/headers";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { TableDefilante } from "@/components/TableDefilante";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { chargerPostes } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { compareVersions, displayName, fleetVersion, freshness } from "@/lib/extension-installs";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, pluriel } from "@/lib/format";
 import { forgetInstallAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +44,9 @@ export default async function ExtensionInstalls() {
     enRetard: Boolean(reference && r.ext_version && compareVersions(r.ext_version, reference) < 0),
   }));
 
+  // L'adresse que le poste doit pouvoir joindre : celle de cette console, que
+  // l'extension contacte pour se déclarer et pour reconnaître les domaines.
+  const hote = (await headers()).get("host");
   const actifs = vus.filter((r) => r.etat === "actif").length;
   const retard = vus.filter((r) => r.enRetard).length;
   const sansApp = vus.filter((r) => r.app_ids.length === 0 && r.etat === "actif").length;
@@ -59,42 +65,50 @@ export default async function ExtensionInstalls() {
         }
       />
 
-      {/* Chiffres de tête : les quatre questions d'exploitation d'un parc. */}
-      <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Postes équipés" value={String(rows.length)} hint={`${actifs} vus ces 3 derniers jours`} />
-        <Stat
-          label="Version du parc"
-          value={reference ?? "—"}
-          hint={retard > 0 ? `${retard} poste${retard > 1 ? "s" : ""} en retard` : "aucun poste en retard"}
-          alerte={retard > 0}
-        />
-        <Stat
-          label="Sans remontée"
-          value={String(sansApp)}
-          hint="actifs, mais n'alimentent aucune application"
-          alerte={sansApp > 0}
-        />
-        <Stat label="Postes nommés" value={`${nommes}/${rows.length}`} hint="libellé poussé par la policy" />
-      </div>
+      {/* Chiffres de tête : les quatre questions d'exploitation d'un parc. Masqués
+          quand aucun poste ne s'est déclaré : quatre tuiles à zéro passaient avant
+          le seul message utile, sous la ligne de flottaison à 390 px (recette du 26/09). */}
+      {rows.length > 0 && (
+        <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Stat label="Postes équipés" value={rows.length.toLocaleString("fr-FR")} hint={`${pluriel(actifs, "vu", "vus")} ces 3 derniers jours`} />
+          <Stat
+            label="Version du parc"
+            value={reference ?? "—"}
+            hint={retard > 0 ? `${pluriel(retard, "poste")} en retard` : "aucun poste en retard"}
+            alerte={retard > 0}
+          />
+          <Stat
+            label="Sans remontée"
+            value={sansApp.toLocaleString("fr-FR")}
+            hint="actifs, mais n'alimentent aucune application"
+            alerte={sansApp > 0}
+          />
+          <Stat label="Postes nommés" value={`${nommes} sur ${rows.length}`} hint="nom attribué par la DSI du client" />
+        </div>
+      )}
 
       {rows.length === 0 ? (
-        <div className="card p-6">
+        <div className="card p-6" data-testid="aucun-poste">
           <h2 className="text-sm font-semibold text-ink">Aucun poste ne s&apos;est encore déclaré</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-soft">
-            Un poste apparaît ici à l&apos;installation de l&apos;extension, puis toutes les 6 h. Si
-            vous venez d&apos;installer l&apos;extension sur un poste et qu&apos;il reste absent,
-            vérifiez que ce poste atteint bien la console — le battement part vers la même origine
-            que la résolution de domaines.
+            Un poste apparaît ici dès l&apos;installation de l&apos;extension, puis se déclare de nouveau
+            toutes les 6 h. Si vous venez de l&apos;installer et que le poste reste absent, vérifiez que ce
+            poste peut joindre <code className="chip-mono break-all">{hote ?? "l'adresse de cette console"}</code> :
+            c&apos;est là que l&apos;extension se déclare.
           </p>
+          <Link href="/admin/extension-scope" className="btn-accent mt-4 inline-block">
+            Enregistrer un domaine et installer l&apos;extension
+          </Link>
         </div>
       ) : (
-        <div className="card overflow-x-auto">
+        // Huit colonnes, dont l'action « Retirer » en dernier : défilement signalé.
+        <TableDefilante className="card" label="Postes équipés">
           <table className="w-full text-sm">
             <thead className="bg-panel2">
               <tr>
                 <th className="th">Poste</th>
                 <th className="th">Navigateur</th>
-                <th className="th">Version ext.</th>
+                <th className="th">Version de l&apos;extension</th>
                 <th className="th">Applications</th>
                 <th className="th">Depuis</th>
                 <th className="th">Vu</th>
@@ -158,7 +172,7 @@ export default async function ExtensionInstalls() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableDefilante>
       )}
 
       {/* Ce que l'écran ne dit pas — à lire avant de s'en servir comme d'un
@@ -171,22 +185,23 @@ export default async function ExtensionInstalls() {
         <ul className="mt-3 space-y-2 text-[13px] leading-relaxed text-ink-soft">
           <li>
             <strong className="text-ink">Un poste, pas une personne.</strong> L&apos;identifiant est
-            un UUID tiré au hasard à l&apos;installation, dérivé d&apos;aucune caractéristique de la
+            tiré au hasard à l&apos;installation, et ne dérive d&apos;aucune caractéristique de la
             machine ni de son utilisateur. Deux profils Chrome sur le même poste comptent pour deux.
           </li>
           <li>
-            <strong className="text-ink">Les noms viennent de la DSI du client.</strong> Le libellé
-            est lu dans la policy d&apos;entreprise (clé <code className="chip-mono">poste</code>),
-            jamais fabriqué ici. Sans policy, l&apos;inventaire reste anonyme.
+            <strong className="text-ink">Les noms viennent de la DSI du client.</strong> Le nom
+            d&apos;un poste est lu dans la politique du navigateur que la DSI déploie (clé{" "}
+            <code className="chip-mono">poste</code>), jamais fabriqué ici. Sans cette politique,
+            l&apos;inventaire reste anonyme.
           </li>
           <li>
-            <strong className="text-ink">Aucune page visitée n&apos;est remontée</strong> par le
-            battement. La colonne « applications » ne liste que des périmètres déjà déclarés dans le
-            registre de domaines — jamais une navigation hors périmètre.
+            <strong className="text-ink">Aucune page visitée n&apos;est remontée</strong> quand le
+            poste se déclare. La colonne « Applications » ne liste que des applications déjà rattachées
+            à un domaine du registre, jamais une navigation hors de ce registre.
           </li>
           <li>
             <strong className="text-ink">« Retirer » n&apos;est pas une désinstallation.</strong> La
-            ligne disparaît, mais un poste toujours équipé se redéclarera à son prochain battement.
+            ligne disparaît, mais un poste toujours équipé se déclarera de nouveau dans les 6 h.
             Pour arrêter la collecte, désactivez le domaine dans le registre.
           </li>
         </ul>

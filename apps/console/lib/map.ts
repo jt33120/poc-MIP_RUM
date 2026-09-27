@@ -77,12 +77,26 @@ export function texteRegleSanteApi(): string {
  */
 export const SEUIL_TENDANCE = 5;
 
-/** Tendance de volume : moitié récente vs moitié ancienne de la fenêtre. */
+/**
+ * Tendance de volume : moitié récente vs moitié ancienne de la fenêtre.
+ *
+ * `flat` veut dire « aucune direction conclue », pas « stable » : sous le seuil
+ * anti-bruit, et SANS BASE ANCIENNE. Une moitié ancienne vide n'est pas une hausse :
+ * c'est une collecte qui commence, ou une route qui vient d'apparaître. La recette
+ * du 26/09/2026 l'a montré — dix routes « à risque » sur quatorze, alors que la
+ * colonne « Tendance » refusait de chiffrer une seule d'entre elles (`tendancePct`
+ * rend `null` sans base : la direction suit désormais la même règle).
+ */
 export function trend(recent: number, older: number): TrendDir {
-  if (recent + older < SEUIL_TENDANCE) return "flat"; // trop peu de données pour conclure
+  if (!tendanceConclue(recent, older)) return "flat";
   if (recent > older * 1.3 && recent - older >= 3) return "up";
   if (recent < older * 0.7) return "down";
   return "flat";
+}
+
+/** Une tendance se conclut-elle ? Assez de mesures, et une moitié ancienne qui en porte. */
+export function tendanceConclue(recent: number, older: number): boolean {
+  return recent + older >= SEUIL_TENDANCE && older > 0;
 }
 
 /**
@@ -91,6 +105,42 @@ export function trend(recent: number, older: number): TrendDir {
  */
 export function atRisk(dir: TrendDir, health: Health): boolean {
   return dir === "up" && (health === "warn" || health === "bad");
+}
+
+/**
+ * Nœuds à risque, PAGES et SERVICES COMPTÉS À PART : la colonne navigateur porte
+ * des pages (`/partners/:id`, `FichePartenaire`), la colonne serveur des services.
+ * Les additionner sous « Services à risque » comptait des pages comme des services.
+ *
+ * `conclues` : combien de nœuds de chaque colonne ont une tendance conclue. À zéro,
+ * « 0 service à risque » affirmerait une absence de hausse que personne n'a pu
+ * mesurer : l'écran écrit « non conclu ».
+ */
+export function comptesARisque(noeuds: readonly Pick<GNode, "tier" | "risk" | "tendance">[]): {
+  pages: number;
+  services: number;
+  conclues: { pages: number; services: number };
+} {
+  const de = (tier: GNode["tier"]) => noeuds.filter((n) => n.tier === tier);
+  const pages = de("front");
+  const services = de("back");
+  return {
+    pages: pages.filter((n) => n.risk).length,
+    services: services.filter((n) => n.risk).length,
+    // `tendance` n'est posé que si la tendance se chiffre (`texteTendance`).
+    conclues: { pages: pages.filter((n) => n.tendance !== undefined).length, services: services.filter((n) => n.tendance !== undefined).length },
+  };
+}
+
+/** « 2 pages et 1 service en hausse à surveiller » : pluriels calculés, rien pour un compte nul. */
+export function texteARisque(pages: number, services: number): string | null {
+  const morceau = (n: number, singulier: string, pluriel: string) =>
+    n > 0 ? `${n.toLocaleString("fr-FR")}\u00a0${n > 1 ? pluriel : singulier}` : null;
+  const parties = [morceau(pages, "page", "pages"), morceau(services, "service", "services")].filter(
+    (p): p is string => p !== null,
+  );
+  if (parties.length === 0) return null;
+  return `${parties.join(" et ")} en hausse à surveiller`;
 }
 
 // --- Mise en page du graphe (2 colonnes : front | back) ----------------------
@@ -216,8 +266,7 @@ export const NODE_HEIGHT = NODE_H;
  * mesure, c'est une division par zéro (V3).
  */
 export function tendancePct(recent: number, older: number): number | null {
-  if (recent + older < SEUIL_TENDANCE) return null;
-  if (older <= 0) return null;
+  if (!tendanceConclue(recent, older)) return null;
   return ((recent - older) / older) * 100;
 }
 

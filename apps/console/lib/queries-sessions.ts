@@ -13,6 +13,7 @@ import { sqlContext, type SqlContext } from "./query-sql";
 // F41 : tuiles et répartition lues par l'Explorer (une seule définition des mesures).
 import { EXPLORER_VERSION, type ExplorerPlan } from "./analytics-schema";
 import { exploreAnalytics } from "./queries-explorer";
+import { MOBILE_RUNTIME } from "./queries-mobile";
 import type { AnalyticsQuery, Dimension } from "./query-contract";
 
 /**
@@ -373,4 +374,73 @@ export async function repartitionSessions(query: AnalyticsQuery, dimension: Dime
     groupes: data.groups.map((g) => ({ valeur: g.key[0] ?? null, sessions: g.value ?? 0 })),
     tronque: meta.truncated_groups,
   };
+}
+
+// ═══════════════ Frustration et rejeu des lignes de la liste (recette du 26/09) ═══════════════
+//
+// La table « Toutes les sessions » forçait ces deux colonnes à `null` : « — » sur
+// chaque ligne, alors que 140 sessions de la démo avaient un rejeu que leur détail
+// lisait. Deux faits PAR SESSION, lus pour les seules lignes de la page affichée
+// (50 au plus), jamais pour la fenêtre : un compte, une existence.
+//
+//   - frustration : signaux `frustration.rage|dead|error` de la session, toute sa
+//     durée. `null` pour une session React Native : son SDK n'en émet aucun, et
+//     « 0 » y affirmerait un calme que personne n'a écouté (garde de capteur R-F) ;
+//   - rejeu : un segment existe-t-il, DANS LA MÊME APP (l'identifiant de session est
+//     émis par le client ; un segment d'une autre app ne fait pas un rejeu).
+//
+// COÛT. `rum_event` n'a pas d'index par session : la lecture passe par l'index
+// (app, nom, instant), bornée à l'intervalle couvert par les sessions de la page,
+// une heure de marge de chaque côté (horloges clientes). Le rejeu passe par
+// `idx_replay_session`.
+
+/** Les deux signaux d'une ligne ; `frustration: null` = non collecté (capteur mobile). */
+export interface SignauxSession {
+  frustration: number | null;
+  rejeu: boolean;
+}
+
+/** Clé d'une session dans le dictionnaire des signaux : app et identifiant, jamais l'identifiant seul. */
+export function cleSession(s: { app_id: string; session_id: string }): string {
+  return `${s.app_id}\u0000${s.session_id}`;
+}
+
+export async function signauxDesSessions(
+  lignes: readonly {
+    app_id: string;
+    session_id: string;
+    runtime?: string | null;
+    started_at: Date | string;
+    last_seen_at: Date | string;
+  }[],
+): Promise<Record<string, SignauxSession>> {
+  if (lignes.length === 0) return {};
+  const ms = (d: Date | string) => new Date(d).getTime();
+  const debut = new Date(Math.min(...lignes.map((l) => ms(l.started_at))) - 3_600_000);
+  const fin = new Date(Math.max(...lignes.map((l) => ms(l.last_seen_at))) + 3_600_000);
+  const rows = await q<{ app_id: string; session_id: string; frustration: number; rejeu: boolean }>(
+    `with l as (
+       select * from unnest($1::text[], $2::text[]) as l(app_id, session_id)
+     ), signaux as (
+       select e.app_id, e.session_id, count(*)::int as n
+         from rum_event e
+         join l on l.app_id = e.app_id and l.session_id = e.session_id
+        where e.app_id = any($1::text[])
+          and e.name in ('frustration.rage', 'frustration.dead', 'frustration.error')
+          and e.ts >= $3 and e.ts <= $4
+        group by 1, 2
+     )
+     select l.app_id, l.session_id, coalesce(sg.n, 0)::int as frustration,
+            exists (select 1 from replay_chunk r where r.session_id = l.session_id and r.app_id = l.app_id) as rejeu
+       from l
+       left join signaux sg on sg.app_id = l.app_id and sg.session_id = l.session_id`,
+    [lignes.map((l) => l.app_id), lignes.map((l) => l.session_id), debut, fin],
+  );
+  const mobile = new Set(lignes.filter((l) => l.runtime === MOBILE_RUNTIME).map(cleSession));
+  const sortie: Record<string, SignauxSession> = {};
+  for (const r of rows) {
+    const cle = cleSession(r);
+    sortie[cle] = { frustration: mobile.has(cle) ? null : r.frustration, rejeu: r.rejeu === true };
+  }
+  return sortie;
 }

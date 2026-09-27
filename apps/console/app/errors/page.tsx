@@ -21,7 +21,8 @@ import { errorGroupHref, errorSearchParams, errorsHref, fmtCount } from "@/lib/e
 import type { SearchParams } from "@/lib/filters";
 import { chargerErrors } from "@/lib/chargeurs/errors";
 import { chargerEcran } from "@/lib/ecran";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, pluriel } from "@/lib/format";
+import { cleGroupe, texteDistinction } from "@/lib/erreurs-distinction";
 import { BasculeTri, Breakdown } from "@/components/Breakdown";
 import { ERRORS_BREAKDOWN_COLUMNS, errorsBreakdownItems } from "@/components/breakdown-view";
 import { BREAKDOWN_NOTICES, BREAKDOWN_PARAM, breakdownTabs, datasetAvailability } from "@/lib/breakdowns";
@@ -85,7 +86,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
       <Breakdown
         title="Répartition des occurrences"
         tabs={breakdownTabs("/errors", ecran.query, dimension, dispoDecoupage, filtresEcran)}
-        notice={`${BREAKDOWN_NOTICES[dimension]} Ce classement porte sur TOUTES les occurrences de la fenêtre : le statut de triage et la source, qui filtrent la liste ci-dessus, ne le découpent pas.`}
+        notice={`${BREAKDOWN_NOTICES[dimension]} Ce classement porte sur toutes les occurrences de la période : les filtres de statut et de source de la liste ne s'y appliquent pas.`}
         items={errorsBreakdownItems({ pathname: "/errors", query: ecran.query, schema, dimension }, decoupe.rows)}
         columns={ERRORS_BREAKDOWN_COLUMNS}
         groups={decoupe.groups}
@@ -99,21 +100,21 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   // regroupement v2 → la liste passe aux issues. Sinon, liste historique.
   const modeIssues = ecran.modeIssues;
   if (modeIssues && vue.tri !== null && vue.tri !== "statut") {
-    avertissements.push(ligneIgnoree("tri", vue.tri, "la liste des issues garde son ordre de triage"));
+    avertissements.push(ligneIgnoree("tri", vue.tri, "cette liste garde son ordre de triage"));
   }
   if (modeIssues && vue.nouveaux) {
-    avertissements.push(ligneIgnoree("nouveaux", "1", "la liste des issues ne se restreint pas encore aux groupes apparus"));
+    avertissements.push(ligneIgnoree("nouveaux", "1", "cette liste ne se restreint pas encore aux groupes apparus"));
   }
   if (modeIssues && vue.panel?.type === "error") {
     avertissements.push(
-      ligneIgnoree("panel", url.get("panel") ?? "", "la liste des issues n'ouvre pas le panneau d'un groupe historique"),
+      ligneIgnoree("panel", url.get("panel") ?? "", "cette liste n'ouvre pas le panneau d'une ancienne signature"),
     );
   }
   // La liste des issues a SON filtre de statut (`status`, quatre valeurs dont « à
   // revoir »), posé par son propre formulaire : `statut` — celui de la liste
   // historique — n'y est pas appliqué, et le dire vaut mieux que le taire (V10).
   if (modeIssues && vue.statut) {
-    avertissements.push(ligneIgnoree("statut", vue.statut, "la liste des issues filtre par son propre champ « Statut »"));
+    avertissements.push(ligneIgnoree("statut", vue.statut, "cette liste filtre par son propre champ « Statut »"));
   }
   const tri: OrdreGroupes = !modeIssues && (vue.tri === "sessions" || vue.tri === "recent") ? vue.tri : "statut";
   const nouveauxSeuls = !modeIssues && vue.nouveaux;
@@ -209,7 +210,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
           hrefGroupe={(g) => (modeIssues ? errorGroupHref(g.ref, f) : lienPanneau(g.ref.fingerprint))}
           plusieursApps={query.scope.requestedApp === null}
           annotations={annotations.annotations}
-          annotationsIndisponibles={deploys.ok ? annotations.indisponible : "marqueurs de déploiement non lus"}
+          annotationsIndisponibles={deploys.ok ? annotations.indisponible : "marqueurs de déploiement indisponibles"}
           zoomHref={zoomHref}
         />
       </SectionErreur>
@@ -248,6 +249,10 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   }
 
   const { groups, total, totalFiltre, trend, sampling, enrichment, unfingerprinted } = ecran.liste;
+  // Ligne de pile et route principale de chaque groupe (recette du 26/09/2026) ; une
+  // lecture en échec ôte la phrase, pas la liste.
+  const distinctions = ecran.distinctions.ok ? ecran.distinctions.data : {};
+  const plusieursApps = query.scope.requestedApp === null;
   // Liste restreinte (groupes apparus, statut de triage) : elle se pagine sur LEUR
   // nombre, pas sur celui de tous les groupes (les totaux de l'écran, eux, ne
   // changent pas). Sous filtre de statut, la lecture rend le compte retenu ;
@@ -302,7 +307,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
       ? "par sessions touchées (inconnues en dernier), puis visiteurs, puis occurrences"
       : tri === "recent"
         ? "par dernière vue, la plus récente d'abord"
-        : "régressées, puis ouvertes, puis résolues, puis ignorées ; puis par visiteurs touchés, sessions et occurrences";
+        : "régressés, puis ouverts, puis résolus, puis ignorés ; puis par visiteurs touchés, sessions et occurrences";
 
   return (
     <div className="animate-fade-up">
@@ -324,27 +329,41 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
         {nouveauxSeuls ? " apparus sur la période" : ""}
         {statut ? ` ${STATUT_LABELS[statut].toLowerCase()}` : ""})
       </h2>
-      <p className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="ordre-liste">
-        Une ligne = une cause récurrente (type + message + frame, dans son application). Ordre : {ordreLu}.
-        {nouveauxSeuls && (
-          <>
-            {" "}
-            Liste restreinte aux groupes apparus sur {label}.{" "}
-            <Link href={lienListe(tri !== "statut" ? { tri } : {})} className="text-brand hover:underline">
-              Tous les groupes
-            </Link>
-          </>
-        )}{" "}
-        {statut && (
-          <>
-            Liste restreinte aux groupes dont le triage est « {STATUT_LABELS[statut].toLowerCase()} » : les tuiles, le
-            graphique et la répartition, eux, portent sur toute la population.{" "}
-          </>
-        )}
-        Tous les compteurs portent sur {label} — sauf « Première vue », qui remonte à la première apparition connue.
-        « Inconnu » : aucune occurrence du groupe n&apos;est rattachée à une session ou à un visiteur connu (une erreur
-        backend sans session, par exemple) — ce n&apos;est pas zéro personne. {noteTendances}
-      </p>
+      {/* Recette du 26/09/2026 : quatre lignes d'explication précédaient la liste. L'ordre
+          et les restrictions restent dits ; le mode d'emploi se déplie à la demande. */}
+      <div className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="ordre-liste">
+        <p>
+          Ordre : {ordreLu}.
+          {nouveauxSeuls && (
+            <>
+              {" "}
+              Liste restreinte aux groupes apparus sur {label}.{" "}
+              <Link href={lienListe(tri !== "statut" ? { tri } : {})} className="text-brand hover:underline">
+                Tous les groupes
+              </Link>
+            </>
+          )}
+          {statut && (
+            <>
+              {" "}
+              Liste restreinte aux groupes « {STATUT_LABELS[statut].toLowerCase()} » : les tuiles, le graphique et la
+              répartition portent sur toute la population.
+            </>
+          )}
+        </p>
+        <details className="mt-1">
+          <summary className="cursor-pointer rounded text-ink-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
+            Comment lire cette liste
+          </summary>
+          <p className="mt-1">
+            Une ligne = une cause récurrente : même type, même message et même ligne de code, dans son application ;
+            sous le titre, la ligne de code et la route où l&apos;erreur survient le plus. Tous les compteurs portent
+            sur {label}, sauf « Première vue », qui remonte à la première apparition connue. « Inconnu » : aucune
+            occurrence du groupe n&apos;est rattachée à une session ou à un visiteur connu (une erreur serveur sans
+            session, par exemple) — ce n&apos;est pas zéro personne. {noteTendances}
+          </p>
+        </details>
+      </div>
       <div className="mb-3">
         {/* Changer d'ordre GARDE le filtre de statut : trier n'est pas dé-filtrer
             (à la différence d'une tuile, qui repart de toute la population). */}
@@ -391,6 +410,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
             {groups.map((g) => {
               const dim = g.status !== "open" && !g.regressed;
               const message = g.sample_message ?? "(sans message)";
+              const distinction = texteDistinction(distinctions[cleGroupe(g)]);
               return (
                 <tr
                   key={`${g.app_id}|${g.fingerprint}`}
@@ -416,8 +436,18 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
                       <span className="break-words font-medium text-ink" title={g.sample_message ?? ""}>
                         {message.slice(0, 120)}
                       </span>
-                      <span className="mt-0.5 block break-all font-mono text-xs text-ink-faint">
-                        {g.fingerprint} · {g.app_id}
+                      {/* Ce qui distingue deux groupes de même titre : la ligne de code
+                          (l'empreinte en dépend) et la route principale. */}
+                      {distinction && (
+                        <span className="mt-0.5 block break-words text-xs text-ink-soft" data-testid="distinction-groupe">
+                          {distinction.lieu && <span className="font-mono">{distinction.lieu}</span>}
+                          {distinction.lieu && distinction.route && " · "}
+                          {distinction.route}
+                        </span>
+                      )}
+                      <span className="mt-0.5 block break-all font-mono text-[11px] text-ink-faint">
+                        {g.fingerprint}
+                        {plusieursApps ? ` · ${g.app_id}` : ""}
                       </span>
                     </Link>
                   </td>
@@ -434,7 +464,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
                     <Sparkline
                       valeurs={g.series ?? trend.map(() => 0)}
                       max={echelle}
-                      label={`${g.occurrences.toLocaleString("fr-FR")} occurrence(s) sur ${label}`}
+                      label={`${pluriel(g.occurrences, "occurrence")} sur ${label}`}
                     />
                   </CelluleGroupe>
                   <CelluleGroupe libelle="Première vue" className="text-ink-soft sm:whitespace-nowrap">
@@ -494,8 +524,8 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
 
       {unfingerprinted > 0 && (
         <p className="mt-3 text-xs text-ink-faint">
-          {unfingerprinted.toLocaleString("fr-FR")} occurrence(s) sans empreinte sur {label} (erreurs v0.1
-          antérieures au regroupement) : non groupées, et hors des compteurs ci-dessus.
+          {pluriel(unfingerprinted, "occurrence ancienne", "occurrences anciennes")} sur {label}, antérieures au
+          regroupement des erreurs : non groupées, et hors des compteurs ci-dessus.
         </p>
       )}
 

@@ -1,9 +1,9 @@
 // E2E — F49 : l'écran `/retention` (plan § 5.17).
 //
 // CE QUE CE SPEC EXISTE POUR EMPÊCHER.
-//   - Qu'une période globale active laisse croire qu'elle filtre : la rétention lit
-//     N semaines choisies dans l'en-tête ; la période du haut est affichée
-//     DÉSACTIVÉE, avec sa raison.
+//   - Qu'une période globale laisse croire qu'elle filtre : la rétention lit N
+//     semaines choisies dans l'en-tête ; la période du haut n'est pas affichée
+//     (recette du 26/09/2026 : grisée, « 24 h » paraissait sélectionnée).
 //   - Qu'une semaine inachevée tire la courbe vers le bas : « Retour en S+1 » ne
 //     compte que les cohortes dont la semaine S+1 est finie, et le dit.
 //   - Qu'une case de la matrice montre un taux sans son effectif : chaque case écrit
@@ -95,25 +95,29 @@ async function ouvrir(page: Page, largeur: number, hauteur: number) {
 
 const tuile = (page: Page, libelle: string) => page.getByTestId("kpi-tile").filter({ hasText: libelle });
 
-test("la période globale est affichée désactivée avec sa raison ; la fenêtre se choisit en semaines", async ({ page }) => {
+test("la période globale n'est pas affichée ; la fenêtre se choisit en semaines", async ({ page }) => {
   await ouvrir(page, 1440, 900);
-  const periode = page.getByTestId("filter-period");
-  await expect(periode).toHaveAttribute("title", /La rétention se lit sur un nombre de semaines/);
-  await expect(periode.getByRole("button", { name: "24 h" })).toBeDisabled();
+  // La barre reste (l'appareil s'applique), sans période.
+  await expect(page.getByTestId("global-filters")).toBeVisible();
+  await expect(page.getByTestId("filter-period")).toHaveCount(0);
+  await expect(page.getByTestId("filter-device")).toBeVisible();
 
+  // Recette du 26/09/2026 : seules les fenêtres que l'historique conservé remplit
+  // sont proposées. 30 jours (défaut, sans RETENTION_DAYS) : 4 semaines, par défaut.
   const fenetres = page.getByTestId("retention-fenetre");
-  await expect(fenetres).toHaveText(["4 sem.", "8 sem.", "12 sem.", "26 sem."]);
-  await expect(fenetres.filter({ hasText: "8 sem." })).toHaveAttribute("aria-current", "true");
-  await fenetres.filter({ hasText: "4 sem." }).click();
-  await page.waitForURL((u) => u.searchParams.get("weeks") === "4", { timeout: 15_000 });
-  await expect(page.getByTestId("retention-fenetre").filter({ hasText: "4 sem." })).toHaveAttribute("aria-current", "true");
+  await expect(fenetres).toHaveText(["4 sem."]);
+  await expect(fenetres.filter({ hasText: "4 sem." })).toHaveAttribute("aria-current", "true");
+  await expect(page.getByTestId("retention-historique")).toContainText("30 jours");
 
-  // Une fenêtre hors des quatre proposées est ignorée ET dite.
+  // Une fenêtre hors de celles proposées est ignorée ET dite — 26 semaines comprises,
+  // que 30 jours d'historique ne rempliraient pas.
   await page.goto(`${consoleUrl}/retention?app=${APP_F49}&weeks=5`);
   await expect(page.getByTestId("reglage-ignore")).toContainText("weeks=5");
+  await page.goto(`${consoleUrl}/retention?app=${APP_F49}&weeks=26`);
+  await expect(page.getByTestId("reglage-ignore")).toContainText("weeks=26");
 });
 
-test("tuiles : S+1 sur les seules cohortes complètes, S+4 sans recul → « — », jamais 0", async ({ page }) => {
+test("tuiles : S+1 sur les seules cohortes complètes, S+4 hors fenêtre → la dernière semaine lisible, jamais 0", async ({ page }) => {
   await ouvrir(page, 1440, 900);
   await expect(tuile(page, "Visiteurs identifiés suivis").getByTestId("kpi-valeur")).toHaveText("18");
   // Cohorte A seule complète à S+1 : 6 / 12. La cohorte B (S+1 = cette semaine) est exclue.
@@ -123,10 +127,21 @@ test("tuiles : S+1 sur les seules cohortes complètes, S+4 sans recul → « —
   // Aucun verdict coloré : aucun seuil de rétention n'est publié.
   await expect(s1).toHaveAttribute("data-ton", "neutre");
   await expect(s1.getByTestId("kpi-verdict")).toHaveCount(0);
-  const s4 = tuile(page, "Retour en S+4");
-  await expect(s4.getByTestId("kpi-valeur")).toHaveText("—");
-  await expect(s4).toContainText("pas encore 4 semaines complètes de recul");
-  await expect(tuile(page, "Sessions sans identifiant").getByTestId("kpi-raison")).toContainText("B35");
+  // 30 jours conservés : la fenêtre de 4 semaines couvre S+0 à S+3. S+4 n'y serait
+  // jamais lisible (une tuile vide par construction, contre-recette du 26/09/2026) :
+  // la tuile lit S+3, la dernière semaine de la fenêtre, et le dit.
+  await expect(tuile(page, "Retour en S+4")).toHaveCount(0);
+  const s3 = tuile(page, "Retour en S+3");
+  await expect(s3).toContainText("S+4 dépasse la fenêtre de 4 semaines : dernière semaine lisible");
+  // La cohorte A (il y a deux semaines) n'a pas encore sa semaine S+3 terminée : « — » daté, jamais 0.
+  await expect(s3.getByTestId("kpi-valeur")).toHaveText("—");
+  await expect(s3).toContainText("lisible à partir du");
+  // Recette du 26/09/2026 : la tuile « Sessions sans identifiant, hors matrice »
+  // attend une lecture non livrée — elle n'est pas rendue, et aucun code interne
+  // n'apparaît à l'écran.
+  await expect(page.getByTestId("retention-kpi").getByTestId("kpi-tile")).toHaveCount(3);
+  await expect(tuile(page, "Sessions sans identifiant")).toHaveCount(0);
+  for (const code of ["B35", "parité C3"]) await expect(page.locator("main")).not.toContainText(code);
 });
 
 test("matrice : chaque case écrit « n / taille », la semaine en cours est hachurée", async ({ page }) => {
@@ -146,7 +161,7 @@ test("matrice : chaque case écrit « n / taille », la semaine en cours est hac
   // F54 (§ 3.9) : ce sont des images NOMMÉES, et chacune garde son alternative textuelle.
   await expect(page.locator('#retention-courbe [role="img"]').first()).toHaveAttribute(
     "aria-label",
-    /^Rétention pondérée par semaine depuis l'arrivée, de S\+0 à S\+2, fenêtre de 8 semaines UTC/,
+    /^Rétention pondérée par semaine depuis l'arrivée, de S\+0 à S\+2, fenêtre de 4 semaines/,
   );
   await expect(page.locator('#retention-appareils [role="img"]').first()).toHaveAttribute(
     "aria-label",

@@ -6,7 +6,11 @@
 //   · sous « toutes les apps », l'app préfixe la condition et la table a sa colonne ;
 //   · vide motivé (aucune session, aucun objectif), geste réservé à l'admin (V9) ;
 //   · petits multiples par appareil, « Inconnu » à part, appareil sans session « — » ;
-//   · une lecture en échec n'efface pas l'en-tête.
+//   · une lecture en échec n'efface pas l'en-tête ;
+//   · recette du 26/09/2026 : le NOM de l'application, jamais son identifiant ; le
+//     taux juste après le nom, dans la couleur des barres ; Désactiver et Supprimer
+//     sur la ligne de la table (admin), la gestion ne listant plus que les objectifs
+//     absents de la table ; aucune justification technique visible.
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -108,24 +112,66 @@ describe("/goals — hero et table", () => {
     // P*.1 conservé : l'intervalle en mots, par ligne de la table.
     expect(html).toContain('data-testid="goal-intervalle"');
     expect(t).toMatch(/entre 45,1\s% et 54,9\s% \(95 %\)/);
-    // La colonne dit « sessions », la dernière conversion est datée en UTC.
+    // La colonne dit « sessions », la dernière conversion est datée à l'heure de Paris.
     expect(t).toContain("Conversions (sessions)");
     expect(t).toContain("200 sur 400");
-    expect(t).toMatch(/22\/09,? 12:34 UTC/);
-    // Une seule app lue : pas de colonne App dans la table des objectifs.
-    expect(texte(tableObjectifs(html))).toMatch(/Objectif Condition Conversions \(sessions\)/);
+    expect(t).toMatch(/22\/09,? 14:34/);
+    // Une seule app lue : pas de colonne App ; le taux juste après le nom (lisible à 390 px).
+    expect(texte(tableObjectifs(html))).toMatch(/Objectif Taux Conversions \(sessions\) Condition Dernière conversion Actions/);
+    // Un taux, une couleur : la barre de la table est celle du hero (série principale), plus le bleu `perf`.
+    expect(tableObjectifs(html)).toContain("background-color:#f89101");
+    expect(tableObjectifs(html)).not.toContain("bg-perf");
+    // Plus de justification technique visible.
+    expect(t).not.toContain("dimension de filtre");
+    expect(t).not.toContain("demi-largeur de l'intervalle de Wilson");
   });
 
-  it("toutes les apps : l'app préfixe la condition, la table a sa colonne App", async () => {
+  it("admin : Désactiver et Supprimer sur la ligne ; la gestion ne relist que les objectifs absents de la table", async () => {
+    goalConversions.mockResolvedValue({ total: 100, rows: [objectif(1, "Merci", 40, 100)] });
+    listGoals.mockResolvedValue([
+      { id: 1, app_id: "a", name: "Merci", kind: "pageview", pattern: "/merci", match_type: "exact", active: true },
+      { id: 2, app_id: "a", name: "Ancien", kind: "event", pattern: "vieux", match_type: "exact", active: false },
+    ]);
+    const html = await rendre();
+    const table = tableObjectifs(html);
+    expect(table).toContain('aria-label="Désactiver l’objectif Merci"');
+    expect(table).toContain('data-testid="supprimer-objectif-1"');
+    const gestion = html.slice(html.indexOf('id="gerer-objectifs"'));
+    expect(texte(gestion)).toContain("Gérer les objectifs");
+    expect(texte(gestion)).not.toContain("(admin)");
+    expect(gestion).toContain('data-testid="create-goal"');
+    // « Merci » (actif, dans la table) n'est pas relisté ; « Ancien » (désactivé) l'est, réactivable.
+    const autres = gestion.slice(gestion.indexOf('data-testid="objectifs-autres"'));
+    expect(texte(autres)).toContain("Objectifs désactivés");
+    expect(texte(autres)).toContain("Ancien");
+    expect(texte(autres)).not.toContain("Merci");
+    expect(autres).toContain('aria-label="Activer l’objectif Ancien"');
+    expect(autres).toContain('data-testid="supprimer-objectif-2"');
+    // Le nom de l'application, jamais son identifiant.
+    expect(texte(autres)).toContain("App A");
+  });
+
+  it("viewer : ni colonne Actions ni gestion", async () => {
+    simul.user = { email: "v@mip", role: "viewer", apps: ["a"] };
+    goalConversions.mockResolvedValue({ total: 100, rows: [objectif(1, "Merci", 40, 100)] });
+    const html = await rendre();
+    expect(texte(tableObjectifs(html))).not.toContain("Actions");
+    expect(html).not.toContain("Désactiver");
+    expect(html).not.toContain('id="gerer-objectifs"');
+  });
+
+  it("toutes les apps : le NOM de l'app préfixe la condition, la table a sa colonne App", async () => {
     goalConversions.mockResolvedValue({
       total: 12,
       rows: [objectif(1, "Merci", 3, 5, { app_id: "a" }), objectif(2, "Merci B", 1, 7, { app_id: "b" })],
     });
     const html = await rendre({ app: "all" });
     const t = texte(html);
-    expect(t).toContain("Merci a · page vue = /merci");
+    // « a » est connue du registre (« App A ») ; « b » ne l'est pas : son identifiant reste.
+    expect(t).toContain("Merci App A · page vue = /merci");
     expect(t).toContain("Merci B b · page vue = /merci b");
-    expect(texte(tableObjectifs(html))).toMatch(/Objectif App Condition Conversions \(sessions\)/);
+    expect(texte(tableObjectifs(html))).toMatch(/Objectif Taux Conversions \(sessions\) App Condition/);
+    expect(texte(tableObjectifs(html))).toContain("App A");
   });
 
   it("aucune session : vide motivé, taux non calculables, aucune barre", async () => {
@@ -162,7 +208,7 @@ describe("/goals — par appareil (G4)", () => {
     const html = await rendre();
     const bloc = html.slice(html.indexOf('data-testid="conversion-appareils"'));
     const t = texte(bloc);
-    expect(t).toMatch(/Desktop 10 sessions 40,0\s% \(\+15,0 pt\)/);
+    expect(t).toMatch(/Ordinateur 10 sessions 40,0\s% \(\+15,0 pt\)/);
     expect(t).toMatch(/Mobile 6 sessions 16,7\s% \(−8,3 pt\)/);
     expect(t).toMatch(/Tablette 0 session —/);
     expect(t).toMatch(/Inconnu 4 sessions 0,0\s% \(−25,0 pt\)/);

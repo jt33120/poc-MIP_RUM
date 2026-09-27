@@ -194,10 +194,12 @@ export const MODELES_TABLEAUX: ModeleTableau[] = [
         ],
       },
     ],
+    // Le taux d'erreur par release manque au modèle (l'Explorer n'a pas de mesure de
+    // rapport : occurrences et pages vues y sont côte à côte, jamais divisées). La
+    // carte dit où le lire, sans exposer la limite technique (recette du 26/09/2026).
     limite: {
-      texte:
-        "Un taux d'erreur par release n'est pas exprimable dans l'Explorer (aucune mesure de ratio) : les occurrences et les pages vues sont posées côte à côte, jamais divisées.",
-      libelle: "Comparer deux releases sur la Vue d'ensemble",
+      texte: "Taux d'erreur par release :",
+      libelle: "comparer deux releases sur la Vue d'ensemble",
       href: "/?cmp=release",
     },
   },
@@ -230,14 +232,16 @@ export function apercuDuModele(modele: ModeleTableau): { titre: string; cartes: 
 
 /**
  * Puce du TYPE d'une carte (W-D2) : ce qu'elle montre, plutôt qu'un nombre de
- * cartes. « Valeur », « Classement », « Série », « Journal » pour une analyse ;
- * « v1 : Trafic »… pour une carte du catalogue historique ; « illisible » sinon.
+ * cartes. « Valeur », « Classement », « Série », « Lignes » pour une analyse ;
+ * « Trafic », « LCP p75 »… pour une carte du catalogue historique ; « illisible »
+ * sinon. Le préfixe « v1 : » est parti (recette du 26/09/2026) : c'était la version
+ * interne du format de carte, qui ne dit rien de ce qu'on y lit.
  */
 const REPRESENTATIONS: Record<ExplorerPlan["visualization"], string> = {
   value: "Valeur",
   toplist: "Classement",
   timeseries: "Série",
-  table: "Journal",
+  table: "Lignes",
 };
 const V1_COURT: Record<LegacyWidget["type"], string> = {
   vital_p75: "Web Vital",
@@ -250,7 +254,9 @@ const V1_COURT: Record<LegacyWidget["type"], string> = {
 export function puceDeCarte(widget: CarteWidget): string {
   if (widget.kind === "v2") return REPRESENTATIONS[widget.plan.visualization];
   if (widget.kind === "v1") {
-    return `v1 : ${widget.type === "vital_p75" && widget.metric ? `${widget.metric} p75` : (V1_COURT[widget.type] ?? WIDGET_META[widget.type].label)}`;
+    return widget.type === "vital_p75" && widget.metric
+      ? `${widget.metric} p75`
+      : (V1_COURT[widget.type] ?? WIDGET_META[widget.type].label);
   }
   return "illisible";
 }

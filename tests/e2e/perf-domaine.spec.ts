@@ -424,7 +424,9 @@ test.describe("F13 — Vue d'ensemble : segments, release, angle mort, historiqu
     await page.goto(ACCUEIL_F13, { waitUntil: "domcontentloaded" });
     const angle = page.getByTestId("angle-mort");
     await expect(angle.getByTestId("kpi-valeur")).toHaveText("3", { timeout: 15_000 });
-    await expect(angle).toContainText("borne Bon de lib/rating.ts");
+    // La règle est la méthode de la tuile (son infobulle) ; plus de chemin du dépôt à l'écran.
+    await expect(angle.getByTestId("kpi-tile")).toHaveAttribute("title", /seuil Bon du LCP/);
+    await expect(angle).not.toContainText("lib/rating.ts");
     const tuile = new URL((await angle.getByTestId("kpi-tile").getAttribute("href"))!, consoleUrl);
     expect(tuile.pathname).toBe("/correlation");
     expect(tuile.hash).toBe("#angles-morts");
@@ -523,7 +525,7 @@ test.describe("F18 — Erreurs : KPI, hero, répartition", () => {
     await page.goto(`${consoleUrl}/errors?app=${APP}`);
     const hero = page.locator("#hero-erreurs");
     await hero.scrollIntoViewIfNeeded();
-    // Les entrées de SÉRIES : la légende ajoute « seau en cours (barre pâle) » quand
+    // Les entrées de SÉRIES : la légende ajoute « heure en cours (incomplète) » quand
     // le dernier seau de la fenêtre glissante n'est pas fini (le cas sous `period=24h`).
     // Ce n'est pas une série : elle n'entre pas dans le compte des ≤ 5.
     const legende = hero.getByTestId("legende-serie").locator("li:not([data-testid=legende-seau-en-cours])");
@@ -654,12 +656,12 @@ test.describe("F22 — Interactions : onglets, Frustration KPI, règles, hero", 
   test("tuiles : comptes entiers, sessions en sous-texte, lien vers le hero filtré par type", async ({ page }) => {
     await login(page);
     await page.goto(`${consoleUrl}/ux?app=${APP}`);
-    await expect(tuile(page, "Rage clicks").getByTestId("kpi-valeur")).toHaveText("2");
-    await expect(tuile(page, "Rage clicks")).toContainText("2 signaux, 1 session");
+    await expect(tuile(page, "Clics de rage").getByTestId("kpi-valeur")).toHaveText("2");
+    await expect(tuile(page, "Clics de rage")).toContainText("2 signaux, 1 session");
     await expect(page.getByTestId("ligne-sdk-desactive")).toContainText("frustration: false");
-    await tuile(page, "Rage clicks").click();
+    await tuile(page, "Clics de rage").click();
     await expect(page).toHaveURL(/type=rage/);
-    await expect(page.getByTestId("filtre-type").locator('[aria-current="true"]')).toHaveText("Rage clicks");
+    await expect(page.getByTestId("filtre-type").locator('[aria-current="true"]')).toHaveText("Clics de rage");
   });
 
   test("règles de détection écrites depuis les constantes du SDK", async ({ page }) => {
@@ -685,9 +687,9 @@ test.describe("F22 — Interactions : onglets, Frustration KPI, règles, hero", 
     await page.goto(`${consoleUrl}/ux?app=${APP_MOBILE}`);
     const rangee = page.getByTestId("kpi-interactions");
     await expect(rangee.getByTestId("signaux-non-collectes")).toContainText("Non collecté");
-    await expect(tuile(page, "Rage clicks")).toHaveCount(0);
-    await expect(tuile(page, "Dead clicks")).toHaveCount(0);
-    await expect(tuile(page, "Error clicks")).toHaveCount(0);
+    await expect(tuile(page, "Clics de rage")).toHaveCount(0);
+    await expect(tuile(page, "Clics sans réaction")).toHaveCount(0);
+    await expect(tuile(page, "Clics suivis d'erreur")).toHaveCount(0);
     for (const valeur of await rangee.getByTestId("kpi-valeur").allInnerTexts()) expect(valeur.trim()).not.toBe("0");
     await expect(page.locator("#routes-frustrantes")).toContainText("Non collecté");
   });
@@ -782,11 +784,14 @@ test.describe("F26 — Satisfaction", () => {
     const seaux = await hero.getByTestId("threshold-series").evaluateAll((els) => els.map((e) => e.getAttribute("data-seaux")));
     expect(new Set(seaux).size).toBe(1);
 
-    // Moins de trois pages avec au moins 10 avis : pas de nuage, et on le dit.
+    // Moins de trois pages avec au moins 10 avis : pas de nuage, et on le dit — sans
+    // bandeau « Partiel », réservé aux données partielles (recette du 26/09/2026).
     const nuage = page.locator("#ressenti-face-au-lcp");
-    await expect(nuage).toHaveAttribute("data-etat", "partiel");
-    await expect(nuage).toContainText("moins de trois pages avec au moins 10 avis : pas de nuage");
-    await expect(nuage).toContainText("2 page(s) éligible(s)");
+    await expect(nuage).not.toHaveAttribute("data-etat", "partiel");
+    await expect(nuage.getByTestId("nuage-insuffisant")).toContainText("il faut au moins trois pages");
+    await expect(nuage.getByTestId("nuage-insuffisant")).toContainText("seules 2 le sont");
+    await expect(nuage).toContainText("2 pages éligibles");
+    await expect(nuage).not.toContainText("(s)");
 
     // Page à commentaire seul : pas de CSAT — « — », jamais « 0 % ».
     const commentaire = page.getByTestId("impact-ligne").filter({ hasText: "/f26-commentaire" });
@@ -794,7 +799,7 @@ test.describe("F26 — Satisfaction", () => {
     await expect(commentaire).not.toContainText("%");
 
     // Chaque verbatim porte sa date ; aucun score composite.
-    await expect(page.locator("#verbatims")).toContainText(/\d{2}\/\d{2} \d{2}:\d{2} UTC/);
+    await expect(page.locator("#verbatims")).toContainText(/\d{2}\/\d{2} \d{2}:\d{2}/);
     await expect(page.getByText("/100")).toHaveCount(0);
   });
 
@@ -1181,8 +1186,8 @@ test.describe("F16 — Pages : tâches longues et ressources", () => {
     expect(seauxP75).toBe(seauxComptes);
     // Le marqueur de déploiement est posé sur les DEUX panneaux (P9).
     await expect(figure.getByTestId("annotations")).toHaveCount(2);
-    // Le p75 par seau n'est plus seulement dans la table repliée : il a son panneau.
-    await expect(figure).toContainText("Blocage p75 par seau");
+    // Le p75 par tranche n'est plus seulement dans la table repliée : il a son panneau.
+    await expect(figure).toContainText("Blocage p75 par tranche");
     await expect(figure).toContainText("Aucun cumul de durées");
   });
 
@@ -1299,7 +1304,7 @@ test.describe("F23 — Interactions : INP et scripts", () => {
     // Le marqueur de déploiement est posé sur la série (P9).
     await expect(figure.getByTestId("annotations")).toHaveCount(1);
     await figure.getByTestId("alternative").locator("summary").click();
-    await expect(figure.getByTestId("alternative")).toContainText("Seau (UTC)");
+    await expect(figure.getByTestId("alternative")).toContainText("Période");
     await expect(figure).toContainText("mesures INP");
   });
 
@@ -1344,7 +1349,7 @@ test.describe("F23 — Interactions : INP et scripts", () => {
     expect(texte.indexOf("checkout.js")).toBeGreaterThanOrEqual(0);
     expect(texte.indexOf("checkout.js")).toBeLessThan(texte.indexOf("analytics.js"));
     await expect(figure).toContainText("f23Recalcul");
-    await expect(figure).toContainText("6 frames");
+    await expect(figure).toContainText("6 trames");
     await expect(figure).toContainText(/pire/);
     // Ce que le cumul n'est pas, et pourquoi une absence de ligne ne prouve rien.
     await expect(figure).toContainText("n'est le temps vécu de personne");
@@ -1912,22 +1917,21 @@ test.describe("F20 — Détail d'erreur (panneau et page)", () => {
     await expect(page.getByTestId("rejeu-absent")).toContainText("Aucune occurrence de la fenêtre n'a de rejeu");
     // Erreur backend : sessions touchées INCONNUES, jamais 0 (V3).
     await expect(page.getByTestId("detail-sessions")).toHaveText("—");
-    await expect(page.getByTestId("phrase-impact")).toContainText("Inconnu");
+    await expect(page.getByTestId("phrase-impact")).toContainText("nombre inconnu");
     // Aucune release déclarée : dit, jamais une version devinée.
     await expect(page.getByTestId("versions-touchees")).toContainText("Release non déclarée");
   });
 
-  test("bloc 5 avant B3 : aucune barre de base, la raison et le « pas de test » chiffré", async ({ page }) => {
+  test("bloc 5 avant B3 : la comparaison absente n'est pas dessinée, le repli seul", async ({ page }) => {
     await login(page);
     await page.goto(`${consoleUrl}/errors/${FP}?app=${APP}`);
     const commun = page.locator("#detail-erreur-commun");
     await commun.scrollIntoViewIfNeeded();
-    await expect(commun.getByTestId("contrast-bars")).toHaveAttribute("data-etat", "indisponible");
-    await expect(commun).toContainText("base de comparaison non lue (B3)");
-    // P*.6 : le test est PUBLIÉ à l'état « pas de test », avec ses volumes minimaux.
-    await expect(commun.getByTestId("commun-pas-de-test")).toContainText("pas de test : 2 sessions touchées, 10 requises");
-    await expect(commun.getByTestId("commun-pas-de-test")).toContainText("Fisher");
-    await expect(commun.getByTestId("commun-pas-de-test")).toContainText("Benjamini-Hochberg");
+    // Recette du 26/09/2026 : une fonction absente ne se montre pas — ni cadre « non
+    // disponible », ni code de lot, ni règle d'un test qui ne tourne pas.
+    await expect(commun.getByTestId("contrast-bars")).toHaveCount(0);
+    await expect(commun.getByTestId("commun-pas-de-test")).toHaveCount(0);
+    await expect(commun).not.toContainText("B3");
     // Le repli dit ce qu'il compte vraiment : les occurrences AFFICHÉES.
     await expect(commun.getByTestId("commun-titre-repli")).toContainText("pas de la population");
     await expect(commun.getByTestId("repli-release")).toContainText("1.4.2");
@@ -2250,8 +2254,8 @@ test.describe("F27 — Recette transverse du domaine performance", () => {
     const rage = page
       .getByTestId("kpi-interactions")
       .getByTestId("kpi-tile")
-      .filter({ has: page.getByText("Rage clicks", { exact: true }) });
-    verifierP8("tuile Rage clicks", await urlDeF27(rage, "tuile Rage clicks"), "/ux", ["type", "rage"]);
+      .filter({ has: page.getByText("Clics de rage", { exact: true }) });
+    verifierP8("tuile Clics de rage", await urlDeF27(rage, "tuile Clics de rage"), "/ux", ["type", "rage"]);
     const route = page.locator("#routes-frustrantes").getByTestId("impact-ligne").first().locator("a");
     verifierP8("routes les plus frustrantes", await urlDeF27(route, "routes frustrantes"), "/pages", ["panel", /^route:%2Ff27-/]);
   });

@@ -5,7 +5,7 @@
 // PAS DE SCORE COMPOSITE (§ 5.5.1). L'ancien « score d'expérience /100 » reposait sur
 // des paliers de LCP sans source et une pondération au jugé ; il est retiré, avec
 // son radar. Chaque chiffre a sa source : la part d'avis ≥ 4/5 (CSAT), le volume
-// d'avis, la part de notes 1-2, la frustration pour 1 000 sessions ; et le lien au
+// d'avis, la part de notes 1-2, les signaux de frustration par session ; et le lien au
 // LCP se lit PAR PAGE, dans un nuage qui dit qu'il montre une corrélation, pas une
 // cause.
 //
@@ -35,7 +35,7 @@ import { type CouverturePrecedente } from "@/lib/comparaison";
 import {
   AVIS_FAIBLE_SOUS,
   AVIS_MIN_NUAGE,
-  frustrationPour1000,
+  frustrationParSession,
   lignesSatisfactionParPage,
   nuageRessenti,
   partPositive,
@@ -59,24 +59,19 @@ import { THRESHOLDS } from "@/lib/rating";
 import { libelleSeauComplet } from "@/lib/series";
 import { ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
 import { ecrirePanel, gabaritZoom, lireComparaison, lireTri } from "@/lib/view-state";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { fmtDate, pluriel } from "@/lib/format";
+import { BasculeTri } from "@/components/Breakdown";
+import { BandeauComparaison, MASQUE_SILENCE_REPETE } from "@/components/charts/RangeeKpi";
 
 export const dynamic = "force-dynamic";
 
 const TITRE = "Satisfaction";
 const CHEMIN = "/experience";
 
-const HEURE_UTC = new Intl.DateTimeFormat("fr-FR", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
-
-/** « vs période précédente (du 20/09 14:00 au 21/09 14:00 UTC) » (§ 3.12). */
+/** « vs période précédente (du 20/09 14:00 au 21/09 14:00) », heure de Paris (§ 3.12). */
 function referencePrecedente(query: AnalyticsQuery): string {
-  return `vs période précédente (${rangeLabel({ ...previousRange(query.range), preset: null }, "UTC")} UTC)`;
+  return `vs période précédente (${rangeLabel({ ...previousRange(query.range), preset: null }, FUSEAU_AFFICHAGE)})`;
 }
 
 /** La couverture qui décide pour une rangée : la première incomplète, sinon la première. */
@@ -152,7 +147,8 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
         title={TITRE}
         domain="perf"
         help="experience"
-        sub="Les visiteurs se disent-ils satisfaits, et le ressenti suit-il la performance ?"
+        // Espace insécable avant « ? » : la typographie française ne coupe pas la ligne là.
+        sub={"Les visiteurs se disent-ils satisfaits, et le ressenti suit-il la performance\u00a0?"}
       />
 
       {/* Pourquoi les tuiles n'ont pas d'écart : dit en clair. */}
@@ -164,7 +160,13 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
         </div>
       )}
 
-      <section aria-label="Chiffres clés de la satisfaction" className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="satisfaction-kpi">
+      {/* La période précédente incomplète est dite UNE fois, au-dessus des tuiles. */}
+      <BandeauComparaison couvertures={p ? [pire(couvPart), pire(couvCompte)] : []} />
+      <section
+        aria-label="Chiffres clés de la satisfaction"
+        className={`mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 ${MASQUE_SILENCE_REPETE}`}
+        data-testid="satisfaction-kpi"
+      >
         {!s ? (
           <>
             <EchecLecture compact titre="Satisfaction (CSAT)" />
@@ -175,7 +177,7 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
           <TuilesAvis s={s} p={p} reference={reference} couvPart={pire(couvPart)} couvCompte={pire(couvCompte)} label={label} />
         )}
         {!frustration.ok ? (
-          <EchecLecture compact titre="Frustration pour 1 000 sessions" />
+          <EchecLecture compact titre="Signaux de frustration par session" />
         ) : (
           <TuileFrustration lu={frustration.data} label={label} href={hrefWithQuery("/ux", q)} />
         )}
@@ -205,8 +207,8 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
             meta={
               <>
                 <span>
-                  {formater("count", nuage.eligibles)} page(s) éligible(s) : au moins {AVIS_MIN_NUAGE} avis notés et un LCP
-                  p75 mesuré
+                  {pluriel(nuage.eligibles, "page éligible", "pages éligibles")} : au moins {AVIS_MIN_NUAGE} avis notés et
+                  un LCP p75 mesuré
                 </span>
                 <span>{label}</span>
                 <span>20 pages au plus, les plus commentées</span>
@@ -217,35 +219,52 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
                 ? { kind: "erreur", titre: "Satisfaction par page" }
                 : !lcpPages.ok
                   ? { kind: "erreur", titre: "LCP p75 par page" }
-                  : !nuage.suffisant
-                    ? { kind: "partiel", raison: `moins de trois pages avec au moins ${AVIS_MIN_NUAGE} avis : pas de nuage` }
-                    : undefined
+                  : undefined
             }
-            lecture={`Corrélation observée sur ${formater("count", nuage.eligibles)} pages, pas une cause : une page lente peut aussi être une page dont on se plaint pour autre chose. Horizontal : LCP p75 de la page ; vertical : CSAT ; taille : avis notés. La bande grise marque la zone « Bon » du LCP. Un point ouvre le panneau de la page.`}
+            lecture={
+              nuage.suffisant
+                ? `Corrélation observée sur ${pluriel(nuage.eligibles, "page")}, pas une cause : une page lente peut aussi être une page dont on se plaint pour autre chose. Horizontal : LCP p75 de la page ; vertical : CSAT ; taille : avis notés. La bande grise marque la zone « Bon » du LCP. Un point ouvre le panneau de la page.`
+                : undefined
+            }
             alternative={{
               legende: "CSAT et LCP p75 des pages éligibles",
               colonnes: ["Page", "LCP p75", "CSAT", "Avis notés"],
               lignes: nuage.points.map((pt) => [pt.route, formater("ms", pt.lcp), formater("pct", pt.csat), pt.avis]),
             }}
           >
-            <ScatterPlot
-              points={nuage.points.map((pt) => ({
-                x: Math.round(pt.lcp),
-                y: Math.round(pt.csat * 1000) / 10,
-                z: pt.avis,
-                label: pt.route,
-                href: hrefPanneauRoute(pt.route),
-              }))}
-              xLabel="LCP p75"
-              yLabel="CSAT"
-              xUnit=" ms"
-              yUnit=" %"
-              xFormat="int"
-              yFormat="int"
-              repereX={{ valeur: THRESHOLDS.LCP[0], libelle: `LCP Bon ≤ ${formater("ms", THRESHOLDS.LCP[0])}` }}
-              height={260}
-              ariaLabel={`CSAT et LCP p75 de ${nuage.eligibles} pages, ${label}`}
-            />
+            {/* Trop peu de pages : ce n'est pas une donnée PARTIELLE (le bandeau « Partiel »
+                est réservé à une lecture incomplète), c'est un effectif trop faible pour un
+                nuage. Le dire en clair, sans état d'alerte (recette du 26/09/2026). */}
+            {!nuage.suffisant ? (
+              <p className="py-6 text-center text-sm text-ink-soft" data-testid="nuage-insuffisant">
+                Pas de nuage : il faut au moins trois pages ayant chacune {AVIS_MIN_NUAGE} avis notés et un LCP mesuré
+                {nuage.eligibles === 0
+                  ? " ; aucune ne l'est"
+                  : nuage.eligibles === 1
+                    ? " ; une seule l'est"
+                    : ` ; seules ${nuage.eligibles} le sont`}{" "}
+                sur {label}.
+              </p>
+            ) : (
+              <ScatterPlot
+                points={nuage.points.map((pt) => ({
+                  x: Math.round(pt.lcp),
+                  y: Math.round(pt.csat * 1000) / 10,
+                  z: pt.avis,
+                  label: pt.route,
+                  href: hrefPanneauRoute(pt.route),
+                }))}
+                xLabel="LCP p75"
+                yLabel="CSAT"
+                xUnit=" ms"
+                yUnit=" %"
+                xFormat="int"
+                yFormat="int"
+                repereX={{ valeur: THRESHOLDS.LCP[0], libelle: `LCP Bon ≤ ${formater("ms", THRESHOLDS.LCP[0])}` }}
+                height={260}
+                ariaLabel={`CSAT et LCP p75 de ${pluriel(nuage.eligibles, "page")}, ${label}`}
+              />
+            )}
           </Figure>
         </SectionErreur>
       </div>
@@ -263,21 +282,34 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
                   {triLu.ignore}
                 </p>
               )}
+              {/* La bascule est rendue ICI, sans « Impact » : ce classement (par mesures
+                  « Mauvais ») n'a pas de sens pour des avis, et une option grisée se lisait
+                  comme une fonction présente mais en panne (recette du 26/09/2026). La
+                  table reçoit donc l'ordre déjà appliqué (« fourni »), comme sur /mobile. */}
+              <div className="mb-2 flex justify-end">
+                <BasculeTri
+                  courant={triLu.tri === "volume" ? "volume" : "gravite"}
+                  options={[
+                    { id: "gravite", libelle: "Gravité", href: lienEcran(sp, { tri: null }) },
+                    { id: "volume", libelle: "Volume", href: lienEcran(sp, { tri: "volume" }) },
+                  ]}
+                />
+              </div>
               <ImpactTable
                 titre="Satisfaction par page"
-                tri={triLu.tri === "volume" ? "volume" : "gravite"}
-                triHref={{
-                  gravite: lienEcran(sp, { tri: null }),
-                  volume: lienEcran(sp, { tri: "volume" }),
-                  impact: null,
-                  fourni: null,
-                }}
+                tri="fourni"
+                ordreLibelle={
+                  triLu.tri === "volume"
+                    ? "Ordre : par nombre d'avis notés, le plus grand en tête."
+                    : `Ordre : de la page la moins satisfaisante à la plus satisfaisante ; sous ${AVIS_FAIBLE_SOUS} avis notés, en fin de liste.`
+                }
+                triHref={{ gravite: null, volume: null, impact: null, fourni: null }}
                 reference={
                   s && s.count > 0
                     ? {
                         libelle: "Ensemble (toutes les pages)",
                         valeurs: {
-                          pilote: formater("pct", 1 - (partPositive(s.positives, s.count) ?? 0)),
+                          pilote: formater("pct", partPositive(s.positives, s.count)),
                           volume: formater("count", s.count),
                           detracteurs: formater("pct", partPositive(s.detractors, s.count)),
                           lcp: contexte.ok ? formater("ms", contexte.data.lcp_p75) : "—",
@@ -285,14 +317,14 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
                       }
                     : null
                 }
-                referenceRaison={s ? `aucun avis noté sur ${label}` : "agrégats d'avis non lus (lecture en échec)"}
+                referenceRaison={s ? `aucun avis noté sur ${label}` : "avis non lus (lecture en échec)"}
                 lignes={lignesImpact(lignes, s, (r) => hrefPanneauRoute(r), triLu.tri === "volume" ? "volume" : "gravite")}
                 colonnes={["Notes 1-2", "LCP p75"]}
                 unitePilote="pct"
                 volumeLibelle="Avis notés"
                 groupes={parPage.data[0]?.pages ?? 0}
                 tronque={(parPage.data[0]?.pages ?? 0) > parPage.data.length}
-                notice={`Pages classées par part d'avis non positifs (1 − CSAT) : du haut vers le bas, de la moins satisfaisante à la plus satisfaisante. Les 20 pages qui ont reçu le plus d'avis sont lues ; sous ${AVIS_FAIBLE_SOUS} avis notés, « échantillon faible ». La note moyenne d'une échelle 1-5 n'est pas affichée.${lcpPages.ok ? "" : " LCP p75 par page non lu (lecture en échec)."}`}
+                notice={`CSAT de chaque page (part des avis notés 4 ou 5 sur 5, comme la tuile) : une barre plus longue veut dire plus satisfaisante. Les 20 pages les plus commentées ; sous ${AVIS_FAIBLE_SOUS} avis notés, « échantillon faible ».${lcpPages.ok ? "" : " LCP p75 par page non lu (lecture en échec)."}`}
               />
             </>
           )}
@@ -342,7 +374,7 @@ function TuilesAvis({
         reference={reference}
         couverturePrecedente={couvPrecedente}
         ecart={p ? ecartProportions(s.positives, s.count, p.positives, p.count) : undefined}
-        lecture="Part des avis notés 4 ou 5 sur 5."
+        methode="Part des avis notés 4 ou 5 sur 5."
       />
       <KpiTile
         label="Avis reçus"
@@ -352,7 +384,7 @@ function TuilesAvis({
         precedent={p ? p.count : undefined}
         reference={reference}
         couverturePrecedente={p ? couvCompte : undefined}
-        lecture="Avis notés de 1 à 5 ; un commentaire sans note n'y entre pas, il est dans les verbatims."
+        methode="Avis notés de 1 à 5 ; un commentaire sans note n'y entre pas, il est dans les verbatims."
         href="#verbatims"
       />
       <KpiTile
@@ -367,28 +399,30 @@ function TuilesAvis({
         reference={reference}
         couverturePrecedente={couvPrecedente}
         ecart={p ? ecartProportions(s.detractors, s.count, p.detractors, p.count) : undefined}
-        lecture="Part des avis notés 1 ou 2 sur 5."
+        methode="Part des avis notés 1 ou 2 sur 5."
       />
     </>
   );
 }
 
 /**
- * « Frustration pour 1 000 sessions » : signaux et sessions de la MÊME population
+ * « Signaux de frustration par session » : signaux et sessions de la MÊME population
  * (sessions commencées dont le capteur émet), et la garde de capteur R-F écrite
  * sous la tuile — `non_collecte` pour une population React Native, jamais « 0,00 ».
  */
 function TuileFrustration({ lu, label, href }: { lu: FrustrationSessionsCommencees; label: string; href: string }) {
-  const taux = frustrationPour1000(lu, label);
+  const taux = frustrationParSession(lu, label);
   return (
     <div className="flex min-w-0 flex-col gap-2" data-testid="tuile-frustration">
       <KpiTile
-        label="Frustration pour 1 000 sessions"
+        label="Signaux de frustration par session"
         valeur={taux.valeur}
         raisonNull={taux.raisonNull ?? undefined}
         format="ratio"
         couverture={taux.n > 0 ? { n: taux.n, unite: "sessions commencées", faibleSous: 30 } : undefined}
-        lecture="Clics rageurs et clics morts (pas les clics suivis d'une erreur) des sessions commencées sur la plage, rapportés à ces mêmes sessions."
+        // Les mots du détail de session : « clic de rage », « clic sans réaction »
+        // (la recette relevait « clics morts » ici, « clic sans réaction » là-bas).
+        methode="Clics de rage et clics sans réaction des sessions commencées sur la plage, divisés par le nombre de ces sessions. Les clics suivis d'une erreur n'y entrent pas."
         href={href}
       />
       {taux.etat && <EtatSurface compact etat={taux.etat} />}
@@ -402,15 +436,15 @@ function CarteInstallation() {
     <div className="card mb-6 p-6 text-sm text-ink-soft" data-testid="carte-installation">
       <p className="font-medium text-ink">Aucun avis sur la période.</p>
       <p className="mt-1">
-        La satisfaction ne se calcule donc pas ; la frustration reste mesurée. Pour collecter le ressenti, ajoutez le
-        widget après le snippet RUM :
+        La satisfaction ne se calcule donc pas ; la frustration reste mesurée. Pour recueillir l&apos;avis des
+        visiteurs, ajoutez le module d&apos;avis après le script MIP RUM :
       </p>
       <pre className="mt-3 overflow-x-auto rounded-lg bg-panel2 p-3 font-mono text-xs text-ink-soft">
         {`<script src="/mip-rum-feedback.js"></script>`}
       </pre>
       <p className="mt-2 text-xs text-ink-soft">
         Il envoie <code>MIPRum.track(&quot;feedback&quot;, …)</code> — aucune autre configuration. Après un avis envoyé,
-        le widget se tait <strong>60 jours</strong> pour ce visiteur et cette application ; ajustez avec{" "}
+        le module ne se remontre pas avant <strong>60 jours</strong> à ce visiteur sur cette application ; ajustez avec{" "}
         <code>window.MIPRumFeedback = {"{ cooldownDays: 30 }"}</code>.
       </p>
     </div>
@@ -449,17 +483,17 @@ function HeroSatisfaction({
         <>
           <span>{formater("count", avis)} avis notés</span>
           <span>{label}</span>
-          <span>seaux de {bucketLabel} (UTC)</span>
-          <span>point creux : moins de {AVIS_FAIBLE_SOUS} avis dans le seau</span>
+          <span>tranches de {bucketLabel}</span>
+          <span>point creux : moins de {AVIS_FAIBLE_SOUS} avis dans la tranche</span>
         </>
       }
-      lecture="En haut, la part des avis notés 4 ou 5 sur 5, seau par seau : un seau sans avis est un trou, jamais 0 %. En bas, le nombre d'avis notés. Deux panneaux sur le même axe du temps, jamais deux échelles sur un même axe. Un clic sur un seau zoome sur sa plage."
+      lecture="En haut, la part des avis notés 4 ou 5 sur 5 ; une tranche sans avis reste vide, jamais 0 %. En bas, le nombre d'avis notés. Un clic sur une tranche zoome sur sa plage."
       alternative={
         avis > 0
           ? {
-              legende: `CSAT et avis notés par seau de ${bucketLabel}`,
-              colonnes: ["Seau (UTC)", "CSAT", "Avis notés"],
-              lignes: points.map((pt) => [libelleSeauComplet(pt.t, seauSecondes, "UTC"), formater("pct", pt.csat), pt.avis]),
+              legende: `CSAT et avis notés par tranche de ${bucketLabel}`,
+              colonnes: ["Période", "CSAT", "Avis notés"],
+              lignes: points.map((pt) => [libelleSeauComplet(pt.t, seauSecondes, FUSEAU_AFFICHAGE), formater("pct", pt.csat), pt.avis]),
             }
           : undefined
       }
@@ -477,26 +511,27 @@ function HeroSatisfaction({
             annotations={annotations.annotations}
             annotationsIndisponibles={annotations.indisponible ?? undefined}
             seauSecondes={seauSecondes}
-            fuseau="UTC"
+            fuseau={FUSEAU_AFFICHAGE}
             zoomHref={zoom}
             hauteur={190}
             synchro="satisfaction"
             legendeAnnotations={false}
-            ariaLabel={`CSAT par seau de ${bucketLabel}, ${label}`}
+            ariaLabel={`CSAT par tranche de ${bucketLabel}, ${label}`}
           />
           <ThresholdSeries
             grille={grille}
             points={points}
-            series={[{ cle: "avis", libelle: "Avis notés", role: "principale", forme: "barres", additive: true }]}
+            // Un volume : teinte neutre (ardoise), ni l'orange de la série principale ni un verdict.
+            series={[{ cle: "avis", libelle: "Avis notés", role: "categorie", categorieIndex: 4, forme: "barres", additive: true }]}
             format="count"
             annotations={annotations.annotations}
             annotationsIndisponibles={annotations.indisponible ?? undefined}
             seauSecondes={seauSecondes}
-            fuseau="UTC"
+            fuseau={FUSEAU_AFFICHAGE}
             zoomHref={zoom}
             hauteur={110}
             synchro="satisfaction"
-            ariaLabel={`Avis notés par seau de ${bucketLabel}, ${label}`}
+            ariaLabel={`Avis notés par tranche de ${bucketLabel}, ${label}`}
           />
         </div>
       )}
@@ -520,7 +555,7 @@ function RepartitionNotes({ s, label }: { s: FeedbackStats | null; label: string
             ? { kind: "vide", population: "note d'avis", plage: label }
             : undefined
       }
-      lecture="Trois parts d'un même tout : l'empilement est vrai. Une note n'est pas une mesure au regard d'un seuil : aucune couleur de verdict."
+      lecture="Les notes 4-5 forment le CSAT de la première tuile, les notes 1-2 la part de détracteurs."
       alternative={{
         legende: "Répartition des avis notés",
         colonnes: ["Notes", "Avis", "Part"],
@@ -568,33 +603,44 @@ function lignesImpact(
   hrefRoute: (route: string) => string,
   tri: "gravite" | "volume",
 ): ImpactLigne[] {
-  const csatEnsemble = s ? partPositive(s.positives, s.count) : null;
-  const ensemble = csatEnsemble === null ? null : 1 - csatEnsemble;
+  // Le CSAT, dans le MÊME SENS que la tuile (plus haut = mieux). La recette du
+  // 26/09/2026 lisait « /partners 100,0 % » sous le titre « Satisfaction » : c'était
+  // la part d'avis NON positifs. Le classement, lui, reste « la moins satisfaisante
+  // d'abord » : il trie sur 1 − CSAT, qui n'est jamais affiché.
+  const ensemble = s ? partPositive(s.positives, s.count) : null;
   const impact: ImpactLigne[] = lignes.map((l) => {
     const nom = l.route ?? "(toute l'app)";
     const sansNote = l.avis === 0;
     const libelle = sansNote ? `${nom} — commentaires sans note` : nom;
-    const w = intervalleWilson(l.avis - l.positifs, l.avis);
+    const w = intervalleWilson(l.positifs, l.avis);
     return {
       cle: l.route ?? "__toute-l-app__",
       libelle,
       href: l.route === null ? null : hrefRoute(l.route),
       description: sansNote
         ? `${nom} : commentaires sans note, pas de CSAT`
-        : `${nom} : ${formater("pct", l.nonPositifs)} d'avis non positifs sur ${formater("count", l.avis)} avis notés`,
-      pilote: l.nonPositifs,
+        : `${nom} : CSAT ${formater("pct", l.csat)} sur ${formater("count", l.avis)} avis notés`,
+      pilote: l.csat,
       volume: l.avis,
       mesures: [
         { cle: "detracteurs", valeur: l.partDetracteurs, affichage: formater("pct", l.partDetracteurs) },
-        { cle: "lcp", valeur: l.lcp, affichage: formater("ms", l.lcp), vital: "LCP", n: l.lcpN },
+        {
+          cle: "lcp",
+          valeur: l.lcp,
+          affichage: formater("ms", l.lcp),
+          vital: "LCP",
+          n: l.lcpN,
+          ...(l.lcpIntervalle ? { intervalle: l.lcpIntervalle } : {}),
+        },
       ],
-      ecart: ecartPoints(l.nonPositifs, ensemble),
+      ecart: ecartPoints(l.csat, ensemble),
       intervalle: w && !("indisponible" in w) ? `${formater("pct", w.bas)} – ${formater("pct", w.haut)}` : null,
       echantillonFaible: l.avis < AVIS_FAIBLE_SOUS,
     };
   });
   return classerParGravite(impact, {
-    pilote: (l) => l.pilote,
+    // « Gravité » = la moins satisfaisante d'abord : la clé décroissante est 1 − CSAT.
+    pilote: (l) => (l.pilote === null ? null : 1 - l.pilote),
     effectif: (l) => l.volume,
     seuilFaible: AVIS_FAIBLE_SOUS,
     tri,
@@ -636,14 +682,14 @@ function Verbatims({
         <>
           <span>30 derniers avis, notés ou non</span>
           <span>{label}</span>
-          <span>commentaires nettoyés à l&apos;ingestion (données personnelles retirées)</span>
+          <span>données personnelles retirées des commentaires dès la réception</span>
         </>
       }
       etat={
         !recents.ok
           ? { kind: "erreur", titre: "Derniers verbatims" }
           : recents.data.length === 0
-            ? { kind: "vide", population: "réponse au widget d'avis", plage: label }
+            ? { kind: "vide", population: "réponse au module d'avis", plage: label }
             : undefined
       }
     >
@@ -662,7 +708,7 @@ function Verbatims({
                 <span className="flex min-w-0 flex-wrap items-center gap-2 text-xs sm:shrink-0">
                   <span className="chip-mono inline-block max-w-[14rem] truncate align-middle">{r.route ?? "(toute l'app)"}</span>
                   <time dateTime={Number.isFinite(ms) ? new Date(ms).toISOString() : undefined} className="text-ink-soft">
-                    {Number.isFinite(ms) ? `${HEURE_UTC.format(ms)} UTC` : "—"}
+                    {fmtDate(ms)}
                   </time>
                   {r.session_id && (
                     <Link

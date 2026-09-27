@@ -10,14 +10,28 @@ import { loginAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-/** Page de connexion (publique). Déjà connecté -> retour console. */
+/** Un identifiant de projet tel que l'URL peut en porter un (slug court) ; sinon rien. */
+function projetDemande(brut: string | string[] | undefined): string | null {
+  return typeof brut === "string" && /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(brut) ? brut : null;
+}
+
+/**
+ * Page de connexion (publique). Déjà connecté -> retour console, SUR LE PROJET que
+ * l'URL demandait (recette du 26/09/2026 : `?app=` se perdait, il fallait rechoisir
+ * le projet). Le middleware refuse un projet hors du périmètre de la session et le dit
+ * sur /select : cette page n'a pas à le vérifier.
+ */
 export default async function Login({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  if (await getUser()) redirect("/");
   const sp = await searchParams;
+  if (await getUser()) {
+    const app = projetDemande(sp.app);
+    redirect(app ? `/?app=${encodeURIComponent(app)}` : "/");
+  }
   const error = sp.error != null;
   // C1 : console-api injoignable n'est pas un mot de passe faux — le dire.
   const indisponible = sp.error === "indisponible";
-  const ssoEnabled = (await methodesConnexion()).sso;
+  const methodes = await methodesConnexion();
+  const ssoEnabled = methodes.sso;
 
   return (
     // écran clair, épuré : léger halo accent, la carte porte toute l'attention
@@ -39,12 +53,12 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
                   <span className="block text-base font-bold tracking-tight text-ink">
                     MIP <span className="text-accent">RUM</span>
                   </span>
-                  <span className="block text-[10px] uppercase tracking-[0.18em] text-ink-faint">
+                  <span className="block text-[10px] uppercase tracking-[0.18em] text-ink-soft">
                     Real User Monitoring
                   </span>
                 </span>
               </div>
-              <p className="mt-3 text-sm text-ink-soft">Connexion à la console</p>
+              <h1 className="mt-4 text-lg font-semibold tracking-tight text-ink">Connexion à la console</h1>
               <Link
                 href="/presentation"
                 className="mt-1 inline-block text-xs font-medium text-accent-ink underline-offset-2 hover:underline"
@@ -54,7 +68,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
             </div>
             <form action={loginAction} className="flex flex-col gap-4" data-testid="login-form">
               <label className="text-sm font-medium text-ink-soft">
-                Email
+                Adresse e-mail
                 <input
                   name="email"
                   type="email"
@@ -77,7 +91,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
             </form>
             {ssoEnabled && (
               <>
-                <div className="my-5 flex items-center gap-3 text-[11px] uppercase tracking-wider text-ink-faint">
+                <div className="my-5 flex items-center gap-3 text-[11px] uppercase tracking-wider text-ink-soft">
                   <span className="h-px flex-1 bg-line" />
                   ou
                   <span className="h-px flex-1 bg-line" />
@@ -92,10 +106,30 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
                 </a>
               </>
             )}
+            {/* Pas de réinitialisation de mot de passe : les comptes sont créés par un
+                administrateur de la console, c'est donc à lui de s'adresser. */}
+            <p className="mt-5 text-xs leading-relaxed text-ink-soft">
+              Mot de passe oublié, ou pas encore de compte : demandez-le à l&apos;administrateur de votre
+              console.
+            </p>
+            {methodes.demo && (
+              <p className="mt-4 border-t border-line pt-4 text-sm text-ink-soft">
+                {/* Navigation document : /demo ouvre une session (voir la présentation). */}
+                <a
+                  href="/demo"
+                  data-testid="login-demo"
+                  className="font-medium text-accent-ink underline-offset-2 hover:underline"
+                >
+                  Voir la démo, sans compte →
+                </a>
+              </p>
+            )}
           </div>
         </div>
-        <p className="mt-4 text-center text-[11px] tracking-wide text-ink-faint">
-          Monitoring OTel-native · base de données en UE 🇪🇺 Francfort
+        {/* Sans drapeau ni « UE » seul : la donnée est en Union européenne, mais chez des
+            hébergeurs de droit américain — la présentation le détaille (recette du 26/09/2026). */}
+        <p className="mt-4 text-center text-[11px] tracking-wide text-ink-soft">
+          Données hébergées en Union européenne, chez des hébergeurs de droit américain.
         </p>
       </div>
     </main>

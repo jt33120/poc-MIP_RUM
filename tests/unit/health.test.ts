@@ -25,7 +25,7 @@ describe("facteurErreurs", () => {
 
   it("détail : « N occurrences pour P pages vues (x pour 100) », jamais un pourcentage", () => {
     const f = facteurErreurs({ occurrences: 30, pageviews: 20, restreint: true });
-    expect(espaces(f.detail)).toBe("30 occurrence(s) pour 20 page(s) vue(s) (150 pour 100)");
+    expect(espaces(f.detail)).toBe("30 occurrences pour 20 pages vues (150 pour 100)");
     expect(f.detail).not.toContain("%");
     // Plus d'occurrences que de vues : plancher à 0, jamais négatif.
     expect(f.earned).toBe(0);
@@ -38,13 +38,13 @@ describe("facteurErreurs", () => {
   it("occurrences sans source déclarée : hors du numérateur, et dites dès qu'il y en a (CP14)", () => {
     const f = facteurErreurs({ occurrences: 2, pageviews: 4, restreint: true, sansSource: 3 });
     expect(espaces(f.detail)).toBe(
-      "2 occurrence(s) pour 4 page(s) vue(s) (50 pour 100) ; 3 occurrence(s) sans source déclarée, non comptée(s)",
+      "2 occurrences pour 4 pages vues (50 pour 100) ; 3 occurrences sans source déclarée, non comptées",
     );
     expect(f.earned).toBe(15);
     expect(facteurErreurs({ occurrences: 2, pageviews: 4, restreint: true, sansSource: 0 }).detail).not.toContain("sans source");
     // Sans page vue aussi : le ratio manque, les occurrences écartées restent dites.
-    expect(facteurErreurs({ occurrences: 0, pageviews: 0, restreint: true, sansSource: 1 }).detail).toContain(
-      "1 occurrence(s) sans source déclarée, non comptée(s)",
+    expect(espaces(facteurErreurs({ occurrences: 0, pageviews: 0, restreint: true, sansSource: 1 }).detail)).toContain(
+      "1 occurrence sans source déclarée, non comptée",
     );
   });
 
