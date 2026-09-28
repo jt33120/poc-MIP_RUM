@@ -1010,9 +1010,50 @@ function sessionFromTraceState(traceState) {
   return null;
 }
 
-/** Template de route homogène avec le front : {id} -> :id. */
-function normalizeRouteTemplate(route) {
-  return typeof route === "string" ? route.replace(/\{([^/}]+)\}/g, ":$1") : null;
+// ─────────── Template de route serveur → forme canonique `:nom` ──────────────
+//
+// La forme canonique est celle du SDK web (`/partners/:id`) : c'est elle que
+// l'écran des routes rapproche du front. Chaque framework écrit pourtant son
+// `http.route` à sa façon, et les agents OpenTelemetry officiels le recopient
+// tel quel :
+//
+//   - OpenAPI, FastAPI/Starlette, ASP.NET Core : `{id}`, `{id:int}`, `{id?}`,
+//     `{*slug}`, `{**slug}`, `{id=5}`, `{chemin:path}` ;
+//   - Flask/Werkzeug et Django : `<id>`, `<int:id>`, `<string(length=2):lang>` ;
+//   - Express/Rails : `:id`, déjà canonique, mais aussi `:id(\d+)`, `:id?`, le
+//     glob `*chemin`, l'option Express 5 `{/:id}` et le suffixe Rails `(.:format)`.
+//
+// Non normalisé, chaque syntaxe donnait une route distincte de celle du front,
+// et `{id:int}` devenait `:id:int` — la contrainte de type prise pour le nom.
+// On garde le NOM du paramètre (jamais `:id` pour tout) : deux routes qui ne
+// diffèrent que par lui sont deux routes pour le framework qui les a déclarées.
+const PARAM_OPTIONNEL_EXPRESS = /\{(\/[^{}]*)\}/g;
+const PARAM_ACCOLADES = /\{\*{0,2}([A-Za-z_][\w-]*)(?:[:=?][^{}]*)?\}/g;
+const PARAM_CHEVRONS = /<(?:[A-Za-z_]\w*(?:\([^)>]*\))?:)?([A-Za-z_]\w*)>/g;
+/** Un segment entier `:nom` ou `*nom`, suivi de ses seules contraintes. */
+const SEGMENT_DEUX_POINTS = /^[:*]([A-Za-z_]\w*)(?:\([^/]*\))?(?::[A-Za-z_]\w*(?:\([^/]*\))?)*[?*+]?$/;
+
+/** Template de route serveur (tout framework) → forme canonique `:nom`, ou null. */
+export function normalizeRouteTemplate(route) {
+  if (typeof route !== "string") return null;
+  return route
+    .replace(/\(\.:format\)$/, "")
+    // ASP.NET double une accolade littérale (`{{`, `}}`), notamment dans une
+    // contrainte `regex(...)` : la retirer laisse une accolade de paramètre nette.
+    .replace(/\{\{|\}\}/g, "")
+    .replace(PARAM_OPTIONNEL_EXPRESS, "$1")
+    .replace(PARAM_ACCOLADES, ":$1")
+    // Repli d'avant : une accolade que la règle stricte ne reconnaît pas
+    // (nom qui ne commence pas par une lettre) garde l'ancienne réécriture,
+    // pour ne couper aucune série déjà en base.
+    .replace(/\{([^/{}]+)\}/g, ":$1")
+    .replace(PARAM_CHEVRONS, ":$1")
+    .split("/")
+    .map((segment) => {
+      const nom = SEGMENT_DEUX_POINTS.exec(segment)?.[1];
+      return nom ? `:${nom}` : segment;
+    })
+    .join("/");
 }
 
 /** Nom de span OTel ("GET /aos/{id}" ou "/aos/{id}") -> route, sinon null. */

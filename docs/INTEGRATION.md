@@ -492,6 +492,17 @@ npm install --save @opentelemetry/api @opentelemetry/auto-instrumentations-node
 node --require @opentelemetry/auto-instrumentations-node/register app.js
 ```
 
+### Ce que l'ingestion normalise
+
+**La route.** Chaque framework écrit l'attribut `http.route` dans sa syntaxe ; l'ingestion le ramène à la forme du SDK web, `:nom`, en gardant le nom du paramètre (`normalizeRouteTemplate`, `packages/backend/shared/otlp.mjs`) :
+
+| Framework | `http.route` reçu | Route enregistrée |
+|---|---|---|
+| FastAPI, OpenAPI | `/commandes/{commande_id}` | `/commandes/:commande_id` |
+| Flask, Django | `/commandes/<int:commande_id>` | `/commandes/:commande_id` |
+| ASP.NET Core | `/commandes/{id:int}`, `{id?}`, `{*slug}` | `/commandes/:id`, `:id`, `:slug` |
+| Express, Rails | `/commandes/:id(\d+)`, `/commandes/:id(.:format)`, `*chemin` | `/commandes/:id`, `:chemin` |
+
 ### Vérifier
 
 Un export réussi rend `200` avec un corps protobuf vide, que les exportateurs officiels lisent comme un succès complet (vérifié avec le SDK Node : `tests/integration/otlp-protobuf-agent-sql.test.ts` ; en production le 28/09/2026 avec les agents Python, Java et .NET : 200 à chaque export dans les journaux du `collector`, aucun échec côté agent). En base, un span `SERVER` porteur des attributs HTTP semconv devient une ligne `rum_span` de niveau `back` (rattachée à la session par le `tracestate`), ses appels SQL et sous-appels des lignes `detail`, ses exceptions et les logs `ERROR` porteurs d'`exception.type` des erreurs backend (`rum_error`), les logs des lignes `rum_log`. En cas d'échec, l'agent journalise le statut HTTP : `403` (clé, § 7), `415` (protocole : voir la ligne correspondante du § 7), `429` (débit).
