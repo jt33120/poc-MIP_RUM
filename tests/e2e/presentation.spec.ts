@@ -325,12 +325,12 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
     }
   });
 
-  test("dix points dans l'ordre du plan, chacun avec ce qui manque, ce qui le débloque et qui décide", async ({ page }) => {
+  test("onze points dans l'ordre du plan, chacun avec ce qui manque, ce qui le débloque et qui décide", async ({ page }) => {
     await page.goto(dossierUrl);
     const points = page.locator('section#reste [data-testid="reste-point"]');
-    await expect(points).toHaveCount(10);
+    await expect(points).toHaveCount(11);
     expect(await points.evaluateAll((els) => els.map((e) => e.getAttribute("data-id")))).toEqual([
-      "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10",
+      "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11",
     ]);
     for (const point of await points.all()) {
       await expect(point.getByRole("heading", { level: 3 })).toHaveCount(1);
