@@ -351,7 +351,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
     await expect(faits.locator("#reste-R2-titre")).toHaveText("Reprise de l'historique des erreurs");
     // R1 (28/09/2026) : la recette est datée, et il ne reste que l'écran mobile.
     await expect(points.nth(0)).toContainText("Le 28/09/2026, des écrans ont été relus");
-    await expect(points.nth(0)).toContainText("L'écran mobile reste le seul");
+    await expect(points.nth(0)).toContainText("L'écran mobile, lui, n'a encore reçu aucune donnée réelle");
   });
 
   test("chaque pastille est une ligne du document de couverture, avec son verdict", async ({ page }) => {

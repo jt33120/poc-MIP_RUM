@@ -93,7 +93,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R1",
     titre: "Une recette de l'écran mobile sur une vraie application",
     manque:
-      "Le 28/09/2026, des écrans ont été relus pour la première fois sur le trafic réel de l'application du client : vue d'ensemble, erreurs, un tableau de bord, l'Explorer ; quatre défauts trouvés et corrigés le jour même. L'écran mobile reste le seul qu'aucune donnée réelle n'alimente : aucune application React Native n'émet. Et le registre ne tire encore de cette recette aucun verdict.",
+      "Le 28/09/2026, des écrans ont été relus pour la première fois sur le trafic réel de l'application du client : vue d'ensemble, erreurs, un tableau de bord, l'Explorer ; quatre défauts trouvés et corrigés le jour même. L'écran mobile, lui, n'a encore reçu aucune donnée réelle : aucune application React Native n'émet. Et le registre ne tire encore de cette recette aucun verdict.",
     debloque:
       "Faire émettre une application React Native de recette, puis relire l'écran mobile sur ses sessions ; consigner la recette dans un nouveau relevé du registre.",
     decide: "L'équipe MIP.",

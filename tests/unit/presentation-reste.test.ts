@@ -133,7 +133,7 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     const r1 = point("R1");
     expect(r1.manque).toContain("des écrans ont été relus pour la première fois sur le trafic réel de l'application du client");
     expect(r1.manque).toContain("quatre défauts trouvés et corrigés le jour même");
-    expect(r1.manque).toContain("L'écran mobile reste le seul qu'aucune donnée réelle n'alimente");
+    expect(r1.manque).toContain("L'écran mobile, lui, n'a encore reçu aucune donnée réelle");
     // Aucun verdict ne porte encore la recette : un nouveau relevé le fera.
     expect(r1.manque).toContain("le registre ne tire encore de cette recette aucun verdict");
     expect(r1.debloque).toContain("nouveau relevé");
