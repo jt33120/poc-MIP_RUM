@@ -540,6 +540,30 @@ declare module "@mip/backend/shared/limits.mjs" {
   ): Promise<Buffer | null>;
 }
 
+// R11 — corps OTLP JSON ou protobuf (gzip/deflate), et la réponse au format de
+// la requête. Partagé avec le receveur du collector (contrat de parité).
+declare module "@mip/backend/shared/otlp-corps.mjs" {
+  export const TYPE_JSON: "application/json";
+  export const TYPE_PROTOBUF: "application/x-protobuf";
+  export type FormatOtlp = "json" | "protobuf";
+  /** Refus d'un corps OTLP : 400, 413 ou 415, jamais un 5xx. */
+  export class RefusCorpsOtlp extends Error {
+    constructor(statut: number, message: string);
+    statut: number;
+  }
+  export function formatOtlp(contentType: string | null | undefined): FormatOtlp | null;
+  export function decompresserOtlp(brut: Buffer, contentEncoding: string | null | undefined, max?: number): Buffer;
+  export function decoderCorpsOtlp(
+    brut: Buffer,
+    opts: { signal: "traces" | "logs"; contentType?: string | null; contentEncoding?: string | null; max?: number },
+  ): { format: FormatOtlp; payload: unknown };
+  export function corpsReponseOtlp(
+    format: FormatOtlp,
+    statut: number,
+    corps: unknown,
+  ): { contentType: string; octets: Buffer };
+}
+
 // P7.5 — vocabulaire FERMÉ des capacités mobiles. Le module serveur fait
 // autorité à réception ; la console le lit tel quel plutôt que d'en recopier la
 // liste, qui dériverait.

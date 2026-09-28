@@ -57,6 +57,7 @@ import {
   MAX_SPANS_PER_REQUEST,
 } from "../shared/limits.mjs";
 import { flattenOtlp, flattenOtlpLogs } from "../shared/otlp.mjs";
+import { corpsReponseOtlp, decoderCorpsOtlp, formatOtlp, RefusCorpsOtlp } from "../shared/otlp-corps.mjs";
 import { estIndisponibilite, isTransient, withRetry } from "../shared/retry.mjs";
 import { etatIdentite, secureOtlpIdentities } from "./identity-hash.mjs";
 import { ErreurEcheance, sousEcheance } from "./privacy-barriere.mjs";
@@ -287,7 +288,18 @@ export function creerReceveur(pool, opts = {}) {
     return buildCors(origin, origines, extra);
   }
 
+  // Réponses à une requête OTLP PROTOBUF : marquées à l'entrée du gestionnaire
+  // (`handler`), pour que TOUTES les sorties de la requête — succès, 403, 429,
+  // 503 du `catch` final — partent au format de la requête sans que chaque
+  // branche ait à y penser (spec OTLP/HTTP : même Content-Type qu'à l'aller).
+  const reponsesProtobuf = new WeakSet();
+
   const repondre = (res, statut, corps, entetes) => {
+    if (reponsesProtobuf.has(res)) {
+      const { contentType, octets } = corpsReponseOtlp("protobuf", statut, corps);
+      res.writeHead(statut, { ...entetes, "content-type": contentType });
+      return res.end(octets);
+    }
     res.writeHead(statut, { "content-type": "application/json", ...entetes });
     res.end(JSON.stringify(corps));
   };
@@ -423,12 +435,20 @@ export function creerReceveur(pool, opts = {}) {
       return repondre(res, 413, { error: "payload too large" }, entetes);
     }
 
+    // JSON ou protobuf, compressé ou non : le MÊME objet OTLP en sort
+    // (`shared/otlp-corps.mjs`), et tout ce qui suit — hachage d'identité, clé,
+    // débit, barrière, écriture — ignore par quel encodage il est arrivé.
     let payload;
     try {
-      payload = JSON.parse(brut.toString("utf8"));
-    } catch {
-      log.warn("bad request", { reason: "invalid json body" });
-      return repondre(res, 400, { error: "invalid json body" }, entetes);
+      payload = decoderCorpsOtlp(brut, {
+        signal: estLogs ? "logs" : "traces",
+        contentType: entete(req, "content-type"),
+        contentEncoding: entete(req, "content-encoding"),
+      }).payload;
+    } catch (err) {
+      if (!(err instanceof RefusCorpsOtlp)) throw err;
+      log.warn("bad request", { reason: err.message, status: err.statut });
+      return repondre(res, err.statut, { error: err.message }, entetes);
     }
     const secured = secureOtlpIdentities(
       payload,
@@ -690,6 +710,8 @@ export function creerReceveur(pool, opts = {}) {
     const entetes = estExtension
       ? CORS_EXTENSION
       : await cors(origin, estReplay ? { allowHeaders: REPLAY_ALLOW_HEADERS } : undefined, echeance);
+    const estOtlp = req.method === "POST" && (chemin.startsWith("/v1/traces") || chemin.startsWith("/v1/logs"));
+    if (estOtlp && formatOtlp(entete(req, "content-type")) === "protobuf") reponsesProtobuf.add(res);
 
     try {
       if (req.method === "OPTIONS") {

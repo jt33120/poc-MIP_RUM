@@ -20,7 +20,7 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 
 | Route | Rôle | Réponses |
 |---|---|---|
-| `POST /v1/traces` | métriques, erreurs, sessions, spans (OTLP/HTTP JSON, 1 Mio) | 200 `partialSuccess`, 400, 403 clé, 409 portée, 413, 429 débit, 503 + `retry-after` |
+| `POST /v1/traces` | métriques, erreurs, sessions, spans (OTLP/HTTP JSON ou, depuis R11, protobuf `application/x-protobuf` ; `content-encoding: gzip` accepté ; 2 Mo, décompressé compris) | 200 `partialSuccess` (protobuf : corps vide), 400, 403 clé, 409 portée, 413, 415 format, 429 débit, 503 + `retry-after` — au format de la requête |
 | `POST /v1/logs` | signal logs d'OpenTelemetry | idem |
 | `POST /v1/replay` | chunk rrweb gzippé (2 Mio), métadonnées `x-mip-session/app/seq/key` | 200, 400, 403, 409, 410 session effacée, 413, 425 ancre pas encore reçue (`retry`), 429, 503 + `retry-after` |
 | `POST /v1/sourcemaps` | source maps de CI, **jeton d'upload dédié seul** (20 Mio) ; la lecture admin reste dans la console | statut d'`enregistrerMaps`, 401, 403, 413, 429 (+ `retry-after`) |

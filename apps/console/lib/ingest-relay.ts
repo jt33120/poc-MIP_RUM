@@ -47,11 +47,11 @@
 //     (et le receveur du collector) — le SDK web les pose (`replay.ts`) ;
 //   · `authorization` : la branche JETON des source maps, et elle seule
 //     (`ENTETES_SOURCEMAPS`) ;
-//   · `content-type`, `content-encoding` : AUCUNE route ne les lit
-//     aujourd'hui, et le SDK n'envoie pas de `content-encoding`. Ils sont
-//     transmis parce qu'ils DÉCRIVENT les octets transmis tels quels : les
-//     taire ferait mentir la requête relayée sur son propre corps. Un corps
-//     gzip annoncé reste refusé en 400 des deux côtés (même contrat).
+//   · `content-type`, `content-encoding` : les routes OTLP les lisent depuis
+//     R11 (JSON ou protobuf, gzip/deflate — `shared/otlp-corps.mjs`), et ils
+//     DÉCRIVENT les octets transmis tels quels : sans eux, le collector lirait
+//     un lot protobuf ou compressé comme du JSON. Même décodeur des deux côtés,
+//     donc même statut (400, 413, 415) et mêmes lignes.
 // Plus deux en-têtes du bord de confiance (`mip-edge/1`) : `x-mip-edge-auth`
 // (le secret) et `x-mip-edge-country` (le pays que Vercel a résolu,
 // `x-vercel-ip-country`, s'il a la forme ^[A-Z]{2}$). LE PAYS, JAMAIS L'IP :
@@ -109,8 +109,11 @@
 // débit durable (`rate_counter`) compte le beacon deux fois.
 //
 // La réponse relayée est RECONSTRUITE : statut, corps et `retry-after` du
-// collector ; `content-type: application/json` IMPOSÉ et `nosniff` — le
-// collector ne répond qu'en JSON sur ces routes, et un hôte qui répondrait
+// collector ; `content-type: application/json` IMPOSÉ et `nosniff` — seule
+// exception, `application/x-protobuf` quand la réponse est SIGNÉE et l'annonce
+// (réponse OTLP à une requête protobuf, R11 : un type binaire qu'aucun
+// navigateur n'interprète) ; le collector ne répond sinon qu'en JSON sur ces
+// routes, et un hôte qui répondrait
 // `text/html` (URL mal posée, collector compromis) ne doit pas faire rendre
 // du HTML sous l'origine de la console, là où vit le cookie de session admin ;
 // en-têtes CORS de la CONSOLE (`corsFor` local), jamais ceux du collector —
@@ -140,6 +143,7 @@
 // l'état d'arrivée de la collecte (P6a « 6b »), qui permet ensuite de retirer le
 // chemin d'écriture de la console (C12). À n'allumer qu'après ≥ 7 jours à 100 %
 // sans repli. Retour arrière : retirer la variable et redéployer.
+import { TYPE_PROTOBUF } from "@mip/backend/shared/otlp-corps.mjs";
 import { log as logIngest } from "./ingest";
 import { pourcentageRelais } from "./platform-flag";
 
@@ -456,6 +460,7 @@ export function creerRelais(deps: {
         let corpsReponse: ArrayBuffer;
         let signee: boolean;
         let retryAfter: string | null;
+        let typeReponse: string | null;
         let cacheControl: string | null = null;
         try {
           // La résolution d'un domaine est une LECTURE : sa requête passe, pas de corps.
@@ -471,6 +476,7 @@ export function creerRelais(deps: {
           statut = res.status;
           signee = res.headers.get(ENTETE_COLLECTOR) === "1";
           retryAfter = res.headers.get("retry-after");
+          typeReponse = res.headers.get("content-type");
           // La résolution d'un domaine se met en cache (60 s) : l'extension la relit.
           if (signal === "extensionResolve") cacheControl = res.headers.get("cache-control");
           // Le corps est lu SOUS LE MÊME DÉLAI : un collector qui envoie son
@@ -520,7 +526,8 @@ export function creerRelais(deps: {
         if (!signee && statut >= 500) echec(signal, `statut ${statut} non signé`);
 
         const entetesReponse: Record<string, string> = {
-          "content-type": "application/json",
+          // Protobuf : seulement signé, et seulement ce type exact (voir l'en-tête).
+          "content-type": signee && typeReponse === TYPE_PROTOBUF ? TYPE_PROTOBUF : "application/json",
           "x-content-type-options": "nosniff",
           ...cors,
         };

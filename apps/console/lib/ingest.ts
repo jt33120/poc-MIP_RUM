@@ -11,6 +11,7 @@
 import { createPgAuth } from "@mip/backend/lib/pg-ingest.mjs";
 import { corsHeaders as buildCors, originsFromRegistry } from "@mip/backend/shared/cors.mjs";
 import { createLogger } from "@mip/backend/shared/log.mjs";
+import { corpsReponseOtlp, formatOtlp, TYPE_JSON } from "@mip/backend/shared/otlp-corps.mjs";
 import { estIndisponibilite } from "@mip/backend/shared/retry.mjs";
 import { pool } from "./db";
 
@@ -53,6 +54,28 @@ export const json = (
     status,
     headers: { "content-type": "application/json", ...cors, ...extraHeaders },
   });
+
+/**
+ * Met la réponse d'une route OTLP au format de la REQUÊTE : une requête
+ * protobuf reçoit un corps protobuf (vide sur un 2xx, `google.rpc.Status` sinon)
+ * et `content-type: application/x-protobuf` — la spec OTLP/HTTP l'exige, et les
+ * exportateurs officiels décodent en protobuf tout corps non vide.
+ *
+ * UNE conversion en sortie de route plutôt qu'un format passé à chaque `json()` :
+ * les refus viennent de partout (`guardApps`, `refusIngestion`, le relais…), et
+ * une branche oubliée répondrait du JSON à un client protobuf. Le receveur du
+ * collector fait de même, au même endroit logique (`repondre`). Une réponse déjà
+ * en protobuf — relayée depuis le collector — passe telle quelle.
+ */
+export async function formaterReponseOtlp(req: Request, res: Response): Promise<Response> {
+  if (formatOtlp(req.headers.get("content-type")) !== "protobuf") return res;
+  if (res.headers.get("content-type") !== TYPE_JSON) return res;
+  const corps: unknown = await res.json().catch(() => null);
+  const { contentType, octets } = corpsReponseOtlp("protobuf", res.status, corps);
+  const entetes = new Headers(res.headers);
+  entetes.set("content-type", contentType);
+  return new Response(octets.length ? new Uint8Array(octets) : null, { status: res.status, headers: entetes });
+}
 
 /**
  * La requête a-t-elle été coupée par le CLIENT pendant la lecture de son corps
