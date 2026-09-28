@@ -87,8 +87,8 @@ describe("PS4 — l'hébergement est lu dans lib/legal.ts, jamais retapé", () =
   it("la table : une ligne par hébergeur, dans l'ordre de lib/legal.ts", () => {
     expect(HEBERGEMENT).toEqual([
       { piece: "Base de données", hebergeur: "Neon (sur AWS)", lieu: "Francfort, Allemagne", droit: "américain" },
-      { piece: "Console et collecteur", hebergeur: "Vercel Inc.", lieu: "Francfort, Allemagne", droit: "américain" },
-      { piece: "Travaux planifiés, serveur MCP", hebergeur: "Railway Corp.", lieu: "Amsterdam, Pays-Bas", droit: "américain" },
+      { piece: "Console et réception des mesures", hebergeur: "Vercel Inc.", lieu: "Francfort, Allemagne", droit: "américain" },
+      { piece: "Collecteur et services du backend", hebergeur: "Railway Corp.", lieu: "Amsterdam, Pays-Bas", droit: "américain" },
     ]);
   });
 });
@@ -96,12 +96,12 @@ describe("PS4 — l'hébergement est lu dans lib/legal.ts, jamais retapé", () =
 describe("PS3 — le chemin de la mesure", () => {
   it("le libellé accessible est celui du plan, composé depuis les mêmes hébergeurs", () => {
     expect(ARIA_TOPOLOGIE).toBe(
-      "Chemin de la mesure : du navigateur au collecteur de la console sur Vercel, puis à la base Neon à Francfort ; travaux planifiés et serveur MCP sur Railway à Amsterdam.",
+      "Chemin de la mesure : du navigateur à la console sur Vercel, qui en relaie une part au collecteur sur Railway et écrit le reste dans la base Neon à Francfort ; travaux planifiés, API de lecture et serveur MCP sur Railway à Amsterdam.",
     );
   });
 
-  it("cinq pièces, reliées sans flèche du serveur MCP vers la base", () => {
-    expect(PIECES.map((p) => p.id)).toEqual(["navigateur", "console", "base", "travaux", "mcp"]);
+  it("sept pièces, reliées sans flèche du serveur MCP vers la base", () => {
+    expect(PIECES.map((p) => p.id)).toEqual(["navigateur", "console", "collecteur", "base", "travaux", "api", "mcp"]);
     const ids = new Set(PIECES.map((p) => p.id));
     for (const l of LIAISONS) {
       expect(ids.has(l.de), l.de).toBe(true);
@@ -109,6 +109,16 @@ describe("PS3 — le chemin de la mesure", () => {
     }
     expect(LIAISONS.some((l) => l.de === "mcp" && l.vers === "base")).toBe(false);
     expect(LIAISONS.find((l) => l.de === "navigateur")).toMatchObject({ vers: "console", libelle: "OTLP/HTTP JSON" });
+  });
+
+  it("relevé du 28/09/2026 : la console relaie une part au collecteur Railway, et écrit le reste", () => {
+    const relie = (de: string, vers: string) => LIAISONS.some((l) => l.de === de && l.vers === vers);
+    expect(relie("console", "collecteur")).toBe(true);
+    expect(relie("collecteur", "base")).toBe(true);
+    expect(relie("console", "base")).toBe(true);
+    expect(PIECES.find((p) => p.id === "collecteur")?.hebergeur).toBe(HEBERGEURS.railway.societe);
+    // Ce qui rend ce dessin vrai se lit dans le relevé qu'il date.
+    expect(lire("docs/TOPOLOGIE_BACKEND.md")).toContain("`ingest_relay_pct`");
   });
 
   it("chaque ligne de l'alternative a son hébergeur, sa région (sauf le poste du visiteur) et son rôle", () => {
@@ -163,7 +173,7 @@ describe("une seule source pour les dates d'exploitation Railway", () => {
   it("les Specs disent les dates de la légende : relevé et migrations constatées, sans le journal", () => {
     expect(services.sous).toContain(`relevé le ${TOPOLOGIE_RELEVEE.railway}`);
     expect(ligne("Travaux planifiés").v).toContain(`vérifié le ${MIGRATIONS_CONSTATEES.le} sur un vrai déploiement`);
-    expect(ligne("Collecteur autonome").v).not.toContain(INGEST_SUPPRIME_LE);
+    expect(ligne("Collecteur").v).not.toContain(INGEST_SUPPRIME_LE);
     for (const l of services.lignes) expect(l.v).not.toContain(MIGRATIONS_CONSTATEES.deploiement);
   });
 

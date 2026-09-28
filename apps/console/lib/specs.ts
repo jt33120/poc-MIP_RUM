@@ -106,28 +106,54 @@ export const INFRA: GroupeInfra[] = [
     ],
   },
   {
-    titre: "Services — la collecte dans la console, les travaux planifiés et le serveur MCP à part",
-    // La date est celle du relevé que portent docs/TOPOLOGIE_BACKEND.md et le document
-    // de couverture (API Railway, le jour de la suppression d'`ingest`), lue dans la
-    // même constante que la légende du chemin de la mesure : tests/unit/presentation-
-    // topologie.test.ts vérifie qu'elle se lit dans les deux documents.
-    // Les quatre autres services sont déclarés dans `.railway/railway.ts` (groupes
-    // 1 · Collecte, 2 · Restitution, 3 · Traitements) ; tant que l'opérateur n'a pas
-    // appliqué cette déclaration, ils n'existent pas sur Railway (relu le 26/09/2026).
-    sous: `Les mesures arrivent par la console. Deux services tournent à part en production : les travaux planifiés et le serveur MCP (relevé le ${TOPOLOGIE_RELEVEE.railway}). Quatre autres sont livrés dans le code : le collecteur autonome, décrit ci-dessous, une API, un service de console et un service de notification. Ni framework, ni fonction à la demande : du Node et du PostgreSQL, dans des images construites depuis le code source.`,
+    titre: "Services — six services à part de la console, en trois groupes",
+    // La date est celle du dernier relevé que porte docs/TOPOLOGIE_BACKEND.md (« Relevé
+    // du 28/09/2026 », API Railway), lue dans la même constante que la légende du chemin
+    // de la mesure : tests/unit/presentation-topologie.test.ts vérifie qu'elle s'y lit.
+    // Les six services de `.railway/railway.ts` (groupes 1 · Collecte, 2 · Restitution,
+    // 3 · Traitements) tournent depuis l'apply du 27/09/2026 (PR #332). Ce qui reste
+    // éteint, ce sont des DRAPEAUX (`api_relay_pct`, `console_api_ecrans_pct`,
+    // `console_api_commandes_pct` à 0) : les lignes le disent service par service.
+    sous: `Les capteurs visent la console. Six services tournent à part en production, en trois groupes — collecte, restitution, traitements (relevé le ${TOPOLOGIE_RELEVEE.railway}). Ni framework, ni fonction à la demande : du Node et du PostgreSQL, dans des images construites depuis le code source.`,
     lignes: [
       {
-        k: "Collecteur autonome",
-        // Supprimé de Railway (INGEST_SUPPRIME_LE, docs/TOPOLOGIE_BACKEND.md) : aucun domaine
-        // public ne pointait dessus, et son seul rôle réel — les migrations — était
-        // déjà repris par le scheduler. Le receveur reste dans le dépôt, et revient
-        // comme service `collector` de `.railway/railway.ts`, que la console relaiera
-        // (lib/ingest-relay.ts, drapeau `ingest_relay_pct`, 0 par défaut — ADR 0005).
+        k: "Collecteur",
+        // Le receveur autonome (l'ancien `ingest`, supprimé faute de domaine public, voir
+        // docs/TOPOLOGIE_BACKEND.md) revenu comme service `collector`. La console lui
+        // relaie une part de la collecte depuis le 27/09/2026 (lib/ingest-relay.ts,
+        // drapeau `ingest_relay_pct` : 10 %, puis 50 % le même soir). Pas de pourcentage
+        // ici : il change sans toucher au code, et une page publique le figerait.
         // La SEULE place où le dossier raconte ce service (contre-recette du 26/09/2026 :
         // quatre fois) ; « Le chemin de la mesure » et le point R6 y renvoient.
-        v: "Un receveur OpenTelemetry autonome, construit et démarré à chaque intégration continue, mais pas encore mis en service. Le relais de la console vers lui est livré éteint : en production, les mesures arrivent par la console. La résolution du pays par adresse IP l'attend (voir « Ce qui reste »).",
+        v: "Un receveur OpenTelemetry autonome, en service depuis le 27/09/2026 : la console lui relaie une part des mesures, qui monte par paliers, et il les pseudonymise avant de les écrire en base. Le reste est encore écrit par la console. La résolution du pays par adresse IP y reste éteinte (voir « Ce qui reste »).",
         s: "partiel",
         preuve: "services/collector/server.mjs",
+      },
+      {
+        k: "API de lecture",
+        // Service `api` : le serveur MCP l'appelle sur le réseau privé (MIP_API_HOST,
+        // .railway/railway.ts). Le relais des lectures de la console vers lui
+        // (`api_relay_pct`) est à 0 : les porteurs de jeton passent encore par la console.
+        v: "L'API de lecture v1, servie sous un rôle de base en lecture seule. En service depuis le 27/09/2026 pour le serveur MCP ; les autres porteurs de jeton passent encore par la console, le relais vers elle n'étant pas allumé.",
+        s: "partiel",
+        preuve: "services/api/server.mjs",
+      },
+      {
+        k: "Backend de la console",
+        // Service `console-api` : Vercel y est branché depuis le 27/09/2026 (CONSOLE_API_URL,
+        // lib/backend.ts) ; la connexion l'emprunte (auth.demo, auth.logout, me en 200
+        // dans ses journaux). Écrans et écritures : drapeaux à 0 (lib/aiguillage-console-api.ts).
+        v: "Comptes, sessions, écrans et écritures de la console, hors de Vercel. Depuis le 27/09/2026, la connexion passe par lui ; les écrans et les écritures lisent et écrivent encore la base depuis la console, en attendant leur bascule.",
+        s: "partiel",
+        preuve: "services/console-api/server.mjs",
+      },
+      {
+        k: "Notification",
+        // Service `notifier` : seul détenteur des secrets sortants ; le scheduler ne livre
+        // plus (SCHEDULER_DELIVERY « off », passes à 15 min : .railway/railway.ts).
+        v: "Livre ce que la plateforme a décidé de dire — webhooks signés, e-mails, tickets — et détient seul les secrets de ces envois. Il passe toutes les 15 minutes, juste après les travaux planifiés.",
+        s: "atteint",
+        preuve: "services/notifier/worker.mjs",
       },
       {
         k: "Travaux planifiés",
@@ -149,7 +175,7 @@ export const INFRA: GroupeInfra[] = [
         // Six Dockerfiles (services/*/Dockerfile) ; .github/workflows/docker-smoke.yml
         // les construit et les démarre tous, et vérifie l'uid et l'absence de `pg`
         // dans l'image mcp.
-        v: "Une image conteneur par service, chacune avec sa commande de démarrage explicite, sur une version de Node figée et sans droits d'administration. L'intégration continue construit et démarre chaque image, et vérifie que celle du serveur MCP ne sait pas joindre la base. Seules les images des travaux planifiés et du serveur MCP tournent en production.",
+        v: "Une image conteneur par service, chacune avec sa commande de démarrage explicite, sur une version de Node figée et sans droits d'administration. L'intégration continue construit et démarre chaque image, et vérifie que celle du serveur MCP ne sait pas joindre la base. Les six tournent en production depuis le 27/09/2026.",
         s: "atteint",
         preuve: "services/mcp/Dockerfile",
       },

@@ -86,34 +86,37 @@ export interface LigneHebergement {
   droit: string;
 }
 
+// Relevé du 28/09/2026 : la console reçoit toujours toutes les mesures (les capteurs la
+// visent), mais le collecteur qui écrit la part relayée tourne sur Railway, avec l'API,
+// le backend de la console, le notifier, les travaux planifiés et le MCP.
 export const HEBERGEMENT: readonly LigneHebergement[] = [
   { piece: "Base de données", h: HEBERGEURS.base },
-  { piece: "Console et collecteur", h: HEBERGEURS.console },
-  { piece: "Travaux planifiés, serveur MCP", h: HEBERGEURS.railway },
+  { piece: "Console et réception des mesures", h: HEBERGEURS.console },
+  { piece: "Collecteur et services du backend", h: HEBERGEURS.railway },
 ].map(({ piece, h }) => ({ piece, hebergeur: hebergeurTexte(h), lieu: lieuTexte(h), droit: DROIT_HEBERGEURS }));
 
 // ─────────────────────── PS3 — le chemin de la mesure ───────────────────────
 
-/** Date de suppression du service Railway `ingest` (TOPOLOGIE_BACKEND.md:77-81 ; RUM_PARITY_STATUS.md:85, :103-106). */
+/** Date de suppression du service Railway `ingest` (TOPOLOGIE_BACKEND.md:81-85 ; RUM_PARITY_STATUS.md:85, :103-106). */
 export const INGEST_SUPPRIME_LE = "21/09/2026";
 
 /**
  * Le `scheduler` applique les migrations au pré-déploiement : constaté dans les
- * journaux d'un vrai déploiement (TOPOLOGIE_BACKEND.md:71-75 ; RUM_PARITY_STATUS.md:86).
+ * journaux d'un vrai déploiement (TOPOLOGIE_BACKEND.md:75-79 ; RUM_PARITY_STATUS.md:86).
  */
 export const MIGRATIONS_CONSTATEES = { le: "18/09/2026", deploiement: "03850b30" } as const;
 
 /**
  * Quand la topologie a été relevée par les hébergeurs eux-mêmes : les API Railway et
  * Vercel le 18/09 (RUM_PARITY_STATUS.md:84-87), l'API Railway le 21/09 après la
- * suppression d'`ingest` (TOPOLOGIE_BACKEND.md:77-81), puis de nouveau le 23/09 après
- * la vague 8 (TOPOLOGIE_BACKEND.md, « Relevé du 23/09/2026 ») : deux services, et v86
- * appliquée par le pré-déploiement du `scheduler`. Vercel n'a pas été relevé depuis
- * le 18/09 : d'où les deux dates.
+ * suppression d'`ingest`, le 23/09 après la vague 8 (deux services), puis le 28/09
+ * (TOPOLOGIE_BACKEND.md, « Relevé du 28/09/2026 ») : six services en ligne depuis
+ * l'apply du 27/09, et la console qui relaie une part de la collecte au `collector`.
+ * Vercel n'a pas été relevé par son API depuis le 18/09 : d'où les deux dates.
  */
-export const TOPOLOGIE_RELEVEE = { railwayEtVercel: "18/09/2026", railway: "23/09/2026" } as const;
+export const TOPOLOGIE_RELEVEE = { railwayEtVercel: "18/09/2026", railway: "28/09/2026" } as const;
 
-export type PieceId = "navigateur" | "console" | "base" | "travaux" | "mcp";
+export type PieceId = "navigateur" | "console" | "collecteur" | "base" | "travaux" | "api" | "mcp";
 
 /** Une pièce du chemin : une boîte du dessin, une ligne de l'alternative textuelle. */
 export interface Piece {
@@ -133,9 +136,15 @@ export interface Piece {
 const lieuCourt = (h: Hebergeur): string[] => (h.lieu ? [`${h.lieu.region} · ${h.lieu.ville}`] : []);
 const regionAlt = (h: Hebergeur): string => (h.lieu ? `${h.lieu.region} — ${h.lieu.ville}, ${h.lieu.pays}` : h.phrase);
 
-// Rôles : TOPOLOGIE_BACKEND.md:9-12 (collecteur de la console), :24 (scheduler),
-// :25 (mcp, client mince de /api/v1, ne touche pas la base) ; E1 (API /api/v1) ;
-// travaux planifiés : services/scheduler/worker.mjs:8-10 ; D5 (purge de rétention).
+// Rôles : docs/TOPOLOGIE_BACKEND.md, « Les trois hébergeurs » et « Les services Railway
+// en production » (relevé du 28/09/2026) ; E1 (API /api/v1) ; le relais : ce que la
+// console transmet au collector, sans adresse (apps/console/lib/ingest-relay.ts,
+// ENTETES_TRANSMIS) ; le MCP passe par le service `api` sur le réseau privé
+// (.railway/railway.ts, MIP_API_HOST ; packages/mcp-tools/lib/client.mjs) ; travaux
+// planifiés : services/scheduler/worker.mjs:8-10 ; D5 (purge de rétention).
+// L'ordre est celui du dessin : le collecteur entre la console et la base, l'API
+// au-dessus du MCP qu'elle sert. Le backend de la console (`console-api`) et le
+// notifier ne sont pas sur le chemin de la mesure : les spécifications les décrivent.
 export const PIECES: readonly Piece[] = [
   {
     id: "navigateur",
@@ -148,10 +157,18 @@ export const PIECES: readonly Piece[] = [
   {
     id: "console",
     titre: `Console — ${HEBERGEURS.console.marque}`,
-    lignes: [...lieuCourt(HEBERGEURS.console), "collecteur /api/ingest/v1", "API de lecture /api/v1"],
+    lignes: [...lieuCourt(HEBERGEURS.console), "reçoit les mesures, en relaie", "une part, écrit le reste", "API de lecture /api/v1"],
     hebergeur: HEBERGEURS.console.societe,
     region: regionAlt(HEBERGEURS.console),
-    role: "reçoit les mesures, sert la console et l'API",
+    role: "reçoit les mesures, en relaie une part au collecteur et écrit le reste ; sert la console et l'API",
+  },
+  {
+    id: "collecteur",
+    titre: `Collecteur — ${HEBERGEURS.railway.marque}`,
+    lignes: [...lieuCourt(HEBERGEURS.railway), "pseudonymise, écrit en base"],
+    hebergeur: HEBERGEURS.railway.societe,
+    region: regionAlt(HEBERGEURS.railway),
+    role: "reçoit la part relayée par la console, pseudonymise l'identité et l'écrit en base",
   },
   {
     id: "base",
@@ -170,12 +187,20 @@ export const PIECES: readonly Piece[] = [
     role: "migrations au pré-déploiement, alertes, SLO, sondes, purge",
   },
   {
-    id: "mcp",
-    titre: `Serveur MCP — ${HEBERGEURS.railway.marque}`,
-    lignes: [...lieuCourt(HEBERGEURS.railway), "lecture seule, par /api/v1"],
+    id: "api",
+    titre: `API de lecture — ${HEBERGEURS.railway.marque}`,
+    lignes: [...lieuCourt(HEBERGEURS.railway), "lecture seule, sur jeton"],
     hebergeur: HEBERGEURS.railway.societe,
     region: regionAlt(HEBERGEURS.railway),
-    role: "lit par l'API /api/v1, sans accès à la base",
+    role: "sert l'API de lecture v1 au serveur MCP, sous un rôle de base en lecture seule",
+  },
+  {
+    id: "mcp",
+    titre: `Serveur MCP — ${HEBERGEURS.railway.marque}`,
+    lignes: [...lieuCourt(HEBERGEURS.railway), "lecture seule, par l'API"],
+    hebergeur: HEBERGEURS.railway.societe,
+    region: regionAlt(HEBERGEURS.railway),
+    role: "lit par l'API de lecture, sur le réseau privé, sans accès à la base",
   },
 ];
 
@@ -187,20 +212,25 @@ export interface Liaison {
   libelle: string | null;
 }
 
-// Pas de flèche du serveur MCP vers la base : il n'y touche pas (TOPOLOGIE_BACKEND.md:25).
-// Sa flèche vers la console suit un rail sans place pour un libellé : « par /api/v1 »
-// est écrit dans sa boîte.
+// Pas de flèche du serveur MCP vers la base : il n'y touche pas (ADR 0006). Les deux
+// écritures de la mesure sont dessinées : la part relayée passe par le collecteur, le
+// reste va de la console à la base, le long d'un rail sans place pour un libellé (la
+// boîte de la console le dit). L'API de lecture rejoint la base par un second rail.
 export const LIAISONS: readonly Liaison[] = [
   { de: "navigateur", vers: "console", libelle: "OTLP/HTTP JSON" },
-  { de: "console", vers: "base", libelle: "écrit et lit" },
+  { de: "console", vers: "collecteur", libelle: "relais d'une part" },
+  { de: "collecteur", vers: "base", libelle: "écrit" },
+  { de: "console", vers: "base", libelle: null },
   { de: "travaux", vers: "base", libelle: null },
-  { de: "mcp", vers: "console", libelle: null },
+  { de: "api", vers: "base", libelle: null },
+  { de: "mcp", vers: "api", libelle: "réseau privé" },
 ];
 
 const aVille = (h: Hebergeur) => (h.lieu ? ` à ${h.lieu.ville}` : "");
 
 /** `aria-label` du dessin (texte du plan § 8.2, PS3), composé depuis les mêmes hébergeurs. */
 export const ARIA_TOPOLOGIE =
-  `Chemin de la mesure : du navigateur au collecteur de la console sur ${HEBERGEURS.console.marque}, ` +
-  `puis à la base ${HEBERGEURS.base.marque}${aVille(HEBERGEURS.base)} ; ` +
-  `travaux planifiés et serveur MCP sur ${HEBERGEURS.railway.marque}${aVille(HEBERGEURS.railway)}.`;
+  `Chemin de la mesure : du navigateur à la console sur ${HEBERGEURS.console.marque}, ` +
+  `qui en relaie une part au collecteur sur ${HEBERGEURS.railway.marque} et écrit le reste ` +
+  `dans la base ${HEBERGEURS.base.marque}${aVille(HEBERGEURS.base)} ; ` +
+  `travaux planifiés, API de lecture et serveur MCP sur ${HEBERGEURS.railway.marque}${aVille(HEBERGEURS.railway)}.`;

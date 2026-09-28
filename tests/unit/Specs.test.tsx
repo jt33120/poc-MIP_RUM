@@ -67,8 +67,10 @@ describe("PS11 — Specs, un bloc de la partie « Le détail »", () => {
   it("le groupe des services porte son nom en français courant ; l'hébergement renvoie à la présentation", async () => {
     const html = await rendre(ILLISIBLE);
     const t = texte(html);
-    expect(t).toContain("Services — la collecte dans la console, les travaux planifiés et le serveur MCP à part");
+    // Relevé du 28/09/2026 : les six services tournent ; plus de « collecte dans la console ».
+    expect(t).toContain("Services — six services à part de la console, en trois groupes");
     expect(t).not.toContain("trois services autonomes");
+    expect(t).not.toMatch(/pas encore mis en service|livré éteint/);
     // L'hébergement s'écrit une fois, dans la présentation : ni ses chaînes ni son groupe ici.
     expect(html).toMatch(/<a href="\/presentation#hebergement"/);
     for (const l of INFRA.find((g) => g.titre === "Hébergement")!.lignes) expect(t).not.toContain(l.v);

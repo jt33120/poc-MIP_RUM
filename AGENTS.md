@@ -2,7 +2,7 @@
 
 Consignes pour les agents de code (Codex, Claude Code…) et pour les humains qui
 relisent leur travail. Ce fichier dit ce qui casse si on l'ignore ; le reste est
-dans `docs/`. Tenu à jour au 26/09/2026 ; `tests/unit/agents-md.test.ts` vérifie que
+dans `docs/`. Tenu à jour au 28/09/2026 ; `tests/unit/agents-md.test.ts` vérifie que
 chaque chemin qu'il cite existe.
 
 ## Le dépôt en bref
@@ -13,12 +13,14 @@ et rejeux ; une base Postgres (Neon) les garde ; une console Next.js les montre.
 
 Deux états coexistent, et la doc doit toujours dire lequel elle décrit :
 
-- **En service** : la console sur Vercel (UI, API v1, ingestion, accès direct à la
-  base) ; sur Railway, `scheduler` (travaux planifiés, seul migrateur) et `mcp`.
-- **Livré dans le code, inerte** jusqu'aux gestes de l'opérateur (variables,
-  apply IaC, drapeaux `platform_flag`) : les services `collector`, `api`,
-  `console-api`, `notifier`, les relais de la console vers eux et la bascule des
-  écrans vers `console-api`.
+- **En service** (depuis l'apply du 27/09/2026) : la console sur Vercel (UI, API v1,
+  ingestion, accès direct à la base ; connexion par `console-api`) ; sur Railway, les
+  six services — `collector`, `api`, `console-api`, `mcp`, `scheduler` (travaux
+  planifiés, seul migrateur), `notifier`. Le relais de la collecte vers `collector`
+  est allumé (`ingest_relay_pct`).
+- **En service, éteint par un drapeau** (`platform_flag`) : le relais de l'API v1
+  vers `api` et la bascule des écrans et des écritures vers `console-api` (à 0) ;
+  le GeoIP du `collector`.
 
 L'état détaillé et la suite : `docs/architecture/overview.md`.
 
@@ -111,8 +113,9 @@ ordre et sur quelles bases.
   le redéploie, et son pré-déploiement applique les migrations en attente — même
   pour un commentaire. Des migrations non encore appliquées en production se
   répètent d'abord sur la branche Neon `repetition-p0` (runbook § 5).
-- Neon est sur l'offre gratuite (ADR 0014) : pas de boucle qui interroge la base
-  à vide.
+- Neon est sur une offre payante à l'usage depuis le 27/09/2026, en attendant la
+  base que choisira la DSI de MIP (ADR 0014, remplacée) : chaque réveil se paie,
+  pas de boucle qui interroge la base à vide.
 
 ## Conventions
 

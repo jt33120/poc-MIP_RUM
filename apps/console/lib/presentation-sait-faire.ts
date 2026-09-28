@@ -139,7 +139,7 @@ export const CARTES: readonly CarteCapacite[] = [
       {
         id: "A6",
         texte:
-          "Seule la route de la console est joignable, par lots de 3 Mio au plus ; le branchement dans la CI d'un client n'est pas fait (voir R3).",
+          "Deux adresses les reçoivent : la route de la console, par lots de 3 Mio au plus, et depuis le 27/09/2026 le collecteur ; le branchement dans la CI d'un client n'est pas fait (voir R3).",
       },
     ],
     sources: [{ ligne: "A5" }, { ligne: "A6" }],

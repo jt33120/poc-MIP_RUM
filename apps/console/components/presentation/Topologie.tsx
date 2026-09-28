@@ -1,5 +1,6 @@
-// PS3 — Le chemin de la mesure (plan § 8.2) : du navigateur au collecteur de la
-// console, puis à la base ; autour, les travaux planifiés et le serveur MCP.
+// PS3 — Le chemin de la mesure (plan § 8.2) : du navigateur à la console, qui en
+// relaie une part au collecteur Railway et écrit le reste, puis à la base ; autour,
+// les travaux planifiés, l'API de lecture et le serveur MCP.
 // SVG rendu serveur, sans animation (§ 3.9) : aucun JavaScript envoyé.
 //
 // Le dessin et son alternative lisent la MÊME liste (lib/presentation-topologie.ts) :
@@ -10,10 +11,14 @@
 // docs/TOPOLOGIE_BACKEND.md. L'hébergement et son droit renvoient au tableau de la
 // présentation, leur seule place.
 //
-// UNE COLONNE, À TOUTES LES LARGEURS. Un texte SVG rétrécit avec son dessin : cinq
+// UNE COLONNE, À TOUTES LES LARGEURS. Un texte SVG rétrécit avec son dessin : sept
 // boîtes côte à côte, ramenées aux 358 px d'un téléphone, s'écriraient en 7 px. Les
-// boîtes s'empilent donc dans l'ordre du chemin, et le serveur MCP rejoint la
-// console par un rail à droite (il ne touche pas la base : aucune flèche vers elle).
+// boîtes s'empilent donc dans l'ordre du chemin. Depuis le relevé du 28/09/2026, la
+// mesure a deux trajets : la part relayée descend par le collecteur, le reste va de
+// la console à la base par un rail à droite. L'API de lecture rejoint la base par un
+// second rail, plus à l'extérieur ; les points d'attache des deux rails sont décalés
+// pour qu'ils ne se croisent pas. Le serveur MCP ne touche pas la base : aucune
+// flèche vers elle.
 import { TableAlternative } from "@/components/charts/Figure";
 import { SousPartie } from "@/components/presentation/SousPartie";
 import Link from "next/link";
@@ -27,7 +32,7 @@ import {
 } from "@/lib/presentation-topologie";
 
 const LARGEUR_BOITE = 262;
-const RAIL = 284; // abscisse du rail MCP → console, à droite des boîtes
+const RAIL = 284; // abscisse d'un rail sans réglage propre
 const LARGEUR = 300;
 const BORD = 1; // demi-trait : une boîte collée au bord garde son trait entier
 const MARGE_X = 12;
@@ -41,10 +46,23 @@ const ECART_SERRE = 16; // entre deux boîtes que rien ne relie
 const ORDRE: { id: PieceId; ecart: number }[] = [
   { id: "navigateur", ecart: 0 },
   { id: "console", ecart: ECART_RELIE },
+  { id: "collecteur", ecart: ECART_RELIE },
   { id: "base", ecart: ECART_RELIE },
   { id: "travaux", ecart: ECART_RELIE },
-  { id: "mcp", ecart: ECART_SERRE },
+  { id: "api", ecart: ECART_SERRE },
+  { id: "mcp", ecart: ECART_RELIE },
 ];
+
+/**
+ * Rails des liaisons entre boîtes non voisines : abscisse, et hauteur d'attache au
+ * départ et à l'arrivée (fraction de la boîte). Le rail console → base, intérieur,
+ * arrive dans le haut de la base ; celui de l'API, extérieur, dans le bas : ainsi le
+ * second ne coupe jamais le premier.
+ */
+const RAILS: Partial<Record<string, { x: number; depart: number; arrivee: number }>> = {
+  "console-base": { x: 274, depart: 0.7, arrivee: 0.3 },
+  "api-base": { x: 290, depart: 0.5, arrivee: 0.7 },
+};
 
 interface Place {
   piece: Piece;
@@ -69,17 +87,21 @@ function placer(): { places: Map<PieceId, Place>; hauteur: number } {
 const rang = (id: PieceId) => ORDRE.findIndex((o) => o.id === id);
 
 /** Tracé d'une liaison : verticale entre deux boîtes voisines, rail à droite sinon. */
-function trace(de: Place, vers: Place, voisines: boolean): { d: string; milieu: number } {
+function trace(de: Place, vers: Place, voisines: boolean, cle: string): { d: string; milieu: number } {
   if (voisines) {
     const x = LARGEUR_BOITE / 2;
     const [y1, y2] = de.y < vers.y ? [de.y + de.h, vers.y] : [de.y, vers.y + vers.h];
     return { d: `M ${x} ${y1} V ${y2}`, milieu: (y1 + y2) / 2 };
   }
+  const { x, depart, arrivee } = RAILS[cle] ?? { x: RAIL, depart: 0.5, arrivee: 0.5 };
   const bord = LARGEUR_BOITE - BORD;
-  const ya = de.y + de.h / 2;
-  const yb = vers.y + vers.h / 2;
-  return { d: `M ${bord} ${ya} H ${RAIL} V ${yb} H ${bord}`, milieu: (ya + yb) / 2 };
+  const ya = de.y + de.h * depart;
+  const yb = vers.y + vers.h * arrivee;
+  return { d: `M ${bord} ${ya} H ${x} V ${yb} H ${bord}`, milieu: (ya + yb) / 2 };
 }
+
+/** Les trajets de la mesure elle-même, en couleur : du navigateur jusqu'à la base. */
+const MESURE = new Set(["navigateur-console", "console-collecteur", "collecteur-base", "console-base"]);
 
 function Dessin() {
   const { places, hauteur } = placer();
@@ -104,10 +126,11 @@ function Dessin() {
         const de = places.get(l.de);
         const vers = places.get(l.vers);
         if (!de || !vers) return null;
-        const { d, milieu } = trace(de, vers, Math.abs(rang(l.de) - rang(l.vers)) === 1);
-        const mesure = l.de === "navigateur" || (l.de === "console" && l.vers === "base");
+        const cle = `${l.de}-${l.vers}`;
+        const { d, milieu } = trace(de, vers, Math.abs(rang(l.de) - rang(l.vers)) === 1, cle);
+        const mesure = MESURE.has(cle);
         return (
-          <g key={`${l.de}-${l.vers}`}>
+          <g key={cle}>
             <path
               d={d}
               fill="none"
@@ -157,17 +180,21 @@ export function Topologie() {
           <Dessin />
         </div>
         <div className="min-w-0 space-y-3 text-sm leading-relaxed text-ink-soft">
+          {/* Relevé du 28/09/2026 : le relais de la collecte est allumé depuis le 27/09
+              (`ingest_relay_pct`). La console reçoit tout, en relaie une part au collecteur
+              et écrit elle-même le reste ; ses écrans lisent encore la base. */}
           <p>
-            Le collecteur est une route de la console : c&apos;est l&apos;adresse que visent les capteurs.
-            La console écrit les mesures dans la base, puis les relit pour ses écrans et son API.
+            Les capteurs visent la console. Elle relaie une part des mesures au collecteur, qui les
+            pseudonymise et les écrit dans la base, et écrit elle-même le reste ; ses écrans et son API
+            relisent ensuite la base.
           </p>
-          {/* Les services livrés mais pas en service (dont le collecteur autonome) ne sont
-              racontés qu'une fois, dans les spécifications (contre-recette du 26/09/2026 :
-              quatre fois dans le dossier). Ici, un renvoi. */}
+          {/* Les autres services (backend de la console, notifier) ne sont racontés qu'une
+              fois, dans les spécifications (contre-recette du 26/09/2026 : quatre fois dans
+              le dossier). Ici, un renvoi. */}
           <p>
             Les travaux planifiés — alertes, objectifs de service, sondes, purge — tournent à part, tout
-            comme le serveur MCP, qui passe par l&apos;API et n&apos;a aucun accès à la base. Les autres
-            services du code, et leur état, sont décrits dans{" "}
+            comme le serveur MCP, qui passe par l&apos;API de lecture et n&apos;a aucun accès à la base.
+            Les autres services, et leur état, sont décrits dans{" "}
             <Link href="#specs" className="font-medium text-ink underline decoration-line underline-offset-2 hover:decoration-ink">
               les spécifications
             </Link>

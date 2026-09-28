@@ -5,7 +5,7 @@ Relevé le **23 septembre 2026**, sur `master` à **`8a5f3d1`** (fusion de la PR
 > Ce relevé **remplace** celui du 18/09/2026 sur `2f216cb`. Les commandes du § 2 ont été rejouées, et
 > les douze lignes aux verdicts `livre_non_deploye`, `livre_avec_defaut_connu` et `bloque_acces_externe`
 > revues une à une ; l'hébergement est repris de `docs/TOPOLOGIE_BACKEND.md`, sans interroger Railway
-> ni Vercel. Un seul verdict change (`F2`). Ce qui a changé, et ce qui n'a pas pu être revu : § 12. **Ce qui a changé depuis, sans nouveau relevé** (la CI, la production, des faits lus en base) : § 13, au 26/09/2026.
+> ni Vercel. Un seul verdict change (`F2`). Ce qui a changé, et ce qui n'a pas pu être revu : § 12. **Ce qui a changé depuis, sans nouveau relevé** (la CI, la production, des faits lus en base) : § 13, au 28/09/2026.
 
 Ce document répond à une seule question, capacité par capacité : **est-ce que le produit sait faire
 X, et qu'est-ce qui le prouve ?** Il est écrit pour la personne qui reprend le produit sans avoir
@@ -77,14 +77,14 @@ gardé par `couverture-site.test.ts` et affiché par `/presentation` — une PR 
 test. Les chiffres ci-dessus viennent de ce poste ; le passage de la CI sur le commit relevé (job unitaire vert, job
 e2e rouge sur un test instable qu'aucune ligne ne cite) est au § 12.3.
 
-**Déploiements : non relevés en direct le 23/09** (ni API Railway, ni API Vercel) ; état connu par `docs/TOPOLOGIE_BACKEND.md` (relevés en direct depuis, le 26/09 : § 13) :
+**Déploiements : non relevés en direct le 23/09** (ni API Railway, ni API Vercel) ; état connu par `docs/TOPOLOGIE_BACKEND.md` (relevés en direct depuis, les 26 et 28/09 : § 13 ; ce tableau est celui du 23/09) :
 
 | Cible | SHA | État | Domaine public |
 |---|---|---|---|
-| Console Vercel `mip-rum-console` | non relevé (`2f216cb` le 18/09) | porte la console **et** le seul collecteur actif, `/api/ingest/v1/…` (`TOPOLOGIE_BACKEND.md:11`) | oui |
-| Railway `ingest` | — | **supprimé le 21/09/2026** par l'opérateur ; le projet ne compte plus que `mcp` et `scheduler` (API Railway, 21/09 — `TOPOLOGIE_BACKEND.md:77-81`) | aucun, jusqu'à sa suppression |
-| Railway `scheduler` | non relevé (`2f216cb` le 18/09) | applique les migrations au pré-déploiement : déploiement `03850b30`, 18/09 à 15:29:18 UTC, « migrations à jour » (`TOPOLOGIE_BACKEND.md:71-75`) | aucun |
-| Railway `mcp` | non relevé (`6485f45` le 18/09) | client mince de `/api/v1`, ne touche pas la base (`TOPOLOGIE_BACKEND.md:25`) | oui (`mcp-production-201c.up.railway.app` le 18/09) |
+| Console Vercel `mip-rum-console` | non relevé (`2f216cb` le 18/09) | porte la console **et** le seul collecteur actif au relevé, `/api/ingest/v1/…` ; depuis le 27/09, elle en relaie une part au `collector` (§ 13) | oui |
+| Railway `ingest` | — | **supprimé le 21/09/2026** par l'opérateur ; le projet ne compte plus que `mcp` et `scheduler` (API Railway, 21/09 — `TOPOLOGIE_BACKEND.md:81-85`) | aucun, jusqu'à sa suppression |
+| Railway `scheduler` | non relevé (`2f216cb` le 18/09) | applique les migrations au pré-déploiement : déploiement `03850b30`, 18/09 à 15:29:18 UTC, « migrations à jour » (`TOPOLOGIE_BACKEND.md:75-79`) | aucun |
+| Railway `mcp` | non relevé (`6485f45` le 18/09) | client mince de `/api/v1`, ne touche pas la base (`TOPOLOGIE_BACKEND.md:26`) | oui (`mcp-production-201c.up.railway.app` le 18/09) |
 
 **Les migrations v83, v84 et v85 sont appliquées en production**, et cela se lit sans toucher la base :
 le journal de pré-déploiement d'`ingest` (`node node_modules/ingest/migrate.mjs`) rend, le 18/09 à
@@ -103,21 +103,21 @@ fusions et n'a pas été relu après : c'est ce que vaut une ligne d'état recop
 **Le service Railway `ingest` n'existe plus.** Le 18/09, il était vivant, avec un healthcheck, et
 migrait la base au démarrage — sans aucun domaine public (`serviceDomains: []`, `customDomains: []`) :
 rien ne l'atteignait. Il a été **supprimé le 21/09/2026**, une fois prouvé que le `scheduler` applique
-les migrations à sa place (`docs/TOPOLOGIE_BACKEND.md:69-81`) ; ce relevé ne l'a pas revérifié en direct.
+les migrations à sa place (`docs/TOPOLOGIE_BACKEND.md:73-85`) ; ce relevé ne l'a pas revérifié en direct.
 
 **Le trafic de production entre par Vercel**, sur `apps/console/app/api/ingest/v1/traces/route.ts`,
 qui importe exactement le même parseur et le même writer que le backend (`flattenOtlp`,
 `secureOtlpIdentities`, `writeRows` depuis `@mip/backend`). Le receveur autonome reste dans le dépôt,
-démarré par la CI (`docker-smoke`) pour l'hébergement chez le client ; en production, il ne tourne nulle part.
+démarré par la CI (`docker-smoke`) ; au relevé, il ne tournait nulle part en production (service `collector` depuis le 27/09 : § 13).
 
 Conséquences, à lire avant les lignes `D14`, `A6` et `C*` :
 
 1. **Tout ce qui n'existe que dans l'image backend ne s'exécute pas sur le trafic réel.** C'est le cas
-   de la résolution GeoIP de P8.7 (§ 4.4, `D14`) : l'image backend la porte, et son seul service, le `scheduler`, ne reçoit aucun trafic.
+   de la résolution GeoIP de P8.7 (§ 4.4, `D14`) : l'image backend la porte, et au relevé son seul service, le `scheduler`, ne recevait aucun trafic ; le `collector` la porte depuis le 27/09, éteinte (§ 13).
 2. **Le port d'ingestion direct `POST /v1/sourcemaps`** (`packages/backend/lib/receiver.mjs`, P5.4) n'est
-   servi par aucun service de production. Le port console `POST /api/sourcemaps` l'est.
+   servi par aucun service de production au relevé (le `collector` le sert depuis le 27/09, § 13). Le port console `POST /api/sourcemaps` l'est.
 3. Le faire revenir demande de recréer un service **et de lui donner un domaine public** ; deux
-   chemins d'ingestion devraient alors rester alignés (`TOPOLOGIE_BACKEND.md:105-110`). Rien n'était décidé au relevé ; c'est fait depuis le 24/09 (ADR-0005 : un `collector` atteint d'abord par le relais de la console), écrit mais pas en service (§ 13).
+   chemins d'ingestion devraient alors rester alignés (`TOPOLOGIE_BACKEND.md:109-114`). Rien n'était décidé au relevé ; c'est fait depuis le 24/09 (ADR-0005 : un `collector` atteint d'abord par le relais de la console), en service depuis le 27/09 (§ 13).
 
 ---
 
@@ -142,7 +142,7 @@ résultat de ce document, et il s'arrête avant la production.
 | A3 | Capter les erreurs du navigateur au-delà des exceptions (console, ressources, CSP, réseau) | `deploye_non_eprouve` | `packages/rum-sdk/src/errors.ts`, config `captureErrors` ; `tests/unit/error-collection.test.ts` ; PR #184 | **Les quatre catégories sont opt-in et activées pour aucune app.** Le navigateur ne fournit pas toujours le statut HTTP d'une ressource : il reste `null`, jamais inféré. |
 | A4 | Capter les erreurs d'un service Node ou Python sans inventer de session | `deploye_non_eprouve` | migration v70, `shared/error-normalize.mjs` ; `tests/integration/error-backend-otel-sql.test.ts`, `tests/integration/agent-node-backend-events-sql.test.ts` ; PR #185 | Aucun émetteur backend ne tourne en production. Une double instrumentation log + span **sans** `mip.exception_id` commun n'est pas fusionnée, et n'est pas signalée à l'écran. |
 | A5 | Dé-minifier une pile avec une source map | `deploye_non_eprouve` | migration v71, `packages/backend/lib/error-symbolication.mjs` ; `tests/integration/sourcemaps-p54-sql.test.ts` ; PR #186 | Aucune map n'a jamais été déposée par une application réelle. Une map arrivée **après** les premières occurrences améliore l'affichage sans changer l'identité de l'issue — et peut donc ouvrir une seconde issue. |
-| A6 | Déposer des source maps depuis une CI (jeton dédié, CLI, port direct) | `deploye_non_eprouve` | `scripts/upload-sourcemaps.mjs`, `packages/backend/lib/sourcemap-upload.mjs`, `/admin/sourcemaps`, table `sourcemap_upload_token` | Le port backend direct n'est servi par **aucun** service de production depuis la suppression d'`ingest`, le 21/09/2026 (§ 3) : seule la route console est joignable, avec ses lots ≤ 3 Mio. Le branchement dans une CI cliente est `D10`. |
+| A6 | Déposer des source maps depuis une CI (jeton dédié, CLI, port direct) | `deploye_non_eprouve` | `scripts/upload-sourcemaps.mjs`, `packages/backend/lib/sourcemap-upload.mjs`, `/admin/sourcemaps`, table `sourcemap_upload_token` | Au relevé, le port backend direct n'était servi par **aucun** service de production depuis la suppression d'`ingest`, le 21/09/2026 (§ 3) : seule la route console était joignable, avec ses lots ≤ 3 Mio. **Depuis le relevé** (§ 13) : le `collector`, en service le 27/09 avec un domaine public, le sert. Le branchement dans une CI cliente est `D10`. |
 | A7 | Regrouper les occurrences en issues stables et versionnées | `deploye_non_eprouve` | migration v72, `error_issue` / `error_issue_alias` / `error_grouping_config` ; `tests/unit/error-grouping-v2.test.ts`, `tests/integration/error-issues-sql.test.ts` ; PR #187 | **Le regroupement v2 n'est activé pour aucune application.** Un « Script error. » sans contexte reste explicitement peu discriminant, et la clé retombe sur un repli marqué `low_confidence`. |
 | A8 | Trier une issue : statut, assignation, commentaire, lien de ticket manuel | `deploye_non_eprouve` | migrations v73/v74, `POST /api/v1/issues/:id/{triage,comments,links}` avec `expectedRevision` (409) ; `tests/unit/error-triage.test.ts` ; PR #188/#189 | Le commentaire libre d'un opérateur **n'est pas scrubé** lorsque l'issue survit à un effacement : MIP ne peut pas savoir s'il cite une donnée personnelle. Une revue humaine reste nécessaire (`delivery-p8.md`, écarts P8.1). |
 | A9 | Distinguer une régression d'une réapparition | `deploye_non_eprouve` | ordre des marqueurs de déploiement dans la transaction d'ingestion ; `error-issues-sql.test.ts` | Sans marqueur de déploiement comparable (même release, release absente, ordre inconnu), l'écran affiche « Réapparition à vérifier » et **ne rouvre pas** l'issue. Une issue `ignored` reste `ignored`. |
@@ -194,7 +194,7 @@ résultat de ce document, et il s'arrête avant la production.
 | D11 | Recevoir les crashes natifs iOS/Android, les symboliser, les rattacher à un appareil | `non_commence` | — | **Rien n'est livré**, et c'est délibéré : P7.5 n'a créé **aucune table de crash natif**, parce qu'une table vide se lirait comme un zéro. Manquent un choix de moteur ou de fournisseur, une application native, des builds signés, des symboles et des appareils. Un `ErrorUtils` JS **n'est pas** un crash natif. |
 | D12 | Créer un ticket chez un fournisseur depuis une issue | `deploye_non_eprouve` | **PR #211 fusionnée le 18/09 à 12:59**, CI verte (6 contrôles) ; migration **v84 appliquée en production à 13:30:35 UTC** (journal de pré-déploiement `ingest`) ; `packages/backend/lib/integrations/tickets/{adapter,dispatcher}.mjs`, tables `ticket_integration` / `ticket_outbox` / `ticket_webhook_event`, écrans `/admin/ticket-integrations`. **Un vrai ticket a été créé** dans un dépôt bac à sable — c'est la seule ligne de P5 à P8 qui ait touché un système externe réel | **Déployé et inerte** : aucune intégration n'est configurée, `TICKET_INTEGRATIONS` n'est pas posé, et l'interface d'administration reste cachée tant qu'aucun fournisseur n'est branché **et testé**. Un seul fournisseur (GitHub Issues), présenté dans le produit comme une étape vers l'ITSM de MIP — « ServiceNow, **sous réserve de confirmation** », et personne n'a confirmé. Aucune écriture MIP → fournisseur après la création : résoudre une issue ne ferme pas le ticket. Le lien manuel de P5.6 continue de fonctionner **sans** connecteur, et un test le prouve. |
 | D13 | Recevoir les changements d'état du fournisseur (webhook) | `bloque_acces_externe` | route `apps/console/app/api/webhooks/tickets/[integrationId]/route.ts` déployée sur Vercel avec `2f216cb` ; signature HMAC-SHA256 sur corps brut, comparaison à temps constant, identifiant de livraison unique en base ; tests contre un double fidèle (corps modifié, secret tiers, signature tronquée, non hexadécimale, absente) — PR #211 | **Le webhook n'a jamais reçu de livraison d'un vrai fournisseur.** L'URL est désormais publique, mais aucune intégration n'existe : toute livraison reçoit le même `404` qu'une intégration inconnue. Manquent un espace cible et ses droits, un secret de webhook, et la politique de synchronisation — cinq décisions, pas cinq tickets. Aucune synchronisation de statut n'a été observée en vrai. |
-| D14 | Préciser le pays par une base IP→pays | `deploye_non_eprouve` | **PR #210 fusionnée le 18/09 à 12:52**, CI verte ; migration **v85 appliquée en production** (déduite du journal de pré-déploiement : `total 80 · appliquées 1`, la seule étant v84) ; `packages/backend/lib/geoip-db.mjs`, `shared/geoip.mjs`, `services/collector/Dockerfile` ; `tests/unit/geoip-db.test.ts` (193 l.), `tests/integration/geoip-v85-sql.test.ts` | **Le GeoIP ne résout aucun pays sur le trafic actuel, et la fusion n'y change rien.** La résolution est embarquée dans l'**image backend Railway**, qui ne reçoit aucun trafic : `ingest`, sans domaine public, a été supprimé le 21/09/2026 (§ 3) ; la route Vercel, qui reçoit tout le trafic, **n'appelle délibérément pas** la résolution locale — un commentaire du code l'explique — et ne pose que la provenance `cdn`. La base elle-même n'est pas versionnée : elle restait **à déposer** au relevé ; depuis, l'image du `collector` la télécharge à sa construction d'après un manifeste versionné (`scripts/fetch-geoip-db.mjs`), mais ce service n'est pas créé, et le chemin choisi le 24/09 (ADR-0005) ne s'en servira qu'en collecte directe (§ 13). Pays seulement : ni ville, ni région, ni coordonnées ; la base « City Lite » est refusée par le chargeur. **Aucun enrichissement rétrospectif n'est possible** : l'adresse des visites passées n'a jamais été stockée, et ce lot ne commence pas à la stocker. |
+| D14 | Préciser le pays par une base IP→pays | `deploye_non_eprouve` | **PR #210 fusionnée le 18/09 à 12:52**, CI verte ; migration **v85 appliquée en production** (déduite du journal de pré-déploiement : `total 80 · appliquées 1`, la seule étant v84) ; `packages/backend/lib/geoip-db.mjs`, `shared/geoip.mjs`, `services/collector/Dockerfile` ; `tests/unit/geoip-db.test.ts` (193 l.), `tests/integration/geoip-v85-sql.test.ts` | **Le GeoIP ne résout aucun pays sur le trafic actuel, et la fusion n'y change rien.** La résolution est embarquée dans l'**image backend Railway**, qui ne recevait aucun trafic au relevé : `ingest`, sans domaine public, a été supprimé le 21/09/2026 (§ 3) ; la route Vercel, qui reçoit tout le trafic, **n'appelle délibérément pas** la résolution locale — un commentaire du code l'explique — et ne pose que la provenance `cdn`. La base elle-même n'est pas versionnée : elle restait **à déposer** au relevé ; depuis, l'image du `collector` la télécharge à sa construction d'après un manifeste versionné (`scripts/fetch-geoip-db.mjs`), et ce service tourne depuis le 27/09 : le relais lui transmet le pays, jamais l'adresse, et son GeoIP reste éteint ; le chemin choisi le 24/09 (ADR-0005) ne s'en servira qu'en collecte directe (§ 13). Pays seulement : ni ville, ni région, ni coordonnées ; la base « City Lite » est refusée par le chargeur. **Aucun enrichissement rétrospectif n'est possible** : l'adresse des visites passées n'a jamais été stockée, et ce lot ne commence pas à la stocker. |
 
 ### 4.5 Surfaces d'accès
 
@@ -563,7 +563,7 @@ Dans cet ordre, parce que chaque étape éclaire la suivante (liste revue le 23/
    c'est la moins chère.
 2. **Décider où résoudre le pays.** `ingest` est supprimé depuis le 21/09 : Vercel est le seul chemin.
    `D14` et le port direct de `A6` n'y sont pas ; il faut soit un receveur backend public, soit une
-   résolution depuis la console (`TOPOLOGIE_BACKEND.md:121-123`). **Tranché depuis le 24/09** (ADR-0005) : la collecte directe au `collector` (P6b.G), après le relais ; rien n'est fait (§ 13).
+   résolution depuis la console (`TOPOLOGIE_BACKEND.md:125-127`). **Tranché depuis le 24/09** (ADR-0005) : la collecte directe au `collector` (P6b.G), après le relais ; rien n'est fait (§ 13).
 3. **Jouer les bancs de mesure** (§ 8.2), dans la CI ou à chaque relevé, sur une base préparée — **fait le 24/09** : un job de la CI les joue (#281, § 13). La
    fenêtre de déploiement de P8.2 est réparée et jouée par la CI depuis #213 ; les bancs restent le
    seul morceau de la recette SQL que personne ne rejoue, et ce sont eux qui fondent les temps publiés
@@ -620,7 +620,7 @@ La ligne `D8` du 18/09 portait « migration v83 non appliquée en production »,
    80, v83 comprise. Aucun fichier n'a été ajouté depuis.
 3. Le passage d'`ingest` du 18/09 à 13:30:35 UTC rend « total 80 · appliquées 1 », la seule étant v84
    (§ 2) ; celui du `scheduler` à 15:29:18 UTC rend « total 80, appliquées 0 »
-   (`TOPOLOGIE_BACKEND.md:71-75`). Le registre de production contenait donc les 80 fichiers.
+   (`TOPOLOGIE_BACKEND.md:75-79`). Le registre de production contenait donc les 80 fichiers.
 4. L'étalonnage, qui inscrit un fichier sans l'exécuter, s'arrête à `migration-v51.sql`
    (`MIGRATE_BASELINE`, `DEPLOY.md:117`, `:178-184`) : il n'a pas pu inscrire v83.
 
@@ -662,7 +662,7 @@ ignorés.
 
 ---
 
-## 13. Depuis le relevé : ce qui a changé au 26/09/2026, sans nouveau relevé
+## 13. Depuis le relevé : ce qui a changé au 28/09/2026, sans nouveau relevé
 
 Ce n'est **pas** un relevé : les commandes du § 2 n'ont pas été rejouées, et aucun verdict du § 4 n'a
 changé — un verdict ne change que sur un relevé (§ 12). Ce paragraphe dit ce que des sources plus
@@ -695,16 +695,26 @@ prochain relevé de rejouer les commandes du § 2 et de changer leur verdict.
   `gip-plateforme` a reçu 378 événements, le dernier ce jour-là à 13:01 UTC, et `mip-rum-console` 33 :
   le « 17/09 17:23 » des §§ 6.2 et 8.5 est faux. Le volume reste faible, et aucun écran n'a été relu
   sur ce trafic : la colonne « éprouvé sur donnée réelle » reste « non » partout.
-- **La base est suspendue** depuis le 24/09/2026 à 03:30 UTC : quota de calcul de l'offre gratuite de
-  Neon dépassé, calcul coupé jusqu'au 01/10/2026 ; collecte, écrans et travaux planifiés échouent
-  jusque-là ([ADR-0014](architecture/adr/0014-base-gratuite.md)).
+- **La base a été suspendue** du 24/09/2026 à 03:30 UTC au 27/09 au soir : quota de calcul de l'offre
+  gratuite de Neon dépassé ; collecte, écrans et travaux planifiés échouaient. Le 27/09 au soir, elle est
+  passée sur l'offre payante Launch (à l'usage, calcul plafonné à 0,25 CU, veille active) : un palier,
+  la base d'un vrai produit restant à choisir selon le standard de la DSI de MIP
+  ([ADR-0014](architecture/adr/0014-base-gratuite.md), remplacée le 27/09).
 - **Relevé par les hébergeurs le 26/09** (`docs/TOPOLOGIE_BACKEND.md`, « Relevé du 26/09/2026 ») :
   Railway compte toujours `mcp` et `scheduler` ; le `scheduler` en service date du 23/09 (`5d42f0e`),
   et tous ses déploiements depuis le 24/09 échouent (le dernier au pré-déploiement, sur le quota). La production est
   donc à **v86** ; v87 → v93 attendent le prochain déploiement réussi. `mcp` tourne sur `20261eb`
   (`E2`), la console Vercel sur `09833f1`.
+- **Le 27/09, puis relevé le 28/09** (`docs/TOPOLOGIE_BACKEND.md`, « Relevé du 28/09/2026 ») : l'apply
+  de l'IaC (PR #332) crée `collector`, `api`, `console-api` et `notifier` ; les **six services
+  tournent**, en trois groupes, `collector`, `api` et `console-api` avec un domaine public. Le
+  redéploiement du `scheduler` applique **v87 → v96** ; le rôle `mip_api` est ouvert. Vercel est branché
+  sur `console-api`, par qui passe désormais la connexion. Le relais de la collecte est allumé
+  (`ingest_relay_pct` : 10 %, puis 50 % le 27/09 au soir ; 100 % prévu le 28/09) ; `api_relay_pct`,
+  `console_api_ecrans_pct` et `console_api_commandes_pct` restent à 0, et le GeoIP du `collector`
+  éteint. Aucun verdict ne change : `A6` et `D14` le signalent en place.
 
-### 13.3 Ce que le code livre depuis, sans que rien ne tourne
+### 13.3 Ce que le code livre depuis, et ce qui en tourne au 28/09
 
 - **Restauration** (`D7`) : procédure écrite le 24/09/2026 ([runbook](operations/runbook.md), § 8),
   jamais éprouvée, à répéter sur la branche Neon `repetition-p0` ; sa partie « identités » reste
@@ -714,11 +724,13 @@ prochain relevé de rejouer les commandes du § 2 et de changer leur verdict.
   en ne lui transmettant que le pays, puis la collecte directe (P6b.G), seule à permettre la
   résolution par adresse. L'image du `collector` télécharge la base DB-IP Lite à sa construction
   (`scripts/fetch-geoip-db.mjs`, manifeste versionné) et garde le GeoIP éteint
-  (`GEOIP_IP_SOURCE: "none"`).
+  (`GEOIP_IP_SOURCE: "none"`). Le `collector` tourne depuis le 27/09 et reçoit la part relayée, sans
+  adresse : la résolution n'y sert toujours pas.
 - **Six services déclarés** dans `.railway/railway.ts` (`collector`, `api`, `console-api`, `mcp`,
-  `scheduler`, `notifier`), relais d'ingestion et de l'API, bascule de la console vers `console-api`,
-  rôles de base de v89 et v93 : sur `master`, **inertes** tant que l'opérateur n'a pas fait ses gestes
-  (`docs/TOPOLOGIE_BACKEND.md`, « Ce que le code déclare, et qui n'est pas en service »).
+  `scheduler`, `notifier`) : **en service depuis le 27/09**. Rôles de base de v89 et v93 : appliqués.
+  Relais d'ingestion : allumé. Relais de l'API et bascule des écrans et des écritures vers
+  `console-api` : livrés, drapeaux à 0 ; la connexion, elle, passe par `console-api`
+  (`docs/TOPOLOGIE_BACKEND.md`, « Ce qui tourne, mais reste éteint par un drapeau »).
 
 ---
 

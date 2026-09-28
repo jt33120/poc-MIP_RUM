@@ -1,6 +1,6 @@
 # Topologie du backend en production
 
-Ce que chaque hébergeur et chaque service exécutent réellement, et pourquoi ils existent. Ce que le code déclare sans que rien ne l'exécute encore est dit à part, en fin de document. Un service dont
+Ce que chaque hébergeur et chaque service exécutent réellement, et pourquoi ils existent. **État au 28/09/2026** (relevé plus bas). Ce qui tourne mais reste éteint par un drapeau est dit à part, en fin de document. Un service dont
 on ne sait pas dire le rôle en une phrase est un service qu'on finit par croire
 utile — c'est ce qui est arrivé à `ingest`, décrit plus bas.
 
@@ -8,21 +8,24 @@ utile — c'est ce qui est arrivé à `ingest`, décrit plus bas.
 
 | Hébergeur | Ce qu'il porte |
 |---|---|
-| **Vercel** (projet `mip-rum-console`, région `fra1`) | La console Next.js, **et le collecteur d'ingestion réellement actif** : `POST /api/ingest/v1/{traces,logs,replay}` et `POST /api/sourcemaps`. C'est l'adresse que visent les SDK. Elle sert aussi l'API de lecture `/api/v1/*`. |
-| **Railway** (projet `mip-rum-backend`, région `europe-west4`, Amsterdam) | Ce qui ne tient pas dans une fonction serverless : une boucle de travaux qui doit tourner en continu, et le serveur MCP. |
-| **Neon** (projet `mip-rum-poc-eu`, `aws-eu-central-1`, Francfort ; PostgreSQL 17) | La base, sur l'offre **gratuite** : 100 heures de calcul par mois. Le quota a été dépassé le 24/09/2026 ; le calcul est suspendu jusqu'au 01/10/2026, et tout ce qui touche la base échoue jusque-là ([ADR-0014](architecture/adr/0014-base-gratuite.md), relevé du 26/09 plus bas). |
+| **Vercel** (projet `mip-rum-console`, région `fra1`) | La console Next.js. Elle **reçoit toujours toute la collecte** — `POST /api/ingest/v1/{traces,logs,replay}` et `POST /api/sourcemaps`, l'adresse que visent les SDK —, en relaie une part au `collector` depuis le 27/09/2026 (`ingest_relay_pct`) et écrit elle-même le reste. Elle sert aussi l'API de lecture `/api/v1/*`, et passe par `console-api` pour la connexion. |
+| **Railway** (projet `mip-rum-backend`, région `europe-west4`, Amsterdam) | Six services depuis l'apply du 27/09/2026 (PR #332), en trois groupes : la collecte (`collector`), la restitution (`api`, `console-api`, `mcp`), les traitements (`scheduler`, `notifier`). |
+| **Neon** (projet `mip-rum-poc-eu`, `aws-eu-central-1`, Francfort ; PostgreSQL 17) | La base, sur l'offre payante **Launch** depuis le 27/09/2026 au soir : facturation à l'usage, calcul plafonné à 0,25 CU, mise en veille active. Elle était jusque-là sur l'offre gratuite, dont le quota avait coupé le calcul le 24/09 ([ADR-0014](architecture/adr/0014-base-gratuite.md), remplacée). Ce n'est qu'un palier : la base d'un vrai produit se choisira selon ce qu'utilise la DSI de MIP. |
 
-La console **lit et écrit** donc la base directement (`DATABASE_URL`), pour ses écrans comme pour la collecte. Le parseur, le hachage d'identité et l'écriture sont
+La console **lit et écrit** encore la base directement (`DATABASE_URL`) : pour ses écrans et ses écritures (leur bascule vers `console-api` est à 0), et pour la part de la collecte qu'elle ne relaie pas. Le parseur, le hachage d'identité et l'écriture sont
 ceux de `@mip/backend` (`shared/otlp.mjs`, `lib/identity-hash.mjs`, `lib/pg-ingest.mjs`) ; seule la couche HTTP est propre à la console, et un contrat de parité
-joué en CI (`tests/contract/ingest-parity.test.ts`) la tient alignée sur le receveur autonome (`packages/backend/lib/receiver.mjs`). C'est un état de transition : le code
-prévoit le relais de la collecte vers le `collector` ([ADR-0005](architecture/adr/0005-relais-ingestion.md)), puis une console sans base ([ADR-0002](architecture/adr/0002-console-interface-sans-base.md)) — rien de cela n'est en service.
+joué en CI (`tests/contract/ingest-parity.test.ts`) la tient alignée sur le receveur autonome (`packages/backend/lib/receiver.mjs`). C'est un état de transition : le relais de la collecte vers le `collector` ([ADR-0005](architecture/adr/0005-relais-ingestion.md)) est allumé depuis le 27/09 ; la console sans base ([ADR-0002](architecture/adr/0002-console-interface-sans-base.md)) reste à venir.
 
 ## Les services Railway en production
 
 | Service | Rôle, en une phrase | Domaine public |
 |---|---|---|
-| `scheduler` | Applique les migrations au pré-déploiement — c'est le seul migrateur ([ADR-0004](architecture/adr/0004-migrations.md)) —, puis fait tourner la boucle de travaux : alertes, SLO, sondes de disponibilité, envoi des notifications et des tickets, rafraîchissement des agrégats, purge de rétention. Depuis le 24/09, il tourne mais chaque passage échoue sur la base suspendue (relevé du 26/09). | non — il n'a rien à exposer |
-| `mcp` | Sert le protocole MCP en HTTP. C'est un client mince au-dessus de `/api/v1` de la console : il ne touche pas la base ([ADR-0006](architecture/adr/0006-mcp-sans-base.md)). Le code sait passer par le service `api` sur le réseau privé (`MIP_API_HOST`), qui n'existe pas encore. | oui, domaine généré par Railway |
+| `collector` | Reçoit la part de la collecte que la console lui relaie (corps intact, code pays seul, jamais l'adresse : `apps/console/lib/ingest-relay.ts`), hache l'identité et écrit en base. Deux répliques. Le GeoIP y est éteint (`GEOIP_IP_SOURCE: "none"`, section GeoIP plus bas). | oui, domaine généré par Railway |
+| `api` | Sert l'API de lecture v1 sous le rôle `mip_api`, en lecture seule. Deux répliques. Son client aujourd'hui : le `mcp`, par le réseau privé ; le relais des lectures de la console vers lui (`api_relay_pct`) est à 0. | oui, domaine généré par Railway |
+| `console-api` | Le backend de la console ([ADR-0010](architecture/adr/0010-console-api.md)) : identité, sessions, écrans, écritures. Deux répliques. Seul client : le serveur Vercel, qui l'appelle pour la connexion depuis le 27/09 ; écrans et écritures ne sont pas encore basculés (drapeaux à 0). | oui, domaine généré par Railway, gardé par un secret client |
+| `mcp` | Sert le protocole MCP en HTTP, en client mince de l'API v1 : il passe par le service `api` sur le réseau privé (`MIP_API_HOST`, posé par l'apply du 27/09) et ne touche pas la base ([ADR-0006](architecture/adr/0006-mcp-sans-base.md)). | oui, domaine généré par Railway |
+| `scheduler` | Applique les migrations au pré-déploiement — c'est le seul migrateur ([ADR-0004](architecture/adr/0004-migrations.md)) —, puis fait tourner la boucle de travaux toutes les 15 minutes (`SCHEDULER_TICK_MIN`) : alertes, SLO, sondes de disponibilité, rafraîchissement des agrégats, purge de rétention. Il ne livre plus (`SCHEDULER_DELIVERY: "off"`) : c'est le `notifier`. | non — il n'a rien à exposer |
+| `notifier` | Livre ce que la plateforme a décidé de dire : webhooks signés, e-mails, tickets. Seul détenteur des secrets sortants ; ses passes suivent le tick de 45 s (`NOTIFIER_INTERVAL_MS: "900000"`). | non |
 
 ### Pourquoi le scheduler porte les migrations
 
@@ -36,7 +39,7 @@ Le contrat de déploiement reste celui qui est écrit partout ailleurs : **Verce
 déploie avant que Railway n'ait migré**. Les écritures détectent les colonnes
 présentes (`colonnesDe`, cache de 60 s) et les lectures sondent
 `information_schema` — une version applicative tourne donc correctement sur le
-schéma d'avant **et** d'après sa propre migration. Depuis le 24/09, l'écart n'est plus d'une migration mais de sept : la console sert le code de `master`, écrit jusqu'à v93, et la production est restée à v86 (relevé du 26/09).
+schéma d'avant **et** d'après sa propre migration. Du 24 au 27/09, l'écart a été de sept migrations (production à v86, console écrite jusqu'à v93 : relevé du 26/09) ; le redéploiement du `scheduler` du 27/09 a appliqué v87 → v96 (relevé du 28/09).
 
 > **`MIGRATE_BASELINE`.** Cette variable marque les migrations jusqu'à un fichier donné comme déjà
 > appliquées, sans les exécuter : c'est l'étalonnage d'une base dont le schéma existe sans registre.
@@ -58,7 +61,8 @@ schéma d'avant **et** d'après sa propre migration. Depuis le 24/09, l'écart n
 Chaque service ne se reconstruit que sur ce qui le concerne :
 
 - `scheduler` : la liste `SURVEILLE_SCHEDULER` de `.railway/railway.ts` (noyau, migrations, kit, son dossier, lockfile, et les anciens chemins d'avant le remodelage P1) ;
-- `mcp` : la liste `SURVEILLE_MCP` du même fichier. La source fait foi : ne pas la recopier ici.
+- `mcp` : la liste `SURVEILLE_MCP` du même fichier ;
+- `collector`, `api`, `console-api`, `notifier` : chacun sa liste, dans le même fichier. La source fait foi : ne pas les recopier ici.
 
 Auparavant les deux services backend surveillaient `services/**` en entier :
 déposer une base GeoIP sous `packages/backend/data/` redéployait le scheduler, et
@@ -100,27 +104,27 @@ faisait pas. Un secret qui circule sans servir est un secret de trop.
 **Ce que sa suppression n'a pas retiré.** Le receveur autonome reste dans le
 dépôt, construit et démarré par la CI (`docker-smoke`), et documenté pour
 l'auto-hébergement dans [infra/docker/](../infra/docker/). Le produit garde donc
-son chemin auto-hébergeable : ce qui disparaît, c'est une copie qui tournait à vide. Il est devenu le service `collector` du code (fin de document).
+son chemin auto-hébergeable : ce qui disparaît, c'est une copie qui tournait à vide. Il est devenu le service `collector` (plus haut).
 
-**Ce qui le fait revenir, et c'est écrit sans être appliqué.** `.railway/railway.ts` déclare un
+**Ce qui l'a fait revenir.** `.railway/railway.ts` déclare un
 service `collector` sur `services/collector/Dockerfile` (son `CMD` est `services/collector/server.mjs`), deux
-répliques, ses secrets en variables partagées ; il n'est pas créé (relevé du 26/09). Son domaine public
-se générera à la main après son premier déploiement, et le trafic ne l'atteindra d'abord que par le relais
-de la console ([ADR-0005](architecture/adr/0005-relais-ingestion.md)). Deux chemins d'ingestion coexisteront alors, et devront rester
+répliques, ses secrets en variables partagées. Créé par l'apply du 27/09/2026, il a un domaine public,
+mais le trafic ne l'atteint que par le relais
+de la console ([ADR-0005](architecture/adr/0005-relais-ingestion.md)). Deux chemins d'ingestion coexistent donc, et doivent rester
 alignés : c'est le rôle du contrat de parité joué en CI (`tests/contract/ingest-parity.test.ts`).
 
 ## Conséquence pour le GeoIP (P8.7)
 
 La résolution du pays par base locale est embarquée dans l'image du `collector`, pas
 dans la console : 15 Mio d'index et ~1,1 s de chargement (mesures de P8.7) n'ont pas leur place dans
-une fonction serverless recréée souvent. Comme le trafic de production entre par
-Vercel, **le GeoIP ne résout aucun pays aujourd'hui**. La route de la console pose le pays du
+une fonction serverless recréée souvent. Le trafic de production entre par
+Vercel, et le relais ne transmet au `collector` que le code pays, jamais l'adresse : **le GeoIP ne résout aucun pays aujourd'hui**, pas même sur la part relayée. La route de la console pose le pays du
 fuseau (`geo_source` = `timezone`, depuis `mip.tz`), à défaut l'en-tête pays de Vercel (`cdn`) :
 `appliquerGeo`, `packages/backend/shared/geoip.mjs`. Une session reste sans provenance, affichée « Inconnue », quand ni l'un ni l'autre ne donne de pays, et toutes celles d'avant v85 (relevé lu en base le 23/09 : sur 30 jours, 29 sessions sans provenance, 6 par fuseau, 2 par CDN — [releve-p0-2026-09-23.md](operations/releve-p0-2026-09-23.md)).
 
 Le rendre effectif demandait de choisir entre un receveur backend public et une résolution depuis la
 console. **C'est tranché depuis le 24/09/2026** ([ADR-0005](architecture/adr/0005-relais-ingestion.md), point 5) : la collecte directe au `collector` pour
-les sites sans CSP figée (P6b.G), après le relais. Rien n'est fait : le `collector` déclaré garde le GeoIP éteint (`GEOIP_IP_SOURCE: "none"`), et le relais ne transmet que le pays de Vercel, jamais l'adresse.
+les sites sans CSP figée (P6b.G), après le relais. La collecte directe n'est pas faite : le `collector`, en service depuis le 27/09, garde le GeoIP éteint (`GEOIP_IP_SOURCE: "none"`), et le relais ne transmet que le pays de Vercel, jamais l'adresse.
 
 ## Relevé du 23/09/2026
 
@@ -141,6 +145,8 @@ Le pré-déploiement du `scheduler` applique donc toujours les migrations ; le
 relevé ce jour-là.
 
 ## Relevé du 26/09/2026
+
+> **Dépassé depuis le 27/09** (base payante, apply, relais) : voir le relevé du 28/09/2026, plus bas.
 
 Relevé en direct, en lecture seule : CLI Railway (`railway status`, `railway deployment list`,
 `railway logs`, `railway config plan`, qui n'applique rien), API Vercel, API publique de GitHub. La
@@ -178,18 +184,40 @@ base n'a pas été interrogée : elle est suspendue.
   l'agent Node et de l'extension ; construction depuis un dépôt propre ; E2E ; bancs de mesure) ;
   « Docker smoke » vert.
 
-## Ce que le code déclare, et qui n'est pas en service
+## Relevé du 28/09/2026
 
-Tout ce qui suit est sur `master` et **inerte** tant que l'opérateur n'a pas fait ses gestes :
-variables partagées Railway (liste en tête de `.railway/railway.ts`), apply IaC approuvé
-(workflow « Railway IaC »), variables Vercel, drapeaux `platform_flag`. La cible, service par
-service, est dans [architecture/overview.md](architecture/overview.md).
+Relevé en lecture seule par l'API Railway (état de l'environnement `production`, le 28/09/2026) ; les
+faits de la base, de Vercel et des drapeaux ont été constatés par l'exploitation les 27 et 28/09
+(journaux des services, console Neon, table `platform_flag`).
 
-| Élément | Ce que le code prévoit | Où |
+- **Railway**, projet `mip-rum-backend`, environnement `production` : **six services en ligne**, aucun
+  échec de déploiement sur 24 heures — `collector`, `api` et `console-api` en deux répliques, `mcp`,
+  `scheduler` et `notifier` en une. Déploiements en service : le 27/09 vers 20:07 UTC pour `collector`,
+  `mcp`, `scheduler` et `notifier` (apply de la PR #332) ; le 28/09 à 06:47 UTC pour `api` et
+  `console-api`. Trois groupes sur le canevas : 1 · Collecte, 2 · Restitution, 3 · Traitements.
+  Domaines publics générés pour `collector`, `api` et `console-api` ; `mcp` garde le sien.
+- **Base** : passée sur l'offre payante Launch de Neon le 27/09 au soir (à l'usage, calcul plafonné à
+  0,25 CU, veille active). Le redéploiement du `scheduler` a appliqué **v87 → v96** le même jour. Le
+  rôle `mip_api` est ouvert, en lecture seule, vérifié à travers le pooler. Cadences inchangées :
+  `SCHEDULER_TICK_MIN=15`, passes du `notifier` à 15 minutes.
+- **Vercel** branché sur Railway le 27/09 : la connexion à la console passe par `console-api`
+  (`POST /v1/auth/demo-sessions`, `GET /v1/me`, `DELETE /v1/auth/sessions/current` en 200 dans ses
+  journaux).
+- **Relais de la collecte** (`ingest_relay_pct`) : 10 % à 20:25 UTC le 27/09, 50 % à 20:30 UTC ;
+  1 616 envois relayés en 12 heures, aucune erreur. Le passage à 100 % est prévu le 28/09.
+- **Encore à 0** : `api_relay_pct`, `console_api_ecrans_pct`, `console_api_commandes_pct`. Le GeoIP
+  du `collector` reste éteint (`GEOIP_IP_SOURCE=none`).
+
+## Ce qui tourne, mais reste éteint par un drapeau
+
+Les six services tournent (relevé ci-dessus). Ce qui suit est sur `master` et en production, mais ne
+sert pas encore, ou pas en entier, tant que son drapeau `platform_flag` ou sa variable n'est pas levé.
+La cible, service par service, est dans [architecture/overview.md](architecture/overview.md).
+
+| Élément | État au 28/09/2026 | Où |
 |---|---|---|
-| Six services Railway | `collector` (groupe « 1 · Collecte ») ; `api`, `console-api`, `mcp` (« 2 · Restitution ») ; `scheduler`, `notifier` (« 3 · Traitements »). Seuls `mcp` et `scheduler` existent. | `.railway/railway.ts` |
-| Relais d'ingestion | La console relaie une part de la collecte au `collector` ; `platform_flag.ingest_relay_pct`, 0 par défaut (migration v87, non appliquée en production). | `apps/console/lib/ingest-relay.ts`, [ADR-0005](architecture/adr/0005-relais-ingestion.md) |
-| Relais de l'API v1 | Une part des lectures v1 passe par le service `api` ; `api_relay_pct`, défaut 0, et rien sans `CONSOLE_API_RELAY_URL`. | `apps/console/lib/api-relay.ts` |
-| Bascule vers `console-api` | Écrans et écritures servis par `console-api`, session par session ; `console_api_ecrans_pct` et `console_api_commandes_pct`, défaut 0 ; mode strict `CONSOLE_API_STRICT`. | `apps/console/lib/aiguillage-console-api.ts`, [ADR-0010](architecture/adr/0010-console-api.md) |
-| Rôles de base | `mip_api` (v89), `mip_console` et `mip_identity` (v93) : dans les migrations, pas en production. | `packages/db/sql/`, [runbook](operations/runbook.md) |
+| Relais d'ingestion | **Allumé** : la console relaie une part de la collecte au `collector` (`ingest_relay_pct`, 50 % le 27/09 au soir, 100 % prévu le 28/09) ; la part restante et le repli sont écrits par la console. | `apps/console/lib/ingest-relay.ts`, [ADR-0005](architecture/adr/0005-relais-ingestion.md) |
+| Relais de l'API v1 | Éteint : `api_relay_pct` à 0 ; les porteurs de jeton lisent par la console. Seul le `mcp` passe par `api`. | `apps/console/lib/api-relay.ts` |
+| Bascule vers `console-api` | La connexion passe par `console-api` (`CONSOLE_API_URL` posée sur Vercel) ; écrans et écritures non basculés (`console_api_ecrans_pct` et `console_api_commandes_pct` à 0). Le mode strict (`CONSOLE_API_STRICT`) vient après le rodage à 100 %. | `apps/console/lib/aiguillage-console-api.ts`, [ADR-0010](architecture/adr/0010-console-api.md) |
+| Rôles de base | `mip_api` (v89), `mip_console` et `mip_identity` (v93) : appliqués le 27/09 ; `mip_api` sert le service `api`. | `packages/db/sql/`, [runbook](operations/runbook.md) |
 | GeoIP | Embarqué dans l'image du `collector`, éteint (`GEOIP_IP_SOURCE: "none"`) jusqu'à la collecte directe (P6b.G). | `.railway/railway.ts`, section GeoIP plus haut |

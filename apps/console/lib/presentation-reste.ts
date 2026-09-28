@@ -45,6 +45,16 @@
 // de lot (« P8.3 — … »), un renvoi nomme le point par son titre et non par « R10 »,
 // et R10 dit le mécanisme du quota (ce qu'un lecteur doit savoir pour décider) sans
 // le journal de la coupure en cours ni le montant d'une offre.
+//
+// ÉTAT DU 28/09/2026. La production a changé les 27 et 28/09 (docs/TOPOLOGIE_BACKEND.md,
+// « Relevé du 28/09/2026 ») ; trois points disaient le contraire et sont réécrits :
+//   - R10 : la base n'est plus sur l'offre gratuite (offre payante à l'usage depuis le
+//     27/09, ADR 0014 remplacée). Ce qui manque n'est plus un budget mais un CHOIX : la
+//     base d'un vrai produit, selon le standard de la DSI de MIP ; le palier actuel n'en
+//     est pas un. Les cadences restent à 15 minutes. Titre ajusté ;
+//   - R6 : le collecteur tourne et reçoit le trafic relayé ; la résolution par IP reste
+//     éteinte parce que le relais ne transmet pas l'adresse — il faut la collecte directe ;
+//   - R1 : son renvoi à R10 ne parle plus d'offre gratuite.
 import { capaciteParId, type Capacite } from "./couverture";
 import type { PointReste } from "./couverture-controle";
 
@@ -57,7 +67,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R1",
     titre: "Une recette sur une vraie application",
     manque:
-      "Aucun écran n'a été relu sur des données réellement ingérées. Du trafic arrive pourtant : le relevé lu en base le 23/09/2026 compte 378 événements pour l'application du client, le dernier reçu ce jour-là à 13:01 UTC, et 33 pour la console elle-même. Le volume reste faible, et la base, sur une offre gratuite, plafonne la collecte (voir « Une base dimensionnée pour un vrai produit »).",
+      "Aucun écran n'a été relu sur des données réellement ingérées. Du trafic arrive pourtant : le relevé lu en base le 23/09/2026 compte 378 événements pour l'application du client, le dernier reçu ce jour-là à 13:01 UTC, et 33 pour la console elle-même. Le volume reste faible, et la base, provisoire, n'est pas dimensionnée pour le trafic d'un vrai site (voir « Une base choisie pour un vrai produit »).",
     debloque:
       "Relire les erreurs, l'Explorer et un tableau de bord sur le trafic reçu ; faire émettre une application de recette pour ce qu'il ne couvre pas, dont l'écran mobile.",
     decide: "L'équipe MIP ; c'est le point le moins coûteux.",
@@ -124,18 +134,23 @@ export const POINTS_RESTE: readonly PointReste[] = [
   },
   {
     id: "R6",
-    titre: "Le pays par adresse IP, inerte tant que la collecte passe par Vercel",
+    titre: "Le pays par adresse IP, éteint tant que la collecte passe par la console",
     manque:
-      "La résolution et sa base (DB-IP Lite, téléchargée à la construction de l'image) sont livrées dans le collecteur autonome, qui n'est pas en service (voir les spécifications, « Services »). Même allumé, le relais de la console ne lui transmettra que le pays posé par Vercel, jamais l'adresse : la résolution y est sautée. Cette résolution ne donne donc aucun pays aujourd'hui.",
+      "Le collecteur est en service depuis le 27/09/2026 et reçoit la part de la collecte que la console lui relaie. La résolution et sa base (DB-IP Lite, téléchargée à la construction de son image) y sont livrées, mais éteintes : le relais ne lui transmet que le pays posé par Vercel, jamais l'adresse. Cette résolution ne donne donc aucun pays aujourd'hui.",
     debloque:
-      "Le chemin est choisi : une collecte directe vers le collecteur, pour les sites dont la politique de sécurité du contenu (CSP) le permet, une fois que le relais porte tout le trafic depuis 7 jours sans repli. Avant, prouver sur un environnement de recette que la façade Railway écrase une adresse forgée par le client. Rien de cela n'est livré.",
+      "Le chemin est choisi : une collecte directe vers le collecteur, pour les sites dont la politique de sécurité du contenu (CSP) le permet, une fois que le relais porte tout le trafic depuis 7 jours sans repli. Avant, prouver sur un environnement de recette que la façade Railway écrase une adresse forgée par le client. Cette collecte directe n'est pas livrée.",
     decide: "L'équipe MIP.",
     // D14 : INERTE (règle 3 du § 8.0) — elle figure ici et nulle part dans « Ce qu'il
-    // sait faire ». La décision (ADR 0005, points 5 et conséquences), le GeoIP éteint
-    // du collector et sa condition d'allumage (.railway/railway.ts), la collecte
-    // directe P6b.G (mode d'emploi du relais), la base dans l'image (Dockerfile).
+    // sait faire ». Le collector en service et le relais allumé (relevé du 28/09), ce que
+    // le relais transmet (liste exacte d'en-têtes, sans adresse), la décision (ADR 0005,
+    // points 5 et conséquences), le GeoIP éteint du collector et sa condition d'allumage
+    // (.railway/railway.ts), la collecte directe P6b.G (mode d'emploi du relais), la base
+    // dans l'image (Dockerfile).
     sources: [
       "D14",
+      "docs/TOPOLOGIE_BACKEND.md:193-198",
+      "docs/TOPOLOGIE_BACKEND.md:206-209",
+      "apps/console/lib/ingest-relay.ts:170-177",
       "docs/architecture/adr/0005-relais-ingestion.md:17",
       "docs/architecture/adr/0005-relais-ingestion.md:21",
       ".railway/railway.ts:232-241",
@@ -170,7 +185,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // R8a), l'outil de provisionnement ; aucune certification acquise.
     sources: [
       "apps/console/lib/specs.ts:101-105",
-      "apps/console/lib/specs.ts:218-224",
+      "apps/console/lib/specs.ts:247-253",
       "apps/console/components/presentation/Specs.tsx:167-171",
       "apps/console/components/presentation/Specs.tsx:192-201",
       "docs/architecture/console-api/README.md:221",
@@ -204,23 +219,32 @@ export const POINTS_RESTE: readonly PointReste[] = [
     ],
   },
   {
-    // AJOUTÉ LE 24/09/2026, décision du responsable du produit : la base reste sur
-    // l'offre gratuite, en mode dégradé, et la vitrine doit le dire. Ce n'est pas
+    // AJOUTÉ LE 24/09/2026, décision du responsable du produit : la base restait sur
+    // l'offre gratuite, en mode dégradé, et la vitrine devait le dire. Ce n'est pas
     // un manque du document de couverture (qui ne couvre que P5 à P8) : les
     // sources sont les fichiers qui règlent et expliquent la cadence ralentie.
+    // RÉÉCRIT LE 28/09/2026 : la base est passée le 27/09 sur une offre payante à
+    // l'usage (ADR 0014, section « Remplacée le 27/09/2026 »). Le responsable du produit
+    // ne la tient pas pour la base d'un vrai produit : elle se choisira selon ce
+    // qu'utilise la DSI de MIP. Pas de nom d'hébergeur ni de montant ici (recette du
+    // 26/09) : le tableau d'hébergement dit qui héberge.
     id: "R10",
-    titre: "Une base dimensionnée pour un vrai produit",
+    titre: "Une base choisie pour un vrai produit",
     manque:
-      "La base tourne sur une offre gratuite : 100 heures de calcul par mois et 0,5 Go de stockage, déjà occupés à 60 % le 24/09/2026. Passé le quota de calcul, la base est suspendue jusqu'au mois suivant, et la collecte avec elle. Pour tenir, les tâches planifiées et la livraison des alertes passent toutes les 15 minutes au lieu de 5 : une alerte part jusqu'à 15 minutes après sa cause. La collecte continue d'un vrai site suffirait à épuiser le quota.",
+      "Depuis le 27/09/2026, la base n'est plus sur une offre gratuite : elle est passée sur une offre payante à l'usage, au calcul plafonné, mise en veille entre deux passages. Ce n'est qu'un palier, pas un choix : la base d'un vrai produit reste à choisir selon le standard de la DSI de MIP. En attendant, les tâches planifiées et la livraison des alertes passent toujours toutes les 15 minutes au lieu de 5 : une alerte part jusqu'à 15 minutes après sa cause.",
     debloque:
-      "Passer la base sur une offre payante, puis remettre les cadences à 5 minutes et la livraison à 15 secondes : deux réglages, sans changement de code.",
-    decide: "Le responsable du produit : c'est une ligne de budget.",
-    // Le calcul (quota, veille à 5 min, CU-h par cadence) et le réglage ; la
-    // vitrine lit la cadence effective publiée par le scheduler (etat-latence).
+      "Connaître la base qu'exploite la DSI de MIP et y installer celle du produit, dimensionnée pour le trafic d'un vrai site ; puis remettre les cadences à 5 minutes et la livraison à 15 secondes : deux réglages, sans changement de code.",
+    decide: "La DSI de MIP et le responsable du produit.",
+    // La nouvelle situation et la décision qui reste (ADR 0014, section finale) ; les
+    // cadences posées par l'IaC ; le mécanisme de la veille et le réglage (README du
+    // scheduler, cadence.mjs) ; la vitrine lit la cadence effective (etat-latence).
     sources: [
+      "docs/architecture/adr/0014-base-gratuite.md:40-54",
+      ".railway/railway.ts:365",
+      ".railway/railway.ts:402",
       "services/scheduler/README.md:28-41",
       "packages/backend/jobs/cadence.mjs:6-26",
-      "apps/console/lib/etat-latence.ts:20-28",
+      "apps/console/lib/etat-latence.ts:20-29",
     ],
   },
   {
