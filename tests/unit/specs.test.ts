@@ -84,6 +84,9 @@ describe("onglet infrastructure — chaque ligne porte sa preuve", () => {
     // qui est cassé, et on l'apprend ici plutôt qu'au prochain déploiement.
     for (const f of [
       "services/collector/server.mjs",
+      "services/api/server.mjs",
+      "services/console-api/server.mjs",
+      "services/notifier/worker.mjs",
       "services/scheduler/worker.mjs",
       "services/mcp/http.mjs",
     ]) {

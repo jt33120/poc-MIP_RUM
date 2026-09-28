@@ -102,10 +102,12 @@ export function zoneArchitecture(t) {
     ),
     "",
     `- Régions : ${lieux.join(" ; ")}. Droit des trois hébergeurs (${enumeration(hebergeurs.map((h) => h.societe))}) : ${DROIT_HEBERGEURS}.`,
-    "- Le collecteur est une route de la console : c'est l'adresse que visent les SDK. Le même parseur existe en " +
-      "service Node autonome (`services/collector/server.mjs`), construit et démarré par la CI (`docker-smoke`), pour un " +
-      "hébergement chez le client ; en production, il ne tourne nulle part : le service Railway `ingest`, qui " +
-      `l'exécutait sans domaine public, a été supprimé le ${INGEST_SUPPRIME_LE}.`,
+    // Relevé du 28/09/2026 : le relais de la collecte est allumé depuis le 27/09. Le
+    // pourcentage n'est pas écrit : il monte sans toucher au code (drapeau en base).
+    "- Les SDK visent la route de collecte de la console. Depuis le 27/09/2026, la console en relaie une part " +
+      "(drapeau `ingest_relay_pct`) au service `collector` sur Railway (`services/collector/server.mjs`, le même " +
+      "parseur), qui pseudonymise l'identité et écrit en base ; elle écrit elle-même le reste. Le service Railway " +
+      `\`ingest\`, qui exécutait ce receveur sans domaine public, avait été supprimé le ${INGEST_SUPPRIME_LE}.`,
     `- Le \`scheduler\` applique les migrations au pré-déploiement : constaté le ${MIGRATIONS_CONSTATEES.le} dans les ` +
       `journaux du déploiement \`${MIGRATIONS_CONSTATEES.deploiement}\`.`,
     `- Topologie relevée par les API Railway et Vercel le ${TOPOLOGIE_RELEVEE.railwayEtVercel}, puis par l'API Railway ` +

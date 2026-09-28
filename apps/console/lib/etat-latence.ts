@@ -18,14 +18,15 @@
 export const CADENCE_TICK_MIN = 5;
 
 /**
- * LA CADENCE RÉELLE PEUT ÊTRE PLUS LENTE, ET LA VITRINE LE DIT (24/09/2026). La
- * base tourne sur l'offre gratuite de Neon (100 heures de calcul par mois) ; un
- * tick toutes les 5 minutes la gardait éveillée en permanence et a épuisé le
- * quota. Le scheduler passe donc toutes les 15 minutes, et PUBLIE sa cadence en
- * base (`platform_flag.scheduler_tick_min`) : la ligne dit ce qui tourne, pas la
- * valeur d'usine. Plus lente que la cible, elle est « partielle », avec la raison.
+ * LA CADENCE RÉELLE PEUT ÊTRE PLUS LENTE, ET LA VITRINE LE DIT (24/09/2026, raison
+ * réécrite le 28/09/2026). Un tick toutes les 5 minutes gardait la base éveillée en
+ * permanence et avait épuisé le quota de l'offre gratuite. Depuis le 27/09, la base
+ * est sur une offre payante à l'usage, en veille entre deux passages, en attendant
+ * celle que choisira la DSI de MIP (ADR 0014) : le scheduler reste à 15 minutes et
+ * PUBLIE sa cadence (`platform_flag.scheduler_tick_min`). La ligne dit ce qui
+ * tourne, pas la valeur d'usine ; plus lente que la cible, elle est « partielle ».
  */
-export const RAISON_CADENCE_LENTE = "base en offre gratuite : cadence ralentie pour tenir son quota de calcul";
+export const RAISON_CADENCE_LENTE = "base provisoire : cadence ralentie pour la laisser en veille entre deux passages";
 
 /**
  * Au-delà de ce délai sans passage, on cesse de dire que la latence est tenue.

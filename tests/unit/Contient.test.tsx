@@ -165,9 +165,12 @@ describe("PS3 — le chemin de la mesure (TP7, côté SSR)", () => {
   });
 
   it("la légende dit où passe le trafic, datée, sans journal d'exploitation ni chemin du code", () => {
-    expect(texte).toContain("Le collecteur est une route de la console : c'est l'adresse que visent les capteurs.");
-    // Le collecteur autonome n'est raconté qu'une fois, dans les spécifications : ici, un renvoi.
-    expect(texte).toContain("Les autres services du code, et leur état, sont décrits dans les spécifications.");
+    // Relevé du 28/09/2026 : le relais est allumé, la console n'est plus le seul collecteur.
+    expect(texte).toContain("Les capteurs visent la console. Elle relaie une part des mesures au collecteur");
+    expect(texte).toContain("et écrit elle-même le reste");
+    expect(texte).not.toContain("Le collecteur est une route de la console");
+    // Les autres services ne sont racontés qu'une fois, dans les spécifications : ici, un renvoi.
+    expect(texte).toContain("Les autres services, et leur état, sont décrits dans les spécifications.");
     expect(html).toMatch(/<a [^>]*href="#specs"[^>]*>les spécifications<\/a>/);
     expect(texte).not.toContain("collecteur autonome");
     expect(texte).toContain(`Topologie relevée le ${TOPOLOGIE_RELEVEE.railway}.`);

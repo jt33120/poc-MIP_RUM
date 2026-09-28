@@ -15,16 +15,16 @@ packages/    ce que les deux importent      @mip/backend (le noyau), @mip/db (sc
                                             @mip/service-kit, @mip/console-api et son contrat
 ```
 
-Un service, une ligne. `.railway/railway.ts` les déclare tous les six ; au 26/09/2026, seuls `scheduler` et `mcp` existent sur Railway (relevé de l'API Railway) — les quatre autres attendent leurs variables partagées et un apply IaC approuvé ([runbook](../docs/operations/runbook.md)) :
+Un service, une ligne. `.railway/railway.ts` les déclare tous les six, et les six tournent sur Railway depuis l'apply du 27/09/2026 (PR #332 ; relevé de l'API Railway du 28/09/2026, [TOPOLOGIE_BACKEND.md](../docs/TOPOLOGIE_BACKEND.md)). Ce qui reste éteint l'est par un drapeau ([runbook](../docs/operations/runbook.md)) :
 
 | Service | Rôle | Écoute | Commande | Déployé |
 |---|---|---|---|---|
-| `collector` | point d'entrée unique des capteurs : OTLP traces et logs, replay, source maps de CI (jeton dédié) ; chemins historiques de la console acceptés ; bord de confiance du relais, identité hachée ici — détail : [`collector/README.md`](collector/README.md) | oui (`PORT`, défaut 4318) : `/health` (sonde Railway : processus + base, décrit service, protocole de bord et empreinte d'identité), `/ready` et `/metrics` (jeton) | `node services/collector/server.mjs` | **pas encore créé** — en production, la collecte passe par la route de la console ; le relais de P3 vers ce service est livré, éteint (`ingest_relay_pct` = 0) |
-| `scheduler` | déclenche les travaux planifiés sous bail, et **seul** applique les migrations (pré-déploiement) — détail : [`scheduler/README.md`](scheduler/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/scheduler/worker.mjs` · pré-déploiement `node services/scheduler/migrate.mjs` | **Railway** ; déploiement en service du 23/09/2026, les suivants échouent au pré-déploiement tant que le calcul Neon est suspendu (jusqu'au 01/10/2026) |
-| `notifier` | livre ce que la plateforme a décidé de dire — webhooks signés, e-mails Resend, tickets — et seul détient les secrets sortants — détail : [`notifier/README.md`](notifier/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/live`, `/ready` et `/metrics` (jeton) ; `POST /v1/webhooks/tickets/{id}`, public (C11) | `node services/notifier/worker.mjs` | **pas encore créé** — en production, le scheduler livre à chaque tick |
-| `api` | l'API de lecture v1 pour les machines, **en lecture seule** : les routes de la console compilées en un bundle, sans Next ni session — détail : [`api/README.md`](api/README.md) | oui (`PORT`) : `/api/v1/*`, `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/api/dist/server.mjs` (construit par `build.mjs`) | **pas encore créé** — l'API v1 est servie par la console ; le relais vers ce service est livré, éteint (`api_relay_pct` = 0) |
-| `mcp` | expose l'API v1 à un agent IA, sans accès à la base ; n'utilise pas le kit (pas de README propre : ce fichier et [docs/MCP.md](../docs/MCP.md)) | oui (`PORT`, défaut 8080) : `/mcp` (jeton porteur de l'appelant), `/health` | `node services/mcp/http.mjs` | **Railway** (domaine `mcp-production-201c.up.railway.app`) ; appelle la console tant que `MIP_API_HOST` n'est pas posée |
-| `console-api` | le backend de la console (piste C) : seul client, le serveur Vercel, gardé par un secret client ; poignée de main signée ES256 — détail : [`console-api/README.md`](console-api/README.md) | oui (`PORT`) : `/v1/*` sous secret client, `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/console-api/dist/server.mjs` (construit par `build.mjs`) | **pas encore créé** — la console sait l'appeler (C0b → C11, bascule #325) mais ne le fait pas sans ses trois variables Vercel et les drapeaux `console_api_*_pct` |
+| `collector` | point d'entrée unique des capteurs : OTLP traces et logs, replay, source maps de CI (jeton dédié) ; chemins historiques de la console acceptés ; bord de confiance du relais, identité hachée ici — détail : [`collector/README.md`](collector/README.md) | oui (`PORT`, défaut 4318) : `/health` (sonde Railway : processus + base, décrit service, protocole de bord et empreinte d'identité), `/ready` et `/metrics` (jeton) | `node services/collector/server.mjs` | **Railway**, deux répliques, domaine généré — reçoit la part de la collecte que la console lui relaie (`ingest_relay_pct` : 50 % le 27/09 au soir, 100 % prévu le 28/09) ; GeoIP éteint |
+| `scheduler` | déclenche les travaux planifiés sous bail, et **seul** applique les migrations (pré-déploiement) — détail : [`scheduler/README.md`](scheduler/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/scheduler/worker.mjs` · pré-déploiement `node services/scheduler/migrate.mjs` | **Railway** ; redéployé le 27/09/2026, son pré-déploiement a appliqué v87 → v96 ; tick à 15 minutes, ne livre plus (`SCHEDULER_DELIVERY` = `off`) |
+| `notifier` | livre ce que la plateforme a décidé de dire — webhooks signés, e-mails Resend, tickets — et seul détient les secrets sortants — détail : [`notifier/README.md`](notifier/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/live`, `/ready` et `/metrics` (jeton) ; `POST /v1/webhooks/tickets/{id}`, public (C11) | `node services/notifier/worker.mjs` | **Railway** depuis le 27/09/2026 — livre à la place du scheduler, passes toutes les 15 minutes |
+| `api` | l'API de lecture v1 pour les machines, **en lecture seule** : les routes de la console compilées en un bundle, sans Next ni session — détail : [`api/README.md`](api/README.md) | oui (`PORT`) : `/api/v1/*`, `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/api/dist/server.mjs` (construit par `build.mjs`) | **Railway**, deux répliques, domaine généré — sert le `mcp` ; les autres porteurs de jeton passent encore par la console (`api_relay_pct` = 0) |
+| `mcp` | expose l'API v1 à un agent IA, sans accès à la base ; n'utilise pas le kit (pas de README propre : ce fichier et [docs/MCP.md](../docs/MCP.md)) | oui (`PORT`, défaut 8080) : `/mcp` (jeton porteur de l'appelant), `/health` | `node services/mcp/http.mjs` | **Railway** (domaine `mcp-production-201c.up.railway.app`) ; appelle `api` sur le réseau privé (`MIP_API_HOST`, posée par l'apply du 27/09) |
+| `console-api` | le backend de la console (piste C) : seul client, le serveur Vercel, gardé par un secret client ; poignée de main signée ES256 — détail : [`console-api/README.md`](console-api/README.md) | oui (`PORT`) : `/v1/*` sous secret client, `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/console-api/dist/server.mjs` (construit par `build.mjs`) | **Railway**, deux répliques, domaine généré — la console l'appelle pour la connexion depuis le 27/09/2026 ; écrans et écritures pas encore basculés (`console_api_*_pct` = 0) |
 
 `services/collector/` porte aussi les deux serveurs de **développement** que
 lancent l'E2E et les scripts de validation (`dev-server.mjs` :4318,
@@ -89,16 +89,20 @@ trois plans tarifaires empilés :
 D'où, avant le scheduler, une cadence rabaissée à une heure, et une ligne
 « Latence d'alerte : 5 min visées, 60 réelles » sur la page de présentation
 (`apps/console/lib/etat-latence.ts`). Un processus qui tourne en continu n'a
-aucune de ces limites. La base gratuite de Neon en impose une autre : le tick
-tourne à 15 minutes par défaut ([README du scheduler](scheduler/README.md#base-gratuite--la-cadence-ralentie)).
+aucune de ces limites. La base en impose une autre : le tick tourne à 15 minutes
+par défaut, pour la laisser en veille entre deux passages — sur l'offre gratuite de Neon
+d'abord, puis sur l'offre payante à l'usage depuis le 27/09/2026, en attendant la base
+que choisira la DSI de MIP ([README du scheduler](scheduler/README.md#base-gratuite--la-cadence-ralentie),
+[ADR-0014](../docs/architecture/adr/0014-base-gratuite.md), remplacée).
 
 ## Configuration
 
-Ce tableau dit ce que le code **lit**, pas ce qui est posé. En production (relevé
-de l'API Railway du 26/09/2026), `scheduler` n'a que `DATABASE_URL`,
-`PGPOOL_MAX`, `PORT`, `NODE_ENV` et `LOG_LEVEL`, et `mcp` que `MIP_CONSOLE_URL`,
-`NODE_ENV` et `PORT`. Ce que l'apply posera pour les quatre autres services est
-dans `.railway/railway.ts` (liste des variables partagées en tête du fichier).
+Ce tableau dit ce que le code **lit**, pas ce qui est posé. Ce que l'apply du
+27/09/2026 a posé est déclaré dans `.railway/railway.ts` (liste des variables
+partagées en tête du fichier) ; les variables effectivement posées n'ont pas été
+relevées depuis. Au relevé du 26/09/2026, avant l'apply, `scheduler` n'avait que
+`DATABASE_URL`, `PGPOOL_MAX`, `PORT`, `NODE_ENV` et `LOG_LEVEL`, et `mcp` que
+`MIP_CONSOLE_URL`, `NODE_ENV` et `PORT`.
 
 | Variable | Service | Obligatoire | Rôle |
 |---|---|---|---|
@@ -109,7 +113,7 @@ dans `.railway/railway.ts` (liste des variables partagées en tête du fichier).
 | `PORT` | `scheduler`, `notifier`, `api`, `console-api`, `mcp` | fourni par l'hébergeur (défaut 8080 ; `api` fixé à 8080 dans l'IaC, `mcp` le joint par le réseau privé) | `/health` (sonde Railway : processus + base ; pour le scheduler, « jamais exécuté » et « bail tenu ailleurs » y sont sains), `/ready` et `/metrics` (jeton) |
 | `METRICS_TOKEN` | `collector`, `scheduler`, `notifier`, `api`, `console-api` | non (secret, ≥ 32 caractères) | jeton de `/ready` et `/metrics` ; absent, les deux répondent 404. **Non posé sur le scheduler en production**, et l'IaC ne le lui déclare pas (elle le partage aux quatre autres) |
 | `DEADMAN_URL` | `scheduler` | non (secret, `https:`) | dead-man's switch externe, signalé après chaque tick abouti ; absent, aucun signal. **Non posée en production**, ni déclarée dans l'IaC |
-| `SCHEDULER_TICK_MIN` | `scheduler` | non (5, 10, 15, 20 ou 30 ; défaut 15) | cadence du tick ; 15 sur la base gratuite, 5 pour un vrai produit |
+| `SCHEDULER_TICK_MIN` | `scheduler` | non (5, 10, 15, 20 ou 30 ; défaut 15) | cadence du tick ; 15 tant que la base est provisoire (posé par l'IaC), 5 pour un vrai produit |
 | `SCHEDULER_DELIVERY` | `scheduler` | non (`on`/`off`, défaut `on`) | `off` : le tick ne livre plus, le notifier s'en charge — à poser au plus tard quand il démarre |
 | `NOTIFIER_INTERVAL_MS` | `notifier` | non (défaut 15000) | délai entre deux passes de livraison ; 300000 laisse le compute Neon dormir |
 | `RESEND_API_KEY`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TEST_RECIPIENTS` | `notifier` | non (la clé est un secret) | e-mail des alertes ; `@resend.dev` exige la liste de test ; sans clé, e-mails soldés `skipped` avec la raison |

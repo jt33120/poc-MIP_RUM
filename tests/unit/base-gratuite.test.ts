@@ -1,5 +1,7 @@
-// La base reste sur l'offre gratuite de Neon (décision du 24/09/2026) : les
-// cadences ralentissent pour laisser le calcul s'endormir, et la vitrine le dit.
+// La base est restée sur l'offre gratuite de Neon (décision du 24/09/2026), puis est
+// passée le 27/09 sur une offre payante à l'usage, en attendant la base que choisira
+// la DSI de MIP (ADR 0014, remplacée) : les cadences restent ralenties pour laisser le
+// calcul s'endormir, et la vitrine le dit.
 //
 // CE QUE CES TESTS EXISTENT POUR EMPÊCHER.
 //   - Une cadence hors grille : le passage horaire (HH:05) et le quotidien

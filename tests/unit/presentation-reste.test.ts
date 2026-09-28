@@ -44,11 +44,11 @@ describe("les onze points, dans l'ordre fixe du plan", () => {
       ["R3", "Source maps dans l'intégration continue du client"],
       ["R4", "Crashes natifs iOS et Android"],
       ["R5", "React Native : une matrice de compatibilité vide"],
-      ["R6", "Le pays par adresse IP, inerte tant que la collecte passe par Vercel"],
+      ["R6", "Le pays par adresse IP, éteint tant que la collecte passe par la console"],
       ["R7", "Tickets : le connecteur existe, la cible ITSM n'est pas confirmée"],
       ["R8", "Souveraineté et mise en service chez un client"],
       ["R9", "Une chaîne de livraison qui dit vrai"],
-      ["R10", "Une base dimensionnée pour un vrai produit"],
+      ["R10", "Une base choisie pour un vrai produit"],
       ["R11", "Les backends au-delà de Node et Python"],
     ]);
   });
@@ -72,20 +72,34 @@ describe("les onze points, dans l'ordre fixe du plan", () => {
   });
 });
 
-// R10 (24/09/2026) : la base reste sur l'offre gratuite, décision du responsable
-// du produit, et la vitrine le dit. Ce qui compte : le chiffre du quota, la
-// coupure, la conséquence pour une alerte, et qu'en sortir est une affaire de
-// budget, pas de code.
-describe("R10 — la base gratuite, une limite dite", () => {
-  it("dit le quota, la coupure, la latence qui en découle, et que le déblocage est un budget", () => {
+// R10 (24/09/2026, réécrit le 28/09/2026). La base est passée le 27/09 de l'offre
+// gratuite à une offre payante à l'usage (ADR 0014, remplacée) ; pour le responsable
+// du produit, ce n'est qu'un palier : la base d'un vrai produit se choisira selon le
+// standard de la DSI de MIP. Ce qui compte : que l'offre gratuite ne soit plus dite,
+// que le manque devienne un choix, que la latence des alertes reste dite, et qui décide.
+describe("R10 — une base à choisir avec la DSI de MIP", () => {
+  it("suit l'ADR 0014 remplacée : plus d'offre gratuite, un palier payant, les cadences à 15 minutes", () => {
+    const adr = lire("docs/architecture/adr/0014-base-gratuite.md");
+    expect(adr).toContain("**Statut** : remplacée le 27/09/2026");
+    expect(adr).toContain("L'offre Launch n'est qu'un palier.");
+    expect(lire(".railway/railway.ts")).toContain('SCHEDULER_TICK_MIN: "15"');
+
     const r10 = point("R10");
-    expect(r10.manque).toContain("100 heures de calcul par mois");
-    expect(r10.manque).toContain("la base est suspendue jusqu'au mois suivant, et la collecte avec elle");
+    expect(r10.manque).toContain("la base n'est plus sur une offre gratuite");
+    expect(r10.manque).toContain("Ce n'est qu'un palier, pas un choix");
+    expect(r10.manque).toContain("selon le standard de la DSI de MIP");
     expect(r10.manque).toContain("jusqu'à 15 minutes après sa cause");
-    // Recette du 26/09/2026 : le mécanisme, pas le journal de la coupure en cours ni un montant.
-    expect(affiche("R10")).not.toMatch(/\$|octobre|Neon/);
     expect(r10.debloque).toContain("sans changement de code");
-    expect(r10.decide).toMatch(/budget/);
+    expect(r10.decide).toBe("La DSI de MIP et le responsable du produit.");
+    // L'ancien état : ni quota, ni coupure mensuelle, ni « ligne de budget ».
+    expect(affiche("R10")).not.toMatch(/100 heures|suspendue|quota|budget/);
+    // Recette du 26/09/2026 : pas de montant, pas de journal ; l'hébergeur se lit au tableau d'hébergement.
+    expect(affiche("R10")).not.toMatch(/\$|octobre|Neon/);
+  });
+
+  it("R1 ne renvoie plus à une base « sur une offre gratuite »", () => {
+    expect(point("R1").manque).not.toMatch(/offre gratuite/);
+    expect(point("R1").manque).toContain("(voir « Une base choisie pour un vrai produit »)");
   });
 });
 
@@ -142,11 +156,14 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     );
   });
 
-  it("R6 suit l'ADR 0005 — le relais transmet le pays seul, la résolution attend la collecte directe", () => {
+  it("R6 suit l'ADR 0005 et le relevé du 28/09 — collecteur en service, pays seul, collecte directe à faire", () => {
     expect(lire(".railway/railway.ts")).toContain('GEOIP_IP_SOURCE: "none"');
     expect(lire("docs/architecture/adr/0005-relais-ingestion.md")).toContain("qui seule permet la géolocalisation par adresse");
+    expect(lire("docs/TOPOLOGIE_BACKEND.md")).toContain("**six services en ligne**");
     const r6 = point("R6");
-    expect(r6.manque).toContain("ne lui transmettra que le pays posé par Vercel, jamais l'adresse");
+    expect(r6.manque).toContain("Le collecteur est en service depuis le 27/09/2026");
+    expect(r6.manque).toContain("le relais ne lui transmet que le pays posé par Vercel, jamais l'adresse");
+    expect(affiche("R6")).not.toMatch(/n'est pas en service|Même allumé|passe par Vercel/);
     expect(r6.manque).toContain("Cette résolution ne donne donc aucun pays aujourd'hui.");
     expect(r6.manque).not.toContain("Aucun pays n'est résolu");
     // Le choix est fait : l'ancien « aucun des deux n'est tranché » ne revient pas.

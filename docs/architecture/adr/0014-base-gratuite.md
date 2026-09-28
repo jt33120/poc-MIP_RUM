@@ -1,6 +1,6 @@
 # ADR-0014 — La base reste sur l'offre gratuite, en mode dégradé affiché
 
-- **Statut** : acceptée — décision du responsable du produit, 24/09/2026
+- **Statut** : remplacée le 27/09/2026 — acceptée le 24/09/2026 (décision du responsable du produit) ; la base est passée ce jour-là sur l'offre payante Launch. Ce qui vaut depuis : [la section finale](#remplacée-le-27092026--une-offre-payante-en-attendant-le-choix-de-la-dsi). Le texte ci-dessous est celui de la décision, laissé tel quel.
 - **Date** : 2026-09-24
 - **Portée** : Neon, cadences du `scheduler` et du `notifier`, vitrine
 
@@ -36,3 +36,19 @@ L'offre payante (Launch, ~0,11 $ par CU-h, sans minimum) coûterait ~15 à 20 $ 
 - **Passer tout de suite en offre payante** : décision de budget, reportée par le responsable du produit.
 - **Garder 5 minutes et attendre chaque 1er du mois** : une production coupée une semaine par mois.
 - **Réveiller le notifier par `LISTEN/NOTIFY`** plutôt que par une cadence : il faudrait une connexion permanente, qui empêcherait la veille ou serait coupée par elle, et `LISTEN` ne traverse pas le pooler Neon en mode transaction.
+
+## Remplacée le 27/09/2026 : une offre payante, en attendant le choix de la DSI
+
+Le 27/09/2026 au soir, la base est passée de l'offre gratuite à l'offre payante **Launch** de Neon : facturation à l'usage, calcul plafonné à **0,25 CU**, mise en veille toujours active. Le quota mensuel qui avait coupé la base du 24/09 au 27/09 ne s'applique plus ; les migrations v87 → v96 ont été appliquées le même jour, au redéploiement du `scheduler`.
+
+Ce n'est **pas** le choix de la base d'un vrai produit. Pour le responsable du produit, Neon n'est pas une cible digne d'un vrai produit : la base se choisira selon ce qu'utilise la DSI de MIP, question à lui poser. L'offre Launch n'est qu'un palier.
+
+Ce qui ne change pas :
+
+- les cadences restent à 15 minutes (`SCHEDULER_TICK_MIN: "15"` et `NOTIFIER_INTERVAL_MS: "900000"` dans `.railway/railway.ts`) : sur une offre à l'usage, une base qui dort entre deux passages coûte moins, et la veille reste active ;
+- la ligne « Latence d'alerte » de la vitrine dit toujours la cadence publiée par le `scheduler` (15 minutes, statut partiel), avec une raison réécrite : une base provisoire, laissée en veille entre deux passages ;
+- le point R10 de « Ce qui reste » dit désormais ce qui manque : une base choisie selon le standard de la DSI de MIP ; qui décide : la DSI de MIP et le responsable du produit.
+
+Ce qui devient caduc : la coupure en fin de quota et les conséquences qui en découlaient (la collecte d'un vrai site n'épuise plus un quota, elle se paie à l'usage). Le plafond de stockage et la fenêtre de restauration de l'offre Launch n'ont pas été relevés : ils ne sont pas écrits ici.
+
+Pour un vrai produit, le point 3 de la décision tient : une base dimensionnée, puis `SCHEDULER_TICK_MIN=5` et `NOTIFIER_INTERVAL_MS=15000`. Deux variables, aucun code.
