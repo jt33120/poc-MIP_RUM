@@ -67,7 +67,11 @@ describe("ImpactTable", () => {
   });
 
   it("pistes de largeur FIXE : une grille à colonnes, plus de `flex-1` qui dépend du texte voisin", () => {
-    expect(html).toContain("sm:grid-cols-[10rem_12rem_6rem_minmax(0,1fr)]");
+    // Bornes en longueurs (même piste pour toutes les lignes), choisies par la largeur
+    // de la table et non de la fenêtre : les détails gardent au moins 7 rem.
+    expect(html).toContain("[container-type:inline-size]");
+    expect(html).toContain("grid-cols-[minmax(7rem,12rem)_minmax(7rem,16rem)_6rem_minmax(7rem,1fr)]");
+    expect(html).not.toMatch(/\b(sm|lg):grid-cols-/);
     expect(html).not.toContain("flex-1");
     // L'alternative garde toutes les colonnes, doublon compris.
     const alternative = html.split('data-testid="alternative"')[1] ?? "";
