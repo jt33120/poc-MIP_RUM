@@ -15,7 +15,7 @@
 
 **En service, éteint par un drapeau.**
 - Relais de la collecte → `collector` (`ingest_relay_pct`) : **allumé**, 10 % puis 50 % le 27/09 au soir, 100 % prévu le 28/09.
-- Relais des lectures au jeton → `api` (`api_relay_pct`), bascule des écrans et des écritures vers `console-api` (`console_api_ecrans_pct`, `console_api_commandes_pct`) : à 0. GeoIP du `collector` : éteint (`GEOIP_IP_SOURCE=none`).
+- Relais des lectures au jeton → `api` (`api_relay_pct`), bascule des écrans et des écritures vers `console-api` (`console_api_ecrans_pct`, `console_api_commandes_pct`) : à 0. GeoIP du `collector` : `GEOIP_IP_SOURCE=railway` dans l'IaC depuis le 28/09/2026 (effectif après l'apply), pour le seul trafic direct — le capteur de la console, une fois `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL` posée sur Vercel ; le relais ne porte jamais d'adresse.
 
 **Reste à faire.** Choisir la base d'un vrai produit avec la DSI de MIP, puis remettre les cadences à 5 minutes ; la montée des drapeaux, puis les modes stricts ; les textes de conformité de la PR #296 ; C12 (retirer la base de la console), C12b (image de la console, pile auto-hébergée), P6b.G (collecte directe, pour le GeoIP) ; les exercices sur staging ([présentation](../operations/presentation-dsi.md), § 2).
 
@@ -81,7 +81,7 @@ Le vocabulaire du canevas Railway suit le trajet de la donnée : **Capteurs → 
 
 | Service | Groupe | Rôle en une phrase | Exposition | État au 28/09/2026 |
 |---|---|---|---|---|
-| `collector` | 1 · Collecte | Point d'entrée de tout ce que poussent les capteurs : traces et logs OTLP, rejeu, source maps de CI. Hache l'identité, écrit sous la barrière d'effacement. [README](../../services/collector/README.md) | public, domaine généré | **déployé** le 27/09 (deux répliques) ; reçoit la part relayée par la console (`ingest_relay_pct`, 50 % le 27/09 au soir) ; GeoIP éteint |
+| `collector` | 1 · Collecte | Point d'entrée de tout ce que poussent les capteurs : traces et logs OTLP, rejeu, source maps de CI. Hache l'identité, écrit sous la barrière d'effacement. [README](../../services/collector/README.md) | public, domaine généré | **déployé** le 27/09 (deux répliques) ; reçoit la part relayée par la console (`ingest_relay_pct`, 50 % le 27/09 au soir) ; GeoIP pour le seul trafic direct, le capteur de la console (28/09) |
 | `api` | 2 · Restitution | Contrat de lecture versionné (OpenAPI) pour les machines ; rôle base en lecture seule. [README](../../services/api/README.md) | public + privé | **déployé** le 27/09 (deux répliques), rôle `mip_api` ; sert le `mcp` ; le relais de la console vers lui (`api_relay_pct`) est à 0 : les autres porteurs de jeton lisent par la console |
 | `console-api` | 2 · Restitution | Backend de la console : identité, sessions, écrans, écritures, administration, RGPD. Seul client : le serveur Vercel. [README](../../services/console-api/README.md), [piste C](console-api/README.md) | public, garde par secret client | **déployé** le 27/09 (deux répliques) ; la connexion passe par lui ; écrans et écritures pas encore basculés (drapeaux à 0) ; cliquet : 50 écrans sur 57 atteignent encore la base ([inventaire](console-api/inventaire.md)) |
 | `mcp` | 2 · Restitution | Passerelle MCP pour agents IA ; relaie le jeton de l'appelant, **aucun accès à la base**. [README](../../services/README.md) | public, domaine généré | **déployé** ; appelle `api` sur le réseau privé (`MIP_API_HOST`, posé par l'apply du 27/09) |

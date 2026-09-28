@@ -144,6 +144,24 @@ describe("affirmations que le code ne tient pas", () => {
     expect(DECLARE).toContain("pas un manque à combler plus tard");
   });
 
+  it("le GeoIP du trafic direct allumé dans l'IaC : le registre dit que Railway lit l'adresse IP", () => {
+    // P6b.G (28/09/2026) : dès que le collector lit une adresse (`GEOIP_IP_SOURCE`
+    // autre que `none`), Railway reçoit l'adresse IP des navigateurs qui lui
+    // écrivent en direct. « Code pays seul, sans adresse IP » deviendrait une
+    // déclaration inexacte : c'était la phrase du registre jusque-là.
+    const iac = readFileSync(join(__dirname, "../../.railway/railway.ts"), "utf8");
+    const source = /GEOIP_IP_SOURCE: "([^"]+)"/.exec(iac)?.[1];
+    expect(source, "GEOIP_IP_SOURCE introuvable dans .railway/railway.ts").toBeTruthy();
+    if (source === "none") return;
+    const railway = SUBPROCESSORS.find((s) => s.name === "Railway Corp.");
+    expect(railway?.note).toMatch(/adresse IP/);
+    const ligne = lignesRegistre().find((l) => l.includes("Railway Corp.")) ?? "";
+    expect(ligne).toMatch(/adresse IP lue/);
+    expect(ligne).not.toMatch(/sans adresse IP \(code pays seul\)/);
+    // Et jamais « stockée » : l'adresse est lue, puis oubliée (§ 3.2).
+    expect(DECLARE).toMatch(/ni en clair, ni hachée, ni tronquée/);
+  });
+
   it("ne présente pas le tampon de consentement comme couvrant le terminal", () => {
     // `requireConsent` retient le RÉSEAU. L'identifiant de session est écrit dans
     // le stockage local avant la barrière, et survit au refus.

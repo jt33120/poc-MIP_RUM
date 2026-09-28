@@ -9,10 +9,10 @@ CC BY 4.0 exige.
 avant : le pays reste estimé d'après le fuseau horaire du terminal. Rien n'est
 bloqué, rien n'est retardé, rien n'échoue.
 
-**En production, il ne sert pas** (26/09/2026) : la collecte passe par la console
-sur Vercel, qui n'embarque pas la base, et le service `collector` qui la porte
-n'est pas encore créé ; son IaC pose `GEOIP_IP_SOURCE=none` jusqu'à la collecte
-directe (P6b.G). La base sert l'auto-hébergement ([infra/docker/](../../../infra/docker/README.md)).
+**En production** (28/09/2026), le `collector` la porte et son IaC pose
+`GEOIP_IP_SOURCE=railway` : elle ne sert que la collecte directe (P6b.G), dont le
+seul capteur est celui de la console. Le trafic relayé par la console ne porte
+aucune adresse. La base sert aussi l'auto-hébergement ([infra/docker/](../../../infra/docker/README.md)).
 
 ## Déposer la base
 

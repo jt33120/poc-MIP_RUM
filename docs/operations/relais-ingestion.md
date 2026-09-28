@@ -294,8 +294,8 @@ recouvrement de `user_id_hash` d'un jour sur l'autre se vérifie une fois à 100
   vert avant comme après : il ne signalera pas un oubli.
 - **Soak** : au moins 3 jours à 100 %, environ 0 `relay fallback`.
 - **P6b.G — collecte directe pour le GeoIP.** Le relais transmet le pays, jamais l'IP, et
-  saute donc la résolution. Tant qu'il porte tout le trafic, le GeoIP reste inerte. Après
-  7 jours à 100 % sans repli :
+  saute donc la résolution. Premier périmètre, le 28/09/2026 : le capteur de la console
+  elle-même (« Collecte directe du dogfooding », plus bas). Pour les clients, après 7 jours à 100 % sans repli :
   - poser l'endpoint du collector pour les apps **sans `connect-src` figée** dans leur CSP ;
   - dater le changement par un `deploy_marker` ;
   - vérifier que `geo_source = 'geoip'` devient non nul.
@@ -311,3 +311,106 @@ recouvrement de `user_id_hash` d'un jour sur l'autre se vérifie une fois à 100
   arrière : retirer la variable, redéployer.
 - **Au-delà (C12)** : retirer le chemin d'écriture local de la console, une fois que le
   relais pur a tenu. La console n'aura alors plus besoin de `DATABASE_URL` pour l'ingestion.
+
+## Collecte directe du dogfooding (P6b.G, premier périmètre, 28/09/2026)
+
+Le capteur de la console elle-même (application `mip-rum-console`), **et lui seul**, peut envoyer
+ses traces et ses rejeux du navigateur au collector, sans passer par Vercel :
+`https://collector-production-d769.up.railway.app/v1/traces` et `/v1/replay`. Le collector lit
+alors l'en-tête `X-Real-IP` que pose la façade Railway et en déduit le pays
+(`rum_session.geo_source = 'geoip'`), sans écrire l'adresse. Rien d'autre ne bouge : les snippets
+des clients, l'extension, la CI et `NEXT_PUBLIC_RUM_ENDPOINT` visent toujours la console et son relais.
+
+Code : `apps/console/lib/ingest-endpoint.ts` (`origineCollecteurDogfooding`),
+`packages/backend/shared/client-ip.mjs` (`diagnostiquerFacade`), `services/collector/server.mjs`
+(`/diagnostic/ip`), `scripts/ops/verifier-ip-directe.mjs`. Tests : `tests/unit/ingest-endpoint.test.ts`,
+`tests/unit/client-ip.test.ts`, `tests/unit/verifier-ip-directe.test.ts`.
+
+### Deux interrupteurs, indépendants
+
+| Interrupteur | Où | Effet |
+|---|---|---|
+| `GEOIP_IP_SOURCE: "railway"` | `.railway/railway.ts` (collector), par l'apply IaC | le collector résout le pays du trafic **direct** ; le trafic relayé ne porte jamais d'adresse et n'est pas concerné |
+| `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL` | Vercel, environnement **Production** seulement | le capteur de la console vise le collector. Valeur : `https://collector-production-d769.up.railway.app`, sans chemin (un chemin serait ignoré). Inscrite dans le code au build : la poser ou la retirer demande un **redéploiement** |
+
+Ce que le code refuse, en revenant au chemin par la console (qui marche) : une valeur qui n'est pas
+une URL ; `http:` hors `localhost` ; et toute requête dont l'hôte n'est pas l'hôte de production
+(`VERCEL_PROJECT_PRODUCTION_URL`). Previews et URL propres d'un déploiement restent donc sur la
+console : le CORS du collector n'accepte que les origines enregistrées pour `mip-rum-console`
+(`app_registry.allowed_origins`), et leurs envois seraient bloqués en silence.
+
+**CORS, relevé le 28/09/2026** : le préflight `OPTIONS /v1/traces` et `/v1/replay` du collector de
+production rend `access-control-allow-origin: https://mip-rum-console.vercel.app` (origine posée
+par la migration v05). Rien à écrire en base. Si un jour il ne la rend plus :
+
+```sql
+select app_id, active, allowed_origins, ingestion_suspended_at from app_registry where app_id = 'mip-rum-console';
+-- seulement si l'origine manque (idempotent ; effet sous 60 s, le cache du registre) :
+update app_registry set allowed_origins = array_append(allowed_origins, 'https://mip-rum-console.vercel.app')
+ where app_id = 'mip-rum-console' and not ('https://mip-rum-console.vercel.app' = any(allowed_origins));
+```
+
+**CSP** : la console n'envoie aucune politique de sécurité du contenu (ni `next.config.mjs`, ni
+`vercel.json`, ni le middleware ; en-tête absent en production le 28/09/2026). Rien à élargir.
+`tests/unit/ingest-endpoint.test.ts` rougit le jour où une CSP apparaît : son `connect-src` devra
+porter l'origine du collector.
+
+### Allumer
+
+1. **Fusionner la PR.** Le collector se redéploie de lui-même (chemins surveillés) et sert
+   `/diagnostic/ip`, derrière `METRICS_TOKEN`. Le run « Railway IaC » de la fusion attend son approbation.
+2. **Prouver, AVANT d'approuver l'apply**, que la façade Railway écrase une adresse forgée :
+
+   ```sh
+   railway variables --service collector --json | jq -r .METRICS_TOKEN \
+     | node scripts/ops/verifier-ip-directe.mjs
+   ```
+
+   Trois lectures, aucune écriture ; aucune adresse n'est renvoyée. Attendu : code **0**, avec
+   `✓ CORS : https://mip-rum-console.vercel.app est acceptée` et `✓ la façade écrase l'adresse forgée`.
+   Code **1** (`FORGEABLE`) : **ne pas approuver**, rejeter le run. Code 2 : lire la ligne `✗`.
+3. **Approuver le run « Railway IaC » le plus récent** (environnement `railway-production`). Un push
+   plus récent sur `master` annule un run en attente : c'est le dernier qui porte tout. L'apply pose
+   `GEOIP_IP_SOURCE=railway` et redéploie le collector. Relancer le script : la première ligne doit
+   dire `source railway, base actif (dbip-country-lite-AAAA-MM)`. `base eteint` avec
+   `geoip_db_absente` : l'image n'a pas téléchargé DB-IP à sa construction (journal de build
+   `geoip: base non déposée`) ; rien n'est cassé, aucun pays n'est résolu par adresse.
+4. **Vercel** → Settings → Environment Variables : `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL` =
+   `https://collector-production-d769.up.railway.app`, environnement **Production** seulement.
+5. **Redéployer la production** (Deployments → le dernier déploiement de production → Redeploy).
+6. **Vérifier** :
+   - `/admin/health`, bloc « Où partent les données » : l'adresse du collector, et « Directement au collecteur » ;
+   - dans le navigateur, sur la console : `OPTIONS` puis `POST …/v1/traces` vers le collector, en 204 puis 200 ;
+   - journaux du collector : `ingested` pendant la navigation, aucun `rejected: api key` ;
+   - en base, après quelques minutes de navigation :
+
+     ```sql
+     select geo_source, geo_country, count(*) from rum_session
+      where app_id = 'mip-rum-console' and last_seen_at > now() - interval '1 hour'
+      group by 1, 2 order by 3 desc;
+     ```
+
+     `geoip` apparaît pour les **nouvelles** sessions ; une session déjà écrite garde sa première
+     provenance (`on conflict`). Pour dater le changement sur les écrans :
+     `insert into deploy_marker (app_id, version, env, source) values ('mip-rum-console', 'collecte-directe', 'prod', 'manual');`
+
+### Couper
+
+1. **Retirer `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL`** sur Vercel, puis redéployer la production — ou,
+   plus vite, Instant Rollback vers le déploiement d'avant la variable : son build ne la porte pas.
+   Le capteur revient sur `/api/ingest/v1/*` et le relais. Une page déjà ouverte garde l'ancien
+   endpoint jusqu'à son rechargement.
+2. Si c'est la lecture d'adresse elle-même qui est en cause : `GEOIP_IP_SOURCE: "none"` dans
+   `.railway/railway.ts`, **en PR**, puis approbation de l'apply. Jamais dans le tableau de bord :
+   le prochain apply la remettrait.
+
+| Symptôme | Cause probable | Geste |
+|---|---|---|
+| plus aucune session `mip-rum-console` récente | préflight refusé (origine absente, application inactive ou suspendue) | couper (1), puis la requête `app_registry` ci-dessus |
+| `geo_source` reste `timezone` | apply pas fait, ou base GeoIP `eteint` | relancer le script ; lire `/health` |
+| pic de pays d'hébergeurs (US, DE, NL) en `geoip` | adresse d'un relais retenue | couper (2), relancer le script |
+
+**Conformité.** Railway reçoit désormais l'adresse IP des visiteurs de la console ; ses journaux
+HTTP consignent l'adresse source (`srcIp`), comme ceux de Vercel. `apps/console/lib/legal.ts` et
+`docs/CONFORMITE.md` (§ 1, § 3.2, § 7) le disent depuis le 28/09/2026 ; les deux sont à relire si
+le périmètre s'élargit aux sites des clients.

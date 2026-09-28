@@ -62,7 +62,7 @@ flowchart TB
 | Pièce | Où | Ce qu'elle fait aujourd'hui |
 |---|---|---|
 | Console Next.js | Vercel, `mip-rum-console.vercel.app` | reçoit toute la collecte (`/api/ingest/v1/{traces,logs,replay}`, `/api/sourcemaps`), en relaie une part au `collector` et écrit le reste ; les écrans, en lisant et en écrivant la base directement (`DATABASE_URL`) ; l'API de lecture v1 (`/api/v1/*`) ; la connexion, par `console-api` |
-| `collector` | Railway, projet `mip-rum-backend` (europe-west4, Amsterdam), groupe 1 · Collecte | reçoit la part relayée (code pays seul, jamais l'adresse), hache l'identité et écrit en base ; GeoIP éteint |
+| `collector` | Railway, projet `mip-rum-backend` (europe-west4, Amsterdam), groupe 1 · Collecte | reçoit la part relayée (code pays seul, jamais l'adresse), hache l'identité et écrit en base ; GeoIP pour le seul trafic direct (plus bas) |
 | `api` | Railway, groupe 2 · Restitution | l'API de lecture v1, sous le rôle `mip_api` en lecture seule ; son client aujourd'hui : le `mcp` |
 | `console-api` | Railway, groupe 2 · Restitution | le backend de la console ; la connexion passe par lui depuis le 27/09/2026 |
 | `mcp` | Railway, groupe 2 · Restitution | serveur MCP en lecture seule, qui passe par `api` sur le réseau privé ; aucun accès à la base |
@@ -76,11 +76,11 @@ Le schéma de production est à `migration-v96` : le redéploiement du scheduler
 
 - Le relais de la collecte vers `collector` (`apps/console/lib/ingest-relay.ts`, `ingest_relay_pct`) est **allumé** : 10 %, puis 50 % le 27/09/2026 au soir ; 100 % prévu le 28/09.
 - Le relais de l'API v1 vers `api` (`lib/api-relay.ts`, `api_relay_pct`) et la bascule des écrans et des écritures vers `console-api` (`lib/aiguillage-console-api.ts`, `console_api_ecrans_pct` et `console_api_commandes_pct`, puis le mode strict `CONSOLE_API_STRICT`) : à 0.
-- Le GeoIP du `collector` (`GEOIP_IP_SOURCE=none`) : il attend la collecte directe.
+- Le GeoIP du `collector` : `GEOIP_IP_SOURCE=railway` dans l'IaC depuis le 28/09/2026, pour le seul trafic direct — le capteur de la console, une fois `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL` posée sur Vercel ([mode d'emploi](docs/operations/relais-ingestion.md), « Collecte directe du dogfooding »).
 
 **La cible** : une console Vercel sans accès à la base ([ADR-0002](docs/architecture/adr/0002-console-interface-sans-base.md)). La collecte passe par `collector`, la lecture machine par `api`, l'identité, les écrans et les écritures par `console-api`, les livraisons par `notifier`, les travaux planifiés par `scheduler` ; une seule base, Neon aujourd'hui. Schéma et état service par service : [docs/architecture/overview.md](docs/architecture/overview.md).
 
-**Ce qui reste** : choisir la base d'un vrai produit avec la DSI de MIP, puis remettre les cadences à 5 minutes ; la montée des drapeaux, puis le mode strict ; C12, la décommission (retirer la base de la console : `lib/db.ts`, `lib/queries*`, `pg` — garde `scripts/ci/console-sans-base.mjs --strict`) ; C12b, une image conteneur de la console et un compose auto-hébergé ; P6b.G, la collecte directe pour le GeoIP ; des exercices sur un environnement de staging.
+**Ce qui reste** : choisir la base d'un vrai produit avec la DSI de MIP, puis remettre les cadences à 5 minutes ; la montée des drapeaux, puis le mode strict ; C12, la décommission (retirer la base de la console : `lib/db.ts`, `lib/queries*`, `pg` — garde `scripts/ci/console-sans-base.mjs --strict`) ; C12b, une image conteneur de la console et un compose auto-hébergé ; P6b.G au-delà de la console, la collecte directe des sites clients sans CSP figée ; des exercices sur un environnement de staging.
 
 ## Démarrage local
 
