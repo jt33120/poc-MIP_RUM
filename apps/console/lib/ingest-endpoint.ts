@@ -72,9 +72,47 @@ export function ingestEndpoint(signal: IngestSignal, host?: string | null): stri
   return `http://localhost:3000${path}`;
 }
 
+/** Chemin du canal traces sur le collector, qui sert `/v1/*` et non `/api/ingest/v1/*`. */
+const CHEMIN_COLLECTOR_TRACES = "/v1/traces";
+
 /**
- * Endpoint d'ingestion DU DOGFOODING : toujours l'hôte de la requête, jamais
- * `NEXT_PUBLIC_RUM_ENDPOINT`.
+ * L'origine du collector que le dogfooding vise EN DIRECT, ou `null` : alors il
+ * passe par la console, comme avant (P6b.G, `docs/operations/relais-ingestion.md`).
+ *
+ * POURQUOI UNE VARIABLE À PART, `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL`. Le relais de la
+ * console ne transmet que le pays, jamais l'adresse (ADR 0005) : seul un envoi du
+ * navigateur au collector lui permet de résoudre le pays par l'adresse IP. On
+ * l'ouvre d'abord sur le seul capteur que nous maîtrisons, celui de la console.
+ * `NEXT_PUBLIC_RUM_ENDPOINT` aurait déplacé du même geste l'endpoint des snippets
+ * donnés aux CLIENTS — et le chemin, que le collector n'a pas.
+ *
+ * TROIS REFUS, qui ramènent tous au chemin par la console (il marche, lui) :
+ *   - une valeur qui n'est pas une URL ;
+ *   - `http:` hors poste local : une page https ne peut pas l'appeler ;
+ *   - un hôte de requête qui n'est pas l'hôte de production. Le collector n'accepte
+ *     que les origines enregistrées pour `mip-rum-console` : une preview ou l'URL
+ *     propre d'un déploiement verrait ses envois bloqués par CORS, en silence.
+ */
+export function origineCollecteurDogfooding(host: string | null): string | null {
+  const brut = process.env.NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL?.trim();
+  if (!brut) return null;
+  let url: URL;
+  try {
+    url = new URL(brut);
+  } catch {
+    return null;
+  }
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(url.hostname);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) return null;
+  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  if (production && host && host !== production) return null;
+  return url.origin;
+}
+
+/**
+ * Endpoint d'ingestion DU DOGFOODING : l'hôte de la requête, jamais
+ * `NEXT_PUBLIC_RUM_ENDPOINT` — sauf la collecte directe au collector, qui a sa
+ * propre variable (`origineCollecteurDogfooding`).
  *
  * La console SERT elle-même /api/ingest/v1/* : son propre hôte est donc correct
  * par construction, et un override ne peut que la faire émettre ailleurs. C'est
@@ -86,6 +124,8 @@ export function ingestEndpoint(signal: IngestSignal, host?: string | null): stri
  * là, l'ingestion PEUT légitimement vivre ailleurs.
  */
 export function dogfoodingEndpoint(host: string | null): string {
+  const collecteur = origineCollecteurDogfooding(host);
+  if (collecteur) return `${collecteur}${CHEMIN_COLLECTOR_TRACES}`;
   if (host) return `${protocolFor(host)}://${host}${PATHS.traces}`;
   const deploye = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL ?? null;
   return deploye ? `https://${deploye}${PATHS.traces}` : `http://localhost:3000${PATHS.traces}`;
