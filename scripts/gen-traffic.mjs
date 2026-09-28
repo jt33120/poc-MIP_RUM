@@ -1,8 +1,11 @@
 // Génère du trafic réel sur la démo : N sessions headless (contexts isolés),
 // parcours variés, quelques erreurs. Sert à peupler la console (S4/S5).
 import { chromium } from "@playwright/test";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
-const DEMO = "http://localhost:8080";
+// La démo est locale aujourd'hui ; le garde-fou tient le jour où elle deviendra réglable.
+// Ce script écrit : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+const DEMO = exigerCibleLocale("http://localhost:8080", { quoi: "la démo", script: "gen-traffic" });
 const N = Number(process.argv[2] ?? 3);
 
 const browser = await chromium.launch();

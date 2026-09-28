@@ -222,6 +222,13 @@ export interface HttpSpanInput {
   parentSpanId: string | null;
   method: string;
   route: string;
+  /**
+   * Route DÉCLARÉE par l'application (`withContext({ route })`), ou null. Elle
+   * part aussi en `http.route` : c'est ainsi que l'ingestion distingue un 404
+   * métier sur une route connue d'un chemin qu'aucune route n'a servi, et ne
+   * fait pas d'un chemin de scanner une entrée du registre des routes.
+   */
+  routeResolue?: string | null;
   url: string | null;
   /** null : aucune réponse n'est partie, il n'existe pas de statut à rapporter. */
   status: number | null;
@@ -268,6 +275,7 @@ export function buildHttpServerSpan(i: HttpSpanInput): Record<string, unknown> {
       "mip.span_id": i.spanId,
       "mip.parent_span_id": i.parentSpanId,
       "mip.route": i.route,
+      "http.route": i.routeResolue ?? null,
       "http.url": i.url,
       "http.method": i.method,
       "http.status_code": i.status,

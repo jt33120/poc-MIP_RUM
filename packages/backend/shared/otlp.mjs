@@ -745,15 +745,133 @@ function exceptionNormalisee(appId, attrs) {
 //      l'app, de la trace, du span porteur, de la position de l'événement et de
 //      son horodatage natif, et le span porteur reste à part dans
 //      `source_parent_span_id`.
-//   2. DÉDUPLICATION DÉCLARÉE, JAMAIS DEVINÉE. Un émetteur qui publie la même
-//      exception en log ET en span leur donne le même `mip.exception_id` : la clé
-//      ne dépend plus alors que de l'app et de cet identifiant. Sans identifiant
-//      commun, deux signaux restent deux lignes — les fusionner sur la
-//      ressemblance d'un message ferait disparaître des occurrences réelles.
+//   2. DÉDUPLICATION. Un émetteur qui publie la même exception en log ET en span
+//      leur donne le même `mip.exception_id` : la clé ne dépend plus alors que de
+//      l'app et de cet identifiant. Sans identifiant, voir « Une panne, une
+//      occurrence » juste en dessous.
 //   3. ORIGINE CONSERVÉE (`origin_signal`). Le span porteur est déjà facturé, un
 //      log ne l'est pas : une exception dérivée n'est donc jamais un événement
 //      facturé de plus (meter_tenant_usage, migration-v70), mais compte bien dans
 //      les occurrences d'erreur.
+
+// ─────────── Une panne, une occurrence (sans `mip.exception_id`) ─────────────
+//
+// Constat du 28/09/2026 : les agents OpenTelemetry officiels ne posent aucun
+// identifiant commun, et publient une même panne plusieurs fois — l'événement
+// `exception` du span serveur, plus chaque log ERROR qui porte l'exception
+// (Flask : 3 occurrences pour une panne, Java : 2, .NET : 1). Chacun devenait
+// une ligne, donc une occurrence de plus.
+//
+// LA RÈGLE. Deux exceptions sans identifiant déclaré sont LA MÊME quand elles
+// ont la même trace, le même span porteur (ou son parent, voir plus bas), le
+// même type et le même message — après la normalisation qui les écrit
+// (`boundedErrorType`, scrub, troncature). Leur clé de ligne est alors
+// dérivée de ces seuls éléments ; l'écriture étant `on conflict (span_id) do
+// nothing`, la seconde est inerte, qu'elle arrive dans le même lot ou dans un
+// lot plus tard, par le même signal ou par l'autre. Aucune lecture en base.
+//
+// CE QUI RESTE DISTINCT, et pourquoi c'est sûr :
+//   - deux événements `exception` identiques sur UN MÊME span sont deux levées
+//     réelles (une boucle de réessai) : la clé porte leur rang parmi les
+//     événements de même signature du span. Un log, lui, ne décrit pas une
+//     levée de plus : les logs d'une même signature sur un même span se
+//     rangent tous sur la première ;
+//   - un autre message, un autre type, un autre span sans lien de parenté,
+//     une autre trace : autant d'occurrences ;
+//   - un log sans trace ni span : rien ne le rattache à une panne, il garde
+//     son identité positionnelle (rejeu du même lot inerte, rien de plus).
+//
+// LE SPAN PARENT. Une exception qui remonte est souvent enregistrée par chaque
+// couche : l'événement du span enfant et celui du span serveur qui le contient
+// décrivent la même levée. Dans un même lot de traces, une exception se range
+// donc sur l'ancêtre le plus haut qui porte la même signature, de parent en
+// parent. Un log n'est rangé que sur SON span : sa parenté n'est pas dans le lot
+// de logs, et la retrouver coûterait une lecture. Les deux cas qui restent deux
+// occurrences sont écrits : un enfant et son parent exportés dans deux lots de
+// traces différents, et un log émis dans un span enfant pour une exception
+// enregistrée sur le parent.
+const EXCEPTION_OTEL_V1 = "otel";
+const PROFONDEUR_ANCRE_MAX = 32;
+
+/** Signature d'une exception, telle qu'elle sera écrite : type et message normalisés. */
+function signatureException(attrs) {
+  const type = boundedErrorType(attrs["exception.type"]) ?? "";
+  const message = (scrubText(attrs["exception.message"]) ?? "").slice(0, 1000);
+  return JSON.stringify([type, message]);
+}
+
+/**
+ * Spans d'un lot de traces qui portent des exceptions sans identifiant : leur
+ * parent et les signatures qu'ils portent. Clé `app\u0000trace\u0000span`.
+ */
+function porteursDuLot(payload, maxSpans) {
+  const porteurs = new Map();
+  let vus = 0;
+  for (const rs of Array.isArray(payload?.resourceSpans) ? payload.resourceSpans : []) {
+    const appId = attrsToObj(rs?.resource?.attributes)["mip.app_id"];
+    if (!appId) continue;
+    for (const ss of Array.isArray(rs.scopeSpans) ? rs.scopeSpans : []) {
+      for (const span of Array.isArray(ss?.spans) ? ss.spans : []) {
+        if (++vus > maxSpans) return porteurs;
+        if (!Array.isArray(span?.events) || span.name === "exception") continue;
+        const traceId = nativeTraceId(span.traceId);
+        const spanId = nativeParentSpanId(span.spanId);
+        if (!traceId || !spanId) continue;
+        for (const event of span.events) {
+          if (event?.name !== "exception") continue;
+          const attrs = attrsToObj(event.attributes);
+          if (exceptionIdOf(attrs["mip.exception_id"]) || !exceptionDeclaree(attrs)) continue;
+          const cle = `${appId}\u0000${traceId}\u0000${spanId}`;
+          const porteur = porteurs.get(cle) ?? { parent: nativeParentSpanId(span.parentSpanId), signatures: new Set() };
+          porteur.signatures.add(signatureException(attrs));
+          porteurs.set(cle, porteur);
+        }
+      }
+    }
+  }
+  return porteurs;
+}
+
+/** Span sur lequel une exception se range : l'ancêtre le plus haut de même signature. */
+function ancreException(porteurs, appId, traceId, spanId, signature) {
+  let ancre = spanId;
+  for (let pas = 0; pas < PROFONDEUR_ANCRE_MAX; pas++) {
+    const parent = porteurs.get(`${appId}\u0000${traceId}\u0000${ancre}`)?.parent;
+    if (!parent || !porteurs.get(`${appId}\u0000${traceId}\u0000${parent}`)?.signatures.has(signature)) break;
+    ancre = parent;
+  }
+  return ancre;
+}
+
+/**
+ * Ligne dérivée → span sur lequel elle s'est rangée. Hors de la ligne elle-même :
+ * l'écrivain insère les propriétés qu'il connaît, pas une colonne de travail.
+ */
+const ANCRES = new WeakMap();
+
+/**
+ * Retire d'un lot les exceptions dérivées de même clé. La ligne écrite est celle
+ * du span d'ancrage quand le lot la contient — le span serveur, qui porte la
+ * route de la requête — sinon la première reçue.
+ */
+function sansDoublonDerive(errors) {
+  const retenues = [];
+  const positions = new Map();
+  for (const e of errors) {
+    if (!e.origin_signal) {
+      retenues.push(e);
+      continue;
+    }
+    const position = positions.get(e.span_id);
+    if (position === undefined) {
+      positions.set(e.span_id, retenues.length);
+      retenues.push(e);
+    } else if (ANCRES.get(e) === e.source_parent_span_id && ANCRES.get(retenues[position]) !== retenues[position].source_parent_span_id) {
+      retenues[position] = e;
+    }
+  }
+  return retenues;
+}
 
 /** Au-delà, les événements `exception` d'un même span sont comptés rejetés. */
 export const MAX_EXCEPTION_EVENTS_PER_SPAN = 16;
@@ -830,8 +948,48 @@ function sessionRevendiquee(value) {
     : null;
 }
 
+// ─────────── Requête qu'aucune route n'a servie (404, 405) ─────────────────
+//
+// Constat du 28/09/2026 : des rafales de scan de vulnérabilités
+// (`/wp-admin/admin-ajax.php`, `/manager/html`, `/jmx-console/`…, 88 % de 404)
+// avaient rempli le registre des routes d'une application (2 000 sur 2 000,
+// migration-v62) : toute route réelle apparue ensuite devenait `(other)`.
+// La cause : sur une requête que le framework n'a résolue vers aucune route,
+// les capteurs prenaient le CHEMIN BRUT pour route, et le chemin est choisi par
+// le client HTTP — donc par n'importe qui.
+//
+// La règle : un span serveur en 404 ou 405 qui ne porte PAS `http.route` n'a
+// pas de route ; il prend la route fixe ROUTE_NON_TROUVEE, une seule entrée du
+// registre pour toutes. `http.route` est l'attribut par lequel un framework dit
+// qu'il a résolu la requête (conventions sémantiques OpenTelemetry) : présent,
+// un 404 métier (`GET /commandes/:id` sur une commande absente) garde sa
+// route. C'est une défense côté serveur, qui vaut pour tout émetteur — dont les
+// copies de l'ancien middleware FastAPI qui ne seront pas toutes mises à jour.
+//
+// Le chemin brut n'est pas perdu : il reste dans `url` (épuré) et dans le nom
+// du span, qui ne sont pas des dimensions bornées par le registre.
+export const ROUTE_NON_TROUVEE = "(non trouvée)";
+
+/** 404/405 sans `http.route` : aucune route n'a servi la requête. */
+function sansRouteResolue(a) {
+  const statut = Number(a["http.response.status_code"] ?? a["http.status_code"]);
+  const route = a["http.route"];
+  return (statut === 404 || statut === 405) && (typeof route !== "string" || route.trim() === "");
+}
+
+/**
+ * Route d'une exception portée par un span : celle que l'ingestion donne au span
+ * lui-même, pour qu'une erreur et sa requête restent sur la même ligne.
+ */
+function routeDuSpanPorteur(span, a) {
+  if (!isServerKind(span.kind)) return a["mip.route"] ?? null;
+  if (sansRouteResolue(a)) return ROUTE_NON_TROUVEE;
+  return a["mip.route"] ?? routeServeurOtel(span, a);
+}
+
 /** Route d'un span serveur OTel : template, puis nom du span, puis chemin. */
 function routeServeurOtel(span, a) {
+  if (sansRouteResolue(a)) return ROUTE_NON_TROUVEE;
   return normalizeRouteTemplate(a["http.route"]) ??
     normalizeRouteTemplate(routeFromOtelName(span.name)) ??
     (a["url.path"] ?? null);
@@ -876,16 +1034,21 @@ function exceptionDerivee({ appId, attrs, contexte, resource, scopeName, origin,
  * exceptions. Un span dédié `exception` est déjà, lui-même, l'exception.
  *
  * `budget.restant` borne le nombre d'exceptions dérivées d'une requête.
+ * `porteurs` (porteursDuLot) donne la parenté du lot, pour ranger une exception
+ * sur l'ancêtre de même signature.
  * @returns {{ rows: object[], rejected: number }}
  */
-function spanEventExceptions(span, spanAttrs, { appId, resource, scopeName, now, budget }) {
+function spanEventExceptions(span, spanAttrs, { appId, resource, scopeName, now, budget, porteurs = new Map() }) {
   const rows = [];
   let rejected = 0;
   if (!Array.isArray(span?.events) || span.name === "exception") return { rows, rejected };
   const traceId = nativeTraceId(span.traceId);
   const parentSpanId = nativeParentSpanId(span.spanId);
   let exceptions = 0;
-  span.events.forEach((event, position) => {
+  // Rang d'une exception parmi celles de même signature sur CE span : deux
+  // levées identiques d'une boucle de réessai restent deux occurrences.
+  const rangs = new Map();
+  span.events.forEach((event) => {
     if (event?.name !== "exception") return;
     if (++exceptions > MAX_EXCEPTION_EVENTS_PER_SPAN || budget.restant <= 0) {
       rejected++;
@@ -899,11 +1062,19 @@ function spanEventExceptions(span, spanAttrs, { appId, resource, scopeName, now,
       rejected++;
       return;
     }
-    const identity = exceptionId
-      ? exceptionIdentity(appId, ["id", exceptionId])
-      : exceptionIdentity(appId, ["span_event", traceId, parentSpanId, position, tempsNatif(event.timeUnixNano)]);
+    let identity;
+    let ancre = parentSpanId;
+    if (exceptionId) {
+      identity = exceptionIdentity(appId, ["id", exceptionId]);
+    } else {
+      const signature = signatureException(attrs);
+      const rang = rangs.get(signature) ?? 0;
+      rangs.set(signature, rang + 1);
+      ancre = ancreException(porteurs, appId, traceId, parentSpanId, signature);
+      identity = exceptionIdentity(appId, [EXCEPTION_OTEL_V1, traceId, ancre, signature, rang]);
+    }
     budget.restant--;
-    rows.push(exceptionDerivee({
+    const row = exceptionDerivee({
       appId,
       attrs,
       contexte: spanAttrs,
@@ -915,9 +1086,11 @@ function spanEventExceptions(span, spanAttrs, { appId, resource, scopeName, now,
       traceId,
       parentSpanId,
       session: spanAttrs["mip.session_id"] ?? sessionFromTraceState(span.traceState),
-      route: spanAttrs["mip.route"] ?? (isServerKind(span.kind) ? routeServeurOtel(span, spanAttrs) : null),
+      route: routeDuSpanPorteur(span, spanAttrs),
       ts: nanosToDate(event.timeUnixNano ?? span.startTimeUnixNano, now),
-    }));
+    });
+    ANCRES.set(row, ancre);
+    rows.push(row);
   });
   return { rows, rejected };
 }
@@ -935,10 +1108,12 @@ function severiteErreur(severityNumber, severityTextValue) {
  * `console.error("texte")` reste un log, et une exception journalisée en INFO
  * (réessai attendu, erreur métier gérée) n'entre pas dans le suivi d'erreurs.
  *
- * Sans `mip.exception_id`, l'identité suit la position du log dans le lot et ses
- * horodatages natifs : un rejeu du même lot est inerte, deux logs distincts ne
- * fusionnent jamais. Sans aucun horodatage natif, cette identité ne distinguerait
- * plus deux lots différents : l'exception n'est alors pas dérivée (le log reste).
+ * Sans `mip.exception_id` mais avec sa trace et son span, l'identité est celle
+ * de « Une panne, une occurrence » : la même que l'événement `exception` du
+ * span porteur, et que tout autre log de même signature sur ce span. Sans trace
+ * ni span, elle suit la position du log dans le lot et ses horodatages natifs :
+ * un rejeu du même lot est inerte, deux logs distincts ne fusionnent jamais.
+ * Sans aucun horodatage natif, l'exception n'est pas dérivée (le log reste).
  */
 function logRecordException(rec, attrs, { appId, resource, scopeName, severityNumber, position, now }) {
   if (!severiteErreur(severityNumber, rec?.severityText) || !exceptionDeclaree(attrs)) return null;
@@ -957,7 +1132,9 @@ function logRecordException(rec, attrs, { appId, resource, scopeName, severityNu
     origin: "log",
     identity: exceptionId
       ? exceptionIdentity(appId, ["id", exceptionId])
-      : exceptionIdentity(appId, ["log", traceId ?? "", parentSpanId ?? "", temps, observe, position]),
+      : traceId && parentSpanId
+        ? exceptionIdentity(appId, [EXCEPTION_OTEL_V1, traceId, parentSpanId, signatureException(attrs), 0])
+        : exceptionIdentity(appId, ["log", traceId ?? "", parentSpanId ?? "", temps, observe, position]),
     exceptionId,
     traceId,
     parentSpanId,
@@ -1010,9 +1187,50 @@ function sessionFromTraceState(traceState) {
   return null;
 }
 
-/** Template de route homogène avec le front : {id} -> :id. */
-function normalizeRouteTemplate(route) {
-  return typeof route === "string" ? route.replace(/\{([^/}]+)\}/g, ":$1") : null;
+// ─────────── Template de route serveur → forme canonique `:nom` ──────────────
+//
+// La forme canonique est celle du SDK web (`/partners/:id`) : c'est elle que
+// l'écran des routes rapproche du front. Chaque framework écrit pourtant son
+// `http.route` à sa façon, et les agents OpenTelemetry officiels le recopient
+// tel quel :
+//
+//   - OpenAPI, FastAPI/Starlette, ASP.NET Core : `{id}`, `{id:int}`, `{id?}`,
+//     `{*slug}`, `{**slug}`, `{id=5}`, `{chemin:path}` ;
+//   - Flask/Werkzeug et Django : `<id>`, `<int:id>`, `<string(length=2):lang>` ;
+//   - Express/Rails : `:id`, déjà canonique, mais aussi `:id(\d+)`, `:id?`, le
+//     glob `*chemin`, l'option Express 5 `{/:id}` et le suffixe Rails `(.:format)`.
+//
+// Non normalisé, chaque syntaxe donnait une route distincte de celle du front,
+// et `{id:int}` devenait `:id:int` — la contrainte de type prise pour le nom.
+// On garde le NOM du paramètre (jamais `:id` pour tout) : deux routes qui ne
+// diffèrent que par lui sont deux routes pour le framework qui les a déclarées.
+const PARAM_OPTIONNEL_EXPRESS = /\{(\/[^{}]*)\}/g;
+const PARAM_ACCOLADES = /\{\*{0,2}([A-Za-z_][\w-]*)(?:[:=?][^{}]*)?\}/g;
+const PARAM_CHEVRONS = /<(?:[A-Za-z_]\w*(?:\([^)>]*\))?:)?([A-Za-z_]\w*)>/g;
+/** Un segment entier `:nom` ou `*nom`, suivi de ses seules contraintes. */
+const SEGMENT_DEUX_POINTS = /^[:*]([A-Za-z_]\w*)(?:\([^/]*\))?(?::[A-Za-z_]\w*(?:\([^/]*\))?)*[?*+]?$/;
+
+/** Template de route serveur (tout framework) → forme canonique `:nom`, ou null. */
+export function normalizeRouteTemplate(route) {
+  if (typeof route !== "string") return null;
+  return route
+    .replace(/\(\.:format\)$/, "")
+    // ASP.NET double une accolade littérale (`{{`, `}}`), notamment dans une
+    // contrainte `regex(...)` : la retirer laisse une accolade de paramètre nette.
+    .replace(/\{\{|\}\}/g, "")
+    .replace(PARAM_OPTIONNEL_EXPRESS, "$1")
+    .replace(PARAM_ACCOLADES, ":$1")
+    // Repli d'avant : une accolade que la règle stricte ne reconnaît pas
+    // (nom qui ne commence pas par une lettre) garde l'ancienne réécriture,
+    // pour ne couper aucune série déjà en base.
+    .replace(/\{([^/{}]+)\}/g, ":$1")
+    .replace(PARAM_CHEVRONS, ":$1")
+    .split("/")
+    .map((segment) => {
+      const nom = SEGMENT_DEUX_POINTS.exec(segment)?.[1];
+      return nom ? `:${nom}` : segment;
+    })
+    .join("/");
 }
 
 /** Nom de span OTel ("GET /aos/{id}" ou "/aos/{id}") -> route, sinon null. */
@@ -1068,6 +1286,9 @@ export function flattenOtlp(payload, opts = {}) {
   let rejected = 0;
   // P5.3 : exceptions dérivées d'événements de span, bornées comme les spans.
   const budgetExceptions = { restant: maxSpans };
+  // Parenté des spans porteurs d'exceptions, lue AVANT la boucle : un exportateur
+  // envoie l'enfant avant son parent (il se termine plus tôt).
+  const porteurs = porteursDuLot(payload, maxSpans);
 
   /**
    * Ligne rum_span commune front/back ; null si trace_id/span_id absents.
@@ -1093,7 +1314,9 @@ export function flattenOtlp(payload, opts = {}) {
       tier,
       session_id: a["mip.session_id"] ?? null,
       app_id: appId,
-      route: a["mip.route"] ?? null,
+      // Côté navigateur, la route est celle de la PAGE : un appel en 404 n'y
+      // change rien. Côté serveur, c'est celle de la requête (ROUTE_NON_TROUVEE).
+      route: tier === "back" && sansRouteResolue(a) ? ROUTE_NON_TROUVEE : (a["mip.route"] ?? null),
       url: scrubUrl(a["http.url"]),
       method: a["http.method"] ?? null,
       status_code: a["http.status_code"] ?? null,
@@ -1302,7 +1525,7 @@ export function flattenOtlp(payload, opts = {}) {
         // qui suivent (http.server, serveur OTel, « detail ») sortent toutes par
         // un `continue`, et un span sans session finit rejeté : placées après,
         // ces exceptions n'auraient jamais été lues.
-        const derivees = spanEventExceptions(span, a, { appId, resource: res, scopeName, now, budget: budgetExceptions });
+        const derivees = spanEventExceptions(span, a, { appId, resource: res, scopeName, now, budget: budgetExceptions, porteurs });
         for (const row of derivees.rows) errors.push(row);
         rejected += derivees.rejected;
 
@@ -1814,10 +2037,13 @@ export function flattenOtlp(payload, opts = {}) {
       }
     }
   }
+  // Une panne publiée par un span et son parent n'est écrite qu'une fois : le
+  // compte `recues` de l'écrivain et les compteurs en aval partent de ce lot-ci.
+  const erreurs = sansDoublonDerive(errors);
   const eventIndex = buildEventIndex({
     pageviews,
     metrics,
-    errors,
+    errors: erreurs,
     resources,
     longtasks,
     breadcrumbs,
@@ -1829,7 +2055,7 @@ export function flattenOtlp(payload, opts = {}) {
     sessions: [...sessions.values()],
     pageviews,
     metrics,
-    errors,
+    errors: erreurs,
     resources,
     longtasks,
     breadcrumbs,
@@ -1934,5 +2160,6 @@ export function flattenOtlpLogs(payload, opts = {}) {
       }
     }
   }
-  return { logs, errors, apiKeys, rejected };
+  // Deux logs d'une même panne (même trace, même span, même exception) : une ligne.
+  return { logs, errors: sansDoublonDerive(errors), apiKeys, rejected };
 }

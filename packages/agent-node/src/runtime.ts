@@ -343,6 +343,9 @@ function creerEtat(): Etat {
               // `withContext` peut affiner la route (template du routeur) ;
               // il ne peut pas l'effacer.
               route: ctx.route ?? route,
+              // Seule une route affinée par `withContext` a été résolue par
+              // l'application ; le chemin normalisé de la requête ne l'est pas.
+              routeResolue: ctx.route && ctx.route !== route ? ctx.route : null,
               url: null,
               // Aucun en-tête parti : il n'existe pas de statut, pas même un 500.
               status: fin === "reponse" || res?.headersSent ? Number(res?.statusCode ?? 0) : null,

@@ -13,6 +13,7 @@
 //   pg_virtualenv node scripts/verify-svi-modele.mjs
 import { readFile, readdir } from "node:fs/promises";
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
 const DIR = new URL("../packages/db/sql/", import.meta.url);
 let failures = 0;
@@ -35,6 +36,8 @@ const one = async (c, sql, p = []) => (await c.query(sql, p)).rows[0];
 const n = async (c, sql, p = []) => Number((await c.query(sql, p)).rows[0].n);
 
 async function main() {
+  // Ce script écrit en base : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+  exigerCibleLocale(process.env.DATABASE_URL, { script: "verify-svi-modele" });
   const c = new pg.Client(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {});
   await c.connect();
   await c.query("do $$ begin if not exists (select 1 from pg_roles where rolname='console_ro') then create role console_ro nologin; end if; end $$;");

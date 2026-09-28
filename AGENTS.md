@@ -103,6 +103,11 @@ ordre et sur quelles bases.
   (`docs/DOCUMENTS-HORS-DEPOT.md`).
 - Ne jamais lancer `vercel env pull` dans le dépôt, ni sourcer `.env` (il peut
   contenir l'URL de la base de production).
+- Les scripts qui écrivent hors exploitation (`scripts/verify-*`, `seed-*`,
+  `gen-*`, bancs, `playwright.config.ts`) refusent une cible distante
+  (`scripts/lib/cible-locale.mjs`, cliquet `tests/unit/cible-locale.test.ts`) ;
+  la dérogation nomme l'hôte : `MIP_CIBLE_DISTANTE=<hôte>`. Un script écrivant
+  de plus l'appelle, ou le cliquet échoue.
 - L'infrastructure Railway ne s'applique que par le workflow
   `.github/workflows/railway-config.yml` (environnement protégé, relecture
   humaine). Jamais `railway config apply` en local, jamais `--include-variables`.

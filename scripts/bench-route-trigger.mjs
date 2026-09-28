@@ -20,6 +20,7 @@ import { readFile } from "node:fs/promises";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
 const SQL_DIR = new URL("../packages/db/sql/", import.meta.url).pathname;
 const APP = "bench-app";
@@ -67,6 +68,8 @@ async function passe(c, routes) {
 const mediane = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
 async function main() {
+  // Ce script écrit : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+  exigerCibleLocale(process.env.DATABASE_URL, { script: "bench-route-trigger" });
   const c = new pg.Client(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {});
   await c.connect();
   for (const f of fichiers()) await c.query(await readFile(f, "utf8"));

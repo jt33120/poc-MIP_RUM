@@ -33,6 +33,9 @@
 //   ENDPOINT=https://<collector>/v1/traces APP=gip-banc API_KEY=mip_… \
 //   RATE=4 DURATION_S=30 DB_PHASE=0 node scripts/load-bench.mjs
 //
+//   Une cible distante (ENDPOINT, base) exige MIP_CIBLE_DISTANTE=<hôte exact>,
+//   plusieurs hôtes séparés par des virgules (scripts/lib/cible-locale.mjs).
+//
 //   # auto-test du générateur, sans réseau ni base, sans chiffres de capacité :
 //   node scripts/load-bench.mjs --dry-run
 //
@@ -64,6 +67,7 @@
 //   CLICKHOUSE_URL  [http://localhost:8123]   (si STORE=clickhouse)
 //   CLICKHOUSE_DB   [mip_rum]                 (si STORE=clickhouse)
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 import { pathToFileURL } from "node:url";
 import { createChWriter } from "../labs/clickhouse/writer.mjs";
 
@@ -431,6 +435,17 @@ async function main() {
     }, null, 2));
     console.log("\n[dry-run] générateur OK — aucun POST, aucune base, aucun chiffre de capacité.");
     return;
+  }
+
+  // Ce banc écrit (charge, puis nettoyage `delete`) : jamais sur une cible
+  // distante sans la nommer (garde-fou, scripts/lib/cible-locale.mjs).
+  exigerCibleLocale(CONFIG.endpoint, { quoi: "ENDPOINT", script: "load-bench" });
+  if (CONFIG.dbPhase) {
+    if (CONFIG.store === "clickhouse") {
+      exigerCibleLocale(process.env.CLICKHOUSE_URL || "http://localhost:8123", { quoi: "CLICKHOUSE_URL", script: "load-bench" });
+    } else {
+      exigerCibleLocale(CONFIG.databaseUrl, { script: "load-bench" });
+    }
   }
 
   const cible = CONFIG.rate > 0

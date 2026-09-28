@@ -30,6 +30,8 @@ const SPAN = "00f067aa0ba902b7";
 const ID = "0123456789abcdef0123456789abcdef";
 const NOW = Date.now();
 const nanos = (ms: number) => `${ms}000000`;
+/** Signature de l'exception par défaut, telle que l'identité « une panne, une occurrence » la porte. */
+const SIGNATURE = JSON.stringify(["ValueError", "montant négatif"]);
 
 const kv = (key: string, value: unknown) => ({
   key,
@@ -115,7 +117,7 @@ describe("parseur — exceptions portées par un span", () => {
     }
   });
 
-  it("une identité par événement : déterministe, distincte par position, app-scopée, jamais indexée", () => {
+  it("une identité par événement : déterministe, distincte par rang, app-scopée, jamais indexée", () => {
     const payload = () => traces([span({}, {}, [evenement(erreur()), evenement(erreur())])]);
     const a = flattenOtlp(payload(), { now: NOW });
     const b = flattenOtlp(payload(), { now: NOW });
@@ -124,7 +126,8 @@ describe("parseur — exceptions portées par un span", () => {
     expect(premier.span_id).toMatch(/^[0-9a-f]{32}$/);
     expect(premier.span_id).not.toBe(second.span_id);
     expect(premier.source_parent_span_id).toBe(SPAN);
-    expect(premier.span_id).toBe(exceptionIdentity(APP, ["span_event", TRACE, SPAN, 0, nanos(NOW - 1_000)]));
+    expect(premier.span_id).toBe(exceptionIdentity(APP, ["otel", TRACE, SPAN, SIGNATURE, 0]));
+    expect(second.span_id).toBe(exceptionIdentity(APP, ["otel", TRACE, SPAN, SIGNATURE, 1]));
     const autreApp = flattenOtlp(traces([span({}, {}, [evenement(erreur())])], undefined, undefined, "autre-app"), { now: NOW });
     expect(autreApp.errors[0].span_id).not.toBe(premier.span_id);
     // Seul le span porteur est projeté : l'identité dérivée n'est pas un span.
@@ -139,7 +142,7 @@ describe("parseur — exceptions portées par un span", () => {
     for (const invalide of ["alice@example.test", "123", `${ID}0`]) {
       const [row] = flattenOtlp(traces([span({}, {}, [evenement(erreur({ "mip.exception_id": invalide }))])]), { now: NOW }).errors;
       expect(row.exception_id, invalide).toBeNull();
-      expect(row.span_id).toBe(exceptionIdentity(APP, ["span_event", TRACE, SPAN, 0, nanos(NOW - 1_000)]));
+      expect(row.span_id).toBe(exceptionIdentity(APP, ["otel", TRACE, SPAN, SIGNATURE, 0]));
     }
   });
 
@@ -249,9 +252,9 @@ describe("parseur — exceptions portées par un log", () => {
       source_parent_span_id: SPAN, session_id: null, session_claim: "s-1", route: "/factures",
       error_type: "ValueError", exception_id: null,
     })]);
-    expect(parsed.errors[0].span_id).toBe(
-      exceptionIdentity(APP, ["log", TRACE, SPAN, nanos(NOW - 1_000), nanos(NOW - 999), 1]),
-    );
+    // Trace et span connus : la clé est celle de l'événement du span porteur.
+    expect(parsed.errors[0].span_id).toBe(exceptionIdentity(APP, ["otel", TRACE, SPAN, SIGNATURE, 0]));
+    expect(parsed.errors[0].span_id).toBe(flattenOtlp(traces([span()]), { now: NOW }).errors[0].span_id);
   });
 
   it("texte seul, gravité sous ERROR ou log sans aucun horodatage : pas d'exception", () => {
@@ -267,20 +270,86 @@ describe("parseur — exceptions portées par un log", () => {
 
   it("sans severityNumber, le texte de gravité décide ; un identifiant suffit sans horodatage", () => {
     const parsed = flattenOtlpLogs(logs([
-      log(erreur(), { severityNumber: undefined, severityText: "FATAL" }),
-      log(erreur(), { severityNumber: 0, severityText: "error2" }),
-      log(erreur(), { severityNumber: undefined, severityText: "warning" }),
+      // Un span chacun : sur le même, deux logs d'une même exception n'en font qu'une.
+      log(erreur(), { severityNumber: undefined, severityText: "FATAL", spanId: "00f067aa0ba902c1" }),
+      log(erreur(), { severityNumber: 0, severityText: "error2", spanId: "00f067aa0ba902c2" }),
+      log(erreur(), { severityNumber: undefined, severityText: "warning", spanId: "00f067aa0ba902c3" }),
       log(erreur({ "mip.exception_id": ID }), { timeUnixNano: undefined, observedTimeUnixNano: undefined }),
     ]), { now: NOW });
     expect(parsed.errors).toHaveLength(3);
   });
 
-  it("deux logs identiques d'un lot restent deux lignes ; le rejeu du lot redonne les mêmes clés", () => {
-    const lot = () => logs([log(), log()]);
-    const a = flattenOtlpLogs(lot(), { now: NOW }).errors.map((e: Row) => e.span_id);
-    const b = flattenOtlpLogs(lot(), { now: NOW }).errors.map((e: Row) => e.span_id);
+  it("deux logs d'une même exception sur un même span : une ligne ; sans trace ni span, deux", () => {
+    const memeSpan = flattenOtlpLogs(logs([log(), log(erreur(), { timeUnixNano: nanos(NOW - 900) })]), { now: NOW });
+    expect(memeSpan.logs).toHaveLength(2);
+    expect(memeSpan.errors).toHaveLength(1);
+    const orphelins = () => logs([log(erreur(), { traceId: undefined, spanId: undefined }), log(erreur(), { traceId: undefined, spanId: undefined })]);
+    const a = flattenOtlpLogs(orphelins(), { now: NOW }).errors.map((e: Row) => e.span_id);
+    const b = flattenOtlpLogs(orphelins(), { now: NOW }).errors.map((e: Row) => e.span_id);
     expect(new Set(a).size).toBe(2);
-    expect(b).toEqual(a);
+    expect(b).toEqual(a); // rejeu du même lot : mêmes clés
+  });
+});
+
+describe("parseur — une panne, une occurrence (sans mip.exception_id)", () => {
+  const SPAN_ENFANT = "00f067aa0ba902b8";
+
+  it("Flask : l'événement du span et deux logs ERROR de la même exception ont UNE clé, quel que soit le lot", () => {
+    const parSpan = flattenOtlp(traces([span()]), { now: NOW }).errors;
+    const parLogs = flattenOtlpLogs(logs([log(), log(erreur(), { timeUnixNano: nanos(NOW - 800), body: { stringValue: "Exception on /invoices/1 [POST]" } })]), { now: NOW }).errors;
+    expect(parSpan).toHaveLength(1);
+    expect(parLogs).toHaveLength(1);
+    expect(parLogs[0].span_id).toBe(parSpan[0].span_id);
+  });
+
+  it("l'exception remontée d'un span enfant se range sur son parent de même signature, dans les deux ordres du lot", () => {
+    const enfant = span({ spanId: SPAN_ENFANT, parentSpanId: SPAN, kind: 1, name: "facturer" });
+    for (const ordre of [[enfant, span()], [span(), enfant]]) {
+      const errors = flattenOtlp(traces(ordre), { now: NOW }).errors;
+      expect(errors).toHaveLength(1);
+      expect(errors[0].span_id).toBe(exceptionIdentity(APP, ["otel", TRACE, SPAN, SIGNATURE, 0]));
+      // La ligne gardée est celle du span serveur : il porte la route de la requête.
+      expect(errors[0]).toMatchObject({ source_parent_span_id: SPAN, route: "/invoices/:id" });
+    }
+    // Et le log émis sur le span parent rejoint la même ligne.
+    expect(flattenOtlpLogs(logs([log()]), { now: NOW }).errors[0].span_id)
+      .toBe(flattenOtlp(traces([enfant, span()]), { now: NOW }).errors[0].span_id);
+  });
+
+  it("restent distinctes : autre message, autre type, autre trace, span sans parenté, parent d'une autre signature", () => {
+    const cas: Array<[string, Row[]]> = [
+      ["autre message", [span({}, {}, [evenement(erreur()), evenement(erreur({ "exception.message": "montant nul" }))])]],
+      ["autre type", [span({}, {}, [evenement(erreur()), evenement(erreur({ "exception.type": "TypeError" }))])]],
+      ["autre trace", [span(), span({ traceId: "5bf92f3577b34da6a3ce929d0e0e4736" })]],
+      ["frère sans parenté", [span(), span({ spanId: SPAN_ENFANT })]],
+      ["parent d'une autre signature", [
+        span({ spanId: SPAN_ENFANT, parentSpanId: SPAN, kind: 1 }),
+        span({}, {}, [evenement(erreur({ "exception.message": "autre panne" }))]),
+      ]],
+    ];
+    for (const [nom, spans] of cas) {
+      expect(flattenOtlp(traces(spans), { now: NOW }).errors, nom).toHaveLength(2);
+    }
+  });
+
+  it("un log d'une autre signature que l'événement reste une autre occurrence", () => {
+    const parSpan = flattenOtlp(traces([span()]), { now: NOW }).errors[0].span_id;
+    const parLog = flattenOtlpLogs(logs([log(erreur({ "exception.message": "montant nul" }))]), { now: NOW }).errors[0].span_id;
+    expect(parLog).not.toBe(parSpan);
+  });
+
+  it("la signature est prise APRÈS normalisation : un secret scrubbé ne distingue pas deux signaux", () => {
+    const message = "refusé pour alice@example.test";
+    const parSpan = flattenOtlp(traces([span({}, {}, [evenement(erreur({ "exception.message": message }))])]), { now: NOW }).errors[0];
+    const parLog = flattenOtlpLogs(logs([log(erreur({ "exception.message": message }))]), { now: NOW }).errors[0];
+    expect(parSpan.message).not.toContain("alice@example.test");
+    expect(parLog.span_id).toBe(parSpan.span_id);
+  });
+
+  it("mip.exception_id garde la main : il n'est jamais fusionné sur la ressemblance", () => {
+    const declaree = flattenOtlp(traces([span({}, {}, [evenement(erreur({ "mip.exception_id": ID })), evenement(erreur())])]), { now: NOW }).errors;
+    expect(declaree).toHaveLength(2);
+    expect(declaree[0].span_id).toBe(exceptionIdentity(APP, ["id", ID]));
   });
 });
 

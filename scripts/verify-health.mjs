@@ -4,6 +4,7 @@
 //   pg_virtualenv node scripts/verify-health.mjs
 import { readFile } from "node:fs/promises";
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
 const SQL = (f) => new URL(`../packages/db/sql/${f}`, import.meta.url);
 const MIGR = ["schema.sql", ...["02","03","04","05","07","08","09","10","11","12","13","14","15","16","19"].map((n) => `migration-v${n}.sql`)];
@@ -30,6 +31,8 @@ async function applyAll(c) {
 function assert(label, cond) { console.log(`${cond ? "✓" : "✗"} ${label}`); if (!cond) process.exitCode = 1; }
 
 async function main() {
+  // Ce script écrit en base : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+  exigerCibleLocale(process.env.DATABASE_URL, { script: "verify-health" });
   const c = new pg.Client(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {});
   await c.connect();
   await c.query("do $$ begin if not exists (select 1 from pg_roles where rolname='console_ro') then create role console_ro nologin; end if; end $$;");

@@ -41,6 +41,15 @@ l'ingestion. **Ni corps, ni query string, ni headers métier, ni IP.** Envoi par
 batch (5 s / 20 spans), best effort, timeout 3 s : l'API ne ralentit ni ne casse
 jamais.
 
+**Requête qu'aucune route n'a servie.** Un 404 ou un 405 sans route résolue par
+le framework prend la route fixe `(non trouvée)`, jamais le chemin demandé : un
+scanner de vulnérabilités (`/wp-admin/…`, `/manager/html`…) inventerait sinon une
+route par chemin, jusqu'à remplir le registre des routes de l'application
+(2 000), après quoi toute nouvelle route réelle devient `(other)`. Une route
+résolue part aussi en `http.route` : un 404 métier (`/commandes/{id}` sur une
+commande absente) garde ainsi sa route. Depuis la version 0.7.0 du middleware ;
+l'ingestion applique la même règle aux versions antérieures.
+
 ## Exceptions non gérées
 
 Une exception qui traverse toute l'app devient un **événement `exception`** du span

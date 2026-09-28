@@ -81,6 +81,31 @@ describe("agent-node — round-trip OTLP -> flattenOtlp (span back)", () => {
     expect(rows.rejected).toBe(0);
     expect(rows.apiKeys[0]).toEqual({ app_id: "demo", api_key: "mip_key_123" });
   });
+
+  // 28/09/2026 — un 404 sans route résolue prend la route fixe de l'ingestion :
+  // le chemin normalisé d'un scanner n'entre plus au registre des routes. Une
+  // route déclarée par `withContext` part en `http.route` et survit au 404.
+  const enQuatreCentQuatre = (routeResolue: string | null) => flattenOtlp(buildPayload(cfg, [buildHttpServerSpan({
+    traceId: tp.traceId,
+    spanId: "00aa11bb22cc33de",
+    parentSpanId: null,
+    method: "GET",
+    route: routeResolue ?? "/wp-admin/admin-ajax.php",
+    routeResolue,
+    url: null,
+    status: 404,
+    sessionId: null,
+    startMs: 1_760_000_000_000,
+    durationMs: 3,
+  })])).spans[0];
+
+  it("404 sans route déclarée : route fixe, jamais le chemin", () => {
+    expect(enQuatreCentQuatre(null).route).toBe("(non trouvée)");
+  });
+
+  it("404 sur une route déclarée : `http.route` émis, route gardée", () => {
+    expect(enQuatreCentQuatre("/commandes/:id").route).toBe("/commandes/:id");
+  });
 });
 
 describe("agent-node — normalizeSql / sqlOperation (profondeur DB #20)", () => {

@@ -326,6 +326,87 @@ function logs(app: App, session: string, n: number) {
   };
 }
 
+// ── 28/09/2026 : une panne, une occurrence ; une rafale de scanner, une route ──
+//
+// Ce qu'un agent OpenTelemetry officiel (Flask) enverrait : le span serveur avec
+// l'événement `exception`, puis deux logs ERROR de la même exception, SANS
+// `mip.exception_id`. Et une rafale de 404 sans `http.route`. Les deux côtés
+// doivent écrire la même unique occurrence et la même route fixe.
+const PANNE = { traceId: "e2809000000000000000000000000001", spanId: "e280900000000001" };
+const RESSOURCE_FLASK = (app: App) => [
+  attr("mip.app_id", app.id), attr("service.name", "facturation"), attr("telemetry.sdk.language", "python"),
+  ...(app.cle ? [attr("mip.api_key", app.cle)] : []),
+];
+const ATTRS_PANNE = [attr("exception.type", "ZeroDivisionError"), attr("exception.message", "division by zero")];
+
+function panneFlaskTraces(app: App) {
+  return {
+    resourceSpans: [{
+      resource: { attributes: RESSOURCE_FLASK(app) },
+      scopeSpans: [{
+        scope: { name: "opentelemetry.instrumentation.flask" },
+        spans: [{
+          ...PANNE,
+          kind: 2,
+          name: "GET /api/commandes/<int:commande_id>",
+          startTimeUnixNano: nanos(T0 + 30_000),
+          endTimeUnixNano: nanos(T0 + 30_012),
+          attributes: [
+            attr("http.request.method", "GET"), attr("http.route", "/api/commandes/<int:commande_id>"),
+            { key: "http.response.status_code", value: { intValue: "500" } },
+          ],
+          events: [{ name: "exception", timeUnixNano: nanos(T0 + 30_010), attributes: ATTRS_PANNE }],
+        }],
+      }],
+    }],
+  };
+}
+
+function panneFlaskLogs(app: App) {
+  const log = (decalage: number, corps: string) => ({
+    timeUnixNano: nanos(T0 + 30_010 + decalage),
+    observedTimeUnixNano: nanos(T0 + 30_011 + decalage),
+    severityNumber: 17,
+    severityText: "ERROR",
+    body: { stringValue: corps },
+    ...PANNE,
+    attributes: ATTRS_PANNE,
+  });
+  return {
+    resourceLogs: [{
+      resource: { attributes: RESSOURCE_FLASK(app) },
+      scopeLogs: [{
+        scope: { name: "opentelemetry.sdk._logs" },
+        logRecords: [log(0, "Exception on /api/commandes/7 [GET]"), log(1, "division by zero")],
+      }],
+    }],
+  };
+}
+
+const CHEMINS_SCANNER = ["/wp-admin/admin-ajax.php", "/manager/html", "/jmx-console/"];
+function rafaleScanner(app: App) {
+  return {
+    resourceSpans: [{
+      resource: { attributes: RESSOURCE_FLASK(app) },
+      scopeSpans: [{
+        scope: { name: "opentelemetry.instrumentation.flask" },
+        spans: CHEMINS_SCANNER.map((chemin, i) => ({
+          traceId: `e28090000000000000000000000000a${i}`,
+          spanId: `e2809000000000a${i}`,
+          kind: 2,
+          name: "GET",
+          startTimeUnixNano: nanos(T0 + 31_000 + i),
+          endTimeUnixNano: nanos(T0 + 31_002 + i),
+          attributes: [
+            attr("http.request.method", "GET"), attr("url.path", chemin),
+            { key: "http.response.status_code", value: { intValue: "404" } },
+          ],
+        })),
+      }],
+    }],
+  };
+}
+
 /** Chunk rrweb gzip, tel que le SDK l'envoie. */
 function chunk(evenements = 3) {
   const liste = Array.from({ length: evenements }, (_, i) => ({ type: 3, data: { source: 1, i }, timestamp: T0 + i }));
@@ -1096,6 +1177,22 @@ const CAS: Cas[] = [
     envoi: { chemin: "/api/ingest/v1/traces", entetes: PROTOBUF_GZIP, corps: gzipSync(Buffer.alloc(2_000_001, 0), { level: 9 }) },
     statut: 413,
   },
+  // ── 28/09/2026 — en fin de liste pour la même raison que R11 ────────────────
+  {
+    nom: "28/09 — panne Flask : le span serveur et son événement `exception` → 200",
+    envoi: { chemin: "/api/ingest/v1/traces", ...json(panneFlaskTraces(APP.a)) },
+    statut: 200,
+  },
+  {
+    nom: "28/09 — la même panne en deux logs ERROR, sans mip.exception_id → 200, aucune occurrence de plus",
+    envoi: { chemin: "/api/ingest/v1/logs", cheminCollector: "/v1/logs", ...json(panneFlaskLogs(APP.a)) },
+    statut: 200,
+  },
+  {
+    nom: "28/09 — rafale de scanner, 404 sans http.route → 200, une seule route",
+    envoi: { chemin: "/api/ingest/v1/traces", ...json(rafaleScanner(APP.a)) },
+    statut: 200,
+  },
 ];
 
 // ─────────────────────────────── Exécution ─────────────────────────────────
@@ -1188,6 +1285,24 @@ suite("contrat de parité — console (routes Next) ↔ collector (creerReceveur
       expect(spans.rows).toEqual([{ tier: "back", session_id: SESSION(1) }, { tier: "detail", session_id: SESSION(1) }]);
       const logsEcrits = await base.query("select count(*)::int n from rum_log where trace_id = $1", [AGENT_A.traceId]);
       expect(logsEcrits.rows[0].n).toBe(2);
+    }
+  }, DELAI);
+
+  // Idem pour les cas du 28/09 : la parité est prouvée par les deltas, le
+  // contenu l'est ici — une occurrence pour la panne, une route pour la rafale.
+  it("28/09 — une panne, une occurrence ; une rafale, une route — des deux côtés", async () => {
+    for (const base of [baseConsole, baseCollector]) {
+      const erreurs = await base.query(
+        "select origin_signal, route from rum_error where app_id = $1 and trace_id = $2", [APP.a.id, PANNE.traceId]);
+      expect(erreurs.rows).toEqual([{ origin_signal: "span_event", route: "/api/commandes/:commande_id" }]);
+      const logsEcrits = await base.query("select count(*)::int n from rum_log where trace_id = $1", [PANNE.traceId]);
+      expect(logsEcrits.rows[0].n).toBe(2);
+      const routes = await base.query(
+        "select distinct route from rum_span where app_id = $1 and trace_id like 'e28090000000000000000000000000a%'", [APP.a.id]);
+      expect(routes.rows).toEqual([{ route: "(non trouvée)" }]);
+      const registre = await base.query(
+        "select route from route_registry where app_id = $1 and route = any($2::text[])", [APP.a.id, CHEMINS_SCANNER]);
+      expect(registre.rows).toEqual([]);
     }
   }, DELAI);
 
