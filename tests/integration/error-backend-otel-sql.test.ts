@@ -6,8 +6,9 @@
 // aucune. Qu'une session revendiquée n'est rattachée que si elle existe DANS LA
 // MÊME APP, sans qu'aucune session ne soit créée. Qu'une même exception publiée en
 // log et en span avec le même `mip.exception_id` ne fait qu'une ligne, dans les
-// deux ordres d'arrivée, et que deux signaux sans identifiant commun restent deux
-// lignes. Que le métering ne refacture ni le span porteur ni le log, tout en
+// deux ordres d'arrivée — et, sans identifiant (28/09/2026), qu'une même panne
+// (même trace, même span ou parent, même type, même message) n'en fait qu'une
+// aussi, sans rien fusionner d'autre. Que le métering ne refacture ni le span porteur ni le log, tout en
 // comptant chaque occurrence. Que purge, effacements et DSAR atteignent ces
 // lignes, y compris sans session. Enfin, sur une base restée en v69, que le même
 // code ne perd aucun lot et active la collecte dès v70 appliquée.
@@ -405,15 +406,70 @@ suite("P5.3 — exceptions backend et OpenTelemetry — PostgreSQL", () => {
       expect(await compter(pool, "rum_log", APP_B)).toBe(1);
     });
 
-    it("sans identifiant commun, log et span restent deux occurrences : aucune fusion devinée", async () => {
+    // 28/09/2026 — une panne, une occurrence. Sans identifiant commun, les agents
+    // officiels publiaient une même panne plusieurs fois (Flask : l'événement du
+    // span et deux logs ERROR, 3 occurrences ; Java : 2). Même trace, même span
+    // (ou parent), même type, même message : une ligne, sans lecture en base.
+    const panne = { "exception.type": "ValueError", "exception.message": "montant négatif" };
+    const deuxLogs = (n: number, attrs: Attrs) => {
+      const lot = logOtelPython(APP, n, attrs);
+      const [premier] = lot.resourceLogs[0].scopeLogs[0].logRecords;
+      lot.resourceLogs[0].scopeLogs[0].logRecords.push({
+        ...premier, body: { stringValue: "Exception on /invoices/1 [POST]" }, timeUnixNano: nanos(Date.now() - 3_500),
+      });
+      return lot;
+    };
+
+    it("Flask : l'événement du span puis deux logs ERROR de la même exception, une occurrence", async () => {
       await nettoyer(pool, [APP]);
-      const attrs = { "exception.type": "ValueError", "exception.message": "montant négatif" };
-      await writeRows(pool, aplatir(spanOtelPython(APP, 60, [attrs])));
-      const log = aplatirLogs(logOtelPython(APP, 60, attrs));
-      await writeLogs(pool, log.logs, log.errors);
+      expect((await writeRows(pool, aplatir(spanOtelPython(APP, 60, [panne])))).erreurs)
+        .toEqual({ recues: 1, inserees: 1, ignorees: 0 });
+      const logs = aplatirLogs(deuxLogs(60, panne));
+      expect(logs.errors).toHaveLength(1); // les deux logs du lot : une seule clé
+      expect((await writeLogs(pool, logs.logs, logs.errors)).erreurs).toEqual({ recues: 1, inserees: 0, ignorees: 0 });
       const rows = await erreurs(pool, APP);
-      expect(rows.map((r) => r.origin_signal).sort()).toEqual(["log", "span_event"]);
-      expect(new Set(rows.map((r) => r.fingerprint)).size).toBe(1);
+      expect(rows.map((r) => [r.origin_signal, r.trace_id, r.source_parent_span_id, r.route]))
+        .toEqual([["span_event", traceId(60), spanId(60), "/invoices/:id"]]);
+      // Les logs, eux, sont tous écrits.
+      expect(await compter(pool, "rum_log", APP)).toBe(2);
+    });
+
+    it("dans l'autre ordre d'arrivée — logs d'abord, span ensuite — toujours une occurrence", async () => {
+      await nettoyer(pool, [APP]);
+      const logs = aplatirLogs(deuxLogs(61, panne));
+      expect((await writeLogs(pool, logs.logs, logs.errors)).erreurs).toEqual({ recues: 1, inserees: 1, ignorees: 0 });
+      expect((await writeRows(pool, aplatir(spanOtelPython(APP, 61, [panne])))).erreurs)
+        .toEqual({ recues: 1, inserees: 0, ignorees: 0 });
+      expect((await erreurs(pool, APP)).map((r) => r.origin_signal)).toEqual(["log"]);
+    });
+
+    it("Java : l'exception enregistrée par le span enfant ET par le span serveur, puis le log : une occurrence", async () => {
+      await nettoyer(pool, [APP]);
+      const lot = spanOtelPython(APP, 62, [panne]);
+      const serveur = lot.resourceSpans[0].scopeSpans[0].spans[0];
+      // L'exportateur envoie l'enfant AVANT son parent : il se termine plus tôt.
+      lot.resourceSpans[0].scopeSpans[0].spans.unshift({
+        ...serveur, spanId: spanId(620), parentSpanId: spanId(62), kind: 1, name: "FacturesController.creer",
+        attributes: attributs({ "code.function": "creer" }),
+      });
+      expect((await writeRows(pool, aplatir(lot))).erreurs).toEqual({ recues: 1, inserees: 1, ignorees: 0 });
+      const log = aplatirLogs(logOtelPython(APP, 62, panne));
+      expect((await writeLogs(pool, log.logs, log.errors)).erreurs).toEqual({ recues: 1, inserees: 0, ignorees: 0 });
+      expect((await erreurs(pool, APP)).map((r) => [r.origin_signal, r.source_parent_span_id]))
+        .toEqual([["span_event", spanId(62)]]);
+    });
+
+    it("ce qui reste distinct : autre message, autre span sans parenté, deux levées sur un même span", async () => {
+      await nettoyer(pool, [APP]);
+      await writeRows(pool, aplatir(spanOtelPython(APP, 63, [panne, panne])));
+      const autreMessage = aplatirLogs(logOtelPython(APP, 63, { ...panne, "exception.message": "montant nul" }));
+      await writeLogs(pool, autreMessage.logs, autreMessage.errors);
+      const autreTrace = aplatirLogs(logOtelPython(APP, 64, panne));
+      await writeLogs(pool, autreTrace.logs, autreTrace.errors);
+      const rows = await erreurs(pool, APP);
+      // Deux levées identiques du même span (réessai), un autre message, une autre trace.
+      expect(rows).toHaveLength(4);
+      expect(rows.filter((r) => r.message === "montant nul")).toHaveLength(1);
     });
 
     it("un log texte, un log d'exception sous ERROR ou sans horodatage restent des logs", async () => {
