@@ -48,6 +48,7 @@ import {
   IDEMPOTENTS,
   issueReponse,
   lireConfigRelais,
+  RETRY_AFTER_DELAI_S,
   type Signal,
 } from "../../apps/console/lib/ingest-relay";
 // @ts-expect-error module ESM partagé, sans déclarations
@@ -413,6 +414,24 @@ describe("matrice de repli — chaque statut × chaque signal × signé ou non",
     expect(rep!.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
+  it("R11 — réponse SIGNÉE en application/x-protobuf (OTLP protobuf) : ce type conservé, nosniff toujours", async () => {
+    const collector = fauxCollector({
+      post: () => new Response(new Uint8Array(0), { status: 200, headers: { "content-type": "application/x-protobuf" } }),
+    });
+    const rep = await relais({ collector }).r.relayer("traces", entrante(), corps, CORS);
+    expect(rep!.headers.get("content-type")).toBe("application/x-protobuf");
+    expect(rep!.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("R11 — application/x-protobuf NON signé (pas le collector) : application/json imposé", async () => {
+    const collector = fauxCollector({
+      postSigne: false,
+      post: () => new Response("x", { status: 400, headers: { "content-type": "application/x-protobuf" } }),
+    });
+    const rep = await relais({ collector }).r.relayer("traces", entrante(), corps, CORS);
+    expect(rep!.headers.get("content-type")).toBe("application/json");
+  });
+
   it("erreur de CONNEXION (requête jamais partie) : repli pour tous les signaux, logs compris", async () => {
     for (const code of ["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]) {
       for (const signal of SIGNAUX) {
@@ -705,6 +724,39 @@ describe("par les route handlers — branchement réel", () => {
     expect(envoi.url).toBe(`${URL_COLLECTOR}/v1/traces`);
     expect(Buffer.from(envoi.init.body as Uint8Array).toString()).toBe('{"resourceSpans":[]}');
     expect(new Headers(envoi.init.headers).has("x-forwarded-for")).toBe(false);
+  });
+
+  it("R11 — traces protobuf gzip relayées : content-type et content-encoding transmis, réponse protobuf rendue telle quelle", async () => {
+    const collector = brancher({
+      collector: fauxCollector({
+        post: () => new Response(new Uint8Array(0), { status: 200, headers: { "content-type": "application/x-protobuf" } }),
+      }),
+    });
+    const brut = new Uint8Array([0x1f, 0x8b, 0x08, 0x00]);
+    const rep = await POST_TRACES(post("/api/ingest/v1/traces", {
+      "content-type": "application/x-protobuf", "content-encoding": "gzip", origin: ORIGINE,
+    }, brut));
+    expect(rep.status).toBe(200);
+    expect(rep.headers.get("content-type")).toBe("application/x-protobuf");
+    expect((await rep.arrayBuffer()).byteLength).toBe(0);
+    const envoi = new Headers(collector.posts()[0].init.headers);
+    expect(envoi.get("content-type")).toBe("application/x-protobuf");
+    expect(envoi.get("content-encoding")).toBe("gzip");
+  });
+
+  it("R11 — relais expiré sur une requête protobuf : le 503 part en google.rpc.Status, retry-after gardé", async () => {
+    brancher({
+      collector: fauxCollector({
+        post: () => Promise.reject(Object.assign(new Error("timeout"), { name: "TimeoutError" })),
+      }),
+    });
+    const rep = await POST_LOGS(post("/api/ingest/v1/logs", { "content-type": "application/x-protobuf" }, new Uint8Array(0)));
+    expect(rep.status).toBe(503);
+    expect(rep.headers.get("content-type")).toBe("application/x-protobuf");
+    expect(rep.headers.get("retry-after")).toBe(RETRY_AFTER_DELAI_S);
+    const octets = Buffer.from(await rep.arrayBuffer());
+    expect(octets[0]).toBe(0x12);
+    expect(octets.subarray(2).toString()).toBe("ingestion relay timeout, retry");
   });
 
   it("un corps au-delà du plafond reste refusé LOCALEMENT (413), sans relais", async () => {

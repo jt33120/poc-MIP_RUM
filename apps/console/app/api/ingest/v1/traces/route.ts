@@ -1,4 +1,4 @@
-// POST /api/ingest/v1/traces — OTLP/HTTP JSON -> Postgres.
+// POST /api/ingest/v1/traces — OTLP/HTTP (JSON ou protobuf) -> Postgres.
 //
 // Remplaçant de l'edge function Supabase `v1-traces` (disparue avec le projet).
 // Même parser partagé (shared/otlp.mjs), mêmes gardes (413 taille, 403 clé,
@@ -12,11 +12,12 @@
 import { writeRows } from "@mip/backend/lib/pg-ingest.mjs";
 import { secureOtlpIdentities } from "@mip/backend/lib/identity-hash.mjs";
 import { flattenOtlp } from "@mip/backend/shared/otlp.mjs";
+import { decoderCorpsOtlp, RefusCorpsOtlp } from "@mip/backend/shared/otlp-corps.mjs";
 import { appliquerGeo } from "@mip/backend/shared/geoip.mjs";
 import { bodyTooLarge, lireCorpsBorne, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "@mip/backend/shared/limits.mjs";
 import { withRetry } from "@mip/backend/shared/retry.mjs";
 import { pool } from "@/lib/db";
-import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
+import { corsFor, formaterReponseOtlp, guardApps, json, log, refusIngestion } from "@/lib/ingest";
 import { relayer } from "@/lib/ingest-relay";
 
 // Beacons navigateur : jamais de cache, toujours du calcul serveur.
@@ -44,7 +45,12 @@ export async function GET(req: Request) {
   return json({ status: "ok", service: "v1-traces" }, 200, cors);
 }
 
+// La réponse suit le format de la requête (JSON ou protobuf) : `formaterReponseOtlp`.
 export async function POST(req: Request) {
+  return formaterReponseOtlp(req, await traiter(req));
+}
+
+async function traiter(req: Request) {
   const cors = await corsFor(req.headers.get("origin") ?? "");
 
   // garde-fou de charge : rejet sur le Content-Length annoncé, avant de
@@ -79,11 +85,19 @@ export async function POST(req: Request) {
     // appel réseau pour un corps qu'on refuserait de toute façon).
     const relayee = await relayer("traces", req, brut, cors);
     if (relayee) return relayee;
+    // JSON ou protobuf, gzip ou non : le même objet OTLP, par le même décodeur
+    // que le collector (`shared/otlp-corps.mjs`). Refus : 400, 413 ou 415.
     let payload: unknown;
     try {
-      payload = JSON.parse(brut.toString("utf8"));
-    } catch {
-      throw new BadRequestError("invalid json body");
+      payload = decoderCorpsOtlp(brut, {
+        signal: "traces",
+        contentType: req.headers.get("content-type"),
+        contentEncoding: req.headers.get("content-encoding"),
+      }).payload;
+    } catch (err) {
+      if (!(err instanceof RefusCorpsOtlp)) throw err;
+      log.warn("bad request", { reason: err.message, status: err.statut });
+      return json({ error: err.message }, err.statut, cors);
     }
     const secured = secureOtlpIdentities(payload, process.env.IDENTITY_HASH_SECRET);
     const rows = flattenOtlp(secured.payload, { maxSpans: MAX_SPANS_PER_REQUEST });

@@ -31,6 +31,8 @@ vi.mock("@/lib/ingest", () => ({
   json: (body: unknown, status: number, headers: Record<string, string>) =>
     new Response(JSON.stringify(body), { status, headers }),
   log: { info() {}, warn() {}, error(...args: unknown[]) { errors.push(args); } },
+  // Requêtes JSON ici : la réponse passe telle quelle (la conversion protobuf a ses tests).
+  formaterReponseOtlp: async (_req: Request, res: Response) => res,
 }));
 
 import { POST } from "../../apps/console/app/api/ingest/v1/traces/route";

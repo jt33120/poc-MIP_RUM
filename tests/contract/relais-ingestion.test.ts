@@ -67,6 +67,7 @@ import { _resetPlatformFlagCache } from "../../apps/console/lib/platform-flag";
 import { empreinteIdentite } from "../../packages/backend/lib/identity-hash.mjs";
 // @ts-expect-error module ESM partagé, sans déclarations
 import { genererJetonUpload } from "../../packages/backend/lib/sourcemap-upload.mjs";
+import { logsOfficiels, tracesOfficielles } from "../fixtures/otlp-officiel";
 
 if (process.env.CI && !ENV.url) {
   throw new Error("CI : RELAY_TEST_DATABASE_URL est requise (pas de skip silencieux)");
@@ -308,6 +309,33 @@ suite("relais d'ingestion : console → collector réel → Postgres (Docker)", 
       expect(rep.status).toBe(200);
       const { rows } = await db.query("select count(*)::int n from rum_log where app_id = $1 and session_id = 'relais-s1'", [APP.id]);
       expect(rows[0].n).toBe(2);
+    });
+
+    it("R11 — traces et logs protobuf gzip du SDK officiel : décodés par le collector réel, réponse protobuf", async () => {
+      // Ce qu'un agent Java ou .NET enverrait, session du navigateur propagée
+      // (`tracestate: mip=s:relais-s1`, ancrée par le cas traces ci-dessus).
+      const agent = { appId: APP.id, cle: APP.cle, session: "relais-s1", t0: Date.now() - 20_000, traceId: "e11b0000000000000000000000000001" };
+      const protobufGzip = { "content-type": "application/x-protobuf", "content-encoding": "gzip" };
+      fetchEspion.mockClear();
+
+      const repTraces = await POST_TRACES(requete("/api/ingest/v1/traces", gzipSync(tracesOfficielles(agent).protobuf), protobufGzip));
+      expect(repTraces.status).toBe(200);
+      expect(repTraces.headers.get("content-type")).toBe("application/x-protobuf");
+      expect((await repTraces.arrayBuffer()).byteLength).toBe(0);
+      const repLogs = await POST_LOGS(requete("/api/ingest/v1/logs", gzipSync(logsOfficiels(agent).protobuf), protobufGzip));
+      expect(repLogs.status).toBe(200);
+      expect(repLogs.headers.get("content-type")).toBe("application/x-protobuf");
+
+      // Relayés tels quels : c'est le collector qui a décodé.
+      expect(appelsCollector().map(([u]) => String(u))).toEqual([`${base}/v1/traces`, `${base}/v1/logs`]);
+      const envoyes = new Headers((appelsCollector()[0][1] as RequestInit).headers);
+      expect(envoyes.get("content-type")).toBe("application/x-protobuf");
+      expect(envoyes.get("content-encoding")).toBe("gzip");
+
+      const spans = await db.query("select tier, session_id from rum_span where trace_id = $1 order by tier", [agent.traceId]);
+      expect(spans.rows).toEqual([{ tier: "back", session_id: "relais-s1" }, { tier: "detail", session_id: "relais-s1" }]);
+      const logs = await db.query("select count(*)::int n from rum_log where app_id = $1 and trace_id = $2", [APP.id, agent.traceId]);
+      expect(logs.rows[0].n).toBe(2);
     });
 
     it("replay : chunk écrit par le collector, en-têtes x-mip-* transmis", async () => {

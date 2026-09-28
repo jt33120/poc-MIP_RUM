@@ -317,6 +317,7 @@ Garanties :
 | Aucune requête réseau du tout | `requireConsent: true` sans appel `MIPRum.consent(true)` ; ou session en mode « error-biased » sans erreur (collecte de routine supprimée) ou « off » (`keepOnError: false` + hors `sampleRate`) ; ou bloqueur de pub | vérifier la CMP ; tester avec `sampleRate: 1` ; servir le SDK et l'ingestion en first-party |
 | Données partielles (INP/CLS absents) | l'onglet n'est jamais passé en arrière-plan (ces vitals sont finalisés au `visibilitychange`) | comportement normal ; ils arrivent quand l'utilisateur quitte/masque la page |
 | Le SDK ne se charge pas | CSP `script-src` bloquante | cf. §4 |
+| `415` sur les POST d'un agent backend | `content-type` autre que `application/json` ou `application/x-protobuf`, ou `content-encoding` autre que `gzip` | `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` (ou `http/json`), `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` ou `none` (§ 10) |
 
 Vérification rapide de l'endpoint sans navigateur :
 
@@ -363,4 +364,118 @@ Architecture : `app sous agent OTel → Collector → ingestion MIP`.
 | Stacks | FastAPI/Express prouvés, autres via protocole | toute stack avec un agent OTel |
 | Recommandé quand | on a accès au code du backend | backend non modifiable / multi-langages |
 
-Note Node : les agents JavaScript exportent déjà de l'OTLP/HTTP JSON ; le Collector y est optionnel (l'app peut viser directement l'endpoint), mais il reste utile pour filtrer les spans serveur et injecter l'identité MIP.
+Depuis le 28/09/2026, l'ingestion lit aussi l'OTLP/HTTP **protobuf** (§ 10) : le Collector n'est plus nécessaire pour changer d'encodage — un agent peut viser directement l'endpoint. Il reste utile pour filtrer les spans serveur ou injecter l'identité MIP sans toucher à l'environnement de l'application.
+
+## 10. Backends : les agents OpenTelemetry officiels
+
+Les agents et SDK OpenTelemetry officiels exportent par défaut en **OTLP/HTTP protobuf** (`content-type: application/x-protobuf`). L'ingestion l'accepte sur les deux mêmes routes que le JSON, pour les **traces** et les **logs**, sans Collector intermédiaire. Le lot décodé suit exactement le chemin d'un lot JSON : même clé d'API, même limite de débit, même barrière RGPD, même hachage d'identité, mêmes lignes (`packages/backend/shared/otlp-corps.mjs`, contrat de parité `tests/contract/ingest-parity.test.ts`).
+
+### Ce que MIP attend
+
+| Élément | Valeur |
+|---|---|
+| Endpoint traces | `https://<ingestion>/v1/traces` — sur la console : `https://mip-rum-console.vercel.app/api/ingest/v1/traces` |
+| Endpoint logs | `https://<ingestion>/v1/logs` — sur la console : `https://mip-rum-console.vercel.app/api/ingest/v1/logs` |
+| Protocole | `http/protobuf` (ou `http/json`, là où l'agent le propose) ; **pas `grpc`** : l'ingestion est en HTTP seulement |
+| Compression | `gzip` ou aucune (la sortie décompressée est bornée au même plafond qu'un corps en clair, 2 Mo : au-delà, 413) |
+| Application | attribut de ressource `mip.app_id` (obligatoire : un lot sans `mip.app_id` est ignoré) |
+| Clé d'API | attribut de ressource `mip.api_key` (la même clé que le snippet navigateur ; exigée quand `REQUIRE_API_KEY=true`) |
+| Service | `OTEL_SERVICE_NAME` : devient la dimension « service » des spans et des erreurs backend |
+| Métriques | **aucune route** `/v1/metrics` : `OTEL_METRICS_EXPORTER=none`, sinon l'agent journalise des échecs d'export |
+
+Les variables d'environnement ci-dessous sont celles de la [spécification OpenTelemetry](https://opentelemetry.io/docs/specs/otel/protocol/exporter/), communes à tous les langages. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` et `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` sont utilisés **tels quels** (aucun chemin ajouté) : on y met l'URL complète. `OTEL_EXPORTER_OTLP_ENDPOINT`, lui, reçoit `/v1/traces` et `/v1/logs` en suffixe ; sur la console, sa valeur serait donc `https://mip-rum-console.vercel.app/api/ingest`.
+
+Socle commun, à poser dans l'environnement du processus (valeurs à remplacer) :
+
+```bash
+export OTEL_SERVICE_NAME="facturation"
+export OTEL_RESOURCE_ATTRIBUTES="mip.app_id=<app_id>,mip.api_key=<clé fournie par MIP>,deployment.environment.name=prod"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="https://mip-rum-console.vercel.app/api/ingest/v1/traces"
+export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="https://mip-rum-console.vercel.app/api/ingest/v1/logs"
+export OTEL_EXPORTER_OTLP_COMPRESSION="gzip"
+export OTEL_TRACES_EXPORTER="otlp"
+export OTEL_LOGS_EXPORTER="otlp"      # « none » pour n'envoyer que les traces
+export OTEL_METRICS_EXPORTER="none"
+```
+
+`OTEL_RESOURCE_ATTRIBUTES` est une liste `clé=valeur` séparée par des virgules : une valeur qui contiendrait une virgule, un `=` ou un espace doit être encodée en pourcentage.
+
+**Propagation W3C.** Le propagateur par défaut des SDK est `tracecontext,baggage` (`OTEL_PROPAGATORS`) : l'agent lit l'en-tête `traceparent` que le SDK web pose sur les appels same-origin et sur les origines de `cfg.trace`, et recopie le `tracestate: mip=s:<session>` dans le champ `traceState` de son span serveur. C'est ce qui rattache la requête backend à la session du navigateur (waterfall « navigateur → serveur → SQL »). Ne changer `OTEL_PROPAGATORS` qu'en y gardant `tracecontext`.
+
+**Débit.** La limite de débit est par application (600 requêtes/min par défaut, § 7), et chaque export est une requête. Un agent exporte par lots, et seulement quand il a quelque chose à envoyer : les traces toutes les 5 s au plus (`OTEL_BSP_SCHEDULE_DELAY`, défaut 5000 ms), les logs toutes les secondes (`OTEL_BLRP_SCHEDULE_DELAY`, défaut 1000 ms) — soit jusqu'à ~72 requêtes/min par processus actif. Pour un parc de plusieurs processus, allonger `OTEL_BLRP_SCHEDULE_DELAY` (5000, par exemple), relever la limite de l'app, ou passer par un Collector qui regroupe les lots.
+
+### Par langage
+
+**Java** — agent `opentelemetry-javaagent.jar` ([téléchargement](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar)) ; `http/protobuf` est son protocole par défaut depuis la version 2.0.
+
+```bash
+# socle commun ci-dessus, puis :
+java -javaagent:/chemin/opentelemetry-javaagent.jar -jar app.jar
+```
+
+**.NET** — instrumentation automatique OpenTelemetry .NET (script `otel-dotnet-auto-install.sh` de la [documentation officielle](https://opentelemetry.io/docs/zero-code/dotnet/), qui installe dans `$HOME/.otel-dotnet-auto`).
+
+```bash
+# socle commun ci-dessus, puis, dans le shell qui lance l'application :
+. $HOME/.otel-dotnet-auto/instrument.sh
+dotnet MonApplication.dll
+```
+
+Sous Windows (PowerShell), le module fourni par le même projet : `Register-OpenTelemetryForCurrentSession -OTelServiceName "facturation"`, après avoir posé les mêmes variables en `$env:…`.
+
+**Python** (hors FastAPI, qui a son middleware MIP, § 0) — `opentelemetry-instrument`. Son protocole par défaut est `grpc` : `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` est **obligatoire** ici.
+
+```bash
+pip install opentelemetry-distro opentelemetry-exporter-otlp
+opentelemetry-bootstrap -a install
+# socle commun ci-dessus (protocole http/protobuf compris), puis :
+opentelemetry-instrument gunicorn app:app
+```
+
+Avant OpenTelemetry Python 1.40.0, les logs du module `logging` ne partent qu'avec `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true`.
+
+**Go** — pas d'agent sans code : le SDK s'initialise dans `main` avec les exportateurs HTTP, qui lisent les mêmes variables (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_COMPRESSION`…) et parlent protobuf par construction.
+
+```go
+import (
+    "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+    "go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+)
+
+exportateurTraces, err := otlptracehttp.New(ctx) // endpoint, compression : variables d'environnement
+exportateurLogs, err := otlploghttp.New(ctx)
+```
+
+L'instrumentation HTTP serveur (`otelhttp`, `otelgin`…) produit les spans `SERVER` attendus ; la ressource lit `OTEL_SERVICE_NAME` et `OTEL_RESOURCE_ATTRIBUTES` avec `resource.WithFromEnv()`.
+
+**PHP** — extension `opentelemetry` et autoload du SDK.
+
+```bash
+pecl install opentelemetry            # puis « extension=opentelemetry.so » dans php.ini
+composer require open-telemetry/sdk open-telemetry/exporter-otlp
+# + les paquets d'auto-instrumentation du framework (open-telemetry/opentelemetry-auto-slim, -laravel, -symfony…)
+# socle commun ci-dessus, plus :
+export OTEL_PHP_AUTOLOAD_ENABLED=true
+```
+
+**Ruby** — gems `opentelemetry-sdk`, `opentelemetry-exporter-otlp` (OTLP/HTTP protobuf, le seul encodage de cette gem) et `opentelemetry-instrumentation-all`, puis un initialiseur de trois lignes (Rails : `config/initializers/opentelemetry.rb`) :
+
+```ruby
+require "opentelemetry/sdk"
+require "opentelemetry/exporter/otlp"
+require "opentelemetry/instrumentation/all"
+OpenTelemetry::SDK.configure { |c| c.use_all }   # endpoint, ressource, service : variables d'environnement
+```
+
+**Node** (SDK officiel, sans le paquet `@mip/agent-node`) — auto-instrumentation.
+
+```bash
+npm install --save @opentelemetry/api @opentelemetry/auto-instrumentations-node
+# socle commun ci-dessus, puis :
+node --require @opentelemetry/auto-instrumentations-node/register app.js
+```
+
+### Vérifier
+
+Un export réussi rend `200` avec un corps protobuf vide, que les exportateurs officiels lisent comme un succès complet (vérifié avec le SDK Node : `tests/integration/otlp-protobuf-agent-sql.test.ts`). En base, un span `SERVER` porteur des attributs HTTP semconv devient une ligne `rum_span` de niveau `back` (rattachée à la session par le `tracestate`), ses appels SQL et sous-appels des lignes `detail`, ses exceptions et les logs `ERROR` porteurs d'`exception.type` des erreurs backend (`rum_error`), les logs des lignes `rum_log`. En cas d'échec, l'agent journalise le statut HTTP : `403` (clé, § 7), `415` (protocole : voir la ligne correspondante du § 7), `429` (débit).

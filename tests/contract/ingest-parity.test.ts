@@ -55,6 +55,11 @@
 //     collector → prédicat partagé (`shared/retry.mjs`, `estIndisponibilite`),
 //     branché dans `refusIngestion` (`apps/console/lib/ingest.ts`).
 //
+// R11 — OTLP/HTTP PROTOBUF : des exports du SDK OpenTelemetry officiel
+// (`tests/fixtures/otlp-officiel.ts`), en clair et en gzip, plus les refus
+// (400, 403, 413, 415). Même statut, même `content-type` de réponse (protobuf
+// pour une requête protobuf), mêmes lignes des deux côtés.
+//
 // DÉFAUT COMMUN CORRIGÉ DES DEUX CÔTÉS : un chunk de rejeu sans `x-mip-seq`
 // partait en séquence 0 (`Number(null) === 0`) → 400 partout, par le même
 // `lireSequenceReplay` ; et la console lit le corps du rejeu borné.
@@ -119,6 +124,7 @@ import { VERROU_INGESTION_NS } from "../../packages/backend/lib/privacy-barriere
 import { creerReceveur } from "../../packages/backend/lib/receiver.mjs";
 // @ts-expect-error module ESM partagé, sans déclarations
 import { genererJetonUpload } from "../../packages/backend/lib/sourcemap-upload.mjs";
+import { logsOfficiels, tracesOfficielles } from "../fixtures/otlp-officiel";
 
 // En CI, l'absence des bases est une panne de câblage, pas une raison de sauter :
 // un contrat qui se skippe en silence ne protège rien (même leçon que les bases
@@ -377,6 +383,8 @@ interface Envoi {
 interface Reponse {
   statut: number;
   retryAfter: string | null;
+  /** `content-type` de la réponse : comparé sur les routes OTLP (R11, JSON ou protobuf). */
+  type: string | null;
   corps: unknown;
 }
 
@@ -423,7 +431,12 @@ async function appelerConsole(e: Envoi): Promise<Reponse> {
     const req = Object.assign(brute, { nextUrl: new URL(url), cookies: { get: () => undefined } });
     res = await POST_SOURCEMAPS(req as never);
   } else throw new Error(`chemin sans route console : ${e.chemin}`);
-  return { statut: res.status, retryAfter: res.headers.get("retry-after"), corps: lireJson(await res.text()) };
+  return {
+    statut: res.status,
+    retryAfter: res.headers.get("retry-after"),
+    type: res.headers.get("content-type"),
+    corps: lireJson(await res.text()),
+  };
 }
 
 /** Côté collector : une vraie requête HTTP, en-têtes maîtrisés. */
@@ -441,6 +454,7 @@ function appelerCollector(port: number, e: Envoi): Promise<Reponse> {
           resoudre({
             statut: res.statusCode ?? 0,
             retryAfter: (res.headers["retry-after"] as string | undefined) ?? null,
+            type: (res.headers["content-type"] as string | undefined) ?? null,
             corps: lireJson(Buffer.concat(morceaux).toString("utf8")),
           }));
         res.on("error", rejeter);
@@ -693,6 +707,17 @@ const battement = (installId: string, appIds: string[] = [APP.a.id]) => ({
 const POSTE = "4f1c2b8e-6a3d-4c7e-9b10-2d5e8f7a9c01";
 /** C11 — un marqueur de déploiement, à l'instant fixé (T0) pour que les deux côtés écrivent le même. */
 const marqueur = (appId: string, version = "2026.09.25") => ({ app_id: appId, version, env: "prod", ts: new Date(T0).toISOString() });
+
+/**
+ * R11 — ce qu'un agent OpenTelemetry officiel de l'app A enverrait : une requête
+ * serveur de la session SESSION(1) (déjà ancrée par les cas nominaux), construite
+ * UNE fois, envoyée octet pour octet aux deux côtés.
+ */
+const AGENT_A = { appId: APP.a.id, cle: APP.a.cle, session: SESSION(1), t0: T0 + 20_000, traceId: "e11a0000000000000000000000000001" };
+const EXPORT_A = { traces: tracesOfficielles(AGENT_A), logs: logsOfficiels(AGENT_A) };
+const EXPORT_SANS_CLE = tracesOfficielles({ ...AGENT_A, cle: null, traceId: "e11a0000000000000000000000000002" });
+const PROTOBUF = { "content-type": "application/x-protobuf" };
+const PROTOBUF_GZIP = { ...PROTOBUF, "content-encoding": "gzip" };
 
 const CAS: Cas[] = [
   // ── 200 nominaux ──────────────────────────────────────────────────────────
@@ -1033,6 +1058,44 @@ const CAS: Cas[] = [
     envoi: { chemin: "/api/v1/deploys", ...json({ version: "x" }, bearer(JETON_DEPLOIEMENT.jeton)) },
     statut: 400,
   },
+  // ── R11 : OTLP/HTTP PROTOBUF (agents OpenTelemetry officiels) ─────────────
+  // En FIN de liste : ces cas écrivent, et les séquences (`rum_error.id`…) des
+  // cas précédents ne doivent pas bouger.
+  {
+    nom: "R11 — traces protobuf du SDK officiel (span serveur, appel SQL, exception) → 200",
+    envoi: { chemin: "/api/ingest/v1/traces", entetes: PROTOBUF, corps: EXPORT_A.traces.protobuf },
+    statut: 200,
+  },
+  {
+    nom: "R11 — le même export en gzip (rejeu : idempotent) → 200, rien de plus",
+    envoi: { chemin: "/api/ingest/v1/traces", entetes: PROTOBUF_GZIP, corps: gzipSync(EXPORT_A.traces.protobuf) },
+    statut: 200,
+  },
+  {
+    nom: "R11 — logs protobuf gzip (information + exception), /v1/logs côté collector → 200",
+    envoi: { chemin: "/api/ingest/v1/logs", cheminCollector: "/v1/logs", entetes: PROTOBUF_GZIP, corps: gzipSync(EXPORT_A.logs.protobuf) },
+    statut: 200,
+  },
+  {
+    nom: "R11 — traces protobuf sans clé, sous REQUIRE_API_KEY → 403 (mêmes gardes qu'en JSON)",
+    envoi: { chemin: "/api/ingest/v1/traces", entetes: PROTOBUF, corps: EXPORT_SANS_CLE.protobuf },
+    statut: 403,
+  },
+  {
+    nom: "R11 — corps protobuf illisible → 400",
+    envoi: { chemin: "/api/ingest/v1/traces", entetes: PROTOBUF, corps: Buffer.from([0x0a, 0x7f, 0x01]) },
+    statut: 400,
+  },
+  {
+    nom: "R11 — content-type non pris en charge (text/plain) → 415",
+    envoi: { chemin: "/api/ingest/v1/logs", entetes: { "content-type": "text/plain" }, corps: Buffer.from(JSON.stringify(logs(APP.a, SESSION(1), 16))) },
+    statut: 415,
+  },
+  {
+    nom: "R11 — bombe gzip (sortie au-delà du plafond de 2 Mo, ~2 Kio envoyés) → 413",
+    envoi: { chemin: "/api/ingest/v1/traces", entetes: PROTOBUF_GZIP, corps: gzipSync(Buffer.alloc(2_000_001, 0), { level: 9 }) },
+    statut: 413,
+  },
 ];
 
 // ─────────────────────────────── Exécution ─────────────────────────────────
@@ -1107,11 +1170,26 @@ suite("contrat de parité — console (routes Next) ↔ collector (creerReceveur
       ).toEqual({ console: cas.statut, collector: cas.statut });
       expect(r.collector.retryAfter, "retry-after").toBe(r.console.retryAfter);
       expect(r.collector.corps, "corps de réponse").toEqual(r.console.corps);
+      // R11 : une réponse OTLP suit le format de la requête — le même des deux côtés.
+      if (/\/v1\/(traces|logs)$/.test(cas.envoi.chemin)) {
+        expect(r.collector.type, "content-type de réponse").toBe(r.console.type);
+      }
       expect(ecartsDuCas(avant, apres), "lignes écrites par ce cas").toEqual([]);
       expect(coupsAjoutes(avant.coupsCollector, apres.coupsCollector), "coups de débit de ce cas")
         .toEqual(coupsAjoutes(avant.coupsConsole, apres.coupsConsole));
     }, cas.delai ?? DELAI);
   }
+
+  // Une parité sur « rien d'écrit des deux côtés » serait vide de sens : les cas
+  // protobuf nominaux ont bien écrit, et la même chose des deux côtés.
+  it("R11 — l'export protobuf a écrit ses lignes (span serveur, appel SQL, logs), des deux côtés", async () => {
+    for (const base of [baseConsole, baseCollector]) {
+      const spans = await base.query("select tier, session_id from rum_span where trace_id = $1 order by tier", [AGENT_A.traceId]);
+      expect(spans.rows).toEqual([{ tier: "back", session_id: SESSION(1) }, { tier: "detail", session_id: SESSION(1) }]);
+      const logsEcrits = await base.query("select count(*)::int n from rum_log where trace_id = $1", [AGENT_A.traceId]);
+      expect(logsEcrits.rows[0].n).toBe(2);
+    }
+  }, DELAI);
 
   // Les deltas isolent chaque cas ; ce cas-ci prouve en plus qu'après tous les
   // cas de parité, les deux bases sont TOUJOURS identiques, compteurs compris.
