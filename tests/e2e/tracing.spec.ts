@@ -2,7 +2,7 @@
 // démo (:8080) -> fetch + XHR instrumentés (traceparent) -> backend FastAPI (:8001)
 // avec mip_rum_middleware -> spans front/back en base, corrélés par trace_id ->
 // console /tracing + timeline session.
-// Le backend de démo est spawné ici (demo/.venv ou python3 avec fastapi) ;
+// Le backend de démo est spawné ici (tests/e2e/site-cobaye/.venv ou python3 avec fastapi) ;
 // sans FastAPI disponible, la suite est skippée proprement.
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
@@ -40,7 +40,7 @@ const pool = new pg.Pool({
 });
 
 function pythonBin(): string | null {
-  for (const bin of ["demo/.venv/bin/python", "python3"]) {
+  for (const bin of ["tests/e2e/site-cobaye/.venv/bin/python", "python3"]) {
     try {
       execFileSync(bin, ["-c", "import fastapi, uvicorn"], { stdio: "ignore" });
       return bin;
@@ -57,7 +57,7 @@ let backend: ChildProcess | null = null;
 // Sans FastAPI, seuls les deux tests bout en bout sont sautés (chacun le dit) : un
 // `test.skip` dans ce crochet de fichier sauterait aussi les blocs d'écran (F60),
 // qui sèment leurs spans en base et n'ont pas besoin du backend de démo.
-const SANS_FASTAPI = "fastapi/uvicorn indisponibles (demo/.venv absent et python3 nu)";
+const SANS_FASTAPI = "fastapi/uvicorn indisponibles (tests/e2e/site-cobaye/.venv absent et python3 nu)";
 
 test.beforeAll(async () => {
   await pool.query(
@@ -69,7 +69,7 @@ test.beforeAll(async () => {
   );
 
   if (!PY) return;
-  backend = spawn(PY, ["demo/backend.py"], {
+  backend = spawn(PY, ["tests/e2e/site-cobaye/backend.py"], {
     env: {
       ...process.env,
       MIP_RUM_ENDPOINT: "http://localhost:4318/v1/traces",

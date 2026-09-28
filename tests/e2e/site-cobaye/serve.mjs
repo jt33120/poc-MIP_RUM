@@ -9,18 +9,18 @@ const PORT = process.env.DEMO_PORT || 8080;
 
 const ROUTES = {
   "/mip-rum.js": {
-    file: join(__dirname, "../packages/rum-sdk/dist/mip-rum.js"),
+    file: join(__dirname, "../../../packages/rum-sdk/dist/mip-rum.js"),
     type: "application/javascript",
   },
   // v0.3 — bundle replay séparé, lazy-loadé par le cœur (même origine)
   "/mip-rum-replay.js": {
-    file: join(__dirname, "../packages/rum-sdk/dist/mip-rum-replay.js"),
+    file: join(__dirname, "../../../packages/rum-sdk/dist/mip-rum-replay.js"),
     type: "application/javascript",
   },
   // Widget d'avis : servi ici pour que l'e2e exerce le fichier RÉELLEMENT déployé
   // (apps/console/public), et non une copie.
   "/mip-rum-feedback.js": {
-    file: join(__dirname, "../apps/console/public/mip-rum-feedback.js"),
+    file: join(__dirname, "../../../apps/console/public/mip-rum-feedback.js"),
     type: "application/javascript",
   },
 };

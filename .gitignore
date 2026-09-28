@@ -16,7 +16,7 @@ playwright-report/
 .secrets-v02.local.md
 
 # v0.4 demo backend
-demo/.venv/
+tests/e2e/site-cobaye/.venv/
 __pycache__/
 
 # Ext-D : clé privée de signature de l'extension — NE JAMAIS committer (l'ID

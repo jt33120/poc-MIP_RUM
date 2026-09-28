@@ -45,7 +45,7 @@ export default defineConfig({
       env: { MIP_E2E_TAMPON: "1" },
     },
     {
-      command: "node demo/serve.mjs",
+      command: "node tests/e2e/site-cobaye/serve.mjs",
       url: "http://localhost:8080",
       reuseExistingServer: true,
     },

@@ -2,7 +2,7 @@
 
 Lancement (depuis la racine du repo) :
   MIP_RUM_ENDPOINT=http://localhost:4318/v1/traces MIP_RUM_APP_ID=demo-app \
-  MIP_RUM_API_KEY=demo-key-local python3 demo/backend.py
+  MIP_RUM_API_KEY=demo-key-local python3 tests/e2e/site-cobaye/backend.py
 
 Sert /api/demo/* sur :8001 ; le middleware MIP RUM y est branché exactement
 comme sur un backend client (uti-platform) : env vars + add_middleware.
@@ -12,7 +12,7 @@ import asyncio
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "examples", "integrations", "fastapi"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "examples", "integrations", "fastapi"))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
