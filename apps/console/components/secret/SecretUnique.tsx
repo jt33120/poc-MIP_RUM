@@ -120,8 +120,60 @@ export function SecretAffiche({
       <code data-testid={testidValeur} className={codeClassName}>
         {remis.valeur}
       </code>
+      <CopieSecret valeur={remis.valeur} />
       {note}
     </div>
+  );
+}
+
+type EtatCopie = "attente" | "copie" | "a-copier" | "echec";
+
+/**
+ * Le secret part tout seul dans le presse-papiers à son affichage, et un bouton le
+ * recopie. Recette du 28/09/2026 : sélectionner à la souris un jeton de 47 caractères
+ * affiché une seule fois, c'était risquer d'en perdre un bout — et un jeton tronqué
+ * ne se revoit pas.
+ *
+ * La copie automatique peut être refusée : le navigateur n'écrit dans le presse-papiers
+ * que dans la foulée d'un geste de l'utilisateur, et la soumission du formulaire en est
+ * un, mais l'action serveur a pu durer plus longtemps que ce délai de grâce. Le libellé
+ * dit alors ce qui s'est vraiment passé, et le bouton reste là : jamais un « copié »
+ * qui ne l'est pas.
+ */
+function CopieSecret({ valeur }: { valeur: string }) {
+  const [etat, setEtat] = useState<EtatCopie>("attente");
+  const copier = async (automatique: boolean) => {
+    try {
+      await navigator.clipboard.writeText(valeur);
+      setEtat("copie");
+    } catch {
+      setEtat(automatique ? "a-copier" : "echec");
+    }
+  };
+  useEffect(() => {
+    // Une seule tentative automatique, à l'affichage de CE secret.
+    void copier(true);
+  }, [valeur]);
+  const libelle =
+    etat === "copie"
+      ? "Copié dans le presse-papiers ✓"
+      : etat === "echec"
+        ? "Copie refusée par le navigateur : sélectionnez le texte"
+        : "Pas encore copié : utilisez le bouton";
+  return (
+    <span className="mt-2 flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => void copier(false)}
+        data-testid="copier-secret"
+        className="rounded-md border border-line bg-panel px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface"
+      >
+        {etat === "copie" ? "Recopier" : "Copier"}
+      </button>
+      <span role="status" aria-live="polite" className="text-xs">
+        {etat === "attente" ? "" : libelle}
+      </span>
+    </span>
   );
 }
 
