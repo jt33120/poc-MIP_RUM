@@ -9,6 +9,7 @@ import { choisirReleases } from "../../apps/console/lib/presets";
 import { queryOf } from "../../apps/console/lib/filters";
 import {
   ALERTES_PAR_EVENEMENT,
+  bandeauSansVisite,
   constatsVueEnsemble,
   lectureErreursPour100,
   referencePrecedente,
@@ -464,5 +465,58 @@ describe("F13 — heures × route en angle mort (CR9)", () => {
 
   it("la règle cite la borne Bon de lib/rating.ts, formatée, jamais recopiée", () => {
     expect(regleAngleMort(THRESHOLDS.LCP[0])).toContain(formater("ms", THRESHOLDS.LCP[0]));
+  });
+});
+
+// Recette UTI du 28/09/2026 : sur 24 h, `gip-plateforme` affichait « Cette application
+// n'a pas encore reçu de données » alors qu'elle recevait depuis août — dernière visite
+// le 23/09, et 59 800 requêtes serveur tracées le jour même.
+describe("bandeauSansVisite — rien sur la plage n'est pas « jamais rien reçu »", () => {
+  const VINGT_QUATRE_H = { preset: "24h" as const };
+  const lu = (visite: string | null, serveur: string | null) => ({ ok: true as const, data: { visite, serveur } });
+
+  it("une visite en base, hors plage : dite et datée, sans guide d'installation", () => {
+    const b = bandeauSansVisite(VINGT_QUATRE_H, "24 h", lu("2026-09-23T13:02:07.556Z", null), 30);
+    expect(b).toEqual({
+      titre: "Aucune visite mesurée sur les dernières 24 h.",
+      detail: "Dernière visite reçue le 23/09 à 15:02.",
+      serveur: null,
+      guide: false,
+    });
+    expect(b.titre).not.toContain("pas encore");
+  });
+
+  it("le serveur envoie encore : sa dernière requête est datée, et dite hors des tuiles", () => {
+    const b = bandeauSansVisite(VINGT_QUATRE_H, "24 h", lu("2026-09-23T13:02:07.556Z", "2026-09-28T08:45:33.435Z"), 30);
+    expect(b.serveur).toBe(
+      "Le serveur de l'application envoie des requêtes tracées sans visite (la dernière le 28/09 à 10:45) : elles ne sont comptées dans aucune tuile de cet écran.",
+    );
+  });
+
+  it("aucune visite sur toute la conservation : dit comme tel, et le guide est proposé", () => {
+    const b = bandeauSansVisite({ preset: "7d" }, "7 j", lu(null, null), 30);
+    expect(b.titre).toBe("Aucune visite reçue sur les 30 derniers jours, la durée de conservation.");
+    expect(b.guide).toBe(true);
+    expect(b.serveur).toBeNull();
+  });
+
+  it("des requêtes serveur sans aucune visite : le guide reste proposé, le serveur est dit", () => {
+    const b = bandeauSansVisite({ preset: "1h" }, "1 h", lu(null, "2026-09-28T08:45:33.435Z"), 30);
+    expect(b.guide).toBe(true);
+    expect(b.serveur).toContain("28/09 à 10:45");
+  });
+
+  it("plage personnalisée : son libellé, tel quel", () => {
+    const b = bandeauSansVisite({ preset: null }, "du 15/07 09:00 au 16/07 09:00", lu("2026-09-23T13:02:07.556Z", null), 30);
+    expect(b.titre).toBe("Aucune visite mesurée du 15/07 09:00 au 16/07 09:00.");
+  });
+
+  it("date illisible : le constat de la plage seulement, rien d'inventé", () => {
+    expect(bandeauSansVisite(VINGT_QUATRE_H, "24 h", { ok: false }, 30)).toEqual({
+      titre: "Aucune visite mesurée sur les dernières 24 h.",
+      detail: "La date de la dernière donnée reçue n'a pas pu être lue.",
+      serveur: null,
+      guide: false,
+    });
   });
 });

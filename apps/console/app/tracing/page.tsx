@@ -319,6 +319,21 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
             />
           </RangeeKpi>
         )}
+        {/* Des requêtes serveur sans aucun appel navigateur (robots, sondes, scanners) :
+            les tuiles comptent le NAVIGATEUR et affichent 0 — la recette UTI du 28/09/2026
+            y a lu « rien reçu » un jour de 59 800 requêtes serveur. Le compte est déjà lu
+            (`back_total`) : il est dit, avec le chemin vers « Routes serveur ». */}
+        {c && c.total === 0 && c.back_total > 0 && (
+          <p role="note" data-testid="serveur-sans-navigateur" className="mt-2 text-xs text-ink-soft">
+            Aucun appel vu du navigateur sur {plage}, mais {formater("count", c.back_total)}{" "}
+            {c.back_total > 1 ? "requêtes serveur tracées" : "requête serveur tracée"} sans visite (robots, sondes, appels
+            entre services) : elles se lisent dans{" "}
+            <a href="#routes-serveur" className="text-perf underline-offset-2 hover:underline">
+              Routes serveur
+            </a>
+            .
+          </p>
+        )}
       </section>
 
       {/* 3 — Hero : classement (3/5) et série (2/5), côte à côte à partir de 1280 px. */}
@@ -540,7 +555,9 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
         explorer={planRoutes.ok ? explorerHref(query, planRoutes.value) : undefined}
         meta={
           <>
-            <span>tout trafic serveur rattaché à une session, y compris hors navigateur</span>
+            {/* `backRoutes` ne demande pas de session (jointure externe) : robots, sondes et
+                scanners y sont, et la phrase le dit au lieu de promettre une visite. */}
+            <span>tout trafic serveur reçu, avec ou sans visite navigateur (robots et sondes compris)</span>
             <span>erreurs = statuts 5xx</span>
             <Link href={hrefWithQuery("/map", query)} className="text-perf underline-offset-2 hover:underline">
               Carte

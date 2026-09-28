@@ -5,7 +5,7 @@
 import type { ImpactLigne } from "@/components/ImpactTable";
 import type { Constat } from "@/components/InsightStrip";
 import { formater } from "./fmt-ids";
-import { fmtDate, fmtPlage, pluriel } from "./format";
+import { fmtDate, fmtInstant, fmtPlage, pluriel } from "./format";
 import { classerParGravite, ecartALaReference, estFaible } from "./impact";
 import type { AnomalyRow } from "./health";
 import type { AlertFiringRow } from "./queries-v2";
@@ -34,6 +34,77 @@ export function referencePrecedente(range: Pick<ResolvedRange, "from" | "to" | "
   const debut = new Date(from - (to - from));
   const nom = (range.preset && NOM_PRECEDENTE[range.preset]) ?? "période précédente";
   return `vs ${nom} (${fmtPlage(debut, from)})`;
+}
+
+// ─────────────────────── Fenêtre sans visite (recette UTI du 28/09/2026) ───────────────────────
+
+const SUR_LA_PLAGE: Record<string, string> = {
+  "1h": "sur la dernière heure",
+  "24h": "sur les dernières 24 h",
+  "7d": "sur les 7 derniers jours",
+};
+
+/** Ce que dit le bandeau d'une app dont la fenêtre ne compte aucune session. */
+export interface BandeauSansVisite {
+  /** La phrase en gras : ce qui manque, et sur quelle durée. */
+  titre: string;
+  /** La suite : depuis quand, ou quoi faire. */
+  detail: string;
+  /** Les requêtes serveur qui arrivent sans visite, datées ; `null` s'il n'y en a pas. */
+  serveur: string | null;
+  /** Le lien vers le guide d'intégration : seulement si aucune visite n'a jamais été vue. */
+  guide: boolean;
+}
+
+/**
+ * Le bandeau « rien sur la fenêtre » de la Vue d'ensemble. Il disait « Cette
+ * application n'a pas encore reçu de données » dès que la fenêtre était vide : faux
+ * pour `gip-plateforme`, qui recevait depuis août — sa dernière visite datait de cinq
+ * jours, et son serveur envoyait 59 800 requêtes tracées le jour même. Trois cas :
+ *
+ *   - une visite en base, hors fenêtre → « Aucune visite mesurée … ; dernière visite
+ *     reçue le … » (le capteur a fonctionné : pas de guide d'installation) ;
+ *   - aucune visite en base → rien sur toute la conservation, ce qui est le plus
+ *     qu'on puisse affirmer (au-delà, la purge a tout effacé) : le guide est proposé ;
+ *   - la date illisible → le constat de la fenêtre seulement, sans rien inventer.
+ *
+ * Les requêtes serveur (palier `back`) sont dites à part : ce ne sont pas des visites,
+ * aucune tuile de l'écran ne les compte, et Tracing les liste sous « Routes serveur ».
+ */
+export function bandeauSansVisite(
+  range: Pick<ResolvedRange, "preset">,
+  libellePlage: string,
+  activite: { ok: true; data: { visite: string | null; serveur: string | null } | null } | { ok: false },
+  retentionJours: number,
+): BandeauSansVisite {
+  const plage = (range.preset && SUR_LA_PLAGE[range.preset]) ?? libellePlage;
+  if (!activite.ok || activite.data === null) {
+    return {
+      titre: `Aucune visite mesurée ${plage}.`,
+      detail: "La date de la dernière donnée reçue n'a pas pu être lue.",
+      serveur: null,
+      guide: false,
+    };
+  }
+  const { visite, serveur } = activite.data;
+  const phraseServeur = serveur
+    ? `Le serveur de l'application envoie des requêtes tracées sans visite (la dernière le ${fmtInstant(serveur)}) : elles ne sont comptées dans aucune tuile de cet écran.`
+    : null;
+  if (visite) {
+    return {
+      titre: `Aucune visite mesurée ${plage}.`,
+      // Heure de Paris, comme toute la console (le fuseau est nommé dans la barre du haut).
+      detail: `Dernière visite reçue le ${fmtInstant(visite)}.`,
+      serveur: phraseServeur,
+      guide: false,
+    };
+  }
+  return {
+    titre: `Aucune visite reçue sur les ${retentionJours} derniers jours, la durée de conservation.`,
+    detail: "Posez le capteur RUM sur votre site, puis simulez un parcours — les mesures apparaîtront ici.",
+    serveur: phraseServeur,
+    guide: true,
+  };
 }
 
 /** Référence d'un écart `cmp=release` : même fenêtre, la release A (§ 3.12). */

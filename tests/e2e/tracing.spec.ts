@@ -478,3 +478,91 @@ test.describe("F61 — détail de trace (§ 5.9)", () => {
     expect(fautes).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recette UTI du 28/09/2026 : une app dont le SERVEUR envoie (un scanner de
+// vulnérabilités, 59 800 requêtes en une nuit) mais qu'aucun visiteur n'a ouverte
+// depuis cinq jours. Tracing disait « 0 appel API », la Vue d'ensemble « cette
+// application n'a pas encore reçu de données ». Ce bloc prouve que les deux écrans
+// disent la vérité : rien de NAVIGATEUR sur la plage, la dernière visite datée, et
+// les requêtes serveur nommées, avec le chemin vers « Routes serveur ».
+// ─────────────────────────────────────────────────────────────────────────────
+
+test.describe("Recette UTI — requêtes serveur sans visite", () => {
+  const APP_UTI = "uti-e2e-serveur";
+  // Des requêtes de scanner, sans session : deux routes, cinq requêtes.
+  const REQUETES: [string, number][] = [
+    ["/wp-login.php", 404],
+    ["/wp-login.php", 404],
+    ["/wp-login.php", 404],
+    ["/", 200],
+    ["/", 200],
+  ];
+
+  test.beforeAll(async () => {
+    for (const t of ["rum_span", "rum_pageview", "rum_session"]) {
+      await pool.query(`delete from ${t} where app_id = $1`, [APP_UTI]);
+    }
+    await pool.query(
+      `insert into app_registry (app_id, name) values ($1, 'Recette UTI E2E') on conflict (app_id) do nothing`,
+      [APP_UTI],
+    );
+    // La dernière visite date de trois jours : hors de la plage de 24 h.
+    await pool.query(
+      `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+       values ($1, $2, $1, 'desktop', false, now() - interval '3 days', now() - interval '3 days', 1)
+       on conflict (session_id) do nothing`,
+      [`${APP_UTI}-s1`, APP_UTI],
+    );
+    for (const [i, [route, statut]] of REQUETES.entries()) {
+      // Hexadécimal, préfixé par ce bloc : unique dans `rum_span`, lisible par le détail de trace.
+      const id = `0e7e${(i + 1).toString(16).padStart(12, "0")}`;
+      await pool.query(
+        `insert into rum_span (span_id, trace_id, tier, kind, service, app_id, method, status_code, duration_ms, route, name, ts)
+         values ($1, $2, 'back', 'server', 'fastapi', $3, 'GET', $4, 3, $5, $6, now() - $7::int * interval '1 minute')`,
+        [id, id.padEnd(32, "0"), APP_UTI, statut, route, `GET ${route}`, 20 + i],
+      );
+    }
+  });
+
+  test("Tracing : aucun appel navigateur, mais les requêtes serveur sont comptées et listées", async ({ page }) => {
+    await loginConsole(page);
+    await page.goto(`${CONSOLE_F60}/tracing?app=${APP_UTI}&period=24h`, { waitUntil: "domcontentloaded" });
+    const note = page.getByTestId("serveur-sans-navigateur");
+    await expect(note).toContainText("5 requêtes serveur tracées");
+    await expect(note.getByRole("link", { name: "Routes serveur" })).toHaveAttribute("href", "#routes-serveur");
+    await expect(page.getByTestId("back-routes")).toContainText("/wp-login.php");
+  });
+
+  test("Vue d'ensemble : rien sur 24 h n'est pas « jamais rien reçu »", async ({ page }) => {
+    await loginConsole(page);
+    await page.goto(`${CONSOLE_F60}/?app=${APP_UTI}&period=24h`, { waitUntil: "domcontentloaded" });
+    const bandeau = page.getByTestId("onboarding-nudge");
+    await expect(bandeau).toContainText("Aucune visite mesurée sur les dernières 24 h.");
+    await expect(bandeau).toContainText("Dernière visite reçue le");
+    await expect(bandeau).not.toContainText("pas encore reçu");
+    // Le capteur a fonctionné : pas de guide d'installation.
+    await expect(bandeau.getByRole("link", { name: /Guide d.intégration/ })).toHaveCount(0);
+    const serveur = page.getByTestId("activite-serveur");
+    await expect(serveur).toContainText("requêtes tracées sans visite");
+    const lien = new URL((await serveur.getByRole("link", { name: "Voir les routes serveur" }).getAttribute("href"))!, CONSOLE_F60);
+    expect(lien.pathname).toBe("/tracing");
+    expect(lien.hash).toBe("#routes-serveur");
+    expect(lien.searchParams.get("app")).toBe(APP_UTI);
+  });
+
+  test("aucun débordement à 390, 768 et 1440 px (Tracing et Vue d'ensemble)", async ({ page }) => {
+    await loginConsole(page);
+    const fautes: string[] = [];
+    for (const largeur of LARGEURS) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(`${CONSOLE_F60}/tracing?app=${APP_UTI}&period=24h`, { waitUntil: "domcontentloaded" });
+      await expect(page.getByTestId("serveur-sans-navigateur")).toBeVisible();
+      for (const faute of await debordements(page)) fautes.push(`${largeur} px, /tracing — ${faute}`);
+      await page.goto(`${CONSOLE_F60}/?app=${APP_UTI}&period=24h`, { waitUntil: "domcontentloaded" });
+      await expect(page.getByTestId("onboarding-nudge")).toBeVisible();
+      for (const faute of await debordements(page)) fautes.push(`${largeur} px, / — ${faute}`);
+    }
+    expect(fautes).toEqual([]);
+  });
+});
