@@ -873,6 +873,11 @@ Règles, dans l'ordre (la première qui s'applique gagne) :
    à `previousRange.from`, `partielle`, raison « <signal> collecté depuis le JJ/MM HH:MM UTC seulement ».
    Cas particulier : `rum_session.sample_rate` vaut 1 par défaut sur les lignes antérieures à v58
    (09/09/2026, `migration-v58.sql:L26, L65`) ; pour lui, la date de référence est le 09/09/2026 00:00 UTC.
+   Signal RARE (les erreurs, `rum_error`, sans colonne requise) : le capteur ne l'émet que s'il se produit,
+   et son absence est un zéro mesuré. Son début de collecte est la plus ancienne de sa première ligne et de
+   la première session du périmètre (recette UTI du 28/09/2026 : une app sans aucune erreur voyait
+   « aucune donnée collectée sur le périmètre » sur la Vue d'ensemble et Erreurs JS, pendant que Pages,
+   jugée sur les pages vues, affichait son écart).
 3. **Retard d'ingestion** : si la mesure est additive, que la fenêtre courante se termine à moins de
    5 minutes de maintenant et dure 1 heure ou moins (`period=1h`), `partielle`, raison « période en cours :
    les derniers événements arrivent encore ; un delta serait faussement négatif ». Au-delà d'une heure,
