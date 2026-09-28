@@ -28,6 +28,30 @@ import {
   representationDemandee,
 } from "../../apps/console/lib/explorer-page-params";
 import { resumeVue as f34ResumeVue, explorerHrefFromAst as f34ExplorerHrefFromAst } from "../../apps/console/lib/explorer-page-params";
+import { libelleCibleTableau } from "../../apps/console/lib/explorer-page-params";
+
+// Recette UTI du 28/09/2026 : la liste des tableaux cibles affichait « Vue d'ensemble —
+// gip-plateforme — gip-plateforme » (le nom disait déjà l'app, le composant la rajoutait).
+describe("libelleCibleTableau — l'application n'est pas dite deux fois", () => {
+  it("un nom qui dit déjà l'app reste tel quel", () => {
+    expect(libelleCibleTableau("Vue d'ensemble — gip-plateforme", "gip-plateforme")).toBe("Vue d'ensemble — gip-plateforme");
+    expect(libelleCibleTableau("GIP-Plateforme : suivi", "gip-plateforme")).toBe("GIP-Plateforme : suivi");
+  });
+
+  it("un nom qui ne la dit pas la reçoit en suffixe", () => {
+    expect(libelleCibleTableau("COPIL", "gip-plateforme")).toBe("COPIL — gip-plateforme");
+  });
+
+  it("l'app doit être un mot du nom, pas un morceau d'un autre", () => {
+    expect(libelleCibleTableau("Tests de charge", "test")).toBe("Tests de charge — test");
+    expect(libelleCibleTableau("Vue gip-plateforme-v2", "gip-plateforme")).toBe("Vue gip-plateforme-v2 — gip-plateforme");
+  });
+
+  it("un tableau transverse : « toutes les applications », une fois", () => {
+    expect(libelleCibleTableau("Revue hebdo", null)).toBe("Revue hebdo — toutes les applications");
+    expect(libelleCibleTableau("Revue — toutes les applications", null)).toBe("Revue — toutes les applications");
+  });
+});
 import { mesureDeVolume as f33MesureDeVolume, planDeVolume as f33PlanDeVolume, planDeRepartition as f33PlanDeRepartition, LIMITE_REPARTITION as f33LimiteRepartition } from "../../apps/console/lib/explorer-page-params";
 import { EXPLORER_DATASET_IDS as f33DatasetIds, datasetDefinition as f33DatasetDefinition } from "../../apps/console/lib/analytics-schema";
 import { resumePopulation as f36ResumePopulation, retraitsDePopulation as f36RetraitsDePopulation } from "../../apps/console/lib/explorer-page-params";

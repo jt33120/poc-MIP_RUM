@@ -22,6 +22,7 @@ const SESSION = "p65-dash-session";
 const RELEASE = "p65-e2e-rel";
 const FINGERPRINT = "p65-e2e-fp";
 const TABLEAU = "P65 recette";
+const NOM_AVEC_APP = "P65 Vue d’ensemble — demo-app";
 const VUE = "P65 vue de recette";
 // Compte dédié à ce fichier (helpers/compte-dedie.ts), jamais le compte admin local.
 const ADMIN_EMAIL = "e2e-dashboards-analytics@mip-rum.local";
@@ -155,6 +156,10 @@ async function debordements(page: Page): Promise<string[]> {
 test("Explorer → carte → rechargement → duplication → CSV", async ({ page }) => {
   await login(page);
   const id = await creerTableau(page);
+  // Un second tableau dont le NOM dit déjà l'app (supprimé par `menage`, préfixe « P65 »).
+  const nomme = String(
+    (await pool.query(`insert into dashboard (name, app_id) values ($1, 'demo-app') returning id`, [NOM_AVEC_APP])).rows[0].id,
+  );
 
   // 1. L'analyse est composée dans l'Explorer, et son total est exact.
   await page.goto(explorer);
@@ -163,6 +168,10 @@ test("Explorer → carte → rechargement → duplication → CSV", async ({ pag
   // 2. Elle s'enregistre comme carte du tableau de bord créé à l'instant.
   const formulaire = page.getByTestId("save-widget");
   await expect(formulaire).toBeVisible();
+  // Recette UTI du 28/09/2026 : l'app suit le nom du tableau, une fois — et pas du
+  // tout quand le nom la dit déjà (« Vue d'ensemble — gip-plateforme — gip-plateforme »).
+  await expect(formulaire.locator(`select[name="id"] option[value="${id}"]`)).toHaveText(`${TABLEAU} — demo-app`);
+  await expect(formulaire.locator(`select[name="id"] option[value="${nomme}"]`)).toHaveText(NOM_AVEC_APP);
   await formulaire.locator('select[name="id"]').selectOption(id);
   await formulaire.locator('input[name="title"]').fill("Occurrences par route");
   // L'action serveur ne redirige pas : sans attendre sa réponse, le `goto` qui suit

@@ -92,7 +92,7 @@ import {
   representationDemandee,
 } from "@/lib/explorer-page-params";
 // F33 — plans dérivés du contexte et filtre d'une valeur de la répartition.
-import { LIMITE_REPARTITION, filtresDuGroupe, mesureDeVolume } from "@/lib/explorer-page-params";
+import { LIMITE_REPARTITION, filtresDuGroupe, libelleCibleTableau, mesureDeVolume } from "@/lib/explorer-page-params";
 import { modelesDeDepart } from "@/lib/explorer-modeles";
 import { type ExplorerResult } from "@/lib/queries-explorer";
 import { widgetConfigJson, widgetFromPlan } from "@/lib/dashboards";
@@ -678,7 +678,7 @@ function Resultat({
                   <select name="id" className={`${INPUT_CLASS} w-full`}>
                     {cibles.map((cible) => (
                       <option key={cible.id} value={cible.id}>
-                        {cible.name} — {cible.app_id ?? "toutes les applications"}
+                        {libelleCibleTableau(cible.name, cible.app_id)}
                       </option>
                     ))}
                   </select>
