@@ -112,41 +112,104 @@ Commiter le manifeste (jamais le fichier : il est ignoré), PR, fusion : l'image
 
 ## 8. Restaurer une sauvegarde sans ressusciter des données effacées
 
-> **Procédure écrite le 24/09/2026, jamais éprouvée.** À répéter sur la branche Neon `repetition-p0` avant d'en avoir besoin. Elle ferme en partie le point D7 du [document de couverture](../RUM_PARITY_STATUS.md) ; la partie « identités » reste manuelle (voir l'étape 5).
+> **Procédure éprouvée le 28/09/2026 sur la branche de répétition** `repetition-p0`, commande par commande (compte rendu en fin de section). Elle ferme en partie le point D7 du [document de couverture](../RUM_PARITY_STATUS.md). Restent manuels et non éprouvés : la partie « identités » de l'étape 5 (aucune identité en base ce jour-là) et les gestes d'exploitation des étapes 1 et 7, simulés.
 
-**Le piège.** Les barrières d'effacement (`privacy_erasure_barrier`) vivent dans la même base que les données. Restaurer à un instant **antérieur** à un effacement ressuscite les données effacées **et** fait disparaître la barrière qui empêchait de les réécrire.
+**Le piège.** Une restauration remet **toute** la base à l'instant choisi, et les barrières d'effacement (`privacy_erasure_barrier`) vivent dans la même base que les données. Restaurer à un instant **antérieur** à un effacement ressuscite les données effacées **et** fait disparaître la barrière qui empêchait de les réécrire. Disparaissent avec elle (relevé du 28/09) : la demande d'effacement (`privacy_erasure_request`), sa ligne d'`audit_log`, la suspension d'ingestion posée par `erase_app_data` (l'application effacée revient avec ses données), un mode de protection activé après l'instant (`privacy_barrier_mode` retombe à `off`). `platform_flag` revient lui aussi à sa valeur d'alors, et tout ce qui a été collecté depuis est perdu.
 
-**La fenêtre.** L'offre gratuite ne garde que **6 heures** d'historique (`history_retention_seconds` = 21 600, relu par `conso-neon.mjs`). Au-delà, pas de restauration à l'instant voulu.
+**La fenêtre.** Le projet garde **6 heures** d'historique restaurable (`history_retention_seconds` = 21 600, relu par l'API le 28/09/2026 ; `conso-neon.mjs` l'affiche). L'offre payante souscrite le 27/09/2026 (Launch) permet d'aller jusqu'à 7 jours, facturés au Go-mois d'historique : le réglage n'a pas été relevé, c'est une décision à prendre. Au-delà, pas de restauration à l'instant voulu.
 
-1. **Geler les écritures.** Relais à 0 (`platform_flag`), scheduler et notifier à 0 réplique, collector à 0 réplique s'il est déployé. La console continue de recevoir : l'étape 3 la coupe.
-2. **Garder l'état d'avant.** La restauration Neon conserve l'état courant sous une branche de sauvegarde (« preserve under »). En plus, exporter les barrières et les demandes :
-   ```sql
-   \copy (select * from privacy_erasure_barrier) to 'barrieres.csv' csv header
-   \copy (select * from privacy_erasure_request where status = 'completed') to 'demandes.csv' csv header
+**Les outils.** `curl`, `jq`, la clé d'API Neon et la chaîne propriétaire de `main`, saisies sans écho. Le SQL passe par le point `/sql` de Neon, en HTTPS : il marche là où le port 5432 est fermé (c'était le cas le 28/09). Chaque appel y est sa propre transaction : ni table temporaire d'un appel à l'autre, ni `\copy`. Avec `psql`, les mêmes requêtes passent telles quelles.
+
+```bash
+read -rs NEON_API_KEY && read -rs CHAINE        # clé d'API, puis chaîne neondb_owner de main
+PROJET=rough-firefly-49250892
+MAIN=$(curl -sS "https://console.neon.tech/api/v2/projects/$PROJET/branches" -H "Authorization: Bearer $NEON_API_KEY" | jq -r '.branches[] | select(.name == "main") | .id')
+HOTE=$(printf %s "$CHAINE" | sed -E 's#^[^@]*@([^/:?]+).*#\1#')
+sql()      { curl -sS --fail-with-body "https://$HOTE/sql" -H "Neon-Connection-String: $CHAINE" -H 'Content-Type: application/json' -d "$(jq -nc --arg q "$1" '{query: $q, params: []}')"; }
+sql_json() { curl -sS --fail-with-body "https://$HOTE/sql" -H "Neon-Connection-String: $CHAINE" -H 'Content-Type: application/json' -d "$(jq -nc --arg q "$1" --slurpfile f "$2" '{query: $q, params: [($f[0] | tojson)]}')"; }
+```
+
+1. **Geler les écritures.** Relais à 0 (`update platform_flag set value = '0' where key = 'ingest_relay_pct'`, en notant la valeur d'avant : 100 au 28/09), scheduler, notifier et collector à 0 réplique. La console continue de recevoir : l'étape 3 la coupe.
+2. **Choisir l'instant et garder l'état d'avant.** L'instant, en UTC, juste avant l'incident (`INSTANT=2026-09-28T08:36:57Z`). La restauration garde l'état courant sous une branche de sauvegarde ; en plus, exporter ce qu'il faudra reposer — les barrières, les demandes, le registre (protection et suspensions), le journal depuis l'instant (1 s le 28/09) :
+   ```bash
+   sql 'select * from privacy_erasure_barrier' | jq .rows > barrieres.json
+   sql "select * from privacy_erasure_request where status = 'completed'" | jq .rows > demandes.json
+   sql 'select app_id, privacy_barrier_mode, ingestion_suspended_at, ingestion_suspended_by from app_registry' | jq .rows > registre.json
+   sql "select user_email, action, detail, ts, request_id, actor_kind, app_id from audit_log where ts >= '$INSTANT' order by id" | jq .rows > audit.json
    ```
-3. **Restaurer** la branche `main` à l'instant choisi (console Neon → Restore, en gardant l'état courant sous un nom daté), puis **immédiatement** suspendre l'ingestion de toutes les applications — la suspension posée avant la restauration a disparu avec elle :
-   ```sql
-   update app_registry set ingestion_suspended_at = now(), ingestion_suspended_by = 'restauration';
+3. **Suspendre, restaurer, suspendre à nouveau.** Chaque instance d'ingestion, console comme collector, garde le registre des applications **60 s** en cache (`createPgAuth`, `packages/backend/lib/pg-ingest.mjs`). Posée une minute avant la restauration, la suspension est dans toutes les instances ; la restauration l'efface de la base, les caches la gardent jusqu'à leur relecture : la reposer **aussitôt** (2 s après, le 28/09). Le `where` ne touche pas une suspension déjà posée, celle d'un client effacé par exemple.
+   ```bash
+   SUSPENDRE="update app_registry set ingestion_suspended_at = now(), ingestion_suspended_by = 'restauration' where ingestion_suspended_at is null"
+   sql "$SUSPENDRE" && sleep 60
+   curl -sS --fail-with-body -X POST "https://console.neon.tech/api/v2/projects/$PROJET/branches/$MAIN/restore" \
+     -H "Authorization: Bearer $NEON_API_KEY" -H 'Content-Type: application/json' \
+     -d "$(jq -nc --arg b "$MAIN" --arg t "$INSTANT" --arg n "main-avant-restauration-$(date -u +%Y%m%d-%H%M)" \
+           '{source_branch_id: $b, source_timestamp: $t, preserve_under_name: $n}')" | jq -c '[.operations[].action]'
+   until [ "$(curl -sS "https://console.neon.tech/api/v2/projects/$PROJET/operations?limit=20" -H "Authorization: Bearer $NEON_API_KEY" \
+               | jq '[.operations[] | select(.status == "running" or .status == "scheduling")] | length')" = 0 ]; do sleep 2; done
+   sql "$SUSPENDRE"
    ```
-4. **Reposer les barrières** perdues :
-   ```sql
-   create temp table b (like privacy_erasure_barrier);
-   \copy b from 'barrieres.csv' csv header
-   insert into privacy_erasure_barrier select * from b on conflict do nothing;
+   La restauration dure quelques secondes (3 à 4 s le 28/09, base de 357 Mo) ; le calcul redémarre, les connexions ouvertes sont coupées, l'hôte et la chaîne ne changent pas.
+4. **Reposer** les barrières (avec leur date d'effacement et leur demande d'origine), les demandes, et les lignes d'`audit_log` perdues — réinsérées avec leur date, jamais réécrites : le journal est en ajout seul (v90).
+   ```bash
+   sql_json 'insert into privacy_erasure_barrier select * from json_populate_recordset(null::privacy_erasure_barrier, $1::json) on conflict do nothing' barrieres.json
+   sql_json 'insert into privacy_erasure_request select * from json_populate_recordset(null::privacy_erasure_request, $1::json) on conflict (id) do nothing' demandes.json
+   sql_json 'insert into audit_log (user_email, action, detail, ts, request_id, actor_kind, app_id)
+             select e.user_email, e.action, e.detail, e.ts, e.request_id, e.actor_kind, e.app_id
+               from json_populate_recordset(null::audit_log, $1::json) e
+              where not exists (select 1 from audit_log a where a.ts = e.ts and a.action = e.action and a.detail is not distinct from e.detail)' audit.json
    ```
-5. **Réeffacer ce que la restauration a ressuscité.** Sessions et visiteurs, en SQL, sous le verrou de chaque application :
-   ```sql
-   select erase_session(s.session_id)
-     from rum_session s join b on b.app_id = s.app_id
-      and ((b.subject_kind = 'session' and s.session_id = b.subject_key)
-        or (b.subject_kind = 'visitor' and s.visitor_id = b.subject_key)
-        or (b.subject_kind = 'user'    and s.user_id_hash = b.subject_key)
-        or (b.subject_kind = 'account' and s.account_id_hash = b.subject_key));
+5. **Réeffacer ce que la restauration a ressuscité** (1 s le 28/09). Les sessions rattachées à une barrière, sous le verrou de leur application ; les lots encore en file ; les applications effacées par `erase_app_data` après l'instant :
+   ```bash
+   sql "select erase_session(x.session_id) from (select distinct s.session_id
+          from rum_session s join privacy_erasure_barrier b on b.app_id = s.app_id
+           and ((b.subject_kind = 'session' and s.session_id = b.subject_key)
+             or (b.subject_kind = 'visitor' and s.visitor_id = b.subject_key)
+             or (b.subject_kind = 'user'    and s.user_id_hash = b.subject_key)
+             or (b.subject_kind = 'account' and s.account_id_hash = b.subject_key))) x"
+   sql "select app_id, privacy_filtrer_file(app_id,
+          array_agg(subject_key) filter (where subject_kind = 'session'), array_agg(subject_key) filter (where subject_kind = 'visitor'),
+          array_agg(subject_key) filter (where subject_kind = 'user'),    array_agg(subject_key) filter (where subject_kind = 'account'))
+          from privacy_erasure_barrier group by app_id"
+   jq -c '[.[] | select(.ingestion_suspended_by == "erase_app_data") | .app_id]' registre.json > apps-effacees.json
+   sql_json 'select app_id, erase_app_data(app_id) from json_array_elements_text($1::json) as app_id' apps-effacees.json
    ```
-   **Ce qui reste manuel** : les lignes d'une identité qui ne sont rattachées à aucune session (logs OpenTelemetry portant l'identité, lots encore en file). Les compter par l'écran `/admin/privacy` pour chaque identité ; tant qu'il en reste, ne pas rouvrir. L'effacement est une commande depuis C10 (`privacy.eraseIdentity`, `privacy.eraseVisitor`), exécutée par la console jusqu'à la mise en service de `console-api`.
-6. **Remettre la protection** là où elle était : `update app_registry set privacy_barrier_mode = 'enforce' where app_id = any(…)`, d'après l'export de l'état d'avant.
-7. **Rouvrir** : lever la suspension application par application (`ingestion_suspended_at = null`), remettre scheduler, notifier, collector, puis le relais à sa valeur.
-8. **Tracer** : une ligne dans `audit_log` et dans le journal d'incident — instant restauré, barrières reposées, sessions réeffacées, identités vérifiées.
+   **Ce qui reste manuel** : les lignes d'une identité qui ne sont rattachées à aucune session (erreurs, événements et index portant le HMAC). Les compter ; tant qu'il en reste, ne pas rouvrir, et les effacer par la commande `privacy.eraseIdentity` (écran `/admin/privacy`), exécutée par la console tant que les écritures n'ont pas basculé vers `console-api`. Elle exige l'identité en clair, ressaisie : la reprendre de la demande d'origine, la barrière n'en garde que le HMAC. Non éprouvé : aucune ligne de la base ne portait d'identité le 28/09.
+   ```bash
+   sql "select b.app_id, b.subject_kind, left(b.subject_key, 8) as cle,
+          (select count(*) from rum_error t       where t.app_id = b.app_id and b.subject_key in (t.user_id_hash, t.account_id_hash))
+        + (select count(*) from rum_event t       where t.app_id = b.app_id and b.subject_key in (t.user_id_hash, t.account_id_hash))
+        + (select count(*) from rum_event_index t where t.app_id = b.app_id and b.subject_key in (t.user_id_hash, t.account_id_hash)) as lignes
+          from privacy_erasure_barrier b where b.subject_kind in ('user', 'account')"
+   ```
+6. **Remettre la protection** là où elle était, d'après l'export :
+   ```bash
+   sql_json 'update app_registry r set privacy_barrier_mode = e.privacy_barrier_mode
+               from json_populate_recordset(null::app_registry, $1::json) e
+              where r.app_id = e.app_id and r.privacy_barrier_mode is distinct from e.privacy_barrier_mode
+          returning r.app_id, r.privacy_barrier_mode' registre.json
+   ```
+7. **Rouvrir** : chaque suspension posée par la restauration reprend la valeur de l'export — levée pour une application ouverte, remise telle quelle pour un client effacé par `erase_app_data`. Puis scheduler, notifier, collector, et le relais à sa valeur.
+   ```bash
+   sql_json "update app_registry r set ingestion_suspended_at = e.ingestion_suspended_at, ingestion_suspended_by = e.ingestion_suspended_by
+               from json_populate_recordset(null::app_registry, \$1::json) e
+              where r.app_id = e.app_id and r.ingestion_suspended_by = 'restauration'
+          returning r.app_id, r.ingestion_suspended_by" registre.json
+   ```
+8. **Tracer** : une ligne dans `audit_log` et dans le journal d'incident (§ 9) — instant restauré, barrières et demandes reposées, sessions et applications réeffacées, identités vérifiées.
+   ```bash
+   sql "insert into audit_log (user_email, action, detail, actor_kind) values ('<exploitant>', 'restauration', 'instant=$INSTANT barrieres=… demandes=… sessions=… applications=… identites=…', 'user')"
+   ```
+
+**Après.** La branche de sauvegarde garde l'état d'avant la restauration, **données effacées comprises** : la supprimer dès la restauration validée. D'après la documentation de Neon, la restauration y déplace les branches enfants de `main` (dont `repetition-p0`), et une branche qui a des enfants ne se supprime pas : réinitialiser d'abord `repetition-p0` depuis `main` (`restore` avec `source_branch_id` = `$MAIN`, sans instant), puis supprimer la sauvegarde. Le 28/09, sur la répétition, la sauvegarde était devenue le parent de `repetition-p0` ; réinitialisée depuis `main`, la répétition l'a quittée, et la sauvegarde s'est supprimée.
+
+**Répétition du 28/09/2026.** Sur `repetition-p0` réinitialisée depuis `main` (3 s) :
+
+- *Scénario.* Instant T0 = 08:36:57 UTC. Après T0 : la protection activée sur une application (`test`), un visiteur de `mip-rum-console` effacé par le code de la commande `privacy.eraseVisitor` (`dsarErase` avec sa ligne d'audit : une session, 237 lignes rattachées, dont 13 morceaux de rejeu ; barrières `visitor` et `session`), l'application `app-a` effacée par `erase_app_data`.
+- *Restauration à T0* : 4 s d'opérations, même endpoint. Tout est revenu : la session et ses 237 lignes, les données d'`app-a` ; plus aucune barrière, demande, ligne d'audit d'effacement ni suspension ; `test` à `off`.
+- *Étapes 2 à 8* : les commandes ci-dessus, chacune en une à deux secondes. La session est réeffacée ligne pour ligne, `app-a` aussi ; `test` repasse à `enforce`, `app-a` reste suspendue, les autres rouvrent.
+- *Contrôle* par le noyau d'ingestion réel (`pg-ingest.mjs`) : un morceau de rejeu de la session effacée est refusé (`refus_barriere`), une nouvelle session du visiteur effacé aussi (session et page vue refusées), `app-a` répond « ingestion suspended ». Rien n'est écrit.
+- *Non éprouvé* : les gestes Railway et `platform_flag` des étapes 1 et 7 (simulés), la partie « identités », et la restauration de `main` elle-même. La répétition est une branche enfant : Neon ne promet la restauration à un instant qu'aux branches racines — elle a pourtant été acceptée sur son propre historique. `main` est une branche racine.
 
 ## 9. Incidents déjà vécus
 
