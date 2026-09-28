@@ -248,24 +248,23 @@ export const POINTS_RESTE: readonly PointReste[] = [
     ],
   },
   {
-    // AJOUTÉ LE 27/09/2026, décision du responsable du produit : la couverture des
-    // backends se fera par les agents OpenTelemetry officiels de chaque langage,
-    // après la présentation. Le frein est chez nous : l'ingestion ne lit que du JSON
-    // (les deux points d'entrée cités), alors que ces agents envoient du protobuf
-    // par défaut.
+    // AJOUTÉ LE 27/09/2026 ; RÉÉCRIT LE 28/09/2026 après la PR #338 : la collecte
+    // accepte désormais OTLP en protobuf (les deux points d'entrée partagent
+    // `otlp-corps.mjs`), et la recette par langage est écrite. Ce qui manque n'est
+    // plus du code : c'est la preuve, langage par langage, sur un vrai backend.
     id: "R11",
     titre: "Les backends au-delà de Node et Python",
     manque:
-      "Côté serveur, deux capteurs seulement relient un appel du navigateur à ce qu'il a coûté au backend : un agent pour Node.js et un middleware pour FastAPI. Java, .NET, PHP, Go ou Ruby n'ont rien. Ces langages ont tous un agent OpenTelemetry officiel, mais la collecte n'accepte que le format OTLP en JSON, alors que ces agents envoient du protobuf par défaut.",
+      "La collecte accepte depuis le 28/09/2026 le format des agents OpenTelemetry officiels (OTLP en protobuf, compressé ou non), et la documentation d'intégration donne leur configuration pour Java, .NET, Python, Go, PHP, Ruby et Node. Seul le SDK Node officiel a été éprouvé de bout en bout, dans un test automatique : aucun agent Java, .NET, Go, PHP ou Ruby n'a encore envoyé de trace à la production.",
     debloque:
-      "Accepter OTLP en protobuf à la collecte : les agents officiels deviennent compatibles sans capteur maison. Puis une recette de configuration par langage dans la documentation d'intégration, et un test de bout en bout par langage qui vérifie que la trace du navigateur rejoint celle du serveur.",
-    decide: "L'équipe MIP ; le travail est prévu après la présentation.",
+      "Faire tourner l'agent officiel de chaque langage sur un vrai backend, configuré par la seule documentation, et vérifier que sa trace rejoint celle du navigateur.",
+    decide: "L'équipe MIP.",
     sources: [
       "C5",
       "C6",
-      "packages/backend/lib/receiver.mjs:426-432",
-      "apps/console/app/api/ingest/v1/traces/route.ts:1",
-      "apps/console/app/api/ingest/v1/traces/route.ts:84",
+      "packages/backend/shared/otlp-corps.mjs:10-21",
+      "docs/INTEGRATION.md:369-371",
+      "tests/integration/otlp-protobuf-agent-sql.test.ts:1-12",
     ],
   },
 ];
