@@ -733,6 +733,28 @@ const AGREGATIONS_VOLUME = ["count", "sum"] as const;
 /** Classement de la répartition (W-E7) : dix valeurs, comme les facettes comptées. */
 export const LIMITE_REPARTITION = 10;
 
+/** Caractères d'un identifiant d'app (slug) : aucun d'eux ne borne un mot. */
+const CARACTERE_D_IDENTIFIANT = /[\p{L}\p{N}_-]/u;
+
+/**
+ * Un tableau de bord dans la liste « Enregistrer cette analyse → Comme carte d'un
+ * tableau de bord » : son nom, puis son application — sauf si le nom la dit déjà.
+ * Recette UTI du 28/09/2026 : « Vue d'ensemble — gip-plateforme — gip-plateforme ».
+ * L'app doit y être un MOT : « Tests de charge » ne dit pas l'app `test`, et garde
+ * son suffixe.
+ */
+export function libelleCibleTableau(nom: string, appId: string | null): string {
+  const portee = appId ?? "toutes les applications";
+  const bas = nom.toLocaleLowerCase("fr-FR");
+  const cherche = portee.toLocaleLowerCase("fr-FR");
+  for (let i = bas.indexOf(cherche); i !== -1; i = bas.indexOf(cherche, i + 1)) {
+    const avant = i === 0 ? "" : bas[i - 1];
+    const apres = bas[i + cherche.length] ?? "";
+    if (!CARACTERE_D_IDENTIFIANT.test(avant) && !CARACTERE_D_IDENTIFIANT.test(apres)) return nom;
+  }
+  return `${nom} — ${portee}`;
+}
+
 export interface MesureVolume {
   measure: ExplorerMeasure;
   /** Libellé du champ compté (« Occurrences », « Sessions commencées dans la fenêtre »). */

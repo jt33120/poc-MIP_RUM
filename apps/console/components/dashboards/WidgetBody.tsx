@@ -227,7 +227,9 @@ function ClassementRoutes({ routes, query }: { routes: WidgetRoutes; query: Anal
               libelle: "Ensemble de la population",
               valeurs: {
                 pilote: formater("ms", routes.referenceLcp),
-                volume: routes.referenceN === null ? "—" : routes.referenceN.toLocaleString("fr-FR"),
+                // Des PAGES VUES, comme la colonne « Vues » de chaque route (recette UTI
+                // du 28/09/2026) ; l'effectif du p75 est dit dans la note, sous la table.
+                volume: routes.referenceVues.toLocaleString("fr-FR"),
               },
             }
       }
@@ -240,7 +242,7 @@ function ClassementRoutes({ routes, query }: { routes: WidgetRoutes; query: Anal
       volumeLibelle="Vues"
       groupes={routes.lignes.length}
       tronque={routes.tronque}
-      notice="Routes lues sur les pages vues de la fenêtre ; LCP, INP et CLS au p75."
+      notice={routes.note}
       compact
     />
   );

@@ -63,6 +63,7 @@ import { explorerHref } from "@/lib/explorer-page-params";
 import { accord } from "@/lib/format";
 import { ecrirePanel, gabaritZoom, lireComparaison, lireEtatDeVue, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
 import {
+  bandeauSansVisite,
   constatsVueEnsemble,
   estVitalDecoupe,
   FENETRE_CONSTATS,
@@ -128,10 +129,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // rien. Masquer en CSS aurait laissé tout le travail serveur en place, ce qui
   // vide la fonctionnalité de son intérêt sur un écran qui porte neuf requêtes.
   //
-  // `overviewStats(f)` reste inconditionnel : le bandeau « pas encore de
-  // données » en dépend, et il doit s'afficher même sur un tableau de bord
-  // réduit au minimum — c'est justement là qu'on a besoin de savoir pourquoi
-  // l'écran est vide.
+  // `overviewStats(f)` reste inconditionnel : le bandeau « aucune visite » en
+  // dépend, et il doit s'afficher même sur un tableau de bord réduit au minimum —
+  // c'est justement là qu'on a besoin de savoir pourquoi l'écran est vide.
   const blocs = blocsDe(sp, "/");
 
   // Découpage (P6.3) : l'onglet est jugé sur les mesures RÉELLEMENT groupées —
@@ -204,6 +204,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     seriesRelease,
     releasesLues,
     vitauxReleasesLus,
+    activite,
+    retentionJours,
   } = ecran;
   const dispoNavigateur = dispoDecoupage("browser");
   const dispoPays = dispoDecoupage("country");
@@ -641,6 +643,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     const stats = ligne ? statsDeVersion(ligne) : { release: v, sessions: 0, lcp_p75: null, inp_p75: null, sessionsEnErreur: null };
     return { ...stats, intervalles: intervallesDe(vitaux) };
   };
+  // Fenêtre sans aucune session : « rien sur la plage » n'est pas « jamais rien reçu »
+  // (recette UTI du 28/09/2026). Le chargeur a daté la dernière visite et la dernière
+  // requête serveur ; `bandeauSansVisite` décide de ce qui peut s'en affirmer.
+  const sansVisite =
+    query.scope.requestedApp && stats.ok && stats.data.sessions === 0
+      ? bandeauSansVisite(query.range, period.label, activite, retentionJours)
+      : null;
   const [lueB, lueA] = releasesLues ?? [null, null];
   const [vitauxB, vitauxA] = vitauxReleasesLus ?? [null, null];
   const lienRelease = (v: string) => lien("/", { release: v, cmp: null, rel_a: null, rel_b: null });
@@ -656,18 +665,29 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </p>
       )}
 
-      {query.scope.requestedApp && stats.ok && stats.data.sessions === 0 && (
+      {sansVisite && query.scope.requestedApp && (
         <div
           data-testid="onboarding-nudge"
           className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm"
         >
-          <span className="text-ink">
-            <strong>Cette application n&apos;a pas encore reçu de données.</strong> Posez le capteur RUM
-            sur votre site, puis simulez un parcours — les mesures apparaîtront ici.
-          </span>
-          <Link href={`/select/new?app=${encodeURIComponent(query.scope.requestedApp)}`} className="btn-accent ml-auto shrink-0 px-3 py-1.5">
-            Guide d&apos;intégration →
-          </Link>
+          <div className="min-w-0 flex-1 basis-64 space-y-1 text-ink">
+            <p>
+              <strong>{sansVisite.titre}</strong> {sansVisite.detail}
+            </p>
+            {sansVisite.serveur && (
+              <p data-testid="activite-serveur" className="text-xs text-ink-soft">
+                {sansVisite.serveur}{" "}
+                <Link href={lien("/tracing", {}) + "#routes-serveur"} className="text-accent underline-offset-2 hover:underline">
+                  Voir les routes serveur
+                </Link>
+              </p>
+            )}
+          </div>
+          {sansVisite.guide && (
+            <Link href={`/select/new?app=${encodeURIComponent(query.scope.requestedApp)}`} className="btn-accent shrink-0 px-3 py-1.5">
+              Guide d&apos;intégration →
+            </Link>
+          )}
         </div>
       )}
 

@@ -206,6 +206,45 @@ export async function overviewStats(f: Filters, shift = false): Promise<Overview
   return row;
 }
 
+/** Derniers signes de vie du périmètre, HORS fenêtre : instants ISO, `null` = rien en base. */
+export interface DerniereActivite {
+  /** Dernière activité d'une session (navigateur ou mobile) : `rum_session.last_seen_at`. */
+  visite: string | null;
+  /** Dernière requête serveur tracée (`rum_span`, palier `back`), avec ou sans visite. */
+  serveur: string | null;
+}
+
+/**
+ * Quand le périmètre a-t-il reçu quelque chose pour la dernière fois ? Lu par la Vue
+ * d'ensemble quand la fenêtre n'a AUCUNE session : sans cette date, l'écran ne sait
+ * pas distinguer « rien sur 24 h » de « jamais rien reçu », et disait le second à une
+ * app qui recevait depuis août (recette UTI du 28/09/2026).
+ *
+ * Ni fenêtre ni filtre de population : la question porte sur la collecte, pas sur un
+ * segment. Le périmètre seul, app par app (`unnest` + `lateral`) : chaque `max` se lit
+ * au bout d'un index (`idx_session_app_seen`, `rum_span_app_tier_ts_idx`), là où un
+ * `app_id = any(...)` parcourait les 240 000 spans d'une app (~100 ms contre ~1 ms,
+ * mesuré sur une copie de la base de production).
+ */
+export async function derniereActivite(f: FiltersLike): Promise<DerniereActivite> {
+  const sql = await sqlContext(f);
+  const apps = sql.query.scope.effectiveApps;
+  // « Toutes les apps » n'a pas de bandeau d'installation : rien à dater.
+  if (apps === null || apps.length === 0) return { visite: null, serveur: null };
+  const liste = sql.bind(apps);
+  const [row] = await q<{ visite: Date | null; serveur: Date | null }>(
+    `select
+       (select max(d.vu) from unnest(${liste}::text[]) as a(app_id)
+          cross join lateral (select max(s.last_seen_at) as vu from rum_session s where s.app_id = a.app_id) d) as visite,
+       (select max(d.vu) from unnest(${liste}::text[]) as a(app_id)
+          cross join lateral (select max(t.ts) as vu from rum_span t where t.app_id = a.app_id and t.tier = 'back') d) as serveur`,
+    sql.params,
+  );
+  // Des chaînes, pas des `Date` : la section voyage aussi en JSON (console-api).
+  const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : null);
+  return { visite: iso(row?.visite), serveur: iso(row?.serveur) };
+}
+
 export interface SeriesRow {
   bucket: string;
   p75: number;
@@ -484,6 +523,22 @@ export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
  * tronquée, et à faire remonter une explosion de cardinalité avant qu'elle ne
  * rende l'écran inutile.
  */
+/**
+ * Pages vues de la fenêtre, TOUTES routes : l'effectif de la ligne « Ensemble de la
+ * population » d'un classement de routes (carte « Routes les plus lentes »). Même
+ * population que le `vues` de `slowRoutes`, moins la condition `route is not null` :
+ * l'ensemble compte aussi les vues sans route, jamais moins qu'une de ses routes.
+ */
+export async function pagesVuesTotal(f: Filters): Promise<number> {
+  const sql = await sqlContext(f);
+  const vues = sql.where({ dataset: "views", row: "p", session: "ps", time: "p.started_at" });
+  const [row] = await q<{ n: number }>(
+    `select count(*)::int as n from rum_pageview p ${sessionJoin("p", "ps")} where true${vues}`,
+    sql.params,
+  );
+  return row?.n ?? 0;
+}
+
 export async function nombreDeRoutes(f: Filters): Promise<number> {
   const sql = await sqlContext(f);
   const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });

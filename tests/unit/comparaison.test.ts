@@ -15,12 +15,14 @@ vi.mock("../../apps/console/lib/db", () => ({ q: lecture, tx: lecture, pool: {} 
 
 const {
   couverturePrecedente,
+  debutCollecte,
   deltasDeLaRangee,
   evaluerCouverture,
   releasesComparables,
   sourcesSousFiltres,
 } = await import("../../apps/console/lib/comparaison");
 const { parseAnalyticsQuery } = await import("../../apps/console/lib/query-contract");
+const { filtersOfQuery } = await import("../../apps/console/lib/filters");
 type Source = Parameters<typeof evaluerCouverture>[0]["source"];
 
 const NOW = Date.parse("2026-09-22T12:00:00Z");
@@ -155,6 +157,53 @@ describe("règles 4 et 5", () => {
 
   it("period=24h avec historique complet → complète", () => {
     expect(evaluer(requete("period=24h"), VUES, new Date(NOW - 10 * JOUR))).toEqual({ etat: "complete", raison: null });
+  });
+});
+
+// Recette UTI du 28/09/2026 : `gip-plateforme` n'a jamais eu d'erreur JS. Datée à sa
+// première erreur, la collecte des erreurs n'avait « aucune donnée » : Vue d'ensemble
+// et Erreurs JS taisaient leurs écarts, Pages (jugée sur les pages vues) affichait −70 %.
+describe("règle 2 — un signal rare est collecté depuis le capteur, pas depuis sa première ligne", () => {
+  const ERREURS: Source = { table: "rum_error", colonneTemps: "ts", additive: true };
+  /** Le SQL de `debutCollecte`, la sonde de schéma servie vide. */
+  async function sqlDuDebut(source: Source): Promise<string> {
+    const lus: string[] = [];
+    lecture.mockImplementation((async (sql: string) => {
+      if (sql.includes("information_schema")) return [];
+      lus.push(sql);
+      return [{ debut: null }];
+    }) as never);
+    try {
+      await debutCollecte(filtersOfQuery(requete("app=gip-plateforme&period=7d")), source);
+    } finally {
+      lecture.mockImplementation(async () => {
+        throw new Error("aucune lecture attendue dans un test unitaire");
+      });
+    }
+    expect(lus).toHaveLength(1);
+    return lus[0];
+  }
+
+  it("erreurs : la plus ancienne de la première erreur et de la première session du périmètre", async () => {
+    const sql = await sqlDuDebut(ERREURS);
+    expect(sql).toMatch(/^select least\(\(select min\(t\.ts\) from rum_error t where true and t\.app_id = any\(\$1::text\[\]\)\), \(select min\(s\.started_at\) from rum_session s where true and s\.app_id = any\(\$2::text\[\]\)\)\) as debut$/);
+  });
+
+  it("un signal émis à chaque visite garde sa première ligne", async () => {
+    const sql = await sqlDuDebut(METRIQUE);
+    expect(sql).not.toContain("least(");
+    expect(sql).not.toContain("rum_session");
+  });
+
+  it("une colonne requise garde sa propre date, même sur les erreurs : elle date la migration", async () => {
+    const sql = await sqlDuDebut({ ...ERREURS, colonneRequise: "release" });
+    expect(sql).not.toContain("least(");
+    expect(sql).toContain("t.release is not null");
+  });
+
+  it("des sessions depuis vingt jours et aucune erreur : la période précédente de 7 j est complète", () => {
+    // Ce que `least` rend pour cette app : la première session.
+    expect(evaluer(requete("period=7d"), ERREURS, new Date(NOW - 20 * JOUR))).toEqual({ etat: "complete", raison: null });
   });
 });
 

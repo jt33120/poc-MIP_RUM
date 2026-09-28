@@ -22,6 +22,7 @@ const SESSION = "p65-dash-session";
 const RELEASE = "p65-e2e-rel";
 const FINGERPRINT = "p65-e2e-fp";
 const TABLEAU = "P65 recette";
+const NOM_AVEC_APP = "P65 Vue d’ensemble — demo-app";
 const VUE = "P65 vue de recette";
 // Compte dédié à ce fichier (helpers/compte-dedie.ts), jamais le compte admin local.
 const ADMIN_EMAIL = "e2e-dashboards-analytics@mip-rum.local";
@@ -155,6 +156,10 @@ async function debordements(page: Page): Promise<string[]> {
 test("Explorer → carte → rechargement → duplication → CSV", async ({ page }) => {
   await login(page);
   const id = await creerTableau(page);
+  // Un second tableau dont le NOM dit déjà l'app (supprimé par `menage`, préfixe « P65 »).
+  const nomme = String(
+    (await pool.query(`insert into dashboard (name, app_id) values ($1, 'demo-app') returning id`, [NOM_AVEC_APP])).rows[0].id,
+  );
 
   // 1. L'analyse est composée dans l'Explorer, et son total est exact.
   await page.goto(explorer);
@@ -163,6 +168,10 @@ test("Explorer → carte → rechargement → duplication → CSV", async ({ pag
   // 2. Elle s'enregistre comme carte du tableau de bord créé à l'instant.
   const formulaire = page.getByTestId("save-widget");
   await expect(formulaire).toBeVisible();
+  // Recette UTI du 28/09/2026 : l'app suit le nom du tableau, une fois — et pas du
+  // tout quand le nom la dit déjà (« Vue d'ensemble — gip-plateforme — gip-plateforme »).
+  await expect(formulaire.locator(`select[name="id"] option[value="${id}"]`)).toHaveText(`${TABLEAU} — demo-app`);
+  await expect(formulaire.locator(`select[name="id"] option[value="${nomme}"]`)).toHaveText(NOM_AVEC_APP);
   await formulaire.locator('select[name="id"]').selectOption(id);
   await formulaire.locator('input[name="title"]').fill("Occurrences par route");
   // L'action serveur ne redirige pas : sans attendre sa réponse, le `goto` qui suit
@@ -203,6 +212,48 @@ test("Explorer → carte → rechargement → duplication → CSV", async ({ pag
   expect(texte).toContain("Occurrences par route");
   expect(texte).toContain("/p65-a,4");
   expect(texte).not.toMatch(/^=/m);
+});
+
+// Recette UTI du 28/09/2026 : « Ensemble de la population · Vues 1 » sous « /login ·
+// Vues 3 ». L'ensemble portait le nombre de mesures LCP de son p75 dans la colonne des
+// pages vues. Une app dédiée : quatre vues (trois sur /login), UNE mesure LCP.
+test("« Routes les plus lentes » : l'ensemble compte ses pages vues, jamais moins qu'une route", async ({ page }) => {
+  const APP = "uti-e2e-routes";
+  const SESSION_ROUTES = `${APP}-s1`;
+  for (const t of ["rum_metric", "rum_pageview", "rum_session"]) await pool.query(`delete from ${t} where app_id = $1`, [APP]);
+  await pool.query(`insert into app_registry (app_id, name, active) values ($1, 'Recette UTI routes', true) on conflict do nothing`, [APP]);
+  await pool.query(
+    `insert into rum_session (session_id, app_id, device_type, started_at, last_seen_at)
+     values ($1, $2, 'desktop', now() - interval '2 hours', now() - interval '1 hour')`,
+    [SESSION_ROUTES, APP],
+  );
+  for (const [i, route] of ["/login", "/login", "/login", "/"].entries()) {
+    await pool.query(
+      `insert into rum_pageview (span_id, session_id, app_id, route, started_at) values ($1, $2, $3, $4, now() - interval '90 minutes')`,
+      [`${APP}-v${i}`, SESSION_ROUTES, APP, route],
+    );
+  }
+  await pool.query(
+    `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, ts)
+     values ($1, $2, $3, '/login', 'LCP', 2400, 'needs-improvement', now() - interval '90 minutes')`,
+    [`${APP}-m1`, SESSION_ROUTES, APP],
+  );
+  const id = (
+    await pool.query(`insert into dashboard (name, app_id, layout) values ('P65 UTI routes', $1, $2::jsonb) returning id`, [
+      APP,
+      JSON.stringify([{ type: "slow_routes", title: "Routes les plus lentes" }]),
+    ])
+  ).rows[0].id;
+  try {
+    await login(page);
+    await page.goto(`${consoleUrl}/dashboards/${id}?app=${APP}&period=24h`);
+    const reference = page.getByTestId("impact-reference");
+    await expect(reference).toContainText("Ensemble de la population", { timeout: 20_000 });
+    await expect(reference).toContainText("Vues 4");
+    await expect(page.getByTestId("widget-0")).toContainText("repose sur 1 mesure LCP");
+  } finally {
+    for (const t of ["rum_metric", "rum_pageview", "rum_session"]) await pool.query(`delete from ${t} where app_id = $1`, [APP]);
+  }
 });
 
 test("une carte invalide se voit et se corrige, elle ne disparaît pas", async ({ page }) => {

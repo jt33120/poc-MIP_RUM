@@ -14,6 +14,17 @@
 //   3. retard d'ingestion — compte sur une heure qui se termine maintenant ;
 //   4. début de collecte non lu — `inconnue`, jamais `complete` par défaut ;
 //   5. sinon `complete`.
+//
+// LE DÉBUT DE COLLECTE D'UN SIGNAL RARE (recette UTI du 28/09/2026). Pour un signal
+// que le capteur émet à chaque visite (mesures, pages vues, sessions), la première
+// ligne date bien le début de la collecte. Pas pour une ERREUR : le capteur ne
+// l'émet que s'il y en a une, et son absence est une mesure — zéro erreur —, pas un
+// trou de collecte. Dater la collecte des erreurs à la première erreur faisait dire
+// « aucune donnée collectée sur le périmètre » à une app qui n'en a jamais eu
+// (`gip-plateforme`) : la Vue d'ensemble et Erreurs JS taisaient leurs écarts
+// pendant que Pages, jugée sur les pages vues, affichait « −70 % ». Un signal rare
+// (`rare` ci-dessous) est donc collecté depuis que le CAPTEUR l'est : la plus
+// ancienne de sa première ligne et de la première session du périmètre.
 import { q } from "./db";
 import { DEBUT_SAMPLE_RATE } from "./echantillonnage";
 import { filtersOfQuery, type FiltersLike } from "./filters";
@@ -43,12 +54,18 @@ export interface SourceComparaison {
  * Tables et colonnes temporelles LISIBLES. Les noms entrent tels quels dans le SQL
  * (un identifiant ne se lie pas) : seule cette liste blanche les y autorise. Le
  * libellé nomme le signal dans la raison affichée.
+ *
+ * `rare` : le capteur des sessions émet ce signal seulement quand il se produit —
+ * son absence est un zéro mesuré (voir l'en-tête). Seules les erreurs le sont : les
+ * événements métier dépendent de l'intégration (`track`), les actions et les appels
+ * tracés sont arrivés avec des versions du capteur ou un autre capteur (agent
+ * serveur) ; pour eux, la première ligne date toujours la collecte.
  */
-const SOURCES: Record<string, { colonnesTemps: readonly string[]; libelle: string }> = {
+const SOURCES: Record<string, { colonnesTemps: readonly string[]; libelle: string; rare?: true }> = {
   rum_metric: { colonnesTemps: ["ts"], libelle: "mesures de performance collectées" },
   rum_pageview: { colonnesTemps: ["started_at"], libelle: "pages vues collectées" },
   rum_session: { colonnesTemps: ["started_at", "last_seen_at"], libelle: "sessions collectées" },
-  rum_error: { colonnesTemps: ["ts"], libelle: "erreurs collectées" },
+  rum_error: { colonnesTemps: ["ts"], libelle: "erreurs collectées", rare: true },
   rum_event: { colonnesTemps: ["ts"], libelle: "événements collectés" },
   rum_action: { colonnesTemps: ["ts"], libelle: "actions collectées" },
   // F60 : les tuiles de /tracing (appels API) se comparent à la période précédente.
@@ -169,6 +186,11 @@ function libelleSignal(source: SourceComparaison): string {
  * périmètre (et `colonneRequise is not null` si fournie). Le PÉRIMÈTRE seul, pas les
  * filtres de population : la question est « depuis quand ce signal arrive-t-il »,
  * pas « depuis quand ce segment existe-t-il ». `null` : aucune ligne.
+ *
+ * Signal `rare` sans colonne requise : la plus ancienne de sa première ligne et de
+ * la première session du périmètre (`least` ignore un NULL) — une app sans aucune
+ * erreur a ses erreurs collectées depuis que ses visites le sont. Une colonne
+ * requise garde sa propre date : elle dit quand la MIGRATION l'a ajoutée.
  */
 export async function debutCollecte(f: FiltersLike, source: SourceComparaison): Promise<Date | null> {
   verifierSource(source);
@@ -176,8 +198,13 @@ export async function debutCollecte(f: FiltersLike, source: SourceComparaison): 
   const sql = await sqlContext(f);
   const perimetre = compileScope(sql.query, "t.app_id", sql.bind);
   const requise = source.colonneRequise ? ` and t.${source.colonneRequise} is not null` : "";
+  const premiere = `select min(t.${source.colonneTemps}) from ${source.table} t where true${perimetre}${requise}`;
+  const rare = SOURCES[source.table].rare === true && !source.colonneRequise;
+  const capteur = rare
+    ? `select min(s.started_at) from rum_session s where true${compileScope(sql.query, "s.app_id", sql.bind)}`
+    : null;
   const [ligne] = await q<{ debut: Date | null }>(
-    `select min(t.${source.colonneTemps}) as debut from ${source.table} t where true${perimetre}${requise}`,
+    capteur ? `select least((${premiere}), (${capteur})) as debut` : `select (${premiere}) as debut`,
     sql.params,
   );
   const debut = ligne?.debut ? new Date(ligne.debut) : null;

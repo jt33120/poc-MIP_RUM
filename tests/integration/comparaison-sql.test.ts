@@ -9,6 +9,10 @@
 // donnée remonte bien plus loin — la purge de rétention décide, pas le hasard de ce
 // qui reste en base.
 //
+// Recette UTI du 28/09/2026 : les erreurs, signal rare, sont collectées depuis la
+// première SESSION du périmètre ; et l'autre bout de la collecte, la dernière activité
+// (visite, requête serveur) que la Vue d'ensemble lit quand sa fenêtre est vide.
+//
 // COMMENT L'EXÉCUTER. Ce fichier applique le schéma COMPLET : base JETABLE.
 //   SQL_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5433/<jetable> pnpm test:sql
 import { readFileSync, readdirSync } from "node:fs";
@@ -46,7 +50,7 @@ function fichiersSql(): string[] {
 }
 
 async function nettoyer(c: pg.Client): Promise<void> {
-  for (const table of ["rum_metric", "rum_pageview", "rum_session"]) {
+  for (const table of ["rum_span", "rum_error", "rum_metric", "rum_pageview", "rum_session"]) {
     await c.query(`delete from ${table} where app_id = any($1::text[])`, [APPS]);
   }
 }
@@ -91,6 +95,25 @@ async function semer(c: pg.Client): Promise<void> {
       [span, A, debut, release],
     );
   }
+  // Une seule erreur, sur A, hier ; B n'en a JAMAIS eu (recette UTI du 28/09/2026).
+  await c.query(
+    `insert into rum_error (span_id, session_id, app_id, message, kind, occurrences, ts)
+     values ('f06-e-a1', 'f06-a', $1, 'TypeError', 'error', 1, $2)`,
+    [A, HIER],
+  );
+  // Des requêtes serveur SANS visite sur B (un scanner, une sonde) ; un span navigateur
+  // sur C, qui n'est pas une requête serveur.
+  const spans: [string, string, string, Date][] = [
+    ["f06-s-b1", B, "back", DEUX_JOURS],
+    ["f06-s-b2", B, "back", new Date(NOW - HEURE)],
+    ["f06-s-c1", C, "front", new Date(NOW - HEURE)],
+  ];
+  for (const [span, app, tier, ts] of spans) {
+    await c.query(
+      `insert into rum_span (span_id, trace_id, tier, app_id, duration_ms, ts) values ($1, $1, $2, $3, 12, $4)`,
+      [span, tier, app, ts],
+    );
+  }
 }
 
 /** Modules console branchés sur la base jetable (cf. query-contract-sql). */
@@ -102,8 +125,9 @@ async function consoleSur(databaseUrl: string) {
   delete process.env.RETENTION_DAYS;
   const comparaison = await import("../../apps/console/lib/comparaison");
   const filters = await import("../../apps/console/lib/filters");
+  const { derniereActivite } = await import("../../apps/console/lib/queries");
   const { pool } = await import("../../apps/console/lib/db");
-  return { ...comparaison, ...filters, pool };
+  return { ...comparaison, ...filters, derniereActivite, pool };
 }
 type Console = Awaited<ReturnType<typeof consoleSur>>;
 
@@ -123,6 +147,7 @@ function trenteJours(app: string): AnalyticsQuery {
 
 const METRIQUE = { table: "rum_metric", colonneTemps: "ts", additive: false } as const;
 const VUES = { table: "rum_pageview", colonneTemps: "started_at", additive: true } as const;
+const ERREURS = { table: "rum_error", colonneTemps: "ts", additive: true } as const;
 
 (url ? describe : describe.skip)("couverture de la période précédente sur PostgreSQL", () => {
   const c = new pg.Client(url ? { connectionString: url } : {});
@@ -203,6 +228,35 @@ const VUES = { table: "rum_pageview", colonneTemps: "started_at", additive: true
       etat: "partielle",
       raison: "aucune donnée collectée sur le périmètre",
     });
+  });
+
+  it("erreurs, signal rare : collectées depuis la première session, pas depuis la première erreur", async () => {
+    // B n'a jamais eu d'erreur : ses erreurs sont collectées depuis ses visites (dix jours).
+    const debutB = await lib.debutCollecte(lib.filtersOfQuery(requete(`app=${B}`)), ERREURS);
+    expect(debutB?.toISOString()).toBe(DIX_JOURS.toISOString());
+    expect(await lib.couverturePrecedente(requete(`app=${B}&period=24h`), ERREURS)).toEqual({ etat: "complete", raison: null });
+    // A a eu sa première erreur hier, mais des visites depuis août : la collecte date d'août.
+    const debutA = await lib.debutCollecte(lib.filtersOfQuery(requete(`app=${A}`)), ERREURS);
+    expect(debutA?.toISOString()).toBe(AOUT.toISOString());
+    // Ni visite ni erreur : toujours « aucune donnée », jamais complète.
+    expect((await lib.couverturePrecedente(requete(`app=${D}&period=24h`), ERREURS)).raison).toBe(
+      "aucune donnée collectée sur le périmètre",
+    );
+  });
+
+  it("dernière activité (bandeau sans visite de la Vue d'ensemble) : hors fenêtre, par app, palier serveur seul", async () => {
+    const lire = (qs: string, principal?: ScopePrincipal) => lib.derniereActivite(lib.filtersOfQuery(requete(qs, principal)));
+    // B : sa dernière visite a dix jours, son serveur a envoyé il y a une heure.
+    expect(await lire(`app=${B}&period=1h`)).toEqual({
+      visite: DIX_JOURS.toISOString(),
+      serveur: new Date(NOW - HEURE).toISOString(),
+    });
+    // C : un span NAVIGATEUR n'est pas une requête serveur.
+    expect((await lire(`app=${C}&period=24h`)).serveur).toBeNull();
+    // D : rien du tout.
+    expect(await lire(`app=${D}&period=24h`)).toEqual({ visite: null, serveur: null });
+    // Le périmètre décide : A ne voit pas le serveur de B.
+    expect((await lire("period=24h", { role: "viewer", apps: [A] })).serveur).toBeNull();
   });
 
   it("lecture en échec → inconnue", async () => {

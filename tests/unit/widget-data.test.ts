@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/queries", () => ({ slowRoutes: vi.fn(), vitalsP75: vi.fn() }));
+vi.mock("@/lib/queries", () => ({ slowRoutes: vi.fn(), vitalsP75: vi.fn(), pagesVuesTotal: vi.fn() }));
 vi.mock("@/lib/queries-grid", () => ({ dailyTraffic: vi.fn() }));
 vi.mock("@/lib/queries-frustration", () => ({ topFrustrations: vi.fn() }));
 vi.mock("@/lib/queries-errors", () => ({ listErrorGroups: vi.fn() }));
@@ -20,7 +20,7 @@ import { normalizeLayout, widgetQueryJson, type AnalyticsWidget } from "@/lib/da
 import { explorerHrefFromAst } from "@/lib/explorer-page-params";
 import { filtersOfQuery } from "@/lib/filters";
 import { dailyTraffic } from "@/lib/queries-grid";
-import { vitalsP75 } from "@/lib/queries";
+import { pagesVuesTotal, slowRoutes, vitalsP75 } from "@/lib/queries";
 import { exploreAnalytics, type ExplorerResult } from "@/lib/queries-explorer";
 import { parseAnalyticsQuery } from "@/lib/query-contract";
 import {
@@ -159,6 +159,43 @@ describe("CE3 — carte v1 : une lecture qui lève devient une erreur dite", () 
     expect(data).toEqual({ kind: "error", reason: RAISON_LECTURE_INDISPONIBLE });
     // La raison technique n'est jamais affichée.
     expect(JSON.stringify(data)).not.toContain("connexion refusée");
+  });
+});
+
+// Recette UTI du 28/09/2026, carte « Routes les plus lentes » de `gip-plateforme` :
+// « Ensemble de la population · Vues 1 » sous « /login · Vues 3 ». La colonne « Vues »
+// de l'ensemble portait le nombre de MESURES LCP de son p75.
+describe("W-B8 — la ligne « Ensemble » compte des pages vues, comme ses routes", () => {
+  it("Vues de l'ensemble = pages vues de la fenêtre ; l'effectif LCP est dit dans la note", async () => {
+    vi.mocked(slowRoutes).mockResolvedValue([
+      { route: "/login", views: 3, lcp_p75: 2400, inp_p75: 180, cls_p75: 0.02, longtasks: 0 },
+      { route: "/", views: 1, lcp_p75: 1900, inp_p75: null, cls_p75: null, longtasks: 0 },
+      { route: "/aos/new", views: 1, lcp_p75: 1200, inp_p75: null, cls_p75: null, longtasks: 0 },
+    ]);
+    vi.mocked(vitalsP75).mockResolvedValue([
+      { name: "LCP", p75: 1900, p50: 1900, n: 1 },
+    ] as unknown as Awaited<ReturnType<typeof vitalsP75>>);
+    vi.mocked(pagesVuesTotal).mockResolvedValue(16);
+    const [carteRoutes] = normalizeLayout([{ type: "slow_routes", title: "Routes les plus lentes" }]);
+    const data = await resolveWidget(carteRoutes, ctx());
+    const routes = data.routes!;
+    expect(routes.referenceVues).toBe(16);
+    // Jamais moins qu'une de ses routes.
+    expect(routes.referenceVues).toBeGreaterThanOrEqual(Math.max(...routes.lignes.map((l) => l.views)));
+    expect(routes.referenceMesuresLcp).toBe(1);
+    expect(routes.note.replace(/[  ]/g, " ")).toBe(
+      "Routes lues sur les pages vues de la fenêtre ; LCP, INP et CLS au p75. Le LCP p75 de l’ensemble repose sur 1 mesure LCP.",
+    );
+  });
+
+  it("sans mesure LCP : la note ne cite aucun effectif", async () => {
+    vi.mocked(slowRoutes).mockResolvedValue([]);
+    vi.mocked(vitalsP75).mockResolvedValue([] as Awaited<ReturnType<typeof vitalsP75>>);
+    vi.mocked(pagesVuesTotal).mockResolvedValue(4);
+    const [carteRoutes] = normalizeLayout([{ type: "slow_routes", title: "Routes les plus lentes" }]);
+    const routes = (await resolveWidget(carteRoutes, ctx())).routes!;
+    expect(routes.referenceLcp).toBeNull();
+    expect(routes.note).toBe("Routes lues sur les pages vues de la fenêtre ; LCP, INP et CLS au p75.");
   });
 });
 

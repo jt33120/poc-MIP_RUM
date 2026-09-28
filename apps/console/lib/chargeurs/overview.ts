@@ -3,7 +3,7 @@
 // L'écran le plus lourd de la console, et composable : le choix des blocs (cookie
 // de la console, passé ici en paramètre `blocs`) est lu AVANT les requêtes — un
 // bloc éteint ne coûte rien. `overviewStats` reste inconditionnel : le bandeau
-// « pas encore de données » en dépend, même sur un tableau de bord réduit au minimum.
+// « aucune visite » en dépend, même sur un tableau de bord réduit au minimum.
 //
 // En deux temps : les lectures de l'écran, chacune une section (F02, § 3.8) ; puis
 // les RELEASES COMPARÉES (§ 3.2) — celles de l'URL, sinon la règle du dernier
@@ -23,7 +23,17 @@ import { fuseauDe } from "../fuseau";
 import { healthScore } from "../health";
 import { avecCondition } from "../perf-domain";
 import { choisirReleases } from "../presets";
-import { overviewStats, pageviewSeries, samplingVitals, vitalSeriesN, vitalsP75, type VitalAgg, type VitalSeriesPoint } from "../queries";
+import {
+  derniereActivite,
+  overviewStats,
+  pageviewSeries,
+  samplingVitals,
+  vitalSeriesN,
+  vitalsP75,
+  type DerniereActivite,
+  type VitalAgg,
+  type VitalSeriesPoint,
+} from "../queries";
 import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown } from "../queries-breakdowns";
 import { comparaisonVersions, latestDeployImpact, listDeploys } from "../queries-deploys";
 import { errorSeries, erreursNavigateur, listErrorGroups } from "../queries-errors";
@@ -33,6 +43,7 @@ import { alertFirings, correlationCards, correlationConcordance, unackedAlertCou
 import { UnsupportedFilterError } from "../query-compiler";
 import { paramReader } from "../query-contract";
 import { dimensionSchema } from "../query-schema";
+import { retentionDays } from "../queries-explorer";
 import { lireComparaison } from "../view-state";
 import { ALERTES_PAR_EVENEMENT, releasesComparees, sansConditionRelease } from "../vue-ensemble";
 import { blocsDe, section, sansSection, type Chargeur } from "./commun";
@@ -191,7 +202,11 @@ export const chargerOverview = (async (principal, sp) => {
   // ─── Releases comparées (§ 3.2) : URL d'abord, sinon la règle du dernier déploiement ───
   const choix = deploys.ok && versionsFenetre.ok ? choisirReleases(deploys.data, versionsFenetre.data.rows) : null;
   const releases = releasesComparees({ relA: comparaison.relA, relB: comparaison.relB }, choix);
-  const [[vitalsB, vitalsA], seriesRelease, releasesLues, vitauxReleasesLus] = await Promise.all([
+  // Fenêtre sans aucune session sur une app : le bandeau doit dire depuis quand rien
+  // n'arrive, et si le serveur, lui, envoie encore (recette UTI du 28/09/2026). Lu
+  // SEULEMENT dans ce cas : l'écran ordinaire ne paie pas cette lecture.
+  const sansVisite = query.scope.requestedApp !== null && stats.ok && stats.data.sessions === 0;
+  const [[vitalsB, vitalsA], seriesRelease, releasesLues, vitauxReleasesLus, activite] = await Promise.all([
     // `cmp=release` : les tuiles Web Vitals lisent la release B et la comparent à A.
     comparaison.mode === "release" && blocs.vitals && releases.ok
       ? Promise.all([
@@ -222,6 +237,7 @@ export const chargerOverview = (async (principal, sp) => {
     blocs.versions && releases.ok
       ? Promise.all([releases.relB, releases.relA].map((v) => section(() => vitalsP75(avecCondition(fToutesReleases, "release", v)))))
       : Promise.resolve(null),
+    sansVisite ? section(() => derniereActivite(f)) : sansSection<DerniereActivite | null>(null),
   ]);
 
   return {
@@ -268,5 +284,7 @@ export const chargerOverview = (async (principal, sp) => {
     seriesRelease,
     releasesLues,
     vitauxReleasesLus,
+    activite,
+    retentionJours: retentionDays(),
   } as const;
 }) satisfies Chargeur<unknown>;
