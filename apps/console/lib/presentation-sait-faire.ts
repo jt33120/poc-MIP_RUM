@@ -8,8 +8,8 @@
 //     principale de sa ligne (relue à la main, puce par puce, par P**.8) ;
 //   - une réserve tirée d'une ligne d'un autre verdict (D7, les sauvegardes) va dans
 //     « Ce qui reste », jamais dans une carte ;
-//   - les lignes déployées mais inertes sur le trafic réel (D12, D14) vont aussi
-//     dans « Ce qui reste » : déployé ne veut pas dire actif.
+//   - les lignes déployées mais inertes sur le trafic réel (D12 ; D14 jusqu'au
+//     28/09/2026) vont aussi dans « Ce qui reste » : déployé ne veut pas dire actif.
 // tests/unit/couverture-site.test.ts (contrôle n° 3) le vérifie sur CES cartes :
 // identifiants, provenance de chaque source, une puce par identifiant.
 //
@@ -31,6 +31,15 @@
 // `POST /api/v1/deploys`, qui accepte encore un jeton d'API jusqu'au 31/12/2026. Les
 // lignes F2 et E1 du document n'ont pas été relevées depuis le 23/09.
 //
+// JOURNÉE DU 28/09/2026. Le document de couverture le dit d'abord (lignes A4 et D14,
+// § 13.4), sans changer de verdict ; les cartes suivent :
+//   - la puce A4 de K9 : des émetteurs backend écrivent en production, et une exception
+//     publiée par le span et par un journal ne compte plus qu'une fois (PR #345) ; restent
+//     les deux cas comptés double que la ligne nomme ;
+//   - K16 (D14) : le GeoIP n'est plus inerte — il résout le pays de la collecte directe du
+//     capteur de la console. D14 quitte la liste des inertes (couverture-controle.ts) et
+//     prend sa carte ; les sites des clients restent en « Ce qui reste » (R6).
+//
 // SOURCES. `{ ligne }` = une ligne de capacité, par identifiant ; `{ passage }` = le
 // numéro d'une ligne du document hors des tables de capacités ; `{ fichier }` =
 // « chemin:ligne » ou « chemin:début-fin » d'un fichier du dépôt, relatif à la
@@ -42,8 +51,9 @@ import type { CarteCapacite, Source } from "./couverture-controle";
 export type { CarteCapacite, Source };
 
 /**
- * PS7 — les cartes, dans l'ordre des familles du document. Les identifiants d'une
- * carte sont DÉRIVÉS de `limites` : aucune liste séparée qui pourrait diverger.
+ * PS7 — les cartes, dans l'ordre des familles du document (K16, famille D, suit donc
+ * K13). Les identifiants d'une carte sont DÉRIVÉS de `limites` : aucune liste séparée
+ * qui pourrait diverger.
  * (La recette e2e compte les cartes en lisant les lignes `id: "K…",` de ce fichier.)
  */
 export const CARTES: readonly CarteCapacite[] = [
@@ -233,8 +243,11 @@ export const CARTES: readonly CarteCapacite[] = [
     limites: [
       {
         id: "A4",
+        // Journée du 28/09/2026 (ligne A4, « depuis le relevé ») : des émetteurs backend
+        // écrivent en production, et la PR #345 fusionne span et journaux d'une même
+        // exception. La réserve principale devient les deux cas encore comptés double.
         texte:
-          "Aucun émetteur backend ne tourne en production ; une double instrumentation journal + span sans identifiant d'exception commun n'est pas fusionnée, et l'écran ne le signale pas.",
+          "Une exception publiée par le span et par un journal ne compte qu'une fois ; deux cas comptent encore double, sans signal à l'écran : un span enfant et son parent envoyés dans deux lots, un journal émis dans un span enfant pour l'exception de son parent.",
       },
       {
         id: "C5",
@@ -332,6 +345,32 @@ export const CARTES: readonly CarteCapacite[] = [
       { ligne: "D6" },
       { fichier: "DEPLOY.md:272-278" },
       { fichier: "components/presentation/Specs.tsx:172-176" },
+    ],
+  },
+  {
+    // AJOUTÉE LE 28/09/2026 : D14 n'est plus inerte. Le collecteur résout le pays de la
+    // collecte directe du capteur de la console (ligne D14, « depuis le 28/09/2026 » ;
+    // une session résolue, lue en base) : la règle veut alors une carte pour elle. Rangée
+    // avec la famille D, à la suite de K13 ; son identifiant suit K15.
+    id: "K16",
+    titre: "Déduire le pays de l'adresse IP, sans la garder",
+    faitQuoi:
+      "Pour les mesures qu'un navigateur envoie directement au collecteur, le pays se lit dans une base IP→pays embarquée ; l'adresse ne sert que le temps de la requête, et MIP ne l'écrit nulle part.",
+    limites: [
+      {
+        id: "D14",
+        texte:
+          "Allumé le 28/09/2026 pour le seul capteur de la console : les sites des clients passent encore par le relais, qui ne transmet que le pays (voir R6). Le pays seulement, et rien de rétrospectif : l'adresse des visites passées n'a jamais été gardée.",
+      },
+    ],
+    // § 6.4 : aucune adresse IP n'est stockée ; la conformité : ce que le collecteur lit
+    // et n'écrit pas, et le seul périmètre allumé ; le mode d'emploi de la collecte directe.
+    sources: [
+      { ligne: "D14" },
+      { passage: 326 },
+      { fichier: "docs/CONFORMITE.md:127-130" },
+      { fichier: "docs/CONFORMITE.md:132-141" },
+      { fichier: "docs/operations/relais-ingestion.md:317-321" },
     ],
   },
   {

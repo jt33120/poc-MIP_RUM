@@ -242,7 +242,7 @@ describe("PS5 — les écrans de la console", () => {
   it("chapeau exact ; méthodes d'analyse datées par le relevé, sans compte figé", () => {
     const texte = lisible(visiteur);
     expect(texte).toContain(
-      "Les écrans qui existent dans la console. Ils ont été construits et testés sur des jeux de démonstration ; aucun n'a encore été relu sur le trafic d'une vraie application.",
+      "Les écrans qui existent dans la console. Ils ont été construits et testés sur des jeux de démonstration ; le 28/09/2026, une première recette en a relu plusieurs sur le trafic d'une vraie application.",
     );
     expect(texte).toContain(`Le relevé du ${RELEVE} ne couvre ni le score de santé, ni les anomalies, ni les tendances.`);
     expect(texte).not.toMatch(/Trois analyses|AIOps|prédictif/);

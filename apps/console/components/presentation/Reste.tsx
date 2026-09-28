@@ -1,14 +1,19 @@
 // Partie 3 du dossier technique — « Ce qui reste pour un vrai outil de RUM » (plan § 8.2, PS10).
 //
-// Une carte par point de lib/presentation-reste.ts (R1 à R10), dans l'ordre fixe du
-// plan : titre, puis trois lignes étiquetées « Ce qui manque », « Ce qui le
-// débloque », « Qui décide », puis les pastilles des lignes du document de
-// couverture que le point cite. Aucun texte n'est écrit ici : tout vient des
-// données, qui citent leurs sources (contrôle n° 4 de couverture-site.test.ts).
+// Une carte par point de lib/presentation-reste.ts (R1 à R11, R2 retiré le
+// 28/09/2026), dans l'ordre fixe du plan : titre, puis trois lignes étiquetées « Ce
+// qui manque », « Ce qui le débloque », « Qui décide », puis les pastilles des lignes
+// du document de couverture que le point cite. Aucun texte n'est écrit ici : tout
+// vient des données, qui citent leurs sources (contrôle n° 4 de couverture-site.test.ts).
 //
-// Les capacités déployées mais inertes (D12, D14) y figurent, et nulle part dans
-// la partie 2 (règle 3 du § 8.0) : leur pastille porte `data-id`, que la recette
-// TP4 cherche dans #reste.
+// Les capacités déployées mais inertes (D12 ; D14 jusqu'au 28/09/2026) y figurent, et
+// nulle part dans la partie 2 (règle 3 du § 8.0) : leur pastille porte `data-id`, que
+// la recette TP4 cherche dans #reste.
+//
+// SORTIS DE LA LISTE (28/09/2026). Un point fait quitte la liste, mais la page le dit
+// encore sous elle, en une phrase datée (POINTS_FAITS) : son titre garde l'ancre d'un
+// point, que l'annexe vise pour les lignes qu'il citait. Pas de pastille : le verdict de
+// ces lignes attend un nouveau relevé, et la phrase dit ce qui est fait.
 //
 // Une pastille porte au survol le nom de la capacité et son verdict, lus dans
 // lib/couverture.ts : jamais recopiés, ils suivent le prochain relevé. Le verdict
@@ -16,7 +21,7 @@
 import { Partie } from "@/components/presentation/Partie";
 import { VERDICT_LABEL, type Capacite } from "@/lib/couverture";
 import type { PointReste } from "@/lib/couverture-controle";
-import { POINTS_RESTE, lignesCitees } from "@/lib/presentation-reste";
+import { POINTS_FAITS, POINTS_RESTE, lignesCitees } from "@/lib/presentation-reste";
 
 /** Les trois lignes d'une carte, dans l'ordre du plan, avec leur libellé exact. */
 const LIGNES: readonly { cle: "manque" | "debloque" | "decide"; libelle: string }[] = [
@@ -108,6 +113,24 @@ export function Reste() {
           </li>
         ))}
       </ol>
+
+      {POINTS_FAITS.length > 0 && (
+        <div className="mt-8 min-w-0" data-testid="reste-faits">
+          <h3 id="reste-faits-titre" className="text-sm font-semibold text-ink">
+            Sortis de la liste
+          </h3>
+          <ul aria-labelledby="reste-faits-titre" className="mt-2 space-y-2 text-sm leading-relaxed text-ink-soft">
+            {POINTS_FAITS.map((point) => (
+              <li key={point.id} data-testid="reste-fait" data-id={point.id} className="min-w-0">
+                <span id={idTitrePoint(point.id)} className="scroll-mt-28 font-semibold text-ink">
+                  {point.titre}
+                </span>{" "}
+                — {point.fait}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Partie>
   );
 }

@@ -16,8 +16,10 @@
 //    noms de tables, codes de vague — illisible pour un visiteur, et parfois en
 //    retard sur le code (F1 à F3). Chaque ligne renvoie à l'endroit de cette page qui
 //    dit sa limite en français courant, et que les tests confrontent au document : la
-//    carte de « Ce qu'il sait faire » qui la porte, ou le point de « Ce qui reste »
-//    qui la cite. Une ligne sans renvoi fait échouer tests/unit/Annexe.test.tsx.
+//    carte de « Ce qu'il sait faire » qui la porte, le point de « Ce qui reste »
+//    qui la cite, ou, depuis le 28/09/2026, le point sorti de la liste parce qu'il est
+//    fait (R2, la reprise : D8 et D9). Une ligne sans renvoi fait échouer
+//    tests/unit/Annexe.test.tsx.
 //
 // 2. LES SPECS (Specs.tsx), sous une frontière <Suspense> : c'est la seule partie
 //    de la page qui lit la base (l'état du planificateur). Le reste de la page part
@@ -42,7 +44,7 @@ import { ancreDuPoint, idCarte } from "@/components/presentation/SaitFaire";
 import { Specs } from "@/components/presentation/Specs";
 import { RELEVE, VERDICT_LABEL, parFamille, type Capacite } from "@/lib/couverture";
 import { lireEnLigne, type Noeud } from "@/lib/markdown-en-ligne";
-import { POINTS_RESTE } from "@/lib/presentation-reste";
+import { POINTS_FAITS, POINTS_RESTE } from "@/lib/presentation-reste";
 import { CARTES } from "@/lib/presentation-sait-faire";
 
 /**
@@ -59,6 +61,9 @@ export function renvoiLimite(id: string): { href: string; libelle: string } | nu
   if (carte) return { href: `#${idCarte(carte.id)}`, libelle: `Ce qu'il sait faire : « ${carte.titre} »` };
   const point = POINTS_RESTE.find((p) => p.sources.includes(id)) ?? POINTS_RESTE.find((p) => p.id === TRAITEES_PAR[id]);
   if (point) return { href: `#${ancreDuPoint(point.id)}`, libelle: `Ce qui reste : « ${point.titre} »` };
+  // Un point fait, sorti de la liste (28/09/2026) : sa phrase datée dit l'état de la ligne.
+  const fait = POINTS_FAITS.find((p) => p.sources.includes(id));
+  if (fait) return { href: `#${ancreDuPoint(fait.id)}`, libelle: `Sorti de la liste : « ${fait.titre} »` };
   return null;
 }
 

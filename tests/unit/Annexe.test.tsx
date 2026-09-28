@@ -103,6 +103,16 @@ describe("PS11 — le document de couverture, tel quel", () => {
     });
   });
 
+  it("D8 et D9 (la reprise, faite le 28/09/2026) renvoient au point sorti de la liste ; D14 à sa carte", () => {
+    for (const id of ["D8", "D9"]) {
+      expect(renvoiLimite(id), id).toEqual({
+        href: "#reste-R2-titre",
+        libelle: "Sorti de la liste : « Reprise de l'historique des erreurs »",
+      });
+    }
+    expect(renvoiLimite("D14")?.href).toBe("#capacite-K16");
+  });
+
   it("chaque renvoi vise une ancre qui existe sur la page : une carte de « Ce qu'il sait faire » ou un point de « Ce qui reste »", () => {
     const page = renderToStaticMarkup(<SaitFaire />) + renderToStaticMarkup(<Reste />);
     for (const c of CAPACITES) {

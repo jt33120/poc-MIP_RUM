@@ -25,6 +25,7 @@ import {
   parFamille,
 } from "../../apps/console/lib/couverture";
 import {
+  DEPLOYEES_INERTES,
   verifierCartes,
   verifierReste,
   type CarteCapacite,
@@ -32,7 +33,7 @@ import {
   type PointReste,
 } from "../../apps/console/lib/couverture-controle";
 import { GLOSSARY } from "../../apps/console/lib/glossary";
-import { POINTS_RESTE } from "../../apps/console/lib/presentation-reste";
+import { POINTS_FAITS, POINTS_RESTE } from "../../apps/console/lib/presentation-reste";
 import { CARTES } from "../../apps/console/lib/presentation-sait-faire";
 import {
   DOCUMENT,
@@ -165,13 +166,15 @@ const CTX: ContexteControle = { capacites: CAPACITES, lignesDocument: DOC.split(
 // contrôle à la fin de ce bloc. K15 n'est pas dans le plan : le relevé du 23/09/2026
 // (P**.10) a fait passer F2 (« Vérifier les types ») à « déployé, non éprouvé », et
 // la règle 1 du § 8.0 veut alors une carte pour elle ; ici, seul son identifiant
-// compte.
+// compte. K16 non plus : le 28/09/2026, D14 (le pays par adresse IP) a cessé d'être
+// inerte, et prend sa carte à son tour ; seule D12 reste en « Ce qui reste » seulement.
 const REPARTITION: Record<string, string[]> = {
   K1: ["A1"], K2: ["A2"], K3: ["A7", "A8", "A9", "A10"], K4: ["A3"], K5: ["A5", "A6"],
   K6: ["B1", "B2", "B3", "B4"], K7: ["B5", "B6", "B7", "B8"], K8: ["B9"],
   K9: ["A4", "C5", "C6"], K10: ["C7", "C8"], K11: ["D1", "D2", "D3", "D4"], K12: ["D5"], K13: ["D6"],
   K14: ["E1", "E2", "E3"],
   K15: ["F2"],
+  K16: ["D14"],
 };
 function cartesFixture(): CarteCapacite[] {
   return Object.entries(REPARTITION).map(([id, ids]) => ({
@@ -188,7 +191,7 @@ const RESTE: PointReste[] = [
 const carte = (cartes: CarteCapacite[], id: string) => cartes.find((c) => c.id === id)!;
 
 describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le document", () => {
-  it("la répartition du plan, plus K15, couvre exactement les lignes « déployé, non éprouvé »", () => {
+  it("la répartition du plan, plus K15 et K16, couvre exactement les lignes « déployé, non éprouvé »", () => {
     expect(verifierCartes(cartesFixture(), RESTE, CTX)).toEqual([]);
   });
 
@@ -272,7 +275,10 @@ describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le doc
     expect(verifierCartes(CARTES, POINTS_RESTE, CTX)).toEqual([]);
     const puces = CARTES.flatMap((c) => c.limites.map((l) => l.id));
     expect(puces).toContain("A4");
-    expect(puces.length).toBe(compte("deploye_non_eprouve") - 2); // toutes, sauf D12 et D14
+    expect(puces.length).toBe(compte("deploye_non_eprouve") - DEPLOYEES_INERTES.length); // toutes, sauf D12
+    // D14 n'est plus inerte (28/09/2026) : elle a sa carte, K16.
+    expect(DEPLOYEES_INERTES).toEqual(["D12"]);
+    expect(puces).toContain("D14");
   });
 });
 
@@ -299,9 +305,11 @@ describe("4 — chaque point de « Ce qui reste » cite une source qui existe", 
     ]);
   });
 
-  it("sur les vrais points de lib/presentation-reste.ts (P**.5) : R1 à R11, et chaque source existe", () => {
-    expect(POINTS_RESTE.map((p) => p.id)).toEqual(["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11"]);
+  it("sur les vrais points de lib/presentation-reste.ts (P**.5) : R1 à R11 sans R2 (fait le 28/09/2026), et chaque source existe", () => {
+    expect(POINTS_RESTE.map((p) => p.id)).toEqual(["R1", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11"]);
     expect(verifierReste(POINTS_RESTE, CTX)).toEqual([]);
+    // Les points sortis de la liste (R2, 28/09/2026) passent le même contrôle.
+    expect(verifierReste(POINTS_FAITS, CTX)).toEqual([]);
     // Côté « Ce qui reste » du contrôle 3a : les déployées inertes y figurent. Sans
     // cartes, verifierCartes ne rend alors, pour elles, aucune erreur de ce genre.
     const inertesAbsentes = verifierCartes([], POINTS_RESTE, CTX).filter((e) => e.includes("doit figurer dans « Ce qui reste »"));

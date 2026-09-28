@@ -208,8 +208,12 @@ test.describe("P**.3 — Partie 1 : ce qu'il contient", () => {
 test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  /** Déployées mais inertes : elles vont dans « Ce qui reste », jamais dans une carte (§ 8.0, règle 3). */
-  const INERTES = ["D12", "D14"];
+  /**
+   * Déployées mais inertes : elles vont dans « Ce qui reste », jamais dans une carte (§ 8.0,
+   * règle 3). D14 en est sortie le 28/09/2026 : elle résout le pays de la collecte directe
+   * de la console, et a sa carte (lib/couverture-controle.ts, DEPLOYEES_INERTES).
+   */
+  const INERTES = ["D12"];
 
   /** Les capacités du document, relues dans son extraction versionnée. */
   function capacitesDuDocument(): { id: string; verdict: string }[] {
@@ -277,12 +281,13 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
     }
   });
 
-  test("TP4 — D12 et D14, déployées mais inertes, n'apparaissent pas dans « Ce qu'il sait faire »", async ({ page }) => {
+  test("TP4 — D12, déployée mais inerte, n'apparaît pas dans « Ce qu'il sait faire » ; D14 y a sa carte", async ({ page }) => {
     await page.goto(dossierUrl);
     const partie = page.locator("section#sait-faire");
     await expect(partie).toHaveCount(1);
     for (const id of INERTES) await expect(partie.locator(`[data-id="${id}"]`)).toHaveCount(0);
-    expect(await partie.innerText()).not.toMatch(/\bD1[24]\b/);
+    expect(await partie.innerText()).not.toMatch(/\bD12\b/);
+    await expect(partie.locator('[data-testid="capacite-limite"][data-id="D14"]')).toHaveCount(1);
   });
 
   test("V-E — la barre de couverture : une case par capacité, des décomptes écrits", async ({ page }) => {
@@ -312,7 +317,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
     return new Map(brut.capacites.map((c) => [c.id, c.verdict]));
   };
 
-  test("TP4 — D12 et D14, déployées mais inertes, ont leur pastille dans « Ce qui reste »", async ({ page }) => {
+  test("TP4 — D12 (inerte) et D14 (pour les sites des clients) ont leur pastille dans « Ce qui reste »", async ({ page }) => {
     const verdicts = verdictsDuDocument();
     await page.goto(dossierUrl);
     const reste = page.locator("section#reste");
@@ -325,22 +330,28 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
     }
   });
 
-  test("onze points dans l'ordre du plan, chacun avec ce qui manque, ce qui le débloque et qui décide", async ({ page }) => {
+  test("dix points dans l'ordre du plan, chacun avec ce qui manque, ce qui le débloque et qui décide", async ({ page }) => {
     await page.goto(dossierUrl);
     const points = page.locator('section#reste [data-testid="reste-point"]');
-    await expect(points).toHaveCount(11);
+    await expect(points).toHaveCount(10);
+    // R2 (la reprise de l'historique) est sorti le 28/09/2026 : fait. Les identifiants
+    // ne sont pas renumérotés, la page affiche le rang.
     expect(await points.evaluateAll((els) => els.map((e) => e.getAttribute("data-id")))).toEqual([
-      "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11",
+      "R1", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11",
     ]);
     for (const point of await points.all()) {
       await expect(point.getByRole("heading", { level: 3 })).toHaveCount(1);
       await expect(point.locator("dt")).toHaveText(["Ce qui manque", "Ce qui le débloque", "Qui décide"]);
       for (const valeur of await point.locator("dd").all()) await expect(valeur).not.toBeEmpty();
     }
-    // R1 : ses chiffres sont LUS EN BASE (relevé du 23/09/2026), la date est obligatoire.
-    // R2 : son chiffre est repris du document, qui dit ne pas l'avoir recontrôlé.
-    await expect(points.nth(0)).toContainText("lu en base le 23/09/2026");
-    await expect(points.nth(1)).toContainText("non recontrôlé");
+    // R2 est dit sous la liste, fait, avec l'ancre que vise l'annexe (D8, D9).
+    const faits = page.locator('section#reste [data-testid="reste-fait"]');
+    await expect(faits).toHaveCount(1);
+    await expect(faits).toHaveAttribute("data-id", "R2");
+    await expect(faits.locator("#reste-R2-titre")).toHaveText("Reprise de l'historique des erreurs");
+    // R1 (28/09/2026) : la recette est datée, et il ne reste que l'écran mobile.
+    await expect(points.nth(0)).toContainText("Le 28/09/2026, des écrans ont été relus");
+    await expect(points.nth(0)).toContainText("L'écran mobile reste le seul");
   });
 
   test("chaque pastille est une ligne du document de couverture, avec son verdict", async ({ page }) => {

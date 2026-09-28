@@ -55,52 +55,58 @@
 //   - R6 : le collecteur tourne et reçoit le trafic relayé ; la résolution par IP reste
 //     éteinte parce que le relais ne transmet pas l'adresse — il faut la collecte directe ;
 //   - R1 : son renvoi à R10 ne parle plus d'offre gratuite.
+//
+// JOURNÉE DU 28/09/2026. Cinq points étaient faits en tout ou en partie ; le document de
+// couverture le dit d'abord (§ 13.4, et en place sur ses lignes), sans changer de verdict.
+// La règle de cette partie tranche entre retirer et réduire : ne pas maintenir une limite
+// levée, ne pas minimiser celle qui reste. Un point entièrement fait sort ; un point fait
+// en partie ne dit plus que ce qui reste. Les identifiants ne sont PAS renumérotés : la
+// page n'en affiche aucun (le rang visible vient de l'ordre), un renvoi « (voir R3) »
+// d'une carte vise son identifiant, et un trou dans la suite ne se voit pas.
+//   - R2 (reprise de l'historique) SORT : exécutée en production le 28/09/2026, sans
+//     échec, et plus rien ne la bloque (lignes D8, D9). Il passe dans POINTS_FAITS, que
+//     la page rend sous la liste (« Sortis de la liste ») : l'annexe veut, pour CHAQUE
+//     ligne du registre, un endroit de la page qui dise son état en français courant
+//     (tests/unit/Annexe.test.tsx), et D8 et D9 n'en auraient plus ;
+//   - R1 ne dit plus que l'écran mobile : les écrans web ont été relus sur le trafic de
+//     l'application du client, quatre défauts corrigés (§ 6.2, § 13.4). Pastille C7 ;
+//   - R6 ne dit plus que les sites des clients : le GeoIP résout le pays de la collecte
+//     directe du capteur de la console. D14 n'est plus inerte (elle a sa carte, K16) ;
+//     R6 la cite encore, pour ce qui reste ;
+//   - R9 : la restauration est éprouvée sur la branche de répétition ; restent sa partie
+//     « identités », les bancs sans seuil et le JavaScript du backend ;
+//   - R11 ne dit plus que Go, PHP et Ruby : les agents Python, Java et .NET sont
+//     éprouvés en production (docs/INTEGRATION.md § 10).
+// R3, R4, R5, R7, R8 et R10 dépendent de tiers et n'ont pas bougé.
 import { capaciteParId, type Capacite } from "./couverture";
-import type { PointReste } from "./couverture-controle";
+import type { PointFait, PointReste } from "./couverture-controle";
 
 /** Le document de couverture, tel que les sources le citent. */
 const DOC = "docs/RUM_PARITY_STATUS.md";
 
-/** Les onze points, dans l'ordre fixe du plan (R10 ajouté le 24/09/2026, R11 le 27/09/2026). */
+/**
+ * Les dix points, dans l'ordre fixe du plan (R10 ajouté le 24/09/2026, R11 le 27/09/2026 ;
+ * R2 retiré le 28/09/2026, fait).
+ */
 export const POINTS_RESTE: readonly PointReste[] = [
   {
     id: "R1",
-    titre: "Une recette sur une vraie application",
+    titre: "Une recette de l'écran mobile sur une vraie application",
     manque:
-      "Aucun écran n'a été relu sur des données réellement ingérées. Du trafic arrive pourtant : le relevé lu en base le 23/09/2026 compte 378 événements pour l'application du client, le dernier reçu ce jour-là à 13:01 UTC, et 33 pour la console elle-même. Le volume reste faible, et la base, provisoire, n'est pas dimensionnée pour le trafic d'un vrai site (voir « Une base choisie pour un vrai produit »).",
+      "Le 28/09/2026, des écrans ont été relus pour la première fois sur le trafic réel de l'application du client : vue d'ensemble, erreurs, un tableau de bord, l'Explorer ; quatre défauts trouvés et corrigés le jour même. L'écran mobile reste le seul qu'aucune donnée réelle n'alimente : aucune application React Native n'émet. Et le registre ne tire encore de cette recette aucun verdict.",
     debloque:
-      "Relire les erreurs, l'Explorer et un tableau de bord sur le trafic reçu ; faire émettre une application de recette pour ce qu'il ne couvre pas, dont l'écran mobile.",
-    decide: "L'équipe MIP ; c'est le point le moins coûteux.",
-    // § 6.2 (aucun écran éprouvé sur des données réellement ingérées) ; § 11, étape 1 ;
-    // le relevé de production du 23/09, lu en base : le « dernier événement le 17/09 »
-    // que le document reprenait sans recontrôle est faux.
+      "Faire émettre une application React Native de recette, puis relire l'écran mobile sur ses sessions ; consigner la recette dans un nouveau relevé du registre.",
+    decide: "L'équipe MIP.",
+    // RÉDUIT LE 28/09/2026 à ce qui reste. § 6.2 (la limite, et ce qui l'a levée en
+    // partie), § 13.4 (la recette, ses quatre défauts, l'écran mobile), la vue
+    // d'ensemble qui disait « jamais rien reçu » ; la fin du § 13.4 (aucun verdict ne
+    // porte encore la recette). C7 : l'écran mobile, qu'aucune session réelle n'alimente.
     sources: [
-      `${DOC}:297-298`,
-      `${DOC}:560-563`,
-      "docs/operations/releve-p0-2026-09-23.md:13",
-      "docs/operations/releve-p0-2026-09-23.md:54-57",
-    ],
-  },
-  {
-    id: "R2",
-    titre: "Reprise de l'historique des erreurs",
-    manque:
-      "L'outil de reprise est livré et testé (dry-run, vérification), et sa migration v83 est appliquée en production : le registre des migrations, lu en base le 23/09/2026, l'inscrit le 18/09/2026 à 11:46 UTC. Aucun environnement ne lance l'outil, qui est une ligne de commande, et son exécution en production a été écartée le 18/09/2026 : environ 97 lignes étaient concernées (chiffre non recontrôlé).",
-    debloque:
-      "Rien n'est obligatoire. Si une reprise redevient nécessaire, plus rien n'est à faire côté schéma : il reste à lancer l'outil sur la base de production, depuis un poste qui y a accès.",
-    decide: "Le responsable du produit.",
-    // D8 (aucun environnement ne lance l'outil), D9 (décision du 18/09, ≈ 97 lignes
-    // non recontrôlées, poste de livraison refusé par la base) ; § 10 (seul point
-    // fermé par une décision) ; fin du § 12.2 (« rien côté schéma, seulement lancer
-    // l'outil ») ; le relevé de production du 23/09 : v83 LUE dans `schema_migration`,
-    // là où le document ne l'avait que déduite des journaux du runner.
-    sources: [
-      "D8",
-      "D9",
-      `${DOC}:546-548`,
-      `${DOC}:629-631`,
-      "docs/operations/releve-p0-2026-09-23.md:12",
-      "docs/operations/releve-p0-2026-09-23.md:45",
+      `${DOC}:297-304`,
+      `${DOC}:743-756`,
+      "apps/console/lib/vue-ensemble.ts:59-62",
+      `${DOC}:780-781`,
+      "C7",
     ],
   },
   {
@@ -134,28 +140,26 @@ export const POINTS_RESTE: readonly PointReste[] = [
   },
   {
     id: "R6",
-    titre: "Le pays par adresse IP, éteint tant que la collecte passe par la console",
+    titre: "Le pays par adresse IP sur les sites des clients",
     manque:
-      "Le collecteur est en service depuis le 27/09/2026 et reçoit la part de la collecte que la console lui relaie. La résolution et sa base (DB-IP Lite, téléchargée à la construction de son image) y sont livrées, mais éteintes : le relais ne lui transmet que le pays posé par Vercel, jamais l'adresse. Cette résolution ne donne donc aucun pays aujourd'hui.",
+      "Depuis le 28/09/2026, le collecteur déduit le pays de l'adresse IP pour la collecte que lui envoie directement le capteur de la console, et pour elle seule. Les sites des clients passent encore par le relais de la console, qui ne transmet que le pays posé par Vercel, jamais l'adresse : pour eux, la résolution ne donne aucun pays.",
     debloque:
-      "Le chemin est choisi : une collecte directe vers le collecteur, pour les sites dont la politique de sécurité du contenu (CSP) le permet, une fois que le relais porte tout le trafic depuis 7 jours sans repli. Avant, prouver sur un environnement de recette que la façade Railway écrase une adresse forgée par le client. Cette collecte directe n'est pas livrée.",
+      "Ouvrir la collecte directe aux sites dont la politique de sécurité du contenu (CSP) le permet, une fois que le relais porte tout le trafic depuis 7 jours sans repli ; relire la conformité avant d'élargir le périmètre.",
     decide: "L'équipe MIP.",
-    // D14 : INERTE (règle 3 du § 8.0) — elle figure ici et nulle part dans « Ce qu'il
-    // sait faire ». Le collector en service et le relais allumé (relevé du 28/09), ce que
-    // le relais transmet (liste exacte d'en-têtes, sans adresse), la décision (ADR 0005,
-    // points 5 et conséquences), le GeoIP éteint du collector et sa condition d'allumage
-    // (.railway/railway.ts), la collecte directe P6b.G (mode d'emploi du relais), la base
-    // dans l'image (Dockerfile).
+    // RÉDUIT LE 28/09/2026 aux sites des clients. D14 n'est plus inerte (elle a sa carte,
+    // K16) ; R6 la cite pour ce qui reste. Le périmètre allumé et sa preuve (§ 13.4 ; la
+    // conformité) ; ce que le relais transmet (liste exacte d'en-têtes, sans adresse) ; la
+    // décision (ADR 0005) ; l'IaC du collecteur ; la suite pour les clients et la
+    // conformité à relire (mode d'emploi du relais).
     sources: [
       "D14",
-      "docs/TOPOLOGIE_BACKEND.md:193-198",
-      "docs/TOPOLOGIE_BACKEND.md:206-209",
-      "apps/console/lib/ingest-relay.ts:170-177",
-      "docs/architecture/adr/0005-relais-ingestion.md:17",
+      `${DOC}:763-769`,
+      "docs/CONFORMITE.md:132-141",
+      "apps/console/lib/ingest-relay.ts:173-181",
       "docs/architecture/adr/0005-relais-ingestion.md:21",
       ".railway/railway.ts:232-241",
-      "docs/operations/relais-ingestion.md:295-302",
-      "services/collector/Dockerfile:103-131",
+      "docs/operations/relais-ingestion.md:296-301",
+      "docs/operations/relais-ingestion.md:413-416",
     ],
   },
   {
@@ -166,7 +170,8 @@ export const POINTS_RESTE: readonly PointReste[] = [
     debloque:
       "Confirmer l'outil ITSM cible, ouvrir un espace et ses droits, poser un secret de webhook, décider de la synchronisation des statuts.",
     decide: "La DSI de MIP.",
-    // D12 : déployée, INERTE (règle 3 du § 8.0), comme D14 en R6. Aucune intégration
+    // D12 : déployée, INERTE (règle 3 du § 8.0) — la seule depuis que D14 résout le pays
+    // de la collecte directe (28/09/2026). Aucune intégration
     // configurée : lu en base au relevé de production du 23/09.
     sources: ["D12", "D13", "docs/operations/releve-p0-2026-09-23.md:16"],
   },
@@ -201,21 +206,25 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R9",
     titre: "Une chaîne de livraison qui dit vrai",
     manque:
-      "Depuis le 24/09/2026, la CI construit le dépôt depuis un clone propre, vérifie les types de l'extension navigateur et joue les deux bancs de mesure, et la procédure de restauration d'une sauvegarde sans ressusciter des données effacées est écrite. Reste que cette procédure n'a jamais été éprouvée et que sa partie « identités » est manuelle ; que les bancs impriment leurs temps sans seuil, si bien que les temps publiés sont remesurés, pas garantis ; et que le JavaScript du backend n'est typé par rien.",
+      "Depuis le 24/09/2026, la CI construit le dépôt depuis un clone propre, vérifie les types de l'extension navigateur et joue les deux bancs de mesure ; depuis le 28/09/2026, la restauration d'une sauvegarde sans ressusciter des données effacées est éprouvée sur une branche de répétition, avec 24 heures d'historique restaurable. Restent sa partie « identités », manuelle et jamais éprouvée ; des bancs qui impriment leurs temps sans seuil, si bien que les temps publiés sont remesurés, pas garantis ; et le JavaScript du backend n'est typé par rien.",
     debloque:
-      "Répéter la procédure de restauration sur la branche Neon de répétition, avant d'en avoir besoin.",
+      "Éprouver la partie « identités » sur la branche de répétition, avec une identité effacée ; donner un seuil aux bancs de mesure ; étendre le typage au JavaScript du backend.",
     decide: "L'équipe MIP.",
-    // D7 (restauration ; le document la dit « non commencée », le runbook l'a écrite
-    // le 24/09 sans l'éprouver). La CI : typage de l'extension et limite du backend
-    // `.mjs`, construction depuis un dépôt propre, bancs de mesure sans seuil de
-    // latence. F1 à F3 ne sont plus citées : ce qu'elles disent manquer est fait.
+    // D7 (restauration : « non commencée » au relevé, écrite le 24/09, éprouvée le 28/09
+    // sur la répétition — la ligne le dit en place, le verdict attend un relevé). Le
+    // runbook : l'exercice, la fenêtre de 24 heures, la partie « identités » manuelle et
+    // ce qui n'a pas été éprouvé. La CI : typage de l'extension et limite du backend
+    // `.mjs`, construction depuis un dépôt propre, bancs de mesure sans seuil de latence.
     sources: [
       "D7",
+      `${DOC}:770-773`,
+      "docs/operations/runbook.md:115",
+      "docs/operations/runbook.md:119",
+      "docs/operations/runbook.md:177",
+      "docs/operations/runbook.md:206-212",
       ".github/workflows/ci.yml:78-93",
       ".github/workflows/ci.yml:102-131",
       ".github/workflows/ci.yml:462-481",
-      "docs/operations/runbook.md:113-115",
-      "docs/operations/runbook.md:146",
     ],
   },
   {
@@ -248,24 +257,42 @@ export const POINTS_RESTE: readonly PointReste[] = [
     ],
   },
   {
-    // AJOUTÉ LE 27/09/2026 ; RÉÉCRIT LE 28/09/2026 après la PR #338 : la collecte
-    // accepte désormais OTLP en protobuf (les deux points d'entrée partagent
-    // `otlp-corps.mjs`), et la recette par langage est écrite. Ce qui manque n'est
-    // plus du code : c'est la preuve, langage par langage, sur un vrai backend.
+    // AJOUTÉ LE 27/09/2026 ; RÉÉCRIT LE 28/09/2026 après la PR #338 (la collecte accepte
+    // OTLP en protobuf) ; RÉDUIT LE MÊME JOUR après la PR #342 : les agents officiels
+    // Python, Java et .NET sont éprouvés en production (docs/INTEGRATION.md § 10, tableau
+    // par langage). Ce qui reste : Go, PHP et Ruby, et le SDK Node officiel hors test.
     id: "R11",
-    titre: "Les backends au-delà de Node et Python",
+    titre: "Les backends Go, PHP et Ruby, pas encore éprouvés",
     manque:
-      "La collecte accepte depuis le 28/09/2026 le format des agents OpenTelemetry officiels (OTLP en protobuf, compressé ou non), et la documentation d'intégration donne leur configuration pour Java, .NET, Python, Go, PHP, Ruby et Node. Seul le SDK Node officiel a été éprouvé de bout en bout, dans un test automatique : aucun agent Java, .NET, Go, PHP ou Ruby n'a encore envoyé de trace à la production.",
+      "La collecte accepte depuis le 28/09/2026 le format des agents OpenTelemetry officiels, et ceux de Python, Java et .NET ont été éprouvés en production le même jour : un vrai serveur, configuré par la seule documentation d'intégration, a envoyé traces, journaux et erreurs, que la console a montrés. Aucun agent Go, PHP ou Ruby n'a encore envoyé de trace, et le SDK Node officiel ne l'a fait qu'en test automatique.",
     debloque:
-      "Faire tourner l'agent officiel de chaque langage sur un vrai backend, configuré par la seule documentation, et vérifier que sa trace rejoint celle du navigateur.",
+      "Faire tourner l'agent officiel de Go, de PHP et de Ruby sur un vrai backend, configuré par la seule documentation, comme les trois premiers.",
     decide: "L'équipe MIP.",
     sources: [
       "C5",
       "C6",
       "packages/backend/shared/otlp-corps.mjs:10-21",
-      "docs/INTEGRATION.md:369-371",
+      "docs/INTEGRATION.md:410-418",
       "tests/integration/otlp-protobuf-agent-sql.test.ts:1-12",
+      `${DOC}:774-778`,
     ],
+  },
+];
+
+/**
+ * Les points sortis de la liste parce qu'ils sont faits, dans l'ordre où ils en sont
+ * sortis. Une phrase datée chacun, sourcée comme un point (contrôle n° 4).
+ */
+export const POINTS_FAITS: readonly PointFait[] = [
+  {
+    // SORTI LE 28/09/2026. La ligne D9 (« depuis le relevé ») et le § 13.4 : la reprise
+    // exécutée, ses chiffres lus en base (`backfill_run`), le « ≈ 97 lignes » faux. D8 :
+    // l'outil reste une ligne de commande, sans écran.
+    id: "R2",
+    titre: "Reprise de l'historique des erreurs",
+    fait:
+      "Exécutée en production le 28/09/2026 sur les données du 30/08 au 28/09, après une répétition : 143 686 lignes manquaient à l'index des signaux, surtout des appels serveur, et non environ 97 comme estimé le 18/09. Aucun échec. L'outil reste une ligne de commande, lancée depuis un poste, sans écran.",
+    sources: ["D8", "D9", `${DOC}:191-192`, `${DOC}:757-762`],
   },
 ];
 
