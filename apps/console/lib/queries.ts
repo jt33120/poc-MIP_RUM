@@ -523,6 +523,22 @@ export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
  * tronquée, et à faire remonter une explosion de cardinalité avant qu'elle ne
  * rende l'écran inutile.
  */
+/**
+ * Pages vues de la fenêtre, TOUTES routes : l'effectif de la ligne « Ensemble de la
+ * population » d'un classement de routes (carte « Routes les plus lentes »). Même
+ * population que le `vues` de `slowRoutes`, moins la condition `route is not null` :
+ * l'ensemble compte aussi les vues sans route, jamais moins qu'une de ses routes.
+ */
+export async function pagesVuesTotal(f: Filters): Promise<number> {
+  const sql = await sqlContext(f);
+  const vues = sql.where({ dataset: "views", row: "p", session: "ps", time: "p.started_at" });
+  const [row] = await q<{ n: number }>(
+    `select count(*)::int as n from rum_pageview p ${sessionJoin("p", "ps")} where true${vues}`,
+    sql.params,
+  );
+  return row?.n ?? 0;
+}
+
 export async function nombreDeRoutes(f: Filters): Promise<number> {
   const sql = await sqlContext(f);
   const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });

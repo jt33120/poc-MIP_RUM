@@ -26,12 +26,13 @@ import {
 import type { Filters } from "./filters";
 import { queryOf } from "./filters";
 import { cleJour } from "./forecast";
+import { pluriel } from "./format";
 import { lire } from "./lecture";
 import { UnsupportedFilterError } from "./query-compiler";
 import { dailyTraffic } from "./queries-grid";
 import { topFrustrations } from "./queries-frustration";
 import { listErrorGroups } from "./queries-errors";
-import { slowRoutes, vitalsP75 } from "./queries";
+import { pagesVuesTotal, slowRoutes, vitalsP75 } from "./queries";
 import { eventCount } from "./queries-events";
 import { ExplorerBudgetError, UnsupportedExplorerDimension, type ExplorerPlan } from "./analytics-schema";
 import { exploreAnalytics, type ExplorerData, type ExplorerMeta, type ExplorerResult } from "./queries-explorer";
@@ -113,8 +114,12 @@ export interface WidgetRoutes {
   lignes: WidgetRoute[];
   /** LCP p75 de l'app entière (`vitalsP75`) : la ligne « Ensemble ». */
   referenceLcp: number | null;
-  /** Effectif de la référence, ou `null` si la lecture n'a rien rendu. */
-  referenceN: number | null;
+  /** Pages vues de l'ensemble sur la fenêtre : la colonne « Vues » de la ligne « Ensemble ». */
+  referenceVues: number;
+  /** Mesures LCP sur lesquelles repose `referenceLcp`, ou `null` si la lecture n'a rien rendu. */
+  referenceMesuresLcp: number | null;
+  /** La note sous la carte : ce que « Vues » compte, et l'effectif du p75 de l'ensemble. */
+  note: string;
   /** Vrai si d'autres routes existent au-delà des huit affichées. */
   tronque: boolean;
 }
@@ -603,9 +608,13 @@ async function lireLegacy(w: Extract<Widget, { kind: "v1" }>, ctx: WidgetContext
     case "slow_routes": {
       // W-B8 — un classement de PERCENTILES : écart au LCP p75 de l'app, jamais une
       // part d'un total (des p75 ne s'additionnent pas).
-      const toutes = await slowRoutes(f);
+      // La ligne « Ensemble » se lit dans la colonne « Vues » comme chaque route : ses
+      // PAGES VUES, pas le nombre de mesures LCP de son p75. Recette UTI du 28/09/2026 :
+      // « Ensemble de la population · Vues 1 » sous « /login · Vues 3 » — l'ensemble
+      // avait moins de vues qu'une de ses routes.
+      const [toutes, vitaux, vuesTotales] = await Promise.all([slowRoutes(f), vitalsP75(f), pagesVuesTotal(f)]);
       const lignes = toutes.slice(0, LIGNES_V1);
-      const reference = (await vitalsP75(f)).find((x) => x.name === "LCP");
+      const reference = vitaux.find((x) => x.name === "LCP");
       return {
         kind: "toplist",
         routes: {
@@ -617,7 +626,14 @@ async function lireLegacy(w: Extract<Widget, { kind: "v1" }>, ctx: WidgetContext
             cls_p75: r.cls_p75 == null ? null : Number(r.cls_p75),
           })),
           referenceLcp: reference && reference.p75 != null ? Math.round(Number(reference.p75)) : null,
-          referenceN: reference ? Number(reference.n) : null,
+          referenceVues: vuesTotales,
+          referenceMesuresLcp: reference ? Number(reference.n) : null,
+          // L'effectif du p75 n'est pas des vues : dit à part, sous la table, et
+          // seulement s'il existe (sans mesure, la ligne « Ensemble » est absente).
+          note:
+            reference && Number(reference.n) > 0
+              ? `Routes lues sur les pages vues de la fenêtre ; LCP, INP et CLS au p75. Le LCP p75 de l’ensemble repose sur ${pluriel(Number(reference.n), "mesure LCP", "mesures LCP")}.`
+              : "Routes lues sur les pages vues de la fenêtre ; LCP, INP et CLS au p75.",
           tronque: toutes.length > LIGNES_V1,
         },
         columns: ["Route", "Vues", "LCP p75", "INP p75", "CLS p75"],
