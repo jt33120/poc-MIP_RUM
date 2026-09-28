@@ -503,6 +503,8 @@ node --require @opentelemetry/auto-instrumentations-node/register app.js
 | ASP.NET Core | `/commandes/{id:int}`, `{id?}`, `{*slug}` | `/commandes/:id`, `:id`, `:slug` |
 | Express, Rails | `/commandes/:id(\d+)`, `/commandes/:id(.:format)`, `*chemin` | `/commandes/:id`, `:chemin` |
 
+**Une requête qu'aucune route n'a servie.** Un span serveur en 404 ou 405 **sans** `http.route` prend la route fixe `(non trouvée)`, jamais son chemin : le chemin est choisi par le client HTTP, et une rafale de scanner de vulnérabilités (`/wp-admin/…`, `/manager/html`…) remplirait sinon le registre des routes de l'application (§ 5, plafond de 2 000), après quoi toute nouvelle route réelle devient `(other)`. Avec `http.route`, un 404 métier (commande absente sur `/commandes/:id`) garde sa route. Le chemin reste lisible dans l'URL du span.
+
 ### Vérifier
 
 Un export réussi rend `200` avec un corps protobuf vide, que les exportateurs officiels lisent comme un succès complet (vérifié avec le SDK Node : `tests/integration/otlp-protobuf-agent-sql.test.ts` ; en production le 28/09/2026 avec les agents Python, Java et .NET : 200 à chaque export dans les journaux du `collector`, aucun échec côté agent). En base, un span `SERVER` porteur des attributs HTTP semconv devient une ligne `rum_span` de niveau `back` (rattachée à la session par le `tracestate`), ses appels SQL et sous-appels des lignes `detail`, ses exceptions et les logs `ERROR` porteurs d'`exception.type` des erreurs backend (`rum_error`), les logs des lignes `rum_log`. En cas d'échec, l'agent journalise le statut HTTP : `403` (clé, § 7), `415` (protocole : voir la ligne correspondante du § 7), `429` (débit).

@@ -830,8 +830,48 @@ function sessionRevendiquee(value) {
     : null;
 }
 
+// ─────────── Requête qu'aucune route n'a servie (404, 405) ─────────────────
+//
+// Constat du 28/09/2026 : des rafales de scan de vulnérabilités
+// (`/wp-admin/admin-ajax.php`, `/manager/html`, `/jmx-console/`…, 88 % de 404)
+// avaient rempli le registre des routes d'une application (2 000 sur 2 000,
+// migration-v62) : toute route réelle apparue ensuite devenait `(other)`.
+// La cause : sur une requête que le framework n'a résolue vers aucune route,
+// les capteurs prenaient le CHEMIN BRUT pour route, et le chemin est choisi par
+// le client HTTP — donc par n'importe qui.
+//
+// La règle : un span serveur en 404 ou 405 qui ne porte PAS `http.route` n'a
+// pas de route ; il prend la route fixe ROUTE_NON_TROUVEE, une seule entrée du
+// registre pour toutes. `http.route` est l'attribut par lequel un framework dit
+// qu'il a résolu la requête (conventions sémantiques OpenTelemetry) : présent,
+// un 404 métier (`GET /commandes/:id` sur une commande absente) garde sa
+// route. C'est une défense côté serveur, qui vaut pour tout émetteur — dont les
+// copies de l'ancien middleware FastAPI qui ne seront pas toutes mises à jour.
+//
+// Le chemin brut n'est pas perdu : il reste dans `url` (épuré) et dans le nom
+// du span, qui ne sont pas des dimensions bornées par le registre.
+export const ROUTE_NON_TROUVEE = "(non trouvée)";
+
+/** 404/405 sans `http.route` : aucune route n'a servi la requête. */
+function sansRouteResolue(a) {
+  const statut = Number(a["http.response.status_code"] ?? a["http.status_code"]);
+  const route = a["http.route"];
+  return (statut === 404 || statut === 405) && (typeof route !== "string" || route.trim() === "");
+}
+
+/**
+ * Route d'une exception portée par un span : celle que l'ingestion donne au span
+ * lui-même, pour qu'une erreur et sa requête restent sur la même ligne.
+ */
+function routeDuSpanPorteur(span, a) {
+  if (!isServerKind(span.kind)) return a["mip.route"] ?? null;
+  if (sansRouteResolue(a)) return ROUTE_NON_TROUVEE;
+  return a["mip.route"] ?? routeServeurOtel(span, a);
+}
+
 /** Route d'un span serveur OTel : template, puis nom du span, puis chemin. */
 function routeServeurOtel(span, a) {
+  if (sansRouteResolue(a)) return ROUTE_NON_TROUVEE;
   return normalizeRouteTemplate(a["http.route"]) ??
     normalizeRouteTemplate(routeFromOtelName(span.name)) ??
     (a["url.path"] ?? null);
@@ -915,7 +955,7 @@ function spanEventExceptions(span, spanAttrs, { appId, resource, scopeName, now,
       traceId,
       parentSpanId,
       session: spanAttrs["mip.session_id"] ?? sessionFromTraceState(span.traceState),
-      route: spanAttrs["mip.route"] ?? (isServerKind(span.kind) ? routeServeurOtel(span, spanAttrs) : null),
+      route: routeDuSpanPorteur(span, spanAttrs),
       ts: nanosToDate(event.timeUnixNano ?? span.startTimeUnixNano, now),
     }));
   });
@@ -1134,7 +1174,9 @@ export function flattenOtlp(payload, opts = {}) {
       tier,
       session_id: a["mip.session_id"] ?? null,
       app_id: appId,
-      route: a["mip.route"] ?? null,
+      // Côté navigateur, la route est celle de la PAGE : un appel en 404 n'y
+      // change rien. Côté serveur, c'est celle de la requête (ROUTE_NON_TROUVEE).
+      route: tier === "back" && sansRouteResolue(a) ? ROUTE_NON_TROUVEE : (a["mip.route"] ?? null),
       url: scrubUrl(a["http.url"]),
       method: a["http.method"] ?? null,
       status_code: a["http.status_code"] ?? null,

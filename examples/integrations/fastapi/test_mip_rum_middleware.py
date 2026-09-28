@@ -117,18 +117,73 @@ class MiddlewareTest(unittest.TestCase):
         run_request(mw, path="/health")
         self.assertEqual(self.posts, [])
 
-    def test_normalisation_sans_template(self):
-        class BareApp:  # ne pose pas scope['route'] (404, mounts…)
+    def _sans_route(self, statut):
+        class BareApp:  # ne pose pas scope['route'] (404, montages…)
             async def __call__(self, scope, receive, send):
-                await send({"type": "http.response.start", "status": 404, "headers": []})
+                await send({"type": "http.response.start", "status": statut, "headers": []})
                 await send({"type": "http.response.body", "body": b""})
 
+        return BareApp()
+
+    def test_normalisation_sans_template(self):
+        # Un montage (fichiers statiques, sous-application) répond sans poser
+        # scope['route'] : hors 404/405, le chemin normalisé reste la route.
         mw = mrm.MIPRumMiddleware(
-            BareApp(), endpoint="http://x/v1/traces", app_id="demo-app", batch_size=1
+            self._sans_route(200), endpoint="http://x/v1/traces", app_id="demo-app", batch_size=1
         )
         run_request(mw, path="/partners/42")
         a = self.attrs(self.posts[0][1]["resourceSpans"][0]["scopeSpans"][0]["spans"][0])
         self.assertEqual(a["mip.route"], "/partners/:id")
+        self.assertNotIn("http.route", a)  # aucune route résolue par le framework
+
+    def test_404_ou_405_sans_route_resolue_route_fixe_jamais_le_chemin(self):
+        # Rafale de scanner du 21/09 et du 28/09/2026 : chaque chemin inventé
+        # devenait une route, jusqu'à saturer le registre de l'application.
+        for statut in (404, 405):
+            for chemin in ("/wp-admin/admin-ajax.php", "/manager/html", "/jmx-console/", "/partners/42"):
+                self.posts.clear()
+                mw = mrm.MIPRumMiddleware(
+                    self._sans_route(statut), endpoint="http://x/v1/traces", app_id="demo-app", batch_size=1
+                )
+                run_request(mw, path=chemin)
+                a = self.attrs(self.posts[0][1]["resourceSpans"][0]["scopeSpans"][0]["spans"][0])
+                self.assertEqual(a["mip.route"], "(non trouvée)", (statut, chemin))
+                self.assertEqual(a["mip.route"], mrm.ROUTE_NON_TROUVEE)
+                self.assertNotIn("http.route", a)
+                # Le chemin n'est pas perdu : il reste l'URL du span, que
+                # l'ingestion épure et qui n'est pas une dimension bornée.
+                self.assertEqual(a["http.url"], chemin)
+                self.assertEqual(a["http.status_code"], str(statut))
+
+    def test_404_sur_une_route_resolue_garde_son_template_et_le_declare(self):
+        class NotFoundApp:  # route connue, ressource absente : un 404 métier
+            async def __call__(self, scope, receive, send):
+                scope["route"] = FakeRoute()
+                await send({"type": "http.response.start", "status": 404, "headers": []})
+                await send({"type": "http.response.body", "body": b""})
+
+        mw = mrm.MIPRumMiddleware(
+            NotFoundApp(), endpoint="http://x/v1/traces", app_id="demo-app", batch_size=1
+        )
+        run_request(mw, path="/items/42")
+        a = self.attrs(self.posts[0][1]["resourceSpans"][0]["scopeSpans"][0]["spans"][0])
+        self.assertEqual(a["mip.route"], "/items/{item_id}")
+        self.assertEqual(a["http.route"], "/items/{item_id}")
+
+    def test_route_declaree_par_rum_context_prime_meme_en_404(self):
+        class DeclareApp:
+            async def __call__(self, scope, receive, send):
+                with mrm.rum_context(route="/rapports/:annee"):
+                    await send({"type": "http.response.start", "status": 404, "headers": []})
+                    await send({"type": "http.response.body", "body": b""})
+
+        mw = mrm.MIPRumMiddleware(
+            DeclareApp(), endpoint="http://x/v1/traces", app_id="demo-app", batch_size=1
+        )
+        run_request(mw, path="/rapports/2026")
+        a = self.attrs(self.posts[0][1]["resourceSpans"][0]["scopeSpans"][0]["spans"][0])
+        self.assertEqual(a["mip.route"], "/rapports/:annee")
+        self.assertEqual(a["http.route"], "/rapports/:annee")
 
     def test_erreur_app_remonte_mais_span_emis(self):
         class BoomApp:

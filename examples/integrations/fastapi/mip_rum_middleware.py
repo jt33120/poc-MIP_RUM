@@ -62,7 +62,11 @@ import time
 import traceback
 import urllib.request
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
+
+# Route d'une requête qu'aucune route n'a servie (404, 405). La même valeur que
+# l'ingestion (`ROUTE_NON_TROUVEE`, packages/backend/shared/otlp.mjs).
+ROUTE_NON_TROUVEE = "(non trouvée)"
 
 _TRACEPARENT = re.compile(r"^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$")
 _TRACESTATE_MIP = re.compile(r"(?:^|[,\s])mip=s:([A-Za-z0-9_-]{1,64})")
@@ -444,17 +448,27 @@ class MIPRumMiddleware:
         span_id = rum.span_id
         session_id = rum.session_id
 
-        # route template FastAPI si le routing l'a posée, sinon path normalisé ;
-        # un `rum_context(route=…)` explicite prime sur les deux.
-        route = scope.get("route")
-        route_path = rum.route or getattr(route, "path_format", None) or getattr(route, "path", None)
-        if not route_path:
-            route_path = _normalize(path)
-
         status_code = state["code"]
         if failure is not None and not state["started"]:
             # Rien n'est parti : le serveur ASGI répondra 500 à la place de l'app.
             status_code = 500
+
+        # Route template FastAPI si le routing l'a posée ; un
+        # `rum_context(route=…)` explicite prime. Sans l'une ni l'autre, un 404
+        # ou un 405 prend une route FIXE, jamais le chemin : le chemin d'une
+        # requête qu'aucune route n'a servie est choisi par le client HTTP, et
+        # un scanner de vulnérabilités en envoie des milliers — il avait rempli
+        # le registre des routes d'une application (2 000 sur 2 000), après
+        # quoi chaque nouvelle route réelle devenait « (other) ». Hors 404/405
+        # (montage, fichiers statiques), le chemin normalisé reste la route.
+        route = scope.get("route")
+        gabarit = rum.route or getattr(route, "path_format", None) or getattr(route, "path", None)
+        if gabarit:
+            route_path = gabarit
+        elif status_code in (404, 405):
+            route_path = ROUTE_NON_TROUVEE
+        else:
+            route_path = _normalize(path)
 
         attrs = [
             _kv("mip.trace_id", trace_id),
@@ -465,6 +479,11 @@ class MIPRumMiddleware:
             _kv("http.status_code", int(status_code)),
             _kv("http.duration_ms", float(duration_ms)),
         ]
+        if gabarit:
+            # Convention OpenTelemetry : `http.route` dit que le framework a
+            # résolu la requête. L'ingestion s'y fie pour distinguer un 404
+            # métier (commande absente, route connue) d'un chemin inconnu.
+            attrs.append(_kv("http.route", gabarit))
         if parent_span_id:
             attrs.append(_kv("mip.parent_span_id", parent_span_id))
         if session_id:
