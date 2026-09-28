@@ -4,7 +4,7 @@
 
 **POC** de Real User Monitoring : mesure de l'expérience vécue par les visiteurs réels d'un site ou d'une application — vitesse d'affichage, réactivité, erreurs, parcours. Collecte au format OpenTelemetry, données hébergées en Union européenne.
 
-La vitrine de la console (`/presentation`) dit ce que le POC contient, ce qu'il sait faire et ce qui reste pour un vrai outil de RUM. Ce README en reprend l'hébergement et l'état relevé (sections [Architecture](#architecture) et [Statut](#statut), générées depuis les mêmes sources). Ce qui tourne réellement en production, ce qui y reste éteint par un drapeau, et la cible du backend sont écrits à la main dans [En production, et ce qui attend](#en-production-et-ce-qui-attend). L'historique des versions est dans [CHANGELOG.md](CHANGELOG.md).
+La vitrine de la console (`/presentation`) dit ce que le POC contient, ce qu'il sait faire et ce qui reste pour un vrai outil de RUM. Ce README en reprend l'hébergement et l'état relevé (sections [Architecture](#architecture) et [Statut](#statut), générées depuis les mêmes sources). Ce qui tourne réellement en production, ce qui y reste éteint par un drapeau, et la cible du backend sont écrits à la main dans [En production, et ce qui attend](#en-production-et-ce-qui-attend). L'historique des versions est dans `git log`.
 
 ## Pourquoi celui-là
 
@@ -179,8 +179,6 @@ En cas de désaccord entre ces documents, [docs/RUM_PARITY_STATUS.md](docs/RUM_P
 | [docs/DOCUMENTS-HORS-DEPOT.md](docs/DOCUMENTS-HORS-DEPOT.md) | **Ce qui n'est pas ici** : documents commerciaux (offre, démo, scan marché) et documents d'un client nommé. Présents sur le poste, hors dépôt, et listés avec leur contenu |
 | [docs/LIMITES.md](docs/LIMITES.md) | Limites du produit : liste du 10/06/2026 (v0.1 à v0.3), mises à jour du 18/09 (P8.8) et du 26/09/2026 |
 | [DEPLOY.md](DEPLOY.md) | Mise en place d'origine (Neon + Railway + Vercel), snippet d'intégration et recette ; corrigé le 26/09/2026 mais **supplanté** : l'exploitation courante est dans le [runbook](docs/operations/runbook.md) |
-| [BUILD_LOG.md](BUILD_LOG.md) | Journal factuel du build (valeurs réelles mesurées, pièges, décisions) |
-| [CHANGELOG.md](CHANGELOG.md) | Historique des versions |
 | [docs/archive/](docs/archive/) | Rapports de sprint & plans historiques (PLAN, ROADMAP_V02/V03, RAPPORT_NUIT/V04/V05) — non maintenus, valeur d'archive |
 
 ## Statut
