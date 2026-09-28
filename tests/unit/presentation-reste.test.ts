@@ -140,7 +140,10 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     expect(ci).toContain("name: Bancs de mesure (Explorer P6.6, /mobile P7.5)");
     expect(ci).toContain("Aucun seuil de LATENCE");
     expect(ci).toContain("Reste HORS typage, et c'est connu : le JavaScript du backend");
-    expect(lire("docs/operations/runbook.md")).toContain("**Procédure écrite le 24/09/2026, jamais éprouvée.**");
+    // Le runbook a changé le 28/09/2026 : la procédure est éprouvée sur la branche de
+    // répétition. R9, texte de la vitrine, dit encore « jamais éprouvée » : sa
+    // réécriture revient à la vitrine, avec les assertions sur `r9` ci-dessous.
+    expect(lire("docs/operations/runbook.md")).toContain("**Procédure éprouvée le 28/09/2026 sur la branche de répétition**");
     expect(ligne("D7").verdict).toBe("non_commence");
 
     const r9 = point("R9");
