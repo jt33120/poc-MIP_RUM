@@ -5,16 +5,19 @@
 import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
 const requireConsole = createRequire(new URL("../apps/console/package.json", import.meta.url));
 const bcryptMod = requireConsole("bcryptjs");
 const bcrypt = bcryptMod.hashSync ? bcryptMod : bcryptMod.default;
 
 const EMAIL = "julian@mip-rum.local";
-const pool = new pg.Pool({
-  connectionString:
-    process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum",
-});
+// Ce script écrit : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+const URL_BASE = exigerCibleLocale(
+  process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum",
+  { script: "seed-admin" },
+);
+const pool = new pg.Pool({ connectionString: URL_BASE });
 
 const password = randomBytes(16).toString("base64url").slice(0, 18);
 const hash = bcrypt.hashSync(password, 10);

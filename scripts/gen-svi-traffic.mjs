@@ -12,6 +12,7 @@
 //
 //   node scripts/gen-svi-traffic.mjs [nombre] [--endpoint http://localhost:4318/v1/traces]
 import { createHash, randomUUID } from "node:crypto";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
 const args = process.argv.slice(2);
 const COUNT = Number(args.find((a) => /^\d+$/.test(a)) ?? 40);
@@ -19,6 +20,8 @@ const ENDPOINT =
   args.find((a) => a.startsWith("--endpoint="))?.slice(11) ??
   process.env.MIP_INGEST_ENDPOINT ??
   "http://localhost:4318/v1/traces";
+// Ce script écrit : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+exigerCibleLocale(ENDPOINT, { quoi: "l'endpoint d'ingestion", script: "gen-svi-traffic" });
 const APP_ID = process.env.MIP_APP_ID ?? "demo-app";
 const ADAPTER = "gen-svi-traffic/0.1.0";
 

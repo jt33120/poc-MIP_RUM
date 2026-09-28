@@ -7,6 +7,7 @@
 //   pg_virtualenv node scripts/verify-alerting.mjs
 import { readFile } from "node:fs/promises";
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
 const SQL = (f) => new URL(`../packages/db/sql/${f}`, import.meta.url);
 const MIGR = ["schema.sql", ...[
@@ -36,6 +37,8 @@ function assert(label, cond) {
 const fire = async (c) => Number((await c.query("select check_alerts() as n")).rows[0].n);
 
 async function main() {
+  // Ce script écrit en base : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+  exigerCibleLocale(process.env.DATABASE_URL, { script: "verify-alerting" });
   const c = new pg.Client(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {});
   await c.connect();
   await c.query("do $$ begin if not exists (select 1 from pg_roles where rolname='console_ro') then create role console_ro nologin; end if; end $$;");

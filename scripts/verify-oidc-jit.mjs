@@ -7,6 +7,7 @@
 //
 // Usage : pg_virtualenv node scripts/verify-oidc-jit.mjs
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
 // DDL minimale (extrait exact de migration-v03) — test focalisé sur le JIT.
 const DDL = `
@@ -46,6 +47,8 @@ function assert(label, cond) {
 }
 
 async function main() {
+  // Ce script écrit en base : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+  exigerCibleLocale(process.env.DATABASE_URL, { script: "verify-oidc-jit" });
   const c = new pg.Client(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {});
   await c.connect();
   await c.query(DDL);

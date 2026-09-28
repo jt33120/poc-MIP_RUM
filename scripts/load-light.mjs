@@ -1,8 +1,10 @@
 // Charge légère (PLAN §12) : ~1 000 events OTLP scriptés -> sanity ingestion + console.
 // Pas un bench : on vérifie que la chaîne tient et on note les chiffres réels.
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
-const ENDPOINT = "http://localhost:4318/v1/traces";
+// Ce script écrit : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+const ENDPOINT = exigerCibleLocale("http://localhost:4318/v1/traces", { quoi: "l'endpoint", script: "load-light" });
 const BATCHES = 100;
 const SPANS_PER_BATCH = 10; // 1000 events
 const APP = "load-test";
@@ -51,7 +53,9 @@ for (let i = 0; i < BATCHES; i += 10) {
 }
 const elapsed = performance.now() - t0;
 
-const pool = new pg.Pool({ connectionString: "postgres://postgres:postgres@localhost:5433/mip_rum" });
+const pool = new pg.Pool({
+  connectionString: exigerCibleLocale("postgres://postgres:postgres@localhost:5433/mip_rum", { script: "load-light" }),
+});
 const { rows: [{ n }] } = await pool.query(
   "select count(*)::int as n from rum_metric where app_id = $1", [APP],
 );

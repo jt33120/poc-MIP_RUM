@@ -20,6 +20,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 import { creerReceveur } from "../packages/backend/lib/receiver.mjs";
 import { drainerIngestRaw } from "../packages/backend/lib/ingest-differe.mjs";
 
@@ -131,6 +132,8 @@ async function tirer(port, depart) {
 }
 
 async function main() {
+  // Ce script écrit : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+  exigerCibleLocale(process.env.DATABASE_URL, { script: "bench-ingest" });
   const pool = new pg.Pool(
     process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL, max: 10 } : { max: 10 });
   const c = await pool.connect();

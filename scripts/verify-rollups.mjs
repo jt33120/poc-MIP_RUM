@@ -9,6 +9,7 @@
 //   DATABASE_URL=postgres://… node scripts/verify-rollups.mjs
 import { readFile } from "node:fs/promises";
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
 const SCHEMA = new URL("../packages/db/sql/schema.sql", import.meta.url);
 const MIGRATION = new URL("../packages/db/sql/migration-v12.sql", import.meta.url);
@@ -92,6 +93,8 @@ async function seed(c) {
 }
 
 async function main() {
+  // Ce script écrit en base : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+  exigerCibleLocale(process.env.DATABASE_URL, { script: "verify-rollups" });
   const c = new pg.Client(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {});
   await c.connect();
   await c.query(await readFile(SCHEMA, "utf8"));

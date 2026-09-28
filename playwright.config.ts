@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
+// @ts-expect-error module JS sans déclarations
+import { exigerCibleLocale } from "./scripts/lib/cible-locale.mjs";
 
 // LE SECRET DE SESSION de la console de test : local et jetable. Les specs qui
 // signent une session sans passer par /login (le crawl) le lisent ici.
@@ -18,7 +20,13 @@ if (!process.env.E2E_SESSION_SIGNING_KEYS) {
   process.env.E2E_CONSOLE_API_SECRET = randomBytes(32).toString("hex");
   process.env.E2E_CONSOLE_API_METRICS_TOKEN = randomBytes(32).toString("hex");
 }
-const BASE_E2E = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum";
+// L'E2E sème, écrit et efface sur cette base, et lance ingestion et console
+// dessus : jamais une base distante (garde-fou, scripts/lib/cible-locale.mjs).
+// Le `.env` du poste fait pointer DATABASE_URL sur la production.
+const BASE_E2E = exigerCibleLocale(
+  process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum",
+  { script: "playwright" },
+);
 
 // Prérequis : Postgres up ET migré (docker compose -f infra/docker/docker-compose.yml run --rm migrate).
 // Les 5 serveurs (ingestion, démo, rejeu, console-api, console) sont lancés/réutilisés automatiquement.

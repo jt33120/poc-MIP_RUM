@@ -4,6 +4,7 @@
 //   pg_virtualenv node scripts/verify-dashboards.mjs
 import { readFile } from "node:fs/promises";
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
 const SQL = (f) => new URL(`../packages/db/sql/${f}`, import.meta.url);
 // v17 (alerting) vit sur une autre branche : on applique 02..16 + 18 (v18 indépendante).
@@ -21,6 +22,8 @@ function assert(label, cond) {
 }
 
 async function main() {
+  // Ce script écrit en base : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+  exigerCibleLocale(process.env.DATABASE_URL, { script: "verify-dashboards" });
   const c = new pg.Client(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {});
   await c.connect();
   await c.query("do $$ begin if not exists (select 1 from pg_roles where rolname='console_ro') then create role console_ro nologin; end if; end $$;");

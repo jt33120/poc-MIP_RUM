@@ -8,6 +8,7 @@
 // ou : DATABASE_URL=postgres://… (superuser) node scripts/verify-console-ro.mjs
 import { readFile } from "node:fs/promises";
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 
 const SQL = (f) => new URL(`../packages/db/sql/${f}`, import.meta.url);
 const MIGR = ["schema.sql", ...["02","03","04","05","07","08","09","10","11","12","13","14","15","16"].map((n) => `migration-v${n}.sql`)];
@@ -27,6 +28,8 @@ function assert(label, cond) {
 }
 
 async function main() {
+  // Ce script écrit en base : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+  exigerCibleLocale(process.env.DATABASE_URL, { script: "verify-console-ro" });
   const c = new pg.Client(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {});
   await c.connect();
 

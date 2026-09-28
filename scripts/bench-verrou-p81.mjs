@@ -54,6 +54,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { exigerCibleLocale } from "./lib/cible-locale.mjs";
 import { flattenOtlp } from "../packages/backend/shared/otlp.mjs";
 import { writeRows } from "../packages/backend/lib/pg-ingest.mjs";
 import { BUDGET_REQUETE } from "../packages/backend/lib/receiver.mjs";
@@ -71,6 +72,9 @@ if (!URL_BASE) {
   );
   process.exit(2);
 }
+
+// Ce script écrit : jamais sur une cible distante (garde-fou, scripts/lib/cible-locale.mjs).
+exigerCibleLocale(URL_BASE, { script: "bench-verrou-p81" });
 
 /** Lots par niveau de contention. Assez pour un p95 lisible, assez court pour être rejoué. */
 const LOTS = Number(process.env.BENCH_LOTS ?? 200);
