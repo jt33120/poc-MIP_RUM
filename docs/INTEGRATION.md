@@ -407,35 +407,51 @@ export OTEL_METRICS_EXPORTER="none"
 
 ### Par langage
 
-**Java** — agent `opentelemetry-javaagent.jar` ([téléchargement](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar)) ; `http/protobuf` est son protocole par défaut depuis la version 2.0.
+État au 28/09/2026. **Éprouvé en production** : un vrai serveur, lancé sous l'agent officiel et configuré par le seul socle commun ci-dessus, a exporté vers `https://mip-rum-console.vercel.app/api/ingest/v1/{traces,logs}` ; la console a relayé au `collector`, qui a répondu 200 et écrit les spans, les logs et les erreurs ; la console les a ensuite montrés (détail de trace avec la session du `tracestate`, erreurs backend avec leur service). L'essai n'a pas posé `mip.api_key` : le refus d'un lot sans clé sous `REQUIRE_API_KEY=true` est tenu par le contrat de parité (`tests/contract/ingest-parity.test.ts`). **Non éprouvé** : la recette suit la documentation de l'agent, sans plus.
+
+| Langage | État | Versions de l'essai |
+|---|---|---|
+| Python | éprouvé en production le 28/09/2026 | `opentelemetry-distro` 0.66b0, SDK 1.45.0, Flask 3.1.3, Python 3.13 |
+| Java | éprouvé en production le 28/09/2026 | `opentelemetry-javaagent` 2.31.1, JDK 21, serveur `com.sun.net.httpserver` |
+| .NET | éprouvé en production le 28/09/2026 | instrumentation automatique 1.17.0, ASP.NET Core 9, macOS arm64 |
+| Node | non éprouvé en production ; ses exportateurs OTLP protobuf le sont en local, contre le serveur de développement du collector et PostgreSQL (`tests/integration/otlp-protobuf-agent-sql.test.ts`), sans l'auto-instrumentation | SDK officiel |
+| Go, PHP, Ruby | non éprouvé | — |
+
+**Java** (éprouvé en production le 28/09/2026) — agent `opentelemetry-javaagent.jar` ([téléchargement](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar)) ; `http/protobuf` est son protocole par défaut depuis la version 2.0. GitHub publie l'empreinte SHA-256 du jar avec la release (champ `digest` de l'asset) : la comparer à celle du fichier téléchargé (`shasum -a 256`).
 
 ```bash
 # socle commun ci-dessus, puis :
 java -javaagent:/chemin/opentelemetry-javaagent.jar -jar app.jar
 ```
 
-**.NET** — instrumentation automatique OpenTelemetry .NET (script `otel-dotnet-auto-install.sh` de la [documentation officielle](https://opentelemetry.io/docs/zero-code/dotnet/), qui installe dans `$HOME/.otel-dotnet-auto`).
+Lancer une classe compilée ou un jar : sous le lanceur de fichier source (`java Serveur.java`), l'agent se croit dans un outil du JDK et ne démarre pas (« JDK tool detected … agent will not be started »). L'agent n'écrit rien quand un export réussit ; un refus s'affiche dans son journal (`WARN … HttpExporter - Failed to export logs. Server responded with HTTP status code <statut>`).
+
+**.NET** (éprouvé en production le 28/09/2026) — instrumentation automatique OpenTelemetry .NET (script `otel-dotnet-auto-install.sh` de la [documentation officielle](https://opentelemetry.io/docs/zero-code/dotnet/), qui installe dans `$HOME/.otel-dotnet-auto`, ou dans `OTEL_DOTNET_AUTO_HOME` s'il est posé). En version 1.17.0, le script vérifie la release et son attestation avec la CLI GitHub `gh` : sans elle, il s'arrête, sauf `SKIP_RELEASE_VERIFICATION=true`.
 
 ```bash
-# socle commun ci-dessus, puis, dans le shell qui lance l'application :
+# socle commun ci-dessus, plus un dossier de journaux accessible en écriture :
+export OTEL_DOTNET_AUTO_LOG_DIRECTORY="/var/tmp/otel-dotnet"
+# puis, dans le shell qui lance l'application :
 . $HOME/.otel-dotnet-auto/instrument.sh
 dotnet MonApplication.dll
 ```
 
+`OTEL_DOTNET_AUTO_LOG_DIRECTORY` : par défaut, l'instrumentation écrit ses journaux sous `/var/log/opentelemetry` ; pour un utilisateur qui ne peut pas y créer de dossier, le processus s'arrête au démarrage (`Permission denied`, constaté sous macOS). Ces journaux disent le sort de chaque export : `Export succeeded for https://…/api/ingest/v1/traces`. Sous macOS, `instrument.sh` appelle aussi `greadlink` (paquet `coreutils`).
+
 Sous Windows (PowerShell), le module fourni par le même projet : `Register-OpenTelemetryForCurrentSession -OTelServiceName "facturation"`, après avoir posé les mêmes variables en `$env:…`.
 
-**Python** (hors FastAPI, qui a son middleware MIP, § 0) — `opentelemetry-instrument`. Son protocole par défaut est `grpc` : `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` est **obligatoire** ici.
+**Python** (éprouvé en production le 28/09/2026 ; hors FastAPI, qui a son middleware MIP, § 0) — `opentelemetry-instrument`. Son protocole par défaut est `grpc` : `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` est **obligatoire** ici. L'exportateur HTTP seul suffit : l'ingestion n'a pas d'entrée gRPC.
 
 ```bash
-pip install opentelemetry-distro opentelemetry-exporter-otlp
+pip install opentelemetry-distro opentelemetry-exporter-otlp-proto-http
 opentelemetry-bootstrap -a install
 # socle commun ci-dessus (protocole http/protobuf compris), puis :
-opentelemetry-instrument gunicorn app:app
+opentelemetry-instrument flask --app app run   # éprouvé ; gunicorn, uwsgi : même préfixe, non éprouvés
 ```
 
-Avant OpenTelemetry Python 1.40.0, les logs du module `logging` ne partent qu'avec `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true`.
+Avant OpenTelemetry Python 1.40.0, les logs du module `logging` ne partent qu'avec `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true` ; avec 1.45.0, ils sont partis sans. L'exportateur n'écrit rien quand un export réussit, et il signale un refus par le module `logging` (`Failed to export spans batch code: <statut>, reason: …`). Sous `opentelemetry-instrument`, la racine de `logging` ne porte que le gestionnaire OpenTelemetry : ce message ne s'affiche pas tant que l'application ne pose pas le sien, par exemple `logging.getLogger("opentelemetry").addHandler(logging.StreamHandler())`.
 
-**Go** — pas d'agent sans code : le SDK s'initialise dans `main` avec les exportateurs HTTP, qui lisent les mêmes variables (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_COMPRESSION`…) et parlent protobuf par construction.
+**Go** (non éprouvé) — pas d'agent sans code : le SDK s'initialise dans `main` avec les exportateurs HTTP, qui lisent les mêmes variables (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_COMPRESSION`…) et parlent protobuf par construction.
 
 ```go
 import (
@@ -449,7 +465,7 @@ exportateurLogs, err := otlploghttp.New(ctx)
 
 L'instrumentation HTTP serveur (`otelhttp`, `otelgin`…) produit les spans `SERVER` attendus ; la ressource lit `OTEL_SERVICE_NAME` et `OTEL_RESOURCE_ATTRIBUTES` avec `resource.WithFromEnv()`.
 
-**PHP** — extension `opentelemetry` et autoload du SDK.
+**PHP** (non éprouvé) — extension `opentelemetry` et autoload du SDK.
 
 ```bash
 pecl install opentelemetry            # puis « extension=opentelemetry.so » dans php.ini
@@ -459,7 +475,7 @@ composer require open-telemetry/sdk open-telemetry/exporter-otlp
 export OTEL_PHP_AUTOLOAD_ENABLED=true
 ```
 
-**Ruby** — gems `opentelemetry-sdk`, `opentelemetry-exporter-otlp` (OTLP/HTTP protobuf, le seul encodage de cette gem) et `opentelemetry-instrumentation-all`, puis un initialiseur de trois lignes (Rails : `config/initializers/opentelemetry.rb`) :
+**Ruby** (non éprouvé) — gems `opentelemetry-sdk`, `opentelemetry-exporter-otlp` (OTLP/HTTP protobuf, le seul encodage de cette gem) et `opentelemetry-instrumentation-all`, puis un initialiseur de trois lignes (Rails : `config/initializers/opentelemetry.rb`) :
 
 ```ruby
 require "opentelemetry/sdk"
@@ -468,7 +484,7 @@ require "opentelemetry/instrumentation/all"
 OpenTelemetry::SDK.configure { |c| c.use_all }   # endpoint, ressource, service : variables d'environnement
 ```
 
-**Node** (SDK officiel, sans le paquet `@mip/agent-node`) — auto-instrumentation.
+**Node** (SDK officiel, sans le paquet `@mip/agent-node` ; non éprouvé en production) — auto-instrumentation.
 
 ```bash
 npm install --save @opentelemetry/api @opentelemetry/auto-instrumentations-node
@@ -478,4 +494,10 @@ node --require @opentelemetry/auto-instrumentations-node/register app.js
 
 ### Vérifier
 
-Un export réussi rend `200` avec un corps protobuf vide, que les exportateurs officiels lisent comme un succès complet (vérifié avec le SDK Node : `tests/integration/otlp-protobuf-agent-sql.test.ts`). En base, un span `SERVER` porteur des attributs HTTP semconv devient une ligne `rum_span` de niveau `back` (rattachée à la session par le `tracestate`), ses appels SQL et sous-appels des lignes `detail`, ses exceptions et les logs `ERROR` porteurs d'`exception.type` des erreurs backend (`rum_error`), les logs des lignes `rum_log`. En cas d'échec, l'agent journalise le statut HTTP : `403` (clé, § 7), `415` (protocole : voir la ligne correspondante du § 7), `429` (débit).
+Un export réussi rend `200` avec un corps protobuf vide, que les exportateurs officiels lisent comme un succès complet (vérifié avec le SDK Node : `tests/integration/otlp-protobuf-agent-sql.test.ts` ; en production le 28/09/2026 avec les agents Python, Java et .NET : 200 à chaque export dans les journaux du `collector`, aucun échec côté agent). En base, un span `SERVER` porteur des attributs HTTP semconv devient une ligne `rum_span` de niveau `back` (rattachée à la session par le `tracestate`), ses appels SQL et sous-appels des lignes `detail`, ses exceptions et les logs `ERROR` porteurs d'`exception.type` des erreurs backend (`rum_error`), les logs des lignes `rum_log`. En cas d'échec, l'agent journalise le statut HTTP : `403` (clé, § 7), `415` (protocole : voir la ligne correspondante du § 7), `429` (débit).
+
+Constaté en production le 28/09/2026, à savoir avant de lire les écrans :
+
+- **La route** d'un span serveur est son `http.route`, tel que l'agent le pose ; l'ingestion ne réécrit que `{param}` en `:param`. Flask donne donc `/api/commandes/<int:commande_id>`, ASP.NET Core `/api/commandes/:id:int` (la contrainte reste), et `com.sun.net.httpserver`, qui n'a pas de gabarit, le chemin de son contexte (`/api/commandes`).
+- **Une exception peut compter plusieurs fois.** L'événement d'exception du span serveur et chaque log `ERROR` porteur d'`exception.type` donnent chacun une occurrence. Pour une seule panne : 3 sous Flask (le span, le log écrit par l'application, le log d'erreur de Flask), 2 en Java (le span, le log `SEVERE` écrit par l'application), 1 en .NET (le log d'ASP.NET Core : son span serveur ne portait pas l'exception).
+- **Sans navigateur**, le `tracestate: mip=s:<session>` suffit à rattacher le span serveur à la session : le détail de la trace l'affiche, et dit la session introuvable tant que le SDK web ne l'a pas envoyée.
