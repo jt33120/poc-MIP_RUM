@@ -21,7 +21,7 @@ import { startLoop } from "@mip/service-kit/loop.mjs";
 import { BUDGET_REQUETE, creerReceveur, ENTETE_COLLECTOR, plafondCorps } from "@mip/backend/lib/receiver.mjs";
 import { drainerIngestRaw } from "@mip/backend/lib/ingest-differe.mjs";
 import { IDENTITY_FINGERPRINT_PATTERN, verifierConfigIdentite } from "@mip/backend/lib/identity-hash.mjs";
-import { parseSourceIp, verifierSecretsBord } from "@mip/backend/shared/client-ip.mjs";
+import { diagnostiquerFacade, parseSourceIp, verifierSecretsBord } from "@mip/backend/shared/client-ip.mjs";
 
 const log = createLogger("collector");
 
@@ -128,6 +128,13 @@ startService({
   details: receveur.infosSante,
   // /ready (jeton) : registre d'apps chargé au moins une fois, identité concordante.
   ready: receveur.pret,
+  // /diagnostic/ip (jeton) : ce que le mode `railway` RETIENDRAIT de cette
+  // requête, et d'où cela vient — jamais l'adresse. La preuve que la façade
+  // écrase une adresse forgée se fait AVANT d'allumer le GeoIP, donc quel que
+  // soit GEOIP_IP_SOURCE (scripts/ops/verifier-ip-directe.mjs).
+  diagnostics: {
+    "/diagnostic/ip": (req) => ({ source_ip: parseSourceIp(config.GEOIP_IP_SOURCE).mode, ...diagnostiquerFacade(req) }),
+  },
   // Sur TOUTES les réponses (erreurs, 404 métier, sondes comprises) : le relais
   // de la console distingue ainsi un 404 du collector (route inconnue, à ne
   // pas rejouer ailleurs) d'un 404 du routeur Railway (service absent ou mal

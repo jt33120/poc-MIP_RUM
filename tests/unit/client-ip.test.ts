@@ -8,7 +8,7 @@
 // aucune adresse du tout.
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module ESM partagé, sans déclarations
-import { ipClient, MAX_HOPS, parseSourceIp } from "../../packages/backend/shared/client-ip.mjs";
+import { diagnostiquerFacade, ipClient, MAX_HOPS, parseSourceIp, SONDES_FORGEES } from "../../packages/backend/shared/client-ip.mjs";
 
 /** Requête Node : en-têtes déjà en minuscules, socket éventuelle. */
 const req = (headers: Record<string, string | string[]> = {}, remoteAddress?: string) =>
@@ -129,5 +129,52 @@ describe("ipClient — robustesse", () => {
         expect(() => ipClient(r as never, parseSourceIp(mode))).not.toThrow();
       }
     }
+  });
+});
+
+// La preuve qu'exige P6b.G AVANT d'allumer `railway` : la façade écrase-t-elle une
+// adresse forgée ? Le diagnostic le dit par la PROVENANCE de l'adresse retenue,
+// sans jamais la renvoyer (servi par le collector sur /diagnostic/ip, jeton requis).
+describe("diagnostiquerFacade — d'où vient l'adresse que `railway` retiendrait", () => {
+  const XRI = SONDES_FORGEES["x-real-ip"];
+  const XFF = SONDES_FORGEES["x-forwarded-for"];
+  const REELLE = "212.27.38.253";
+
+  it("les adresses forgées sont des plages de documentation : aucun vrai client ne les porte", () => {
+    expect(XRI).toMatch(/^192\.0\.2\./);
+    expect(XFF).toMatch(/^198\.51\.100\./);
+  });
+
+  it("façade qui ÉCRASE : verdict `sure`, et l'adresse n'apparaît nulle part dans la réponse", () => {
+    const d = diagnostiquerFacade(req({ ...EDGE, "x-real-ip": REELLE, "x-forwarded-for": `${XFF}, ${REELLE}` }));
+    expect(d).toEqual({
+      marqueur_arete: true,
+      x_real_ip: { valeurs: 1, retenue: "autre" },
+      x_forwarded_for: { elements: 2, premier: "forgee:x-forwarded-for", dernier: "autre" },
+      verdict: "sure",
+    });
+    expect(JSON.stringify(d)).not.toContain(REELLE);
+  });
+
+  it("façade qui AJOUTE la sienne après celle du client : toujours sûr, et c'est visible", () => {
+    const d = diagnostiquerFacade(req({ ...EDGE, "x-real-ip": `${XRI}, ${REELLE}` }));
+    expect(d.x_real_ip).toEqual({ valeurs: 2, retenue: "autre" });
+    expect(d.verdict).toBe("sure");
+  });
+
+  it("façade qui laisse passer le X-Real-IP du client : `forgeable`", () => {
+    expect(diagnostiquerFacade(req({ ...EDGE, "x-real-ip": XRI })).verdict).toBe("forgeable");
+  });
+
+  it("façade qui dériverait X-Real-IP du X-Forwarded-For forgé : `forgeable` aussi", () => {
+    const d = diagnostiquerFacade(req({ ...EDGE, "x-real-ip": XFF, "x-forwarded-for": XFF }));
+    expect(d.x_real_ip.retenue).toBe("forgee:x-forwarded-for");
+    expect(d.verdict).toBe("forgeable");
+  });
+
+  it("requête arrivée hors façade (pas de marqueur, ou pas de X-Real-IP) : rien n'est prouvé", () => {
+    expect(diagnostiquerFacade(req({ "x-real-ip": REELLE })).verdict).toBe("indeterminee");
+    expect(diagnostiquerFacade(req({ ...EDGE })).verdict).toBe("indeterminee");
+    expect(diagnostiquerFacade(req({ ...EDGE })).x_real_ip).toEqual({ valeurs: 0, retenue: "absente" });
   });
 });

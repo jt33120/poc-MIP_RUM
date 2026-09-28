@@ -41,6 +41,7 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `GET /live` | publique | processus vivant, **jamais de base**. **C'est la sonde de toute supervision externe.** `200 {"status":"ok"}`. |
 | `GET /ready` | jeton `METRICS_TOKEN` (sinon 404) | 503 dès SIGTERM ; sinon prêt si le **registre d'apps a été chargé au moins une fois** (`registryLoaded()` : avant cela, la vérification de clé est en *fail-open*) **et** si l'identité n'est pas `discordante`. Supervision seulement. |
 | `GET /metrics` | jeton `METRICS_TOKEN` (sinon 404) | Prometheus : `http_requests_total{method,code}`, durée, requêtes en vol, pool, mémoire ; la boucle `drain` si l'ingestion différée est allumée. |
+| `GET /diagnostic/ip` | jeton `METRICS_TOKEN` (sinon 404) | ce que le mode `railway` **retiendrait** de cette requête, quel que soit `GEOIP_IP_SOURCE` : marqueur d'arête, et d'où vient l'adresse retenue (`forgee:x-real-ip`, `forgee:x-forwarded-for`, `autre`) — **jamais l'adresse**. Verdict `sure`, `forgeable` ou `indeterminee`. C'est la preuve à faire avant d'allumer le GeoIP : `scripts/ops/verifier-ip-directe.mjs`. N'écrit rien. |
 
 **Railway → `/health`, sonde externe → `/live`.** Incident Neon du 24/09 : une sonde externe et les scanners sur `/health` faisaient un `select 1` à chaque passage ; la base ne s'endormait plus, le quota a fondu. Le cache de 30 s borne le coût (≤ 2 `select 1`/min), il ne rend pas le sommeil à Neon : une supervision externe pointée sur `/health` le tiendrait éveillé. Elle vise `/live`.
 
@@ -61,7 +62,7 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `IDENTITY_HASH_SECRET` | non (secret, ≥ 32 car.) | — | clé HMAC de `mip.identity.*`. Absente : l'identité est **retirée**, jamais stockée brute (`identity: "absente"`). |
 | `IDENTITY_HASH_FINGERPRINT` | **oui dès que le secret est posé** | — | empreinte du secret (12 hex). Absente avec le secret : refus de démarrer. Discordante : l'identité est retirée, `/ready` refusé, erreur au journal. |
 | `EDGE_PROXY_SECRET` | non (secret, ≥ 32 car.) | — | secret du relais de la console (`x-mip-edge-auth`). **Deux valeurs** séparées par une virgule pendant une rotation. |
-| `GEOIP_IP_SOURCE` | non | `none` | d'où lire l'adresse du trafic **direct** : `none`, `socket`, `railway`, `xff:<n>` |
+| `GEOIP_IP_SOURCE` | non | `none` | d'où lire l'adresse du trafic **direct** : `none`, `socket`, `railway`, `xff:<n>`. L'IaC pose `railway` depuis le 28/09/2026 : seul le capteur de la console vient en direct ([mode d'emploi](../../docs/operations/relais-ingestion.md), « Collecte directe du dogfooding ») |
 | `INGEST_DEFERRED` | non | `false` | acquitte **avant** d'écrire (table UNLOGGED, vidée par un arrêt brutal de Postgres) |
 | `INGEST_DRAIN_MS` | non | 250 | intervalle du drain de la file différée |
 | `GEOIP_DB_PATH`, `GEOIP_MAX_AGE_DAYS` | non | —, 180 | lues hors schéma par `packages/backend/lib/geoip-db.mjs`, seulement si `GEOIP_IP_SOURCE` n'est pas `none` : chemin explicite d'une livraison, âge maximal ([`packages/backend/data/README.md`](../../packages/backend/data/README.md)) |

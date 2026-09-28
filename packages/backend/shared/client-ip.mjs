@@ -39,12 +39,14 @@
 // assaini. Le journal HTTP de l'arête enregistre `srcIp` = la source TCP réelle,
 // y compris quand la requête transporte un `X-Forwarded-For` forgé.
 //
-// NON CONSTATÉ : que la façade ÉCRASE un `X-Real-IP` envoyé par le client. Le
-// service déployé ne renvoie pas ses en-têtes et ce lot ne déploie pas de sonde
-// pour le vérifier. Conséquence assumée, et bornée : un client pourrait se
-// choisir un pays. Ce n'est pas une aggravation — il choisit déjà son fuseau
-// horaire, d'où vient le pays estimé d'aujourd'hui. C'est une donnée déclarée,
-// jamais une preuve, et la colonne de provenance le dit.
+// À PROUVER SUR LE SERVICE DÉPLOYÉ : que la façade ÉCRASE un `X-Real-IP` envoyé
+// par le client. La documentation ne le dit pas. `diagnostiquerFacade` (plus
+// bas), servi par le collector sur `/diagnostic/ip` derrière METRICS_TOKEN, et
+// `scripts/ops/verifier-ip-directe.mjs` font la mesure SANS écrire une ligne ni
+// renvoyer une adresse. Tant qu'elle n'est pas faite, conséquence bornée : un
+// client pourrait se choisir un pays. Ce n'est pas une aggravation — il choisit
+// déjà son fuseau horaire, d'où vient le pays estimé. C'est une donnée
+// déclarée, jamais une preuve, et la colonne de provenance le dit.
 //
 // ═══════════════════ LE BORD DE CONFIANCE (P2, relais Vercel) ════════════════
 //
@@ -152,6 +154,70 @@ function entete(req, nom) {
   const v = h[nom] ?? h[nom.toLowerCase()];
   const brut = Array.isArray(v) ? v[0] : v;
   return typeof brut === "string" && brut.length > 0 ? brut : null;
+}
+
+// ─────────────────── Diagnostic de la façade (preuve avant allumage) ─────────
+
+/**
+ * Les adresses que la vérification FORGE, une par en-tête. Plages de
+ * documentation (RFC 5737) : aucun vrai client ne s'y trouve, donc une valeur
+ * égale à l'une d'elles ne peut venir que de la requête de vérification — et le
+ * diagnostic peut dire D'OÙ vient l'adresse retenue sans jamais la renvoyer.
+ */
+export const SONDES_FORGEES = Object.freeze({
+  "x-real-ip": "192.0.2.10",
+  "x-forwarded-for": "198.51.100.20",
+});
+
+/** `forgee:x-real-ip`, `forgee:x-forwarded-for`, `autre` (ni l'une ni l'autre) ou `absente`. */
+function provenance(valeur) {
+  if (valeur == null) return "absente";
+  for (const [entete, forgee] of Object.entries(SONDES_FORGEES)) {
+    if (valeur === forgee) return `forgee:${entete}`;
+  }
+  return "autre";
+}
+
+/**
+ * Ce que le mode `railway` RETIENDRAIT pour cette requête, et d'où cela vient —
+ * JAMAIS l'adresse elle-même, ni aucune de celles des en-têtes.
+ *
+ * Évalué quel que soit `GEOIP_IP_SOURCE` : la preuve se fait AVANT d'allumer,
+ * pas après. Verdict :
+ *   `sure`         la requête vient de la façade, et l'adresse retenue n'est
+ *                  aucune des deux forgées : la façade l'a posée elle-même ;
+ *   `forgeable`    l'adresse retenue est une forgée : le client choisirait son pays ;
+ *   `indeterminee` pas de marqueur d'arête, ou pas de `X-Real-IP` : la requête
+ *                  n'est pas passée par la façade, rien n'est prouvé.
+ *
+ * `x_forwarded_for` renseigne sur l'autre mode possible (`xff:1` lit le dernier
+ * élément) : c'est une information, pas le verdict.
+ *
+ * @param {{headers?: Record<string, string|string[]|undefined>}} req
+ */
+export function diagnostiquerFacade(req) {
+  const marqueur = MARQUEURS_RAILWAY.some((h) => entete(req, h) !== null);
+  const xri = entete(req, "x-real-ip");
+  const retenue = ipClient(req, { mode: "railway" });
+  const xff = (entete(req, "x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const origine = provenance(retenue);
+  const verdict = !marqueur || retenue === null ? "indeterminee" : origine === "autre" ? "sure" : "forgeable";
+  return {
+    marqueur_arete: marqueur,
+    x_real_ip: {
+      // Plus d'une valeur : la façade a AJOUTÉ la sienne à celle du client au
+      // lieu de la remplacer. Sûr tant que la sienne est la dernière (c'est
+      // celle que lit `dernierJeton`), mais bon à savoir.
+      valeurs: xri ? xri.split(",").filter((s) => s.trim()).length : 0,
+      retenue: origine,
+    },
+    x_forwarded_for: {
+      elements: xff.length,
+      premier: provenance(xff[0] ?? null),
+      dernier: provenance(xff.length ? xff[xff.length - 1] : null),
+    },
+    verdict,
+  };
 }
 
 /**
