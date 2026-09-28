@@ -20,7 +20,7 @@ joué en CI (`tests/contract/ingest-parity.test.ts`) la tient alignée sur le re
 
 | Service | Rôle, en une phrase | Domaine public |
 |---|---|---|
-| `collector` | Reçoit la part de la collecte que la console lui relaie (corps intact, code pays seul, jamais l'adresse : `apps/console/lib/ingest-relay.ts`), hache l'identité et écrit en base. Deux répliques. Le GeoIP y est éteint (`GEOIP_IP_SOURCE: "none"`, section GeoIP plus bas). | oui, domaine généré par Railway |
+| `collector` | Reçoit la part de la collecte que la console lui relaie (corps intact, code pays seul, jamais l'adresse : `apps/console/lib/ingest-relay.ts`), hache l'identité et écrit en base. Deux répliques. Son GeoIP ne lit que le trafic direct, celui du seul capteur de la console (`GEOIP_IP_SOURCE: "railway"` dans l'IaC depuis le 28/09/2026, section GeoIP plus bas). | oui, domaine généré par Railway |
 | `api` | Sert l'API de lecture v1 sous le rôle `mip_api`, en lecture seule. Deux répliques. Son client aujourd'hui : le `mcp`, par le réseau privé ; le relais des lectures de la console vers lui (`api_relay_pct`) est à 0. | oui, domaine généré par Railway |
 | `console-api` | Le backend de la console ([ADR-0010](architecture/adr/0010-console-api.md)) : identité, sessions, écrans, écritures. Deux répliques. Seul client : le serveur Vercel, qui l'appelle pour la connexion depuis le 27/09 ; écrans et écritures ne sont pas encore basculés (drapeaux à 0). | oui, domaine généré par Railway, gardé par un secret client |
 | `mcp` | Sert le protocole MCP en HTTP, en client mince de l'API v1 : il passe par le service `api` sur le réseau privé (`MIP_API_HOST`, posé par l'apply du 27/09) et ne touche pas la base ([ADR-0006](architecture/adr/0006-mcp-sans-base.md)). | oui, domaine généré par Railway |
@@ -124,7 +124,7 @@ fuseau (`geo_source` = `timezone`, depuis `mip.tz`), à défaut l'en-tête pays 
 
 Le rendre effectif demandait de choisir entre un receveur backend public et une résolution depuis la
 console. **C'est tranché depuis le 24/09/2026** ([ADR-0005](architecture/adr/0005-relais-ingestion.md), point 5) : la collecte directe au `collector` pour
-les sites sans CSP figée (P6b.G), après le relais. La collecte directe n'est pas faite : le `collector`, en service depuis le 27/09, garde le GeoIP éteint (`GEOIP_IP_SOURCE: "none"`), et le relais ne transmet que le pays de Vercel, jamais l'adresse.
+les sites sans CSP figée (P6b.G), après le relais. La collecte directe est ouverte le 28/09/2026 sur un seul périmètre, le capteur de la console (`GEOIP_IP_SOURCE: "railway"` dans l'IaC, variable Vercel `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL`) ; pour les clients, le relais ne transmet que le pays de Vercel, jamais l'adresse.
 
 ## Relevé du 23/09/2026
 
@@ -220,4 +220,4 @@ La cible, service par service, est dans [architecture/overview.md](architecture/
 | Relais de l'API v1 | Éteint : `api_relay_pct` à 0 ; les porteurs de jeton lisent par la console. Seul le `mcp` passe par `api`. | `apps/console/lib/api-relay.ts` |
 | Bascule vers `console-api` | La connexion passe par `console-api` (`CONSOLE_API_URL` posée sur Vercel) ; écrans et écritures non basculés (`console_api_ecrans_pct` et `console_api_commandes_pct` à 0). Le mode strict (`CONSOLE_API_STRICT`) vient après le rodage à 100 %. | `apps/console/lib/aiguillage-console-api.ts`, [ADR-0010](architecture/adr/0010-console-api.md) |
 | Rôles de base | `mip_api` (v89), `mip_console` et `mip_identity` (v93) : appliqués le 27/09 ; `mip_api` sert le service `api`. | `packages/db/sql/`, [runbook](operations/runbook.md) |
-| GeoIP | Embarqué dans l'image du `collector`, éteint (`GEOIP_IP_SOURCE: "none"`) jusqu'à la collecte directe (P6b.G). | `.railway/railway.ts`, section GeoIP plus haut |
+| GeoIP | Embarqué dans l'image du `collector` ; lu pour le seul trafic direct (`GEOIP_IP_SOURCE: "railway"` depuis le 28/09/2026, P6b.G : le capteur de la console). | `.railway/railway.ts`, section GeoIP plus haut |

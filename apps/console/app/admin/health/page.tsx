@@ -7,7 +7,7 @@ import { EchecLecture } from "@/components/states/SectionErreur";
 import { chargerSante } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { verdictSante, FILE_ATTENTION, RETARD_CONSO_ATTENTION_H, RETARD_CONSO_INCIDENT_H, type VerdictSante } from "@/lib/health-verdict";
-import { dogfoodingEndpoint, ingestEndpoint } from "@/lib/ingest-endpoint";
+import { dogfoodingEndpoint, ingestEndpoint, origineCollecteurDogfooding } from "@/lib/ingest-endpoint";
 import type { HealthSnapshot } from "@/lib/metrics-format";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +29,7 @@ export default async function Health() {
   // est signalé ici, au lieu de se lire dans un tableau vide des semaines plus tard.
   const hote = (await headers()).get("host");
   const endpoint = dogfoodingEndpoint(hote);          // la console -> elle-même
+  const direct = origineCollecteurDogfooding(hote) !== null; // ou au collector, en direct (P6b.G)
   const snippet = ingestEndpoint("traces", hote);     // ce qu'on remet aux CLIENTS
   const force = Boolean(process.env.NEXT_PUBLIC_RUM_ENDPOINT);
   const memeHote = (() => {
@@ -97,7 +98,14 @@ export default async function Health() {
         </div>
         <Adresse url={endpoint} />
         <div className="mt-1 text-xs text-ink-soft">
-          Toujours l&apos;hôte de cette page : aucun réglage ne peut le détourner.
+          {direct
+            ? "Directement au collecteur, qui en déduit le pays par l'adresse IP (collecte directe). Retirer ce réglage ramène ces mesures sur l'hôte de cette page."
+            : "L'hôte de cette page : seule la collecte directe au collecteur peut l'en déplacer."}
+          {direct && (
+            <DetailTechnique>
+              Réglage : <code>NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL</code>.
+            </DetailTechnique>
+          )}
         </div>
 
         <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">

@@ -229,16 +229,16 @@ export default defineRailway((ctx) => {
       // Jeton de /ready et /metrics (kit, ≥ 32 caractères). Partagé : la
       // supervision le porte pour tous les services du kit.
       METRICS_TOKEN: ctx.shared.METRICS_TOKEN,
-      // GEOIP ÉTEINT, et c'est voulu. La géolocalisation par adresse du trafic
-      // DIRECT est réservée à P6b.G (collecte directe, à une date annoncée et
-      // datée par un `deploy_marker`) ; jusque-là les textes de conformité
-      // disent « code pays seul, sans adresse IP », et le trafic relayé (P3)
-      // porte le pays de Vercel sans jamais d'adresse. « railway » l'allumait
-      // dès P2, pour tout ce qui viserait le domaine du collector.
-      // AVANT DE L'ALLUMER : prouver sur staging que la façade Railway ÉCRASE
-      // un `X-Real-IP` forgé par le client (non constaté, `client-ip.mjs`) —
-      // sinon n'importe qui choisit le pays de ses propres beacons.
-      GEOIP_IP_SOURCE: "none",
+      // GEOIP DU TRAFIC DIRECT (P6b.G, 28/09/2026) : `X-Real-IP` posé par la
+      // façade Railway, lu seulement avec un marqueur d'arête (`client-ip.mjs`).
+      // Seul le dogfooding de la console vient en direct (sa variable Vercel
+      // NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL) ; le trafic relayé ne porte jamais
+      // d'adresse et garde le pays de Vercel. Les textes de conformité le
+      // disent (lib/legal.ts, docs/CONFORMITE.md). AVANT D'APPROUVER L'APPLY :
+      // prouver que la façade ÉCRASE un `X-Real-IP` forgé par le client —
+      // `scripts/ops/verifier-ip-directe.mjs`, qui doit sortir en 0. Retour
+      // arrière : « none » ici, en PR ; sinon le prochain apply le remettrait.
+      GEOIP_IP_SOURCE: "railway",
       // Par réplique. Le défaut du schéma (8), écrit ici pour que le calcul des
       // connexions se lise sans ouvrir le code.
       PGPOOL_MAX: "8",

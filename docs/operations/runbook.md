@@ -108,7 +108,7 @@ node scripts/fetch-geoip-db.mjs --update 2026-10   # télécharge, mesure, RÉÉ
 node scripts/fetch-geoip-db.mjs --verify           # sans réseau : la base déposée correspond au manifeste
 ```
 
-Commiter le manifeste (jamais le fichier : il est ignoré), PR, fusion : l'image du collector se reconstruit et télécharge la nouvelle livraison en vérifiant son sha256. Tant que le relais porte le trafic, le GeoIP reste éteint (`GEOIP_IP_SOURCE=none`) : le rafraîchissement ne change rien en production, mais garde l'image prête pour P6b.G.
+Commiter le manifeste (jamais le fichier : il est ignoré), PR, fusion : l'image du collector se reconstruit et télécharge la nouvelle livraison en vérifiant son sha256. Le relais ne transmet aucune adresse : le rafraîchissement ne vaut que pour la collecte directe (`GEOIP_IP_SOURCE=railway` depuis le 28/09/2026, pour le seul capteur de la console), et garde l'image prête pour la suite de P6b.G.
 
 ## 8. Restaurer une sauvegarde sans ressusciter des données effacées
 

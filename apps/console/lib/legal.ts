@@ -12,7 +12,7 @@
 // compléter » de `LegalShell`. Les hébergeurs sont factuels. À faire relire par
 // un conseil juridique.
 
-export const LEGAL_UPDATED = "26 septembre 2026";
+export const LEGAL_UPDATED = "28 septembre 2026";
 
 /**
  * L'ÉDITEUR ET SES CONDITIONS — TOUT CE QUI RESTE À FOURNIR, EN UN SEUL OBJET.
@@ -101,6 +101,16 @@ export const ORG = {
  * en-tête d'adresse relayé, aucune écriture) ; ce que la plateforme Vercel garde
  * dans ses propres journaux de requêtes relève de son contrat, pas de ce fichier.
  *
+ * COLLECTE DIRECTE DU DOGFOODING (P6b.G, 28/09/2026). Le capteur de la console
+ * elle-même — et lui seul — peut envoyer ses mesures du navigateur au collector,
+ * sans passer par Vercel (`NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL`,
+ * `lib/ingest-endpoint.ts`). Le collector lit alors l'adresse posée par la façade
+ * Railway pour en déduire le pays, en mémoire, le temps de la requête, et ne
+ * l'écrit nulle part (`packages/backend/shared/geoip.mjs`). D'où « et,
+ * directement du navigateur, celles de la console elle-même » ci-dessous, et la
+ * note de Railway. Écrit AVANT que la variable soit posée : déclarer un
+ * traitement qui n'a pas encore lieu est le moindre des deux défauts.
+ *
  * FORME IMPOSÉE. `lib/presentation-topologie.ts` DÉCOUPE ces phrases : la société
  * avant la première parenthèse, puis « région <id> — Ville, Pays) » ou
  * « région <id>, Ville, Pays) » EN FIN de phrase. Le mot « région » n'y paraît
@@ -115,7 +125,7 @@ export const HOSTS = {
   // aux machines porteuses d'un jeton ; piste C : le backend de la console
   // (service `console-api`) — voir SUBPROCESSORS.
   backend:
-    "Railway Corp. (hébergement du collecteur, qui reçoit les mesures relayées par la console, les pseudonymise et les écrit en base, des travaux planifiés, de l'API de lecture servie aux machines sur jeton, du backend de la console — comptes, sessions, écrans et écritures — et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
+    "Railway Corp. (hébergement du collecteur, qui reçoit les mesures relayées par la console et, directement du navigateur, celles de la console elle-même, les pseudonymise et les écrit en base, des travaux planifiés, de l'API de lecture servie aux machines sur jeton, du backend de la console — comptes, sessions, écrans et écritures — et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
 } as const;
 
 /** Un sous-traitant ultérieur, tel que le déclarent les politiques de confidentialité. */
@@ -221,6 +231,16 @@ export const SUBPROCESSORS: SousTraitant[] = [
   // une empreinte HMAC dans les compteurs de débit, effacée après 24 h
   // d'inactivité, migration-v90). Même donnée, même base : ce qui change est
   // l'hébergeur qui la TRAITE — les comptes de la console compris.
+  // COLLECTE DIRECTE DU DOGFOODING (P6b.G, 28/09/2026) : les mesures de la
+  // console ELLE-MÊME peuvent arriver du navigateur au collector sans passer par
+  // Vercel. Railway reçoit alors l'adresse IP du visiteur de la console : le
+  // collector en déduit le pays en mémoire, le temps de la requête, sans l'écrire
+  // (`packages/backend/shared/geoip.mjs`, `appliquerGeo` : seuls le code pays, sa
+  // provenance et la version de la base sont écrits). La phrase dit « peuvent » :
+  // elle reste vraie variable posée ou non, et la coupure (retirer la variable)
+  // ne la rend pas fausse. Les journaux HTTP de la plateforme Railway consignent
+  // l'adresse source, comme ceux de Vercel : cela relève de son contrat, et
+  // docs/CONFORMITE.md § 3.2 le dit.
   {
     name: "Railway Corp.",
     role: "Hébergement des services du backend : collecteur des mesures, travaux planifiés, API de lecture, backend de la console et serveur MCP.",
@@ -229,7 +249,9 @@ export const SUBPROCESSORS: SousTraitant[] = [
     region: "europe-west4",
     garanties: CCT,
     note:
-      "Le collecteur remplace l'identifiant d'utilisateur par une empreinte (HMAC) avant d'écrire en base. L'API de " +
+      "Le collecteur remplace l'identifiant d'utilisateur par une empreinte (HMAC) avant d'écrire en base. Les mesures " +
+      "de la console elle-même peuvent lui être envoyées directement par le navigateur : il en lit alors l'adresse IP " +
+      "pour en déduire le pays, le temps de la requête, sans la conserver. L'API de " +
       "lecture et le serveur MCP servent des agrégats aux machines porteuses d'un jeton, sans droit d'écriture. Le " +
       "backend de la console traite les comptes, les sessions, les écrans, les écritures et les demandes RGPD, pour le " +
       "seul serveur de la console ; l'adresse IP d'un utilisateur de la console n'y est gardée que sous forme " +
@@ -256,17 +278,19 @@ export const SUBPROCESSORS: SousTraitant[] = [
 ];
 
 /**
- * Le pays des mesures (« Pays estimé : … ») — VÉRIFIÉ dans le code le 26/09/2026 avant d'être écrit.
- * Le SDK envoie le fuseau horaire du navigateur (`mip.tz`), d'où le pays ; à
- * défaut, la route d'ingestion de la console reprend le code pays que l'hébergeur
+ * Le pays des mesures (« Pays estimé : … ») — VÉRIFIÉ dans le code le 28/09/2026 avant d'être écrit.
+ * Par la console : le SDK envoie le fuseau horaire du navigateur (`mip.tz`), d'où
+ * le pays ; à défaut, la route d'ingestion reprend le code pays que l'hébergeur
  * déduit de l'adresse à la réception (`x-vercel-ip-country`), et le relais ne
  * transmet que ce code (`packages/backend/shared/geoip.mjs`, `appliquerGeo`).
- * L'adresse n'est écrite nulle part. Seul le collecteur appelé EN DIRECT, avec la
- * base DB-IP chargée, fait passer l'adresse devant le fuseau — un chemin qu'aucun
- * capteur n'emprunte (SDK, extension et CI visent la console).
+ * EN DIRECT au collecteur, avec la base DB-IP chargée, l'adresse passe DEVANT le
+ * fuseau : c'est le chemin du seul capteur de la console elle-même depuis P6b.G
+ * (SDK des clients, extension et CI visent toujours la console). D'où une phrase
+ * qui ne dit plus d'ordre : elle vaut pour les deux chemins, et pour la politique
+ * de l'extension qui la reprend. L'adresse n'est écrite nulle part.
  */
 export const PAYS_ESTIME =
-  "déduit du fuseau horaire du navigateur ou, à défaut, de l'adresse IP à la réception, sans que cette adresse soit conservée";
+  "déduit de l'adresse IP à la réception ou du fuseau horaire du navigateur, sans que cette adresse soit conservée";
 
 /**
  * Les identifiants de la mesure : des PSEUDONYMES, jamais « anonymes » — une

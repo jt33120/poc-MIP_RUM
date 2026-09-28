@@ -28,10 +28,11 @@ Le kit met en œuvre les points 2 à 7 du **contrat de service** (plan backend, 
 | `GET /live` | publique | processus vivant, **jamais de base**. **C'est la sonde des superviseurs externes** (disponibilité, statuspage, scanners). | `200 {"status":"ok"}`, rien d'autre |
 | `GET /ready` | jeton | 503 dès SIGTERM (drainage) ; sinon le verdict de `ready()` : fraîcheur, backlog. **Supervision seulement**, jamais sonde Railway : une sonde de fraîcheur bloquerait le déploiement du scheduler, dont le bail est tenu par l'ancienne instance. | `200 {"status":"ready",…}` ou `503 {"status":"draining"\|"not_ready",…}` |
 | `GET /metrics` | jeton | texte Prometheus : requêtes, pool, boucles, mémoire. | `text/plain; version=0.0.4` |
+| `GET /diagnostic/<nom>` | jeton | option `diagnostics` (`{ "/diagnostic/<nom>": (req) => objet }`, validée au démarrage) : ce que le service fait de **la requête qui l'appelle**, pour prouver un réglage avant de l'allumer. Journalisée en `debug`, hors métriques. Le collector y sert `/diagnostic/ip` (d'où viendrait l'adresse retenue, jamais l'adresse). | `200` + l'objet ; `404` sans jeton |
 
 **Quelle sonde pour qui.** Railway → `/health` (au déploiement : la base doit répondre avant de basculer). Toute sonde **externe** → `/live`. Leçon de l'incident Neon du 24/09 : une sonde externe et les scanners qui frappaient `/health` faisaient un `select 1` à chaque passage, la base ne s'endormait plus et le quota a fondu. Le cache de 30 s borne ce coût à deux `select 1` par minute au plus, mais **ne rend pas le sommeil** à la base (Neon s'endort après 5 min sans requête) : seul `/live` le fait.
 
-**Jeton.** `/ready` et `/metrics` exigent `Authorization: Bearer <METRICS_TOKEN>`. Sans jeton configuré, sans en-tête ou avec un mauvais jeton, les deux répondent **404**, pas 401 : un 401 confirmerait que la route existe. Comparaison à temps constant. Le jeton en paramètre d'URL est refusé : il finirait dans les journaux des proxys.
+**Jeton.** `/ready`, `/metrics` et les diagnostics exigent `Authorization: Bearer <METRICS_TOKEN>`. Sans jeton configuré, sans en-tête ou avec un mauvais jeton, tous répondent **404**, pas 401 : un 401 confirmerait que la route existe. Comparaison à temps constant. Le jeton en paramètre d'URL est refusé : il finirait dans les journaux des proxys.
 
 Toute autre route va au `handler` (style `node:http`) ou au `fetch` (style Web) du service. Sans l'un ni l'autre (le scheduler), elle reçoit un 404.
 

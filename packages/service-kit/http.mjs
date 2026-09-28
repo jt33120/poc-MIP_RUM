@@ -32,6 +32,12 @@
 //   backlog et ses compteurs ne regardent que nous. Jamais de jeton en
 //   paramètre d'URL : il finirait dans les journaux des proxys.
 //
+//   Les DIAGNOSTICS (option `diagnostics`, GET seulement) suivent la même
+//   règle : jeton, sinon 404. Ils décrivent ce que le service fait de LA
+//   requête qui les appelle, pour prouver un réglage AVANT de l'allumer (le
+//   collector : ce que la façade Railway fait d'une adresse forgée). Journalisés
+//   en `debug` et hors métriques, comme les sondes.
+//
 // LES DÉLAIS SERVEUR (défauts de Node entre parenthèses) :
 //   - headersTimeout 10 s (60 s) : un client qui envoie ses en-têtes octet par
 //     octet (slowloris) tient une connexion ; 10 s suffisent à n'importe qui.
@@ -180,6 +186,9 @@ function avecDelai(promesse, ms, message) {
  * @property {ReturnType<import("./lifecycle.mjs").installLifecycle>} [lifecycle]
  *   si fourni : /ready suit le drainage, et la fermeture du serveur est
  *   enregistrée en phase de drainage
+ * @property {Record<string, (req: import("node:http").IncomingMessage) => unknown>} [diagnostics]
+ *   `/diagnostic/<nom>` → description JSON de la requête reçue ; jeton
+ *   obligatoire, sinon 404. Ni secret ni adresse dans ce qu'elle rend.
  */
 
 /**
@@ -207,6 +216,7 @@ export function startService(options) {
     healthDbTtlMs = 30_000,
     lifecycle,
     responseHeaders = {},
+    diagnostics = {},
   } = options ?? {};
   if (!name) throw new TypeError("startService : name obligatoire");
   if (!log) throw new TypeError("startService : log obligatoire");
@@ -222,6 +232,15 @@ export function startService(options) {
     // Validé au démarrage : un en-tête invalide ferait lever CHAQUE réponse.
     http.validateHeaderName(nom);
     http.validateHeaderValue(nom, valeur);
+  }
+
+  // Un diagnostic ne peut ni masquer une sonde, ni sortir de son préfixe : il
+  // prendrait sinon, en silence, la place d'une route du service.
+  const diagnosticsParChemin = new Map(Object.entries(diagnostics ?? {}));
+  for (const [chemin, fonction] of diagnosticsParChemin) {
+    if (!/^\/diagnostic\/[a-z0-9-]+$/.test(chemin) || typeof fonction !== "function") {
+      throw new TypeError(`startService : diagnostic invalide « ${chemin} » (attendu : /diagnostic/<nom> → fonction)`);
+    }
   }
 
   const limiteDe = (req) => (typeof maxBodyBytes === "function" ? maxBodyBytes(req) : maxBodyBytes);
@@ -309,6 +328,8 @@ export function startService(options) {
       return sendJson(res, ok ? 200 : 503, { ...extra, status: ok ? "ok" : "unavailable" });
     }
     if (!jetonValide(req)) return sendJson(res, 404, { error: "not_found" });
+    const diagnostic = diagnosticsParChemin.get(chemin);
+    if (diagnostic) return sendJson(res, 200, await diagnostic(req));
     if (chemin === "/ready") {
       if (lifecycle?.draining) return sendJson(res, 503, { status: "draining" });
       if (!ready) return sendJson(res, 200, { status: "ready" });
@@ -333,7 +354,7 @@ export function startService(options) {
     const debut = performance.now();
     const requestId = idRequete(req);
     const chemin = cheminSeul(req.url);
-    const sonde = SONDES.has(chemin);
+    const sonde = SONDES.has(chemin) || diagnosticsParChemin.has(chemin);
     res.setHeader("x-request-id", requestId);
     for (const [nom, valeur] of entetesFixes) res.setHeader(nom, valeur);
     if (lifecycle?.draining) res.setHeader("connection", "close");

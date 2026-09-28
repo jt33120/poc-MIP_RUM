@@ -18,7 +18,7 @@ Un client réel et une extension publiée envoient leurs mesures à `mip-rum-con
 
 ## Conséquences
 
-- Tant que le relais porte le trafic, le pays vient de Vercel (`x-vercel-ip-country`) et le GeoIP local du collector reste éteint (`GEOIP_IP_SOURCE=none`).
+- Tant que le relais porte le trafic, le pays vient de Vercel (`x-vercel-ip-country`) : le relais ne transmet aucune adresse, et le GeoIP local du collector ne sert que la collecte directe. Celle-ci est ouverte le 28/09/2026 sur un seul périmètre, le capteur de la console elle-même (`GEOIP_IP_SOURCE=railway`, variable Vercel `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL`) : il ne dépend pas de la stabilité du relais, d'où ce périmètre avant les 7 jours du point 5.
 - Le texte de conformité doit changer AVANT la première montée du drapeau (Vercel reçoit et relaie, Railway pseudonymise et écrit) : garde humaine, PR #296 (ouverte au 26/09/2026 ; elle remplace #285, fermée), prérequis n° 6 du [mode d'emploi](../../operations/relais-ingestion.md).
 - Un COMMIT dont la réponse se perd laisse une issue inconnue (503 « outcome unknown ») : doublon possible pour les logs, les seuls sans clé naturelle.
 

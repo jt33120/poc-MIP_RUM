@@ -160,7 +160,10 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
   });
 
   it("R6 suit l'ADR 0005 et le relevé du 28/09 — collecteur en service, pays seul, collecte directe à faire", () => {
-    expect(lire(".railway/railway.ts")).toContain('GEOIP_IP_SOURCE: "none"');
+    // 28/09/2026 : l'IaC allume la lecture de `X-Real-IP` pour le seul trafic
+    // DIRECT (le dogfooding de la console) ; le relais, lui, ne porte toujours
+    // aucune adresse. Le texte de R6 est à relire avec la vitrine.
+    expect(lire(".railway/railway.ts")).toContain('GEOIP_IP_SOURCE: "railway"');
     expect(lire("docs/architecture/adr/0005-relais-ingestion.md")).toContain("qui seule permet la géolocalisation par adresse");
     expect(lire("docs/TOPOLOGIE_BACKEND.md")).toContain("**six services en ligne**");
     const r6 = point("R6");

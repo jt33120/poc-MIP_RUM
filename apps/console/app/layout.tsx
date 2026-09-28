@@ -48,7 +48,8 @@ const RUM_REPLAY_RATE = Number.isFinite(RUM_REPLAY) ? RUM_REPLAY : 0;
 // vers un projet Supabase décommissionné pendant douze jours (invariant AD-4).
 function rumInitScript(host: string | null): string {
   // dogfoodingEndpoint, PAS ingestEndpoint : la console poste chez elle, et
-  // NEXT_PUBLIC_RUM_ENDPOINT ne doit jamais pouvoir l'envoyer ailleurs.
+  // NEXT_PUBLIC_RUM_ENDPOINT ne doit jamais pouvoir l'envoyer ailleurs. Seule
+  // exception, sa propre variable : la collecte directe au collector (P6b.G).
   const endpoint = dogfoodingEndpoint(host);
   // Version de l'app : le SHA du commit déployé, fourni par Vercel. Sans elle, une
   // régression de performance ne peut pas être rattachée à une mise en production —

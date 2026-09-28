@@ -271,6 +271,48 @@ describe("service-kit/http — /ready et /metrics : jeton obligatoire, sinon 404
   });
 });
 
+// Le collector s'en sert pour prouver, avant d'allumer le GeoIP, que la façade
+// Railway écrase une adresse forgée : même porte que /ready, parce qu'un
+// diagnostic public dirait à un curieux comment la requête est lue.
+describe("service-kit/http — diagnostics : jeton obligatoire, sinon 404", () => {
+  const diagnostics = { "/diagnostic/ip": (req: any) => ({ vu: req.headers["x-sonde"] ?? null }) };
+
+  it("sans jeton, faux, ou sans jeton configuré : 404 ; avec : la description de LA requête reçue", async () => {
+    const sansJeton = await demarrer({ diagnostics });
+    expect((await fetch(`${sansJeton.base}/diagnostic/ip`, { headers: { authorization: `Bearer ${JETON}` } })).status).toBe(404);
+
+    const handler = vi.fn((_req: any, res: any) => res.end("route"));
+    const { base } = await demarrer({ diagnostics, metricsToken: JETON, handler });
+    expect((await fetch(`${base}/diagnostic/ip`)).status).toBe(404);
+    expect((await fetch(`${base}/diagnostic/ip`, { headers: { authorization: "Bearer mauvais" } })).status).toBe(404);
+    const r = await fetch(`${base}/diagnostic/ip`, { headers: { authorization: `Bearer ${JETON}`, "x-sonde": "a" } });
+    expect(r.status).toBe(200);
+    expect(r.headers.get("cache-control")).toBe("no-store");
+    expect(await r.json()).toEqual({ vu: "a" });
+    // Jamais transmis aux routes du service, même sans jeton.
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("journalisé en debug et hors métriques, comme une sonde ; GET et HEAD seulement", async () => {
+    const metrics = createMetrics();
+    const { base, lignes } = await demarrer({ diagnostics, metrics, metricsToken: JETON });
+    expect((await fetch(`${base}/diagnostic/ip`, { method: "POST" })).status).toBe(405);
+    await fetch(`${base}/diagnostic/ip`, { headers: { authorization: `Bearer ${JETON}` } });
+    await attendre(20);
+    const acces = lignes.filter((l) => l.msg === "requête" && l.path === "/diagnostic/ip");
+    expect(acces.length).toBeGreaterThan(0);
+    expect(acces.every((l) => l.level === "debug")).toBe(true);
+    expect(await metrics.render()).not.toMatch(/http_requests_total\{[^}]*\} [1-9]/);
+  });
+
+  it("un chemin hors /diagnostic/, ou qui n'est pas une fonction, est refusé au DÉMARRAGE", () => {
+    const { log } = journal();
+    for (const d of [{ "/ready": () => ({}) }, { "/v1/traces": () => ({}) }, { "/diagnostic/ip": "non" }]) {
+      expect(() => startService({ name: "t", log, port: 0, diagnostics: d } as any)).toThrow(/diagnostic invalide/);
+    }
+  });
+});
+
 describe("service-kit/http — routes, plafond de corps, erreurs", () => {
   it("sans routes (scheduler) : 404 hors sondes", async () => {
     const { base } = await demarrer();

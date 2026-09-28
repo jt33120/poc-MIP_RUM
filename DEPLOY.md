@@ -123,7 +123,7 @@ comportement voulu, pas une panne.
 | `REQUIRE_API_KEY`, `RATE_LIMIT_PER_MIN` | `ingest` (supprimé), puis `collector` | `false` et `600` sur `ingest` ; l'IaC du collector pose `REQUIRE_API_KEY=false` et laisse `RATE_LIMIT_PER_MIN` à son défaut, 600 (`services/collector/README.md`) |
 | `INGEST_DEFERRED`, `INGEST_DRAIN_MS` | `collector` | non posées (`false`, `250`) ; jamais `true` sur la base gratuite (ADR-0014) |
 | `IDENTITY_HASH_SECRET`, `EDGE_PROXY_SECRET` | `collector` | variables partagées à créer avant l'apply (en-tête de `.railway/railway.ts`) |
-| `GEOIP_IP_SOURCE` | `collector` | `none` dans l'IaC (GeoIP éteint jusqu'à P6b.G) |
+| `GEOIP_IP_SOURCE` | `collector` | `railway` dans l'IaC depuis le 28/09/2026 : trafic direct seulement, celui du capteur de la console (P6b.G, `docs/operations/relais-ingestion.md`) |
 | `GEOIP_DB_PATH` | `collector` | non posée (base cherchée dans l'image) |
 | `GEOIP_MAX_AGE_DAYS` | `collector` | non posée (`180`) |
 
