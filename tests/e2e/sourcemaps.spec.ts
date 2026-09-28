@@ -206,7 +206,18 @@ test("admin : jeton de CI, upload direct, manifeste, stack source et révocation
   await page.getByRole("button", { name: "Révoquer le jeton CI E2E" }).click();
   await expect(page.getByRole("group", { name: /Révoquer le jeton «\s*CI E2E\s*»/ })).toBeVisible();
   await page.getByRole("button", { name: "Révoquer le jeton", exact: true }).click();
-  await expect(page.getByRole("row", { name: /CI E2E/ })).toContainText("révoqué");
+  // Révoqué quand la CELLULE de statut le dit, la liste relue par le serveur après
+  // la commande — pas quand la LIGNE contient le mot : l'encadré de confirmation
+  // (« un jeton révoqué ne se rétablit pas ») le porte dès son ouverture. Attendre
+  // la ligne laissait partir l'upload ci-dessous PENDANT la révocation ; il passait
+  // (200) chaque fois qu'il prenait la ligne du jeton avant elle : CI du 28/09/2026.
+  await expect(page.getByRole("row", { name: /CI E2E/ }).getByRole("cell", { name: "révoqué", exact: true })).toBeVisible();
+  // Révocation validée en base : dès cet instant, l'upload est refusé, sans second essai.
+  const { rows: [jeton] } = await pool.query<{ revoque: boolean }>(
+    "select revoked_at is not null as revoque from sourcemap_upload_token where app_id = $1 and name = 'CI E2E'",
+    [APP],
+  );
+  expect(jeton.revoque).toBe(true);
   const apresRevocation = await request.post(`${INGEST}/v1/sourcemaps`, { data: corps, headers: { authorization: `Bearer ${secret}` } });
   expect(apresRevocation.status()).toBe(401);
 
