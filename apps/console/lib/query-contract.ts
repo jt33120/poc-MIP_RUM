@@ -256,14 +256,61 @@ export function bucketSecondsFor(durationMs: number): number {
 }
 
 /**
- * Seaux alignés sur l'époque UTC couvrant [from,to) : le premier contient `from`,
- * le dernier contient l'instant qui précède `to`. Un seau de bord est partiel.
+ * Fuseau d'alignement des seaux de 6 h et d'un jour (A1 T3, 29/09/2026). Alignés
+ * sur l'époque UTC, les seaux de 6 h d'un « 7 jours » commençaient à 02:00, 08:00,
+ * 14:00, 20:00 à Paris l'été, et l'axe écrivait « 21/09 20:00 · 22/09 20:00 » ; un
+ * seau d'un jour allait de 02:00 à 02:00. Ils partent désormais de minuit, heure de
+ * Paris, changements d'heure compris (le seau qui les contient dure 5 ou 7 h, le
+ * jour 23 ou 25 h). Les seaux d'une heure et de 5 minutes restent sur l'époque
+ * UTC : Paris est décalé d'heures entières, ils sont déjà alignés.
+ * Même règle en SQL (`query-compiler.ts`, `bucketExpr`, `bucketSeriesSql`).
+ */
+export const FUSEAU_SEAUX = "Europe/Paris";
+/** Largeur à partir de laquelle un seau s'aligne sur l'heure murale de `FUSEAU_SEAUX`. */
+export const SEAU_ALIGNE_LOCAL_DES = 21_600;
+
+const MUR = new Intl.DateTimeFormat("en-GB", {
+  timeZone: FUSEAU_SEAUX,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+/** Heure murale de Paris d'un instant, exprimée comme un instant UTC (« 14:00 à Paris » → 14:00Z). */
+function murDe(ms: number): number {
+  const parts = MUR.formatToParts(ms);
+  const v = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return Date.UTC(v("year"), v("month") - 1, v("day"), v("hour"), v("minute"), v("second")) + (ms % 1000);
+}
+
+/** L'inverse : l'instant d'une heure murale de Paris (comme `timestamp at time zone` de PostgreSQL). */
+function instantDuMur(mur: number): number {
+  const essai = mur - (murDe(mur) - mur);
+  return mur - (murDe(essai) - essai);
+}
+
+/**
+ * Seaux couvrant [from,to) : le premier contient `from`, le dernier contient
+ * l'instant qui précède `to`. Un seau de bord est partiel. Alignés sur l'époque
+ * UTC sous 6 h, sur l'heure murale de Paris à partir de 6 h (`FUSEAU_SEAUX`).
  */
 export function bucketStarts(range: Pick<ResolvedRange, "from" | "to" | "bucketSeconds">): number[] {
   const width = range.bucketSeconds * 1000;
   const from = Date.parse(range.from);
   const to = Date.parse(range.to);
   const starts: number[] = [];
+  if (range.bucketSeconds >= SEAU_ALIGNE_LOCAL_DES) {
+    for (let mur = Math.floor(murDe(from) / width) * width; starts.length <= MAX_POINTS; mur += width) {
+      const start = instantDuMur(mur);
+      if (start >= to) break;
+      starts.push(start);
+    }
+    return starts;
+  }
   for (let start = Math.floor(from / width) * width; start < to && starts.length <= MAX_POINTS; start += width) {
     starts.push(start);
   }

@@ -15,6 +15,9 @@
 //   - la couverture : point creux sous `faibleSous` mesures, seau en cours creux,
 //     au plus cinq séries (les suivantes sont nommées, pas tracées), points hors
 //     grille comptés ;
+//   - le MANQUE se voit : un seau couvert par une fenêtre hors collecte
+//     (`fenetresCollecte`, registre `collecte_fenetre`) est hachuré en gris et dit
+//     « non mesuré » — jamais un 0 mesuré pendant une panne ;
 //   - le temps porte ses événements (P9) : annotations verticales cliquables, ou la
 //     raison pour laquelle elles manquent.
 //
@@ -51,8 +54,10 @@ import {
   MAX_SERIES,
   SERIE_MARGES,
   bandesSeuils,
+  collecteDesSeaux,
   echelleY,
   estJour,
+  fenetresDeLaGrille,
   formaterAxe,
   graduationsTemps,
   hrefZoom,
@@ -67,8 +72,12 @@ import {
   premiereDonneeTardive,
   tranchesMesurees,
   regrouperAnnotations,
+  suitesDeSeaux,
+  texteFenetreCollecte,
   type Annotation,
   type AnnotationPlacee,
+  type CollecteSeau,
+  type FenetreCollecte,
   type LignePreparee,
   type PointSerie,
   type SerieDef,
@@ -139,6 +148,93 @@ export function MotifEnCours({ id, couleur }: { id: string; couleur: string }) {
       <rect width={6} height={6} fill={couleur} />
       <line x1={0} y1={0} x2={0} y2={6} stroke="rgb(var(--c-panel))" strokeOpacity={0.55} strokeWidth={2} />
     </pattern>
+  );
+}
+
+/**
+ * Motif « non mesuré » (collecte interrompue) : hachures GRISES, dans l'autre sens
+ * que celles du seau en cours (colorées) — un manque de collecte ne doit pas se
+ * lire comme une période incomplète d'une série.
+ */
+export function MotifHorsCollecte({ id }: { id: string }) {
+  return (
+    <pattern id={id} patternUnits="userSpaceOnUse" width={7} height={7} patternTransform="rotate(-45)">
+      <line x1={0} y1={0} x2={0} y2={7} stroke="rgb(var(--c-ink-faint))" strokeOpacity={0.7} strokeWidth={2} />
+    </pattern>
+  );
+}
+
+/** Pastille de légende « non mesuré » : le même motif que la zone. */
+export function PaveHorsCollecte({ id }: { id: string }) {
+  return (
+    <svg width={12} height={10} aria-hidden="true" className="shrink-0">
+      <rect x={0.5} y={0.5} width={11} height={9} rx={2} fill={`url(#${id})`} stroke="rgb(var(--c-ink-faint))" />
+    </svg>
+  );
+}
+
+/**
+ * La collecte de chaque seau, calculée APRÈS le montage (comme le seau en cours) :
+ * avant, `maintenant` est inconnu et le seau en cours n'est pas coupé à l'instant.
+ */
+export function useCollecteDesSeaux(
+  grille: string[],
+  seauSecondes: number,
+  fuseau: string,
+  fenetres: readonly FenetreCollecte[] | undefined,
+  maintenant: number | null,
+): { collecte: CollecteSeau[]; fenetres: FenetreCollecte[] } {
+  return useMemo(() => {
+    if (!fenetres || fenetres.length === 0) return { collecte: [], fenetres: [] };
+    return {
+      collecte: collecteDesSeaux(grille, seauSecondes, fenetres, { fuseau, maintenant: maintenant ?? Number.POSITIVE_INFINITY }),
+      fenetres: fenetresDeLaGrille(fenetres, grille, seauSecondes, fuseau),
+    };
+  }, [grille, seauSecondes, fuseau, fenetres, maintenant]);
+}
+
+/** Zones pleine hauteur d'une suite de seaux hors collecte : hachurées (interrompue), voilées (partielle). */
+export function zonesHorsCollecte(grille: string[], collecte: readonly CollecteSeau[], motif: string) {
+  return [
+    ...suitesDeSeaux(collecte, "partielle").map(([a, b]) => (
+      <ReferenceArea
+        key={`partielle-${a}`}
+        x1={grille[a]}
+        x2={grille[b]}
+        className="zone-collecte-partielle"
+        fill="rgb(var(--c-ink-faint))"
+        fillOpacity={0.08}
+        stroke="rgb(var(--c-ink-faint))"
+        strokeOpacity={0.5}
+        strokeDasharray="2 3"
+        ifOverflow="hidden"
+      />
+    )),
+    ...suitesDeSeaux(collecte, "interrompue").map(([a, b]) => (
+      <ReferenceArea
+        key={`interrompue-${a}`}
+        x1={grille[a]}
+        x2={grille[b]}
+        className="zone-hors-collecte"
+        fill={`url(#${motif})`}
+        fillOpacity={1}
+        stroke="none"
+        ifOverflow="hidden"
+      />
+    )),
+  ];
+}
+
+/** Sous la légende : chaque fenêtre de la plage, datée (« Collecte interrompue du … au … (heure de Paris) »). */
+export function NoteHorsCollecte({ fenetres, fuseau }: { fenetres: readonly FenetreCollecte[]; fuseau: string }) {
+  if (fenetres.length === 0) return null;
+  return (
+    <ul className="mt-1 text-xs text-ink-soft" data-testid="note-hors-collecte">
+      {fenetres.slice(0, 3).map((f) => (
+        <li key={`${f.debut}-${f.etat}`}>{texteFenetreCollecte(f, fuseau)}</li>
+      ))}
+      {fenetres.length > 3 && <li>et {fenetres.length - 3} autres périodes hors collecte</li>}
+    </ul>
   );
 }
 
@@ -450,10 +546,13 @@ function Infobulle({
   dernierEnCours,
   dernier,
   liens,
+  collecte,
 }: {
   active?: boolean;
   label?: string;
   payload?: { payload?: LignePreparee }[];
+  /** État de collecte par seau, indexé par `t`. */
+  collecte?: ReadonlyMap<string, CollecteSeau>;
   series: SerieTracee[];
   format: FormatId;
   vital?: VitalName;
@@ -469,6 +568,7 @@ function Infobulle({
   return (
     <div className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs text-ink shadow-sm">
       <p className="mb-1 font-medium">{liens?.[label]?.libelle ?? libelleSeauComplet(label, seauSecondes, fuseau)}</p>
+      <LigneCollecte etat={collecte?.get(label) ?? null} vide={series.every((s) => nombreOuNull(ligne[s.cle]) === null)} />
       {series.map((s) => {
         const v = nombreOuNull(ligne[s.cle]);
         const n = s.effectifCle ? nombreOuNull(ligne[s.effectifCle]) : null;
@@ -493,6 +593,26 @@ function Infobulle({
         <p className="text-ink-soft">{libellePeriodeEnCours(seauSecondes, estJour(label))}</p>
       )}
     </div>
+  );
+}
+
+/**
+ * L'infobulle d'un seau hors collecte : « Aucune donnée reçue — collecte
+ * interrompue » n'est pas « 0 — collecte en service ».
+ */
+export function LigneCollecte({ etat, vide }: { etat: CollecteSeau; vide: boolean }) {
+  if (etat === null) return null;
+  if (etat === "interrompue" && vide) {
+    return (
+      <p className="text-ink-soft" data-infobulle-collecte="interrompue">
+        Aucune donnée reçue — collecte interrompue
+      </p>
+    );
+  }
+  return (
+    <p className="text-ink-soft" data-infobulle-collecte="partielle">
+      Collecte partielle sur cette tranche
+    </p>
   );
 }
 
@@ -528,6 +648,7 @@ export function ThresholdSeries({
   liensSeaux,
   debutCollecte,
   noteCollecte = true,
+  fenetresCollecte,
 }: {
   /** OBLIGATOIRE : débuts de seau attendus, ISO UTC (`bucketStarts`) ou jours « AAAA-MM-JJ ». */
   grille: string[];
@@ -573,16 +694,29 @@ export function ThresholdSeries({
    * données à 14:00 »).
    */
   debutCollecte?: string;
-  /** Défaut true. Panneaux empilés : un seul panneau porte la note « Collecte commencée… ». */
+  /**
+   * Défaut true. Panneaux empilés : un seul panneau porte la note « Collecte
+   * commencée… » et les fenêtres hors collecte datées (les hachures, elles, sont sur
+   * chaque panneau).
+   */
   noteCollecte?: boolean;
+  /**
+   * Fenêtres hors collecte de la plage (chargeur `chargeurs/collecte.ts`) : un seau
+   * entièrement couvert par une fenêtre `interrompue` est « non mesuré » (hachuré,
+   * valeur `null` même pour un compte), un seau recoupé est voilé. Ajout du 29/09/2026.
+   */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const router = useRouter();
   const motifs = useIdSvg("en-cours");
+  const motifHorsCollecte = useIdSvg("hors-collecte");
   const { enCours, maintenant } = useSeauEnCours(grille, seauSecondes, fuseau);
+  const { collecte, fenetres: fenetresVisibles } = useCollecteDesSeaux(grille, seauSecondes, fuseau, fenetresCollecte, maintenant);
+  const collecteParSeau = useMemo(() => new Map(grille.map((t, i) => [t, collecte[i] ?? null])), [grille, collecte]);
   const { tracees, ecartees } = useMemo(() => tracerSeries(series), [series]);
   const prep = useMemo(
-    () => preparerPoints(grille, points, tracees, { faibleSous, seauEnCours: enCours }),
-    [grille, points, tracees, faibleSous, enCours],
+    () => preparerPoints(grille, points, tracees, { faibleSous, seauEnCours: enCours, collecte }),
+    [grille, points, tracees, faibleSous, enCours, collecte],
   );
   const aDesBarres = tracees.some((s) => s.forme === "barres");
   // Une bande de verdict derrière des barres de comptes n'aurait pas de sens : un
@@ -654,12 +788,13 @@ export function ThresholdSeries({
       {premier === null && noteCollecte && mesurees > 0 && mesurees < 3 && grille.length >= 3 && (
         <NotePeuDePoints n={mesurees} seauSecondes={seauSecondes} jours={estJour(dernier ?? "")} />
       )}
-      {barres.length > 0 && (
+      {(barres.length > 0 || collecte.length > 0) && (
         <svg width={0} height={0} aria-hidden="true" className="absolute">
           <defs>
             {barres.map(({ s, id }) => (
               <MotifEnCours key={id} id={id} couleur={s.couleur} />
             ))}
+            {collecte.length > 0 && <MotifHorsCollecte id={motifHorsCollecte} />}
           </defs>
         </svg>
       )}
@@ -718,6 +853,7 @@ export function ThresholdSeries({
                 label={nomBande(bandes.mauvais.y1, bandes.mauvais.y2, RATING_LABEL.poor, BANDE.mauvais.texte)}
               />
             )}
+            {zonesHorsCollecte(grille, collecte, motifHorsCollecte)}
             <XAxis
               dataKey="t"
               fontSize={11}
@@ -754,6 +890,7 @@ export function ThresholdSeries({
                   dernierEnCours={enCours}
                   dernier={dernier}
                   liens={liensSeaux}
+                  collecte={collecteParSeau}
                 />
               }
             />
@@ -861,7 +998,14 @@ export function ThresholdSeries({
             {periodeEnCours}
           </li>
         )}
+        {prep.horsCollecte.length > 0 && (
+          <li className="flex items-center gap-1.5" data-testid="legende-hors-collecte">
+            <PaveHorsCollecte id={motifHorsCollecte} />
+            non mesuré (collecte interrompue)
+          </li>
+        )}
       </ul>
+      {noteCollecte && <NoteHorsCollecte fenetres={fenetresVisibles} fuseau={fuseau} />}
       {bandes?.horsEchelle && (
         <p className="mt-1 text-xs text-ink-soft" data-testid="seuil-hors-echelle">
           {bandes.horsEchelle}

@@ -12,6 +12,7 @@ import { alertEvents } from "../queries-v2";
 import { paramReader, previousRange } from "../query-contract";
 import { lireAppel } from "../tracing-ancres";
 import { lireComparaison } from "../view-state";
+import { sectionFenetresCollecte } from "./collecte";
 import { section, sansSection, type Chargeur } from "./commun";
 
 const SOURCE_APPELS: SourceComparaison = { table: "rum_span", colonneTemps: "ts", additive: true };
@@ -28,7 +29,7 @@ export const chargerTracing = (async (principal, sp) => {
   const couvertures = (source: SourceComparaison) =>
     Promise.all(sourcesSousFiltres(query, source).map((s) => couverturePrecedente(query, s)));
 
-  const [cov, covPrec, couvAppels, couvDurees, appels, serie, seriePrec, routes, lentes, deploys, impact, alertes] =
+  const [cov, covPrec, couvAppels, couvDurees, appels, serie, seriePrec, routes, lentes, deploys, impact, alertes, fenetresCollecte] =
     await Promise.all([
       section(() => traceCoverage(f)),
       prev ? section(() => traceCoverage(fPrec)) : sansSection<TraceCoverage | null>(null),
@@ -44,6 +45,8 @@ export const chargerTracing = (async (principal, sp) => {
       // Annotations d'alerte (F67) : les 100 derniers déclenchements du périmètre ;
       // la fenêtre est appliquée par `annotationsAlertes`, pas par la lecture.
       section(() => alertEvents(f)),
+      // Les fenêtres hors collecte : hachures « non mesuré » de la série de latence.
+      sectionFenetresCollecte(query),
     ]);
   return {
     etat: "ok",
@@ -62,5 +65,6 @@ export const chargerTracing = (async (principal, sp) => {
     deploys,
     impact,
     alertes,
+    fenetresCollecte,
   } as const;
 }) satisfies Chargeur<unknown>;

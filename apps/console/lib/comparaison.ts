@@ -13,7 +13,13 @@
 //   2. début de collecte — le signal (ou sa colonne) commence après son début ;
 //   3. retard d'ingestion — compte sur une heure qui se termine maintenant ;
 //   4. début de collecte non lu — `inconnue`, jamais `complete` par défaut ;
-//   5. sinon `complete`.
+//   5. sinon `complete` ;
+//   6. collecte interrompue — la période précédente OU la courante recoupe une
+//      fenêtre `interrompue` du registre (`collecte_fenetre`) : l'écart mesurerait la
+//      panne, pas le site. Ajoutée le 29/09/2026 ; évaluée APRÈS 1 à 3 (leur raison
+//      reste la plus précise) et AVANT 4 et 5 (une interruption connue vaut mieux
+//      qu'un « inconnu », et interdit « complète »). Les dates viennent de la base,
+//      jamais du code.
 //
 // LE DÉBUT DE COLLECTE D'UN SIGNAL RARE (recette UTI du 28/09/2026). Pour un signal
 // que le capteur émet à chaque visite (mesures, pages vues, sessions), la première
@@ -33,7 +39,9 @@ import { couvertureRetention, retentionDays } from "./queries-explorer";
 import { SANS_RELEASE, type VersionRow } from "./queries-deploys";
 import { DATASETS, DATASET_REGISTRY, compileScope } from "./query-compiler";
 import { conditionsOf, previousRange, type AnalyticsQuery } from "./query-contract";
+import { lireFenetresCollecte } from "./queries-collecte";
 import { sqlContext } from "./query-sql";
+import type { FenetreCollecte } from "./series";
 import type { ModeComparaison } from "./view-state";
 
 export type CouverturePrecedente = {
@@ -222,6 +230,44 @@ export interface EntreeCouverture {
   debut: Date | null | "echec";
   nowMs: number;
   retentionJours: number;
+  /** Fenêtres hors collecte qui recoupent les deux périodes (`lireFenetresCollecte`) ; absentes = aucune. */
+  fenetres?: readonly FenetreCollecte[];
+}
+
+/** Recoupement strict de [a, b) et d'une fenêtre (fin `null` = en cours). */
+function recoupe(f: FenetreCollecte, a: number, b: number): boolean {
+  const debut = Date.parse(f.debut);
+  const fin = f.fin === null ? Number.POSITIVE_INFINITY : Date.parse(f.fin);
+  return debut < b && fin > a;
+}
+
+/**
+ * Règle 6 : la première fenêtre `interrompue` qui recoupe la période précédente,
+ * sinon la courante. La raison la date en heure de Paris, comme la règle 2 :
+ * « collecte interrompue du 24/09 à 05:28 au 27/09 à 21:44 ».
+ */
+export function regleInterruption(
+  query: AnalyticsQuery,
+  fenetres: readonly FenetreCollecte[],
+): CouverturePrecedente | null {
+  const interrompues = fenetres
+    .filter((f) => f.etat === "interrompue")
+    .sort((x, y) => Date.parse(x.debut) - Date.parse(y.debut));
+  if (interrompues.length === 0) return null;
+  const precedente = previousRange(query.range);
+  const [pa, pb] = [Date.parse(precedente.from), Date.parse(precedente.to)];
+  const [ca, cb] = [Date.parse(query.range.from), Date.parse(query.range.to)];
+  const dansPrecedente = interrompues.find((f) => recoupe(f, pa, pb));
+  const fenetre = dansPrecedente ?? interrompues.find((f) => recoupe(f, ca, cb));
+  if (!fenetre) return null;
+  const quand =
+    fenetre.fin === null
+      ? `depuis le ${fmtInstant(fenetre.debut)}`
+      : `du ${fmtInstant(fenetre.debut)} au ${fmtInstant(fenetre.fin)}`;
+  return {
+    etat: "partielle",
+    raison: dansPrecedente ? `collecte interrompue ${quand}` : `collecte interrompue ${quand}, pendant la période affichée`,
+  };
 }
 
 /** Règle 1 seule : elle ne demande aucune lecture, et en dispense quand elle s'applique. */
@@ -238,8 +284,8 @@ function regleRetention(query: AnalyticsQuery, retentionJours: number, nowMs: nu
   };
 }
 
-/** Les cinq règles du § 3.2, PURES : testées sans base. */
-export function evaluerCouverture({ query, source, debut, nowMs, retentionJours }: EntreeCouverture): CouverturePrecedente {
+/** Les six règles du § 3.2, PURES : testées sans base. */
+export function evaluerCouverture({ query, source, debut, nowMs, retentionJours, fenetres = [] }: EntreeCouverture): CouverturePrecedente {
   const retention = regleRetention(query, retentionJours, nowMs);
   if (retention) return retention;
 
@@ -261,6 +307,9 @@ export function evaluerCouverture({ query, source, debut, nowMs, retentionJours 
     };
   }
 
+  const interruption = regleInterruption(query, fenetres);
+  if (interruption) return interruption;
+
   if (debut === "echec") return { etat: "inconnue", raison: "début de collecte non lu" };
   return { etat: "complete", raison: null };
 }
@@ -273,7 +322,7 @@ export function evaluerCouverture({ query, source, debut, nowMs, retentionJours 
 export async function couverturePrecedente(
   query: AnalyticsQuery,
   source: SourceComparaison,
-  options: { nowMs?: number; retentionJours?: number } = {},
+  options: { nowMs?: number; retentionJours?: number; fenetres?: readonly FenetreCollecte[] } = {},
 ): Promise<CouverturePrecedente> {
   verifierSource(source);
   const retentionJours = options.retentionJours ?? retentionDays();
@@ -281,13 +330,18 @@ export async function couverturePrecedente(
   // Hors rétention, inutile de lire quoi que ce soit : la réponse est connue.
   const retention = regleRetention(query, retentionJours, nowMs);
   if (retention) return retention;
-  let debut: Date | null | "echec";
-  try {
-    debut = await debutCollecte(filtersOfQuery(query), source);
-  } catch {
-    debut = "echec";
-  }
-  return evaluerCouverture({ query, source, debut, nowMs, retentionJours });
+  const [debut, fenetres] = await Promise.all([
+    debutCollecte(filtersOfQuery(query), source).catch((): "echec" => "echec"),
+    // Le registre illisible n'invente rien : sans fenêtres, la règle 6 se tait
+    // (les autres règles jugent comme avant).
+    options.fenetres
+      ? Promise.resolve(options.fenetres)
+      : lireFenetresCollecte(
+          { from: previousRange(query.range).from, to: query.range.to },
+          query.scope.effectiveApps,
+        ).catch(() => [] as FenetreCollecte[]),
+  ]);
+  return evaluerCouverture({ query, source, debut, nowMs, retentionJours, fenetres });
 }
 
 /**

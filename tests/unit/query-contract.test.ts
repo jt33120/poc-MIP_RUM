@@ -456,3 +456,42 @@ describe("reprise versionnée des segments enregistrés", () => {
     expect(dropped).toBe(1);
   });
 });
+
+describe("seaux de 6 h et d'un jour alignés sur minuit, heure de Paris (A1 T3)", () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  it("7 jours en été : 00:00, 06:00, 12:00, 18:00 à Paris (22:00, 04:00, 10:00, 16:00 UTC)", () => {
+    const starts = bucketStarts({ from: "2026-09-21T19:30:00.000Z", to: "2026-09-28T19:30:00.000Z", bucketSeconds: 21_600 });
+    // Premier seau : 18:00 à Paris le 21/09 (16:00 UTC), partiel ; aucun seau ne part à 20:00.
+    expect(iso(starts[0])).toBe("2026-09-21T16:00:00.000Z");
+    expect(iso(starts[1])).toBe("2026-09-21T22:00:00.000Z");
+    expect(starts.map((s) => new Date(s).getUTCHours() % 6)).toEqual(starts.map(() => 4));
+    expect(iso(starts.at(-1)!)).toBe("2026-09-28T16:00:00.000Z");
+  });
+
+  it("jours : minuit de Paris, et le 25/10/2026 (passage à l'heure d'hiver) dure 25 h", () => {
+    const starts = bucketStarts({ from: "2026-10-23T10:00:00.000Z", to: "2026-10-27T10:00:00.000Z", bucketSeconds: 86_400 });
+    expect(starts.map(iso)).toEqual([
+      "2026-10-22T22:00:00.000Z",
+      "2026-10-23T22:00:00.000Z",
+      "2026-10-24T22:00:00.000Z",
+      "2026-10-25T23:00:00.000Z",
+      "2026-10-26T23:00:00.000Z",
+    ]);
+  });
+
+  it("6 h le 25/10/2026 : le seau de minuit dure 7 h, les suivants repartent à 06:00 heure d'hiver", () => {
+    const starts = bucketStarts({ from: "2026-10-24T22:00:00.000Z", to: "2026-10-25T23:00:00.000Z", bucketSeconds: 21_600 });
+    expect(starts.map(iso)).toEqual([
+      "2026-10-24T22:00:00.000Z", // 00:00 heure d'été
+      "2026-10-25T05:00:00.000Z", // 06:00 heure d'hiver
+      "2026-10-25T11:00:00.000Z",
+      "2026-10-25T17:00:00.000Z",
+    ]);
+  });
+
+  it("sous 6 h, rien ne change : époque UTC", () => {
+    const starts = bucketStarts({ from: "2026-10-25T00:30:00.000Z", to: "2026-10-25T03:00:00.000Z", bucketSeconds: 3600 });
+    expect(starts.map(iso)).toEqual(["2026-10-25T00:00:00.000Z", "2026-10-25T01:00:00.000Z", "2026-10-25T02:00:00.000Z"]);
+  });
+});
