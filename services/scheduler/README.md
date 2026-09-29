@@ -17,13 +17,27 @@
 
 | Cadence | Quand (UTC) | Étapes | Bail |
 |---|---|---|---|
-| `tick` | :00, :05, :10… — ou :00, :15, :30, :45 avec `SCHEDULER_TICK_MIN=15` (+ un passage au démarrage) | `check_alerts`, `route_error_issue_notifications`, `check_slo_burn`, uptime, `dispatch_alerts`, `reconcile_deliveries` — avec `SCHEDULER_DELIVERY=off` : `check_alerts`, `check_slo_burn`, uptime seulement | 600 s |
+| `tick` | :00, :05, :10… — ou :00, :15, :30, :45 avec `SCHEDULER_TICK_MIN=15` (+ un passage au démarrage) | `canari_emettre`, `check_alerts`, `route_error_issue_notifications`, `check_slo_burn`, uptime, `canari_verifier` (journal, registre, alerte d'absence), `dispatch_alerts`, `reconcile_deliveries` — avec `SCHEDULER_DELIVERY=off` : sans les deux étapes de livraison ; avec `CANARI=off` : sans les deux étapes du canari | 600 s |
 | `horaire` | HH:05 | `refresh_rum_rollups(26)`, `refresh_metric_histogram(26)`, `check_new_errors`, `check_ai_op_anomalies`, notes historiques | 900 s |
 | `quotidien` | 03:17 | `purge_rum_tenants(30)`, `meter_tenant_usage` | 3 600 s |
 
 **La livraison part au notifier (P5).** Webhooks et e-mails sont l'affaire du service [`notifier`](../notifier/README.md), toutes les 15 s par défaut, seul détenteur des secrets sortants — pas encore créé sur Railway : en production, le tick livre. Tant que `SCHEDULER_DELIVERY` vaut `on`, le tick livre aussi, comme avant ; `off` le réduit à **décider** — les livraisons restent `queued` pour le notifier. Le scheduler n'a pas de clé Resend : une livraison e-mail qu'il prend est soldée `skipped`, d'où `off` posé au plus tard quand le notifier démarre.
 
 Chaque étape SQL est bornée par un `statement_timeout` posé **dans sa transaction** (`set_config(…, true)`, jamais en `SET` de session : le pooler Neon le perdrait) — 60 s par défaut, 5 min pour les pré-agrégats et le comptage, **30 min pour la purge** (`DELAIS_ETAPES_MS`, `packages/backend/jobs/planifie.mjs`). La somme des délais d'une cadence reste sous la durée de son bail. Une étape en échec n'annule pas les suivantes ; elle part au journal en `error` **avec sa pile complète**.
+
+## Le canari et le journal des sondes
+
+**Pourquoi.** Les trous du 24 au 27/09/2026 ne se sont vus qu'en regardant des graphiques vides. Chaque tick prouve désormais que la porte des clients écrit (`packages/backend/jobs/sondes.mjs`, migration-v99) :
+
+1. **`canari_emettre`, en tête du tick.** Un lot OTLP/HTTP JSON de quelques centaines d'octets — une page vue (`/canari`, URL en `.invalid`), un vital (LCP fixe, 1 000 ms), un span serveur, application `mip-canari` — part en `POST` sur l'URL **publique** des capteurs (`CANARI_CONSOLE_URL`, par défaut `https://mip-rum-console.vercel.app/api/ingest/v1/traces`) : console Vercel → relais → collector → base, le chemin des clients. Verdict : `ok` ≤ 2 s, `lent` jusqu'à 8 s, `echec` au-delà, sur un statut non 2xx ou sans réponse. Aucune donnée personnelle, jamais d'erreur, aucun destinataire nouveau.
+2. **`canari_verifier`, avant la livraison.** Relecture par clé unique des lignes du passage (`rum_session`, `rum_pageview`, `rum_metric`, `rum_span`, `rum_event_index`) ; une ligne par étage dans `sonde_passage` (`ingest_console`, `ecriture`), en un seul `insert` ; état de la chaîne (`interrompue` si rien n'est écrit, `degradee` si lent ou si une projection manque) ; registre `collecte_fenetre` (portée `*`, étage `chaine`) : la fenêtre ouverte se ferme, se prolonge ou est remplacée. Un silence du journal plus long que `2 × cadence + 5 min` (coupure de la base) est **reconstitué** en fenêtre `interrompue`, `source = 'reconstitution'`.
+3. **Alertes, une par épisode**, par le chemin des autres (`alert_event` puis `route_alert`, la fenêtre garde l'identifiant de son alerte) : le canari en échec **deux passages de suite** (`critical`, app `mip-canari` : canaux globaux) ; une application qui recevait des données et n'en reçoit plus depuis `SILENCE_APP_MIN` minutes (`warning`, `check_collecte_silence`, fenêtre `silence` par application, close au retour de la donnée). Quand la chaîne elle-même est coupée, l'alerte d'absence des applications se tait : la fenêtre de la plateforme le dit une fois.
+
+**La clé.** La collecte exige une clé (`REQUIRE_API_KEY=true` depuis le 29/09/2026). Aucune n'est dans le dépôt ni dans une variable : le scheduler en **tire une à son démarrage**, n'écrit que son empreinte (`sha256`) dans `app_registry.api_key_hash` de `mip-canari`, et garde le clair en mémoire. L'ingestion met le registre des clés en cache 60 s : le premier canari après une clé réécrite (démarrage, clé régénérée depuis la console) peut être refusé en 403 — journalisé `saute`, sans toucher au registre ni compter comme un échec.
+
+**Hors des statistiques clients.** `mip-canari` est interne **et** sonde (`app_registry.sonde`) : exclue du périmètre des écrans même quand on inclut les apps internes, du comptage d'usage (déclencheur sur `tenant_usage_daily`) et de l'alerte d'absence ; rétention 7 jours. Le journal est purgé à 90 jours, le registre à 400 (fenêtres closes), par `purge_rum_tenants`.
+
+**Coût.** Une transaction d'ingestion, une lecture par clé unique, un `insert` de deux lignes et une lecture d'index par application, dans la fenêtre où le tick a déjà réveillé la base : aucun réveil de plus.
 
 ## Base gratuite : la cadence ralentie
 
@@ -68,6 +82,9 @@ Toute autre route : 404. (`/status`, sans jeton, a disparu : son contenu est dan
 | `METRICS_TOKEN` | non (secret, ≥ 32 car.) | — | jeton de `/ready` et `/metrics` ; absent : 404 |
 | `DEADMAN_URL` | non (secret, `https:`) | — | dead-man's switch ; absent : aucun signal |
 | `SCHEDULER_DELIVERY` | non | `on` | `off` : le tick ne livre plus (notifier). Retour arrière : `on` |
+| `CANARI` | non | `on` | `off` : ni canari, ni journal des sondes, ni alerte d'absence. Retour arrière : `on` |
+| `CANARI_CONSOLE_URL` | non (`https:`) | l'ingestion publique de la console | porte que le canari traverse |
+| `SILENCE_APP_MIN` | non | `60` | alerte d'absence : minutes sans donnée (5 à 10 080) |
 | `SCHEDULER_TICK_MIN` | non | `15` | cadence du tick : 5, 10, 15, 20 ou 30. Le défaut suit la base gratuite (voir plus haut) ; **un vrai produit pose 5** |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non, **à poser** | 10 pour le kit (qui avertit sur Railway) ; Railway, lui, draine **0 s** par défaut | délai SIGTERM → SIGKILL ; 15 à 30 (le drainage du service Railway est réglé à 20 s) |
 | `RAILWAY_DEPLOYMENT_ID`, `RAILWAY_REPLICA_ID` | fournies par Railway | — | titulaire du bail : `${RAILWAY_DEPLOYMENT_ID}:${RAILWAY_REPLICA_ID}` |
