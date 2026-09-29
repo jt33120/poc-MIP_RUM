@@ -120,7 +120,7 @@ comportement voulu, pas une panne.
 | `METRICS_TOKEN`, `DEADMAN_URL` | `scheduler` | **non posées** : `/ready` et `/metrics` en 404, aucun dead-man's switch |
 | `MIP_CONSOLE_URL`, `NODE_ENV`, `PORT` | `mcp` | posées ; `MIP_CONSOLE_URL` = `https://mip-rum-console.vercel.app` (valeur de la mise en place) |
 | `MIP_API_HOST`, `MIP_API_PORT` | `mcp` | **non posées** (l'IaC les pose avec le service `api`) : `mcp` appelle l'API v1 de la console |
-| `REQUIRE_API_KEY`, `RATE_LIMIT_PER_MIN` | `ingest` (supprimé), puis `collector` | `false` et `600` sur `ingest` ; l'IaC du collector pose `REQUIRE_API_KEY=false` et laisse `RATE_LIMIT_PER_MIN` à son défaut, 600 (`services/collector/README.md`) |
+| `REQUIRE_API_KEY`, `RATE_LIMIT_PER_MIN` | `ingest` (supprimé), puis `collector` | `false` et `600` sur `ingest` ; l'IaC du collector pose `REQUIRE_API_KEY=true` depuis le 29/09/2026 (clés posées chez les deux applications actives) et laisse `RATE_LIMIT_PER_MIN` à son défaut, 600 (`services/collector/README.md`) |
 | `INGEST_DEFERRED`, `INGEST_DRAIN_MS` | `collector` | non posées (`false`, `250`) ; jamais `true` sur la base gratuite (ADR-0014) |
 | `IDENTITY_HASH_SECRET`, `EDGE_PROXY_SECRET` | `collector` | variables partagées à créer avant l'apply (en-tête de `.railway/railway.ts`) |
 | `GEOIP_IP_SOURCE` | `collector` | `railway` dans l'IaC depuis le 28/09/2026 : trafic direct seulement, celui du capteur de la console (P6b.G, `docs/operations/relais-ingestion.md`) |
