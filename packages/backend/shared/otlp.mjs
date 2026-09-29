@@ -881,7 +881,12 @@ const EXCEPTION_ID = ACTION_ID;
 const IDENTITE_EXCEPTION_V1 = "mip.exception.v1";
 /** Horodatage OTLP natif : nanosecondes décimales (fixed64 sérialisé). */
 const NANOS_NATIFS = /^\d{1,20}$/;
-/** Scopes de nos intégrations backend (agent Node, middleware FastAPI). */
+/**
+ * Scopes de nos anciennes intégrations backend (agent Node, middleware FastAPI).
+ * Archivées le 29/09/2026 (docs/archive/capteurs-serveur-maison.md) : ces scopes
+ * ne viennent plus que de copies déjà déployées chez un client, qui ne seront pas
+ * toutes retirées le même jour. Leurs erreurs gardent donc leur source.
+ */
 const SCOPE_AGENT_NODE = "@mip/agent-node";
 const SCOPE_FASTAPI = "mip-rum-fastapi";
 const RUNTIMES_PYTHON = new Set(["cpython", "pypy", "python", "ironpython", "jython"]);
@@ -980,11 +985,77 @@ function sansRouteResolue(a) {
 /**
  * Route d'une exception portée par un span : celle que l'ingestion donne au span
  * lui-même, pour qu'une erreur et sa requête restent sur la même ligne.
+ *
+ * Constat du 29/09/2026 (agent Node officiel, Express 5) : l'instrumentation
+ * Express enregistre l'exception sur le span INTERNAL de son gestionnaire, pas
+ * sur le span SERVER de la requête. Ce span interne porte pourtant `http.route` ;
+ * il n'était pas lu, et l'erreur partait sans route. Un span non serveur donne
+ * donc sa propre route s'il en déclare une, sinon celle du span serveur de sa
+ * trace présent dans le lot (`routeServeurDuLot`), sinon aucune.
  */
-function routeDuSpanPorteur(span, a) {
-  if (!isServerKind(span.kind)) return a["mip.route"] ?? null;
+function routeDuSpanPorteur(span, a, routeServeurDuLot = () => null) {
+  if (!isServerKind(span.kind)) return a["mip.route"] ?? routeDeclaree(a["http.route"]) ?? routeServeurDuLot();
   if (sansRouteResolue(a)) return ROUTE_NON_TROUVEE;
   return a["mip.route"] ?? routeServeurOtel(span, a);
+}
+
+/** `http.route` d'un span non serveur, normalisé ; null s'il est absent ou vide. */
+function routeDeclaree(route) {
+  return typeof route === "string" && route.trim() !== "" ? normalizeRouteTemplate(route) : null;
+}
+
+/**
+ * Parenté des spans d'un lot et route de ses spans serveur, pour la route d'une
+ * exception portée par un span non serveur. Lue à la demande : un lot sans
+ * exception de ce genre ne paie pas ce second passage.
+ * `spans` : clé `app\u0000trace\u0000span` → { parent, serveur, route } ;
+ * `traces` : clé `app\u0000trace` → routes distinctes de ses spans serveur.
+ */
+function serveursDuLot(payload, maxSpans) {
+  const spans = new Map();
+  const traces = new Map();
+  let vus = 0;
+  for (const rs of Array.isArray(payload?.resourceSpans) ? payload.resourceSpans : []) {
+    const appId = attrsToObj(rs?.resource?.attributes)["mip.app_id"];
+    if (!appId) continue;
+    for (const ss of Array.isArray(rs.scopeSpans) ? rs.scopeSpans : []) {
+      for (const span of Array.isArray(ss?.spans) ? ss.spans : []) {
+        if (++vus > maxSpans) return { spans, traces };
+        const traceId = nativeTraceId(span?.traceId);
+        const spanId = nativeParentSpanId(span?.spanId);
+        if (!traceId || !spanId || typeof span.name !== "string") continue;
+        const serveur = isServerKind(span.kind);
+        const route = serveur ? routeDuSpanPorteur(span, attrsToObj(span.attributes)) : null;
+        spans.set(`${appId}\u0000${traceId}\u0000${spanId}`, { parent: nativeParentSpanId(span.parentSpanId), serveur, route });
+        if (serveur && route != null) {
+          const cle = `${appId}\u0000${traceId}`;
+          if (!traces.has(cle)) traces.set(cle, new Set());
+          traces.get(cle).add(route);
+        }
+      }
+    }
+  }
+  return { spans, traces };
+}
+
+/**
+ * Route du span serveur d'une trace, pour une exception portée par `spanId` :
+ * celle de son ancêtre serveur le plus proche dans le lot ; à défaut de parenté
+ * lisible, celle du seul span serveur de la trace. Plusieurs routes possibles
+ * (deux services d'une même app dans le lot) et aucune parenté : on ne choisit
+ * pas, la route reste inconnue.
+ */
+function routeServeurDeLaTrace(lot, appId, traceId, spanId) {
+  if (!traceId || !spanId) return null;
+  let courant = lot.spans.get(`${appId}\u0000${traceId}\u0000${spanId}`)?.parent;
+  for (let pas = 0; courant && pas < PROFONDEUR_ANCRE_MAX; pas++) {
+    const ancetre = lot.spans.get(`${appId}\u0000${traceId}\u0000${courant}`);
+    if (!ancetre) break;
+    if (ancetre.serveur) return ancetre.route;
+    courant = ancetre.parent;
+  }
+  const routes = lot.traces.get(`${appId}\u0000${traceId}`);
+  return routes?.size === 1 ? [...routes][0] : null;
 }
 
 /** Route d'un span serveur OTel : template, puis nom du span, puis chemin. */
@@ -1035,10 +1106,11 @@ function exceptionDerivee({ appId, attrs, contexte, resource, scopeName, origin,
  *
  * `budget.restant` borne le nombre d'exceptions dérivées d'une requête.
  * `porteurs` (porteursDuLot) donne la parenté du lot, pour ranger une exception
- * sur l'ancêtre de même signature.
+ * sur l'ancêtre de même signature. `serveurs` rend, à la demande, les spans
+ * serveur du lot (serveursDuLot) : la route d'un porteur qui n'en déclare pas.
  * @returns {{ rows: object[], rejected: number }}
  */
-function spanEventExceptions(span, spanAttrs, { appId, resource, scopeName, now, budget, porteurs = new Map() }) {
+function spanEventExceptions(span, spanAttrs, { appId, resource, scopeName, now, budget, porteurs = new Map(), serveurs = null }) {
   const rows = [];
   let rejected = 0;
   if (!Array.isArray(span?.events) || span.name === "exception") return { rows, rejected };
@@ -1086,7 +1158,8 @@ function spanEventExceptions(span, spanAttrs, { appId, resource, scopeName, now,
       traceId,
       parentSpanId,
       session: spanAttrs["mip.session_id"] ?? sessionFromTraceState(span.traceState),
-      route: routeDuSpanPorteur(span, spanAttrs),
+      route: routeDuSpanPorteur(span, spanAttrs, () =>
+        serveurs ? routeServeurDeLaTrace(serveurs(), appId, traceId, parentSpanId) : null),
       ts: nanosToDate(event.timeUnixNano ?? span.startTimeUnixNano, now),
     });
     ANCRES.set(row, ancre);
@@ -1289,6 +1362,10 @@ export function flattenOtlp(payload, opts = {}) {
   // Parenté des spans porteurs d'exceptions, lue AVANT la boucle : un exportateur
   // envoie l'enfant avant son parent (il se termine plus tôt).
   const porteurs = porteursDuLot(payload, maxSpans);
+  // Spans serveur du lot, lus au premier besoin (route d'une exception portée
+  // par un span interne), puis gardés pour le reste du lot.
+  let lotServeurs = null;
+  const serveurs = () => (lotServeurs ??= serveursDuLot(payload, maxSpans));
 
   /**
    * Ligne rum_span commune front/back ; null si trace_id/span_id absents.
@@ -1525,7 +1602,7 @@ export function flattenOtlp(payload, opts = {}) {
         // qui suivent (http.server, serveur OTel, « detail ») sortent toutes par
         // un `continue`, et un span sans session finit rejeté : placées après,
         // ces exceptions n'auraient jamais été lues.
-        const derivees = spanEventExceptions(span, a, { appId, resource: res, scopeName, now, budget: budgetExceptions, porteurs });
+        const derivees = spanEventExceptions(span, a, { appId, resource: res, scopeName, now, budget: budgetExceptions, porteurs, serveurs });
         for (const row of derivees.rows) errors.push(row);
         rejected += derivees.rejected;
 

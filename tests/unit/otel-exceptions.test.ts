@@ -5,8 +5,6 @@
 // décide AVANT la base : quelles exceptions sont lues et où, leur identité, leur
 // source, leur normalisation, leurs bornes, et le SQL que chaque écrivain envoie
 // selon le schéma qu'il trouve.
-import { execFileSync } from "node:child_process";
-import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   backendErrorSource,
@@ -19,7 +17,6 @@ import {
 } from "../../packages/backend/shared/otlp.mjs";
 // @ts-expect-error module JS partagé sans déclarations
 import { _resetColonnesCache, writeLogs, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
-// @ts-expect-error module JS partagé sans déclarations
 
 type Attrs = Record<string, unknown>;
 type Row = Record<string, unknown>;
@@ -39,7 +36,8 @@ const kv = (key: string, value: unknown) => ({
     : typeof value === "number" ? { intValue: String(value) }
       : { stringValue: String(value) },
 });
-const attributs = (attrs: Attrs) => Object.entries(attrs).map(([key, value]) => kv(key, value));
+/** Un attribut `undefined` n'est pas émis : c'est ainsi qu'un test retire un attribut par défaut. */
+const attributs = (attrs: Attrs) => Object.entries(attrs).filter(([, value]) => value !== undefined).map(([key, value]) => kv(key, value));
 
 const erreur = (over: Attrs = {}): Attrs => ({
   "exception.type": "ValueError",
@@ -238,6 +236,68 @@ describe("parseur — exceptions portées par un span", () => {
     expect(rows.errors).toHaveLength(1);
     expect(rows.errors[0]).toMatchObject({ span_id: SPAN, session_id: "s-web" });
     expect(rows.errors[0]).not.toHaveProperty("origin_signal");
+  });
+});
+
+// 29/09/2026, constaté en production : l'agent Node officiel sous Express 5
+// enregistre l'exception sur le span INTERNAL du gestionnaire (qui porte
+// `http.route`), pas sur le span SERVER. L'erreur partait avec `route = null`.
+describe("parseur — route d'une exception portée par un span non serveur", () => {
+  const SPAN_HANDLER = "00f067aa0ba902c7";
+  const AUTRE_TRACE = "5bf92f3577b34da6a3ce929d0e0e4736";
+  /** Span INTERNAL de l'instrumentation Express : c'est lui qui porte l'exception. */
+  const gestionnaire = (attrs: Attrs = { "http.route": "/factures/:id" }, over: Row = {}) => span(
+    { spanId: SPAN_HANDLER, parentSpanId: SPAN, kind: 1, name: "request handler - /factures/:id", ...over },
+    { "http.request.method": undefined, "http.route": undefined, "express.type": "request_handler", ...attrs },
+  );
+  /** Span SERVER de la requête, sans exception. */
+  const serveur = (attrs: Attrs = {}, over: Row = {}) => span({ name: "GET /factures/:id", ...over },
+    { "http.request.method": "GET", "http.route": "/factures/:id", "http.response.status_code": 500, ...attrs }, []);
+  const routes = (spans: Row[]) => flattenOtlp(traces(spans), { now: NOW }).errors.map((e: Row) => e.route);
+
+  it("span INTERNAL qui porte `http.route` : sa propre route, normalisée, même seul dans le lot", () => {
+    expect(routes([gestionnaire()])).toEqual(["/factures/:id"]);
+    expect(routes([gestionnaire({ "http.route": "/factures/{id}" })])).toEqual(["/factures/:id"]);
+    // Sa route prime sur celle du serveur, dans les deux ordres du lot.
+    expect(routes([gestionnaire(), serveur({ "http.route": "/autre" })])).toEqual(["/factures/:id"]);
+    expect(routes([serveur({ "http.route": "/autre" }), gestionnaire()])).toEqual(["/factures/:id"]);
+  });
+
+  it("span INTERNAL sans `http.route` : la route du span serveur de sa trace présent dans le lot", () => {
+    const sansRoute = gestionnaire({ "http.route": "  " });
+    // L'exportateur envoie l'enfant AVANT son parent : il se termine plus tôt.
+    expect(routes([sansRoute, serveur()])).toEqual(["/factures/:id"]);
+    expect(routes([serveur(), sansRoute])).toEqual(["/factures/:id"]);
+    // Un intermédiaire (middleware) entre le porteur et le serveur ne coupe pas la parenté.
+    const middleware = span({ spanId: "00f067aa0ba902c8", parentSpanId: SPAN, kind: 1, name: "middleware - query" },
+      { "http.request.method": undefined, "http.route": undefined, "express.type": "middleware" }, []);
+    expect(routes([gestionnaire({}, { parentSpanId: "00f067aa0ba902c8" }), middleware, serveur()])).toEqual(["/factures/:id"]);
+    // Parent absent du lot, un seul span serveur dans la trace : le sien.
+    expect(routes([gestionnaire({}, { parentSpanId: "00f067aa0ba902c9" }), serveur()])).toEqual(["/factures/:id"]);
+    // Le 404 sans `http.route` du serveur se transmet tel que l'ingestion l'écrit.
+    expect(routes([sansRoute, serveur({ "http.route": undefined, "http.response.status_code": 404 })])).toEqual(["(non trouvée)"]);
+  });
+
+  it("sans route propre ni serveur de sa trace dans le lot : null, jamais la route d'une autre trace", () => {
+    const sansRoute = gestionnaire({});
+    expect(routes([sansRoute])).toEqual([null]);
+    expect(routes([sansRoute, serveur({}, { traceId: AUTRE_TRACE })])).toEqual([null]);
+    // Même trace, autre app : jamais prêtée.
+    const autreApp = traces([serveur()], undefined, undefined, "autre-app");
+    const lot = traces([sansRoute]);
+    expect(flattenOtlp({ resourceSpans: [...autreApp.resourceSpans, ...lot.resourceSpans] }, { now: NOW }).errors
+      .map((e: Row) => e.route)).toEqual([null]);
+    // Deux serveurs de routes différentes dans la trace, sans parenté lisible : on ne choisit pas.
+    const orphelin = gestionnaire({}, { parentSpanId: "00f067aa0ba902c9" });
+    expect(routes([orphelin, serveur(), serveur({ "http.route": "/autre" }, { spanId: "00f067aa0ba902ca" })])).toEqual([null]);
+  });
+
+  it("non-régression : l'exception du span SERVER garde la route de sa requête", () => {
+    expect(routes([span()])).toEqual(["/invoices/:id"]);
+    expect(routes([span({}, { "http.route": undefined, "http.response.status_code": 404 })])).toEqual(["(non trouvée)"]);
+    expect(routes([span({}, { "http.response.status_code": 404 })])).toEqual(["/invoices/:id"]);
+    // `mip.route` d'un span navigateur (SDK web) prime toujours.
+    expect(routes([gestionnaire({ "mip.route": "/page" })])).toEqual(["/page"]);
   });
 });
 
@@ -494,54 +554,124 @@ describe("écrivain PostgreSQL — erreurs dérivées", () => {
   });
 });
 
-// ───────────────────────── Middleware FastAPI réel ────────────────────────────
+// ─────────────────── Agent officiel Python / FastAPI (figé) ───────────────────
+//
+// Ce que l'agent OpenTelemetry officiel émet pour `GET /boum`, une route FastAPI
+// qui lève `KeyError("facture 42")`, appelée avec `traceparent` et `tracestate:
+// mip=s:session-web` comme le pose le SDK web. Capturé le 29/09/2026 avec les
+// versions de tests/e2e/site-cobaye/requirements.txt (fastapi 0.141.1,
+// opentelemetry-instrumentation-fastapi 0.66b0, opentelemetry-sdk 1.45.0),
+// encodé par l'encodeur OTLP officiel puis rendu en OTLP/JSON. Figé ici : le
+// test ne dépend ni de Python ni d'un paquet installé. Seule retouche : la pile,
+// dont les chemins du poste de capture sont remplacés par `/srv/app` et dont les
+// cadres intermédiaires (Starlette, FastAPI) sont omis.
+//
+// À noter pour l'ingestion : conventions HTTP d'avant la stabilisation
+// (`http.method`, `http.status_code`), exception sur le span SERVER, et deux
+// spans INTERNAL `http send` enfants de la requête.
+const FASTAPI_SPAN_SERVEUR = "da56f53337b57b98";
+const FASTAPI_RECU_MS = 1790674060300;
+const FASTAPI_PILE = [
+  "Traceback (most recent call last):",
+  '  File "/srv/app/.venv/lib/python3.13/site-packages/opentelemetry/instrumentation/fastapi/__init__.py", line 360, in __call__',
+  "    await self.app(scope, receive, send)",
+  '  File "/srv/app/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__',
+  "    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)",
+  '  File "/srv/app/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 352, in run_endpoint_function',
+  "    return await dependant.call(**values)",
+  "           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+  '  File "/srv/app/main.py", line 26, in boum',
+  '    raise KeyError("facture 42")',
+  "KeyError: 'facture 42'",
+  "",
+].join("\n");
 
-const PYTHON = (() => {
-  try {
-    execFileSync("python3", ["-c", "import asyncio, secrets, traceback"], { stdio: "ignore" });
-    return "python3";
-  } catch {
-    return null;
-  }
-})();
+function fastapiOfficiel() {
+  const commun = { traceId: TRACE, traceState: "mip=s:session-web" };
+  return {
+    resourceSpans: [{
+      resource: {
+        attributes: attributs({
+          "telemetry.sdk.language": "python",
+          "telemetry.sdk.name": "opentelemetry",
+          "telemetry.sdk.version": "1.45.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000000",
+          "mip.app_id": APP,
+          "service.name": "fastapi",
+          "telemetry.auto.version": "0.66b0",
+        }),
+      },
+      scopeSpans: [{
+        scope: { name: "opentelemetry.instrumentation.fastapi", version: "0.66b0" },
+        spans: [
+          {
+            ...commun, spanId: "221346c1142bbbda", parentSpanId: FASTAPI_SPAN_SERVEUR, name: "GET /boum http send", kind: 1,
+            startTimeUnixNano: "1790674060248650000", endTimeUnixNano: "1790674060248677000",
+            attributes: attributs({ "asgi.event.type": "http.response.start", "http.status_code": 500 }),
+            status: { code: 2 }, flags: 256,
+          },
+          {
+            ...commun, spanId: "34755bd1359ac17f", parentSpanId: FASTAPI_SPAN_SERVEUR, name: "GET /boum http send", kind: 1,
+            startTimeUnixNano: "1790674060248740000", endTimeUnixNano: "1790674060248747000",
+            attributes: attributs({ "asgi.event.type": "http.response.body" }),
+            status: {}, flags: 256,
+          },
+          {
+            ...commun, spanId: FASTAPI_SPAN_SERVEUR, parentSpanId: SPAN, name: "GET /boum", kind: 2,
+            startTimeUnixNano: "1790674060243753000", endTimeUnixNano: "1790674060248761000",
+            attributes: attributs({
+              "http.scheme": "http",
+              "http.host": "127.0.0.1:8001",
+              "net.host.port": 8001,
+              "http.flavor": "1.1",
+              "http.target": "/boum",
+              "http.url": "http://127.0.0.1:8001/boum",
+              "http.method": "GET",
+              "http.server_name": "127.0.0.1:8001",
+              "http.user_agent": "Mozilla/5.0",
+              "net.peer.ip": "127.0.0.1",
+              "net.peer.port": 53124,
+              "http.route": "/boum",
+              "http.status_code": 500,
+            }),
+            events: [{
+              timeUnixNano: "1790674060248540000",
+              name: "exception",
+              attributes: attributs({
+                "exception.type": "KeyError",
+                "exception.message": "'facture 42'",
+                "exception.stacktrace": FASTAPI_PILE,
+                "exception.escaped": "False",
+              }),
+            }],
+            status: { code: 2 }, flags: 768,
+          },
+        ],
+        schemaUrl: "https://opentelemetry.io/schemas/1.11.0",
+      }],
+    }],
+  };
+}
 
-describe.skipIf(!PYTHON)("middleware FastAPI réel -> ingestion", () => {
+describe("agent officiel Python / FastAPI (charge figée) -> ingestion", () => {
   it("l'exception d'une requête ASGI devient une erreur python rattachée à son span, sans session inventée", () => {
-    const script = `
-import asyncio, json, sys
-sys.path.insert(0, ${JSON.stringify(join(__dirname, "..", "..", "examples", "integrations", "fastapi"))})
-import mip_rum_middleware as mrm
-
-class Boom:
-    async def __call__(self, scope, receive, send):
-        raise KeyError("facture 42")
-
-mw = mrm.MIPRumMiddleware(Boom(), endpoint="http://x/v1/traces", app_id=${JSON.stringify(APP)}, batch_size=1000)
-
-async def main():
-    scope = {"type": "http", "method": "POST", "path": "/invoices/42",
-             "headers": [(b"traceparent", b"00-${TRACE}-${SPAN}-01"), (b"tracestate", b"mip=s:session-web")]}
-    async def receive():
-        return {"type": "http.request"}
-    async def send(message):
-        pass
-    try:
-        await mw(scope, receive, send)
-    except KeyError:
-        pass
-
-asyncio.run(main())
-print(json.dumps(mw._otlp(mw._buf)))
-`;
-    const payload = JSON.parse(execFileSync(PYTHON!, ["-c", script], { encoding: "utf8" }));
-    const rows = flattenOtlp(payload);
-    expect(rows.spans).toEqual([expect.objectContaining({ tier: "back", trace_id: TRACE, status_code: 500, session_id: "session-web" })]);
+    const rows = flattenOtlp(fastapiOfficiel(), { now: FASTAPI_RECU_MS });
+    const serveur = rows.spans.filter((s: Row) => s.tier === "back");
+    expect(serveur).toEqual([expect.objectContaining({
+      span_id: FASTAPI_SPAN_SERVEUR, trace_id: TRACE, status_code: 500, session_id: "session-web", route: "/boum",
+    })]);
+    // Les deux `http send` de l'agent restent des spans de détail de la même requête.
+    expect(rows.spans.filter((s: Row) => s.tier === "detail").map((s: Row) => s.parent_span_id))
+      .toEqual([FASTAPI_SPAN_SERVEUR, FASTAPI_SPAN_SERVEUR]);
     expect(rows.errors).toEqual([expect.objectContaining({
       origin_signal: "span_event", error_source: "python", service: "fastapi", trace_id: TRACE,
-      source_parent_span_id: rows.spans[0].span_id, session_id: null, session_claim: "session-web",
-      error_type: "KeyError", message: "'facture 42'", handled: false, route: "/invoices/:id",
+      source_parent_span_id: FASTAPI_SPAN_SERVEUR, session_id: null, session_claim: "session-web",
+      // L'agent officiel ne déclare ni le caractère géré ni d'identifiant d'exception.
+      error_type: "KeyError", message: "'facture 42'", handled: null, route: "/boum", exception_id: null,
     })]);
     expect(rows.errors[0].stack).toContain("Traceback (most recent call last)");
-    expect(rows.errors[0].exception_id).toMatch(/^[0-9a-f]{32}$/);
+    expect(rows.errors[0].span_id).toBe(exceptionIdentity(APP, [
+      "otel", TRACE, FASTAPI_SPAN_SERVEUR, JSON.stringify(["KeyError", "'facture 42'"]), 0,
+    ]));
   });
 });
