@@ -14,7 +14,7 @@ import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { ingestEndpoint } from "@/lib/ingest-endpoint";
 import { buildInjectionArtifacts, buildSnippet, deriveStatus } from "@/lib/onboarding";
-import { buildBackendRecipes } from "@/lib/onboarding-recipes";
+import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
 import { fmtDate } from "@/lib/format";
 import { cleDe } from "@/lib/secret-remis";
 import { rotateKeyAction, updateOriginsAction } from "../actions";
@@ -67,9 +67,12 @@ export default async function CustomerWizard({
     clientId: customer.client_id,
   });
 
-  // recettes backend (tracing front→back), paramétrées par endpoint + app_id
-  const { otel: otelRecipe, fastapi: fastapiWiring, express: expressWiring, other: otherStack } =
-    buildBackendRecipes({ endpoint, appId });
+  // Recettes serveur (tracing navigateur → serveur) : les agents OpenTelemetry
+  // officiels, préremplis avec l'app_id et les adresses complètes de collecte.
+  const recettesServeur = recettesAgentsOtel({
+    appId,
+    adresses: { traces: endpoint, logs: ingestEndpoint("logs", host) },
+  });
 
   const etape = "flex items-center justify-between gap-3 rounded-lg border border-line bg-panel2/60 px-3 py-2";
 
@@ -178,12 +181,7 @@ export default async function CustomerWizard({
         </WizardStep>
 
         <WizardStep n={3} title="Brancher le serveur (facultatif : suivre un appel du navigateur jusqu’au serveur)">
-          <BackendStep
-            fastapiWiring={fastapiWiring}
-            expressWiring={expressWiring}
-            otherStack={otherStack}
-            otelRecipe={otelRecipe}
-          />
+          <BackendStep recettes={recettesServeur} nomSecret={cleDe(appId)} />
         </WizardStep>
 
         <WizardStep n={4} title="Vérifier que les données arrivent (en direct)">
