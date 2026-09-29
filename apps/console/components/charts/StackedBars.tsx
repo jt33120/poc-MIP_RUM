@@ -45,21 +45,29 @@ import {
   preparerPoints,
   premiereDonneeTardive,
   type Annotation,
+  type CollecteSeau,
+  type FenetreCollecte,
   type LignePreparee,
   type PointSerie,
 } from "@/lib/series";
 import {
   CoucheAnnotations,
   LegendeAnnotations,
+  LigneCollecte,
   MotifEnCours,
+  MotifHorsCollecte,
   NoteCollecteRecente,
+  NoteHorsCollecte,
   PaveEnCours,
+  PaveHorsCollecte,
   PointsIgnores,
   SeriesEcartees,
   formateurGraduations,
   margeHauteAnnotations,
+  useCollecteDesSeaux,
   useIdSvg,
   useSeauEnCours,
+  zonesHorsCollecte,
 } from "./ThresholdSeries";
 
 // ─────────────────────────────── Ancienne forme ───────────────────────────────
@@ -126,6 +134,11 @@ interface FormeGrille {
   debutCollecte?: string;
   /** Défaut true. Panneaux empilés : un seul panneau porte la note « Collecte commencée… ». */
   noteCollecte?: boolean;
+  /**
+   * Fenêtres hors collecte de la plage (voir `ThresholdSeries`) : un seau entièrement
+   * interrompu n'a pas de barre à 0 mais une zone hachurée « non mesuré ».
+   */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }
 
 export type StackedBarsProps = FormeAncienne | FormeGrille;
@@ -205,6 +218,7 @@ function InfobulleEmpilee({
   fuseau,
   enCours,
   dernier,
+  collecte,
 }: {
   active?: boolean;
   label?: string;
@@ -215,6 +229,7 @@ function InfobulleEmpilee({
   fuseau: string;
   enCours: boolean;
   dernier: string | undefined;
+  collecte?: ReadonlyMap<string, CollecteSeau>;
 }) {
   const ligne = payload?.[0]?.payload;
   if (!active || !ligne || label === undefined) return null;
@@ -225,6 +240,7 @@ function InfobulleEmpilee({
   return (
     <div className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs text-ink shadow-sm">
       <p className="mb-1 font-medium">{libelleSeauComplet(label, seauSecondes, fuseau)}</p>
+      <LigneCollecte etat={collecte?.get(label) ?? null} vide={valeurs.every((v) => v === null)} />
       {[...series].reverse().map((s) => (
         <p key={s.cle} className="flex items-center gap-1.5">
           <PaveMotif s={s} />
@@ -261,11 +277,15 @@ function BarresSurGrille({
   legendeAnnotations = true,
   debutCollecte,
   noteCollecte = true,
+  fenetresCollecte,
 }: FormeGrille) {
   const router = useRouter();
   const prefixe = useIdSvg("motif");
   const prefixeEnCours = useIdSvg("en-cours");
+  const motifHorsCollecte = useIdSvg("hors-collecte");
   const { enCours, maintenant } = useSeauEnCours(grille, seauSecondes, fuseau);
+  const { collecte, fenetres: fenetresVisibles } = useCollecteDesSeaux(grille, seauSecondes, fuseau, fenetresCollecte, maintenant);
+  const collecteParSeau = useMemo(() => new Map(grille.map((t, i) => [t, collecte[i] ?? null])), [grille, collecte]);
   const { dessinees, ecartees } = useMemo(() => dessinerSeries(series, prefixe), [series, prefixe]);
   const prep = useMemo(
     () =>
@@ -273,9 +293,9 @@ function BarresSurGrille({
         grille,
         points,
         dessinees.map((s) => ({ cle: s.cle, libelle: s.libelle, role: "categorie" as const, additive: true })),
-        { seauEnCours: enCours },
+        { seauEnCours: enCours, collecte },
       ),
-    [grille, points, dessinees, enCours],
+    [grille, points, dessinees, enCours, collecte],
   );
   // Haut de l'axe : la plus haute PILE, arrondie à un pas rond (0-100-200-300, plus
   // 0-70-140-278) ; l'axe part de 0, c'est un compte.
@@ -323,6 +343,7 @@ function BarresSurGrille({
           {dessinees.map((s, i) => (
             <MotifEnCours key={idEnCours(i)} id={idEnCours(i)} couleur={s.couleur} />
           ))}
+          {collecte.length > 0 && <MotifHorsCollecte id={motifHorsCollecte} />}
         </defs>
       </svg>
       <div role="img" aria-label={ariaLabel} className={zoomHref ? "cursor-pointer" : undefined}>
@@ -338,6 +359,7 @@ function BarresSurGrille({
             }}
           >
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            {zonesHorsCollecte(grille, collecte, motifHorsCollecte)}
             <XAxis
               dataKey="t"
               fontSize={11}
@@ -371,6 +393,7 @@ function BarresSurGrille({
                   fuseau={fuseau}
                   enCours={enCours}
                   dernier={dernier}
+                  collecte={collecteParSeau}
                 />
               }
             />
@@ -440,7 +463,14 @@ function BarresSurGrille({
             {libellePeriodeEnCours(seauSecondes, estJour(dernier ?? ""))}
           </li>
         )}
+        {prep.horsCollecte.length > 0 && (
+          <li className="flex items-center gap-1.5" data-testid="legende-hors-collecte">
+            <PaveHorsCollecte id={motifHorsCollecte} />
+            non mesuré (collecte interrompue)
+          </li>
+        )}
       </ul>
+      <NoteHorsCollecte fenetres={fenetresVisibles} fuseau={fuseau} />
       <SeriesEcartees libelles={ecartees} />
       <PointsIgnores n={prep.ignores} />
       {legendeAnnotations && (
