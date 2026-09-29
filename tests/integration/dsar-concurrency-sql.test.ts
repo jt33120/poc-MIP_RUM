@@ -594,6 +594,9 @@ suite("P8.1 — l'inventaire des tables ne se recopie pas à la main", () => {
       // Configuration d'exploitation — écart assumé, consigné dans v81.
       "slo", "goal", "notify_channel", "uptime_check", "read_tokens", "deploy_marker",
       "ai_briefing", "extension_scope", "extension_install_app",
+      // v99 : le battement attendu d'une app (route de santé, cadence) est de la
+      // configuration de sonde, sans donnée personnelle — comme `uptime_check`.
+      "sonde_attendue",
       // v90 : le journal d'audit porte `app_id`, et il est en AJOUT SEUL — il garde
       // la trace de l'effacement lui-même.
       "audit_log",
