@@ -16,7 +16,6 @@ import {
   estAdditive,
   type Aggregation,
   type ExplorerDatasetId,
-  type ExplorerError,
   type ExplorerPlan,
 } from "./analytics-schema";
 import type { RollupSource } from "./analytics-rollups";
@@ -498,14 +497,5 @@ export function compileRollupHistogram(ctx: SqlContext, plan: ExplorerPlan, sour
       select 'brut', g0, bucket, observed_count from brut`,
       params: ctx.params,
     },
-  };
-}
-
-/** Erreur typée d'une dimension que le jeu de données ne porte pas. */
-export function asExplorerError(error: { code: string; message: string; dimension?: string }): ExplorerError {
-  return {
-    code: error.code as ExplorerError["code"],
-    message: error.message,
-    ...(error.dimension ? { dimension: error.dimension } : {}),
   };
 }

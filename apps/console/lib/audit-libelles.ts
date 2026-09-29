@@ -138,8 +138,6 @@ export const FAMILLES_AUDIT = [
   { cle: "analyse", libelle: "Tableaux de bord, objectifs et issues", prefixes: ["dashboard_", "goal_", "issue_", "error_", "ticket_request"] },
 ] as const;
 
-export type CleFamille = (typeof FAMILLES_AUDIT)[number]["cle"];
-
 /** La famille d'une clé d'URL, ou null (« toutes » ou valeur inconnue). */
 export function familleAudit(cle: unknown): (typeof FAMILLES_AUDIT)[number] | null {
   return FAMILLES_AUDIT.find((f) => f.cle === cle) ?? null;

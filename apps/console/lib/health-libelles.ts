@@ -25,14 +25,6 @@ export const HEALTH_CLASS: Record<HealthLabel, string> = {
   Critique: "bg-bad/10 text-bad-ink border-bad/30",
 };
 
-/** Couleur d'accent (anneau de score, texte) par libellé santé. */
-export const HEALTH_ACCENT: Record<HealthLabel, string> = {
-  Excellent: "text-good-ink",
-  Bon: "text-perf-ink dark:text-perf",
-  Dégradé: "text-warn-ink",
-  Critique: "text-bad-ink",
-};
-
 export interface HealthFactor {
   key: "vitals" | "errors" | "stability" | "anomalies";
   label: string;

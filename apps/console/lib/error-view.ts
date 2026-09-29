@@ -4,7 +4,6 @@ import type { IssueListFilters } from "@/lib/error-issues";
 import { queryOf, type SearchParams } from "@/lib/filters";
 import type { ErrorFilters, ErrorGroupRef, ErrorOccurrenceRow } from "@/lib/queries-errors";
 import { queryToSearchParams } from "@/lib/query-contract";
-import { fmtDate, fmtHeure } from "@/lib/format";
 
 /**
  * Next livre un paramètre répété en tableau : on retient le premier pour les
@@ -96,14 +95,6 @@ export function fmtCount(v: number | null): string {
 /** Une couverture 0..1 : NULL (aucune occurrence) veut dire inconnue. */
 export function fmtCoverage(v: number | null): string {
   return v === null ? "Inconnue" : `${(v * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })}\u00a0%`;
-}
-
-/**
- * Libellé d'un seau : dès 6 h de largeur l'heure seule est ambiguë, on date le seau.
- * Heure de Paris (fuseau d'affichage) : sans fuseau fixé, c'était celui du serveur.
- */
-export function bucketTick(bucket: Date, bucketSeconds: number): string {
-  return bucketSeconds >= 21_600 ? fmtDate(bucket) : fmtHeure(bucket);
 }
 
 /** Nombre de groupes dessinés dans le hero de `/errors` (§ 5.3.2, P14 : 4 + « Autres » = 5 séries). */

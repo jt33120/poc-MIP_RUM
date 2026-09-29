@@ -57,7 +57,6 @@ export interface Capacite {
   ligne: number;
 }
 
-export const DOCUMENT_COUVERTURE: string = donnees.source;
 /** Date du relevé, « JJ/MM/AAAA ». */
 export const RELEVE: string = donnees.releve;
 /** Commit relevé. */

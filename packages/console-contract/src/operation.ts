@@ -46,13 +46,3 @@ export function operation<P = Aucun, Q = Aucun, B = never, R = unknown>(
   }
   return Object.freeze({ id, methode, chemin });
 }
-
-/** Les noms des paramètres de chemin, dans l'ordre : `/v1/a/{x}/b/{y}` → `["x", "y"]`. */
-export function parametresDe(chemin: Chemin): string[] {
-  return [...chemin.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map((m) => m[1]);
-}
-
-export type ParametresDe<O> = O extends Operation<infer P, infer _Q, infer _B, infer _R> ? P : never;
-export type RequeteDe<O> = O extends Operation<infer _P, infer Q, infer _B, infer _R> ? Q : never;
-export type CorpsDe<O> = O extends Operation<infer _P, infer _Q, infer B, infer _R> ? B : never;
-export type ReponseDe<O> = O extends Operation<infer _P, infer _Q, infer _B, infer R> ? R : never;

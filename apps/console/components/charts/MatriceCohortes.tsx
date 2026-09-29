@@ -17,12 +17,6 @@
 import { formater } from "@/lib/fmt-ids";
 import { PALIERS_SEQUENTIELLE, SEQUENTIELLE } from "@/lib/palette";
 
-export interface LigneCohorte {
-  cohorte: string;
-  taille: number;
-  cellules: { offset: number; retenus: number; taux: number | null; incomplete: boolean }[];
-}
-
 /** Hachures de la semaine en cours : un motif, pas une couleur de plus (§ 3.9). */
 const HACHURES = "repeating-linear-gradient(135deg, rgb(var(--c-ink-soft) / 0.35) 0 2px, transparent 2px 6px)";
 
