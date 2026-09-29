@@ -13,7 +13,7 @@
 // jamais le cookie projet.
 //
 // P5.6 (bloc final) : workflow d'une issue — résolution et régression, commentaire,
-// lien de ticket, 409, viewer en lecture seule, clavier et 390/768/1440 px.
+// 409, viewer en lecture seule, clavier et 390/768/1440 px.
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { gzipSync } from "node:zlib";
@@ -414,7 +414,7 @@ for (const width of [390, 768, 1440]) {
 // appelle dans sa transaction (error_issue_record_occurrences) ; le chemin complet
 // de l'écrivain est prouvé par tests/integration/error-issues-sql.test.ts. Ce bloc
 // prouve ce que l'ÉCRAN en fait : résolution avec sa référence, régression
-// confirmée, réapparition à vérifier, commentaire masqué, lien de ticket, 409 avec
+// confirmée, réapparition à vérifier, commentaire masqué, 409 avec
 // rechargement, viewer en lecture seule refusé par l'API, clavier, 390/768/1440 px.
 test.describe("P5.6 — workflow d'une issue", () => {
   const APP_W = "p56-e2e-a";
@@ -574,7 +574,7 @@ test.describe("P5.6 — workflow d'une issue", () => {
     );
   });
 
-  test("commentaire masqué, lien de ticket et triage au clavier", async ({ page }) => {
+  test("commentaire masqué et triage au clavier", async ({ page }) => {
     await login(page);
     await page.goto(`${CONSOLE}${PAGE_ISSUE}`);
 
@@ -587,13 +587,8 @@ test.describe("P5.6 — workflow d'une issue", () => {
     await expect(page.getByTestId("issue-activity-comment")).toContainText("Voir avec [email] avant la release");
     await expect(commentaire).toHaveValue("");
 
-    const lien = page.getByTestId("issue-link-form");
-    await lien.getByTestId("issue-link-url").fill("https://tickets.exemple.fr/browse/MIP-56");
-    await lien.getByTestId("issue-link-label").fill("MIP-56");
-    await lien.getByRole("button", { name: "Lier" }).click();
-    await expect(page.getByTestId("issue-links").getByRole("link", { name: "MIP-56" }))
-      .toHaveAttribute("href", "https://tickets.exemple.fr/browse/MIP-56");
-    await expect(page.getByTestId("issue-activity-link")).toContainText("a lié le ticket MIP-56");
+    // Le lien de ticket manuel est retiré depuis le 29/09/2026 : ni formulaire, ni liste.
+    await expect(page.getByTestId("issue-link-form")).toHaveCount(0);
 
     // Clavier seul : statut suivant (« À revoir »), puis Tab jusqu'au bouton et Entrée.
     const statut = page.getByTestId("issue-triage-status");
@@ -652,7 +647,7 @@ test.describe("P5.6 — workflow d'une issue", () => {
     // L'auteur d'un commentaire est un compte de la console, jamais son adresse.
     await expect(page.getByTestId("issue-activity-comment")).toContainText("Un compte de la console a commenté");
     await expect(page.getByTestId("issue-activity")).not.toContainText(E2E_EMAIL);
-    for (const formulaire of ["issue-triage-form", "issue-comment-form", "issue-link-form", "issue-alert-link"]) {
+    for (const formulaire of ["issue-triage-form", "issue-comment-form", "issue-alert-link"]) {
       await expect(page.getByTestId(formulaire), formulaire).toHaveCount(0);
     }
 
@@ -670,12 +665,6 @@ test.describe("P5.6 — workflow d'une issue", () => {
 
   for (const width of [390, 768, 1440]) {
     test(`issue avec son workflow : aucun débordement horizontal de la page à ${width} px`, async ({ page }) => {
-      const url = "https://tickets.exemple.fr/browse/MIP-56-un-identifiant-de-ticket-particulierement-long-pour-le-mobile";
-      await pool.query(
-        `with t as (insert into error_issue_ticket (app_id, issue_id, url, label) values ($1, $2, $3, 'MIP-56') returning id)
-         insert into error_issue_activity (app_id, issue_id, kind, actor_kind, ticket_id) select $1, $2, 'link', 'user', id from t`,
-        [APP_W, ISSUE_W, url],
-      );
       await pool.query(
         "insert into error_issue_activity (app_id, issue_id, kind, actor_kind, body) values ($1, $2, 'comment', 'user', $3)",
         [APP_W, ISSUE_W, `Analyse ${"sans-espace-".repeat(20)}`],

@@ -6,7 +6,7 @@
 //     qu'en levant ce défaut elle ne peut TOUJOURS RIEN écrire : ni table, ni
 //     fonction à droits de propriétaire ;
 //   · qu'elle lit la télémétrie (policy de lecture), mais ni un hachage de mot
-//     de passe, ni le contenu d'un rejeu, ni une référence de secret de ticket ;
+//     de passe, ni le contenu d'un rejeu ;
 //   · que `verifierRoleApi` (la garde CI) voit chaque écart qu'on lui glisse :
 //     un droit de trop, une policy d'écriture, une fonction rouverte, une
 //     relation lue par le bundle sans droit ;
@@ -133,15 +133,12 @@ const BUNDLE_CONFORME = [...TABLES, ...Object.keys(COLONNES), "event_metric_base
     expect(rows).toEqual([{ session_id: "p4-s1" }]);
     await api.query("select id from console_user limit 1");
     await api.query("select app_id, session_id from replay_chunk limit 1");
-    await api.query("select id, provider, target from ticket_integration limit 1");
     for (const sql of [
       "select password_hash from console_user",
       "select email from console_user",
       "select * from console_user",
       "select * from analytics_saved_view",
       "select body from replay_chunk",
-      "select credential_ref from ticket_integration",
-      "select webhook_secret_ref from ticket_integration",
       "select * from audit_log",
       "select * from notify_channel",
     ]) {

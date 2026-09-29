@@ -62,11 +62,6 @@ const RELEVES = [
             from alert_delivery group by 1 order by 2 desc`,
   },
   {
-    titre: "Intégrations de tickets",
-    decide: "P5 — `TICKET_SECRET_KEY` et les références `env:` sont-ils nécessaires dès maintenant ?",
-    sql: `select id, provider, state, credential_ref from ticket_integration order by id`,
-  },
-  {
     titre: "Administrateurs au périmètre restreint",
     decide: "C8/C9 — combien de comptes la règle de portée changerait-elle ?",
     sql: `select email, role, apps from console_user
