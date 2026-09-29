@@ -142,7 +142,8 @@ declare
 begin
   foreach t in array array['sonde_passage', 'collecte_fenetre', 'sonde_attendue', 'sonde_battement'] loop
     execute format('alter table %I enable row level security', t);
-    seq := pg_get_serial_sequence('public.' || t, 'id');
+    -- Séquence d'identité des deux tables qui en ont une (journal, registre).
+    seq := case when t in ('sonde_passage', 'collecte_fenetre') then pg_get_serial_sequence('public.' || t, 'id') end;
     if exists (select 1 from pg_roles where rolname = 'console_ro') then
       execute format('revoke all on %I from console_ro', t);
       execute format('grant select on %I to console_ro', t);
