@@ -10,17 +10,23 @@ Code : `apps/console/lib/ingest-relay.ts` (relais), `apps/console/lib/platform-f
 (drapeau), `packages/db/sql/migration-v87.sql` (table `platform_flag`). Tests :
 `tests/unit/ingest-relay.test.ts`, `tests/contract/relais-ingestion.test.ts`.
 
-## État au 26/09/2026 : inerte
+## État au 29/09/2026 : 100 %
 
-Fusionné le 24/09 (#286), **le relais ne fait rien en production**, et c'est vérifié par un test. Le collector lui-même n'est pas encore créé sur Railway.
+Le drapeau `ingest_relay_pct` vaut **100 depuis le 28/09/2026, 07:10 UTC**. Il est monté à 10 %
+puis à 50 % le 27/09 au soir, après l'apply qui a créé le collector (#332). Au 29/09, le
+collector a répondu à 4 208 requêtes en 48 h (99,3 % en 2xx, 3 en 5xx, relevé Railway).
 
-- `CONSOLE_INGEST_RELAY_URL` n'est pas posée sur Vercel : le relais est éteint **quel que
-  soit le drapeau**. La console ne lit même pas `platform_flag` : aucune requête SQL de plus.
-- La migration v87 n'est pas encore appliquée : la base Neon est suspendue depuis le 24/09
-  (quota gratuit épuisé). Elle s'appliquera d'elle-même au prochain pré-déploiement réussi
-  du scheduler. Tant que la table manque, la lecture du drapeau échoue en `42P01`. La console
-  retombe alors sur `INGEST_RELAY_PCT` (défaut 0), sans exception.
-- La ligne que v87 sème vaut `'0'`. Appliquer la migration ne relaie donc rien non plus.
+Ce que 100 % ne veut pas dire : la console reste le point d'arrivée des capteurs, et elle
+**écrit elle-même en repli** quand le collector ne répond pas (voir « Ce que fait le relais,
+requête par requête »). Le collector ne sera la seule porte d'entrée qu'avec la collecte
+directe (P6b.G, plus bas) puis le retrait de la base de la console (C12).
+
+### Historique : l'état inerte du 26/09/2026
+
+Fusionné le 24/09 (#286), le relais ne faisait rien en production : `CONSOLE_INGEST_RELAY_URL`
+n'était pas posée sur Vercel, la migration v87 (table `platform_flag`) n'était pas appliquée
+(base Neon suspendue), et la ligne qu'elle sème vaut `'0'`. Sans la table, la lecture du
+drapeau échoue en `42P01` et la console retombe sur `INGEST_RELAY_PCT` (défaut 0).
 
 Ce qui a changé quand même à la fusion (la console est déployée à chaque fusion), et vient de **P2** (voulu : la console répond comme
 le collector, contrat de parité `tests/contract/ingest-parity.test.ts`) :

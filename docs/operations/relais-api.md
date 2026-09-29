@@ -2,6 +2,8 @@
 
 > La console transmet les **lectures au jeton machine** de l'API v1 au service `api` de Railway, pour un pourcentage réglé en base. Code : `apps/console/lib/api-relay.ts` ; service : [services/api/README.md](../../services/api/README.md) ; décision : [ADR-0005](../architecture/adr/0005-relais-ingestion.md), même mécanique que la collecte.
 
+**État au 29/09/2026** : `api_relay_pct` vaut **100 depuis le 28/09/2026, 16:33 UTC**. Les prérequis ci-dessous sont remplis : service déployé le 27/09 (#332), textes de conformité fusionnés le 26/09 (#296). Le trafic est faible : 19 requêtes en 24 h au service `api` (relevé Railway du 29/09).
+
 ## Ce qui part au service, et ce qui reste à la console
 
 | Requête | Où |

@@ -7,12 +7,12 @@
 | Groupe du canevas | 1 · Collecte |
 | Point d'entrée | `node services/collector/server.mjs` (câblage seul, sur `@mip/service-kit`) |
 | Logique | `@mip/backend/lib/receiver.mjs` (`creerReceveur`), partagée avec les serveurs de développement |
-| Exposition | **publique**, domaine généré `*.up.railway.app`, à créer à la main après le premier déploiement (les domaines ne sont pas dans l'IaC) ; aucun trafic tant que le relais de P3 n'est pas allumé |
+| Exposition | **publique**, domaine généré `*.up.railway.app`, créé à la main après le premier déploiement (les domaines ne sont pas dans l'IaC) ; reçoit le trafic relayé par la console |
 | Rôle BDD | propriétaire (`DATABASE_URL`, moindre privilège après M4) ; pool de 8 par réplique (`PGPOOL_MAX`), `application_name = mip-collector`, attente de connexion 2 s |
 | Réplicas | 2 (voir « Sûreté multi-réplique ») |
 | Image | `services/collector/Dockerfile` — seule image à embarquer la base GeoIP |
 
-État au 26/09/2026 : le service n'est **pas encore créé** sur Railway — il est déclaré dans `.railway/railway.ts` et attend ses variables partagées et un apply approuvé. En production, la collecte passe par les routes de la console (`/api/ingest/v1/*`). Le relais de P3 vers ce service est livré dans la console (`apps/console/lib/ingest-relay.ts`) et éteint : drapeau `platform_flag.ingest_relay_pct` à 0, table créée par migration-v87, pas encore appliquée en production ([mode d'emploi](../../docs/operations/relais-ingestion.md)).
+État au 29/09/2026 : **en service** depuis l'apply du 27/09 (PR #332), deux réplicas, domaine `collector-production-d769.up.railway.app`. Les capteurs visent toujours la console (`/api/ingest/v1/*`), qui relaie **100 %** des beacons ici depuis le 28/09/2026, 07:10 UTC (`platform_flag.ingest_relay_pct`, relais `apps/console/lib/ingest-relay.ts`). La console garde son écriture locale en repli : ce service n'est donc pas encore la seule porte d'entrée. Relevé Railway au 29/09 : 4 208 requêtes en 48 h, 99,3 % en 2xx, 3 en 5xx ([mode d'emploi](../../docs/operations/relais-ingestion.md)).
 
 ## Routes
 
