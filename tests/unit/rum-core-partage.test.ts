@@ -18,9 +18,11 @@ import * as sdk from "../../packages/rum-sdk/src/index";
 import * as sdkContexte from "../../packages/rum-sdk/src/event-context";
 import * as sdkOtlp from "../../packages/rum-sdk/src/otlp-encode";
 import * as mobile from "../../packages/rum-mobile/src/core";
-import * as agent from "../../packages/agent-node/src/core";
 
-describe("rum-core — une seule implémentation pour trois runtimes", () => {
+// L'agent Node maison, troisième runtime jusqu'au 29/09/2026, est archivé
+// (docs/archive/capteurs-serveur-maison.md) : un service Node pose l'agent
+// OpenTelemetry officiel, qui a son propre encodeur.
+describe("rum-core — une seule implémentation pour les deux runtimes MIP", () => {
   it("le web et React Native partagent la MÊME classe de contexte et les mêmes limites", () => {
     expect(sdkContexte.EventContextStore).toBe(core.EventContextStore);
     expect(sdkContexte.sanitizeContext).toBe(core.sanitizeContext);
@@ -32,18 +34,14 @@ describe("rum-core — une seule implémentation pour trois runtimes", () => {
     expect(sdk.applyBeforeSend).toBe(core.applyBeforeSend);
   });
 
-  it("les trois runtimes partagent le MÊME encodeur OTLP", () => {
+  it("les deux runtimes partagent le MÊME encodeur OTLP", () => {
     expect(sdkOtlp.encodeAttributes).toBe(core.encodeAttributes);
     expect(sdkOtlp.toAnyValue).toBe(core.toAnyValue);
     expect(mobile.encodeAttrs).toBe(core.encodeAttributes);
     expect(mobile.nanos).toBe(core.msToNanos);
-    // L'agent Node garde ses NOMS historiques (`register.ts` les appelle) mais
-    // délègue : ce sont des adaptateurs d'une ligne, pas une seconde table.
-    expect(agent.encodeAttrs({ a: 1 })).toEqual(core.encodeAttributes({ a: 1 }));
-    expect(agent.nanos(1_760_000_000_123)).toBe(core.msToNanos(1_760_000_000_123));
   });
 
-  it("encode les scalaires à l'identique pour les trois runtimes (snapshot commun)", () => {
+  it("encode les scalaires à l'identique pour les deux runtimes (snapshot commun)", () => {
     const attributs = {
       "mip.texte": "valeur",
       "mip.entier": 42,
@@ -65,13 +63,12 @@ describe("rum-core — une seule implémentation pour trois runtimes", () => {
     expect(core.encodeAttributes(attributs)).toEqual(attendu);
     expect(sdkOtlp.encodeAttributes(attributs)).toEqual(attendu);
     expect(mobile.encodeAttrs(attributs)).toEqual(attendu);
-    expect(agent.encodeAttrs(attributs)).toEqual(attendu);
   });
 
   it("convertit les horodatages à l'identique : ms entières -> nanosecondes en chaîne", () => {
     for (const ms of [0, 1, 1_760_000_000_000, 1_760_000_000_123, 1_760_000_000_999]) {
       expect(core.msToNanos(ms)).toBe(core.hrToNanos(core.msToHr(ms)));
-      expect(mobile.nanos(ms)).toBe(agent.nanos(ms));
+      expect(mobile.nanos(ms)).toBe(core.msToNanos(ms));
       // La précision nanoseconde dépasse 2^53 : la valeur reste une CHAÎNE.
       expect(typeof core.msToNanos(ms)).toBe("string");
     }

@@ -6,22 +6,25 @@
 // depuis le backend, que la projection de lecture la reprend, et que la purge
 // par app l'emporte comme les autres signaux.
 //
-// Le payload est construit par le VRAI package : ce sont les octets de l'agent
-// qui traversent le parseur, l'écrivain et le schéma.
+// Le lot est produit par le SDK OpenTelemetry OFFICIEL et sérialisé par ses
+// propres encodeurs (`@opentelemetry/otlp-transformer`), comme le ferait un
+// service qui pose l'agent officiel de son langage puis émet son événement par
+// l'API OpenTelemetry. Jusqu'au 29/09/2026, ces octets venaient de l'agent Node
+// maison (archivé : docs/archive/capteurs-serveur-maison.md) ; l'événement garde
+// les attributs qu'il posait (`mip.event_type`, `mip.event_name`, `mip.props`,
+// `mip.route`), qui sont le contrat de l'ingestion, pas celui d'un capteur.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { context, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import { JsonTraceSerializer } from "@opentelemetry/otlp-transformer";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error — module .mjs sans déclaration de types
 import { writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error — module .mjs sans déclaration de types
 import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
-import {
-  buildConfig,
-  buildHttpServerSpan,
-  buildPayload,
-  buildTrackSpan,
-} from "../../packages/agent-node/src/core";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const dir = join(__dirname, "..", "..", "packages", "db", "sql");
@@ -39,36 +42,56 @@ function migrations() {
     .map((f) => join(dir, f));
 }
 
-/** Lot tel que l'agent Node l'expédie : requête HTTP + événement métier enfant. */
-function lotAgent(app: string, spanId: string, nom: string, props: Record<string, unknown>) {
-  const cfg = buildConfig({ MIP_RUM_ENDPOINT: "https://i/v1/traces", MIP_RUM_APP_ID: app, MIP_RUM_SERVICE: "api" });
+/**
+ * Lot d'un service instrumenté par le SDK officiel : la requête HTTP serveur
+ * (attributs semconv, comme la pose l'auto-instrumentation) et l'événement
+ * métier enfant, émis à la main par l'API OpenTelemetry.
+ */
+function lotOfficiel(app: string, spanId: string, nom: string, props: Record<string, unknown>) {
+  // Identifiants fixés : l'assertion sur `rum_span` et le rejeu idempotent
+  // portent sur des valeurs connues, pas sur un tirage aléatoire.
+  const ids = [SPAN_REQUETE, spanId];
+  const memoire = new InMemorySpanExporter();
+  const fournisseur = new BasicTracerProvider({
+    resource: resourceFromAttributes({
+      "service.name": "api",
+      "mip.app_id": app,
+      "deployment.environment.name": "prod",
+    }),
+    idGenerator: { generateTraceId: () => TRACE, generateSpanId: () => ids.shift()! },
+    spanProcessors: [new SimpleSpanProcessor(memoire)],
+  });
+  const traceur = fournisseur.getTracer("@opentelemetry/instrumentation-http", "0.222.0");
   const debut = Date.now();
-  return flattenOtlp(buildPayload(cfg, [
-    buildHttpServerSpan({
-      traceId: TRACE,
-      spanId: SPAN_REQUETE,
-      parentSpanId: null,
-      method: "POST",
-      route: "/api/commandes",
-      url: null,
-      status: 201,
-      sessionId: null,
-      startMs: debut,
-      durationMs: 18,
-      attributes: { canal: "batch" },
-    }),
-    buildTrackSpan({
-      name: nom,
-      props,
-      traceId: TRACE,
-      spanId,
-      parentSpanId: SPAN_REQUETE,
-      sessionId: null,
-      route: "/api/commandes",
-      attributes: { canal: "batch" },
-      tsMs: debut + 5,
-    }),
-  ]));
+  const requete = traceur.startSpan("POST /api/commandes", {
+    kind: SpanKind.SERVER,
+    startTime: debut,
+    attributes: {
+      "http.request.method": "POST",
+      "http.route": "/api/commandes",
+      "url.path": "/api/commandes",
+      "http.response.status_code": 201,
+    },
+  });
+  requete.setStatus({ code: SpanStatusCode.OK });
+  const evenement = traceur.startSpan(
+    `track.${nom}`,
+    {
+      startTime: debut + 5,
+      attributes: {
+        "mip.event_type": "custom",
+        "mip.event_name": nom,
+        "mip.props": JSON.stringify(props),
+        "mip.route": "/api/commandes",
+        "mip.context": JSON.stringify({ canal: "batch" }),
+      },
+    },
+    trace.setSpan(context.active(), requete),
+  );
+  evenement.end(debut + 5);
+  requete.end(debut + 18);
+  const octets = JsonTraceSerializer.serializeRequest(memoire.getFinishedSpans())!;
+  return flattenOtlp(JSON.parse(Buffer.from(octets).toString("utf8")));
 }
 
 async function nettoyer(app: string) {
@@ -99,11 +122,11 @@ afterAll(async () => {
   if (url) await pool.end();
 });
 
-suite("P7.4 — événement métier backend (agent Node) en base", () => {
+suite("P7.4 — événement métier backend (SDK OpenTelemetry officiel) en base", () => {
   it("s'écrit sans session, sans violer la clé étrangère, et sans inventer de session", async () => {
     await nettoyer(APP);
     try {
-      const lot = lotAgent(APP, "aaaa1111bbbb2222", "commande_validee", { montant: 42.5, devise: "EUR" });
+      const lot = lotOfficiel(APP, "aaaa1111bbbb2222", "commande_validee", { montant: 42.5, devise: "EUR" });
       // Aucune ligne de session dans le lot : c'est précisément ce qui ferait
       // échouer l'INSERT si l'événement en revendiquait une.
       expect(lot.sessions).toEqual([]);
@@ -142,7 +165,7 @@ suite("P7.4 — événement métier backend (agent Node) en base", () => {
   it("entre une seule fois dans la projection de lecture, au rejeu comme au premier envoi", async () => {
     await nettoyer(APP);
     try {
-      const lot = lotAgent(APP, "cccc3333dddd4444", "commande_validee", { montant: 1 });
+      const lot = lotOfficiel(APP, "cccc3333dddd4444", "commande_validee", { montant: 1 });
       await writeRows(pool, lot);
       await writeRows(pool, lot); // rejeu du MÊME lot : idempotent
       const index = await pool.query(
@@ -164,8 +187,8 @@ suite("P7.4 — événement métier backend (agent Node) en base", () => {
     await nettoyer(APP);
     await nettoyer(AUTRE);
     try {
-      await writeRows(pool, lotAgent(APP, "eeee5555ffff6666", "commande_validee", {}));
-      await writeRows(pool, lotAgent(AUTRE, "9999aaaa8888bbbb", "commande_validee", {}));
+      await writeRows(pool, lotOfficiel(APP, "eeee5555ffff6666", "commande_validee", {}));
+      await writeRows(pool, lotOfficiel(AUTRE, "9999aaaa8888bbbb", "commande_validee", {}));
       await pool.query("delete from rum_event where app_id = $1", [APP]);
       const restant = await pool.query("select app_id from rum_event where name = 'commande_validee'");
       expect(restant.rows.map((r: { app_id: string }) => r.app_id)).toEqual([AUTRE]);

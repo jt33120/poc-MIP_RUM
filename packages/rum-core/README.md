@@ -7,7 +7,11 @@ runtimes** et dont le résultat **ne dépend d'aucun environnement**.
 | --- | --- |
 | `EventContextStore`, `sanitizeContext`, `boundedName`, `CONTEXT_LIMITS`, `validateIdentity`, `newEnvelopeId` | web (`@mip/rum-sdk`), React Native (`@mip/rum-mobile`) |
 | `applyBeforeSend`, `STRUCTURAL_ATTRIBUTES` | web, React Native |
-| `encodeAttributes`, `toAnyValue`, `hrToNanos`, `msToHr`, `msToNanos`, `buildResourceSpans`, `kindPour`, `statutPour`, `SPAN_KIND`, `STATUS_CODE` | web, React Native, agent Node (`@mip/agent-node`) |
+| `encodeAttributes`, `toAnyValue`, `hrToNanos`, `msToHr`, `msToNanos`, `buildResourceSpans`, `kindPour`, `statutPour`, `SPAN_KIND`, `STATUS_CODE` | web, React Native |
+
+L'agent Node maison (`@mip/agent-node`), troisième consommateur jusqu'au
+29/09/2026, est archivé : un service Node pose l'agent OpenTelemetry officiel
+(voir [`docs/archive/capteurs-serveur-maison.md`](../../docs/archive/capteurs-serveur-maison.md)).
 
 ## Ce qui n'y entre pas, et pourquoi
 
@@ -35,10 +39,10 @@ pnpm --filter @mip/rum-core build   # esbuild -> dist/index.{js,mjs} ; tsc -> di
 
 Un runtime ne se construit jamais seul : le suffixe `...` du filtre pnpm
 (`pnpm --filter "@mip/rum-sdk..." build`) entraîne ses dépendances, donc ce
-paquet. `pnpm build:sdk` le fait pour les trois d'un coup.
+paquet. `pnpm build:sdk` le fait pour les deux d'un coup.
 
 `exports` pointe sur `dist/`, jamais sur `src/` : un consommateur n'a jamais à
-compiler du TypeScript qui ne lui a pas été publié. Les trois runtimes
+compiler du TypeScript qui ne lui a pas été publié. Les deux runtimes
 **inlinent** ce paquet dans leur propre bundle — leurs artefacts ne contiennent
 donc aucun import résiduel vers `@mip/*`, ce que vérifie
 `scripts/verify-sdk-packaging.mjs`.

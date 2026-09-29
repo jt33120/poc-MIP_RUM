@@ -8,7 +8,9 @@
 //
 // Ici, la défense de l'INGESTION, qui vaut pour tout émetteur : un span serveur
 // en 404/405 sans `http.route` n'a pas de route, il prend `(non trouvée)`. Le
-// middleware corrigé est testé à part (examples/integrations/fastapi) ; le
+// middleware FastAPI maison est archivé depuis le 29/09/2026
+// (docs/archive/capteurs-serveur-maison.md) : ses copies déjà déployées
+// continuent d'émettre la forme `ancienMiddleware` ci-dessous, d'où ces cas. Le
 // registre lui-même, sur PostgreSQL, dans tests/integration/route-cardinalite-sql.test.ts.
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module JS partagé sans déclarations
@@ -74,7 +76,7 @@ function agentOfficiel(statut: number, attrs: Attrs = {}, nom = "GET") {
 }
 
 describe("ingestion — une requête qu'aucune route n'a servie n'invente pas de route", () => {
-  it("la valeur est une constante exportée, partagée avec le middleware", () => {
+  it("la valeur est une constante exportée", () => {
     expect(ROUTE_NON_TROUVEE).toBe("(non trouvée)");
   });
 
