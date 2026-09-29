@@ -5,15 +5,35 @@ dist/
 # Artefacts générés (jamais versionnés) : cache incrémental tsc + couverture
 *.tsbuildinfo
 coverage/
-.env
-.env.local
 *.log
 .DS_Store
 test-results/
 playwright-report/
+blob-report/
+.turbo/
+*.tgz
 .vercel/
-.env.production
-.secrets-v02.local.md
+scratchpad/
+
+# Réglages d'éditeur : propres à chaque poste, rien à en tirer pour le dépôt.
+.vscode/
+.idea/
+
+# SECRETS — toute variante d'environnement, sauf les exemples. Le dépôt est
+# public, et Next.js lit de lui-même `.env.development.local`, `.env.test`… : ne
+# lister que `.env`, `.env.local` et `.env.production` en laissait passer. Calqué
+# sur `.dockerignore`, qui l'était déjà.
+.env
+.env.*
+!.env.example
+!**/.env.example
+.envrc
+.secrets*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
 
 # v0.4 demo backend
 tests/e2e/site-cobaye/.venv/
@@ -47,6 +67,18 @@ apps/extension/*-key*.b64
 .claude/settings.local.json
 .claude/skills/
 .claude/worktrees/
+# État d'exécution de Claude Code : ces lignes vivaient dans `.git/info/exclude`,
+# donc sur un seul poste ; un autre clone les aurait vues comme fichiers à suivre.
+**/.claude/scheduled_tasks.lock
+**/.claude/scheduled_tasks.json
+**/.claude/routines/.state/
+**/.claude/worktrees/
+**/.claude/checkpoints/
+**/.claude/mailbox/
+**/.claude/agent-registry.json
+**/.claude/agent-memory-local
+**/.claude/first-run
+**/.claude/assistant-daemon-state.json
 .agents/
 .codex/
 _bmad/
