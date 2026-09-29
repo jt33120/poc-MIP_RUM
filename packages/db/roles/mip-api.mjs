@@ -19,6 +19,7 @@
 export const TABLES = Object.freeze([
   "analytics_rollup_invalidation",
   "app_registry",
+  "collecte_fenetre",
   "error_grouping_config",
   "error_issue",
   "error_issue_activity",

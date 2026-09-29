@@ -29,9 +29,10 @@
 --      (`alert_event` puis `route_alert`).
 --
 -- DROITS. Lecture pour `console_ro` (motif de v87), rien pour `anon` ni
--- `authenticated`. PAS de droit pour `mip_api` : le service `api` ne lit aucune
--- de ces tables, et sa garde (`scripts/ci/verify-db-roles.mjs`) signale une
--- table accordée que son bundle ne nomme pas. La carte « Santé de la chaîne de
+-- `authenticated`. `mip_api` lit `collecte_fenetre` seulement (§ 6 bis) : le
+-- service `api` ne lit pas les trois autres, et sa garde
+-- (`scripts/ci/verify-db-roles.mjs`) signale une table accordée que son bundle
+-- ne nomme pas. La carte « Santé de la chaîne de
 -- mesure » (lot suivant) lira par `console-api` et accordera alors à
 -- `mip_console` ce qu'elle lit. RLS activée sur les quatre tables, comme sur
 -- toute table `public` depuis v97.
@@ -173,6 +174,27 @@ begin
       if seq is not null then execute format('revoke all on sequence %s from authenticated', seq); end if;
     end if;
   end loop;
+end $$;
+
+-- ── 6 bis. `mip_api` lit le registre des fenêtres ─────────────────────────
+--
+-- Le service `api` compile les lectures de la console (`apps/console/lib`) :
+-- la comparaison à la période précédente y consulte `collecte_fenetre` pour
+-- invalider un écart calculé sur une période trouée (#357). Sans ce droit, sa
+-- garde (`scripts/ci/verify-db-roles.mjs`) refuse un bundle qui nomme une
+-- relation qu'il ne peut pas lire. Motif de v89 : lecture seule, policy
+-- `using (true)` propre à `mip_api` (le service borne la portée dans son code),
+-- et la table rejoint la liste blanche `packages/db/roles/mip-api.mjs`. Les trois
+-- autres tables restent hors de sa portée.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'mip_api') then
+    grant select on collecte_fenetre to mip_api;
+    if not exists (select 1 from pg_policy where polrelid = 'public.collecte_fenetre'::regclass
+                                               and polname = 'mip_api_lecture') then
+      create policy mip_api_lecture on collecte_fenetre as permissive for select to mip_api using (true);
+    end if;
+  end if;
 end $$;
 
 -- ── 7. Le comptage d'usage n'admet jamais une application sonde ─────────────
