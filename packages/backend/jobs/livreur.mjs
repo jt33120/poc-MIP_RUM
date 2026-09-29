@@ -5,14 +5,13 @@
 // 5 minutes ; livrer au même rythme donnait jusqu'à 5 minutes de retard à une
 // alerte déjà décidée — et à une nouvelle erreur, que l'ingestion met dans l'outbox
 // à la seconde. Le notifier livre toutes les 15 s. Il est aussi le SEUL à détenir
-// les secrets sortants (clé Resend, secret de signature des webhooks, jetons de
-// tickets) : un processus qui décide n'a aucune raison de pouvoir écrire à un tiers.
+// les secrets sortants (clé Resend, secret de signature des webhooks) : un
+// processus qui décide n'a aucune raison de pouvoir écrire à un tiers.
 //
-// UNE PASSE = trois étapes, dans cet ordre, celles du tick du scheduler
+// UNE PASSE = deux étapes, dans cet ordre, celles du tick du scheduler
 // (`etapesLivraison`, `planifie.mjs`) :
 //   route_error_issue_notifications   l'outbox des issues → alert_event + livraisons
 //   dispatch_alerts                   webhooks signés, e-mails Resend
-//   dispatch_tickets                  la file de sortie des tickets (P8.6)
 // La réconciliation des livraisons héritées de pg_net tourne à l'heure.
 //
 // PAS DE BAIL. Chaque étape réserve ses lignes par `for update skip locked` : deux
@@ -124,7 +123,7 @@ export function creerLivreur({
   async function passe() {
     const debut = maintenant();
     const l = etapesLivraison(pool, { log, dispatch: dispatchConfigure, echeance: debut + budgetMs });
-    const bilan = await executerEtapes([l.route, l.dispatch, l.tickets], log, { job: "livraison" });
+    const bilan = await executerEtapes([l.route, l.dispatch], log, { job: "livraison" });
     return retenir("passe", debut, bilan);
   }
 

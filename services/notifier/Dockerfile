@@ -1,5 +1,5 @@
 # Image du service `notifier` — livreur des alertes : webhooks signés, e-mails
-# Resend, tickets.
+# Resend.
 #
 # La recette (pnpm fetch → install --offline → build → pnpm deploy --prod), le
 # contexte de build et l'épinglage par digest sont expliqués en tête de

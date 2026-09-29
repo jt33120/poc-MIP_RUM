@@ -35,10 +35,10 @@ export function texteActivite(texte) {
  * chaque essai — et migration-v74 ne confirme de régression qu'avec des valeurs
  * ainsi bornées.
  *
- * P8.6 : cette fonction vit ICI, et non plus dans la console seule, parce qu'un
- * fournisseur de tickets peut désormais résoudre une issue par webhook. Deux
- * copies auraient donné deux références de résolution — donc deux verdicts de
- * régression pour la même issue selon qui l'a fermée.
+ * Cette fonction vit ICI, et non dans la console seule : tout écrivain qui
+ * résout une issue doit retenir la même référence. Deux copies donneraient deux
+ * références de résolution — donc deux verdicts de régression pour la même issue
+ * selon qui l'a fermée.
  */
 export const SQL_REFERENCE_RESOLUTION = `
   select case when octet_length(r.release) between 1 and 200 and r.release !~ '[[:cntrl:]]' then r.release end as release,

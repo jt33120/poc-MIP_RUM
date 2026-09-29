@@ -86,7 +86,7 @@ export async function executerEtapes(etapes, log = console, { job } = {}) {
  * cadence. Un test le vérifie.
  *
  * Seules les étapes qui appellent UNE fonction SQL portent ce délai. Celles qui
- * sortent sur le réseau (uptime, dispatch_alerts, dispatch_tickets) ont déjà
+ * sortent sur le réseau (uptime, dispatch_alerts) ont déjà
  * les leurs — délai par sonde, échéance de livraison ; comme
  * import_legacy_issue_notes, elles enchaînent des requêtes courtes, chacune
  * bornée par le `query_timeout` du pool (30 s, `@mip/service-kit/pg.mjs`).
@@ -276,7 +276,7 @@ export const ECHEANCE_LIVRAISON_MS = 45_000;
 
 /**
  * Les étapes de LIVRAISON — ce qui sort vers l'extérieur ou y prépare : routage des
- * notifications d'issue, webhooks et e-mails, tickets, réconciliation. Le tick du
+ * notifications d'issue, webhooks et e-mails, réconciliation. Le tick du
  * scheduler les exécute tant que sa livraison n'est pas coupée ; le notifier (P5)
  * les exécute seul ensuite, toutes les 15 s, avec la réconciliation à l'heure.
  *
@@ -284,7 +284,7 @@ export const ECHEANCE_LIVRAISON_MS = 45_000;
  * l'extérieur, et un appelant (un test, un environnement sans réseau sortant)
  * doit pouvoir le neutraliser. `echeance` borne les sorties réseau de la passe.
  *
- * @returns {{ route: object, dispatch: object | null, tickets: object, reconcile: object }}
+ * @returns {{ route: object, dispatch: object | null, reconcile: object }}
  */
 export function etapesLivraison(pool, { log = console, dispatch = null, echeance }) {
   const delaiRoutage = delaiEtape("route_error_issue_notifications");
@@ -306,17 +306,6 @@ export function etapesLivraison(pool, { log = console, dispatch = null, echeance
     },
     // Livraison effective des webhooks et e-mails en attente (remplace pg_net).
     dispatch: dispatch ? { name: "dispatch_alerts", run: () => dispatch(pool, { echeance }) } : null,
-    // P8.6 : la file de sortie des tickets suit la MÊME passe que l'outbox de
-    // notifications, à dessein — un second planificateur aurait sa propre
-    // cadence, son propre verrou et ses propres régressions.
-    // Chargé à la demande : ce module sort vers l'extérieur.
-    tickets: {
-      name: "dispatch_tickets",
-      run: async () => {
-        const { livrerTickets } = await import("../lib/integrations/tickets/dispatcher.mjs");
-        return livrerTickets(pool, { echeance, log });
-      },
-    },
     // Réconciliation des livraisons 'sent' héritées de l'ère pg_net : sans pg_net
     // la fonction ne trouve rien, mais elle reste correcte et bon marché — la
     // garder évite des lignes 'sent' éternelles.
@@ -355,7 +344,7 @@ export function travaux(pool, { log = console, dispatch = null, livraison = true
           ...(livraison ? [l.route] : []),
           sql("check_slo_burn", "check_slo_burn()"),
           { name: "uptime", run: () => sonderUptime(pool, log) },
-          ...(livraison ? [l.dispatch, l.tickets, l.reconcile].filter(Boolean) : []),
+          ...(livraison ? [l.dispatch, l.reconcile].filter(Boolean) : []),
         ],
         log,
         { job: "tick" },
