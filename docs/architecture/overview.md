@@ -27,7 +27,7 @@ flowchart LR
   ci["CI du client<br/>source maps"]
   operateur["Opérateur<br/>console web"]
   machine["Partenaire, front tiers,<br/>agent IA (MCP)"]
-  destinataire["Destinataires d'alertes<br/>webhook, Slack, e-mail, tickets"]
+  destinataire["Destinataires d'alertes<br/>webhook, Slack, e-mail"]
   mip(["MIP RUM"])
   visiteur -->|"mesures OTLP/HTTP JSON"| mip
   ci -->|"source maps (jeton dédié)"| mip
@@ -72,7 +72,7 @@ flowchart LR
   mcp -->|"réseau privé"| api
   scheduler --> neon
   notifier --> neon
-  notifier -->|"webhooks, Resend, tickets"| dehors(["destinataires"])
+  notifier -->|"webhooks, Resend"| dehors(["destinataires"])
 ```
 
 Le vocabulaire du canevas Railway suit le trajet de la donnée : **Capteurs → Collecte → Restitution → Traitements**. Un groupe n'est qu'un cadre sur le canevas ; il ne change ni le réseau, ni les variables, ni le déploiement (`.railway/railway.ts`).
@@ -86,7 +86,7 @@ Le vocabulaire du canevas Railway suit le trajet de la donnée : **Capteurs → 
 | `console-api` | 2 · Restitution | Backend de la console : identité, sessions, écrans, écritures, administration, RGPD. Seul client : le serveur Vercel. [README](../../services/console-api/README.md), [piste C](console-api/README.md) | public, garde par secret client | **déployé** le 27/09 (deux répliques) ; la connexion passe par lui ; écrans et écritures pas encore basculés (drapeaux à 0) ; cliquet : 50 écrans sur 57 atteignent encore la base ([inventaire](console-api/inventaire.md)) |
 | `mcp` | 2 · Restitution | Passerelle MCP pour agents IA ; relaie le jeton de l'appelant, **aucun accès à la base**. [README](../../services/README.md) | public, domaine généré | **déployé** ; appelle `api` sur le réseau privé (`MIP_API_HOST`, posé par l'apply du 27/09) |
 | `scheduler` | 3 · Traitements | Travaux planifiés sous bail (alertes, SLO, uptime, agrégats, purge, comptage) ; **seul migrateur**, au pré-déploiement. [README](../../services/scheduler/README.md) | privé | **déployé** (redéploiement du 27/09 : migrations v87 → v96) ; tick toutes les 15 minutes ; ne livre plus (`SCHEDULER_DELIVERY` à `off`) |
-| `notifier` | 3 · Traitements | Livre ce que la plateforme a décidé de dire : webhooks signés, e-mails Resend, tickets. Seul détenteur des secrets sortants. [README](../../services/notifier/README.md) | privé | **déployé** le 27/09 ; passes toutes les 15 minutes, 45 s après le tick |
+| `notifier` | 3 · Traitements | Livre ce que la plateforme a décidé de dire : webhooks signés, e-mails Resend. Seul détenteur des secrets sortants. [README](../../services/notifier/README.md) | privé | **déployé** le 27/09 ; passes toutes les 15 minutes, 45 s après le tick |
 | console | Vercel | Interface Next.js. Jusqu'à M4 elle lit et écrit encore la base directement, et reçoit les mesures (route `/api/ingest/v1/*`). | public | **déployée** ; relais vers le collector allumé ; relais vers `api` et bascule des écrans vers `console-api` à 0 ; connexion par `console-api` |
 
 ## Principes, et la décision qui les porte
@@ -96,7 +96,7 @@ Le vocabulaire du canevas Railway suit le trajet de la donnée : **Capteurs → 
 3. **Seul le scheduler migre**, en pré-déploiement, schéma compatible N et N+1. [ADR-0004](adr/0004-migrations.md)
 4. **L'infrastructure passe par la revue** : `.railway/railway.ts`, plan sur la PR, apply du plan relu dans un environnement GitHub protégé. [ADR-0007](adr/0007-iac-railway.md)
 5. **Un seul déclencheur** pour les travaux planifiés, sous bail. [ADR-0008](adr/0008-scheduler-unique.md)
-6. **Sûreté multi-réplique écrite noir sur blanc** : bail (scheduler), `for update skip locked` (livraisons, outbox, tickets), verrou consultatif par application (écritures d'ingestion et effacements).
+6. **Sûreté multi-réplique écrite noir sur blanc** : bail (scheduler), `for update skip locked` (livraisons, outbox), verrou consultatif par application (écritures d'ingestion et effacements).
 7. **Le MCP n'atteint pas la base**, structurellement. [ADR-0006](adr/0006-mcp-sans-base.md)
 8. **La base est provisoire, et la vitrine le dit** : offre gratuite en mode dégradé (24/09), puis offre payante à l'usage depuis le 27/09, en attendant le choix de la DSI de MIP. [ADR-0014](adr/0014-base-gratuite.md), remplacée
 
@@ -110,7 +110,6 @@ La règle : un service ne porte que les secrets dont il se sert. Ceux des nouvea
 | `IDENTITY_HASH_SECRET` + empreinte | **jamais** | oui | — | — | `console-api` : lu par les commandes RGPD (C10), **pas encore déclaré** dans son IaC |
 | `EDGE_PROXY_SECRET` | posé (le relais est allumé depuis le 27/09), tant que le relais existe | oui | — | — | — |
 | `RESEND_API_KEY`, `WEBHOOK_SIGNING_SECRET` | **non** (retirés en P5) | — | — | **seul** | — |
-| `TICKET_SECRET_KEY`, `TICKET_*` | lus par le crochet entrant des tickets tant que `CONSOLE_TICKET_HOOK_URL` n'est pas posée (C11b) | — | tant que `SCHEDULER_DELIVERY=on` | selon les intégrations | — |
 | `METRICS_TOKEN` | — | oui | lu, **non déclaré** dans l'IaC | oui | oui |
 | `DEADMAN_URL` | — | — | lu, **non déclaré** dans l'IaC | — | — |
 | `AUTH_SECRET`, `OIDC_*` | oui, jusqu'au mode strict de la bascule (les sessions HS256 cessent avec `AUTH_SECRET`) | — | — | — | `console-api` : `OIDC_*` seuls (C1c), **pas encore déclarés** dans son IaC |

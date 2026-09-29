@@ -9,7 +9,7 @@
 | `GET`/`HEAD` `/api/v1/…` avec `Authorization: Bearer <jeton>` | tirée au sort → service `api` |
 | `POST /api/v1/explorer/query` avec un jeton | tirée au sort → service `api` |
 | toute requête au **cookie de session** (les écrans de la console) | **console**, toujours : le service n'accepte pas les sessions |
-| toute écriture | jamais relayée au service `api`, qui n'en sert aucune. Il n'en reste qu'une dans l'API v1, le marqueur de déploiement (`POST /api/v1/deploys`, jeton de CI) : elle suit le relais d'**ingestion** vers le collector (C11). Les écritures au cookie (triage, commentaires, liens, tickets, vues) ont quitté l'API v1 en C7 pour des server actions |
+| toute écriture | jamais relayée au service `api`, qui n'en sert aucune. Il n'en reste qu'une dans l'API v1, le marqueur de déploiement (`POST /api/v1/deploys`, jeton de CI) : elle suit le relais d'**ingestion** vers le collector (C11). Les écritures au cookie (triage, commentaires, vues) ont quitté l'API v1 en C7 pour des server actions |
 | `OPTIONS` (préflight, sans jeton) | console |
 
 Transmis : `authorization`, `accept`, `content-type`, `if-none-match`, `origin`, `x-request-id`. Jamais le cookie, jamais l'adresse du client.

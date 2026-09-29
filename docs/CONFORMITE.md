@@ -198,8 +198,7 @@ modification ni redistribution.
   (`password_hash` bcrypt, clés d'API sha256) ; fonctions `SECURITY DEFINER` `search_path` figé.
 - **Authentification** : JWT cookie httpOnly + **SSO/OIDC** (Azure AD/Okta/Keycloak — MFA
   déléguée à l'IdP) + **RBAC** admin/viewer scopé par app. Secrets en **variables d'environnement**
-  des hébergeurs (Vercel, Railway), jamais en clair en base : un identifiant d'intégration de tickets
-  y est une référence `env:TICKET_*` ou un chiffré AES-256-GCM `enc:v1:` (clé `TICKET_SECRET_KEY`).
+  des hébergeurs (Vercel, Railway), jamais en clair en base.
 - **Ingestion durcie** : 400/500 distincts, limites de taille (413), retries transitoires,
   rate limiting durable, logs structurés avec **redaction des secrets**.
 - **Cloisonnement multi-tenant** : scoping `app_id` + RBAC (renforcement P0 #5 à venir).
