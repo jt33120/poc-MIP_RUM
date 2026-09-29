@@ -19,6 +19,11 @@
 // (« API et MCP ») se répétait sous son propre titre, et « Explorer » listait un écran
 // « Explorer » : le titre de la catégorie porte désormais son écran d'arrivée, et la
 // liste ne reprend que les autres.
+//
+// LE CHAPEAU (28/09/2026). Il disait qu'aucun écran n'avait été relu sur le trafic d'une
+// vraie application : c'est fait en partie depuis la recette du 28/09 (document de
+// couverture, § 6.2 et § 13.4 ; quatre défauts corrigés, l'écran mobile encore sans
+// données réelles). Il dit « plusieurs », pas « tous ».
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { CATEGORIES, sousOnglets, type NavCategory, type NavLink } from "@/components/nav-items";
 import { SousPartie } from "@/components/presentation/SousPartie";
@@ -46,7 +51,8 @@ export function EcransConsole({ user, demoOuverte = false }: { user: SessionUser
       chapeau={
         <>
           Les écrans qui existent dans la console. Ils ont été construits et testés sur des jeux de
-          démonstration ; aucun n&apos;a encore été relu sur le trafic d&apos;une vraie application.
+          démonstration ; le 28/09/2026, une première recette en a relu plusieurs sur le trafic
+          d&apos;une vraie application.
         </>
       }
     >

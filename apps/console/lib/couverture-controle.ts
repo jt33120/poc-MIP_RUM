@@ -39,6 +39,21 @@ export interface PointReste {
   sources: string[];
 }
 
+/**
+ * Un point sorti de « Ce qui reste » parce qu'il est fait (28/09/2026). La page le dit
+ * encore, en une phrase datée : les lignes qu'il citait gardent un endroit qui dit leur
+ * état en français courant (le renvoi de l'annexe), et ses sources passent le même
+ * contrôle n° 4 que celles d'un point.
+ */
+export interface PointFait {
+  id: string;
+  titre: string;
+  /** Ce qui a été fait, daté. */
+  fait: string;
+  /** Identifiants de capacité ou « chemin:ligne ». */
+  sources: string[];
+}
+
 export interface ContexteControle {
   capacites: readonly Capacite[];
   /** Nombre de lignes du document de couverture. */
@@ -53,8 +68,13 @@ export const VERDICT_MONTRABLE = "deploye_non_eprouve";
 /**
  * Déployées mais inertes sur le trafic réel : elles vont en « Ce qui reste »,
  * pas en « Ce qu'il sait faire » — déployé ne veut pas dire actif.
+ *
+ * D14 (le pays par adresse IP) en est sortie le 28/09/2026 : elle résout le pays de
+ * la collecte directe du capteur de la console (ligne D14, « depuis le 28/09/2026 »,
+ * et § 13.4 du document). Elle a donc sa carte ; ce qui reste pour les sites des
+ * clients est un point de « Ce qui reste », qui la cite encore.
  */
-export const DEPLOYEES_INERTES: readonly string[] = ["D12", "D14"];
+export const DEPLOYEES_INERTES: readonly string[] = ["D12"];
 
 const ID_CAPACITE = /^[A-Z]\d+$/;
 
@@ -169,8 +189,14 @@ export function verifierCartes(
   return erreurs;
 }
 
-/** Contrôle 4 du § 8.4 (P**.0) : chaque point de « Ce qui reste » cite une source qui existe. */
-export function verifierReste(points: readonly PointReste[], ctx: ContexteControle): string[] {
+/**
+ * Contrôle 4 du § 8.4 (P**.0) : chaque point de « Ce qui reste » — et chaque point qui
+ * en est sorti, fait — cite une source qui existe.
+ */
+export function verifierReste(
+  points: readonly Pick<PointReste | PointFait, "id" | "sources">[],
+  ctx: ContexteControle,
+): string[] {
   const erreurs: string[] = [];
   const ids = new Set(ctx.capacites.map((c) => c.id));
   for (const p of points) {

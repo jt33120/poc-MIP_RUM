@@ -5,7 +5,7 @@ Relevé le **23 septembre 2026**, sur `master` à **`8a5f3d1`** (fusion de la PR
 > Ce relevé **remplace** celui du 18/09/2026 sur `2f216cb`. Les commandes du § 2 ont été rejouées, et
 > les douze lignes aux verdicts `livre_non_deploye`, `livre_avec_defaut_connu` et `bloque_acces_externe`
 > revues une à une ; l'hébergement est repris de `docs/TOPOLOGIE_BACKEND.md`, sans interroger Railway
-> ni Vercel. Un seul verdict change (`F2`). Ce qui a changé, et ce qui n'a pas pu être revu : § 12. **Ce qui a changé depuis, sans nouveau relevé** (la CI, la production, des faits lus en base) : § 13, au 28/09/2026.
+> ni Vercel. Un seul verdict change (`F2`). Ce qui a changé, et ce qui n'a pas pu être revu : § 12. **Ce qui a changé depuis, sans nouveau relevé** (la CI, la production, des faits lus en base) : § 13, au 28/09/2026 — dont la journée du 28/09 (première recette sur une vraie application, reprise de l'historique, pays par adresse IP, restauration, agents officiels) : § 13.4.
 
 Ce document répond à une seule question, capacité par capacité : **est-ce que le produit sait faire
 X, et qu'est-ce qui le prouve ?** Il est écrit pour la personne qui reprend le produit sans avoir
@@ -39,7 +39,7 @@ Deux règles de lecture, posées une fois :
 - **`deploye_non_eprouve` est le meilleur verdict de ce document.** Aucune capacité de P5 à P8 n'est
   `éprouvée sur donnée réelle`, parce qu'aucun écran n'a été relu sur des données réellement ingérées
   (§ 6.2). Ce n'est pas un détail de forme : un écran juste sur des fixtures peut être faux sur du
-  trafic, et personne ne l'a regardé.
+  trafic, et personne ne l'a regardé. **Depuis le relevé** (§ 13.4) : des écrans ont été relus le 28/09/2026 sur le trafic d'une vraie application ; aucun verdict n'en change avant un nouveau relevé.
 - **Une table vide n'est pas un zéro.** Là où une capacité n'existe pas (crashes natifs), le produit
   affiche « Non collecté » et n'a délibérément créé aucune table. C'est un choix, redit à chaque
   ligne concernée.
@@ -113,7 +113,7 @@ démarré par la CI (`docker-smoke`) ; au relevé, il ne tournait nulle part en 
 Conséquences, à lire avant les lignes `D14`, `A6` et `C*` :
 
 1. **Tout ce qui n'existe que dans l'image backend ne s'exécute pas sur le trafic réel.** C'est le cas
-   de la résolution GeoIP de P8.7 (§ 4.4, `D14`) : l'image backend la porte, et au relevé son seul service, le `scheduler`, ne recevait aucun trafic ; le `collector` la porte depuis le 27/09, éteinte (§ 13).
+   de la résolution GeoIP de P8.7 (§ 4.4, `D14`) : l'image backend la porte, et au relevé son seul service, le `scheduler`, ne recevait aucun trafic ; le `collector` la porte depuis le 27/09, éteinte (§ 13), puis allumée le 28/09 pour la seule collecte directe du capteur de la console (§ 13.4).
 2. **Le port d'ingestion direct `POST /v1/sourcemaps`** (`packages/backend/lib/receiver.mjs`, P5.4) n'est
    servi par aucun service de production au relevé (le `collector` le sert depuis le 27/09, § 13). Le port console `POST /api/sourcemaps` l'est.
 3. Le faire revenir demande de recréer un service **et de lui donner un domaine public** ; deux
@@ -140,7 +140,7 @@ résultat de ce document, et il s'arrête avant la production.
 | A1 | Ouvrir une erreur et retrouver sa session, son action, sa trace, son rejeu | `deploye_non_eprouve` | `apps/console/lib/queries-errors.ts`, migration v69 ; `tests/integration/error-queries-p51-sql.test.ts`, `tests/e2e/error-tracking.spec.ts` ; PR #182/#183 | Un lien n'apparaît que si la relation existe dans la **même** app ; une trace étrangère rend 404. Le rejeu positionné est borné au contenu réellement disponible. |
 | A2 | Compter les occurrences sans les confondre avec les lignes ni les personnes | `deploye_non_eprouve` | `sum(occurrences)` dans `queries-errors.ts` ; jeu de recette « 38 partout » de `error-queries-p51-sql.test.ts` | `visitors_affected`, `identified_users_affected` et `sessions_affected` sont rendus séparément et valent `null` quand l'identité est inconnue. Un backend sans session ne donne **aucun** impact utilisateur. |
 | A3 | Capter les erreurs du navigateur au-delà des exceptions (console, ressources, CSP, réseau) | `deploye_non_eprouve` | `packages/rum-sdk/src/errors.ts`, config `captureErrors` ; `tests/unit/error-collection.test.ts` ; PR #184 | **Les quatre catégories sont opt-in et activées pour aucune app.** Le navigateur ne fournit pas toujours le statut HTTP d'une ressource : il reste `null`, jamais inféré. |
-| A4 | Capter les erreurs d'un service Node ou Python sans inventer de session | `deploye_non_eprouve` | migration v70, `shared/error-normalize.mjs` ; `tests/integration/error-backend-otel-sql.test.ts`, `tests/integration/agent-node-backend-events-sql.test.ts` ; PR #185 | Aucun émetteur backend ne tourne en production. Une double instrumentation log + span **sans** `mip.exception_id` commun n'est pas fusionnée, et n'est pas signalée à l'écran. |
+| A4 | Capter les erreurs d'un service Node ou Python sans inventer de session | `deploye_non_eprouve` | migration v70, `shared/error-normalize.mjs` ; `tests/integration/error-backend-otel-sql.test.ts`, `tests/integration/agent-node-backend-events-sql.test.ts` ; PR #185 | Au relevé, cette ligne disait qu'aucun émetteur backend ne tournait en production, et une double instrumentation log + span **sans** `mip.exception_id` commun n'était pas fusionnée, ni signalée à l'écran. **Depuis le relevé** (§ 13.4) : lu en base, le premier point était faux — le backend FastAPI de `gip-plateforme` envoie ses spans serveur ; les agents officiels Python, Java et .NET ont écrit en production le 28/09/2026 ; et, depuis #345 (28/09/2026), les exceptions de **même trace, même span (ou span parent dans le même lot), même type et même message** ne comptent qu'une occurrence, sans lecture en base (`packages/backend/shared/otlp.mjs` ; `tests/unit/otel-exceptions.test.ts`, `error-backend-otel-sql.test.ts`, `tests/contract/ingest-parity.test.ts` ; `docs/INTEGRATION.md` § 10). **Restent comptés deux fois**, sans signal à l'écran : un span enfant et son parent exportés dans deux lots, et un log émis dans un span enfant pour une exception enregistrée sur le parent. |
 | A5 | Dé-minifier une pile avec une source map | `deploye_non_eprouve` | migration v71, `packages/backend/lib/error-symbolication.mjs` ; `tests/integration/sourcemaps-p54-sql.test.ts` ; PR #186 | Aucune map n'a jamais été déposée par une application réelle. Une map arrivée **après** les premières occurrences améliore l'affichage sans changer l'identité de l'issue — et peut donc ouvrir une seconde issue. |
 | A6 | Déposer des source maps depuis une CI (jeton dédié, CLI, port direct) | `deploye_non_eprouve` | `scripts/upload-sourcemaps.mjs`, `packages/backend/lib/sourcemap-upload.mjs`, `/admin/sourcemaps`, table `sourcemap_upload_token` | Au relevé, le port backend direct n'était servi par **aucun** service de production depuis la suppression d'`ingest`, le 21/09/2026 (§ 3) : seule la route console était joignable, avec ses lots ≤ 3 Mio. **Depuis le relevé** (§ 13) : le `collector`, en service le 27/09 avec un domaine public, le sert. Le branchement dans une CI cliente est `D10`. |
 | A7 | Regrouper les occurrences en issues stables et versionnées | `deploye_non_eprouve` | migration v72, `error_issue` / `error_issue_alias` / `error_grouping_config` ; `tests/unit/error-grouping-v2.test.ts`, `tests/integration/error-issues-sql.test.ts` ; PR #187 | **Le regroupement v2 n'est activé pour aucune application.** Un « Script error. » sans contexte reste explicitement peu discriminant, et la clé retombe sur un repli marqué `low_confidence`. |
@@ -171,7 +171,7 @@ résultat de ce document, et il s'arrête avant la production.
 | C3 | Compter un visiteur mobile | `livre_non_deploye` | `identity_persistence = memory` dans `packages/rum-mobile` ; écart consigné dans `delivery-p7.md` | **Le visiteur mobile est un tirage mémoire remis à zéro à chaque lancement** : les compteurs de visiteurs mobiles **surestiment** les personnes. C'est un défaut connu, non corrigé. |
 | C4 | Mesurer le démarrage JS jusqu'au premier écran | `livre_non_deploye` | `js_start_to_first_screen_ms` ; `rum-mobile-p73.test.ts` | Ce n'est **pas** un démarrage natif. Sans appel à `markFirstScreenRendered()`, la mesure est absente — pas nulle. Aucun ANR n'est déduit d'un timer JS. |
 | C5 | Instrumenter un service Node | `deploye_non_eprouve` | `packages/agent-node` : `track`, `captureException`, `withContext`, `flush` ; `tests/unit/agent-node.test.ts`, `tests/unit/agent-node-process.test.ts` (vrais processus), `agent-node-backend-events-sql.test.ts` ; PR #200 | Aucun service Node n'émet vers la production. Les rejets non gérés hors mode `throw` ne sont pas observés. Le vidage durable à l'arrêt fatal n'est pas garanti : **un export peut être perdu à la mort du processus.** |
-| C6 | Instrumenter un service FastAPI | `deploye_non_eprouve` | `examples/integrations/fastapi/mip_rum_middleware.py` (ContextVar) ; `python3 -m unittest discover -s examples/integrations/fastapi` en CI | Un seul framework (FastAPI/Starlette), un seul saut : ni propagation backend→backend, ni span DB. |
+| C6 | Instrumenter un service FastAPI | `deploye_non_eprouve` | `examples/integrations/fastapi/mip_rum_middleware.py` (ContextVar) ; `python3 -m unittest discover -s examples/integrations/fastapi` en CI | Un seul framework (FastAPI/Starlette), un seul saut : ni propagation backend→backend, ni span DB. **Depuis le relevé** (§ 13.4) : une copie d'une version antérieure du middleware tourne sur le backend de `gip-plateforme` (#345), et ses spans serveur arrivent en production (lu en base : 178 054 à l'index du 30/08 au 23/09) ; elle prenait le chemin d'un 404 pour route, et les rafales d'un scanner ont saturé le registre des routes de l'application — corrigé par #345 (middleware 0.7.0 et ingestion : un 404 ou 405 sans route résolue devient `(non trouvée)`). |
 | C7 | Lire l'état d'une application mobile (`/mobile`, API, MCP) | `deploye_non_eprouve` | migration v82, `apps/console/app/mobile/`, `GET /api/v1/mobile/summary`, outil MCP `mip_rum_mobile_summary` ; `tests/integration/rum-mobile-p75-sql.test.ts` (19 tests), `tests/e2e/mobile-console.spec.ts` ; PR #207 | L'écran est déployé, **aucune session RN réelle ne l'alimente**. Crashes natifs, ANR et démarrage natif s'affichent « Non collecté », jamais `0` ni « 100 % sans crash ». Le taux rendu est `js_error_free_session_rate`, pas un « crash-free ». |
 | C8 | Déclarer ce qu'un runtime mobile sait faire (capacités) | `deploye_non_eprouve` | table `mobile_capabilities` (v82), `verified_at` hors de portée du client ; `pnpm test:isolation` le vérifie en base | **Aucune interface d'opérateur pour poser `verified_at`** : c'est un `update` direct documenté, sans droit RBAC. Une capacité déclarée par le SDK ne vaut pas une recette. |
 | C9 | Distribuer le paquet React Native | `bloque_acces_externe` | `packages/rum-mobile/package.json` porte `private: true` ; `scripts/verify-sdk-packaging.mjs` (36 contrôles verts) prouve les exports CJS/ESM/types | Aucune publication npm ni store. Quatre décisions manquent : registre cible, compte de publication, nom définitif, politique de versions et de dépréciation. |
@@ -187,14 +187,14 @@ résultat de ce document, et il s'arrête avant la production.
 | D4 | Effacer toutes les données d'une application | `deploye_non_eprouve` | `erase_app_data` (v81), qui **suspend l'ingestion dans le registre** sous la même transaction ; vérifié en base le 18/09 : `analytics_saved_view`, `dashboard`, `backfill_run`, `error_status`, `svi_*`, `rum_log`, `rum_ai`, `mobile_capabilities` sont bien couverts | La configuration d'exploitation (`slo`, `goal`, `notify_channel`, `uptime_check`, `read_tokens`, `deploy_marker`, `extension_scope`…) **n'est pas supprimée** : objets d'exploitation, pas données de personnes. `tenant_usage_daily` et `app_registry` survivent volontairement. |
 | D5 | Purger selon la rétention | `deploye_non_eprouve` | `purge_rum_app` / `purge_rum_tenants`, travail planifié `packages/backend/jobs/planifie.mjs` | **La rétention ne couvre toujours pas les tables SVI.** Vérifié en base le 18/09 : `purge_rum_app` ne cite pas `svi_call`, alors que `erase_app_data` le fait. Écart préexistant, non corrigé. |
 | D6 | Isoler les locataires en base | `deploye_non_eprouve` | `scripts/verify-tenant-isolation.mjs`, rejoué vert le 23/09 sur base jetable : requêtes **sans aucun `WHERE app_id`**, jouées sous le rôle `console_ro` | Un périmètre `[]` vaut **zéro accès**, plus « sans restriction » (corrigé en P6.2). L'isolation est prouvée en base ; elle ne dispense pas les lectures applicatives de lier `app_id`. |
-| D7 | Restaurer une sauvegarde sans ressusciter des données effacées | `non_commence` | — (rien dans le dépôt) | **La garantie d'effacement ne porte pas sur les sauvegardes.** Une restauration PITR antérieure à un effacement devrait rejouer les barrières avant de rouvrir lectures et ingestion ; au relevé, cette procédure n'était ni écrite, ni éprouvée, comme le dit `docs/CONFORMITE.md` § 3.1. **Depuis le relevé** (§ 13) : elle est écrite le 24/09/2026 (`docs/operations/runbook.md` § 8), **jamais éprouvée**, et sa partie « identités » reste manuelle. Le verdict attend un nouveau relevé. |
-| D8 | Préparer une reprise d'historique (plan, dry-run, vérification) | `livre_non_deploye` | `scripts/backfill-rum.mjs` (6 sous-commandes, 4 reconstructions), `packages/backend/lib/backfills/` ; `tests/integration/backfill-idempotency-sql.test.ts` (52 tests, 52 verts le 23/09 avec la fenêtre v82→v83), `tests/unit/backfill-p82.test.ts` ; PR #208. Migration **v83 appliquée en production** le 18/09 — déduit des journaux du runner, pas lu en base ; le relevé du 18/09 la disait non appliquée (§ 12.2). **Lu en base depuis** : le registre l'inscrit le 18/09 à 11:46 UTC (relevé de production du 23/09, § 13) | **Aucun environnement ne lance l'outil** : c'est une ligne de commande, et son exécution en production a été écartée (`D9`). L'outil lit `BACKFILL_DATABASE_URL`, **jamais** `DATABASE_URL`. `--app all` est refusé. Aucun écran de console : le journal se lit par CLI et par SQL. La fenêtre de déploiement v82→v83 (3 de ses 52 tests) est jouée par la CI depuis #213. |
-| D9 | Exécuter une reprise d'historique en production | `non_retenu` | **Décision de l'utilisateur du 18/09/2026 : ne pas exécuter.** Périmètre mesuré en production et rapporté avec la décision : ≈ **97 lignes** de `rum_event` sans projection dans `rum_event_index` — 90 sur `gip-plateforme` (19/08 → 15/09), 7 sur `mip-rum-console` (08/09 → 15/09) — sur 4 046 lignes indexées | **Ces chiffres n'ont pas été recontrôlés pour ce document** : aucune base de production n'a été interrogée (§ 2), et ils n'apparaissent dans aucun fichier du dépôt. Ils sont repris tels que la décision les énonce. Obstacle pratique complémentaire : le port 5432 est refusé depuis le poste de livraison (`ECONNREFUSED`). L'outillage, ses tests et son dry-run sont livrés (`D8`) ; **seule l'exécution manque.** |
+| D7 | Restaurer une sauvegarde sans ressusciter des données effacées | `non_commence` | — (rien dans le dépôt) | **La garantie d'effacement ne porte pas sur les sauvegardes.** Une restauration PITR antérieure à un effacement devrait rejouer les barrières avant de rouvrir lectures et ingestion ; au relevé, cette procédure n'était ni écrite, ni éprouvée, comme le dit `docs/CONFORMITE.md` § 3.1. **Depuis le relevé** (§ 13) : elle est écrite le 24/09/2026 (`docs/operations/runbook.md` § 8) et **éprouvée le 28/09/2026 sur la branche de répétition** (#341, § 13.4) : un visiteur et une application effacés, restauration à l'instant d'avant, puis les étapes du runbook — les données ressuscitées sont réeffacées, et l'ingestion les refuse de nouveau. **Restent non éprouvés** : la partie « identités », manuelle (aucune identité en base ce jour-là), les gestes d'exploitation des étapes 1 et 7 (simulés) et la restauration de `main` elle-même. Fenêtre restaurable : 24 heures depuis le 28/09. Le verdict attend un nouveau relevé. |
+| D8 | Préparer une reprise d'historique (plan, dry-run, vérification) | `livre_non_deploye` | `scripts/backfill-rum.mjs` (6 sous-commandes, 4 reconstructions), `packages/backend/lib/backfills/` ; `tests/integration/backfill-idempotency-sql.test.ts` (52 tests, 52 verts le 23/09 avec la fenêtre v82→v83), `tests/unit/backfill-p82.test.ts` ; PR #208. Migration **v83 appliquée en production** le 18/09 — déduit des journaux du runner, pas lu en base ; le relevé du 18/09 la disait non appliquée (§ 12.2). **Lu en base depuis** : le registre l'inscrit le 18/09 à 11:46 UTC (relevé de production du 23/09, § 13) | **Aucun environnement ne lance l'outil** : c'est une ligne de commande, et son exécution en production a été écartée (`D9`) — décision levée depuis : l'outil a été lancé en production depuis un poste le 28/09/2026 (§ 13.4). L'outil lit `BACKFILL_DATABASE_URL`, **jamais** `DATABASE_URL`. `--app all` est refusé. Aucun écran de console : le journal se lit par CLI et par SQL. La fenêtre de déploiement v82→v83 (3 de ses 52 tests) est jouée par la CI depuis #213. |
+| D9 | Exécuter une reprise d'historique en production | `non_retenu` | **Décision de l'utilisateur du 18/09/2026 : ne pas exécuter.** Périmètre mesuré en production et rapporté avec la décision : ≈ **97 lignes** de `rum_event` sans projection dans `rum_event_index` — 90 sur `gip-plateforme` (19/08 → 15/09), 7 sur `mip-rum-console` (08/09 → 15/09) — sur 4 046 lignes indexées | **Ces chiffres n'ont pas été recontrôlés pour ce document** : aucune base de production n'a été interrogée (§ 2), et ils n'apparaissent dans aucun fichier du dépôt. Ils sont repris tels que la décision les énonce. Obstacle pratique complémentaire : le port 5432 est refusé depuis le poste de livraison (`ECONNREFUSED`). L'outillage, ses tests et son dry-run sont livrés (`D8`) ; **seule l'exécution manque.** **Depuis le relevé** (§ 13.4) : la décision est levée, et la reprise **exécutée en production le 28/09/2026** (`event-index`, du 30/08 au 28/09, répétée d'abord sur une branche Neon) : 142 833 lignes écrites pour `gip-plateforme`, 853 pour `mip-rum-console`, 0 échec, les deux passages `completed` (table `backfill_run`, lue en base le 28/09). Le « ≈ 97 lignes » du 18/09 était **faux** : il ne comptait que `rum_event`, pas les sept autres tables sources de l'index, dont `rum_span` — le trou était surtout fait de spans serveur. Le verdict attend un nouveau relevé. |
 | D10 | Brancher l'upload de source maps dans la CI du client | `bloque_acces_externe` | côté MIP, tout existe : CLI, port console, port backend, jetons app-scopés expirants (`A6`) | Manquent : accès au dépôt et au build du client, `app_id` MIP, convention de release, destination d'ingestion, jeton d'upload dans les secrets CI. **Jamais entamé.** Les accès du dépôt MIP ne valent pas accès au dépôt client. |
 | D11 | Recevoir les crashes natifs iOS/Android, les symboliser, les rattacher à un appareil | `non_commence` | — | **Rien n'est livré**, et c'est délibéré : P7.5 n'a créé **aucune table de crash natif**, parce qu'une table vide se lirait comme un zéro. Manquent un choix de moteur ou de fournisseur, une application native, des builds signés, des symboles et des appareils. Un `ErrorUtils` JS **n'est pas** un crash natif. |
 | D12 | Créer un ticket chez un fournisseur depuis une issue | `deploye_non_eprouve` | **PR #211 fusionnée le 18/09 à 12:59**, CI verte (6 contrôles) ; migration **v84 appliquée en production à 13:30:35 UTC** (journal de pré-déploiement `ingest`) ; `packages/backend/lib/integrations/tickets/{adapter,dispatcher}.mjs`, tables `ticket_integration` / `ticket_outbox` / `ticket_webhook_event`, écrans `/admin/ticket-integrations`. **Un vrai ticket a été créé** dans un dépôt bac à sable — c'est la seule ligne de P5 à P8 qui ait touché un système externe réel | **Déployé et inerte** : aucune intégration n'est configurée, `TICKET_INTEGRATIONS` n'est pas posé, et l'interface d'administration reste cachée tant qu'aucun fournisseur n'est branché **et testé**. Un seul fournisseur (GitHub Issues), présenté dans le produit comme une étape vers l'ITSM de MIP — « ServiceNow, **sous réserve de confirmation** », et personne n'a confirmé. Aucune écriture MIP → fournisseur après la création : résoudre une issue ne ferme pas le ticket. Le lien manuel de P5.6 continue de fonctionner **sans** connecteur, et un test le prouve. |
 | D13 | Recevoir les changements d'état du fournisseur (webhook) | `bloque_acces_externe` | route `apps/console/app/api/webhooks/tickets/[integrationId]/route.ts` déployée sur Vercel avec `2f216cb` ; signature HMAC-SHA256 sur corps brut, comparaison à temps constant, identifiant de livraison unique en base ; tests contre un double fidèle (corps modifié, secret tiers, signature tronquée, non hexadécimale, absente) — PR #211 | **Le webhook n'a jamais reçu de livraison d'un vrai fournisseur.** L'URL est désormais publique, mais aucune intégration n'existe : toute livraison reçoit le même `404` qu'une intégration inconnue. Manquent un espace cible et ses droits, un secret de webhook, et la politique de synchronisation — cinq décisions, pas cinq tickets. Aucune synchronisation de statut n'a été observée en vrai. |
-| D14 | Préciser le pays par une base IP→pays | `deploye_non_eprouve` | **PR #210 fusionnée le 18/09 à 12:52**, CI verte ; migration **v85 appliquée en production** (déduite du journal de pré-déploiement : `total 80 · appliquées 1`, la seule étant v84) ; `packages/backend/lib/geoip-db.mjs`, `shared/geoip.mjs`, `services/collector/Dockerfile` ; `tests/unit/geoip-db.test.ts` (193 l.), `tests/integration/geoip-v85-sql.test.ts` | **Le GeoIP ne résout aucun pays sur le trafic actuel, et la fusion n'y change rien.** La résolution est embarquée dans l'**image backend Railway**, qui ne recevait aucun trafic au relevé : `ingest`, sans domaine public, a été supprimé le 21/09/2026 (§ 3) ; la route Vercel, qui reçoit tout le trafic, **n'appelle délibérément pas** la résolution locale — un commentaire du code l'explique — et ne pose que la provenance `cdn`. La base elle-même n'est pas versionnée : elle restait **à déposer** au relevé ; depuis, l'image du `collector` la télécharge à sa construction d'après un manifeste versionné (`scripts/fetch-geoip-db.mjs`), et ce service tourne depuis le 27/09 : le relais lui transmet le pays, jamais l'adresse, et son GeoIP reste éteint ; le chemin choisi le 24/09 (ADR-0005) ne s'en servira qu'en collecte directe (§ 13). Pays seulement : ni ville, ni région, ni coordonnées ; la base « City Lite » est refusée par le chargeur. **Aucun enrichissement rétrospectif n'est possible** : l'adresse des visites passées n'a jamais été stockée, et ce lot ne commence pas à la stocker. |
+| D14 | Préciser le pays par une base IP→pays | `deploye_non_eprouve` | **PR #210 fusionnée le 18/09 à 12:52**, CI verte ; migration **v85 appliquée en production** (déduite du journal de pré-déploiement : `total 80 · appliquées 1`, la seule étant v84) ; `packages/backend/lib/geoip-db.mjs`, `shared/geoip.mjs`, `services/collector/Dockerfile` ; `tests/unit/geoip-db.test.ts` (193 l.), `tests/integration/geoip-v85-sql.test.ts` | **Au relevé, le GeoIP ne résolvait aucun pays sur le trafic, et la fusion n'y changeait rien.** La résolution est embarquée dans l'**image backend Railway**, qui ne recevait aucun trafic au relevé : `ingest`, sans domaine public, a été supprimé le 21/09/2026 (§ 3) ; la route Vercel, qui reçoit tout le trafic, **n'appelle délibérément pas** la résolution locale — un commentaire du code l'explique — et ne pose que la provenance `cdn`. La base elle-même n'est pas versionnée : elle restait **à déposer** au relevé ; depuis, l'image du `collector` la télécharge à sa construction d'après un manifeste versionné (`scripts/fetch-geoip-db.mjs`), et ce service tourne depuis le 27/09 : le relais lui transmet le pays, jamais l'adresse ; le chemin choisi le 24/09 (ADR-0005) ne se sert de la résolution qu'en collecte directe (§ 13). **Depuis le 28/09/2026** (#340, § 13.4) : allumée pour la seule collecte directe du capteur de la console (`GEOIP_IP_SOURCE: "railway"`), après la preuve que la façade Railway écrase une adresse forgée par le client (`scripts/ops/verifier-ip-directe.mjs`) ; première session résolue le 28/09 à 14:39 UTC (`geo_source = geoip`, `FR`, `dbip-country-lite-2026-09`, lue en base). Les sites des clients passent par le relais : pour eux, toujours aucun pays par adresse. Pays seulement : ni ville, ni région, ni coordonnées ; la base « City Lite » est refusée par le chargeur. **Aucun enrichissement rétrospectif n'est possible** : l'adresse des visites passées n'a jamais été stockée, et ce lot ne commence pas à la stocker. |
 
 ### 4.5 Surfaces d'accès
 
@@ -235,7 +235,7 @@ que deux colonnes sur `rum_session`, déjà couverte — son en-tête le dit, «
 journal.
 
 **Trois chemins restent ouverts** : les sauvegardes (`D7`), le texte libre des commentaires de triage
-(`A8`), et la purge de rétention des tables SVI (`D5`). Aucun effacement réel n'a été joué.
+(`A8`), et la purge de rétention des tables SVI (`D5`). Aucun effacement réel n'a été joué. La restauration (`D7`) est éprouvée depuis le 28/09/2026 sur la branche de répétition, sauf sa partie « identités » (§ 13.4).
 
 ### 5.2 Périmètre d'application — **fermé, et prouvé sans filtre applicatif**
 
@@ -277,12 +277,12 @@ chemin de lecture est donc, lui, ouvert.
 ### 6.1 Absence de données anciennes
 
 Chaque migration crée une frontière avant laquelle la donnée n'existe pas, et **aucune reprise
-d'historique n'a été exécutée** (`D9`). Concrètement :
+d'historique n'a été exécutée** au relevé (`D9` ; depuis, celle de l'index v65, le 28/09 : § 13.4). Concrètement :
 
 | Frontière | Avant elle |
 |---|---|
 | v64 | Occurrences sous-comptées dans les agrégats ; irrécupérables si le SDK ne les a jamais envoyées. |
-| v65 | Aucune projection `rum_event_index` : les signaux ne sont pas explorables. |
+| v65 | Aucune projection `rum_event_index` : les signaux ne sont pas explorables. Reprise exécutée le 28/09/2026 pour `gip-plateforme` et `mip-rum-console`, du 30/08 au 28/09 (§ 13.4). |
 | v69 | Enveloppe d'erreur absente : pas de `trace_id`, pas de source, pas de contexte P2. |
 | v72 | Aucune issue : seulement des groupes par empreinte. |
 | v75 | Dimensions à `NULL`, affichées « Inconnu » — navigateur, système, appareil, env, release. |
@@ -301,7 +301,7 @@ déjà, lot par lot : « la colonne *Vérifié sur vraie app* est **non** partou
 (`delivery-p7.md`), « aucun événement n'est arrivé depuis le 17/09 17:23 » (`delivery-p8.md`).
 
 **Cette dernière date n'a pas été recontrôlée ici** : elle demanderait d'interroger la production, ce
-que ce travail s'est interdit. Elle est reprise telle que `delivery-p8.md` l'énonce. **Elle est fausse** : lu en base le 23/09, `gip-plateforme` a reçu 378 événements, le dernier ce jour-là à 13:01 UTC (§ 13). Aucun écran n'a pour autant été relu sur ce trafic.
+que ce travail s'est interdit. Elle est reprise telle que `delivery-p8.md` l'énonce. **Elle est fausse** : lu en base le 23/09, `gip-plateforme` a reçu 378 événements, le dernier ce jour-là à 13:01 UTC (§ 13). Aucun écran n'a pour autant été relu sur ce trafic. **Depuis le 28/09/2026** (§ 13.4) : des écrans ont été relus sur le trafic de `gip-plateforme`, et quatre défauts corrigés ; l'écran mobile reste sans données réelles.
 
 Ce que cela veut dire, sans détour : un écran juste sur fixtures peut être faux sur du trafic ; une
 requête rapide sur 1,2 M de lignes synthétiques peut être lente sur de vraies données biaisées ; et un
@@ -321,7 +321,7 @@ Le libellé est « Pays estimé » partout : écran, API, catalogue MCP, comment
 
 `D14` est fusionné et déployé, et n'y change rien. Une base IP→pays situerait une **adresse**, souvent
 celle d'un opérateur, d'un relais d'entreprise ou d'un VPN — toujours pas une personne. Et en l'état
-elle ne résout rien du tout, faute d'être sur le chemin qui reçoit le trafic (§ 3).
+elle ne résout rien du tout, faute d'être sur le chemin qui reçoit le trafic (§ 3). **Depuis le 28/09/2026** (§ 13.4), elle résout le pays de la seule collecte directe du capteur de la console ; pour les clients, rien.
 
 **Aucune adresse IP n'est stockée, nulle part, sous aucune forme** — ni en clair, ni hachée, ni
 tronquée. C'est pour cela qu'aucun enrichissement rétrospectif du pays n'est possible : c'est une
@@ -333,12 +333,12 @@ limite définitive et voulue, pas une dette.
 |---|---|---|
 | Navigateur (SDK web) | oui | oui, en E2E Playwright sur Chromium |
 | Node (agent) | oui | oui, en **vrais processus** (`agent-node-process.test.ts`) |
-| Python / FastAPI | oui, **un seul framework** | oui, `unittest` en CI |
+| Python / FastAPI | oui, **un seul framework** | oui, `unittest` en CI ; en production, une copie d'une version antérieure sur le backend de `gip-plateforme` (§ 13.4) |
 | React Native | oui, sur le papier | **non** — aucune version de RN, React, Hermes, JSC, Metro, iOS, Android, Fabric, Paper, React Navigation ni Expo n'a été lancée (`C10`) |
 | iOS / Android natifs | **non** | non (`D11`) |
 
 Un seul framework backend, un seul saut de tracing : ni propagation backend→backend, ni span de base
-de données.
+de données. Hors des capteurs de MIP, les agents OpenTelemetry officiels Python, Java et .NET ont été éprouvés en production le 28/09/2026 (`docs/INTEGRATION.md` § 10, § 13.4).
 
 ### 6.6 Erreurs sans pile
 
@@ -512,7 +512,7 @@ paquets publiés » : quatre paquets et la console. Au 23/09, les cinq sont vert
   **Exception : les migrations appliquées**, que les journaux de pré-déploiement Railway donnent sans
   qu'on ait à ouvrir la base (§ 2) — et c'est par là qu'on a vu que le journal était périmé.
 - **Le comportement de la façade Railway sur `X-Real-IP`** (`D14`) : aucun déploiement exposé sur
-  lequel le sonder — `ingest` n'avait pas de domaine, et il est supprimé.
+  lequel le sonder — `ingest` n'avait pas de domaine, et il est supprimé. Sondé depuis, sur le `collector` : la façade écrase une adresse forgée (`scripts/ops/verifier-ip-directe.mjs`, 28/09 : § 13.4).
 - **La date de la dernière ingestion** (« 17/09 17:23 », `delivery-p8.md`) : reprise telle quelle — lue en base depuis, elle est fausse (§ 13). Ce que le relevé du 23/09 n'a pas pu revoir de plus : § 12.4.
 
 ---
@@ -533,7 +533,7 @@ La spec § 9 l'interdit tant que des points obligatoires restent ouverts. Ils é
 Aucun n'était une affaire de rédaction :
 
 1. **Aucune recette sur vraie application** (§ 6.2). Aucune capacité de ce document n'a franchi la
-   colonne « éprouvé sur donnée réelle ». C'est le point le plus lourd, et le moins cher à lever.
+   colonne « éprouvé sur donnée réelle ». C'est le point le plus lourd, et le moins cher à lever. Commencé le 28/09 (§ 13.4).
 2. **P8.4 — source maps dans la CI du client** (`D10`) : jamais entamé, bloqué sur des accès externes.
 3. **P8.5 — crashes natifs, symboles, appareils** (`D11`) : jamais entamé, et volontairement sans
    table, pour qu'aucun écran ne montre un faux zéro.
@@ -545,7 +545,7 @@ Aucun n'était une affaire de rédaction :
 
 **P8.3 (`D9`) est le seul point fermé par une décision plutôt que par une livraison** : ne pas
 exécuter, le 18/09/2026, périmètre mesuré à ≈ 97 lignes. Cette décision ne rouvre rien, mais elle ne
-referme pas non plus les cinq autres.
+referme pas non plus les cinq autres. **Levée depuis** : reprise exécutée le 28/09/2026, sur un trou de 143 686 lignes et non de 97 (§ 13.4).
 
 **P8.6 et P8.7 ne sont plus ouverts** : fusionnés pendant le relevé du 18/09, migrations v84 et v85
 appliquées, code déployé. Ils s'ajoutent aux capacités livrées, déployées et jamais éprouvées sur du
@@ -560,10 +560,10 @@ Dans cet ordre, parce que chaque étape éclaire la suivante (liste revue le 23/
 1. **Faire arriver du trafic, puis regarder.** Du trafic arrive (lu en base le 23/09, § 13), mais personne ne l'a relu ; réactiver aussi un émetteur sur une application de recette,
    attendre quelques centaines d'événements, et ouvrir `/errors`, `/explorer`, un tableau de bord et
    `/mobile` sur ces données. C'est l'étape qui manque à **toutes** les lignes de ce document, et
-   c'est la moins chère.
+   c'est la moins chère. **Commencé le 28/09/2026** (§ 13.4) : écrans relus sur le trafic de `gip-plateforme`, quatre défauts corrigés ; `/mobile` reste sans données réelles.
 2. **Décider où résoudre le pays.** `ingest` est supprimé depuis le 21/09 : Vercel est le seul chemin.
    `D14` et le port direct de `A6` n'y sont pas ; il faut soit un receveur backend public, soit une
-   résolution depuis la console (`TOPOLOGIE_BACKEND.md:125-127`). **Tranché depuis le 24/09** (ADR-0005) : la collecte directe au `collector` (P6b.G), après le relais ; rien n'est fait (§ 13).
+   résolution depuis la console (`TOPOLOGIE_BACKEND.md:125-127`). **Tranché depuis le 24/09** (ADR-0005) : la collecte directe au `collector` (P6b.G), après le relais ; ouverte le 28/09 au seul capteur de la console (§ 13.4).
 3. **Jouer les bancs de mesure** (§ 8.2), dans la CI ou à chaque relevé, sur une base préparée — **fait le 24/09** : un job de la CI les joue (#281, § 13). La
    fenêtre de déploiement de P8.2 est réparée et jouée par la CI depuis #213 ; les bancs restent le
    seul morceau de la recette SQL que personne ne rejoue, et ce sont eux qui fondent les temps publiés
@@ -571,7 +571,7 @@ Dans cet ordre, parce que chaque étape éclaire la suivante (liste revue le 23/
 4. **Ordonner le build de `apps/extension` et la typer en CI** (§ 8.3, § 8.4) — **fait le 24/09** (#281, § 13) : déclarer sa dépendance
    envers `@mip/rum-sdk`, et ajouter une ligne à l'étape « Typage des paquets publiés ». Deux
    corrections courtes ; `tsc --noEmit` des paquets et `replay.ts:242` sont faits (#213).
-5. **Écrire la procédure de restauration** (`D7`) — **écrite le 24/09/2026** (`docs/operations/runbook.md` § 8), reste à la répéter sur la branche Neon `repetition-p0`. C'est le seul trou de ce document qui touche une
+5. **Écrire la procédure de restauration** (`D7`) — **écrite le 24/09/2026** (`docs/operations/runbook.md` § 8), **répétée le 28/09/2026** sur la branche Neon `repetition-p0` (§ 13.4) ; reste sa partie « identités ». C'est le seul trou de ce document qui touche une
    garantie déjà annoncée à un client dans `docs/CONFORMITE.md`.
 
 ---
@@ -712,25 +712,73 @@ prochain relevé de rejouer les commandes du § 2 et de changer leur verdict.
   sur `console-api`, par qui passe désormais la connexion. Le relais de la collecte est allumé
   (`ingest_relay_pct` : 10 %, puis 50 % le 27/09 au soir ; 100 % prévu le 28/09) ; `api_relay_pct`,
   `console_api_ecrans_pct` et `console_api_commandes_pct` restent à 0, et le GeoIP du `collector`
-  éteint. Aucun verdict ne change : `A6` et `D14` le signalent en place.
+  éteint — allumé le 28/09 pour la seule collecte directe du capteur de la console (§ 13.4). Aucun
+  verdict ne change : `A6` et `D14` le signalent en place.
 
 ### 13.3 Ce que le code livre depuis, et ce qui en tourne au 28/09
 
 - **Restauration** (`D7`) : procédure écrite le 24/09/2026 ([runbook](operations/runbook.md), § 8),
-  jamais éprouvée, à répéter sur la branche Neon `repetition-p0` ; sa partie « identités » reste
-  manuelle.
+  éprouvée le 28/09 sur la branche Neon `repetition-p0` (§ 13.4) ; sa partie « identités » reste
+  manuelle et non éprouvée.
 - **Pays par adresse IP** (`D14`, § 3) : le chemin est choisi le 24/09/2026
   ([ADR-0005](architecture/adr/0005-relais-ingestion.md)) — la console relaie la collecte au `collector`
   en ne lui transmettant que le pays, puis la collecte directe (P6b.G), seule à permettre la
   résolution par adresse. L'image du `collector` télécharge la base DB-IP Lite à sa construction
-  (`scripts/fetch-geoip-db.mjs`, manifeste versionné) et garde le GeoIP éteint
-  (`GEOIP_IP_SOURCE: "none"`). Le `collector` tourne depuis le 27/09 et reçoit la part relayée, sans
-  adresse : la résolution n'y sert toujours pas.
+  (`scripts/fetch-geoip-db.mjs`, manifeste versionné) ; le GeoIP y est resté éteint
+  (`GEOIP_IP_SOURCE: "none"`) jusqu'au 28/09. Le `collector` tourne depuis le 27/09 et reçoit la part
+  relayée, sans adresse : pour elle, la résolution ne sert pas. Depuis le 28/09, elle sert la collecte
+  directe du seul capteur de la console (§ 13.4).
 - **Six services déclarés** dans `.railway/railway.ts` (`collector`, `api`, `console-api`, `mcp`,
   `scheduler`, `notifier`) : **en service depuis le 27/09**. Rôles de base de v89 et v93 : appliqués.
   Relais d'ingestion : allumé. Relais de l'API et bascule des écrans et des écritures vers
   `console-api` : livrés, drapeaux à 0 ; la connexion, elle, passe par `console-api`
   (`docs/TOPOLOGIE_BACKEND.md`, « Ce qui tourne, mais reste éteint par un drapeau »).
+
+### 13.4 La journée du 28/09/2026 : cinq points fermés ou réduits
+
+Des PR fusionnées ce jour-là, et des faits de production **lus en base le 28/09/2026** par des requêtes
+en lecture seule (`backfill_run`, `rum_session`, `rum_event_index`, `route_registry`) ou constatés par
+l'exploitation. Aucun verdict ne change (règle ci-dessus) : les lignes concernées le disent en place.
+
+- **Recette sur une vraie application** (§ 6.2, § 11, étape 1). Première relecture d'écrans sur le
+  trafic réel de `gip-plateforme` : vue d'ensemble, erreurs, un tableau de bord, Explorer, tracing.
+  Quatre défauts trouvés et corrigés (#343) : un bandeau « jamais rien reçu » sur une fenêtre sans
+  visite, quand le serveur de l'application envoyait 59 800 requêtes tracées le jour même
+  (`apps/console/lib/vue-ensemble.ts`) ; une période précédente dite incomplète faute d'erreur JS
+  (`apps/console/lib/comparaison.ts`) ; une ligne « Ensemble » dont les « Vues » comptaient des mesures
+  LCP (`apps/console/lib/widget-data.ts`) ; le nom de l'application dit deux fois dans l'Explorer.
+  L'enquête a trouvé, sur le backend de l'application, les rafales d'un scanner de vulnérabilités
+  (21/09 et 28/09, 88 % de 404) : prises pour des routes, elles avaient saturé son registre des routes
+  depuis le 14/09. Corrigé par #345 (`docs/INTEGRATION.md` § 10, « Une requête qu'aucune route n'a
+  servie »). Le registre a été nettoyé en production le 28/09 (1 977 routes retirées, 23 gardées) ;
+  **la reprise de 16:42 UTC l'a rempli de nouveau** : 1 976 chemins de scanner réinscrits en une
+  minute, relus dans les spans écrits avant le correctif (2 000 routes sur 2 000, lu en base). Le
+  nettoyage est à refaire. **Reste** : l'écran mobile, qu'aucune session réelle n'alimente (`C7`).
+- **Reprise de l'historique** (`D8`, `D9`). Exécutée en production par `scripts/backfill-rum.mjs`
+  (`event-index`, du 30/08 au 28/09), répétée d'abord sur une branche Neon : `mip-rum-console`, 853
+  lignes écrites (16:42:19 → 16:42:23 UTC) ; `gip-plateforme`, 142 833 (16:42:28 → 16:44:07 UTC) ;
+  aucun échec, les deux passages `completed`, et aucun span non indexé ensuite (`verify`). Le trou
+  réel était de 143 686 lignes, pas de 97 : le chiffre du 18/09 ne comptait que `rum_event`, et sur la
+  fenêtre, 179 111 des lignes d'index de `gip-plateforme` sont des spans serveur.
+- **Pays par adresse IP** (`D14`). #340 : `GEOIP_IP_SOURCE: "railway"` dans `.railway/railway.ts` et,
+  sur Vercel, `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL` : le capteur de la console, et lui seul, envoie au
+  `collector` sans passer par le relais. Avant l'apply, `scripts/ops/verifier-ip-directe.mjs` a conclu
+  « la façade écrase l'adresse forgée ». Première session résolue le 28/09 à 14:39 UTC : `FR`,
+  `geo_source = geoip`, `dbip-country-lite-2026-09` ; aucune autre application n'a de session
+  `geoip`. **Reste** : les sites des clients passent par le relais, qui ne transmet que le pays posé
+  par Vercel (`docs/operations/relais-ingestion.md`, P6b.G).
+- **Restauration** (`D7`). #341 : la procédure du runbook (§ 8) éprouvée sur la branche de
+  répétition, compte rendu en fin de section ; fenêtre restaurable portée de 6 à 24 heures le 28/09
+  (`history_retention_seconds` = 86 400, relu par l'API Neon). **Reste** : la partie « identités »,
+  manuelle et non éprouvée, les gestes d'exploitation des étapes 1 et 7, et la restauration de `main`.
+- **Backends** (`A4`, `C5`, `C6`). #338 : l'ingestion lit l'OTLP/HTTP protobuf ; #342 : les agents
+  officiels Python, Java et .NET éprouvés en production (`docs/INTEGRATION.md` § 10, « Par langage ») ;
+  #345 : une panne, une occurrence (`A4`), et les routes Flask, Django, ASP.NET, Express et Rails
+  ramenées à `:nom`. **Reste** : Go, PHP et Ruby, jamais essayés ; le SDK Node officiel, éprouvé
+  seulement en test automatique ; aucun service Node n'émet vers la production (`C5`).
+
+Le prochain relevé revoit `D7`, `D8` et `D9` (avec `F1` et `F3`, § 13.1), et dit ce que la recette
+change à la colonne « éprouvé sur donnée réelle », qu'aucun verdict ne porte encore (§ 1).
 
 ---
 

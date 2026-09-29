@@ -96,7 +96,7 @@ implicitement.
 
 **Ce que l'activation ne couvre pas : les sauvegardes.** Une restauration PITR antérieure à un
 effacement doit rejouer les barrières **avant** de rouvrir lectures et ingestion. Cette procédure
-n'est ni écrite ni éprouvée. Tant qu'elle ne l'est pas, la garantie ne porte pas sur les
+est écrite (`docs/operations/runbook.md` § 8) et éprouvée le 28/09/2026 sur une branche de répétition, sauf sa partie « identités », manuelle et non éprouvée. Tant qu'elle ne l'est pas, la garantie ne porte pas entièrement sur les
 restaurations, et ce document ne prétend pas le contraire.
 
 **Ce que la garantie ne couvrira jamais.** La preuve porte sur les identifiants fournis ou déjà liés

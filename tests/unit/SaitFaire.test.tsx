@@ -5,8 +5,9 @@
 //   - PS7 : une carte par entrée, au verdict LU dans le document (`data-verdict`) et
 //     dit une seule fois pour toutes dans le chapeau (recette du 26/09/2026), « Limites : »
 //     puis une puce par identifiant, sa pastille en tête, sa phrase entière — rien de
-//     replié ; ni D12 ni D14 nulle part dans la partie ; le renvoi « (voir R3) » est un
-//     lien nommé par le titre du point, vers une ancre qui existe dans « Ce qui reste » ;
+//     replié ; D12, seule inerte depuis le 28/09/2026, nulle part dans la partie ; les
+//     renvois « (voir R3) », « (voir R6) » sont des liens nommés par le titre du point,
+//     vers une ancre qui existe dans « Ce qui reste » ;
 //   - V-E : une case par capacité, une légende qui écrit chaque nombre et son
 //     verdict, un `role="img"` qui dit la même chose, une alternative textuelle ;
 //     aucune teinte de verdict de mesure (vert, ambre, rouge) ;
@@ -117,7 +118,7 @@ describe("PS7 — les cartes rendues (pendant unitaire de TP3)", () => {
     expect(ids).toContain("A4");
   });
 
-  it("TP4, côté partie 2 : ni D12 ni D14, ni en pastille ni dans le texte", () => {
+  it("TP4, côté partie 2 : aucune inerte (D12), ni en pastille ni dans le texte", () => {
     for (const id of DEPLOYEES_INERTES) {
       expect(PARTIE).not.toContain(`data-id="${id}"`);
       expect(texte(PARTIE)).not.toMatch(new RegExp(`\\b${id}\\b`));
@@ -129,9 +130,10 @@ describe("PS7 — les cartes rendues (pendant unitaire de TP3)", () => {
     for (const html of cartes) expect(html).toMatch(/^<article [^>]*class="[^"]*break-inside-avoid/);
   });
 
-  it("un renvoi « (voir R3) » est un lien nommé par le titre du point, vers sa carte dans « Ce qui reste »", () => {
+  it("un renvoi « (voir R3) », « (voir R6) » est un lien nommé par le titre du point, vers sa carte dans « Ce qui reste »", () => {
     const renvois = [...new Set(CARTES.flatMap((c) => c.limites).flatMap((l) => [...l.texte.matchAll(/\(voir (R\d+)\)/g)].map((m) => m[1])))];
-    expect(renvois).toEqual(["R3"]); // A6 : le branchement dans la CI d'un client
+    // A6 : le branchement dans la CI d'un client ; D14 (28/09/2026) : les sites des clients.
+    expect(renvois).toEqual(["R3", "R6"]);
     const reste = renderToStaticMarkup(<Reste />);
     for (const id of renvois) {
       const titre = POINTS_RESTE.find((p) => p.id === id)!.titre;
@@ -141,6 +143,8 @@ describe("PS7 — les cartes rendues (pendant unitaire de TP3)", () => {
     // Le texte lu nomme le point, jamais son code.
     const a6 = /<li data-testid="capacite-limite" data-id="A6"[^>]*>(.*?)<\/li>/.exec(PARTIE)?.[1] ?? "";
     expect(texte(a6)).toContain("n'est pas fait (voir « Source maps dans l'intégration continue du client »).");
+    const d14 = /<li data-testid="capacite-limite" data-id="D14"[^>]*>(.*?)<\/li>/.exec(PARTIE)?.[1] ?? "";
+    expect(texte(d14)).toContain("qui ne transmet que le pays (voir « Le pays par adresse IP sur les sites des clients »).");
     expect(texte(PARTIE)).not.toMatch(/\bR\d+\b/);
   });
 });

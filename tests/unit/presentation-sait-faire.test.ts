@@ -1,9 +1,10 @@
 // P**.4 — Les données de « Ce qu'il sait faire » (plan § 8.2, PS7 et PS8).
 //
 // Ce que ces tests tiennent, sans rendu :
-//   - les cartes : K1 à K15 dans l'ordre, chacune au verdict « déployé, non éprouvé »
-//     LU dans le document (verdictCarte), un texte pour chaque champ, et K15 (F2)
-//     avec ses deux réserves ;
+//   - les cartes : K1 à K16 dans l'ordre des familles (K16, famille D, après K13),
+//     chacune au verdict « déployé, non éprouvé » LU dans le document (verdictCarte), un
+//     texte pour chaque champ, K15 (F2) avec ses deux réserves, et, depuis la journée du
+//     28/09/2026, la puce A4 et la carte K16 (D14) qui suivent leurs lignes ;
 //   - les passages du document que citent les cartes et le bloc « Méthode » disent
 //     encore ce qu'on leur fait dire : un relevé qui renumérote le document fait
 //     échouer ce test au lieu de laisser une source pointer ailleurs ;
@@ -28,8 +29,10 @@ const DOC_LIGNES = DOC.split("\n");
 const ligneDoc = (n: number) => DOC_LIGNES[n - 1] ?? "";
 
 describe("PS7 — les cartes", () => {
-  it("K1 à K15, dans l'ordre", () => {
-    expect(CARTES.map((c) => c.id)).toEqual(Array.from({ length: 15 }, (_, i) => `K${i + 1}`));
+  it("K1 à K16, dans l'ordre des familles du document : K16 (famille D) après K13", () => {
+    expect(CARTES.map((c) => c.id)).toEqual([
+      "K1", "K2", "K3", "K4", "K5", "K6", "K7", "K8", "K9", "K10", "K11", "K12", "K13", "K16", "K14", "K15",
+    ]);
   });
 
   it("chaque carte a un titre, ce qu'elle fait et au moins une puce de limite, toutes non vides", () => {
@@ -54,12 +57,13 @@ describe("PS7 — les cartes", () => {
     expect(verdictCarte({ limites: [{ id: "Z9", texte: "x" }] })).toBeNull();
   });
 
-  it("une puce par ligne « déployé, non éprouvé », sauf les inertes — dont A4 et F2", () => {
+  it("une puce par ligne « déployé, non éprouvé », sauf les inertes — dont A4, F2 et D14", () => {
     const puces = CARTES.flatMap((c) => c.limites.map((l) => l.id));
     expect(new Set(puces).size).toBe(puces.length);
     expect(puces.length).toBe(compte("deploye_non_eprouve") - DEPLOYEES_INERTES.length);
     expect(puces).toContain("A4");
     expect(puces).toContain("F2");
+    expect(puces).toContain("D14");
     for (const id of DEPLOYEES_INERTES) expect(puces).not.toContain(id);
   });
 
@@ -228,6 +232,40 @@ describe("revue de fin de vague 7 — les cartes suivent leurs lignes corrigées
     expect(puce("E3").texte).toContain("un viewer ne crée et ne modifie que ses propres tableaux de bord et vues");
     expect(puce("E3").texte).toContain("le triage des issues est réservé aux administrateurs");
     expect(puce("E3").texte).not.toMatch(/aucun droit d'écriture/);
+  });
+
+  it("la puce A4 de K9 suit A4 (28/09/2026) : une panne, une occurrence, sauf deux cas nommés", () => {
+    const a4 = ligneDe("A4");
+    expect(a4.verdict).toBe(VERDICT_MONTRABLE);
+    // Le fait : la ligne dit fausse l'absence d'émetteur backend, et la fusion faite par #345.
+    expect(a4.limite).toContain("le premier point était faux");
+    expect(a4.limite).toContain("ne comptent qu'une occurrence");
+    expect(a4.limite).toContain("**Restent comptés deux fois**");
+    const texte = puce("A4").texte;
+    expect(texte).toContain("ne compte qu'une fois");
+    expect(texte).toContain("deux cas comptent encore double, sans signal à l'écran");
+    // L'ancien état, que la production et #345 ont rendu faux.
+    expect(texte).not.toMatch(/Aucun émetteur backend|n'est pas fusionnée/);
+    expect(carte("K9").limites.map((l) => l.id)).toEqual(["A4", "C5", "C6"]);
+  });
+
+  it("K16 suit D14 (28/09/2026) : le pays par adresse pour la seule collecte directe de la console", () => {
+    const d14 = ligneDe("D14");
+    expect(d14.verdict).toBe(VERDICT_MONTRABLE);
+    expect(d14.limite).toContain("**Depuis le 28/09/2026** (#340, § 13.4) : allumée pour la seule collecte directe du capteur de la console");
+    expect(d14.limite).toContain("**Aucun enrichissement rétrospectif n'est possible**");
+    // Le fait, dans l'IaC du collecteur.
+    expect(readFileSync(join(RACINE, ".railway/railway.ts"), "utf8")).toContain('GEOIP_IP_SOURCE: "railway"');
+    // D14 n'est plus inerte : elle a sa carte, et une seule puce.
+    expect(DEPLOYEES_INERTES).not.toContain("D14");
+    const k16 = carte("K16");
+    expect(k16.limites.map((l) => l.id)).toEqual(["D14"]);
+    expect(k16.faitQuoi).toContain("MIP ne l'écrit nulle part");
+    expect(puce("D14").texte).toContain("Allumé le 28/09/2026 pour le seul capteur de la console");
+    expect(puce("D14").texte).toContain("les sites des clients passent encore par le relais");
+    expect(puce("D14").texte).toContain("rien de rétrospectif");
+    // Le renvoi vise le point qui dit ce qui reste pour les clients.
+    expect(puce("D14").texte).toContain("(voir R6)");
   });
 
   it("la puce B6 de K7 suit B6 : 24 éléments par tableau, sections comprises, depuis F37", () => {

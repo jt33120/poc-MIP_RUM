@@ -4,13 +4,14 @@
 // carte par point de lib/presentation-reste.ts, dans l'ordre ; les trois lignes
 // étiquetées du plan ; les pastilles des lignes du document que le point cite,
 // avec le nom de la capacité et son verdict LUS dans lib/couverture.ts. La
-// présence de D12 et D14 dans #reste sur la vraie page est la recette e2e TP4
+// présence de D12 (inerte) et de D14 (inerte jusqu'au 28/09/2026, citée par R6 pour les
+// sites des clients) dans #reste sur la vraie page est la recette e2e TP4
 // (tests/e2e/presentation.spec.ts).
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Reste } from "@/components/presentation/Reste";
 import { VERDICT_LABEL } from "@/lib/couverture";
-import { POINTS_RESTE, lignesCitees } from "@/lib/presentation-reste";
+import { POINTS_FAITS, POINTS_RESTE, lignesCitees } from "@/lib/presentation-reste";
 
 /** Texte lisible : balises retirées, entités et espaces insécables normalisés. */
 const texte = (html: string) =>
@@ -39,7 +40,7 @@ describe("Partie 3 — la section, son titre et son chapeau", () => {
 });
 
 describe("Partie 3 — une carte par point, dans l'ordre", () => {
-  it("autant de cartes que de points, R1 à R9, chacune titrée par son h3", () => {
+  it("autant de cartes que de points, chacune titrée par son h3", () => {
     expect(CARTES).toHaveLength(POINTS_RESTE.length);
     CARTES.forEach((carte, i) => {
       const p = POINTS_RESTE[i];
@@ -62,6 +63,26 @@ describe("Partie 3 — une carte par point, dans l'ordre", () => {
 
   it("les cartes sont les éléments d'une liste ordonnée", () => {
     expect(HTML).toMatch(/<ol class="[^"]*grid[^"]*">(<li class="min-w-0"><article [^]*?<\/article><\/li>){9}<\/ol>/);
+  });
+});
+
+describe("Partie 3 — les points sortis de la liste, faits (28/09/2026)", () => {
+  const bloc = HTML.slice(HTML.indexOf('data-testid="reste-faits"'));
+
+  it("sous la liste, hors de ses cartes : un titre, puis une phrase datée par point, son titre portant l'ancre d'un point", () => {
+    expect(POINTS_FAITS.map((p) => p.id)).toEqual(["R2"]);
+    expect(HTML.indexOf('data-testid="reste-faits"')).toBeGreaterThan(HTML.indexOf("</ol>"));
+    expect(texte(/<h3 id="reste-faits-titre"[^>]*>(.*?)<\/h3>/.exec(bloc)![1])).toBe("Sortis de la liste");
+    for (const p of POINTS_FAITS) {
+      const li = new RegExp(`<li data-testid="reste-fait" data-id="${p.id}"[^>]*>(.*?)</li>`).exec(bloc);
+      expect(li, p.id).not.toBeNull();
+      expect(li![1]).toContain(`id="reste-${p.id}-titre"`);
+      expect(texte(li![1])).toBe(`${p.titre} — ${p.fait}`);
+    }
+    // Pas de pastille : le verdict de leurs lignes attend un relevé, la phrase dit l'état.
+    expect(bloc).not.toContain("reste-pastille");
+    // Un point fait n'est plus un point de la liste.
+    for (const p of POINTS_FAITS) expect(POINTS_RESTE.map((r) => r.id)).not.toContain(p.id);
   });
 });
 
@@ -97,7 +118,7 @@ describe("Partie 3 — les pastilles des lignes du document", () => {
     });
   });
 
-  it("D12 et D14, déployées mais inertes, ont chacune leur pastille dans la partie 3", () => {
+  it("D12 (inerte) et D14 (pour les sites des clients) ont chacune leur pastille dans la partie 3", () => {
     for (const id of ["D12", "D14"]) {
       const trouvees = [...HTML.matchAll(new RegExp(`data-testid="reste-pastille" data-id="${id}" data-verdict="deploye_non_eprouve"`, "g"))];
       expect(trouvees, id).toHaveLength(1);
