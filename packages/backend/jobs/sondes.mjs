@@ -41,6 +41,11 @@ export const SEUILS_C1 = Object.freeze({ okMs: 2_000, echecMs: 8_000 });
 export const GRACE_CLE_MS = 70_000;
 /** Défaut de l'alerte d'absence par application, en minutes. */
 export const SILENCE_APP_MIN_DEFAUT = 60;
+/**
+ * Une heure d'horloge est HABITUELLE pour une application si elle y a reçu des
+ * données au moins 4 des 7 derniers jours (lu dans `rum_rollup_hourly`).
+ */
+export const HABITUDE = Object.freeze({ jours: 7, minJours: 4 });
 /** Les tables où le passage doit avoir laissé sa trace, par clé unique. */
 export const TABLES_VERIFIEES = Object.freeze(["rum_session", "rum_pageview", "rum_metric", "rum_span", "rum_event_index"]);
 /** Sans elles, rien n'est écrit : la chaîne est interrompue (pas seulement dégradée). */
@@ -230,6 +235,60 @@ export function planReconstitution({ dernierPassage, maintenant, cadenceMin }) {
   const seuil = (2 * cadenceMin + 5) * 60_000;
   if (!(fin - dernier > seuil)) return null;
   return { debut: new Date(dernier + cadenceMin * 60_000), fin: new Date(fin) };
+}
+
+/** L'heure d'horloge (0 à 23) d'un instant, dans un fuseau IANA. */
+export function heureLocale(instant, fuseau) {
+  return Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: fuseau, hour: "2-digit", hourCycle: "h23" }).format(new Date(instant)),
+  );
+}
+
+/**
+ * Les heures d'horloge (dans le fuseau) que touche l'intervalle [debut, fin].
+ * Un pas d'une heure ne peut pas sauter une heure d'horloge : chacune est vue.
+ */
+export function heuresTouchees(debut, fin, fuseau) {
+  const a = new Date(debut).getTime();
+  const b = new Date(fin).getTime();
+  const heures = new Set();
+  for (let t = a; t < b; t += 3_600_000) heures.add(heureLocale(t, fuseau));
+  heures.add(heureLocale(b, fuseau));
+  return [...heures];
+}
+
+/**
+ * L'ALERTE D'ABSENCE : ce qu'il faut faire de la fenêtre `silence` d'une application.
+ *
+ * Muette depuis `silenceMin` minutes ne suffit pas : une application au trafic
+ * de jour se tait chaque soir, et l'alerte de 18 h ruinerait la confiance dans
+ * toutes les autres. Le silence est ANORMAL quand chaque heure d'horloge des
+ * `silenceMin` DERNIÈRES minutes est une heure habituelle de l'application.
+ *
+ * Pourquoi la queue du silence, et pas tout le silence : une panne qui commence
+ * lundi à 17 h traverse la nuit, heures creuses comprises ; exiger que TOUTES
+ * ses heures soient habituelles ne la signalerait jamais. Regarder les
+ * dernières minutes la signale mardi à 11 h, quand l'application aurait dû
+ * parler — et jamais le soir, quand elle se tait d'habitude.
+ *
+ * @param {{ dernier: Date|string|null, maintenant: number|Date, silenceMin: number, fuseau: string,
+ *           heuresHabituelles: number[], ouverte: boolean, chaineOk?: boolean }} p
+ * @returns {{ action: "ouvrir"|"fermer"|"rien", raison?: string, heures?: number[] }}
+ */
+export function decisionSilence({ dernier, maintenant, silenceMin, fuseau, heuresHabituelles, ouverte, chaineOk = true }) {
+  const t = new Date(maintenant).getTime();
+  // Jamais de donnée dans l'horizon : rien à juger (une fenêtre ouverte reste ouverte).
+  if (dernier == null) return { action: "rien", raison: "aucune donnée récente" };
+  const muette = t - new Date(dernier).getTime() >= silenceMin * 60_000;
+  if (!muette) return ouverte ? { action: "fermer" } : { action: "rien" };
+  // Une alerte par épisode : la fenêtre ouverte l'a déjà levée.
+  if (ouverte) return { action: "rien", raison: "épisode en cours" };
+  // La chaîne coupée fait taire toutes les apps : sa propre fenêtre le dit.
+  if (!chaineOk) return { action: "rien", raison: "chaîne coupée" };
+  const habituelles = new Set(heuresHabituelles ?? []);
+  const heures = heuresTouchees(t - silenceMin * 60_000, t, fuseau);
+  if (!heures.every((h) => habituelles.has(h))) return { action: "rien", raison: "heure creuse", heures };
+  return { action: "ouvrir", heures };
 }
 
 /** `x-mip-chemin` de la réponse, s'il est posé (relais) — sinon inconnu. */
@@ -451,6 +510,47 @@ export function creerSondes({
     return ev[0]?.id ?? null;
   }
 
+  /**
+   * Les faits en UNE requête (`sonde_etat_silence` : dernière donnée, heures
+   * habituelles, fenêtre ouverte), la décision ici (`decisionSilence`), une
+   * écriture seulement quand une fenêtre s'ouvre ou se ferme.
+   */
+  async function traiterSilences(chaineOk) {
+    const { rows } = await pool.query("select * from sonde_etat_silence($1, $2)", [HABITUDE.jours, HABITUDE.minJours]);
+    const bilan = { ouvertes: 0, fermees: 0, alertes: 0, heures_creuses: 0 };
+    const t = maintenant();
+    for (const app of rows) {
+      const d = decisionSilence({
+        dernier: app.dernier,
+        maintenant: t,
+        silenceMin,
+        fuseau: app.fuseau || "Europe/Paris",
+        heuresHabituelles: app.heures_habituelles,
+        ouverte: app.fenetre_id != null,
+        chaineOk,
+      });
+      if (d.action === "fermer") {
+        const { rows: r } = await pool.query("select sonde_fermer_silence($1) as ok", [app.fenetre_id]);
+        if (r[0]?.ok) bilan.fermees++;
+      } else if (d.action === "ouvrir") {
+        const { rows: r } = await pool.query("select sonde_ouvrir_silence($1, $2, $3, $4::int[]) as alerte", [
+          app.app_id,
+          app.dernier,
+          silenceMin,
+          d.heures,
+        ]);
+        // NULL : une fenêtre était déjà ouverte (autre instance) — rien de levé.
+        if (r[0]?.alerte != null) {
+          bilan.ouvertes++;
+          bilan.alertes++;
+        }
+      } else if (d.raison === "heure creuse") {
+        bilan.heures_creuses++;
+      }
+    }
+    return bilan;
+  }
+
   const verifier = {
     name: "canari_verifier",
     run: async () => {
@@ -495,14 +595,14 @@ export function creerSondes({
 
       // L'alerte d'absence par application : muette quand la chaîne elle-même
       // est coupée (sa fenêtre le dit déjà, une fois pour toutes les apps).
-      const { rows: silence } = await pool.query("select check_collecte_silence($1, $2) as r", [silenceMin, etat !== "interrompue"]);
+      const silence = await traiterSilences(etat !== "interrompue");
       return {
         etat: etat ?? "inconnu",
         emission: c.emission.resultat,
         ecriture: ecriture.resultat,
         reconstitution: Boolean(reconstitution),
         alerte_canari: alerte,
-        silence: silence[0]?.r ?? null,
+        silence,
       };
     },
   };
