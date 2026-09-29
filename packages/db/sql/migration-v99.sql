@@ -21,10 +21,12 @@
 --   5. le comptage d'usage (`tenant_usage_daily`) n'admet jamais une
 --      application sonde ;
 --   6. la purge quotidienne borne le journal (90 j) et le registre (400 j) ;
---   7. l'alerte d'absence (« dead man's switch ») : `check_collecte_silence`
---      ouvre une fenêtre `silence` par application muette, et `sonde_alerter`
---      lève UNE alerte par fenêtre, par le chemin des autres (`alert_event`
---      puis `route_alert`).
+--   7. l'alerte d'absence (« dead man's switch ») sur un silence ANORMAL :
+--      `sonde_etat_silence` rend, par application, sa dernière donnée et ses
+--      heures d'activité habituelles (lues dans `rum_rollup_hourly`) ; le
+--      scheduler décide ; `sonde_ouvrir_silence` ouvre une fenêtre `silence`
+--      et `sonde_alerter` lève UNE alerte par fenêtre, par le chemin des autres
+--      (`alert_event` puis `route_alert`).
 --
 -- DROITS. Lecture pour `console_ro` (motif de v87), rien pour `anon` ni
 -- `authenticated`. PAS de droit pour `mip_api` : le service `api` ne lit aucune
@@ -260,84 +262,109 @@ begin
   return ev_id;
 end $$;
 
--- ── 10. L'alerte d'absence par application ──────────────────────────────────
+-- ── 10. L'alerte d'absence par application : un silence ANORMAL ────────────
 --
--- Pour chaque application active, ni sonde ni suspendue, qui a reçu des
--- données dans les `p_horizon_jours` derniers jours : sa dernière donnée
--- (`rum_event_index`, la projection de tous les signaux, lue par l'index
--- (app_id, ts desc) : une ligne par application) a plus de `p_silence_min`
--- minutes → une fenêtre `silence` s'ouvre, datée de cette dernière donnée, et
--- UNE alerte part. Elle se ferme au retour de la donnée. Une application qui
--- n'a jamais rien reçu n'est pas « muette » : elle est ignorée.
+-- Une application au trafic de jour se tait chaque soir : ce silence est
+-- normal, et une alerte quotidienne à 18 h ruinerait la confiance dans toutes
+-- les autres. Le silence n'alerte donc que s'il tombe à des heures où
+-- l'application reçoit HABITUELLEMENT des données : au moins `p_min_jours` des
+-- `p_jours` derniers jours (jour en cours exclu) avec une activité dans la même
+-- heure d'horloge, au fuseau de l'application (`app_registry.timezone`).
 --
--- `p_chaine_ok` faux (le canari échoue) : aucune fenêtre ne s'ouvre. Quand la
--- chaîne est coupée, toutes les applications se taisent ensemble, et c'est la
--- fenêtre de la plateforme qui le dit — pas une alerte par application.
--- `p_apps` : restreint le passage à ces applications (exploitation, tests).
-create or replace function check_collecte_silence(
-  p_silence_min int default 60, p_chaine_ok boolean default true, p_horizon_jours int default 7,
-  p_apps text[] default null
-) returns jsonb language plpgsql set search_path = public, pg_temp as $$
-declare
-  a record;
-  dernier timestamptz;
-  ouverte_id bigint;
-  ouverte_debut timestamptz;
-  retour timestamptz;
-  fid bigint;
-  msg text;
-  ouvertes int := 0;
-  fermees int := 0;
-  alertes int := 0;
+-- LA DÉCISION est prise par le scheduler (`decisionSilence`,
+-- `packages/backend/jobs/sondes.mjs`, testée sans base) ; la base fournit les
+-- faits en UNE requête, par index :
+--   · la dernière donnée : `rum_event_index` (projection de tous les signaux,
+--     spans serveur compris), index (app_id, ts desc), une ligne par app ;
+--   · les heures habituelles : `rum_rollup_hourly` (pages vues, vitals,
+--     erreurs), clé primaire (app_id, …), au plus 7 × 24 cellules par app et
+--     par type d'appareil. JAMAIS le brut. Limite : une application qui
+--     n'émet que des spans serveur n'a pas de ligne de rollup, donc aucune
+--     heure habituelle, donc aucune alerte — son battement se déclarera dans
+--     `sonde_attendue` (lot suivant).
+create or replace function sonde_etat_silence(
+  p_jours int default 7, p_min_jours int default 4, p_horizon_jours int default 7, p_apps text[] default null
+) returns table (
+  app_id text, fuseau text, dernier timestamptz, heures_habituelles int[],
+  fenetre_id bigint, fenetre_debut timestamptz
+) language sql stable set search_path = public, pg_temp as $$
+  select r.app_id, r.timezone, d.ts, coalesce(h.heures, '{}'::int[]), f.id, f.debut
+    from app_registry r
+    left join lateral (
+      select i.ts from rum_event_index i
+       where i.app_id = r.app_id
+         and i.ts > now() - make_interval(days => greatest(p_horizon_jours, 1))
+         -- Une horloge cliente en avance ne doit pas masquer un silence.
+         and i.ts <= now() + interval '5 minutes'
+       order by i.ts desc limit 1
+    ) d on true
+    left join lateral (
+      select array_agg(x.heure order by x.heure) as heures
+        from (
+          select extract(hour from c.hour at time zone r.timezone)::int as heure
+            from rum_rollup_hourly c
+           where c.app_id = r.app_id
+             and c.hour >= (date_trunc('day', now() at time zone r.timezone) - make_interval(days => greatest(p_jours, 1))) at time zone r.timezone
+             and c.hour <  date_trunc('day', now() at time zone r.timezone) at time zone r.timezone
+             and (c.pageviews > 0 or c.errors > 0 or c.total_w > 0)
+           group by 1
+          having count(distinct (c.hour at time zone r.timezone)::date) >= p_min_jours
+        ) x
+    ) h on true
+    left join collecte_fenetre f on f.portee = r.app_id and f.etage = 'silence' and f.fin is null
+   where r.active and not r.sonde
+     -- `to_jsonb` : la colonne vient de v81 ; la lire ainsi ne casse rien.
+     and (to_jsonb(r) ->> 'ingestion_suspended_at') is null
+     and (p_apps is null or r.app_id = any(p_apps))
+   order by r.app_id
+$$;
+
+-- Ouvre la fenêtre `silence` d'une application, datée de sa dernière donnée,
+-- et lève son alerte — une seule : la fenêtre ouverte est unique par
+-- (portée, étage), un second appel ne trouve rien à ouvrir. Rend l'alerte.
+create or replace function sonde_ouvrir_silence(
+  p_app_id text, p_dernier timestamptz, p_silence_min int, p_heures int[]
+) returns bigint language plpgsql set search_path = public, pg_temp as $$
+declare fid bigint; msg text; quand text;
 begin
   if p_silence_min is null or p_silence_min < 5 then
-    raise exception 'check_collecte_silence : seuil de silence invalide (% min)', p_silence_min;
+    raise exception 'sonde_ouvrir_silence : seuil de silence invalide (% min)', p_silence_min;
   end if;
-  for a in
-    select r.app_id from app_registry r
-     where r.active and not r.sonde
-       -- `to_jsonb` : la colonne vient de v81 ; la lire ainsi ne casse rien.
-       and (to_jsonb(r) ->> 'ingestion_suspended_at') is null
-       and (p_apps is null or r.app_id = any(p_apps))
-     order by r.app_id
-  loop
-    dernier := null; ouverte_id := null; ouverte_debut := null;
-    select i.ts into dernier from rum_event_index i
-     where i.app_id = a.app_id
-       and i.ts > now() - make_interval(days => greatest(p_horizon_jours, 1))
-       -- Une horloge cliente en avance ne doit pas masquer un silence.
-       and i.ts <= now() + interval '5 minutes'
-     order by i.ts desc limit 1;
-    select f.id, f.debut into ouverte_id, ouverte_debut from collecte_fenetre f
-     where f.portee = a.app_id and f.etage = 'silence' and f.fin is null;
-
-    if dernier is not null and dernier >= now() - make_interval(mins => p_silence_min) then
-      if ouverte_id is not null then
-        select min(i.ts) into retour from rum_event_index i
-         where i.app_id = a.app_id and i.ts > ouverte_debut;
-        update collecte_fenetre
-           set fin = greatest(coalesce(retour, now()), ouverte_debut + interval '1 second'), updated_at = now()
-         where id = ouverte_id;
-        fermees := fermees + 1;
-      end if;
-    elsif dernier is not null and ouverte_id is null and p_chaine_ok then
-      insert into collecte_fenetre (portee, etage, etat, debut, cause, preuve, source)
-      values (a.app_id, 'silence', 'interrompue', dernier,
-              format('aucune donnée reçue depuis %s min', p_silence_min),
-              format('dernière donnée le %s UTC', to_char(dernier at time zone 'UTC', 'YYYY-MM-DD HH24:MI')),
-              'sonde')
-      returning id into fid;
-      ouvertes := ouvertes + 1;
-      msg := format('Collecte muette — app %s : aucune donnée reçue depuis %s min (dernière le %s UTC)',
-                    a.app_id, p_silence_min, to_char(dernier at time zone 'UTC', 'YYYY-MM-DD HH24:MI'));
-      if sonde_alerter(fid, a.app_id, 'warning', msg,
+  quand := to_char(p_dernier at time zone 'UTC', 'YYYY-MM-DD HH24:MI');
+  insert into collecte_fenetre (portee, etage, etat, debut, cause, preuve, source)
+  values (p_app_id, 'silence', 'interrompue', p_dernier,
+          format('aucune donnée depuis %s min, à des heures habituellement actives', p_silence_min),
+          left(format('dernière donnée le %s UTC ; heures locales habituelles manquées : %s',
+                      quand, array_to_string(p_heures, ', ')), 300),
+          'sonde')
+  on conflict (portee, etage) where fin is null do nothing
+  returning id into fid;
+  if fid is null then
+    return null;
+  end if;
+  msg := format('Collecte muette — app %s : aucune donnée depuis %s min (dernière le %s UTC), '
+                'à des heures où elle en reçoit habituellement (%s h, heure locale)',
+                p_app_id, p_silence_min, quand, array_to_string(p_heures, ' h, '));
+  return sonde_alerter(fid, p_app_id, 'warning', msg,
                        jsonb_build_object('kind', 'collecte_silence', 'silence_min', p_silence_min,
-                                          'derniere_donnee', dernier, 'text', msg)) is not null then
-        alertes := alertes + 1;
-      end if;
-    end if;
-  end loop;
-  return jsonb_build_object('ouvertes', ouvertes, 'fermees', fermees, 'alertes', alertes);
+                                          'derniere_donnee', p_dernier, 'heures', to_jsonb(p_heures), 'text', msg));
+end $$;
+
+-- Ferme la fenêtre `silence` à la première donnée revenue (sinon maintenant).
+create or replace function sonde_fermer_silence(p_fenetre_id bigint)
+returns boolean language plpgsql set search_path = public, pg_temp as $$
+declare f record; retour timestamptz;
+begin
+  select id, portee, debut into f from collecte_fenetre
+   where id = p_fenetre_id and etage = 'silence' and fin is null for update;
+  if f.id is null then
+    return false;
+  end if;
+  select min(i.ts) into retour from rum_event_index i where i.app_id = f.portee and i.ts > f.debut;
+  update collecte_fenetre
+     set fin = greatest(coalesce(retour, now()), f.debut + interval '1 second'), updated_at = now()
+   where id = f.id;
+  return true;
 end $$;
 
 -- Écritures : exécutées par le scheduler (propriétaire) seulement.
@@ -347,14 +374,15 @@ begin
   foreach fn in array array[
     'purge_sondes(integer, integer)',
     'sonde_alerter(bigint, text, text, text, jsonb)',
-    'check_collecte_silence(integer, boolean, integer, text[])'
+    'sonde_ouvrir_silence(text, timestamp with time zone, integer, integer[])',
+    'sonde_fermer_silence(bigint)'
   ] loop
     execute format('revoke execute on function %s from public', fn);
   end loop;
 end $$;
 
-comment on function check_collecte_silence(integer, boolean, integer, text[]) is
-  'Alerte d''absence (v99) : une fenêtre silence et UNE alerte par application muette depuis '
-  'p_silence_min minutes ; fermée au retour de la donnée. Rien ne s''ouvre si la chaîne est coupée.';
+comment on function sonde_etat_silence(integer, integer, integer, text[]) is
+  'Alerte d''absence (v99) : par application, dernière donnée, heures locales d''activité habituelle '
+  '(rum_rollup_hourly, au moins p_min_jours des p_jours derniers jours) et fenêtre silence ouverte.';
 comment on function sonde_alerter(bigint, text, text, text, jsonb) is
   'Lève l''alerte d''une fenêtre de collecte, une seule par fenêtre : alert_event puis route_alert (v99).';
