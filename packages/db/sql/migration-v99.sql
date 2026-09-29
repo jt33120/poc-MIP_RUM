@@ -149,11 +149,19 @@ begin
     if exists (select 1 from pg_roles where rolname = 'console_ro') then
       execute format('revoke all on %I from console_ro', t);
       execute format('grant select on %I to console_ro', t);
-      -- Tables GLOBALES, sans secret : la policy ouvre la lecture à qui en a le
-      -- droit. Sans elle, un rôle soumis à la RLS lirait zéro ligne, sans erreur.
+      -- Sans policy, un rôle soumis à la RLS lirait zéro ligne, sans erreur. La
+      -- lecture suit la portée de la session, comme `audit_log` (v90) : la
+      -- plateforme ('*') pour tous, une application pour qui la voit. Une
+      -- `using (true)` sur une table qui porte un `app_id` annulerait le filtrage
+      -- des autres policies (garde de scripts/verify-tenant-isolation.mjs).
       if not exists (select 1 from pg_policy where polrelid = ('public.' || t)::regclass
                                                  and polname = 'console_ro_lecture') then
-        execute format('create policy console_ro_lecture on %I as permissive for select to console_ro using (true)', t);
+        execute format('create policy console_ro_lecture on %I as permissive for select to console_ro using (%s)', t,
+          case t
+            when 'sonde_attendue' then 'app_id = any(current_app_ids())'
+            when 'sonde_battement' then 'true'  -- battement des services : global, sans app
+            else 'portee = ''*'' or portee = any(current_app_ids())'
+          end);
       end if;
     end if;
     if exists (select 1 from pg_roles where rolname = 'anon') then
