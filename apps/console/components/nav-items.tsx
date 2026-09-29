@@ -125,8 +125,8 @@ export const CATEGORIES: NavCategory[] = [
   },
   // FERMÉ : ce n'est pas du RUM. rum_log porte le signal LOGS d'OpenTelemetry,
   // alimenté par le SERVEUR — la console qui forwarde ses propres logs
-  // (lib/log-forward.ts) et l'agent Node (packages/agent-node) qui capture
-  // console.*. Le SDK navigateur n'émet aucun log : la colonne `source` prévoit
+  // (lib/log-forward.ts) et l'agent OpenTelemetry officiel posé sur le serveur
+  // du client (OTEL_LOGS_EXPORTER=otlp). Le SDK navigateur n'émet aucun log : la colonne `source` prévoit
   // 'sdk' et 'extension', rien ne produit ces valeurs. C'est de l'observabilité
   // back-end corrélée au RUM par trace_id, pas une mesure de l'expérience vécue.
   { href: "/logs", label: "Logs", icon: "logs", domain: "neutral", verrouille: estFermee("/logs") },
