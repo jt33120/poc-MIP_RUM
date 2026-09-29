@@ -89,10 +89,10 @@
     {
       "id": "A8",
       "famille": "Suivi des erreurs",
-      "capacite": "Trier une issue : statut, assignation, commentaire, lien de ticket manuel",
+      "capacite": "Trier une issue : statut, assignation, commentaire",
       "verdict": "deploye_non_eprouve",
-      "preuve": "migrations v73/v74, `POST /api/v1/issues/:id/{triage,comments,links}` avec `expectedRevision` (409) ; `tests/unit/error-triage.test.ts` ; PR #188/#189",
-      "limite": "Le commentaire libre d'un opérateur **n'est pas scrubé** lorsque l'issue survit à un effacement : MIP ne peut pas savoir s'il cite une donnée personnelle. Une revue humaine reste nécessaire (`delivery-p8.md`, écarts P8.1).",
+      "preuve": "migrations v73/v74, `POST /api/v1/issues/:id/{triage,comments}` avec `expectedRevision` (409) ; `tests/unit/error-triage.test.ts` ; PR #188/#189",
+      "limite": "Le commentaire libre d'un opérateur **n'est pas scrubé** lorsque l'issue survit à un effacement : MIP ne peut pas savoir s'il cite une donnée personnelle. Une revue humaine reste nécessaire (`delivery-p8.md`, écarts P8.1). Le lien de ticket manuel est retiré depuis le 29/09/2026, avec les tickets (`D12`).",
       "ligne": 147
     },
     {
@@ -119,7 +119,7 @@
       "capacite": "Appliquer les mêmes filtres partout",
       "verdict": "deploye_non_eprouve",
       "preuve": "`apps/console/lib/query-contract.ts`, `query-compiler.ts`, `surfaces.ts` ; `tests/integration/query-contract-sql.test.ts`, `tests/e2e/navigation-filtres.spec.ts` ; PR #192",
-      "limite": "Les lectures historiques `logs`, SVI et assistant IA filtrent encore par l'**app nommée**, pas par le périmètre effectif. Une surface qui ne sait pas appliquer un filtre l'**annonce** non appliqué au lieu de l'ignorer.",
+      "limite": "Les lectures historiques `logs` et assistant IA filtrent encore par l'**app nommée**, pas par le périmètre effectif (la lecture SVI est retirée le 29/09/2026). Une surface qui ne sait pas appliquer un filtre l'**annonce** non appliqué au lieu de l'ignorer.",
       "ligne": 155
     },
     {
@@ -316,7 +316,7 @@
       "famille": "Exploitation, vie privée et conformité",
       "capacite": "Effacer toutes les données d'une application",
       "verdict": "deploye_non_eprouve",
-      "preuve": "`erase_app_data` (v81), qui **suspend l'ingestion dans le registre** sous la même transaction ; vérifié en base le 18/09 : `analytics_saved_view`, `dashboard`, `backfill_run`, `error_status`, `svi_*`, `rum_log`, `rum_ai`, `mobile_capabilities` sont bien couverts",
+      "preuve": "`erase_app_data` (v81), qui **suspend l'ingestion dans le registre** sous la même transaction ; vérifié en base le 18/09 : `analytics_saved_view`, `dashboard`, `backfill_run`, `error_status`, `svi_*` (tables supprimées le 29/09/2026 avec le module SVI), `rum_log`, `rum_ai`, `mobile_capabilities` sont bien couverts",
       "limite": "La configuration d'exploitation (`slo`, `goal`, `notify_channel`, `uptime_check`, `read_tokens`, `deploy_marker`, `extension_scope`…) **n'est pas supprimée** : objets d'exploitation, pas données de personnes. `tenant_usage_daily` et `app_registry` survivent volontairement.",
       "ligne": 187
     },
@@ -326,7 +326,7 @@
       "capacite": "Purger selon la rétention",
       "verdict": "deploye_non_eprouve",
       "preuve": "`purge_rum_app` / `purge_rum_tenants`, travail planifié `packages/backend/jobs/planifie.mjs`",
-      "limite": "**La rétention ne couvre toujours pas les tables SVI.** Vérifié en base le 18/09 : `purge_rum_app` ne cite pas `svi_call`, alors que `erase_app_data` le fait. Écart préexistant, non corrigé.",
+      "limite": "Au relevé, **la rétention ne couvrait pas les tables SVI** : vérifié en base le 18/09, `purge_rum_app` ne cite pas `svi_call`, alors que `erase_app_data` le fait. **Levé le 29/09/2026** : ces tables sont supprimées avec le module SVI. Aucun relevé n'a revérifié la purge depuis ; le verdict attend le prochain.",
       "ligne": 188
     },
     {
@@ -387,18 +387,18 @@
       "id": "D12",
       "famille": "Exploitation, vie privée et conformité",
       "capacite": "Créer un ticket chez un fournisseur depuis une issue",
-      "verdict": "deploye_non_eprouve",
-      "preuve": "**PR #211 fusionnée le 18/09 à 12:59**, CI verte (6 contrôles) ; migration **v84 appliquée en production à 13:30:35 UTC** (journal de pré-déploiement `ingest`) ; `packages/backend/lib/integrations/tickets/{adapter,dispatcher}.mjs`, tables `ticket_integration` / `ticket_outbox` / `ticket_webhook_event`, écrans `/admin/ticket-integrations`. **Un vrai ticket a été créé** dans un dépôt bac à sable — c'est la seule ligne de P5 à P8 qui ait touché un système externe réel",
-      "limite": "**Déployé et inerte** : aucune intégration n'est configurée, `TICKET_INTEGRATIONS` n'est pas posé, et l'interface d'administration reste cachée tant qu'aucun fournisseur n'est branché **et testé**. Un seul fournisseur (GitHub Issues), présenté dans le produit comme une étape vers l'ITSM de MIP — « ServiceNow, **sous réserve de confirmation** », et personne n'a confirmé. Aucune écriture MIP → fournisseur après la création : résoudre une issue ne ferme pas le ticket. Le lien manuel de P5.6 continue de fonctionner **sans** connecteur, et un test le prouve.",
+      "verdict": "non_retenu",
+      "preuve": "**Décision du propriétaire du produit du 29/09/2026 : la fonctionnalité des tickets est retirée.** Le connecteur (GitHub Issues), sa file d'envoi, l'écran `/admin/ticket-integrations`, ses opérations et le lien manuel de P5.6 ont quitté le code ; les tables `ticket_integration`, `ticket_outbox`, `ticket_webhook_event` et `error_issue_ticket` sont supprimées par migration (chantier « base de données propre » du 29/09/2026). Avant le retrait : PR #211 fusionnée le 18/09, migration v84 appliquée en production, un vrai ticket créé dans un dépôt bac à sable (§ 9)",
+      "limite": "**Retiré, rien à éprouver.** Aucune intégration n'avait été configurée en production (relevé du 23/09) : les tables étaient vides. La cible annoncée pour MIP (ServiceNow) n'avait jamais été confirmée.",
       "ligne": 195
     },
     {
       "id": "D13",
       "famille": "Exploitation, vie privée et conformité",
       "capacite": "Recevoir les changements d'état du fournisseur (webhook)",
-      "verdict": "bloque_acces_externe",
-      "preuve": "route `apps/console/app/api/webhooks/tickets/[integrationId]/route.ts` déployée sur Vercel avec `2f216cb` ; signature HMAC-SHA256 sur corps brut, comparaison à temps constant, identifiant de livraison unique en base ; tests contre un double fidèle (corps modifié, secret tiers, signature tronquée, non hexadécimale, absente) — PR #211",
-      "limite": "**Le webhook n'a jamais reçu de livraison d'un vrai fournisseur.** L'URL est désormais publique, mais aucune intégration n'existe : toute livraison reçoit le même `404` qu'une intégration inconnue. Manquent un espace cible et ses droits, un secret de webhook, et la politique de synchronisation — cinq décisions, pas cinq tickets. Aucune synchronisation de statut n'a été observée en vrai.",
+      "verdict": "non_retenu",
+      "preuve": "**Décision du propriétaire du produit du 29/09/2026 : retiré avec les tickets (`D12`).** La route de la console `/api/webhooks/tickets/{id}` et le hook du `notifier` (`POST /v1/webhooks/tickets/{id}`) ont quitté le code, avec `CONSOLE_TICKET_HOOK_URL` et `TICKET_SECRET_KEY`",
+      "limite": "**Retiré.** Le webhook n'avait jamais reçu de livraison d'un vrai fournisseur.",
       "ligne": 196
     },
     {
@@ -460,7 +460,7 @@
       "famille": "Chaîne de livraison",
       "capacite": "Rejouer la recette SQL complète en CI",
       "verdict": "livre_avec_defaut_connu",
-      "preuve": "job « E2E Playwright (Postgres service) » : `test:sql` (7 bases depuis #213), `test:isolation`, `test:alerting`, `test:svi` ; étapes vertes dans le passage CI `35833662207` sur `8a5f3d1` (§ 12.3)",
+      "preuve": "job « E2E Playwright (Postgres service) » : `test:sql` (7 bases depuis #213), `test:isolation`, `test:alerting`, `test:svi` (retiré le 29/09/2026 avec le module SVI) ; étapes vertes dans le passage CI `35833662207` sur `8a5f3d1` (§ 12.3)",
       "limite": "**Défaut : les deux bancs de mesure ne tournent jamais en CI**, faute de `BENCH_DATABASE_URL`, absente de `ci.yml` (vérifié le 23/09) : `explorer-bench-p66` et `rum-mobile-bench-p75`, qui lisent une base préparée à part. Les temps publiés (`B9`) ne sont donc jamais revérifiés, et ce relevé ne les a pas rejoués. La fenêtre v82→v83, second trou du 18/09, est jouée par la CI depuis #213, et passe (§ 8.2). **Levé depuis le relevé** (#281, 24/09/2026) : le job « Bancs de mesure » de `ci.yml` pose `BENCH_DATABASE_URL`, sème une base jetable (`scripts/bench/semer-bancs.mjs`) et joue les deux bancs ; il échoue si l'index de v82 n'est plus choisi, **sans seuil de latence** — les temps sont imprimés, pas comparés. Vert sur `09833f1` (§ 13). Le verdict attend un nouveau relevé.",
       "ligne": 213
     }

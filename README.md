@@ -185,16 +185,16 @@ En cas de désaccord entre ces documents, [docs/RUM_PARITY_STATUS.md](docs/RUM_P
 <!-- genere:readme-statut -->
 <!-- Zone écrite par `node scripts/readme-sections.mjs` depuis apps/console/lib/couverture.generated.json, l'extraction de docs/RUM_PARITY_STATUS.md. Ne pas la modifier à la main : tests/unit/readme.test.ts la régénère et compare. -->
 
-État relevé le **23/09/2026** sur `8a5f3d1` par le document de couverture [docs/RUM_PARITY_STATUS.md](docs/RUM_PARITY_STATUS.md) : **49** capacités recensées, **35** déployées, **aucune** éprouvée sur des données réellement ingérées — le vocabulaire du document n'a pas de verdict au-dessus de `deploye_non_eprouve`.
+État relevé le **23/09/2026** sur `8a5f3d1` par le document de couverture [docs/RUM_PARITY_STATUS.md](docs/RUM_PARITY_STATUS.md) : **49** capacités recensées, **34** déployées, **aucune** éprouvée sur des données réellement ingérées — le vocabulaire du document n'a pas de verdict au-dessus de `deploye_non_eprouve`.
 
 | Verdict | Capacités |
 |---|--:|
-| `deploye_non_eprouve` | 35 |
+| `deploye_non_eprouve` | 34 |
 | `livre_non_deploye` | 5 |
 | `livre_avec_defaut_connu` | 2 |
 | `en_revue` | 0 |
-| `bloque_acces_externe` | 4 |
-| `non_retenu` | 1 |
+| `bloque_acces_externe` | 3 |
+| `non_retenu` | 3 |
 | `non_commence` | 2 |
 
 Le document ne recense que les capacités des lots P5 à P8 : les écrans plus anciens de la console n'y ont pas de verdict, et ce README ne leur en donne pas. La vitrine (`/presentation`) reprend les mêmes verdicts, ligne par ligne.
