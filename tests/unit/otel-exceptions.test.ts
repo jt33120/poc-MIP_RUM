@@ -39,7 +39,8 @@ const kv = (key: string, value: unknown) => ({
     : typeof value === "number" ? { intValue: String(value) }
       : { stringValue: String(value) },
 });
-const attributs = (attrs: Attrs) => Object.entries(attrs).map(([key, value]) => kv(key, value));
+/** Un attribut `undefined` n'est pas émis : c'est ainsi qu'un test retire un attribut par défaut. */
+const attributs = (attrs: Attrs) => Object.entries(attrs).filter(([, value]) => value !== undefined).map(([key, value]) => kv(key, value));
 
 const erreur = (over: Attrs = {}): Attrs => ({
   "exception.type": "ValueError",
@@ -238,6 +239,68 @@ describe("parseur — exceptions portées par un span", () => {
     expect(rows.errors).toHaveLength(1);
     expect(rows.errors[0]).toMatchObject({ span_id: SPAN, session_id: "s-web" });
     expect(rows.errors[0]).not.toHaveProperty("origin_signal");
+  });
+});
+
+// 29/09/2026, constaté en production : l'agent Node officiel sous Express 5
+// enregistre l'exception sur le span INTERNAL du gestionnaire (qui porte
+// `http.route`), pas sur le span SERVER. L'erreur partait avec `route = null`.
+describe("parseur — route d'une exception portée par un span non serveur", () => {
+  const SPAN_HANDLER = "00f067aa0ba902c7";
+  const AUTRE_TRACE = "5bf92f3577b34da6a3ce929d0e0e4736";
+  /** Span INTERNAL de l'instrumentation Express : c'est lui qui porte l'exception. */
+  const gestionnaire = (attrs: Attrs = { "http.route": "/factures/:id" }, over: Row = {}) => span(
+    { spanId: SPAN_HANDLER, parentSpanId: SPAN, kind: 1, name: "request handler - /factures/:id", ...over },
+    { "http.request.method": undefined, "http.route": undefined, "express.type": "request_handler", ...attrs },
+  );
+  /** Span SERVER de la requête, sans exception. */
+  const serveur = (attrs: Attrs = {}, over: Row = {}) => span({ name: "GET /factures/:id", ...over },
+    { "http.request.method": "GET", "http.route": "/factures/:id", "http.response.status_code": 500, ...attrs }, []);
+  const routes = (spans: Row[]) => flattenOtlp(traces(spans), { now: NOW }).errors.map((e: Row) => e.route);
+
+  it("span INTERNAL qui porte `http.route` : sa propre route, normalisée, même seul dans le lot", () => {
+    expect(routes([gestionnaire()])).toEqual(["/factures/:id"]);
+    expect(routes([gestionnaire({ "http.route": "/factures/{id}" })])).toEqual(["/factures/:id"]);
+    // Sa route prime sur celle du serveur, dans les deux ordres du lot.
+    expect(routes([gestionnaire(), serveur({ "http.route": "/autre" })])).toEqual(["/factures/:id"]);
+    expect(routes([serveur({ "http.route": "/autre" }), gestionnaire()])).toEqual(["/factures/:id"]);
+  });
+
+  it("span INTERNAL sans `http.route` : la route du span serveur de sa trace présent dans le lot", () => {
+    const sansRoute = gestionnaire({ "http.route": "  " });
+    // L'exportateur envoie l'enfant AVANT son parent : il se termine plus tôt.
+    expect(routes([sansRoute, serveur()])).toEqual(["/factures/:id"]);
+    expect(routes([serveur(), sansRoute])).toEqual(["/factures/:id"]);
+    // Un intermédiaire (middleware) entre le porteur et le serveur ne coupe pas la parenté.
+    const middleware = span({ spanId: "00f067aa0ba902c8", parentSpanId: SPAN, kind: 1, name: "middleware - query" },
+      { "http.request.method": undefined, "http.route": undefined, "express.type": "middleware" }, []);
+    expect(routes([gestionnaire({}, { parentSpanId: "00f067aa0ba902c8" }), middleware, serveur()])).toEqual(["/factures/:id"]);
+    // Parent absent du lot, un seul span serveur dans la trace : le sien.
+    expect(routes([gestionnaire({}, { parentSpanId: "00f067aa0ba902c9" }), serveur()])).toEqual(["/factures/:id"]);
+    // Le 404 sans `http.route` du serveur se transmet tel que l'ingestion l'écrit.
+    expect(routes([sansRoute, serveur({ "http.route": undefined, "http.response.status_code": 404 })])).toEqual(["(non trouvée)"]);
+  });
+
+  it("sans route propre ni serveur de sa trace dans le lot : null, jamais la route d'une autre trace", () => {
+    const sansRoute = gestionnaire({});
+    expect(routes([sansRoute])).toEqual([null]);
+    expect(routes([sansRoute, serveur({}, { traceId: AUTRE_TRACE })])).toEqual([null]);
+    // Même trace, autre app : jamais prêtée.
+    const autreApp = traces([serveur()], undefined, undefined, "autre-app");
+    const lot = traces([sansRoute]);
+    expect(flattenOtlp({ resourceSpans: [...autreApp.resourceSpans, ...lot.resourceSpans] }, { now: NOW }).errors
+      .map((e: Row) => e.route)).toEqual([null]);
+    // Deux serveurs de routes différentes dans la trace, sans parenté lisible : on ne choisit pas.
+    const orphelin = gestionnaire({}, { parentSpanId: "00f067aa0ba902c9" });
+    expect(routes([orphelin, serveur(), serveur({ "http.route": "/autre" }, { spanId: "00f067aa0ba902ca" })])).toEqual([null]);
+  });
+
+  it("non-régression : l'exception du span SERVER garde la route de sa requête", () => {
+    expect(routes([span()])).toEqual(["/invoices/:id"]);
+    expect(routes([span({}, { "http.route": undefined, "http.response.status_code": 404 })])).toEqual(["(non trouvée)"]);
+    expect(routes([span({}, { "http.response.status_code": 404 })])).toEqual(["/invoices/:id"]);
+    // `mip.route` d'un span navigateur (SDK web) prime toujours.
+    expect(routes([gestionnaire({ "mip.route": "/page" })])).toEqual(["/page"]);
   });
 });
 
