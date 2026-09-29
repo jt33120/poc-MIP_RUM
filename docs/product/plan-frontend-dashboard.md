@@ -342,8 +342,9 @@ temporel ; un « top N » est un classement en barres, jamais N courbes.
 *Vérifier* : e2e « aucun débordement » à 390 / 768 / 1440 sur chaque écran refondu ; revue des séries ≤ 5.
 
 **P15 — La couleur porte un sens, un seul.** Vert / ambre / rouge (`RATING_HEX`) = état d'une mesure au
-regard d'un seuil nommé, ou sévérité d'une alerte (palette `SEVERITE`, toujours doublée d'une forme ou
-d'un motif) ; orange `accent` = la série mesurée principale (le « réel ») ; bleu `perf` pointillé = le
+regard d'un seuil nommé — borne web.dev d'une vital, ou règle MIP écrite à côté de la valeur
+(amendement de R-S du 29/09/2026, § 1.5) —, ou sévérité d'une alerte (palette `SEVERITE`, toujours doublée
+d'une forme ou d'un motif) ; orange `accent` = la série mesurée principale (le « réel ») ; bleu `perf` pointillé = le
 robot ; gris `ink-faint` pointillé = la période ou la release de référence ; échelle `SEQUENTIELLE` (une
 teinte, cinq paliers) = une intensité sans verdict (heatmap, rétention, matrice de concordance) ; la
 palette `CATEGORIELLE` n'emploie ni vert, ni ambre, ni rouge.
@@ -387,6 +388,23 @@ occurrence » de `app/errors/page.tsx`, le rouge « > 2 % » de `app/page.tsx:L1
 `/forecast`, les seuils 0,6 / 0,3 de `/forms`, 40 / 20 % de `/retention`, et le vert / ambre / rouge
 0,9 / 0,5 de la heatmap (qui passe en échelle `SEQUENTIELLE`). Seul « budget ≥ 100 % = épuisé » est une
 définition (SLO, § 5.18).
+
+*Amendement du 29/09/2026 (vague 4 de la refonte du monitoring, décision de l'utilisateur) — règles MIP
+écrites.* Une mesure sans seuil publié **peut** porter vert / ambre / rouge si, et seulement si, elle a
+une règle dans `SEUILS_MIP` (`apps/console/lib/seuils.ts`) ET que cette règle est **écrite à l'écran à
+côté de la valeur** (« règle MIP : DNS > 150 ms », `texteRegleMip`), sur le modèle de
+`REGLE_SANTE_API` / `texteRegleSanteApi` (`lib/map.ts`). La note vient de `noteMip`, la couleur des
+jetons `RATING_CLASS` / `RATING_BAR` des vitals, et elle est doublée d'une forme (● bon, ▲ à améliorer,
+■ mauvais), jamais seule. Aucun écran ne recopie une borne (garde : `tests/unit/perf-domaine-gardes.test.ts`).
+Sont concernées : les six phases réseau de la navigation, RTT et débit descendant, la durée des tâches
+longues et des LoAF, la durée d'une ressource, la durée d'un appel API vu du navigateur, et les parts de
+sessions touchées par les clics rageurs, les clics morts et les erreurs navigateur. **Restent neutres** :
+tout ce qui n'a pas de règle MIP — ratio d'occurrences par vue, CSAT, rétention, conversion, démarrage
+mobile, et les **formulaires** (aucune norme, `SANS_SEUIL_MIP`). La carte des services garde sa règle de
+santé propre (`REGLE_SANTE_API`, 1 s / 3 s combinée au taux d'erreur, écrite sur la carte) : elle note
+un nœud, pas un appel ; les écrans qui mesurent la durée des appels API lisent `SEUILS_MIP.API`. Une note
+MIP est de l'**affichage** : le score de santé, la heatmap et les rollups ne comptent que `CORE_VITALS`
+(`tests/unit/agregats-qualite.test.ts`).
 
 **R-P — Populations canoniques.** En tuile, « Sessions » veut dire **sessions commencées**
 (`started_at ∈ [from, to)`, `engagementStats(f).sessions_started`, `lib/queries-sessions.ts:L20-33`) sur
