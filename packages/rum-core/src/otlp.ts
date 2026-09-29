@@ -1,13 +1,15 @@
-// Encodage OTLP/HTTP JSON — primitives PURES partagées par les trois runtimes
-// MIP (web, React Native, agent Node). Elles vivaient auparavant en trois copies
-// (`rum-sdk/otlp-encode.ts`, `rum-mobile/core.ts`, `agent-node/core.ts`) qui
+// Encodage OTLP/HTTP JSON — primitives PURES partagées par les runtimes MIP
+// (web, React Native). Elles vivaient auparavant en copies séparées
+// (`rum-sdk/otlp-encode.ts`, `rum-mobile/core.ts`, et l'agent Node maison,
+// archivé le 29/09/2026 : docs/archive/capteurs-serveur-maison.md) qui
 // pouvaient diverger sans qu'aucun test ne s'en aperçoive : un `intValue` encodé
 // en nombre d'un côté et en chaîne de l'autre produit deux vérités pour le même
 // événement. Une seule table de correspondance, ici, verrouillée par le
 // round-trip contre `flattenOtlp`.
 //
 // AUCUN import DOM, React Native, Node natif ou réseau : ce module doit rester
-// exécutable à l'identique dans un navigateur, sous Hermes et sous Node.
+// exécutable à l'identique dans un navigateur, sous Hermes et sous Node (où
+// tournent ses tests).
 
 /** [secondes epoch, nanosecondes] — même découpage que l'HrTime OpenTelemetry. */
 export type HrTime = [number, number];
