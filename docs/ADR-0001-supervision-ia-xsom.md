@@ -60,6 +60,9 @@ restent lisibles pour audit/rollback ; `rum_ai` reste dans `dsar.ts` (effacement
 qu'elle existe. Le **DROP dur** (tables/vue/fonctions + branches `ai_cost` de
 `check_alerts`/`metric_baseline`) est une migration **ultérieure différée**, après bake xSOM.
 
+> **Suite (29/09/2026).** `openrouter_balance` est supprimée ce jour-là : vide, et lue par
+> aucun code depuis l'extraction.
+
 Conservé (feature RUM, hors périmètre IA) : le **copilote console** (`ai_briefing`,
 `lib/assistant*`, `lib/briefing`) qui résume le RUM avec un LLM — indépendant de `rum_ai`.
 Ce copilote a été retiré à son tour le 09/09/2026 (voir § État au 26/09/2026).

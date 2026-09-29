@@ -183,7 +183,7 @@ modification ni redistribution.
 
 ## 5. Droits des personnes (art. 15–17)
 - **Effacement client / offboarding** : `erase_app_data(app_id)` supprime **toute** la
-  télémétrie d'un client (sessions, erreurs, métriques, replay, SVI, source maps, alertes, vues
+  télémétrie d'un client (sessions, erreurs, métriques, replay, source maps, alertes, vues
   enregistrées, tableaux de bord) **et suspend son ingestion** dans le registre, sous la même
   transaction — sans quoi le prochain événement reçu recréerait des lignes dans l'application qu'on
   vient de vider. La reprise est une opération d'exploitation explicite, jamais l'effet d'un

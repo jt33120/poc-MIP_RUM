@@ -365,7 +365,7 @@ Un `POST /mcp` sans `Authorization` doit répondre `401` avec un en-tête
 ## 7. Limites connues
 
 - **Seize outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
-  exposé : SLO, alertes, tableaux de bord, replay, logs, SVI. Les ajouter passe
+  exposé : SLO, alertes, tableaux de bord, replay, logs. Les ajouter passe
   par l'API d'abord, jamais par un accès direct depuis le serveur MCP.
 - **Pas de total sur les sessions.** L'API n'en fournit pas ; le serveur ne
   l'invente pas. Seuls les groupes d'erreurs, les issues et l'Explorer d'événements

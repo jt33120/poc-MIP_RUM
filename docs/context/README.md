@@ -15,14 +15,14 @@ est datée et sourcée (fichier du dépôt ou requête sur la base de production
 > quota gratuit dépassé le 24/09). Ce qui a changé depuis, vérifié dans le code
 > (`master`) :
 >
-> - **Logs, SVI et supervision IA sont fermés dans la console** depuis le
->   08/09/2026 : `/logs`, `/svi` et `/ai` affichent un accès fermé et n'exécutent
+> - **Logs et supervision IA sont fermés dans la console** depuis le
+>   08/09/2026 : `/logs` et `/ai` affichent un accès fermé et n'exécutent
 >   aucune lecture (`apps/console/lib/capacites.ts:6`).
-> - **SVI n'est plus absent du code** : le modèle d'appel (`packages/db/sql/migration-v51.sql`)
->   et les écrans `/svi`, `/svi/appels` (incréments I0 et I2 du
->   [plan d'implémentation](./produit-svi-plan-implementation.md)) sont livrés
->   depuis le 30/07/2026, puis fermés avec les deux autres. Aucun adaptateur de
->   plateforme téléphonique n'existe.
+> - **Le module SVI est retiré le 29/09/2026**, par décision du propriétaire du
+>   produit : écrans `/svi` et `/svi/appels`, ingestion des spans `svi.*` et
+>   tables `svi_*` (toutes vides en production). Livré depuis le 30/07/2026
+>   (incréments I0 et I2), fermé le 08/09/2026 ; aucun adaptateur de plateforme
+>   téléphonique n'existait. Ses trois documents sont archivés (`docs/archive/`).
 > - **Livraison des alertes** : depuis la migration v88 — dans le dépôt, pas encore
 >   appliquée en production, arrêtée à v86 —, `route_alert` ne fait que mettre en
 >   file ; le livreur (`packages/backend/lib/dispatch-alerts.mjs`) envoie, et
@@ -48,10 +48,12 @@ est datée et sourcée (fichier du dépôt ou requête sur la base de production
 | **Supervision IA** | Coût, latence, volumétrie et qualité des appels LLM | **xSOM AI Guard** (externe) | [produit-supervision-ia.md](./produit-supervision-ia.md) |
 | **Supervision Logs** | 3ᵉ signal OTel — journaux applicatifs corrélés aux traces | `mip-rum` | [produit-logs.md](./produit-logs.md) |
 
-Une quatrième fiche traite d'un domaine **adjacent, non couvert le 29/07/2026 au
-matin**, sur lequel la question a été posée : [svi-supervision-vocale.md](./svi-supervision-vocale.md)
-(serveurs vocaux interactifs). La décision prise le même jour a produit le
-[cadrage](./produit-svi-cadrage.md) et le [plan d'implémentation](./produit-svi-plan-implementation.md).
+Une quatrième fiche traitait d'un domaine **adjacent** (serveurs vocaux interactifs),
+avec son cadrage et son plan d'implémentation. Le module SVI est **retiré le
+29/09/2026** ; ces trois documents sont archivés :
+[svi-supervision-vocale.md](../archive/svi-supervision-vocale.md),
+[cadrage](../archive/produit-svi-cadrage.md),
+[plan d'implémentation](../archive/produit-svi-plan-implementation.md).
 
 ---
 
