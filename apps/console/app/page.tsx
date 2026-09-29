@@ -747,7 +747,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           {blocs.trafic && (
             <div className={`min-w-0 ${blocs.sante ? "min-[1400px]:col-span-7" : "min-[1400px]:col-span-12"}`}>
               <SectionErreur titre="Trafic">
-                <RangeeTuiles tuiles={tuilesTrafic} classes="grid-cols-1 sm:grid-cols-3" />
+                <RangeeTuiles tuiles={tuilesTrafic} classes="grid-cols-2 sm:grid-cols-3" />
               </SectionErreur>
             </div>
           )}
@@ -768,23 +768,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </SectionErreur>
       )}
 
-      {/* Zone 4 — constats automatiques à règle publiée, repliés. */}
-      <div className="mb-6 min-w-0">
-        <SectionErreur titre="Constats">
-          {constats.echecs.length > 0 && (
-            <div className="mb-2">
-              <EtatSurface
-                compact
-                etat={{ kind: "partiel", raison: `constats partiels : lecture en échec de ${constats.echecs.join(", ")}` }}
-              />
-            </div>
-          )}
-          <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} />
-        </SectionErreur>
-      </div>
-
-      {/* Zone 5 — HERO (P1) : il répond à la question de l'écran, au-dessus du pli à
-          1440 × 900. Trois petits multiples, trois unités, trois échelles. */}
+      {/* Zone 4 — HERO (P1, spec A2 § 5.2 R2) : « qu'est-ce qui a changé ? », juste sous
+          les chiffres — il commençait à y = 1 242 à 1440 px, derrière les constats (audit
+          A1). Trois petits multiples, trois unités, trois échelles. */}
       {blocs.hero && (
         <SectionErreur titre="Core Web Vitals dans le temps">
           <HeroCwv
@@ -821,6 +807,22 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           />
         </SectionErreur>
       )}
+
+      {/* Zone 5 — constats automatiques à règle publiée, repliés, sous le hero qu'ils
+          commentent. */}
+      <div className="mb-6 min-w-0">
+        <SectionErreur titre="Constats">
+          {constats.echecs.length > 0 && (
+            <div className="mb-2">
+              <EtatSurface
+                compact
+                etat={{ kind: "partiel", raison: `constats partiels : lecture en échec de ${constats.echecs.join(", ")}` }}
+              />
+            </div>
+          )}
+          <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} />
+        </SectionErreur>
+      </div>
 
       {/* Zone 6 — la dégradation coïncide-t-elle avec la charge ou avec des erreurs ?
           Trois panneaux empilés, un axe chacun (P5) — 8/12 ; à côté, 4/12, les heures
@@ -1091,14 +1093,16 @@ function fusionnerNotes(notes: readonly string[]): string {
 /**
  * Une rangée de tuiles (§ 3.12 : une rangée = une population). Une tuile dont la
  * lecture a échoué dit l'échec à SA place : ni « 0 », ni « — », qui se liraient
- * comme une mesure sur une fenêtre qu'on n'a simplement pas pu lire.
+ * comme une mesure sur une fenêtre qu'on n'a simplement pas pu lire. Tuiles
+ * compactes (spec A2 § 4) : une ligne sous le chiffre, le détail en infobulle — la
+ * tuile LCP empilait six lignes (283 px) et poussait le hero sous le pli.
  */
 function RangeeTuiles({ tuiles, classes }: { tuiles: Tuile[]; classes: string }) {
   return (
     <div className={`grid min-w-0 gap-3 ${classes}`}>
       {tuiles.map((t) => (
         <div key={t.cle} className="flex min-w-0 flex-col" data-testid={`tuile-${t.cle}`}>
-          {"echec" in t ? <EchecLecture compact titre={t.titre} /> : <KpiTile {...t.props} />}
+          {"echec" in t ? <EchecLecture compact titre={t.titre} /> : <KpiTile {...t.props} compact />}
         </div>
       ))}
     </div>
