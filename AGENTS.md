@@ -72,8 +72,12 @@ ordre et sur quelles bases.
 - **Fichiers générés** : zones du `README.md` (`node scripts/readme-sections.mjs`)
   et `apps/console/lib/couverture.generated.json` (`node scripts/couverture-extraire.mjs`),
   chacun avec un mode `--verifier` ; `docs/api/console-api.md`
-  (`MAJ_DOC_CONSOLE_API=1 pnpm vitest run tests/unit/console-api-doc.test.ts`). Un
-  test échoue si l'un des trois dérive. `docs/architecture/console-api/inventaire.md`
+  (`MAJ_DOC_CONSOLE_API=1 pnpm vitest run tests/unit/console-api-doc.test.ts`) ;
+  `apps/console/lib/composants-open-source.generated.json`
+  (`node scripts/composants-open-source.mjs`, liste tenue à la main :
+  `scripts/composants-open-source.externes.json`), à refaire après tout changement
+  de dépendance, de Dockerfile ou de workflow. Un test échoue si l'un des quatre
+  dérive. `docs/architecture/console-api/inventaire.md`
   et `cliquet.json` se réécrivent par `node scripts/dev/inventaire-console.mjs` ;
   seul le cliquet est gardé par un test (voir « Console sans base »).
 - **Conformité** : toute nouvelle sortie de données vers un tiers, ou tout
