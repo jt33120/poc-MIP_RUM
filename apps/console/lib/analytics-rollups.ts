@@ -138,7 +138,8 @@ export const ROLLUP_SOURCES = {
     label: "Trafic horaire (vues et occurrences d'erreurs)",
     table: "rum_rollup_hourly",
     hour: "hour",
-    // Aucun filigrane : `refresh_rum_rollups` n'en enregistre pas.
+    // Pas d'état de lecture : le filigrane de `refresh_rum_rollups` (v98,
+    // `agregat_filigrane`) borne sa reprise, il ne porte aucun identifiant maximal.
     state: null,
     grainSeconds: GRAIN_SECONDS,
     dimensions: ["device"],
