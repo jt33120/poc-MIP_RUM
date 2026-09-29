@@ -50,6 +50,8 @@ import { type SectionLue } from "@/lib/lecture";
 import { chargerPages } from "@/lib/chargeurs/pages";
 import { chargerEcran } from "@/lib/ecran";
 import { AUTRES, categorie } from "@/lib/palette";
+import { noteAffichee, texteNote } from "@/lib/notes-mip";
+import { texteRegleMip } from "@/lib/seuils";
 import {
   classementParRoute,
   ecartAEnsemblePages,
@@ -811,12 +813,20 @@ function FigureTtfb({
     const e = ecarts[i];
     return !e ? null : e.kind === "ecart" ? `${e.affichage} ${reference}` : e.texte;
   };
+  // Couleur par règle MIP (amendement de R-S, 29/09/2026) : la forme précède la
+  // valeur, la règle est écrite sous le libellé de la barre, à côté de la valeur.
+  const notes = phases.map((p) => noteAffichee(p.cle, p.p75));
   const data: RankDatum[] = phases.map((p, i) => ({
     label: p.libelle,
     value: p.p75,
-    display: formater("ms", p.p75),
-    sub: [`n = ${formater("count", p.n)}`, ...(texteEcart(i) ? [texteEcart(i)] : [])].join(" · "),
-    title: `${p.libelle} — p75 ${formater("ms", p.p75)}, ${formater("count", p.n)} mesures`,
+    display: <span data-note={notes[i]?.note ?? ""}>{texteNote(notes[i], formater("ms", p.p75))}</span>,
+    color: notes[i]?.jeton,
+    sub: [
+      `n = ${formater("count", p.n)}`,
+      ...(notes[i] ? [notes[i].regle] : []),
+      ...(texteEcart(i) ? [texteEcart(i)] : []),
+    ].join(" · "),
+    title: `${p.libelle} — p75 ${formater("ms", p.p75)}${notes[i] ? ` (${notes[i].libelle}, ${notes[i].regle})` : ""}, ${formater("count", p.n)} mesures`,
   }));
   return (
     <Figure
@@ -831,15 +841,20 @@ function FigureTtfb({
       }
       lecture={
         <span data-testid="ttfb-phrase">
-          Chaque barre est le p75 d&apos;une phase mesurée à part ; leur somme n&apos;est pas le TTFB.
+          Chaque barre est le p75 d&apos;une phase mesurée à part ; leur somme n&apos;est pas le TTFB. La couleur
+          suit la règle MIP écrite sous chaque phase : un ordre de grandeur de terrain, pas un seuil publié.
         </span>
       }
       alternative={{
         legende: `${titre} : p75 de chaque phase réseau et nombre de mesures sur ${plage} ; phases non additionnées`,
-        colonnes: avant ? ["Phase", "p75", "Mesures", `Écart ${reference}`] : ["Phase", "p75", "Mesures"],
+        colonnes: avant
+          ? ["Phase", "p75", "Note", "Règle MIP", "Mesures", `Écart ${reference}`]
+          : ["Phase", "p75", "Note", "Règle MIP", "Mesures"],
         lignes: phases.map((p, i) => [
           p.libelle,
           formater("ms", p.p75),
+          notes[i]?.libelle ?? null,
+          texteRegleMip(p.cle),
           p.n,
           ...(avant ? [celluleEcart(i)] : []),
         ]),
