@@ -276,7 +276,7 @@ suite("P8.6 — le schéma refuse ce qui ne doit pas exister", () => {
   it("un secret en clair ne PEUT PAS être écrit dans une configuration", async () => {
     for (const valeur of [
       "ghp_0123456789abcdefghijklmnopqrstuvwxyz",
-      "github_pat_11A53H4FI0GD77rUBL7Rx",
+      "github_pat_FAUX_JETON_DE_TEST_00",
       "Bearer abc",
       "",
       "env:minuscules",
