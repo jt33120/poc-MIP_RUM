@@ -71,6 +71,8 @@ export const MIP_CONSOLE = Object.freeze({
   tables: Object.freeze({
     // Les écrans : la télémétrie et ses agrégats, en lecture.
     alert_delivery: L,
+    // v99 : les fenêtres hors collecte, lues par la comparaison des périodes.
+    collecte_fenetre: L,
     deploy_marker: L,
     error_grouping_config: L,
     error_issue_alias: L,
