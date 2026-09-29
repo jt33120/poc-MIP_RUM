@@ -26,7 +26,7 @@ Mon premier déploiement de l'edge function contenait un placeholder au lieu d'u
 
 ## Ce qui reste
 
-1. **VPS OVH** : `ssh-copy-id julian.talou@164.132.44.212` de ton côté → je déploie (env vars + deploy.sh) et je valide la corrélation front↔back sur trafic réel. C'est le seul maillon manquant.
+1. **VPS OVH** : `ssh-copy-id <utilisateur>@<ip du serveur>` de ton côté → je déploie (env vars + deploy.sh) et je valide la corrélation front↔back sur trafic réel. C'est le seul maillon manquant.
 2. **PR [mip-rum#1](https://github.com/jt33120/mip-rum/pull/1)** à merger (le classifieur m'interdit le push direct sur master — sain).
 3. Toujours en attente (inchangé) : 1er tir webhook Slack depuis /alerts, clé Resend pour l'alerting email, accès API Ekara.
 
