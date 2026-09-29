@@ -4,17 +4,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { corsHeaders } from "./cors";
 
-/** Enveloppe de réponse : { meta, data } — contrat documenté dans docs/API_CONSOLE.md. */
-export interface ApiEnvelope<T> {
-  meta: {
-    app: string; // 'all' ou l'app effective (après scoping)
-    period: string; // '1h' | '24h' | '7d'
-    device: string; // 'all' ou le device demandé
-    generatedAt: string; // ISO 8601
-  };
-  data: T;
-}
-
 export function apiJson(
   req: NextRequest,
   body: unknown,

@@ -228,11 +228,6 @@ export async function dsarCounts(app: string, visitorId: string): Promise<DsarCo
   return out;
 }
 
-/** Total de lignes couvertes (toutes tables) — 0 = visiteur inconnu sur ce périmètre. */
-export function dsarTotalRows(counts: DsarCount[]): number {
-  return counts.reduce((acc, c) => acc + c.rows, 0);
-}
-
 export type { DsarIdentityKind } from "./dsar";
 
 function identityColumn(kind: DsarIdentityKind): "user_id_hash" | "account_id_hash" {

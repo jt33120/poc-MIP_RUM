@@ -48,3 +48,19 @@ documentation.
 > commits passés. Un miroir destiné à être remis à un tiers doit être filtré
 > (`git filter-repo --invert-paths`, voir `scripts/ops/miroir-filtre.sh`), pas simplement
 > cloné.
+
+## Décision du 29/09/2026 : l'historique public reste tel quel
+
+**Le propriétaire du dépôt accepte** que les documents retirés le 23/09/2026 (commit
+`683af85b`) restent lisibles dans l'historique public. L'historique n'est pas réécrit : pas de
+`git filter-repo` sur le dépôt public, pas de poussée forcée. Le filtrage ci-dessus reste la
+règle pour un miroir remis à un tiers.
+
+**Les clés d'ingestion de l'historique.** On y lit 22 clés d'ingestion `mip_…` en clair. Le
+29/09/2026, elles ont été comparées au registre de production (`app_registry.api_key_hash`,
+qui ne garde que l'empreinte sha256) : **aucune n'y est**, aucune ne correspond donc à une
+application.
+
+**Règle : une clé vue dans l'historique ne se repose jamais.** Une application qui reçoit une
+clé en reçoit une neuve, tirée au hasard (`scripts/ops/provisionner-cles.mjs`), jamais une clé
+retrouvée dans un ancien document, une capture ou un commit.

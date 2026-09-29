@@ -29,7 +29,8 @@ import { CopierTrace } from "@/components/tracing/CopierTrace";
 import { formater } from "@/lib/fmt-ids";
 import { fmtInstant, pluriel } from "@/lib/format";
 import { FUSEAU_AFFICHAGE, nomFuseau } from "@/lib/fuseau-local";
-import { appelDeLaTrace, chargerTrace, premier as first } from "@/lib/chargeurs/trace";
+import { premier as first } from "@/lib/chargeurs/session";
+import { appelDeLaTrace, chargerTrace } from "@/lib/chargeurs/trace";
 import { chargerEcran } from "@/lib/ecran";
 import { type TraceSpanRow } from "@/lib/queries-tracing";
 

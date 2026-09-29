@@ -9,12 +9,9 @@ import { sessionMeta } from "../queries";
 import { errorsOfTrace, traceSpans, type TraceSpanRow } from "../queries-tracing";
 import { authorizedAppsOf } from "../query-contract";
 import { mapSection, section, type Chargeur, type ParametresEcran } from "./commun";
+import { premier } from "./session";
 
 const SPAN_ID = /^[0-9a-f]{16}$/i;
-
-export function premier(v: string | string[] | undefined): string | undefined {
-  return Array.isArray(v) ? v[0] : v;
-}
 
 /**
  * Apps dont la trace montre les spans. L'app demandée est bornée au périmètre

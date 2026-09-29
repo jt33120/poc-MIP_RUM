@@ -311,7 +311,7 @@ natif : « pas de SDK iOS ou Android natif »).
 - **Conformité déclarée à l'écran, pas seulement en doc** : `app/admin/privacy/page.tsx` L25-298 (DSAR
   RGPD, portée de la garantie d'effacement affichée directement dans l'écran d'administration,
   `identity_hash`, `DSAR_LIMITES`) ; pays **estimé** jamais géolocalisé, aucune IP stockée
-  (`lib/geo.ts` L61-64, cité dans `console-ecrans-1.md` L69). C'est plus détaillé et plus visible
+  (`lib/geo.ts` L47-50, cité dans `console-ecrans-1.md` L69). C'est plus détaillé et plus visible
   (affiché dans le produit lui-même) que ce que les pages IP-Label documentent sur leur propre interface de
   gestion des droits — **mais** IP-Label revendique un choix de **résidence UE** explicite (§ 1.10) que rien
   dans mon périmètre de lecture ne confirme ou n'infirme pour notre produit (**non établi**, hors périmètre
@@ -346,8 +346,8 @@ intégralement, seulement ceux qui valent aussi face à IP-Label d'après ce que
 - **L'échantillonnage est dit avec sa probabilité d'inclusion, sans extrapolation** (`lib/queries-errors.ts`
   L403-421) — rien de comparable n'est documenté côté IP-Label (silence, pas une infirmation).
 - **« Inconnu » est un groupe à part, jamais confondu avec zéro**
-  (`components/breakdown-view.tsx` L25-28) — même remarque.
-- **Le pays est dit « ESTIMÉ », jamais une géolocalisation, aucune IP stockée** (`lib/geo.ts` L61-64) —
+  (`components/breakdown-view.tsx` L23-26) — même remarque.
+- **Le pays est dit « ESTIMÉ », jamais une géolocalisation, aucune IP stockée** (`lib/geo.ts` L47-50) —
   IP-Label documente la troncature/suppression d'IP en option, nous l'avons en garantie par défaut sur cette
   dimension précise (à ne pas généraliser à tout le produit sans vérification — **déduit** de ce seul point).
 - **Le score composite explique sa pondération à l'écran** (`HealthBanner.tsx` L128-139, « Points perdus :

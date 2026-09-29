@@ -113,7 +113,6 @@ test("corrélation : robot face au réel, sans écart chiffré", async ({ page }
 });
 
 test("replay : session enregistrée sur la démo puis rejouée dans la console", async ({ page }) => {
-  test.skip(!process.env.REPLAY_SERVER_UP && false, "replay server requis");
   // 1. générer un replay (la démo init replay:true -> chunks sur :4319)
   await page.goto("http://localhost:8080/", { waitUntil: "load" });
   await page.waitForTimeout(600);

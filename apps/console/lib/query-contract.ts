@@ -59,7 +59,6 @@ export type Dimension = (typeof DIMENSIONS)[number];
 
 /** Dimensions portées par un paramètre d'URL dédié (`?browser=Firefox`). */
 export const PARAM_DIMENSIONS = ["browser", "os", "env", "service", "release", "route", "country"] as const;
-export type ParamDimension = (typeof PARAM_DIMENSIONS)[number];
 
 export const DIMENSION_LABELS: Record<Dimension, string> = {
   device: "Appareil",

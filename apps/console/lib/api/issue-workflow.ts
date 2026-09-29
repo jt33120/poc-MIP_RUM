@@ -2,17 +2,10 @@
 // chaque issue de lib/error-issue-workflow.ts a son statut. Un 409 rend la
 // révision courante pour que l'écran propose de recharger ; un doublon est un 422,
 // qu'aucun rechargement ne résoudrait.
-import type { SessionUser } from "../auth";
 import type { WorkflowResult } from "../error-issue-workflow";
-import { errorScopeFor, scopeApps } from "../queries-errors";
 import { ApiHttpError } from "./respond";
 
 export const ISSUE_INTROUVABLE = "issue introuvable";
-
-/** Apps d'une session pour le workflow : null = toutes (admin), [] = aucune. */
-export function workflowApps(user: Pick<SessionUser, "role" | "apps">): string[] | null {
-  return scopeApps(errorScopeFor(user));
-}
 
 /** La valeur d'un résultat réussi, ou l'ApiHttpError correspondante. */
 export function valeurOuErreur<T>(result: WorkflowResult<T>): T {

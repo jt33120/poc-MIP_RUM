@@ -12,7 +12,6 @@
 //     (un marqueur = un événement), jamais une « state timeline ».
 //   - Les 30 jours de la frise et des barres sont FIXES : la plage de l'écran ne
 //     s'y applique pas (une règle est évaluée sur SA fenêtre).
-import { type Severity } from "./alerting";
 import { libelleCourtMetrique, libelleSeverite } from "./alertes-metriques";
 import { formater } from "./fmt-ids";
 import { metricLabel, type AlertDayRow, type AlertEventRow, type AlertFiringRow, type AlertRuleRow } from "./queries-v2";
@@ -474,6 +473,3 @@ export function cibleMesure(
   }
   return null;
 }
-
-/** Sévérité d'une règle proposée par défaut dans le formulaire. */
-export const SEVERITE_PAR_DEFAUT: Severity = "warning";

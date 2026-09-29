@@ -33,20 +33,6 @@ export const GEO_SOURCE_LABELS: Record<GeoSource, string> = {
   cdn: "En-tête pays du CDN",
 };
 
-/** Ce que chaque provenance vaut, en une phrase, pour une infobulle ou une note. */
-export const GEO_SOURCE_NOTICES: Record<GeoSource, string> = {
-  geoip:
-    "Pays de l'adresse réseau par laquelle la mesure est arrivée, résolu dans une base locale sans qu'aucune adresse " +
-    "ne sorte ni ne soit stockée. Une adresse est souvent celle d'un opérateur, d'un relais d'entreprise ou d'un VPN : " +
-    "ce n'est pas la position d'une personne.",
-  timezone:
-    "Pays déduit du fuseau horaire déclaré par le terminal. C'est un réglage, que la personne choisit, et une zone " +
-    "couvre souvent plusieurs pays.",
-  cdn:
-    "Pays posé par le CDN placé devant l'ingestion, à partir de l'adresse réseau. Même nature qu'une base locale, " +
-    "mais la résolution a eu lieu chez un tiers.",
-};
-
 /** Libellé affichable d'une provenance, `null` compris. Jamais une valeur par défaut. */
 export function geoSourceLabel(source: string | null | undefined): string {
   if (!source) return "Inconnue";

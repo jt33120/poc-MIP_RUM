@@ -77,5 +77,3 @@ export const chargerActions = (async (principal, sp) => {
     schema: [...schema].sort(),
   } as const;
 }) satisfies Chargeur<unknown>;
-
-export type ChargeActions = Awaited<ReturnType<typeof chargerActions>>;
