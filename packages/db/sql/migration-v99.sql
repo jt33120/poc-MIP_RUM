@@ -273,8 +273,10 @@ end $$;
 -- `p_chaine_ok` faux (le canari échoue) : aucune fenêtre ne s'ouvre. Quand la
 -- chaîne est coupée, toutes les applications se taisent ensemble, et c'est la
 -- fenêtre de la plateforme qui le dit — pas une alerte par application.
+-- `p_apps` : restreint le passage à ces applications (exploitation, tests).
 create or replace function check_collecte_silence(
-  p_silence_min int default 60, p_chaine_ok boolean default true, p_horizon_jours int default 7
+  p_silence_min int default 60, p_chaine_ok boolean default true, p_horizon_jours int default 7,
+  p_apps text[] default null
 ) returns jsonb language plpgsql set search_path = public, pg_temp as $$
 declare
   a record;
@@ -296,6 +298,7 @@ begin
      where r.active and not r.sonde
        -- `to_jsonb` : la colonne vient de v81 ; la lire ainsi ne casse rien.
        and (to_jsonb(r) ->> 'ingestion_suspended_at') is null
+       and (p_apps is null or r.app_id = any(p_apps))
      order by r.app_id
   loop
     dernier := null; ouverte_id := null; ouverte_debut := null;
@@ -344,13 +347,13 @@ begin
   foreach fn in array array[
     'purge_sondes(integer, integer)',
     'sonde_alerter(bigint, text, text, text, jsonb)',
-    'check_collecte_silence(integer, boolean, integer)'
+    'check_collecte_silence(integer, boolean, integer, text[])'
   ] loop
     execute format('revoke execute on function %s from public', fn);
   end loop;
 end $$;
 
-comment on function check_collecte_silence(integer, boolean, integer) is
+comment on function check_collecte_silence(integer, boolean, integer, text[]) is
   'Alerte d''absence (v99) : une fenêtre silence et UNE alerte par application muette depuis '
   'p_silence_min minutes ; fermée au retour de la donnée. Rien ne s''ouvre si la chaîne est coupée.';
 comment on function sonde_alerter(bigint, text, text, text, jsonb) is
