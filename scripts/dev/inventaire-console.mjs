@@ -274,7 +274,7 @@ const LOTS_ECRANS = [
   [/^\/(dashboards(\/.*)?|explorer\/views)$/, "C6 espace de travail"],
   [/^\/(actions|events|mobile|sessions(\/.*)?|explorer)$/, "C3"],
   [/^\/(|forecast|pages|ux|map|errors(\/.*)?|tracing(\/.*)?|correlation)$/, "C4"],
-  [/^\/(svi(\/.*)?|logs|acquisition|forms|retention|paths|experience|goals|ai)$/, "C5"],
+  [/^\/(logs|acquisition|forms|retention|paths|experience|goals|ai)$/, "C5"],
 ];
 
 const CIBLES_ROUTES = [
@@ -293,7 +293,6 @@ const CIBLES_ROUTES = [
   [/^\/api\/dashboards\//, "console-api (C6)"],
   [/^\/api\/replay\//, "console-api (C3)"],
   [/^\/api\/releases$/, "reste sur Vercel, relais serveur (C11)"],
-  [/^\/api\/webhooks\/tickets\//, "notifier, relais octet pour octet (C11)"],
 ];
 
 const AUTH_MODULES = /^@\/lib\/(auth|api\/auth|api\/handle|api\/admin|queries-read-tokens)$/;

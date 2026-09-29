@@ -71,7 +71,6 @@ Où ils vivent : [architecture, « Qui détient quel secret »](../architecture/
 | `RESEND_API_KEY` | créer une clé « Sending access » chez Resend → la poser → révoquer l'ancienne. **La clé du 23/09 a circulé en clair : à révoquer au premier branchement.** |
 | `IDENTITY_HASH_SECRET` | **ne se tourne pas sans rupture** : les `user_id_hash` écrits avant ne correspondent plus. Si une fuite l'impose : nouveau secret + nouvelle empreinte (`scripts/ops/empreinte-identite.mjs`), dater la rupture par un marqueur de déploiement, et la dire dans la recherche RGPD. |
 | `DATABASE_URL` (`neondb_owner`) | rotation du mot de passe par l'API Neon (`reset_password`), puis mise à jour de la variable partagée et des variables de service `preserve()`. Coupe aussi tout ancien déploiement Vercel (prévu en C12). |
-| `TICKET_SECRET_KEY` | la même valeur, à l'octet près, là où les références `enc:v1:` sont déchiffrées ; la changer impose de rechiffrer les références. |
 | `API_DATABASE_URL` (`mip_api`) | `alter role mip_api password` (ci-dessous) → mettre à jour la variable partagée, ce qui redéploie `api`. Entre les deux, les connexions **nouvelles** du service échouent (les ouvertes tiennent) : une à deux minutes d'erreurs 500 sur l'API de lecture, la console n'est pas touchée (le relais retombe en local). |
 
 ### Le rôle de l'API : `mip_api`

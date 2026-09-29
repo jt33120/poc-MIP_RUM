@@ -1,5 +1,10 @@
 # Domaine adjacent — Supervision SVI (serveur vocal interactif)
 
+> **Archivé le 29/09/2026 : module SVI retiré.** Le propriétaire du produit a décidé ce
+> jour-là de retirer la supervision SVI : écrans `/svi`, ingestion des spans `svi.*` et
+> tables `svi_*`, toutes vides en production. Ce document décrit un état et des projets
+> qui n'ont plus cours ; une partie des fichiers qu'il cite n'existe plus.
+
 > **Niveau de maturité : N0 « Absent ».** Aucune brique du produit ne touche à la
 > téléphonie. Cette fiche existe pour répondre à la question posée, cadrer ce que
 > recouvre réellement la supervision SVI, et évaluer si c'est une extension
@@ -151,11 +156,11 @@ identifiée, et le garder en réserve pour deux usages :*
 
 *Cette mise en file d'attente était conditionnée aux chantiers d'amélioration des
 produits existants, désormais livrés dans le code — dont la fermeture de la boucle d'alerte
-([README §4](./README.md#4-le-constat-transversal-et-il-est-unique)). Le premier
+([README §4](../context/README.md#4-le-constat-transversal-et-il-est-unique)). Le premier
 argument reste d'actualité et se renforce : la thèse « nous mesurons l'expérience
 vécue, quel que soit le canal » devient un récit tenable plutôt qu'un slogan.*
 *(Note du 26/09/2026 : qu'une alerte ait été livrée à un humain en production n'est
-pas établi ; voir l'encadré du [README](./README.md).)*
+pas établi ; voir l'encadré du [README](../context/README.md).)*
 
 ---
 

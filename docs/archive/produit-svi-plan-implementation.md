@@ -1,5 +1,10 @@
 # Supervision SVI — plan d'implémentation
 
+> **Archivé le 29/09/2026 : module SVI retiré.** Le propriétaire du produit a décidé ce
+> jour-là de retirer la supervision SVI : écrans `/svi`, ingestion des spans `svi.*` et
+> tables `svi_*`, toutes vides en production. Ce document décrit un état et des projets
+> qui n'ont plus cours ; une partie des fichiers qu'il cite n'existe plus.
+
 > Produit par une conception multi-agents (10 agents) : compréhension partagée du
 > cadrage, du socle réutilisable et de l'état de l'art ; **trois architectures conçues
 > indépendamment** sous des angles opposés ; une critique adverse par architecture ;

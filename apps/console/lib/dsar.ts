@@ -43,9 +43,8 @@ export const DSAR_ID_COLUMN = "visitor_id" as const;
 
 /**
  * Hors périmètre PAR CONSTRUCTION : les issues d'erreurs et leur workflow
- * (error_issue, error_issue_alias, error_issue_activity, error_issue_ticket,
- * error_issue_notification). Ni session, ni visiteur, ni identité, ni message ou
- * stack : des clés de regroupement, des releases, des comptes console et du texte
+ * (error_issue, error_issue_alias, error_issue_activity, error_issue_notification).
+ * Ni session, ni visiteur, ni identité, ni message ou stack : des clés de regroupement, des releases, des comptes console et du texte
  * d'opérateur scrubbé. Effacer les occurrences d'une personne n'y laisse donc rien
  * d'elle — prouvé par tests/integration/error-issues-sql.test.ts. Ces tables
  * suivent la rétention et l'effacement de leur app par clé étrangère.

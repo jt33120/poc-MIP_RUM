@@ -44,7 +44,7 @@ qu'une requête analytique ne tient pas dans une query string, **pas** parce qu'
 `POST /api/v1/deploys`, seule écriture de l'API (celle de la CI), n'est **pas**
 exposé — donner à un agent conversationnel de quoi écrire en production est une
 décision qui se prend à froid, pas un oubli qu'on comble. Les écritures de
-l'opérateur (triage, commentaires et liens d'une issue, tickets, vues) ne sont même
+l'opérateur (triage et commentaires d'une issue, vues) ne sont même
 plus dans l'API depuis C7 : elles passent par l'écran de la console. Un test
 verrouille cette absence.
 
@@ -365,7 +365,7 @@ Un `POST /mcp` sans `Authorization` doit répondre `401` avec un en-tête
 ## 7. Limites connues
 
 - **Seize outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
-  exposé : SLO, alertes, tableaux de bord, replay, logs, SVI. Les ajouter passe
+  exposé : SLO, alertes, tableaux de bord, replay, logs. Les ajouter passe
   par l'API d'abord, jamais par un accès direct depuis le serveur MCP.
 - **Pas de total sur les sessions.** L'API n'en fournit pas ; le serveur ne
   l'invente pas. Seuls les groupes d'erreurs, les issues et l'Explorer d'événements

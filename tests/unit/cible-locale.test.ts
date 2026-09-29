@@ -77,12 +77,10 @@ const ECRIVAINS = [
   "scripts/verify-health.mjs",
   "scripts/verify-oidc-jit.mjs",
   "scripts/verify-rollups.mjs",
-  "scripts/verify-svi-modele.mjs",
   "scripts/verify-tenant-isolation.mjs",
   "scripts/verify-tenant.mjs",
   "scripts/seed-admin.mjs",
   "scripts/gen-traffic.mjs",
-  "scripts/gen-svi-traffic.mjs",
   "scripts/bench-ingest.mjs",
   "scripts/bench-route-trigger.mjs",
   "scripts/bench-verrou-p81.mjs",
@@ -174,13 +172,11 @@ describe("en vrai : lancé sur une base distante, un script refuse sans se conne
   const cas: Array<[string, Record<string, string>]> = [
     ["scripts/verify-tenant-isolation.mjs", { DATABASE_URL: PROD }],
     ["scripts/verify-alerting.mjs", { DATABASE_URL: PROD }],
-    ["scripts/verify-svi-modele.mjs", { DATABASE_URL: PROD }],
     ["scripts/seed-admin.mjs", { DATABASE_URL: PROD }],
     ["scripts/bench-ingest.mjs", { DATABASE_URL: PROD }],
     ["scripts/bench-route-trigger.mjs", { DATABASE_URL: PROD }],
     ["scripts/bench-verrou-p81.mjs", { BENCH_DATABASE_URL: PROD }],
     ["scripts/verify-tenant.mjs", { PGHOST: HOTE_PROD }],
-    ["scripts/gen-svi-traffic.mjs", { MIP_INGEST_ENDPOINT: "https://mip-rum-console.vercel.app/api/ingest/v1/traces" }],
     ["scripts/load-bench.mjs", { ENDPOINT: "https://mip-rum-console.vercel.app/api/ingest/v1/traces", DB_PHASE: "0" }],
   ];
   for (const [script, env] of cas) {

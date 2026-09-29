@@ -17,11 +17,11 @@
 
 | Cadence | Quand (UTC) | Étapes | Bail |
 |---|---|---|---|
-| `tick` | :00, :05, :10… — ou :00, :15, :30, :45 avec `SCHEDULER_TICK_MIN=15` (+ un passage au démarrage) | `check_alerts`, `route_error_issue_notifications`, `check_slo_burn`, uptime, `dispatch_alerts`, `dispatch_tickets`, `reconcile_deliveries` — avec `SCHEDULER_DELIVERY=off` : `check_alerts`, `check_slo_burn`, uptime seulement | 600 s |
+| `tick` | :00, :05, :10… — ou :00, :15, :30, :45 avec `SCHEDULER_TICK_MIN=15` (+ un passage au démarrage) | `check_alerts`, `route_error_issue_notifications`, `check_slo_burn`, uptime, `dispatch_alerts`, `reconcile_deliveries` — avec `SCHEDULER_DELIVERY=off` : `check_alerts`, `check_slo_burn`, uptime seulement | 600 s |
 | `horaire` | HH:05 | `refresh_rum_rollups(26)`, `refresh_metric_histogram(26)`, `check_new_errors`, `check_ai_op_anomalies`, notes historiques | 900 s |
 | `quotidien` | 03:17 | `purge_rum_tenants(30)`, `meter_tenant_usage` | 3 600 s |
 
-**La livraison part au notifier (P5).** Webhooks, e-mails et tickets sont l'affaire du service [`notifier`](../notifier/README.md), toutes les 15 s par défaut, seul détenteur des secrets sortants — pas encore créé sur Railway : en production, le tick livre. Tant que `SCHEDULER_DELIVERY` vaut `on`, le tick livre aussi, comme avant ; `off` le réduit à **décider** — les livraisons restent `queued` pour le notifier. Le scheduler n'a pas de clé Resend : une livraison e-mail qu'il prend est soldée `skipped`, d'où `off` posé au plus tard quand le notifier démarre.
+**La livraison part au notifier (P5).** Webhooks et e-mails sont l'affaire du service [`notifier`](../notifier/README.md), toutes les 15 s par défaut, seul détenteur des secrets sortants — pas encore créé sur Railway : en production, le tick livre. Tant que `SCHEDULER_DELIVERY` vaut `on`, le tick livre aussi, comme avant ; `off` le réduit à **décider** — les livraisons restent `queued` pour le notifier. Le scheduler n'a pas de clé Resend : une livraison e-mail qu'il prend est soldée `skipped`, d'où `off` posé au plus tard quand le notifier démarre.
 
 Chaque étape SQL est bornée par un `statement_timeout` posé **dans sa transaction** (`set_config(…, true)`, jamais en `SET` de session : le pooler Neon le perdrait) — 60 s par défaut, 5 min pour les pré-agrégats et le comptage, **30 min pour la purge** (`DELAIS_ETAPES_MS`, `packages/backend/jobs/planifie.mjs`). La somme des délais d'une cadence reste sous la durée de son bail. Une étape en échec n'annule pas les suivantes ; elle part au journal en `error` **avec sa pile complète**.
 

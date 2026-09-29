@@ -388,8 +388,8 @@ export const EXPLORER_DATASETS = {
       label: "Métrique",
       column: "name",
       values: ["LCP", "INP", "CLS", "FCP", "TTFB"],
-      // La table accueille aussi les métriques du serveur vocal (v51) : sans nom
-      // explicite, une moyenne mélangerait deux produits.
+      // Sans nom explicite, une moyenne mélangerait des métriques d'unités
+      // différentes (millisecondes, score CLS).
       required: true,
       valueNotices: [
         {

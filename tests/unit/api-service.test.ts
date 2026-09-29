@@ -71,7 +71,7 @@ describe("lecture seule, par construction", () => {
     // Les écritures de l'opérateur ont quitté l'API en C7 : restent la CI (deploys) et
     // des méthodes d'écriture sur des chemins de lecture — refusées toutes les deux.
     for (const [chemin, m] of [
-      ["/api/v1/issues/[id]/tickets", "POST"],
+      ["/api/v1/issues/[id]/activity", "POST"],
       ["/api/v1/explorer/views", "POST"],
       ["/api/v1/explorer/views", "DELETE"],
       ["/api/v1/deploys", "POST"],

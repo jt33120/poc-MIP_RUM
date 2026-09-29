@@ -116,15 +116,14 @@ describe("RangeeKpi — la période précédente incomplète, dite une fois", ()
 });
 
 describe("CapaciteFermee — ce que l'écran apportera, et comment le demander", () => {
-  it("dit l'apport, le geste pour l'ouvrir, et rappelle l'identifiant demandé", () => {
+  it("dit l'apport et le geste pour l'ouvrir", () => {
     const t = texte(
       renderToStaticMarkup(
-        <CapaciteFermee titre="Supervision SVI" sujet="Supervision du serveur vocal interactif." identifiant={{ libelle: "l'appel", valeur: "c-42" }} />,
+        <CapaciteFermee titre="Logs" sujet="Les journaux envoyés par vos serveurs, et non par le navigateur des visiteurs." />,
       ),
     );
     expect(t).toContain("Ce qu'il apportera :");
     expect(t).toContain("Pour l'ouvrir : demandez-le à votre interlocuteur MIP");
-    expect(t).toContain("Vous avez demandé : l'appel c-42");
     expect(t).not.toMatch(/Capacité annoncée|accès non ouvert/);
   });
 });

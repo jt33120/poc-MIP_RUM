@@ -103,7 +103,6 @@ describe("parseur — exceptions portées par un span", () => {
       ["serveur OpenTelemetry", span()],
       ["detail (requête DB)", span({ kind: 3, name: "SELECT invoices" }, { "db.system": "postgresql" })],
       ["serveur rejeté faute de durée", span({ endTimeUnixNano: undefined })],
-      ["span SVI", span({ name: "svi.step" })],
       ["span sans session ni trace utilisable", span({ kind: 1, name: "tâche", traceId: undefined, spanId: undefined },
         {}, [evenement(erreur({ "mip.exception_id": ID }))])],
     ];
@@ -461,7 +460,7 @@ function lignesInserees(appels: Appel[]): Row[] {
 
 const vide = {
   sessions: [], pageviews: [], metrics: [], errors: [], resources: [], longtasks: [], breadcrumbs: [],
-  events: [], spans: [], sviCalls: [], sviSteps: [], sviLegs: [],
+  events: [], spans: [],
 };
 
 /** Deux dérivées (session connue de l'app, session d'une autre app) et une erreur navigateur. */

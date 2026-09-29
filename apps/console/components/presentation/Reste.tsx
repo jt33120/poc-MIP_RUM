@@ -6,7 +6,7 @@
 // du document de couverture que le point cite. Aucun texte n'est écrit ici : tout
 // vient des données, qui citent leurs sources (contrôle n° 4 de couverture-site.test.ts).
 //
-// Les capacités déployées mais inertes (D12 ; D14 jusqu'au 28/09/2026) y figurent, et
+// Les capacités déployées mais inertes (D14 jusqu'au 28/09/2026, D12 jusqu'au 29/09/2026) y figurent, et
 // nulle part dans la partie 2 (règle 3 du § 8.0) : leur pastille porte `data-id`, que
 // la recette TP4 cherche dans #reste.
 //

@@ -161,8 +161,6 @@ export interface Coquille {
   readonly schema: Section<readonly string[]>;
   /** Le fuseau d'affichage de chaque projet du principal. */
   readonly fuseaux: Readonly<Record<string, string>>;
-  /** L'entrée « Connecteurs de tickets » ; `null` pour qui n'est pas administrateur. */
-  readonly tickets: Section<boolean> | null;
 }
 export const COQUILLE = operation<Aucun, Aucun, never, Coquille>("console.shell", "GET", "/v1/shell");
 
@@ -217,7 +215,7 @@ export const ECRANS = Object.freeze({
   tracing: ecran("screens.tracing", "/v1/screens/tracing"),
   trace: ecran<{ traceId: string }>("screens.trace", "/v1/screens/tracing/{traceId}"),
   correlation: ecran("screens.correlation", "/v1/screens/correlation"),
-  // C5 — usages, satisfaction, conversions, capacités fermées (SVI, logs, IA).
+  // C5 — usages, satisfaction, conversions, capacités fermées (logs, IA).
   acquisition: ecran("screens.acquisition", "/v1/screens/acquisition"),
   forms: ecran("screens.forms", "/v1/screens/forms"),
   retention: ecran("screens.retention", "/v1/screens/retention"),
@@ -225,9 +223,6 @@ export const ECRANS = Object.freeze({
   experience: ecran("screens.experience", "/v1/screens/experience"),
   goals: ecran("screens.goals", "/v1/screens/goals"),
   /** Capacité FERMÉE tant que `lib/capacites.ts` la liste : le chargeur ne lit rien et le dit. */
-  svi: ecran("screens.svi", "/v1/screens/svi"),
-  sviAppels: ecran("screens.sviCalls", "/v1/screens/svi/calls"),
-  sviAppel: ecran<{ callId: string }>("screens.sviCall", "/v1/screens/svi/calls/{callId}"),
   logs: ecran("screens.logs", "/v1/screens/logs"),
   ai: ecran("screens.ai", "/v1/screens/ai"),
   // C6 — espace de travail : tableaux de bord, vues enregistrées.
@@ -274,7 +269,6 @@ export const ECRANS_ADMIN = Object.freeze({
   jetonsLecture: ecranAdmin("screens.adminReadTokens", "/v1/screens/admin/read-tokens"),
   domaines: ecranAdmin("screens.adminExtensionScopes", "/v1/screens/admin/extension-scopes"),
   sourcemaps: ecranAdmin("screens.adminSourcemaps", "/v1/screens/admin/sourcemaps"),
-  connecteurs: ecranAdmin("screens.adminTicketIntegrations", "/v1/screens/admin/ticket-integrations"),
   /** L'assistant d'ajout d'un site (`/select/new`), et l'intégration d'un site avec `?app=`. */
   nouveauSite: ecranAdmin("screens.adminNewSite", "/v1/screens/admin/new-site"),
   // C10 — les demandes RGPD d'une personne (`/admin/privacy`) : ce qu'elles couvriraient, avant d'agir.
@@ -334,13 +328,12 @@ export const COMMANDES = Object.freeze({
   creerObjectif: commande("goals.create", "POST", "/v1/goals"),
   activerObjectif: commande<{ id: string }>("goals.update", "PATCH", "/v1/goals/{id}"),
   supprimerObjectif: commande<{ id: string }>("goals.delete", "DELETE", "/v1/goals/{id}"),
-  // C7 — le workflow des erreurs : une issue (statut, assigné, commentaire, lien,
-  // demande de ticket), et le statut d'un groupe historique par son empreinte.
+  // C7 — le workflow des erreurs : une issue (statut, assigné, commentaire), et le
+  // statut d'un groupe historique par son empreinte. Le lien et la demande de ticket
+  // sont retirés depuis le 29/09/2026.
   // Chaque mutation d'une issue cite la révision lue ; l'application est la portée.
   trierIssue: commande<{ id: string }>("issues.triage", "POST", "/v1/issues/{id}/triage"),
   commenterIssue: commande<{ id: string }>("issues.comment", "POST", "/v1/issues/{id}/comments"),
-  lierTicket: commande<{ id: string }>("issues.link", "POST", "/v1/issues/{id}/links"),
-  demanderTicket: commande<{ id: string }>("issues.requestTicket", "POST", "/v1/issues/{id}/tickets"),
   trierGroupe: commande<{ fingerprint: string }>("errors.setStatus", "PUT", "/v1/errors/{fingerprint}/status"),
   // C8 — l'alerting (règles, événements, SLO, canaux) et les sondes de disponibilité.
   // Activer ou suspendre POSE l'état voulu (`PUT …/active`) : un formulaire rejoué
@@ -362,7 +355,7 @@ export const COMMANDES = Object.freeze({
   // C9 — l'administration. Les comptes, la création d'une application et ce qui
   // n'appartient à aucune (un poste de l'extension, la recette d'une capacité
   // mobile) : l'administrateur de la plateforme. Ce qui appartient à UNE
-  // application (sa clé, ses origines, ses jetons, ses connecteurs, ses domaines) :
+  // application (sa clé, ses origines, ses jetons, ses domaines) :
   // son administrateur, l'application en portée (`?app=`).
   creerCompte: commande("users.create", "POST", "/v1/users"),
   activerCompte: commande("users.setActive", "PUT", "/v1/user-activations"),
@@ -376,8 +369,6 @@ export const COMMANDES = Object.freeze({
   revoquerJetonLecture: commande<{ id: string }>("readTokens.revoke", "DELETE", "/v1/read-tokens/{id}"),
   creerJetonSourcemap: commande("sourcemapTokens.create", "POST", "/v1/sourcemap-tokens"),
   revoquerJetonSourcemap: commande<{ id: string }>("sourcemapTokens.revoke", "DELETE", "/v1/sourcemap-tokens/{id}"),
-  creerIntegration: commande("ticketIntegrations.create", "POST", "/v1/ticket-integrations"),
-  majIntegration: commande<{ id: string }>("ticketIntegrations.update", "PATCH", "/v1/ticket-integrations/{id}"),
   creerDomaineExtension: commande("extensionScopes.create", "POST", "/v1/extension-scopes"),
   activerDomaineExtension: commande<{ id: string }>("extensionScopes.setActive", "PUT", "/v1/extension-scopes/{id}/active"),
   oublierPoste: commande<{ installId: string }>("extensionInstalls.forget", "DELETE", "/v1/extension-installs/{installId}"),

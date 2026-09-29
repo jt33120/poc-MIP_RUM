@@ -6,8 +6,8 @@
 // n'est recopié ici. Les écrans rendus sont ceux que la navigation rend
 // (`sousOnglets` : l'onglet interne « Actions » reste dans « Interactions »).
 //
-// CE QUI N'EST PAS MONTRÉ : les catégories `verrouille` (Logs, Supervision SVI,
-// Supervision IA). La console les annonce fermées ; la vitrine ne les présente pas
+// CE QUI N'EST PAS MONTRÉ : les catégories `verrouille` (Logs, Supervision IA).
+// La console les annonce fermées ; la vitrine ne les présente pas
 // comme des écrans qui existent.
 //
 // Visiteur : du texte — ces routes demandent une session —, et, si la démo est

@@ -493,7 +493,7 @@ describe("F15 — Pages : phases du TTFB et distributions", () => {
       { name: "TTFB", p75: 600, n: 300 },
       { name: "TLS", p75: 40, n: 120 },
       { name: "DNS", p75: 12, n: 280 },
-      { name: "SVI_ATTENTE", p75: 9000, n: 4 },
+      { name: "METRIQUE_MAISON", p75: 9000, n: 4 },
       { name: "RESPONSE", p75: 80, n: 290 },
     ]);
     expect(phases.map((p) => p.cle)).toEqual(["REDIRECT", "DNS", "TCP", "TLS", "REQUEST", "RESPONSE"]);

@@ -34,7 +34,6 @@ describe("C2 — GET /v1/shell : le chargeur reçoit le principal relu en base, 
           projets: { ok: true, data: [{ app_id: "app-a", name: "A" }] },
           schema: { ok: false, raison: "sonde en échec" },
           fuseaux: { "app-a": "Europe/Paris" },
-          tickets: p.role === "admin" ? { ok: true, data: false } : null,
         };
       },
       pages: ECRANS_FACTICES.pages,
@@ -55,7 +54,6 @@ describe("C2 — GET /v1/shell : le chargeur reçoit le principal relu en base, 
       projets: { ok: true, data: [{ app_id: "app-a", name: "A" }] },
       schema: { ok: false, code: "lecture_en_echec" },
       fuseaux: { "app-a": "Europe/Paris" },
-      tickets: null,
     });
     expect(vus.at(-1)).toEqual({ email: "v@mip.test", role: "viewer", apps: ["app-a"], demo: false });
   });

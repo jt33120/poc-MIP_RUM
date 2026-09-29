@@ -8,8 +8,9 @@
 //     principale de sa ligne (relue à la main, puce par puce, par P**.8) ;
 //   - une réserve tirée d'une ligne d'un autre verdict (D7, les sauvegardes) va dans
 //     « Ce qui reste », jamais dans une carte ;
-//   - les lignes déployées mais inertes sur le trafic réel (D12 ; D14 jusqu'au
-//     28/09/2026) vont aussi dans « Ce qui reste » : déployé ne veut pas dire actif.
+//   - les lignes déployées mais inertes sur le trafic réel (D14 jusqu'au 28/09/2026,
+//     D12 jusqu'au retrait des tickets le 29/09/2026) vont aussi dans « Ce qui reste » :
+//     déployé ne veut pas dire actif.
 // tests/unit/couverture-site.test.ts (contrôle n° 3) le vérifie sur CES cartes :
 // identifiants, provenance de chaque source, une puce par identifiant.
 //
@@ -39,6 +40,10 @@
 //   - K16 (D14) : le GeoIP n'est plus inerte — il résout le pays de la collecte directe du
 //     capteur de la console. D14 quitte la liste des inertes (couverture-controle.ts) et
 //     prend sa carte ; les sites des clients restent en « Ce qui reste » (R6).
+//
+// RETRAIT DU MODULE SVI (29/09/2026). Les lignes B1 et D5 du document le disent ; les
+// puces B1 (K6) et D5 (K12) suivent : plus de lecture SVI, et la réserve de D5 — des
+// tables que la purge ne couvrait pas — est levée avec leur suppression.
 //
 // SOURCES. `{ ligne }` = une ligne de capacité, par identifiant ; `{ passage }` = le
 // numéro d'une ligne du document hors des tables de capacités ; `{ fichier }` =
@@ -96,7 +101,7 @@ export const CARTES: readonly CarteCapacite[] = [
     id: "K3",
     titre: "Regrouper les erreurs en issues et les suivre",
     faitQuoi:
-      "Regrouper les occurrences en issues stables, les trier (statut, assignation, commentaire, lien de ticket), distinguer régression et réapparition, alerter sur une nouvelle issue ou un pic.",
+      "Regrouper les occurrences en issues stables, les trier (statut, assignation, commentaire), distinguer régression et réapparition, alerter sur une nouvelle issue ou un pic.",
     limites: [
       {
         id: "A7",
@@ -163,7 +168,7 @@ export const CARTES: readonly CarteCapacite[] = [
       {
         id: "B1",
         texte:
-          "Les écrans plus anciens (journaux, SVI, assistant IA) filtrent encore par application nommée, pas par le périmètre effectif ; un écran qui ne sait pas appliquer un filtre l'annonce non appliqué.",
+          "Les écrans plus anciens (journaux, assistant IA) filtrent encore par application nommée, pas par le périmètre effectif ; un écran qui ne sait pas appliquer un filtre l'annonce non appliqué.",
       },
       {
         id: "B2",
@@ -326,7 +331,8 @@ export const CARTES: readonly CarteCapacite[] = [
     limites: [
       {
         id: "D5",
-        texte: "La purge ne couvre pas encore les tables de supervision SVI.",
+        texte:
+          "Aucun relevé n'a encore revérifié la purge depuis le retrait, le 29/09/2026, des tables de supervision SVI qu'elle ne couvrait pas.",
       },
     ],
     sources: [{ ligne: "D5" }],

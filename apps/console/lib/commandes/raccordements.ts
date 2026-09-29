@@ -1,8 +1,9 @@
 // CE QUI RACCORDE UNE APPLICATION AU RESTE (C9) — jetons de lecture, jetons de CI
-// des source maps, connecteurs de tickets, domaines de l'extension navigateur,
-// inventaire des postes, recette d'une capacité mobile.
+// des source maps, domaines de l'extension navigateur, inventaire des postes,
+// recette d'une capacité mobile. (Les connecteurs de tickets sont retirés depuis
+// le 29/09/2026.)
 //
-// Tout ce qui appartient à UNE application (un jeton, un connecteur, un domaine)
+// Tout ce qui appartient à UNE application (un jeton, un domaine)
 // revient à l'administrateur de cette application : portée `app`, et la ligne est
 // relue DANS elle (`where id = $1 and app_id = $2`). Ce qui n'appartient à aucune —
 // un poste de l'extension, qui en observe plusieurs ; la recette d'une capacité
@@ -20,7 +21,6 @@ import { allowOriginForApp, appDuDomaine, createExtensionScope, toggleExtensionS
 import { forgetInstall } from "../queries-extension-installs";
 import { createReadToken, revokeReadToken } from "../queries-read-tokens";
 import { createSourcemapToken, parseTokenRequest, revokeSourcemapToken } from "../queries-sourcemap-tokens";
-import { createTicketIntegration, parseIntegrationRequest, patchTicketIntegration } from "../queries-ticket-integrations";
 import { commande, MOTIF_ENTIER } from "./commun";
 
 const CHEMIN_ID = objet({ id: chaine({ max: 18, motif: MOTIF_ENTIER, description: "identifiant entier" }) });
@@ -107,62 +107,6 @@ export const revoquerJetonSourcemap = commande(
   async ({ principal, app, chemin, auditer }) => {
     const jeton = await revokeSourcemapToken(chemin.id.toLowerCase(), principal.email, app, auditer);
     return jeton ? ({ etat: "ok", token: jeton } as const) : ({ etat: "introuvable" } as const);
-  },
-);
-
-// ─── Connecteurs de tickets (P8.6) ───────────────────────────────────────────
-
-/**
- * Le formulaire d'un connecteur : aucune donnée secrète n'y transite — une
- * RÉFÉRENCE (`env:TICKET_NOM` ou `enc:v1:…`), refusée si c'est un jeton collé.
- * La cible est saisie, jamais déduite.
- */
-export const creerIntegration = commande(
-  {
-    regle: { auth: "admin", portee: "app", audit: "ticket_integration.create" },
-    corps: objet({
-      provider: chaine({ max: 40 }),
-      target: chaine({ min: 0, max: 400 }),
-      credentialRef: chaine({ min: 0, max: 400 }),
-      webhookSecretRef: facultatif(chaine({ max: 400 })),
-      mapClosed: facultatif(chaine({ max: 40 })),
-      mapReopened: facultatif(chaine({ max: 40 })),
-    }),
-  },
-  async ({ principal, app, corps, auditer }) => {
-    const demande = parseIntegrationRequest({
-      app,
-      provider: corps.provider.trim(),
-      target: corps.target.trim(),
-      credentialRef: corps.credentialRef.trim(),
-      webhookSecretRef: corps.webhookSecretRef?.trim() || null,
-      statusMapping: { closed: corps.mapClosed || null, reopened: corps.mapReopened || null },
-    });
-    if (!demande.ok) return { etat: "refus", message: demande.error } as const;
-    try {
-      const cree = await createTicketIntegration(demande.value, principal.email, auditer);
-      return cree ? ({ etat: "cree", id: cree.id } as const) : ({ etat: "refus", message: `application inconnue : ${app}` } as const);
-    } catch (err) {
-      if (String((err as { code?: string })?.code) === "23505") {
-        return { etat: "refus", message: "cette cible est déjà configurée pour cette application" } as const;
-      }
-      throw err;
-    }
-  },
-);
-
-/** Activer, marquer la recette jouée, sortir de `degraded` : un champ à la fois, jamais l'inverse de `degraded`. */
-export const majIntegration = commande(
-  {
-    regle: { auth: "admin", portee: "app", audit: "ticket_integration.update" },
-    chemin: CHEMIN_ID,
-    corps: objet({ champ: parmi(["enabled", "verified", "state"] as const), valeur: booleen() }),
-  },
-  async ({ principal, app, chemin, corps, auditer }) => {
-    const patch =
-      corps.champ === "enabled" ? { enabled: corps.valeur } : corps.champ === "verified" ? { verified: corps.valeur } : ({ state: "active" } as const);
-    const maj = await patchTicketIntegration(chemin.id, patch, principal.email, [app!], auditer);
-    return maj ? ({ etat: "ok" } as const) : ({ etat: "introuvable" } as const);
   },
 );
 

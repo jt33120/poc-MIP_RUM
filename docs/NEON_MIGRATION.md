@@ -37,7 +37,8 @@ Postgres 17, base `neondb`.
   le jeu exact que la CI rejoue contre un Postgres vierge — appliqués statement
   par statement (283 statements, aucune erreur). Neon est au niveau **v51**,
   celui du repo. La base Supabase, elle, s'était arrêtée un cran avant : Neon a
-  donc 6 tables `svi_*` vides en plus, prêtes pour l'ingestion SVI.
+  donc 6 tables `svi_*` vides en plus, prêtes pour l'ingestion SVI (supprimées le
+  29/09/2026 avec le module SVI).
 - **Données** : les 36 tables `public`, **250 738 lignes**, comptage vérifié
   **table par table, 36/36 identiques**.
 - **`replay_chunk`** (binaire `bytea`, chunks rrweb gzippés, 18,7 Mo) :

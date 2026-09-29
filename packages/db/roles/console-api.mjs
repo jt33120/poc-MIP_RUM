@@ -83,8 +83,6 @@ export const MIP_CONSOLE = Object.freeze({
     rum_rollup_hourly: L,
     scheduler_lease: L,
     sourcemap: L,
-    svi_call: L,
-    svi_step: L,
     syn_snapshot: L,
     tenant_usage_daily: L,
     v_anomaly: L,
@@ -106,7 +104,6 @@ export const MIP_CONSOLE = Object.freeze({
     dashboard: TOUT,
     error_issue: ["SELECT", "UPDATE", "DELETE"],
     error_issue_activity: LI,
-    error_issue_ticket: LI,
     error_status: LIM,
     extension_install: LS,
     extension_scope: LIM,
@@ -116,8 +113,6 @@ export const MIP_CONSOLE = Object.freeze({
     read_tokens: LIM,
     slo: TOUT,
     sourcemap_upload_token: LIM,
-    ticket_integration: LIM,
-    ticket_outbox: LI,
     uptime_check: TOUT,
   }),
   /**
@@ -168,6 +163,21 @@ export const MIP_IDENTITY = Object.freeze({
 });
 
 export const ROLES = Object.freeze([MIP_CONSOLE, MIP_IDENTITY]);
+
+/**
+ * Tables que v93 accordait et qu'une migration ULTÉRIEURE a supprimées de la
+ * base. Les listes ci-dessus ne peuvent plus les nommer (la garde dirait
+ * « absente de la base »), mais v93, figée, les nomme toujours :
+ * `tests/unit/roles-console-api.test.ts` compare donc v93, MOINS ces tables, aux
+ * listes. Chacune dit la migration qui l'a supprimée.
+ */
+export const SUPPRIMEES = Object.freeze({
+  error_issue_ticket: "v97 — liens de ticket : fonctionnalité retirée, table vide en production",
+  svi_call: "v97 — appels SVI : fonctionnalité retirée, table vide en production",
+  svi_step: "v97 — étapes d'appel SVI : fonctionnalité retirée, table vide en production",
+  ticket_integration: "v97 — connecteur de tickets : fonctionnalité retirée, table vide en production",
+  ticket_outbox: "v97 — file du connecteur de tickets : fonctionnalité retirée, table vide en production",
+});
 
 /**
  * Relations que le bundle NOMME sans que l'un des deux rôles les touche, et

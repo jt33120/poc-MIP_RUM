@@ -1215,7 +1215,7 @@ suite("P8.2 — `backfill_run` dans le périmètre d'effacement", () => {
     const { rows } = await pool.query<{ src: string }>(
       "select prosrc as src from pg_proc where proname = 'erase_app_data'",
     );
-    for (const table of ["analytics_saved_view", "dashboard", "rum_log", "rum_ai", "error_status", "svi_call"]) {
+    for (const table of ["analytics_saved_view", "dashboard", "rum_log", "rum_ai", "error_status"]) {
       expect(rows[0].src).toContain(`from ${table} `);
     }
   });

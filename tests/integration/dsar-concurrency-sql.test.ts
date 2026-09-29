@@ -588,12 +588,9 @@ suite("P8.1 — l'inventaire des tables ne se recopie pas à la main", () => {
       "app_registry",
       // Facturation et compteurs de débit, pas de la télémétrie.
       "tenant_usage_daily", "rate_counter",
-      // Supprimées en CASCADE avec leur parent.
-      "error_issue_activity", "error_issue_alias", "error_issue_ticket", "error_issue_notification",
-      // P8.6 : file de sortie et journal des livraisons entrantes d'un connecteur
-      // de tickets, emportés en cascade avec `ticket_integration` (que
-      // `erase_app_data` supprime, lui, directement).
-      "ticket_outbox", "ticket_webhook_event",
+      // Supprimées en CASCADE avec leur parent. (Les tables des tickets et du SVI
+      // n'existent plus depuis v97.)
+      "error_issue_activity", "error_issue_alias", "error_issue_notification",
       // Configuration d'exploitation — écart assumé, consigné dans v81.
       "slo", "goal", "notify_channel", "uptime_check", "read_tokens", "deploy_marker",
       "ai_briefing", "extension_scope", "extension_install_app",

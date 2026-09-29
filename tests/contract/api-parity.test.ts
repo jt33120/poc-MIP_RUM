@@ -270,7 +270,6 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
       [`/api/v1/sessions/pa-1?app=${A}`, auth(), 200],
       [`/api/v1/issues/${id}?app=${A}`, auth(), 200],
       [`/api/v1/issues/${id}/activity?app=${A}`, auth(), 200],
-      [`/api/v1/issues/${id}/tickets?app=${A}`, auth(), 200],
       [`/api/v1/explorer/views?app=${A}`, auth(), 403], // personnelles : aucun jeton n'en a
       ["/api/v1/openapi", auth(), 200],
       ["/api/rum/summary?window=7d", auth(JETON_BASE), 200],

@@ -10,7 +10,7 @@
 // LECTURE SEULE, PAR CONSTRUCTION. Le service ne sert que `GET`, `HEAD`,
 // `OPTIONS`, et `POST` sur les seules routes qui lisent (l'Explorer : sa requête
 // porte un AST, qui ne tient pas dans une query string). Toute écriture — triage,
-// commentaires, liens, tickets, vues enregistrées, marqueurs de déploiement —
+// commentaires, vues enregistrées, marqueurs de déploiement —
 // répond 405 et reste à la console tant que `console-api` n'existe pas : ces
 // routes s'authentifient par cookie de session, que l'API publique n'accepte pas.
 // Plus tard, le rôle de base `mip_api` (migration v89) le garantira aussi côté base.

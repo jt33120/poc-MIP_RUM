@@ -11,8 +11,8 @@
 // doit rester en LECTURE, sans aucun secret de session : ce service ne sert que
 // GET, HEAD, OPTIONS et la lecture POST de l'Explorer ; il n'embarque pas la
 // vérification des sessions de la console (garde de build) ; un cookie n'y vaut
-// rien (401). Les écritures de l'API v1 (triage, commentaires, liens, tickets,
-// vues, marqueurs de déploiement) restent à la console jusqu'à `console-api`.
+// rien (401). Les écritures de l'API v1 (triage, commentaires, vues,
+// marqueurs de déploiement) restent à la console jusqu'à `console-api`.
 //
 // LES SONDES : /health (processus + base, sonde Railway), /live (processus),
 // /ready et /metrics derrière METRICS_TOKEN.

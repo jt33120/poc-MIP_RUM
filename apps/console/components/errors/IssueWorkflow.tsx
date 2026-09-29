@@ -1,12 +1,12 @@
 // Workflow d'une issue sur son écran (P5.6) : triage et assignation, référence de
-// résolution, régression confirmée ou réapparition à vérifier, liens de ticket,
-// puis historique et commentaires. Rendu serveur ; les formulaires sont des îlots
+// résolution, régression confirmée ou réapparition à vérifier, puis historique
+// et commentaires. Rendu serveur ; les formulaires sont des îlots
 // client, rendus pour un admin seulement. Hors session admin, la lecture arrive
 // sans adresse de compte (lib/error-issue-workflow.ts) : l'écran dit « un compte
 // de la console », jamais « compte supprimé ».
 import Link from "next/link";
 import { ERROR_LINK } from "@/components/errors/ErrorOccurrences";
-import { IssueCommentForm, IssueLinkForm, IssueTriageForm } from "@/components/errors/IssueWorkflowForms";
+import { IssueCommentForm, IssueTriageForm } from "@/components/errors/IssueWorkflowForms";
 import type { IssueActivity, IssueUserRef, IssueWorkflowView } from "@/lib/error-issue-workflow";
 import type { IssueRecord } from "@/lib/error-issues";
 import { ISSUE_STATUSES, ISSUE_STATUS_LABELS, type IssueStatus } from "@/lib/issues-libelles";
@@ -106,31 +106,6 @@ export function IssueTriageCard({
           ) : (
             <p className="mt-3 text-xs text-ink-faint">Lecture seule : le triage est réservé aux administrateurs.</p>
           )}
-          <div className="mt-5">
-            <h3 className={CARTE_TITRE}>Tickets liés</h3>
-            {workflow.links.length ? (
-              <ul className="mt-2 space-y-1 text-sm" data-testid="issue-links">
-                {workflow.links.map((lien) => (
-                  <li key={lien.id} className="break-all">
-                    <a href={lien.url} target="_blank" rel="noopener noreferrer" className={ERROR_LINK}>
-                      {lien.label}
-                    </a>
-                    <span className="text-xs text-ink-faint">
-                      {" "}
-                      — ajouté par {personne(lien.created_by, canWrite)} le {fmtDate(lien.created_at)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-sm text-ink-faint">Aucun ticket lié.</p>
-            )}
-            {canWrite && (
-              <div className="mt-3">
-                <IssueLinkForm issueId={issue.id} appId={issue.app_id} revision={issue.revision} />
-              </div>
-            )}
-          </div>
         </>
       )}
     </section>
@@ -179,18 +154,6 @@ function Evenement({ activite, emails }: { activite: IssueActivity; emails: bool
             </>
           )}
           <span className="mt-1 block whitespace-pre-wrap break-words text-ink">{activite.body}</span>
-        </>
-      );
-    case "link":
-      return (
-        <>
-          <strong>{acteur}</strong> a lié le ticket{" "}
-          {activite.link && (
-            <a href={activite.link.url} target="_blank" rel="noopener noreferrer" className={`break-all ${ERROR_LINK}`}>
-              {activite.link.label}
-            </a>
-          )}
-          .
         </>
       );
     case "regression":
@@ -243,7 +206,7 @@ export function IssueActivitySection({
               ))}
             </ol>
           ) : (
-            <p className="mt-4 text-sm text-ink-faint">Aucune activité : ni triage, ni commentaire, ni lien.</p>
+            <p className="mt-4 text-sm text-ink-faint">Aucune activité : ni triage, ni commentaire.</p>
           )}
           {(olderHref || newestHref) && (
             <nav aria-label="Pages de l'historique" className="mt-4 flex flex-wrap gap-4 text-sm">

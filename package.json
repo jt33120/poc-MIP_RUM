@@ -11,8 +11,7 @@
     "test:sql": "vitest run tests/integration --no-file-parallelism",
     "test:contract": "vitest run tests/contract --no-file-parallelism",
     "test:isolation": "node scripts/verify-tenant-isolation.mjs",
-    "test:alerting": "node scripts/verify-alerting.mjs",
-    "test:svi": "node scripts/verify-svi-modele.mjs"
+    "test:alerting": "node scripts/verify-alerting.mjs"
   },
   "packageManager": "pnpm@9.15.9",
   "engines": {

@@ -173,7 +173,6 @@ services:
       ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
       ALERT_EMAIL_TEST_RECIPIENTS: ${ALERT_EMAIL_TEST_RECIPIENTS:-}
       WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET:-}
-      TICKET_SECRET_KEY: ${TICKET_SECRET_KEY:-}
     depends_on: *apres-migration
     ports:
       # /health (processus + base), /ready et /metrics (fraîcheur, arriéré ; jeton).

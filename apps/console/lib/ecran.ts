@@ -86,7 +86,6 @@ export interface CoquilleEcran {
   readonly projets: Section<AppItem[]>;
   readonly schema: Section<string[]>;
   readonly fuseaux: Record<string, string>;
-  readonly tickets: Section<boolean> | null;
 }
 
 /** La coquille quand ni le service ni la base ne répondent : elle s'affiche et dit « Partiel » (F02). */
@@ -94,7 +93,6 @@ export const COQUILLE_DEGRADEE: CoquilleEcran = Object.freeze({
   projets: { ok: false, code: "lecture_en_echec" } as const,
   schema: { ok: false, code: "lecture_en_echec" } as const,
   fuseaux: {},
-  tickets: null,
 });
 
 function versSection<T>(l: Lecture<T>): Section<T> {
@@ -103,7 +101,7 @@ function versSection<T>(l: Lecture<T>): Section<T> {
 
 /** La coquille chargée par la console, sous la forme du fil. */
 export function coquilleDuFil(c: CoquilleChargee): CoquilleEcran {
-  return { projets: versSection(c.projets), schema: versSection(c.schema), fuseaux: c.fuseaux, tickets: c.tickets && versSection(c.tickets) };
+  return { projets: versSection(c.projets), schema: versSection(c.schema), fuseaux: c.fuseaux };
 }
 
 type Journal = { warn: (m: string, c?: Record<string, unknown>) => void; error: (m: string, c?: Record<string, unknown>) => void };

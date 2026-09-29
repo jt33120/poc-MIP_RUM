@@ -67,7 +67,7 @@ flowchart TB
 | `console-api` | Railway, groupe 2 · Restitution | le backend de la console ; la connexion passe par lui depuis le 27/09/2026 |
 | `mcp` | Railway, groupe 2 · Restitution | serveur MCP en lecture seule, qui passe par `api` sur le réseau privé ; aucun accès à la base |
 | `scheduler` | Railway, groupe 3 · Traitements | travaux planifiés sous bail, toutes les 15 minutes ; seul migrateur, au pré-déploiement |
-| `notifier` | Railway, groupe 3 · Traitements | livre les alertes (webhooks signés, e-mails, tickets) ; seul détenteur des secrets sortants |
+| `notifier` | Railway, groupe 3 · Traitements | livre les alertes (webhooks signés, e-mails) ; seul détenteur des secrets sortants |
 | PostgreSQL | Neon, aws-eu-central-1 (Francfort), offre payante Launch depuis le 27/09/2026 | à l'usage, calcul plafonné à 0,25 CU, veille active. Un palier : la base d'un vrai produit se choisira selon le standard de la DSI de MIP ([ADR-0014](docs/architecture/adr/0014-base-gratuite.md), remplacée) |
 
 Le schéma de production est à `migration-v96` : le redéploiement du scheduler du 27/09/2026 a appliqué v87 → v96.
@@ -145,7 +145,7 @@ Les zones générées de ce README se régénèrent par `node scripts/readme-sec
 | `packages/rum-core` | Primitives pures partagées par les runtimes (contexte, snapshots d'événement, `beforeSend`, encodeur OTLP) |
 | `packages/rum-sdk` | SDK Web (émetteur OTLP + web-vitals), build esbuild IIFE `mip-rum.js` ; poids gzip remesuré par `tests/unit/specs.test.ts` (`apps/console/lib/sdk-poids.ts`) |
 | `packages/rum-mobile` | SDK **React Native** : crashes, écrans, réseau (traceparent), événements → mêmes tables (`device_type=mobile`) ; livré, jamais lancé dans une application React Native (document de couverture, `C1` et `C10`) |
-| `packages/backend` | `@mip/backend` — noyau backend sans framework : parseur OTLP, receveur (`/v1/traces`, `/v1/logs`, `/v1/replay`, `/v1/sourcemaps`, et depuis C11 l'extension et les marqueurs de déploiement), écritures Postgres, travaux planifiés, livraison des alertes, connecteur de tickets. Importé par la console comme par les services. **En production, la route de la console reçoit toute la collecte et en relaie une part au `collector`** ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
+| `packages/backend` | `@mip/backend` — noyau backend sans framework : parseur OTLP, receveur (`/v1/traces`, `/v1/logs`, `/v1/replay`, `/v1/sourcemaps`, et depuis C11 l'extension et les marqueurs de déploiement), écritures Postgres, travaux planifiés, livraison des alertes. Importé par la console comme par les services. **En production, la route de la console reçoit toute la collecte et en relaie une part au `collector`** ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
 | `packages/db` | `@mip/db` — le schéma (`sql/` : `schema.sql`, migrations numérotées, index de pré-déploiement) et son migrateur, que seul le `scheduler` lance |
 | `packages/mcp-tools` | `@mip/mcp-tools` — noyau MCP : catalogue d'outils, client HTTP de l'API v1 ; sans base de données |
 | `packages/service-kit` | `@mip/service-kit` — ce que chaque service fait de la même façon : configuration, journal, sondes, arrêt propre, pool Postgres, métriques, boucles ([README](packages/service-kit/README.md)) |
@@ -185,16 +185,16 @@ En cas de désaccord entre ces documents, [docs/RUM_PARITY_STATUS.md](docs/RUM_P
 <!-- genere:readme-statut -->
 <!-- Zone écrite par `node scripts/readme-sections.mjs` depuis apps/console/lib/couverture.generated.json, l'extraction de docs/RUM_PARITY_STATUS.md. Ne pas la modifier à la main : tests/unit/readme.test.ts la régénère et compare. -->
 
-État relevé le **23/09/2026** sur `8a5f3d1` par le document de couverture [docs/RUM_PARITY_STATUS.md](docs/RUM_PARITY_STATUS.md) : **49** capacités recensées, **35** déployées, **aucune** éprouvée sur des données réellement ingérées — le vocabulaire du document n'a pas de verdict au-dessus de `deploye_non_eprouve`.
+État relevé le **23/09/2026** sur `8a5f3d1` par le document de couverture [docs/RUM_PARITY_STATUS.md](docs/RUM_PARITY_STATUS.md) : **49** capacités recensées, **34** déployées, **aucune** éprouvée sur des données réellement ingérées — le vocabulaire du document n'a pas de verdict au-dessus de `deploye_non_eprouve`.
 
 | Verdict | Capacités |
 |---|--:|
-| `deploye_non_eprouve` | 35 |
+| `deploye_non_eprouve` | 34 |
 | `livre_non_deploye` | 5 |
 | `livre_avec_defaut_connu` | 2 |
 | `en_revue` | 0 |
-| `bloque_acces_externe` | 4 |
-| `non_retenu` | 1 |
+| `bloque_acces_externe` | 3 |
+| `non_retenu` | 3 |
 | `non_commence` | 2 |
 
 Le document ne recense que les capacités des lots P5 à P8 : les écrans plus anciens de la console n'y ont pas de verdict, et ce README ne leur en donne pas. La vitrine (`/presentation`) reprend les mêmes verdicts, ligne par ligne.

@@ -6,7 +6,7 @@
 //     qu'en levant ce défaut elle ne peut TOUJOURS RIEN écrire : ni table, ni
 //     fonction à droits de propriétaire ;
 //   · qu'elle lit la télémétrie (policy de lecture), mais ni un hachage de mot
-//     de passe, ni le contenu d'un rejeu, ni une référence de secret de ticket ;
+//     de passe, ni le contenu d'un rejeu ;
 //   · que `verifierRoleApi` (la garde CI) voit chaque écart qu'on lui glisse :
 //     un droit de trop, une policy d'écriture, une fonction rouverte, une
 //     relation lue par le bundle sans droit ;
@@ -93,7 +93,24 @@ const BUNDLE_CONFORME = [...TABLES, ...Object.keys(COLONNES), "event_metric_base
   });
 
   it("la migration se rejoue sans erreur", async () => {
-    await pool.query(V89);
+    // v97 a supprimé trois tables que v89 nomme (tickets). Une migration figée ne se
+    // réécrit pas, et le migrateur ne rejoue jamais un fichier déjà inscrit : on
+    // rejoue donc v89 sur le schéma qu'elle visait, en rendant ces trois tables vides
+    // le temps d'une transaction annulée.
+    const c = await pool.connect();
+    try {
+      await c.query("begin");
+      await c.query(`
+        create table if not exists error_issue_ticket (id bigint);
+        create table if not exists ticket_outbox (id bigint);
+        create table if not exists ticket_integration (
+          id bigint, app_id text, provider text, target text, state text, enabled boolean, verified_at timestamptz);
+      `);
+      await c.query(V89);
+    } finally {
+      await c.query("rollback");
+      c.release();
+    }
   });
 
   it("une session mip_api est en lecture seule par défaut, requête bornée à 15 s", async () => {
@@ -113,7 +130,6 @@ const BUNDLE_CONFORME = [...TABLES, ...Object.keys(COLONNES), "event_metric_base
         `update rum_session set app_id = 'p4-intrus' where app_id = '${APP}'`,
         `delete from rum_session where app_id = '${APP}'`,
         "truncate rum_metric",
-        "select upsert_svi_call('{}'::jsonb)",
         "select check_new_errors()",
         "select reconcile_alert_deliveries()",
         "select check_ai_op_anomalies()",
@@ -133,15 +149,12 @@ const BUNDLE_CONFORME = [...TABLES, ...Object.keys(COLONNES), "event_metric_base
     expect(rows).toEqual([{ session_id: "p4-s1" }]);
     await api.query("select id from console_user limit 1");
     await api.query("select app_id, session_id from replay_chunk limit 1");
-    await api.query("select id, provider, target from ticket_integration limit 1");
     for (const sql of [
       "select password_hash from console_user",
       "select email from console_user",
       "select * from console_user",
       "select * from analytics_saved_view",
       "select body from replay_chunk",
-      "select credential_ref from ticket_integration",
-      "select webhook_secret_ref from ticket_integration",
       "select * from audit_log",
       "select * from notify_channel",
     ]) {
@@ -156,7 +169,7 @@ const BUNDLE_CONFORME = [...TABLES, ...Object.keys(COLONNES), "event_metric_base
       await c.query("grant select on notify_channel to mip_api");
       await c.query("grant select (password_hash) on console_user to mip_api");
       await c.query("create policy p4_ecrit on rum_session for update to mip_api using (true)");
-      await c.query("grant execute on function upsert_svi_call(jsonb) to public");
+      await c.query("grant execute on function check_new_errors() to public");
       await c.query("grant usage on all sequences in schema public to mip_api");
       const f = fautes(await verifierRoleApi(c, { code: BUNDLE_CONFORME }));
       expect(f).toEqual(expect.arrayContaining([
@@ -165,8 +178,8 @@ const BUNDLE_CONFORME = [...TABLES, ...Object.keys(COLONNES), "event_metric_base
         expect.stringContaining("notify_channel : droits SELECT"),
         expect.stringContaining("console_user : colonnes id, password_hash"),
         expect.stringContaining("policy rum_session.p4_ecrit"),
-        expect.stringContaining("hors liste — upsert_svi_call(jsonb)"),
-        expect.stringContaining("upsert_svi_call : encore exécutable"),
+        expect.stringContaining("hors liste — check_new_errors()"),
+        expect.stringContaining("check_new_errors : encore exécutable"),
         expect.stringContaining("séquences :"),
       ]));
     });

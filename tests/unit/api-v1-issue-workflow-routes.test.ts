@@ -1,7 +1,7 @@
 // P5.6 — la route v1 de LECTURE du workflow d'une issue : son historique, par jeton
 // ou par session, dans le périmètre du principal.
 //
-// Les écritures (triage, commentaire, lien, ticket) ont quitté l'API v1 en C7 : elles
+// Les écritures (triage, commentaire) ont quitté l'API v1 en C7 : elles
 // passent par l'écran et leurs commandes (`lib/commandes/issues.ts`), éprouvées par
 // `tests/unit/issue-workflow-commandes.test.ts`, la matrice d'autorisations et
 // `tests/integration/error-issues-sql.test.ts` (comportement transactionnel).

@@ -19,7 +19,7 @@ export * from "./alertes-metriques";
 // Filtres globaux — FAÇADE « v2 » du contrat commun (lib/query-contract.ts)
 //
 // Forme historique : app `string` ('all' = toutes), device `string` (+ 'tablet').
-// Elle ne sert plus qu'aux lectures pas encore migrées vers le contrat (logs, SVI,
+// Elle ne sert plus qu'aux lectures pas encore migrées vers le contrat (logs,
 // assistant IA) : ces écrans n'acceptent que les presets et leur page valide l'URL
 // par `pageFilters` avant de dériver cette façade avec `v2FiltersOf`. Les
 // lectures migrées (corrélation, alertes) prennent la requête résolue.
