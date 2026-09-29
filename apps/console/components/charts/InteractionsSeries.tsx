@@ -212,12 +212,14 @@ export function usePinceau({
     },
     [grille, seauSecondes],
   );
-  const enCours = zone !== null;
-
   useEffect(() => {
-    if (!enCours) return;
+    if (!actif) return;
+    // Écouteurs posés dès que le pinceau existe, pas à la pression : un clic rapide
+    // (pression et relâchement dans la même trame) ne doit pas laisser une zone
+    // ouverte qui suivrait ensuite la souris. Sans zone, ils ne font rien.
     // Relâché n'importe où (même hors du graphique) : on applique ce qui est tracé.
     const relacher = () => {
+      if (!etatRef.current.zone) return;
       const plage = appliquer({ type: "relacher", maintenant: Date.now() });
       if (plage && gabarit) router.push(hrefPlage(gabarit, plage));
     };
@@ -230,7 +232,7 @@ export function usePinceau({
       window.removeEventListener("mouseup", relacher);
       window.removeEventListener("keydown", echap);
     };
-  }, [enCours, gabarit, router, appliquer]);
+  }, [actif, gabarit, router, appliquer]);
 
   const debuter = useCallback(
     (etat: { activeLabel?: unknown } | null | undefined) => {
