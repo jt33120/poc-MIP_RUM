@@ -130,22 +130,6 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  packages/agent-node:
-    dependencies:
-      '@mip/rum-core':
-        specifier: workspace:*
-        version: link:../rum-core
-    devDependencies:
-      '@types/node':
-        specifier: ^22
-        version: 22.19.20
-      esbuild:
-        specifier: 0.28.0
-        version: 0.28.0
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
   packages/backend:
     dependencies:
       '@mip/service-kit':
