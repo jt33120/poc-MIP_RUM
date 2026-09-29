@@ -27,6 +27,26 @@ export function noteAffichee(mesure: string, valeur: number | null | undefined):
   return { note, forme: FORME_RATING[note], libelle: RATING_LABEL[note], jeton: RATING_JETON[note], regle: texteRegleMip(mesure) };
 }
 
+/**
+ * La mesure MIP d'un type de signal de frustration. Les clics « erreur »
+ * (`frustration.error`) n'en ont PAS : `BROWSER_ERRORS` est la part des sessions
+ * avec une erreur navigateur, pas celle des clics suivis d'une erreur.
+ */
+export const MESURE_DU_SIGNAL: Record<"rage" | "dead" | "error", "RAGE_CLICKS" | "DEAD_CLICKS" | null> = {
+  rage: "RAGE_CLICKS",
+  dead: "DEAD_CLICKS",
+  error: null,
+};
+
+/**
+ * Part (0..1) des sessions touchées : sessions portant le signal ÷ sessions dont le
+ * capteur émet (la population des tuiles, CP16). `null` sans population : jamais 0.
+ */
+export function partSessionsTouchees(sessions: number, population: number): number | null {
+  if (!Number.isFinite(sessions) || !Number.isFinite(population) || population <= 0) return null;
+  return Math.min(1, Math.max(0, sessions / population));
+}
+
 /** « ■ 212 ms » : la valeur précédée de sa forme, ou la valeur seule sans note. */
 export function texteNote(n: NoteAffichee | null, valeur: string): string {
   return n ? `${n.forme} ${valeur}` : valeur;

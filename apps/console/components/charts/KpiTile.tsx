@@ -27,6 +27,7 @@ import { GlossaryTip } from "../GlossaryTip";
 import { InfoTip } from "../InfoTip";
 import { pluriel } from "@/lib/format";
 import { lireVital, texteVerdict } from "@/lib/vital-lecture";
+import { ValeurNoteeMip } from "../NoteMip";
 
 export type SensMeilleur = "bas" | "haut" | "neutre";
 
@@ -201,6 +202,7 @@ export function KpiTile({
   testid,
   approchee = false,
   compact = false,
+  noteMip,
 }: {
   /** « LCP p75 », « Sessions commencées ». */
   label: string;
@@ -233,6 +235,13 @@ export function KpiTile({
   methode?: string;
   /** Ton bad SEULEMENT si la condition est vraie, avec la règle écrite. */
   alerte?: AlerteTuile;
+  /**
+   * Note par une RÈGLE MIP d'une grandeur liée à la tuile (amendement de R-S du
+   * 29/09/2026) : pastille colorée + forme + règle écrite, sous la valeur. La valeur
+   * notée peut différer de celle de la tuile (un compte de signaux est noté par la
+   * PART de sessions touchées) : `texte` la dit, en toutes lettres.
+   */
+  noteMip?: { mesure: string; valeur: number | null; texte: string };
   /** Intervalle à 95 % (P*.1), ou pourquoi il n'est pas calculé. */
   intervalle?: IntervalleP75;
   /**
@@ -375,6 +384,12 @@ export function KpiTile({
       )}
 
       {lecture && <p className="text-xs text-ink-soft">{lecture}</p>}
+
+      {noteMip && (
+        <p className="min-w-0 text-xs text-ink-soft" data-testid="kpi-note-mip">
+          <ValeurNoteeMip mesure={noteMip.mesure} valeur={noteMip.valeur} texte={noteMip.texte} />
+        </p>
+      )}
 
       {(texteEffectif || echantillonFaible) && (
         <p className="text-xs text-ink-soft" data-testid="kpi-couverture">
