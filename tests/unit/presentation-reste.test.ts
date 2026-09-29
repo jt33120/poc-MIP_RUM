@@ -193,12 +193,16 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     expect(r6.sources).toContain("D14");
   });
 
-  it("R11 suit docs/INTEGRATION.md § 10 — Python, Java et .NET éprouvés, restent Go, PHP et Ruby", () => {
-    const integration = lire("docs/INTEGRATION.md");
-    for (const langage of ["Python", "Java", ".NET"]) {
-      expect(integration).toContain(`| ${langage} | éprouvé en production le 28/09/2026 |`);
+  // Le tableau par langage vit dans docs/capteurs-serveur.md depuis le 29/09/2026 (avant :
+  // docs/INTEGRATION.md § 10) ; Python y est éprouvé sous Flask.
+  it("R11 suit docs/capteurs-serveur.md § 2 — Python, Java et .NET éprouvés, restent Go, PHP et Ruby", () => {
+    const capteurs = lire("docs/capteurs-serveur.md");
+    for (const langage of ["Python (Flask)", "Java", ".NET"]) {
+      expect(capteurs).toContain(`| ${langage} | éprouvé en production le 28/09/2026 |`);
     }
-    expect(integration).toContain("| Go, PHP, Ruby | non éprouvé | — |");
+    for (const langage of ["Go", "PHP", "Ruby"]) {
+      expect(capteurs).toContain(`| ${langage} | non éprouvé |`);
+    }
     const r11 = point("R11");
     expect(r11.manque).toContain("ceux de Python, Java et .NET ont été éprouvés en production le même jour");
     expect(r11.manque).toContain("Aucun agent Go, PHP ou Ruby n'a encore envoyé de trace");
