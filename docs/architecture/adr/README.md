@@ -17,4 +17,5 @@ Une décision par fichier : son contexte, ce qui a été décidé, ce que ça co
 | [0011](0011-sessions-es256.md) | Sessions signées ES256, révocables en base | acceptée (25/09/2026) | en service depuis le 27/09, avec la connexion par `console-api` |
 | [0012](0012-roles-de-la-console.md) | Les rôles de la console : `mip_console` et `mip_identity` | acceptée (25/09/2026) | v93 appliquée en production le 27/09 |
 | [0013](0013-pas-de-table-crash-natif.md) | Pas de table de crash natif tant qu'aucun moteur n'est choisi | acceptée (24/09/2026) | en place (aucune table) |
+| [0015](0015-schemas-par-domaine.md) | Schémas par domaine (`rum`, `console`, `identite`, `ops`, `rgpd`) : la cible | acceptée comme cible (29/09/2026) | non appliquée : en trois temps à partir du 05/10/2026, après répétition |
 | [0014](0014-base-gratuite.md) | La base reste sur l'offre gratuite, en mode dégradé affiché | remplacée (27/09/2026) | base sur l'offre payante Launch depuis le 27/09, cadences toujours à 15 min ; la base d'un vrai produit reste à choisir selon le standard de la DSI de MIP |
