@@ -607,5 +607,5 @@ export function creerSondes({
     },
   };
 
-  return { emettre, verifier, empreinte };
+  return { emettre, verifier, traiterSilences, empreinte };
 }

@@ -8,9 +8,10 @@
 //     l'écrivain (déclencheur, `on conflict` compris) ;
 //   · la purge quotidienne borne le journal (90 j) et le registre (400 j), sans
 //     jamais toucher une fenêtre en cours ;
-//   · l'alerte d'absence ouvre UNE fenêtre et lève UNE alerte par épisode, se
-//     ferme au retour de la donnée, se tait quand la chaîne est coupée, ignore
-//     les applications sonde et celles qui n'ont jamais rien reçu ;
+//   · l'alerte d'absence lit les heures habituelles dans `rum_rollup_hourly`
+//     (4 jours sur 7, au fuseau de l'app), n'alerte que sur un silence ANORMAL,
+//     UNE fois par épisode, se ferme au retour de la donnée, se tait quand la
+//     chaîne est coupée, ignore les applications sonde et inactives ;
 //   · le travail du tick écrit son journal et son registre sur la vraie table.
 //
 // Chaque cas tourne dans une transaction ANNULÉE : rien ne reste dans la base
@@ -133,55 +134,110 @@ function migrations(): string[] {
     });
   });
 
-  it("alerte d'absence : une fenêtre et UNE alerte par épisode, fermée au retour de la donnée", async () => {
+  /** Des cellules de rollup (pages vues) aux heures LOCALES `heures` (Paris) des jours J-`jours`. */
+  const rollup = (c: pg.PoolClient, id: string, jours: number[], heures: number[], device = "", pageviews = 3) =>
+    c.query(
+      `insert into rum_rollup_hourly (app_id, device_type, hour, pageviews)
+       select $1, $4, ((date_trunc('day', now() at time zone 'Europe/Paris') - make_interval(days => j)) + make_interval(hours => h))
+                        at time zone 'Europe/Paris', $5
+         from unnest($2::int[]) j, unnest($3::int[]) h
+       on conflict (app_id, device_type, hour) do update set pageviews = excluded.pageviews`,
+      [id, jours, heures, device, pageviews],
+    );
+  const SEPT = [1, 2, 3, 4, 5, 6, 7];
+  const TOUTES = Array.from({ length: 24 }, (_, h) => h);
+
+  it("heures habituelles : lues dans le rollup, 4 jours sur 7, au fuseau de l'app, jour en cours exclu", async () => {
     await annulee(async (c) => {
-      await app(c, "v99-muette");
-      await app(c, "v99-vivante");
-      await app(c, "v99-jamais");
-      await signal(c, "v99-muette", 120);
-      await signal(c, "v99-vivante", 3);
-      const perimetre = ["v99-muette", "v99-vivante", "v99-jamais", APP_CANARI];
-      await signal(c, APP_CANARI, 300);
-
-      const { rows: [{ r: premier }] } = await c.query("select check_collecte_silence(60, true, 7, $1) as r", [perimetre]);
-      expect(premier).toEqual({ ouvertes: 1, fermees: 0, alertes: 1 });
-      const { rows: fenetres } = await c.query(
-        "select portee, etage, etat, fin, alerte_event_id from collecte_fenetre where portee = any($1)",
-        [perimetre],
-      );
-      expect(fenetres).toEqual([
-        expect.objectContaining({ portee: "v99-muette", etage: "silence", etat: "interrompue", fin: null, alerte_event_id: expect.anything() }),
+      await app(c, "v99-jour");
+      await app(c, "v99-inactive");
+      await c.query("update app_registry set active = false where app_id = 'v99-inactive'");
+      await rollup(c, "v99-jour", SEPT, [10, 11, 12, 13, 14, 15, 16]);
+      await rollup(c, "v99-jour", [1, 2, 3], [17]); // 3 jours sur 7 : pas une habitude
+      await rollup(c, "v99-jour", [1, 2], [9]); // deux appareils, deux jours : toujours 2 jours
+      await rollup(c, "v99-jour", [1, 2], [9], "mobile");
+      await rollup(c, "v99-jour", SEPT, [20], "", 0); // une cellule vide ne compte pas
+      await rollup(c, "v99-jour", [0], [5]); // aujourd'hui : exclu
+      await signal(c, "v99-jour", 120);
+      const { rows } = await c.query("select * from sonde_etat_silence(7, 4, 7, $1)", [["v99-jour", "v99-inactive", APP_CANARI]]);
+      expect(rows).toEqual([
+        expect.objectContaining({
+          app_id: "v99-jour",
+          fuseau: "Europe/Paris",
+          heures_habituelles: [10, 11, 12, 13, 14, 15, 16],
+          fenetre_id: null,
+          dernier: expect.any(Date),
+        }),
       ]);
-      const { rows: [ev] } = await c.query("select rule_id, severity, message from alert_event where id = $1", [fenetres[0].alerte_event_id]);
-      expect(ev).toMatchObject({ rule_id: null, severity: "warning", message: expect.stringMatching(/v99-muette.*60 min/) });
+    });
+  });
 
-      // Tick suivant, toujours muette : pas de seconde alerte.
-      const { rows: [{ r: second }] } = await c.query("select check_collecte_silence(60, true, 7, $1) as r", [perimetre]);
-      expect(second).toEqual({ ouvertes: 0, fermees: 0, alertes: 0 });
+  it("le silence anormal sur la vraie base : l'app muette à ses heures alerte UNE fois, l'app en heure creuse jamais", async () => {
+    await annulee(async (c) => {
+      await app(c, "v99-toujours");
+      await app(c, "v99-creuse");
+      await rollup(c, "v99-toujours", SEPT, TOUTES);
+      // Heures creuses : celles que touche la dernière heure écoulée (heure de Paris).
+      const { rows: [{ creuses }] } = await c.query(
+        `select array[extract(hour from (now() - interval '60 minutes') at time zone 'Europe/Paris')::int,
+                      extract(hour from now() at time zone 'Europe/Paris')::int] as creuses`,
+      );
+      await rollup(c, "v99-creuse", SEPT, TOUTES.filter((h) => !creuses.includes(h)));
+      await signal(c, "v99-toujours", 120);
+      await signal(c, "v99-creuse", 120);
+
+      const poolTx = { query: (q: string, p?: unknown[]) => c.query(q, p) };
+      const sondes = creerSondes({ pool: poolTx, log: { info() {}, warn() {}, error() {} }, silenceMin: 60 });
+      // Toute la base est vue ; seules les deux apps de ce cas nous intéressent.
+      const fenetres = async () =>
+        (await c.query(
+          "select portee, alerte_event_id, fin from collecte_fenetre where etage = 'silence' and portee in ('v99-toujours', 'v99-creuse') order by portee",
+        )).rows;
+
+      await sondes.traiterSilences(true);
+      const premieres = await fenetres();
+      expect(premieres).toEqual([{ portee: "v99-toujours", alerte_event_id: expect.anything(), fin: null }]);
+      const { rows: [ev] } = await c.query("select rule_id, severity, message from alert_event where id = $1", [premieres[0].alerte_event_id]);
+      expect(ev).toMatchObject({ rule_id: null, severity: "warning", message: expect.stringMatching(/v99-toujours.*60 min.*habituellement/) });
+
+      // Passage suivant, toujours muette : pas de seconde alerte.
+      await sondes.traiterSilences(true);
+      expect(await fenetres()).toEqual(premieres);
+      const { rows: [{ n }] } = await c.query(
+        "select count(*)::int as n from alert_event where message like 'Collecte muette — app v99-toujours%'",
+      );
+      expect(n).toBe(1);
 
       // La donnée revient : la fenêtre se ferme à la première donnée revenue.
-      await signal(c, "v99-muette", 1);
-      const { rows: [{ r: retour }] } = await c.query("select check_collecte_silence(60, true, 7, $1) as r", [perimetre]);
-      expect(retour).toEqual({ ouvertes: 0, fermees: 1, alertes: 0 });
+      await signal(c, "v99-toujours", 1);
+      await sondes.traiterSilences(true);
       const { rows: [close] } = await c.query(
-        "select fin > debut as borne, fin <= now() as passee from collecte_fenetre where portee = 'v99-muette' and etage = 'silence'",
+        "select fin > debut as borne, fin <= now() as passee from collecte_fenetre where portee = 'v99-toujours' and etage = 'silence'",
       );
       expect(close).toEqual({ borne: true, passee: true });
     });
   });
 
-  it("alerte d'absence : muette quand la chaîne est coupée ; une app suspendue ou inactive est ignorée", async () => {
+  it("sonde_ouvrir_silence : une fenêtre, une alerte, puis plus rien ; muette quand la chaîne est coupée", async () => {
     await annulee(async (c) => {
       await app(c, "v99-coupee");
-      await app(c, "v99-inactive");
-      await c.query("update app_registry set active = false where app_id = 'v99-inactive'");
+      await rollup(c, "v99-coupee", SEPT, TOUTES);
       await signal(c, "v99-coupee", 120);
-      await signal(c, "v99-inactive", 120);
-      const { rows: [{ r }] } = await c.query("select check_collecte_silence(60, false, 7, $1) as r", [["v99-coupee", "v99-inactive"]]);
-      expect(r).toEqual({ ouvertes: 0, fermees: 0, alertes: 0 });
-      const { rows: [{ r: ok }] } = await c.query("select check_collecte_silence(60, true, 7, $1) as r", [["v99-coupee", "v99-inactive"]]);
-      expect(ok).toEqual({ ouvertes: 1, fermees: 0, alertes: 1 });
-      await expect(c.query("select check_collecte_silence(1, true)")).rejects.toThrow(/seuil de silence invalide/);
+      const poolTx = { query: (q: string, p?: unknown[]) => c.query(q, p) };
+      const sondes = creerSondes({ pool: poolTx, log: { info() {}, warn() {}, error() {} }, silenceMin: 60 });
+      await sondes.traiterSilences(false);
+      const { rows: aucune } = await c.query("select 1 from collecte_fenetre where portee = 'v99-coupee'");
+      expect(aucune).toEqual([]);
+
+      const ouvrir = () =>
+        c.query("select sonde_ouvrir_silence('v99-coupee', now() - interval '2 hours', 60, array[10, 11]) as alerte");
+      const { rows: [{ alerte: premiere }] } = await ouvrir();
+      const { rows: [{ alerte: seconde }] } = await ouvrir();
+      expect(premiere).not.toBeNull();
+      expect(seconde).toBeNull();
+      await expect(c.query("select sonde_fermer_silence(-1) as ok")).resolves.toMatchObject({ rows: [{ ok: false }] });
+      // En dernier : l'erreur annule la transaction.
+      await expect(c.query("select sonde_ouvrir_silence('v99-coupee', now(), 1, '{}')")).rejects.toThrow(/seuil de silence invalide/);
     });
   });
 
