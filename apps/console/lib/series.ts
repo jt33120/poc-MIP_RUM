@@ -109,6 +109,175 @@ export function jourDans(ms: number, fuseau: string): string {
   return `${v("year")}-${v("month")}-${v("day")}`;
 }
 
+/**
+ * Décalage (ms) d'un fuseau à un instant : heure murale moins UTC (+2 h à Paris
+ * l'été, +1 h l'hiver). Lu par `Intl`, donc juste aux changements d'heure.
+ */
+export function decalageFuseau(ms: number, fuseau: string): number {
+  const parts = formateur("en-GB", fuseau, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(ms);
+  const v = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const mural = Date.UTC(v("year"), v("month") - 1, v("day"), v("hour"), v("minute"), v("second"));
+  return mural - Math.floor(ms / 1000) * 1000;
+}
+
+/**
+ * Instant UTC du minuit d'un jour « AAAA-MM-JJ » dans un fuseau. Le décalage est
+ * relu À minuit local : le 25/10/2026, minuit à Paris est encore en heure d'été
+ * (22:00 UTC la veille), alors que midi du même jour est en heure d'hiver.
+ */
+export function minuitDans(jour: string, fuseau: string): number {
+  const [a, m, j] = jour.split("-").map(Number);
+  const naif = Date.UTC(a, m - 1, j);
+  const essai = naif - decalageFuseau(naif, fuseau);
+  return naif - decalageFuseau(essai, fuseau);
+}
+
+// ─────────────────────────────── Fenêtres hors collecte ───────────────────────────────
+//
+// POURQUOI. Un seau sans ligne vaut 0 pour un compte : « aucune page vue ». C'est vrai
+// quand la collecte tournait, FAUX quand elle était coupée (base suspendue du 24 au
+// 27/09/2026 : « 0 page vue » trois jours durant). Le registre `collecte_fenetre`
+// (lu par `chargeurs/collecte.ts`) date les périodes non nominales ; un seau que
+// couvre entièrement une fenêtre `interrompue` n'est plus un zéro mesuré mais un
+// « non mesuré » — `null`, hachuré par la figure. Aucune date de panne n'est écrite
+// dans le code : elles viennent toutes de la base.
+
+/** Une période où la chaîne de mesure n'était pas nominale (registre `collecte_fenetre`). */
+export interface FenetreCollecte {
+  /** Instant ISO UTC. */
+  debut: string;
+  /** Instant ISO UTC ; `null` = en cours. */
+  fin: string | null;
+  etat: "degradee" | "interrompue";
+}
+
+/** Ce que la collecte a été pendant un seau : `interrompue` (entièrement), `partielle`, ou `null` (nominale). */
+export type CollecteSeau = "interrompue" | "partielle" | null;
+
+/** Bornes [début, fin) d'un seau de la grille (un jour « AAAA-MM-JJ » est lu dans le fuseau). */
+export function bornesSeau(t: string, seauSecondes: number, fuseau: string): [number, number] | null {
+  if (estJour(t)) {
+    const suivant = new Date(Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)) - 1, Number(t.slice(8, 10)) + 1))
+      .toISOString()
+      .slice(0, 10);
+    return [minuitDans(t, fuseau), minuitDans(suivant, fuseau)];
+  }
+  const debut = Date.parse(t);
+  if (!Number.isFinite(debut)) return null;
+  return [debut, debut + seauSecondes * 1000];
+}
+
+interface Intervalle {
+  a: number;
+  b: number;
+  etat: FenetreCollecte["etat"];
+}
+
+function intervallesDe(fenetres: readonly FenetreCollecte[]): Intervalle[] {
+  return fenetres
+    .map((f) => ({ a: Date.parse(f.debut), b: f.fin === null ? Number.POSITIVE_INFINITY : Date.parse(f.fin), etat: f.etat }))
+    .filter((i) => Number.isFinite(i.a) && !Number.isNaN(i.b) && i.b > i.a);
+}
+
+/** Union d'intervalles triés : deux fenêtres qui se chevauchent (plateforme et app) ne comptent pas double. */
+function fusionner(intervalles: Intervalle[]): Intervalle[] {
+  const tries = [...intervalles].sort((x, y) => x.a - y.a);
+  const union: Intervalle[] = [];
+  for (const i of tries) {
+    const dernier = union[union.length - 1];
+    if (dernier && i.a <= dernier.b) dernier.b = Math.max(dernier.b, i.b);
+    else union.push({ ...i });
+  }
+  return union;
+}
+
+/**
+ * État de la collecte de chaque seau de la grille. Un seau est `interrompue` quand
+ * des fenêtres `interrompue` couvrent TOUTE sa part écoulée (le seau en cours
+ * s'arrête à `maintenant`) ; `partielle` quand une fenêtre le recoupe sans le
+ * couvrir, ou qu'une fenêtre `degradee` le touche ; `null` sinon.
+ */
+export function collecteDesSeaux(
+  grille: string[],
+  seauSecondes: number,
+  fenetres: readonly FenetreCollecte[],
+  { fuseau = "UTC", maintenant = Date.now() }: { fuseau?: string; maintenant?: number } = {},
+): CollecteSeau[] {
+  if (fenetres.length === 0) return grille.map(() => null);
+  const toutes = intervallesDe(fenetres);
+  const interrompues = fusionner(toutes.filter((i) => i.etat === "interrompue"));
+  return grille.map((t) => {
+    const bornes = bornesSeau(t, seauSecondes, fuseau);
+    if (!bornes) return null;
+    const a = bornes[0];
+    const b = Math.min(bornes[1], maintenant);
+    if (b <= a) return null;
+    let couvert = 0;
+    for (const i of interrompues) couvert += Math.max(0, Math.min(b, i.b) - Math.max(a, i.a));
+    if (couvert >= b - a) return "interrompue";
+    if (couvert > 0 || toutes.some((i) => i.a < b && i.b > a)) return "partielle";
+    return null;
+  });
+}
+
+/** Les fenêtres qui recoupent la grille, dans l'ordre : celles que la légende nomme. */
+export function fenetresDeLaGrille(
+  fenetres: readonly FenetreCollecte[],
+  grille: string[],
+  seauSecondes: number,
+  fuseau: string,
+): FenetreCollecte[] {
+  if (grille.length === 0) return [];
+  const premier = bornesSeau(grille[0], seauSecondes, fuseau);
+  const dernier = bornesSeau(grille[grille.length - 1], seauSecondes, fuseau);
+  if (!premier || !dernier) return [];
+  return fenetres
+    .filter((f) => {
+      const a = Date.parse(f.debut);
+      const b = f.fin === null ? Number.POSITIVE_INFINITY : Date.parse(f.fin);
+      return a < dernier[1] && b > premier[0];
+    })
+    .sort((x, y) => Date.parse(x.debut) - Date.parse(y.debut));
+}
+
+/**
+ * La fenêtre, dite : « Collecte interrompue du 24/09 05:28 au 27/09 21:44 (heure de
+ * Paris) », « Collecte dégradée depuis le 29/09 14:30 (heure de Paris) ».
+ */
+export function texteFenetreCollecte(f: FenetreCollecte, fuseau: string): string {
+  const quand = formateur("fr-FR", fuseau, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const nom = nomFuseau(fuseau);
+  const suffixe = nom === "UTC" ? nom : `(${nom})`;
+  const etat = f.etat === "interrompue" ? "Collecte interrompue" : "Collecte dégradée";
+  const debut = quand.format(Date.parse(f.debut));
+  if (f.fin === null) return `${etat} depuis le ${debut} ${suffixe}`;
+  return `${etat} du ${debut} au ${quand.format(Date.parse(f.fin))} ${suffixe}`;
+}
+
+/** Suites continues d'indices dans un état donné : `[premier, dernier]`, pour une zone hachurée par suite. */
+export function suitesDeSeaux(collecte: readonly CollecteSeau[], etat: Exclude<CollecteSeau, null>): [number, number][] {
+  const suites: [number, number][] = [];
+  let debut = -1;
+  collecte.forEach((c, i) => {
+    if (c === etat) {
+      if (debut < 0) debut = i;
+    } else if (debut >= 0) {
+      suites.push([debut, i - 1]);
+      debut = -1;
+    }
+  });
+  if (debut >= 0) suites.push([debut, collecte.length - 1]);
+  return suites;
+}
+
 
 // ─────────────────────────────────── Alignement ───────────────────────────────────
 
@@ -125,11 +294,15 @@ export function jourDans(ms: number, fuseau: string): string {
  *     pour ses seuls champs de compte. Sans aucune ligne reçue, aucun champ n'est
  *     connu : le seau reste `null` (la figure est alors vide, pas nulle).
  * Une ligne hors grille (ou en double) est ignorée et COMPTÉE dans `ignorees`.
+ *
+ * `collecte` (aligné sur `starts`, `collecteDesSeaux`) : un seau `interrompue` sans
+ * ligne reste `null` même en `additif` — la collecte était coupée, ce n'est pas 0.
  */
 export function alignerSeauxDetail<T extends { bucket: string | Date }>(
   rows: T[],
   starts: number[],
   additif: boolean,
+  collecte?: readonly CollecteSeau[],
 ): { seaux: (T | null)[]; ignorees: number } {
   const index = new Map<number, number>();
   starts.forEach((s, i) => index.set(s, i));
@@ -146,7 +319,7 @@ export function alignerSeauxDetail<T extends { bucket: string | Date }>(
   if (additif && rows.length > 0) {
     const comptes = Object.keys(rows[0]).filter((k) => k !== "bucket" && typeof rows[0][k as keyof T] === "number");
     seaux.forEach((s, i) => {
-      if (s !== null) return;
+      if (s !== null || collecte?.[i] === "interrompue") return;
       const zero: Record<string, unknown> = { bucket: isoSansMs(starts[i]) };
       for (const k of comptes) zero[k] = 0;
       seaux[i] = zero as T;
@@ -181,6 +354,10 @@ export interface PointsPrepares {
   faibleEffectif: boolean;
   /** Points dont `t` n'est pas dans la grille : ignorés, et comptés (rien ne disparaît en silence). */
   ignores: number;
+  /** Indices des seaux « non mesurés » : collecte interrompue sur tout le seau (hachurés). */
+  horsCollecte: number[];
+  /** Indices des seaux à collecte partielle ou dégradée (valeur gardée, point creux). */
+  collectePartielle: number[];
 }
 
 /**
@@ -192,13 +369,17 @@ export interface PointsPrepares {
  * - `segments` découpe chaque série en suites continues : `[h0, h2]` sur la grille
  *   `[h0, h1, h2]` donne deux segments `[0,0]` et `[2,2]`, jamais une droite.
  * - Point creux : effectif du seau connu et sous `faibleSous`, ou dernier seau de
- *   la grille encore en cours (`seauEnCours`).
+ *   la grille encore en cours (`seauEnCours`), ou seau à collecte partielle.
+ * - `collecte` (aligné sur la grille, `collecteDesSeaux`) : dans un seau
+ *   `interrompue`, un 0 ou une absence devient `null` — « non mesuré », même pour
+ *   un compte. Une valeur non nulle reçue est gardée (des lignes sont arrivées :
+ *   la collecte n'était pas coupée pour elles), en point creux.
  */
 export function preparerPoints(
   grille: string[],
   points: PointSerie[],
   series: SerieDef[],
-  options: { faibleSous?: number; seauEnCours?: boolean } = {},
+  options: { faibleSous?: number; seauEnCours?: boolean; collecte?: readonly CollecteSeau[] } = {},
 ): PointsPrepares {
   const faibleSous = options.faibleSous ?? FAIBLE_SOUS_DEFAUT;
   const parInstant = new Map<number, PointSerie>();
@@ -214,7 +395,10 @@ export function preparerPoints(
   }
   const effectifs = new Set(series.map((s) => s.effectifCle).filter((c): c is string => !!c));
 
-  const lignes: LignePreparee[] = grille.map((t) => {
+  const collecte = options.collecte ?? [];
+  const horsCollecte: number[] = [];
+  const collectePartielle: number[] = [];
+  const lignes: LignePreparee[] = grille.map((t, i) => {
     const p = parInstant.get(instantDe(t));
     const ligne: LignePreparee = { t };
     if (p) for (const [k, v] of Object.entries(p)) if (k !== "t") ligne[k] = nombreOuNull(v);
@@ -222,8 +406,18 @@ export function preparerPoints(
     for (const s of series) {
       if (!p || p[s.cle] === undefined) ligne[s.cle] = s.additive ? 0 : null;
     }
+    if (collecte[i] === "interrompue") {
+      let garde = false;
+      for (const s of series) {
+        if (ligne[s.cle] === 0) ligne[s.cle] = null;
+        if (ligne[s.cle] !== null) garde = true;
+      }
+      if (garde) collectePartielle.push(i);
+      else horsCollecte.push(i);
+    } else if (collecte[i] === "partielle") collectePartielle.push(i);
     return ligne;
   });
+  const partielle = new Set(collectePartielle);
 
   const segments: Record<string, [number, number][]> = {};
   const creux: Record<string, number[]> = {};
@@ -247,10 +441,10 @@ export function preparerPoints(
       const n = s.effectifCle ? nombreOuNull(l[s.effectifCle]) : null;
       const faible = n !== null && n < faibleSous;
       if (faible) faibleEffectif = true;
-      if (faible || (options.seauEnCours && i === dernier)) creux[s.cle].push(i);
+      if (faible || (options.seauEnCours && i === dernier) || partielle.has(i)) creux[s.cle].push(i);
     });
   }
-  return { lignes, segments, creux, faibleEffectif, ignores };
+  return { lignes, segments, creux, faibleEffectif, ignores, horsCollecte, collectePartielle };
 }
 
 // ─────────────────────────────── Domaine et bandes ───────────────────────────────
