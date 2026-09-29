@@ -5,7 +5,7 @@
 //   · ce que gère l'administrateur de la PLATEFORME seul (comptes, santé interne,
 //     postes de l'extension) : pour un administrateur d'une liste, `interdit` ;
 //   · ce que gère l'administrateur d'une APPLICATION (clients, jetons, domaines,
-//     source maps, connecteurs, consommation, audit) : la liste est restreinte à
+//     source maps, consommation, audit) : la liste est restreinte à
 //     son périmètre — il n'en lit pas plus qu'il n'en administre.
 // Hors administrateur (ou en démonstration), le chargeur le dit (`interdit`) ; sans
 // session, `sans_session`. La page redirige, comme le faisait `requireAdmin`.
@@ -22,7 +22,6 @@ import { internalHealth } from "../queries-health";
 import { echeanceLectureDisponible, listReadTokens } from "../queries-read-tokens";
 import { listSourcemapReleases, releaseManifest, releasesDeployees, schemaSourcemapAbsent, type ReleaseManifest, type SourcemapRelease } from "../queries-sourcemap";
 import { listSourcemapTokens, type SourcemapToken } from "../queries-sourcemap-tokens";
-import { listTicketIntegrations, surfaceTicketsOuverte, ticketSchemaDisponible, type TicketIntegration } from "../queries-ticket-integrations";
 import { monthlyUsage } from "../queries-usage";
 import { q } from "../db";
 import { section, type Chargeur, type ParametresEcran, type PrincipalEcran } from "./commun";
@@ -224,16 +223,3 @@ export const chargerSourcemaps = (async (principal, sp) => {
   }
 }) satisfies Chargeur<unknown>;
 
-/**
- * Les connecteurs de tickets (`/admin/ticket-integrations`). La surface est FERMÉE
- * tant qu'aucune recette réelle n'a été jouée (ou que `TICKET_INTEGRATIONS` ne
- * l'ouvre pas) : le chargeur le dit (`fermee`), la page rend 404 comme avant.
- */
-export const chargerConnecteurs = (async (principal) => {
-  const g = garde(principal);
-  if (g.etat !== "admin") return g;
-  if (!(await surfaceTicketsOuverte())) return { etat: "fermee" } as const;
-  const migre = await ticketSchemaDisponible();
-  const [apps, connecteurs] = await Promise.all([listApps(), migre ? listTicketIntegrations(null) : Promise.resolve([] as TicketIntegration[])]);
-  return { etat: "ok", migre, apps: siennes(g, apps), connecteurs: connecteurs.filter((c) => g.dans(c.app_id)) } as const;
-}) satisfies Chargeur<unknown>;

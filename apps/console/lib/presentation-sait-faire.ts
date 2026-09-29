@@ -8,8 +8,9 @@
 //     principale de sa ligne (relue à la main, puce par puce, par P**.8) ;
 //   - une réserve tirée d'une ligne d'un autre verdict (D7, les sauvegardes) va dans
 //     « Ce qui reste », jamais dans une carte ;
-//   - les lignes déployées mais inertes sur le trafic réel (D12 ; D14 jusqu'au
-//     28/09/2026) vont aussi dans « Ce qui reste » : déployé ne veut pas dire actif.
+//   - les lignes déployées mais inertes sur le trafic réel (D14 jusqu'au 28/09/2026,
+//     D12 jusqu'au retrait des tickets le 29/09/2026) vont aussi dans « Ce qui reste » :
+//     déployé ne veut pas dire actif.
 // tests/unit/couverture-site.test.ts (contrôle n° 3) le vérifie sur CES cartes :
 // identifiants, provenance de chaque source, une puce par identifiant.
 //
@@ -100,7 +101,7 @@ export const CARTES: readonly CarteCapacite[] = [
     id: "K3",
     titre: "Regrouper les erreurs en issues et les suivre",
     faitQuoi:
-      "Regrouper les occurrences en issues stables, les trier (statut, assignation, commentaire, lien de ticket), distinguer régression et réapparition, alerter sur une nouvelle issue ou un pic.",
+      "Regrouper les occurrences en issues stables, les trier (statut, assignation, commentaire), distinguer régression et réapparition, alerter sur une nouvelle issue ou un pic.",
     limites: [
       {
         id: "A7",

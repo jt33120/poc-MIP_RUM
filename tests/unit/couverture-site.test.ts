@@ -146,7 +146,9 @@ describe("2 — les décomptes calculés sont ceux que le document écrit", () =
     expect(TESTS_SQL).toEqual({ fichiers: 45, tests: 637, ignores: { fichiers: 2, tests: 13 } });
     // Revue de fin de vague 7 : les verts sont le total moins les ignorés (les deux bancs).
     expect(TESTS_SQL_VERTS).toBe(624);
-    expect(compte("deploye_non_eprouve")).toBe(35); // 34 au 18/09 : F2 est passée « déployé, non éprouvé »
+    // 34 au 18/09 ; 35 au 23/09 (F2 passée « déployé, non éprouvé ») ; 34 depuis le
+    // 29/09/2026 : D12 passe « non retenu », les tickets sont retirés.
+    expect(compte("deploye_non_eprouve")).toBe(34);
   });
 });
 
@@ -167,7 +169,8 @@ const CTX: ContexteControle = { capacites: CAPACITES, lignesDocument: DOC.split(
 // (P**.10) a fait passer F2 (« Vérifier les types ») à « déployé, non éprouvé », et
 // la règle 1 du § 8.0 veut alors une carte pour elle ; ici, seul son identifiant
 // compte. K16 non plus : le 28/09/2026, D14 (le pays par adresse IP) a cessé d'être
-// inerte, et prend sa carte à son tour ; seule D12 reste en « Ce qui reste » seulement.
+// inerte, et prend sa carte à son tour. D12 (les tickets) est « non retenu » depuis le
+// 29/09/2026 : plus aucune ligne n'est déployée inerte.
 const REPARTITION: Record<string, string[]> = {
   K1: ["A1"], K2: ["A2"], K3: ["A7", "A8", "A9", "A10"], K4: ["A3"], K5: ["A5", "A6"],
   K6: ["B1", "B2", "B3", "B4"], K7: ["B5", "B6", "B7", "B8"], K8: ["B9"],
@@ -202,14 +205,15 @@ describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le doc
     expect(erreurs).toContain("identifiants « deploye_non_eprouve » absents des cartes : A4");
   });
 
-  it("3a — une ligne d'un autre verdict, un doublon, un inerte oublié sont refusés", () => {
+  it("3a — une ligne d'un autre verdict, un doublon sont refusés", () => {
     const cartes = cartesFixture();
     carte(cartes, "K11").limites.push({ id: "D7", texte: "sauvegardes" });
     carte(cartes, "K12").limites.push({ id: "D1", texte: "doublon" });
     const erreurs = verifierCartes(cartes, [], CTX);
     expect(erreurs).toContain("K11 : D7 est « non_commence », pas « deploye_non_eprouve »");
     expect(erreurs).toContain("D1 figure dans deux cartes : K11 et K12");
-    expect(erreurs).toContain("D12 (déployée, inerte) doit figurer dans « Ce qui reste »");
+    // Aucune déployée inerte depuis le 29/09/2026 : rien à exiger de « Ce qui reste ».
+    expect(erreurs.filter((e) => e.includes("doit figurer dans « Ce qui reste »"))).toEqual([]);
   });
 
   it("3b — ajouter { ligne: D7 } aux sources de K11 nomme K11 et D7", () => {
@@ -243,13 +247,11 @@ describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le doc
     expect(erreurs).toContain("K1 : la puce A1 n'a pas de texte");
   });
 
-  it("3a — D12 et D14, déployées mais inertes, sont refusées dans une carte", () => {
+  it("3a — D12, retirée le 29/09/2026 (« non retenu »), est refusée dans une carte", () => {
     const cartes = cartesFixture();
     carte(cartes, "K11").limites.push({ id: "D12", texte: "tickets" });
     carte(cartes, "K11").sources.push({ ligne: "D12" });
-    expect(verifierCartes(cartes, RESTE, CTX)).toContain(
-      "K11 : D12 est déployée mais inerte — elle va en « Ce qui reste », pas dans une carte",
-    );
+    expect(verifierCartes(cartes, RESTE, CTX)).toContain("K11 : D12 est « non_retenu », pas « deploye_non_eprouve »");
   });
 
   it("3c — un passage qui tombe sur une ligne de capacité exige sa puce", () => {
@@ -269,15 +271,15 @@ describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le doc
   });
 
   it("3 — sur les vraies cartes (P**.4) et les vrais points de « Ce qui reste » (P**.5)", () => {
-    // Les trois contrôles d'un coup : identifiants (dont D12 et D14 dans
-    // lib/presentation-reste.ts, et nulle part dans une carte), provenance de
-    // chaque source, une puce par identifiant.
+    // Les trois contrôles d'un coup : identifiants (D14 dans une carte ET dans
+    // lib/presentation-reste.ts), provenance de chaque source, une puce par identifiant.
     expect(verifierCartes(CARTES, POINTS_RESTE, CTX)).toEqual([]);
     const puces = CARTES.flatMap((c) => c.limites.map((l) => l.id));
     expect(puces).toContain("A4");
-    expect(puces.length).toBe(compte("deploye_non_eprouve") - DEPLOYEES_INERTES.length); // toutes, sauf D12
-    // D14 n'est plus inerte (28/09/2026) : elle a sa carte, K16.
-    expect(DEPLOYEES_INERTES).toEqual(["D12"]);
+    expect(puces.length).toBe(compte("deploye_non_eprouve") - DEPLOYEES_INERTES.length);
+    // D14 n'est plus inerte (28/09/2026) : elle a sa carte, K16. D12 est « non retenu »
+    // (29/09/2026) : plus aucune déployée inerte.
+    expect(DEPLOYEES_INERTES).toEqual([]);
     expect(puces).toContain("D14");
   });
 });
@@ -305,8 +307,8 @@ describe("4 — chaque point de « Ce qui reste » cite une source qui existe", 
     ]);
   });
 
-  it("sur les vrais points de lib/presentation-reste.ts (P**.5) : R1 à R11 sans R2 (fait le 28/09/2026), et chaque source existe", () => {
-    expect(POINTS_RESTE.map((p) => p.id)).toEqual(["R1", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11"]);
+  it("sur les vrais points de lib/presentation-reste.ts (P**.5) : R1 à R11 sans R2 (fait le 28/09/2026) ni R7 (tickets retirés le 29/09/2026), et chaque source existe", () => {
+    expect(POINTS_RESTE.map((p) => p.id)).toEqual(["R1", "R3", "R4", "R5", "R6", "R8", "R9", "R10", "R11"]);
     expect(verifierReste(POINTS_RESTE, CTX)).toEqual([]);
     // Les points sortis de la liste (R2, 28/09/2026) passent le même contrôle.
     expect(verifierReste(POINTS_FAITS, CTX)).toEqual([]);

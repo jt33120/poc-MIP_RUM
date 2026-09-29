@@ -114,8 +114,9 @@ describe("aucune route réelle n'est passée sous silence", () => {
     // listes sont donc tenues séparément, et toutes deux exactes : une route non-GET
     // qui n'apparaît dans ni l'une ni l'autre est une route mal classée.
     const LECTURES_EN_POST = ["POST /api/v1/explorer/query"];
-    // C7 (25/09/2026) : les écritures de l'OPÉRATEUR — triage, commentaire, lien et
-    // demande de ticket d'une issue, vues enregistrées — ont quitté l'API publique.
+    // C7 (25/09/2026) : les écritures de l'OPÉRATEUR — triage et commentaire d'une
+    // issue, vues enregistrées — ont quitté l'API publique (le lien et la demande de
+    // ticket, retirés le 29/09/2026 avec les tickets).
     // Elles n'acceptaient que le cookie de la console ; l'écran écrit désormais par
     // ses server actions et leurs commandes. Reste l'écriture d'une MACHINE : le
     // marqueur de déploiement qu'envoie la CI.

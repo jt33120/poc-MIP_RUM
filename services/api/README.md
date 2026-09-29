@@ -34,7 +34,7 @@ Les chemins sont **ceux de la console**, calculés depuis l'arborescence (`route
 |---|---|---|
 | `GET`, `HEAD`, `OPTIONS` | partout | lecture, préflight CORS |
 | `POST /api/v1/explorer/query` | oui | une **lecture** : sa requête porte un AST, qui ne tient pas dans une query string |
-| toute autre écriture (triage, commentaires, liens, tickets, vues enregistrées, marqueurs de déploiement) | **405** | elles s'authentifient par session et restent à la console jusqu'à `console-api` |
+| toute autre écriture (triage, commentaires, vues enregistrées, marqueurs de déploiement) | **405** | elles s'authentifient par session et restent à la console jusqu'à `console-api` |
 
 **Toute réponse est signée `x-mip-api: 1`** (en-tête posé par le kit, jusque sur les 404 et 405) : le relais de la console distinguera une réponse du service d'une réponse du routeur Railway, comme pour le collector.
 
@@ -59,7 +59,7 @@ Réponses : l'enveloppe de la console (`{ meta, data }`, ETag faible, `Cache-Con
 Le service est en lecture seule **par construction** (les écritures répondent 405) ; le rôle l'est **en base**, pour le jour où le code se tromperait :
 
 - aucun INSERT, UPDATE, DELETE, TRUNCATE, sur aucune table ; aucun privilège par défaut, donc aucun droit sur une table créée demain ;
-- ni `console_user.email` ni `password_hash`, ni le contenu d'un rejeu (`replay_chunk.body`), ni la référence de secret d'un connecteur de tickets ;
+- ni `console_user.email` ni `password_hash`, ni le contenu d'un rejeu (`replay_chunk.body`) ;
 - aucune fonction à droits de propriétaire qui écrit — les quatre que `PUBLIC` exécutait lui sont fermées ;
 - transaction en lecture seule par défaut, requête bornée à 15 s, 20 connexions.
 

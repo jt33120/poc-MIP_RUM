@@ -111,8 +111,6 @@ const CHEMINS: Record<string, Record<string, string>> = {
   // C7 — une issue qu'aucune ligne ne porte (la commande répond `not_found`) ; le groupe de l'app A.
   "issues.triage": { id: ISSUE_ABSENTE },
   "issues.comment": { id: ISSUE_ABSENTE },
-  "issues.link": { id: ISSUE_ABSENTE },
-  "issues.requestTicket": { id: ISSUE_ABSENTE },
   "errors.setStatus": { fingerprint: EMPREINTE_A },
   // C8 — des identifiants qu'aucune ligne ne porte : `introuvable`, sans rien écrire.
   "alerts.updateRule": { id: ABSENT },
@@ -127,7 +125,6 @@ const CHEMINS: Record<string, Record<string, string>> = {
   // C9 — des identifiants qu'aucune ligne ne porte.
   "readTokens.revoke": { id: ABSENT },
   "sourcemapTokens.revoke": { id: VUE_ABSENTE },
-  "ticketIntegrations.update": { id: ABSENT },
   "extensionScopes.setActive": { id: ABSENT },
   "extensionInstalls.forget": { installId: VUE_ABSENTE },
   // C9 — la fiche d'une application du périmètre de l'administrateur.
@@ -221,8 +218,6 @@ const CORPS: Record<string, unknown> = {
   "goals.update": { active: false },
   "issues.triage": { status: "resolved", expectedRevision: "1" },
   "issues.comment": { body: "authz", expectedRevision: "1" },
-  "issues.link": { url: "https://tickets.exemple.fr/AUTHZ-1", label: "AUTHZ-1", expectedRevision: "1" },
-  "issues.requestTicket": { integrationId: "1", expectedRevision: "1", origine: "" },
   "errors.setStatus": { status: "open" },
   // C8 — les champs d'un formulaire (des chaînes), tels que la console les envoie.
   "alerts.createRule": { app_id: A, metric: "LCP", comparator: ">", threshold: "2500", window_minutes: "15", mode: "threshold", severity: "warning" },
@@ -245,8 +240,6 @@ const CORPS: Record<string, unknown> = {
   "apps.updateOrigins": { origins: "https://authz.exemple.fr" },
   "readTokens.create": { label: "authz" },
   "sourcemapTokens.create": { name: "authz" },
-  "ticketIntegrations.create": { provider: "github", target: "authz/depot", credentialRef: "env:TICKET_AUTHZ" },
-  "ticketIntegrations.update": { champ: "enabled", valeur: true },
   "extensionScopes.create": { domain: "authz-a.exemple.fr" },
   "extensionScopes.setActive": { active: true },
   "mobileCapabilities.verify": { app_id: A, runtime: "react_native", release: null, capability: "js_errors", note: "" },
@@ -345,15 +338,12 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
     await pool.query("delete from goal where app_id = any($1)", [[A, B]]);
     await pool.query("delete from error_status where app_id = any($1)", [[A, B]]);
     await pool.query("delete from error_issue_activity where app_id = any($1)", [[A, B]]);
-    await pool.query("delete from error_issue_ticket where app_id = any($1)", [[A, B]]);
     await pool.query("delete from alert_rule where app_id = any($1)", [[A, B]]);
     await pool.query("delete from slo where app_id = any($1)", [[A, B]]);
     await pool.query("delete from notify_channel where app_id = any($1) or target like 'https://hooks.exemple.fr/authz%'", [[A, B]]);
     await pool.query("delete from uptime_check where app_id = any($1)", [[A, B]]);
     await pool.query("delete from read_tokens where app_id = any($1)", [[A, B]]);
     await pool.query("delete from sourcemap_upload_token where app_id = any($1)", [[A, B]]);
-    await pool.query("delete from ticket_outbox where app_id = any($1)", [[A, B]]);
-    await pool.query("delete from ticket_integration where app_id = any($1)", [[A, B]]);
     await pool.query("delete from extension_scope where app_id = any($1) or domain like 'authz-%'", [[A, B]]);
     await pool.query("delete from mobile_capabilities where app_id = any($1)", [[A, B]]);
     await pool.query("delete from console_user where email like 'authz-c9-%'");
@@ -575,22 +565,24 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
     expect((await ailleurs.json()).error).toEqual((await absente.json()).error);
   });
 
-  it("la coquille (C2) : les projets du PÉRIMÈTRE relu en base, les connecteurs pour l'administrateur seulement", async () => {
+  it("la coquille (C2) : les projets du PÉRIMÈTRE relu en base", async () => {
     const e = table.find((x) => x.operation.id === "console.shell")!;
     const lire = async (profil: Profil) => {
       const r = await servirRequete(requete(e, profil, { nom: "" }));
       expect(r.status, profil).toBe(200);
-      const { data } = (await r.json()) as { data: { projets: { ok: boolean; data?: { app_id: string }[] }; tickets: unknown } };
+      const { data } = (await r.json()) as { data: { projets: { ok: boolean; data?: { app_id: string }[] } } };
       expect(data.projets.ok, profil).toBe(true);
-      return { apps: (data.projets.data ?? []).map((p) => p.app_id).filter((x) => x === A || x === B).sort(), tickets: data.tickets === null ? null : "section" };
+      // L'entrée des connecteurs de tickets est retirée le 29/09/2026 : plus de champ `tickets`.
+      expect(data, profil).not.toHaveProperty("tickets");
+      return { apps: (data.projets.data ?? []).map((p) => p.app_id).filter((x) => x === A || x === B).sort() };
     };
-    expect(await lire("demo")).toEqual({ apps: [A], tickets: null });
-    expect(await lire("viewer")).toEqual({ apps: [A], tickets: null });
+    expect(await lire("demo")).toEqual({ apps: [A] });
+    expect(await lire("viewer")).toEqual({ apps: [A] });
     // C9 : un administrateur AVEC une liste ne voit que ses projets — il n'en lit pas
     // plus qu'il n'en administre (`authorizedAppsOf`). Relevé P0 : aucun administrateur
     // restreint en production.
-    expect(await lire("admin")).toEqual({ apps: [A], tickets: "section" });
-    expect(await lire("plateforme")).toEqual({ apps: [A, B], tickets: "section" });
+    expect(await lire("admin")).toEqual({ apps: [A] });
+    expect(await lire("plateforme")).toEqual({ apps: [A, B] });
   });
 
   it("chaque écran (C3 → C5) : pour un viewer, sur son app et sur `all`, le chargeur aboutit — aucune section en échec", async () => {
@@ -635,8 +627,6 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
       sante: { admin: "interdit", plateforme: "ok" },
       postes: { admin: "interdit", plateforme: "ok" },
       nouveauSite: { admin: "interdit", plateforme: "creation" },
-      // La surface des tickets est fermée tant qu'aucune recette réelle n'a été jouée.
-      connecteurs: { admin: "fermee", plateforme: "fermee" },
     };
     const ecarts: string[] = [];
     const verifier = async (nom: string, e: Enregistrement, profil: Profil, attendu: string, variante = "") => {
@@ -757,7 +747,7 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
       value: { status: "resolved" },
     });
     // La même issue, demandée sous une AUTRE application par la plateforme : introuvable.
-    expect(await appeler("lierTicket", "plateforme", { app: B, chemin: { id: ISSUE_A }, corps: { url: "https://t.exemple.fr/9", label: "T-9", expectedRevision: await revisionIssue() } })).toEqual({
+    expect(await appeler("commenterIssue", "plateforme", { app: B, chemin: { id: ISSUE_A }, corps: { body: "hors de B", expectedRevision: await revisionIssue() } })).toEqual({
       kind: "not_found",
     });
     expect(await appeler("trierGroupe", "admin", { app: A, chemin: { fingerprint: EMPREINTE_A }, corps: { status: "ignored" } })).toEqual({ etat: "ok" });
@@ -829,12 +819,6 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
     const idCi = (ci.token as { id: string }).id;
     expect(await appeler("revoquerJetonSourcemap", "plateforme", { app: B, chemin: { id: idCi } })).toEqual({ etat: "introuvable" });
     expect(await appeler("revoquerJetonSourcemap", "admin", { app: A, chemin: { id: idCi } })).toMatchObject({ etat: "ok" });
-    // Un connecteur de tickets : une RÉFÉRENCE, jamais un jeton collé.
-    expect(await appeler("creerIntegration", "admin", { app: A, corps: { provider: "github", target: "authz/c9", credentialRef: "ghp_pas_une_reference" } })).toMatchObject({ etat: "refus" });
-    const integration = await appeler("creerIntegration", "admin", { app: A, corps: { provider: "github", target: "authz/c9", credentialRef: "env:TICKET_C9" } });
-    expect(integration).toMatchObject({ etat: "cree" });
-    expect(await appeler("majIntegration", "plateforme", { app: B, chemin: { id: String(integration.id) }, corps: { champ: "enabled", valeur: false } })).toEqual({ etat: "introuvable" });
-    expect(await appeler("majIntegration", "admin", { app: A, chemin: { id: String(integration.id) }, corps: { champ: "enabled", valeur: false } })).toEqual({ etat: "ok" });
     // Un domaine de l'extension déjà rattaché à B : l'administrateur de A ne le reprend pas.
     expect(await appeler("creerDomaineExtension", "plateforme", { app: B, corps: { domain: "authz-c9-b.exemple.fr" } })).toEqual({ etat: "ok" });
     expect(await appeler("creerDomaineExtension", "admin", { app: A, corps: { domain: "https://authz-c9-b.exemple.fr/x" } })).toMatchObject({ etat: "refus" });
@@ -878,8 +862,6 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
       "read_token.revoke",
       "sourcemap_token.create",
       "sourcemap_token.revoke",
-      "ticket_integration.create",
-      "ticket_integration.update",
       "extension_scope.create",
       "mobile_capability.verify",
     ]) {

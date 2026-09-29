@@ -78,7 +78,11 @@
 //   - R11 ne dit plus que Go, PHP et Ruby : les agents Python, Java et .NET sont
 //     éprouvés en production (docs/capteurs-serveur.md § 2, depuis le 29/09/2026 ;
 //     avant, docs/INTEGRATION.md § 10).
-// R3, R4, R5, R7, R8 et R10 dépendent de tiers et n'ont pas bougé.
+//   - R7 (les tickets) SORT le 29/09/2026 : la fonctionnalité est retirée par décision du
+//     propriétaire du produit (lignes D12, D13, passées « non retenu »). Plus rien à
+//     débloquer : il passe dans POINTS_FAITS, pour que D12 et D13 gardent un endroit de
+//     la page qui dise leur état.
+// R3, R4, R5, R8 et R10 dépendent de tiers et n'ont pas bougé.
 import { capaciteParId, type Capacite } from "./couverture";
 import type { PointFait, PointReste } from "./couverture-controle";
 
@@ -86,8 +90,8 @@ import type { PointFait, PointReste } from "./couverture-controle";
 const DOC = "docs/RUM_PARITY_STATUS.md";
 
 /**
- * Les dix points, dans l'ordre fixe du plan (R10 ajouté le 24/09/2026, R11 le 27/09/2026 ;
- * R2 retiré le 28/09/2026, fait).
+ * Les neuf points, dans l'ordre fixe du plan (R10 ajouté le 24/09/2026, R11 le 27/09/2026 ;
+ * R2 retiré le 28/09/2026, fait ; R7 le 29/09/2026, fonctionnalité retirée).
  */
 export const POINTS_RESTE: readonly PointReste[] = [
   {
@@ -162,19 +166,6 @@ export const POINTS_RESTE: readonly PointReste[] = [
       "docs/operations/relais-ingestion.md:296-301",
       "docs/operations/relais-ingestion.md:413-416",
     ],
-  },
-  {
-    id: "R7",
-    titre: "Tickets : le connecteur existe, la cible ITSM n'est pas confirmée",
-    manque:
-      "Un connecteur GitHub Issues est déployé mais aucune intégration n'est configurée ; le webhook n'a jamais reçu de livraison d'un vrai fournisseur ; résoudre une issue ne ferme pas le ticket. La cible annoncée pour MIP (ServiceNow) n'est pas confirmée.",
-    debloque:
-      "Confirmer l'outil ITSM cible, ouvrir un espace et ses droits, poser un secret de webhook, décider de la synchronisation des statuts.",
-    decide: "La DSI de MIP.",
-    // D12 : déployée, INERTE (règle 3 du § 8.0) — la seule depuis que D14 résout le pays
-    // de la collecte directe (28/09/2026). Aucune intégration
-    // configurée : lu en base au relevé de production du 23/09.
-    sources: ["D12", "D13", "docs/operations/releve-p0-2026-09-23.md:16"],
   },
   {
     id: "R8",
@@ -296,6 +287,15 @@ export const POINTS_FAITS: readonly PointFait[] = [
     fait:
       "Exécutée en production le 28/09/2026 sur les données du 30/08 au 28/09, après une répétition : 143 686 lignes manquaient à l'index des signaux, surtout des appels serveur, et non environ 97 comme estimé le 18/09. Aucun échec. L'outil reste une ligne de commande, lancée depuis un poste, sans écran.",
     sources: ["D8", "D9", `${DOC}:191-192`, `${DOC}:757-762`],
+  },
+  {
+    // SORTI LE 29/09/2026. Les lignes D12 et D13, passées « non retenu » : la décision du
+    // propriétaire du produit y est datée et citée.
+    id: "R7",
+    titre: "Tickets depuis une issue",
+    fait:
+      "Retirés le 29/09/2026 par décision du propriétaire du produit : le connecteur GitHub Issues, sa file d'envoi, son webhook entrant et le lien de ticket manuel ont quitté la console, les services et la base. Aucune intégration n'avait été configurée.",
+    sources: ["D12", "D13", `${DOC}:195-196`],
   },
 ];
 

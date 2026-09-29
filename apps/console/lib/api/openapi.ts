@@ -296,7 +296,7 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       "/issues/{id}/activity": {
         get: get(
-          "Historique d'une issue : statuts, assignations, commentaires, liens de ticket et régressions confirmées",
+          "Historique d'une issue : statuts, assignations, commentaires et régressions confirmées",
           "rum",
           ref("IssueActivityPage"),
           {
@@ -305,17 +305,6 @@ export function buildOpenApi(): Record<string, unknown> {
               { $ref: "#/components/parameters/activityLimit" },
               { $ref: "#/components/parameters/errorCursor" },
             ],
-            extraResponses: { "400": ref0("BadRequest"), "404": ref0("NotFound"), "503": ref0("Unavailable") },
-          },
-        ),
-      },
-      "/issues/{id}/tickets": {
-        get: get(
-          "Demandes de création de ticket d'une issue, et leur état de livraison chez le fournisseur de tickets",
-          "rum",
-          ref("IssueTicketDeliveries"),
-          {
-            params: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
             extraResponses: { "400": ref0("BadRequest"), "404": ref0("NotFound"), "503": ref0("Unavailable") },
           },
         ),
@@ -856,20 +845,10 @@ export function buildOpenApi(): Record<string, unknown> {
           },
           ["user_id", "email"],
         ),
-        IssueLink: o(
-          {
-            id: { type: "string", pattern: "^[0-9]+$" },
-            url: { type: "string", format: "uri", maxLength: 2048, description: "https, normalisée, sans identifiants" },
-            label: { type: "string", maxLength: 120 },
-            created_by: nul(ref("IssueUserRef")),
-            created_at: dateTime,
-          },
-          ["id", "url", "label", "created_by", "created_at"],
-        ),
         IssueActivity: o(
           {
             id: { type: "string", pattern: "^[0-9]+$" },
-            kind: { type: "string", enum: ["status", "assignee", "comment", "link", "regression"] },
+            kind: { type: "string", enum: ["status", "assignee", "comment", "regression"] },
             actor: o({ kind: { type: "string", enum: ["user", "system"] }, user: nul(ref("IssueUserRef")) }, ["kind", "user"]),
             old_status: nul({ ...issueStatus, enum: [...issueStatus.enum, null] }),
             new_status: nul({ ...issueStatus, enum: [...issueStatus.enum, null] }),
@@ -877,7 +856,6 @@ export function buildOpenApi(): Record<string, unknown> {
             new_assignee: nul(ref("IssueUserRef")),
             body: nul({ type: "string", maxLength: 2000, description: "commentaire expurgé des données personnelles à l'enregistrement" }),
             legacy_fingerprint: nul({ type: "string", description: "commentaire système : note du groupe historique reprise une fois" }),
-            link: nul(ref("IssueLink")),
             release: nul({ type: "string", description: "status → resolved : release de référence ; regression : release qui rouvre" }),
             reference_release: nul({ type: "string", description: "regression : release de référence dépassée" }),
             env: nul(str),
@@ -889,29 +867,6 @@ export function buildOpenApi(): Record<string, unknown> {
           { activities: arr(ref("IssueActivity")), next_cursor: nul(str) },
           ["activities", "next_cursor"],
         ),
-        // P8.6. `state` dit ce qui s'est réellement passé, sans euphémisme :
-        // `delivery_uncertain` signale qu'un ticket a PEUT-ÊTRE été créé et
-        // qu'un opérateur doit trancher — jamais une relance automatique.
-        IssueTicketDelivery: o(
-          {
-            id: str,
-            integration_id: str,
-            provider: str,
-            target: str,
-            state: {
-              type: "string",
-              enum: ["pending", "sent", "failed", "delivery_uncertain", "cancelled"],
-            },
-            attempts: int,
-            external_id: nul(str),
-            external_url: nul(str),
-            last_error: nul(str),
-            created_at: dateTime,
-            sent_at: nul(dateTime),
-          },
-          ["id", "integration_id", "provider", "target", "state", "attempts"],
-        ),
-        IssueTicketDeliveries: o({ deliveries: arr(ref("IssueTicketDelivery")) }, ["deliveries"]),
         IssueDetail: o(
           {
             issue: ref("IssueRecord"),

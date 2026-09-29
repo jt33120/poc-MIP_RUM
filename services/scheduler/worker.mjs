@@ -21,7 +21,7 @@
 // (une ligne à expiration, qui traverse le pooler Neon en mode transaction, là
 // où un verrou de session se perdait) — cf. `@mip/backend/jobs/bail.mjs`.
 //
-// LA LIVRAISON QUITTE LE SCHEDULER (P5). Webhooks, e-mails et tickets partent du
+// LA LIVRAISON QUITTE LE SCHEDULER (P5). Webhooks et e-mails partent du
 // service `notifier`, toutes les 15 s, seul détenteur des secrets sortants. Tant
 // que `SCHEDULER_DELIVERY` vaut `on` (défaut), le tick livre aussi, comme avant ;
 // `off` le réduit à DÉCIDER — les livraisons restent `queued` pour le notifier.
@@ -82,7 +82,7 @@ const config = defineConfig(
       type: "enum",
       values: ["on", "off"],
       default: "on",
-      description: "off : le tick ne livre plus (webhooks, e-mails, tickets) — le notifier s'en charge. Retour arrière : on.",
+      description: "off : le tick ne livre plus (webhooks, e-mails) — le notifier s'en charge. Retour arrière : on.",
     },
   },
   { service: "scheduler", log },

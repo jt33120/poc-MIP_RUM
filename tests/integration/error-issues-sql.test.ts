@@ -1061,7 +1061,9 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         `select table_name from information_schema.tables
           where table_schema = 'public' and table_name like 'error_issue_%' order by 1`,
       )).rows.map((r) => r.table_name);
-      expect(tables).toEqual(expect.arrayContaining(["error_issue_activity", "error_issue_notification", "error_issue_ticket"]));
+      expect(tables).toEqual(expect.arrayContaining(["error_issue_activity", "error_issue_notification"]));
+      // Les liens de ticket (error_issue_ticket) sont retirés depuis le 29/09/2026.
+      expect(tables).not.toContain("error_issue_ticket");
       const fonctions = (await pool.query(
         `select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
           where n.nspname = 'public' and p.proname in ('error_issue_record_occurrences', 'route_error_issue_notifications',
@@ -1081,11 +1083,6 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
       await refus(activite, [A, issue.id, "status", "user", null, "open", "open", null, null, null]);
       await refus(activite, [A, issue.id, "assignee", "user", null, "open", null, null, null, null]);
       await refus(activite, [B, issue.id, "comment", "user", "autre app", null, null, null, null, null]);
-      const ticket = "insert into error_issue_ticket (app_id, issue_id, url, label) values ($1, $2, $3, $4)";
-      await refus(ticket, [A, issue.id, "http://jira.exemple.fr/MIP-1", "MIP-1"]);
-      await refus(ticket, [A, issue.id, `https://jira.exemple.fr/${"a".repeat(2030)}`, "MIP-1"]);
-      await refus(ticket, [A, issue.id, "https://jira.exemple.fr/é", "MIP-1"]);
-      await refus(ticket, [A, issue.id, "https://jira.exemple.fr/MIP-1", "x".repeat(121)]);
       const notification = "insert into error_issue_notification (app_id, issue_id, kind, rule_id, event_key, payload) values ($1, $2, $3, $4, $5, $6)";
       await refus(notification, [A, issue.id, "spike", null, "spike:x", {}]);
       await refus(notification, [A, issue.id, "new", null, `new:${issue.id}`, { text: "doublon" }]);
@@ -1101,7 +1098,6 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         `select has_table_privilege('console_ro', 'error_issue_activity', 'INSERT') as activite_insert,
                 has_table_privilege('console_ro', 'error_issue_activity', 'UPDATE') as activite_update,
                 has_table_privilege('console_ro', 'error_issue_activity', 'DELETE') as activite_delete,
-                has_table_privilege('console_ro', 'error_issue_ticket', 'INSERT') as ticket_insert,
                 has_table_privilege('console_ro', 'error_issue_notification', 'SELECT') as outbox_select,
                 has_table_privilege('console_ro', 'error_issue_notification', 'INSERT') as outbox_insert,
                 has_column_privilege('console_ro', 'error_issue', 'status', 'UPDATE') as triage,
@@ -1109,7 +1105,7 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
                 has_column_privilege('console_ro', 'error_issue', 'app_id', 'UPDATE') as app`,
       )).rows[0];
       expect(priv).toEqual({
-        activite_insert: true, activite_update: false, activite_delete: false, ticket_insert: true,
+        activite_insert: true, activite_update: false, activite_delete: false,
         outbox_select: true, outbox_insert: false, triage: true, cle: false, app: false,
       });
 
@@ -1503,7 +1499,7 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         expect(resultats.map((x) => x.kind).sort()).toEqual(["conflict", "ok"]);
       });
 
-      it("commentaires et liens : stockés tels que validés, doublon refusé sans conflit, historique paginé à la microseconde", async () => {
+      it("commentaires : stockés tels que validés, historique paginé à la microseconde", async () => {
         const issue = await creerIssue(pool, A);
         const autre = await creerIssue(pool, B);
         let revision = await revisionDe(issue.id);
@@ -1513,14 +1509,9 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         expect(commente).toMatchObject({ kind: "ok", value: { activity: { kind: "comment", body: "Voir avec [email]", actor: { kind: "user", user: { email: ADMIN } } } } });
         revision = commente.kind === "ok" ? commente.value.revision : "";
 
-        const lien = { app: A, url: "https://jira.exemple.fr/browse/MIP-7", label: "MIP-7", expectedRevision: revision };
-        const lie = await lib.linkIssue(ctx(issue.id), lien);
-        expect(lie).toMatchObject({ kind: "ok", value: { link: { url: lien.url, label: "MIP-7", created_by: { email: ADMIN } } } });
-        revision = lie.kind === "ok" ? lie.value.revision : "";
-        expect(await lib.linkIssue(ctx(issue.id), { ...lien, expectedRevision: revision })).toEqual({ kind: "duplicate", error: "ce lien est déjà attaché à ce groupe" });
         expect(await lib.commentIssue(ctx(autre.id), { app: B, body: "B", expectedRevision: await revisionDe(autre.id) })).toMatchObject({ kind: "ok" });
 
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 4; i++) {
           const fait = await lib.commentIssue(ctx(issue.id), { app: A, body: `suite ${i}`, expectedRevision: revision });
           revision = fait.kind === "ok" ? fait.value.revision : "";
         }
@@ -1543,16 +1534,14 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         expect(await lib.listIssueActivity(issue.id, [B], { limit: 10, cursor: null }, { emails: true })).toEqual({ kind: "not_found" });
 
         const vue = await lib.issueWorkflowView(issue.id, A, { emails: true });
-        expect(vue?.links.map((l) => l.url)).toEqual([lien.url]);
         expect(vue?.assignable_users.map((u) => u.email)).toEqual([ADMIN, VIEWER_A]);
 
         // Viewer, démo, jeton : mêmes lignes, sans aucune adresse de compte, ni liste d'assignables.
         const masquee = await lib.issueWorkflowView(issue.id, A, { emails: false });
-        expect(masquee?.links.map((l) => l.created_by)).toEqual([{ user_id: expect.any(String), email: null }]);
         expect(masquee?.assignable_users).toEqual([]);
         const lue = await lib.listIssueActivity(issue.id, [A], { limit: 50, cursor: null }, { emails: false });
         expect(JSON.stringify(lue)).not.toContain(ADMIN);
-        expect(lue).toMatchObject({ kind: "ok", value: { activities: expect.arrayContaining([expect.objectContaining({ kind: "link", actor: { kind: "user", user: { user_id: expect.any(String), email: null } } })]) } });
+        expect(lue).toMatchObject({ kind: "ok", value: { activities: expect.arrayContaining([expect.objectContaining({ kind: "comment", actor: { kind: "user", user: { user_id: expect.any(String), email: null } } })]) } });
       });
     });
 
@@ -1843,13 +1832,12 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
       for (const issue of [vieille, recente, deB]) {
         const app = issue === deB ? B : A;
         await pool.query("insert into error_issue_activity (app_id, issue_id, kind, actor_kind, actor_user_id, body) values ($1, $2, 'comment', 'user', $3, 'suivi')", [app, issue.id, admin]);
-        await pool.query("insert into error_issue_ticket (app_id, issue_id, url, label) values ($1, $2, 'https://jira.exemple.fr/MIP-9', 'MIP-9')", [app, issue.id]);
       }
       const evenementVieille = (await pool.query("select alert_event_id from error_issue_notification where issue_id = $1", [vieille.id])).rows[0].alert_event_id;
 
       const purge = (await pool.query("select purge_rum_app($1, now() - interval '30 days') as r", [A])).rows[0].r;
       expect(purge.error_issue).toBe(1);
-      for (const table of ["error_issue_activity", "error_issue_ticket", "error_issue_notification"]) {
+      for (const table of ["error_issue_activity", "error_issue_notification"]) {
         expect(Number((await pool.query(`select count(*) from ${table} where issue_id = $1`, [vieille.id])).rows[0].count), table).toBe(0);
         expect(Number((await pool.query(`select count(*) from ${table} where issue_id = $1`, [recente.id])).rows[0].count), table).toBeGreaterThan(0);
       }
@@ -1867,15 +1855,15 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
       expect(await lib.dsarIdentityErase(A, "user", hash)).toContainEqual({ table: "rum_error", deleted: 1 });
       // P8.1 — RÉCONCILIATION. `recente` vient de perdre sa DERNIÈRE occurrence :
       // la garder reviendrait à conserver l'exemplaire d'une personne effacée et
-      // le commentaire de triage écrit à son sujet. Elle part, avec son activité,
-      // son lien de ticket et sa notification (cascade). `survivante`, dont les
+      // le commentaire de triage écrit à son sujet. Elle part, avec son activité et
+      // sa notification (cascade). `survivante`, dont les
       // occurrences ne relèvent pas du demandeur, reste intacte.
       expect(Number((await pool.query("select count(*)::int as n from error_issue where id = $1", [recente.id])).rows[0].n)).toBe(0);
       expect(Number((await pool.query("select count(*)::int as n from error_issue_activity where issue_id = $1", [recente.id])).rows[0].n)).toBe(0);
       expect(Number((await pool.query("select count(*)::int as n from error_issue where id = $1", [survivante.id])).rows[0].n)).toBe(1);
       const colonnes = (await pool.query(
         `select table_name, column_name from information_schema.columns
-          where table_schema = 'public' and table_name in ('error_issue_activity', 'error_issue_ticket', 'error_issue_notification')
+          where table_schema = 'public' and table_name in ('error_issue_activity', 'error_issue_notification')
             and column_name in ('session_id', 'visitor_id', 'user_id_hash', 'account_id_hash', 'user_hash', 'message', 'stack', 'context')`,
       )).rows;
       expect(colonnes).toEqual([]);
@@ -1887,7 +1875,6 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
       expect(effacement.error_issue).toBe(1);
       expect(Number((await pool.query("select count(*) from error_issue_activity where app_id = $1", [A])).rows[0].count)).toBe(0);
       expect(Number((await pool.query("select count(*) from error_issue_activity where app_id = $1", [B])).rows[0].count)).toBe(1);
-      expect(Number((await pool.query("select count(*) from error_issue_ticket where app_id = $1", [B])).rows[0].count)).toBe(1);
     });
   });
 

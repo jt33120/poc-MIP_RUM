@@ -1,5 +1,5 @@
 // Workflow d'une issue d'erreurs (P5.6, migration-v73) : triage, assignation,
-// commentaires, liens de ticket et historique.
+// commentaires et historique.
 //
 // CONCURRENCE OPTIMISTE. Chaque mutation porte la révision lue par l'écran ;
 // l'issue est verrouillée, la révision comparée, puis la mutation, son activité
@@ -12,8 +12,7 @@
 // n'existe pas (404). Un assigné doit être un compte actif ayant accès à l'app
 // de l'issue selon `console_user.apps` (NULL = toutes, liste vide = aucune).
 //
-// Aucune donnée ne part vers un fournisseur de tickets (P8.6), et l'activité ne
-// recopie ni stack, ni message d'erreur, ni identité RUM.
+// L'activité ne recopie ni stack, ni message d'erreur, ni identité RUM.
 import type { PoolClient } from "pg";
 import {
   COMMENTAIRE_MAX,
@@ -24,12 +23,11 @@ import { q, tx } from "./db";
 import { ISSUE_STATUSES, isIssueId, type IssueStatus } from "./error-issues";
 import { encodeErrorCursor } from "./queries-errors";
 
-export const ACTIVITY_KINDS = ["status", "assignee", "comment", "link", "regression"] as const;
+// Les liens de ticket (`link`) sont retirés depuis le 29/09/2026, avec la fonctionnalité des tickets.
+export const ACTIVITY_KINDS = ["status", "assignee", "comment", "regression"] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
 export const COMMENT_MAX_CHARS = COMMENTAIRE_MAX;
-export const LINK_URL_MAX_CHARS = 2048;
-export const LINK_LABEL_MAX_CHARS = 120;
 export const ACTIVITY_DEFAULT_LIMIT = 50;
 export const ACTIVITY_MAX_LIMIT = 100;
 
@@ -45,20 +43,12 @@ export interface IssueUserRef {
 }
 
 /**
- * Qui lit. Les adresses des comptes de la console (acteurs, assignés, auteurs de
- * liens) ne sortent que vers une session admin : un viewer, la démo publique ou
+ * Qui lit. Les adresses des comptes de la console (acteurs, assignés) ne sortent
+ * que vers une session admin : un viewer, la démo publique ou
  * un jeton d'API partenaire lisent l'historique sans elles.
  */
 export interface WorkflowReader {
   emails: boolean;
-}
-
-export interface IssueLink {
-  id: string;
-  url: string;
-  label: string;
-  created_by: IssueUserRef | null;
-  created_at: Date | string;
 }
 
 export interface IssueActivity {
@@ -72,7 +62,6 @@ export interface IssueActivity {
   body: string | null;
   /** Commentaire système : note du groupe historique importée. */
   legacy_fingerprint: string | null;
-  link: IssueLink | null;
   /** Résolution : release de référence ; régression : release qui rouvre. */
   release: string | null;
   /** Régression : release de référence dépassée. */
@@ -119,13 +108,6 @@ export interface TriageRequest {
 export interface CommentRequest {
   app: string;
   body: string;
-  expectedRevision: string;
-}
-
-export interface LinkRequest {
-  app: string;
-  url: string;
-  label: string;
   expectedRevision: string;
 }
 
@@ -203,40 +185,6 @@ export function parseCommentRequest(body: unknown): Parsed<CommentRequest> {
   return { ok: true, value: { app, body: texte, expectedRevision } };
 }
 
-/**
- * URL de ticket telle qu'elle est stockée : HTTPS, hôte présent, sans identifiants,
- * normalisée par WHATWG URL (hôte en punycode, points de code encodés), donc en
- * ASCII imprimable ; 2 048 caractères au plus. null si refusée. Pure.
- */
-export function normalizeTicketUrl(v: unknown): string | null {
-  if (typeof v !== "string" || v.length > LINK_URL_MAX_CHARS) return null;
-  let url: URL;
-  try {
-    url = new URL(v.trim());
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "https:" || !url.hostname || url.username || url.password) return null;
-  const href = url.href;
-  return href.length <= LINK_URL_MAX_CHARS && /^[!-~]+$/.test(href) ? href : null;
-}
-
-/** `{app, url, label, expectedRevision}` : URL HTTPS validée, libellé scrubbé ≤ 120. Pure. */
-export function parseLinkRequest(body: unknown): Parsed<LinkRequest> {
-  const base = socle(body);
-  if (!base.ok) return base;
-  const { champs, app, expectedRevision } = base.value;
-  const url = normalizeTicketUrl(champs.url);
-  if (!url) {
-    return { ok: false, error: `url invalide (https, sans identifiants, ${LINK_URL_MAX_CHARS} caractères au plus)` };
-  }
-  const label = texteActivite(champs.label);
-  if (label === null || hasSqlControlCharacters(label) || [...label].length > LINK_LABEL_MAX_CHARS) {
-    return { ok: false, error: `label requis (${LINK_LABEL_MAX_CHARS} caractères au plus, sans retour à la ligne)` };
-  }
-  return { ok: true, value: { app, url, label, expectedRevision } };
-}
-
 // ─────────────────────────────── Lectures ────────────────────────────────────
 
 /** migration-v73 appliquée ? Sonde rejouée à chaque appel, comme celles de P5.1/P5.5. */
@@ -248,12 +196,7 @@ export async function issueWorkflowAvailable(): Promise<boolean> {
 const USER_REF = (colonne: string, alias: string, emails: boolean) =>
   `case when ${colonne} is null then null else jsonb_build_object('user_id', ${colonne}::text, 'email', ${emails ? `${alias}.email` : "null"}) end`;
 
-interface ActivitySqlRow extends Omit<IssueActivity, "link"> {
-  link_id: string | null;
-  link_url: string | null;
-  link_label: string | null;
-  link_created_by: IssueUserRef | null;
-  link_created_at: Date | string | null;
+interface ActivitySqlRow extends IssueActivity {
   cursor_id: string;
   cursor_ts: string;
 }
@@ -265,24 +208,15 @@ const activitySql = (emails: boolean) => `
          ${USER_REF("a.old_assignee_user_id", "ancien", emails)} as old_assignee,
          ${USER_REF("a.new_assignee_user_id", "nouveau", emails)} as new_assignee,
          a.body, a.legacy_fingerprint, a.release, a.reference_release, a.env, a.created_at,
-         t.id::text as link_id, t.url as link_url, t.label as link_label,
-         ${USER_REF("t.created_by_user_id", "createur", emails)} as link_created_by, t.created_at as link_created_at,
          a.id::text as cursor_id,
          to_char(a.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_ts
     from error_issue_activity a
     left join console_user acteur on acteur.id = a.actor_user_id
     left join console_user ancien on ancien.id = a.old_assignee_user_id
-    left join console_user nouveau on nouveau.id = a.new_assignee_user_id
-    left join error_issue_ticket t on t.app_id = a.app_id and t.issue_id = a.issue_id and t.id = a.ticket_id
-    left join console_user createur on createur.id = t.created_by_user_id`;
+    left join console_user nouveau on nouveau.id = a.new_assignee_user_id`;
 
-function toActivity({ link_id, link_url, link_label, link_created_by, link_created_at, cursor_id: _id, cursor_ts: _ts, ...row }: ActivitySqlRow): IssueActivity {
-  return {
-    ...row,
-    link: link_id && link_url && link_label && link_created_at
-      ? { id: link_id, url: link_url, label: link_label, created_by: link_created_by, created_at: link_created_at }
-      : null,
-  };
+function toActivity({ cursor_id: _id, cursor_ts: _ts, ...row }: ActivitySqlRow): IssueActivity {
+  return row;
 }
 
 /**
@@ -326,7 +260,6 @@ export interface IssueWorkflowView {
   resolved_by: IssueUserRef | null;
   /** La dernière décision de statut est une régression confirmée : ce qui a rouvert l'issue. */
   regression: IssueActivity | null;
-  links: IssueLink[];
   /** Comptes assignables, actifs et autorisés sur l'app de l'issue : pour une session admin seulement. */
   assignable_users: IssueUserRef[];
 }
@@ -351,15 +284,6 @@ export async function issueWorkflowView(issueId: string, appId: string, lecteur:
       limit 1`,
     [appId, issueId],
   );
-  const links = await q<IssueLink>(
-    `select t.id::text as id, t.url, t.label, ${USER_REF("t.created_by_user_id", "createur", lecteur.emails)} as created_by, t.created_at
-       from error_issue_ticket t
-       left join console_user createur on createur.id = t.created_by_user_id
-      where t.app_id = $1 and t.issue_id = $2
-      order by t.created_at, t.id
-      limit 100`,
-    [appId, issueId],
-  );
   const assignable_users = lecteur.emails
     ? await q<IssueUserRef>(
         `select id::text as user_id, email from console_user
@@ -372,7 +296,6 @@ export async function issueWorkflowView(issueId: string, appId: string, lecteur:
   return {
     ...etat,
     regression: decision?.kind === "regression" ? toActivity(decision) : null,
-    links,
     assignable_users,
   };
 }
@@ -463,10 +386,9 @@ async function nouvelleRevision(client: PoolClient, issue: LockedIssue): Promise
 
 /**
  * Référence d'une résolution : la release et l'env de la dernière occurrence
- * rattachée. La requête vit dans `@mip/backend/lib/error-issue-workflow.mjs` depuis
- * P8.6 : un fournisseur de tickets peut résoudre une issue par webhook, et deux
- * copies auraient donné deux références — donc deux verdicts de régression pour
- * la même issue selon qui l'a fermée. Son commentaire y explique le détail.
+ * rattachée. La requête vit dans `@mip/backend/lib/error-issue-workflow.mjs` : deux
+ * copies donneraient deux références — donc deux verdicts de régression pour la
+ * même issue selon qui l'a fermée. Son commentaire y explique le détail.
  *
  * `last_seen` reste en base : relu en JavaScript, il perdrait ses microsecondes.
  */
@@ -546,32 +468,5 @@ export async function commentIssue(
     await audit(client, ctx, "error_issue_comment", { app_id: issue.app_id, issue_id: issue.id, activity_id: cree.id });
     const { rows: [activite] } = await client.query<ActivitySqlRow>(`${activitySql(true)} where a.id = $1`, [cree.id]);
     return { kind: "ok", value: { activity: toActivity(activite), revision } };
-  });
-}
-
-/** Lien de ticket manuel ; une même URL deux fois sur l'issue est un conflit. */
-export async function linkIssue(
-  ctx: MutationContext,
-  request: LinkRequest,
-): Promise<WorkflowResult<{ link: IssueLink; activity: IssueActivity; revision: string }>> {
-  return muter(ctx, request.app, request.expectedRevision, async (client, issue, actorId) => {
-    const { rows: [ticket] } = await client.query<{ id: string }>(
-      `insert into error_issue_ticket (app_id, issue_id, url, label, created_by_user_id)
-       values ($1, $2, $3, $4, $5)
-       on conflict (app_id, issue_id, url) do nothing
-       returning id::text as id`,
-      [issue.app_id, issue.id, request.url, request.label, actorId],
-    );
-    if (!ticket) return { kind: "duplicate", error: "ce lien est déjà attaché à ce groupe" };
-    const { rows: [cree] } = await client.query<{ id: string }>(
-      `insert into error_issue_activity (app_id, issue_id, kind, actor_kind, actor_user_id, ticket_id)
-       values ($1, $2, 'link', 'user', $3, $4) returning id::text as id`,
-      [issue.app_id, issue.id, actorId, ticket.id],
-    );
-    const revision = await nouvelleRevision(client, issue);
-    await audit(client, ctx, "error_issue_link", { app_id: issue.app_id, issue_id: issue.id, ticket_id: ticket.id });
-    const { rows: [activite] } = await client.query<ActivitySqlRow>(`${activitySql(true)} where a.id = $1`, [cree.id]);
-    const value = toActivity(activite);
-    return { kind: "ok", value: { link: value.link as IssueLink, activity: value, revision } };
   });
 }

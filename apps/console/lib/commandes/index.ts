@@ -21,7 +21,7 @@ import {
 } from "./alertes";
 import { activerApplication, creerApplication, creerSite, majOrigines, renouvelerCle } from "./applications";
 import { activerCompte, creerCompte, reinitialiserMotDePasse } from "./comptes";
-import { commenterIssue, demanderTicket, lierTicket, trierGroupe, trierIssue } from "./issues";
+import { commenterIssue, trierGroupe, trierIssue } from "./issues";
 import { activerObjectif, creerObjectif, supprimerObjectif } from "./objectifs";
 import {
   ajouterCarte,
@@ -39,10 +39,8 @@ import {
 import {
   activerDomaineExtension,
   creerDomaineExtension,
-  creerIntegration,
   creerJetonLecture,
   creerJetonSourcemap,
-  majIntegration,
   oublierPoste,
   revoquerJetonLecture,
   revoquerJetonSourcemap,
@@ -74,8 +72,6 @@ export const COMMANDES_CONSOLE = {
   // C7 — workflow des erreurs.
   trierIssue,
   commenterIssue,
-  lierTicket,
-  demanderTicket,
   trierGroupe,
   // C8 — alerting et disponibilité.
   creerRegle,
@@ -105,8 +101,6 @@ export const COMMANDES_CONSOLE = {
   revoquerJetonLecture,
   creerJetonSourcemap,
   revoquerJetonSourcemap,
-  creerIntegration,
-  majIntegration,
   creerDomaineExtension,
   activerDomaineExtension,
   oublierPoste,

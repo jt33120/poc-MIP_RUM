@@ -17,7 +17,6 @@ import {
   chargerClient,
   chargerClients,
   chargerComptes,
-  chargerConnecteurs,
   chargerConsommation,
   chargerDomaines,
   chargerJetonsLecture,
@@ -131,7 +130,6 @@ export const ecrans = {
     jetonsLecture: page(chargerJetonsLecture),
     domaines: page(chargerDomaines),
     sourcemaps: page(chargerSourcemaps),
-    connecteurs: page(chargerConnecteurs),
     nouveauSite: page(chargerNouveauSite),
     // C10
     viePrivee: page(chargerViePrivee),

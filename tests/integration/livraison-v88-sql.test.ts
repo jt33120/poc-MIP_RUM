@@ -10,9 +10,6 @@
 //     l'identifiant Resend quand il l'a (le notifier) ; qu'un échec rejoué garde
 //     la MÊME clé d'idempotence, donc aucun second envoi chez Resend ;
 //   · que les webhooks partent signés, corps et signature concordants ;
-//   · que la contrainte v88 refuse une référence de ticket hors `env:TICKET_…`,
-//     et qu'une ligne de l'ancienne forme est neutralisée par la migration
-//     (désactivée, `degraded`) au lieu de rester active et refusée en silence ;
 //   · que l'URL du relais e-mail (un secret en clair) est effacée.
 //
 //   SQL_TEST_DATABASE_URL=<base jetable> pnpm test:sql
@@ -51,7 +48,6 @@ function migrations(): string[] {
   async function nettoyer() {
     await pool.query("delete from alert_event where message like 'p5-%'");
     await pool.query("delete from notify_channel where app_id = $1", [APP]);
-    await pool.query("delete from ticket_integration where app_id = $1", [APP]);
   }
 
   /** Un événement et son routage ; rend l'identifiant de l'événement. */
@@ -157,46 +153,6 @@ function migrations(): string[] {
     expect(d.status).toBe("delivered");
     expect(recu!.headers["x-mip-delivery-id"]).toBe(String(d.id));
     expect(verifierSignature({ secrets: [SECRET], entetes: recu!.headers, corps: recu!.body })).toEqual({ ok: true });
-  });
-
-  it("références de tickets : hors env:TICKET_… refusé à l'écriture ; une ligne héritée est NEUTRALISÉE, jamais laissée active", async () => {
-    const inserer = (cible: string, ref: string, webhook: string | null = null) =>
-      pool.query(
-        "insert into ticket_integration (app_id, provider, target, credential_ref, webhook_secret_ref, enabled) values ($1, 'github', $2, $3, $4, true)",
-        [APP, cible, ref, webhook],
-      );
-    await expect(inserer("p5/a", "env:DATABASE_URL")).rejects.toThrow(/ticket_integration_credential_v88/);
-    await expect(inserer("p5/b", "env:TICKET_SECRET_KEY")).rejects.toThrow(/ticket_integration_credential_v88/);
-    await expect(inserer("p5/c", "env:TICKET_INTEGRATIONS")).rejects.toThrow(/ticket_integration_credential_v88/);
-    await expect(inserer("p5/d", "env:TICKET_GITHUB_TOKEN", "env:AUTH_SECRET")).rejects.toThrow(/ticket_integration_webhook_v88/);
-    await expect(inserer("p5/e", "env:TICKET_GITHUB_TOKEN", "env:TICKET_GITHUB_WEBHOOK")).resolves.toBeTruthy();
-
-    // Des lignes de l'ancienne forme, écrites avant v88 : les contraintes ôtées le
-    // temps de les écrire, puis la migration rejouée.
-    await pool.query("alter table ticket_integration drop constraint ticket_integration_credential_v88");
-    await pool.query("alter table ticket_integration drop constraint ticket_integration_webhook_v88");
-    await inserer("p5/ancienne", "env:DATABASE_URL");
-    await inserer("p5/webhook-ancien", "env:TICKET_GITHUB_TOKEN", "env:AUTH_SECRET");
-    await pool.query(V88);
-    const { rows } = await pool.query(
-      `select target, credential_ref, webhook_secret_ref, enabled, state, last_error, config_version
-         from ticket_integration where app_id = $1 and target in ('p5/ancienne', 'p5/webhook-ancien', 'p5/e') order by target`,
-      [APP],
-    );
-    expect(rows).toEqual([
-      { target: "p5/ancienne", credential_ref: "env:TICKET_REFERENCE_REFUSEE_V88", webhook_secret_ref: null, enabled: false, state: "degraded", last_error: "variable_hors_perimetre", config_version: 2 },
-      // Une ligne conforme n'est pas touchée.
-      { target: "p5/e", credential_ref: "env:TICKET_GITHUB_TOKEN", webhook_secret_ref: "env:TICKET_GITHUB_WEBHOOK", enabled: true, state: "active", last_error: null, config_version: 1 },
-      { target: "p5/webhook-ancien", credential_ref: "env:TICKET_GITHUB_TOKEN", webhook_secret_ref: null, enabled: true, state: "degraded", last_error: "variable_hors_perimetre", config_version: 2 },
-    ]);
-    // Contraintes VALIDÉES : plus aucune ligne hors périmètre dans la table.
-    const contraintes = await pool.query(
-      "select conname, convalidated from pg_constraint where conname like 'ticket_integration_%_v88' order by conname",
-    );
-    expect(contraintes.rows).toEqual([
-      { conname: "ticket_integration_credential_v88", convalidated: true },
-      { conname: "ticket_integration_webhook_v88", convalidated: true },
-    ]);
   });
 
   it("l'URL du relais e-mail de la console (jeton compris) est effacée", async () => {

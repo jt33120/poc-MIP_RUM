@@ -25,7 +25,7 @@ joué en CI (`tests/contract/ingest-parity.test.ts`) la tient alignée sur le re
 | `console-api` | Le backend de la console ([ADR-0010](architecture/adr/0010-console-api.md)) : identité, sessions, écrans, écritures. Deux répliques. Seul client : le serveur Vercel, qui l'appelle pour la connexion depuis le 27/09 ; écrans et écritures ne sont pas encore basculés (drapeaux à 0). | oui, domaine généré par Railway, gardé par un secret client |
 | `mcp` | Sert le protocole MCP en HTTP, en client mince de l'API v1 : il passe par le service `api` sur le réseau privé (`MIP_API_HOST`, posé par l'apply du 27/09) et ne touche pas la base ([ADR-0006](architecture/adr/0006-mcp-sans-base.md)). | oui, domaine généré par Railway |
 | `scheduler` | Applique les migrations au pré-déploiement — c'est le seul migrateur ([ADR-0004](architecture/adr/0004-migrations.md)) —, puis fait tourner la boucle de travaux toutes les 15 minutes (`SCHEDULER_TICK_MIN`) : alertes, SLO, sondes de disponibilité, rafraîchissement des agrégats, purge de rétention. Il ne livre plus (`SCHEDULER_DELIVERY: "off"`) : c'est le `notifier`. | non — il n'a rien à exposer |
-| `notifier` | Livre ce que la plateforme a décidé de dire : webhooks signés, e-mails, tickets. Seul détenteur des secrets sortants ; ses passes suivent le tick de 45 s (`NOTIFIER_INTERVAL_MS: "900000"`). | non |
+| `notifier` | Livre ce que la plateforme a décidé de dire : webhooks signés, e-mails. Seul détenteur des secrets sortants ; ses passes suivent le tick de 45 s (`NOTIFIER_INTERVAL_MS: "900000"`). | non |
 
 ### Pourquoi le scheduler porte les migrations
 

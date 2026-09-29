@@ -268,7 +268,7 @@ vercel env add DEMO_USER_APPS production   # coller: mip-rum-console,insight-per
 # Défaut: demo@mip-rum.local
 # Restent à poser (gestes de l'opérateur, runbook) : CONSOLE_API_URL, CONSOLE_API_CLIENT_SECRET
 # et SESSION_PUBLIC_JWKS (console-api) ; CONSOLE_INGEST_RELAY_URL, EDGE_PROXY_SECRET,
-# CONSOLE_API_RELAY_URL et CONSOLE_TICKET_HOOK_URL (relais). Sans elles, la console
+# et CONSOLE_API_RELAY_URL (relais). Sans elles, la console
 # lit et écrit la base elle-même, sert la collecte et l'API v1.
 vercel --prod
 # Noter l'URL: https://mip-rum-console.vercel.app  (sert aussi le SDK: /mip-rum.js)
@@ -360,7 +360,7 @@ cadences, des sondes et des réglages : `services/scheduler/README.md`.
 
 | Cadence | Quand (UTC) | Contenu |
 |---|---|---|
-| `tick` | toutes les 15 min par défaut (`SCHEDULER_TICK_MIN`, 5 pour un vrai produit) | `check_alerts`, `check_slo_burn`, sondes uptime ; livraison des alertes et des tickets tant que `SCHEDULER_DELIVERY` vaut `on` (ensuite : le `notifier`) |
+| `tick` | toutes les 15 min par défaut (`SCHEDULER_TICK_MIN`, 5 pour un vrai produit) | `check_alerts`, `check_slo_burn`, sondes uptime ; livraison des alertes tant que `SCHEDULER_DELIVERY` vaut `on` (ensuite : le `notifier`) |
 | `horaire` | HH:05 | `refresh_rum_rollups(26)`, `refresh_metric_histogram(26)`, `check_new_errors`, `check_ai_op_anomalies` |
 | `quotidien` | 03:17 | `purge_rum_tenants(30)`, `meter_tenant_usage()` |
 

@@ -67,7 +67,7 @@ flowchart TB
 | `console-api` | Railway, groupe 2 · Restitution | le backend de la console ; la connexion passe par lui depuis le 27/09/2026 |
 | `mcp` | Railway, groupe 2 · Restitution | serveur MCP en lecture seule, qui passe par `api` sur le réseau privé ; aucun accès à la base |
 | `scheduler` | Railway, groupe 3 · Traitements | travaux planifiés sous bail, toutes les 15 minutes ; seul migrateur, au pré-déploiement |
-| `notifier` | Railway, groupe 3 · Traitements | livre les alertes (webhooks signés, e-mails, tickets) ; seul détenteur des secrets sortants |
+| `notifier` | Railway, groupe 3 · Traitements | livre les alertes (webhooks signés, e-mails) ; seul détenteur des secrets sortants |
 | PostgreSQL | Neon, aws-eu-central-1 (Francfort), offre payante Launch depuis le 27/09/2026 | à l'usage, calcul plafonné à 0,25 CU, veille active. Un palier : la base d'un vrai produit se choisira selon le standard de la DSI de MIP ([ADR-0014](docs/architecture/adr/0014-base-gratuite.md), remplacée) |
 
 Le schéma de production est à `migration-v96` : le redéploiement du scheduler du 27/09/2026 a appliqué v87 → v96.
@@ -145,7 +145,7 @@ Les zones générées de ce README se régénèrent par `node scripts/readme-sec
 | `packages/rum-core` | Primitives pures partagées par les runtimes (contexte, snapshots d'événement, `beforeSend`, encodeur OTLP) |
 | `packages/rum-sdk` | SDK Web (émetteur OTLP + web-vitals), build esbuild IIFE `mip-rum.js` ; poids gzip remesuré par `tests/unit/specs.test.ts` (`apps/console/lib/sdk-poids.ts`) |
 | `packages/rum-mobile` | SDK **React Native** : crashes, écrans, réseau (traceparent), événements → mêmes tables (`device_type=mobile`) ; livré, jamais lancé dans une application React Native (document de couverture, `C1` et `C10`) |
-| `packages/backend` | `@mip/backend` — noyau backend sans framework : parseur OTLP, receveur (`/v1/traces`, `/v1/logs`, `/v1/replay`, `/v1/sourcemaps`, et depuis C11 l'extension et les marqueurs de déploiement), écritures Postgres, travaux planifiés, livraison des alertes, connecteur de tickets. Importé par la console comme par les services. **En production, la route de la console reçoit toute la collecte et en relaie une part au `collector`** ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
+| `packages/backend` | `@mip/backend` — noyau backend sans framework : parseur OTLP, receveur (`/v1/traces`, `/v1/logs`, `/v1/replay`, `/v1/sourcemaps`, et depuis C11 l'extension et les marqueurs de déploiement), écritures Postgres, travaux planifiés, livraison des alertes. Importé par la console comme par les services. **En production, la route de la console reçoit toute la collecte et en relaie une part au `collector`** ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
 | `packages/db` | `@mip/db` — le schéma (`sql/` : `schema.sql`, migrations numérotées, index de pré-déploiement) et son migrateur, que seul le `scheduler` lance |
 | `packages/mcp-tools` | `@mip/mcp-tools` — noyau MCP : catalogue d'outils, client HTTP de l'API v1 ; sans base de données |
 | `packages/service-kit` | `@mip/service-kit` — ce que chaque service fait de la même façon : configuration, journal, sondes, arrêt propre, pool Postgres, métriques, boucles ([README](packages/service-kit/README.md)) |

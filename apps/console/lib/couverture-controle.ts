@@ -73,8 +73,12 @@ export const VERDICT_MONTRABLE = "deploye_non_eprouve";
  * la collecte directe du capteur de la console (ligne D14, « depuis le 28/09/2026 »,
  * et § 13.4 du document). Elle a donc sa carte ; ce qui reste pour les sites des
  * clients est un point de « Ce qui reste », qui la cite encore.
+ *
+ * D12 (créer un ticket) en est sortie le 29/09/2026 : la fonctionnalité des tickets
+ * est retirée, la ligne est « non retenu ». La liste est vide ; le contrôle reste,
+ * pour la prochaine capacité déployée qui n'agirait sur aucun trafic réel.
  */
-export const DEPLOYEES_INERTES: readonly string[] = ["D12"];
+export const DEPLOYEES_INERTES: readonly string[] = [];
 
 const ID_CAPACITE = /^[A-Z]\d+$/;
 

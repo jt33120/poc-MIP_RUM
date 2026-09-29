@@ -1,31 +1,22 @@
 // Service « notifier » — livre ce que la plateforme a décidé de dire (P5).
 //
 // CÂBLAGE SEUL. La passe de livraison vit dans `@mip/backend/jobs/livreur.mjs`
-// (routage de l'outbox des issues, webhooks signés, e-mails Resend, tickets), le
+// (routage de l'outbox des issues, webhooks signés, e-mails Resend), le
 // processus (configuration, arrêt propre, pool, sondes, boucles) dans
 // `@mip/service-kit`.
 //
-//   livraison        toutes les 15 s (NOTIFIER_INTERVAL_MS)   outbox → webhooks, e-mails, tickets
+//   livraison        toutes les 15 s (NOTIFIER_INTERVAL_MS)   outbox → webhooks, e-mails
 //   reconciliation   toutes les heures                         livraisons `sent` de l'ère pg_net
 //
 // LE SEUL DÉTENTEUR DES SECRETS SORTANTS : la clé Resend, le secret de signature
-// des webhooks, les jetons de tickets (`TICKET_SECRET_KEY`, `TICKET_*`). Le
-// scheduler décide, le notifier écrit au monde ; ni Vercel ni le scheduler ne
-// portent ces secrets.
+// des webhooks. Le scheduler décide, le notifier écrit au monde ; ni Vercel ni le
+// scheduler ne portent ces secrets.
 //
 // LA BASCULE (P5). Le scheduler livrait à chaque tick. On coupe sa livraison
 // (`SCHEDULER_DELIVERY=off`) AVANT ou EN MÊME TEMPS que le notifier démarre : un
 // scheduler sans clé Resend qui tomberait sur une livraison e-mail la solderait
 // `skipped`. Les livraisons attendent `queued` le temps du démarrage ; rien ne se
 // perd. Retour arrière : `SCHEDULER_DELIVERY=on`, notifier à 0.
-//
-// LE HOOK ENTRANT DES TICKETS (C11) : `POST /v1/webhooks/tickets/{id}`, la
-// livraison signée d'un fournisseur (GitHub) — la seule route publique du
-// service, sur son domaine généré. La console la relaie octet pour octet
-// (`CONSOLE_TICKET_HOOK_URL`) ; son code est partagé
-// (`@mip/backend/lib/integrations/tickets/webhook-entrant.mjs`). Le secret du
-// webhook (`env:TICKET_*` ou `enc:v1:`) se résout ici : ces variables vivent sur
-// le notifier.
 //
 // LES SONDES :
 //   /health   processus vivant + base joignable. LA sonde Railway.
@@ -41,11 +32,6 @@ import { startService } from "@mip/service-kit/http.mjs";
 import { startLoop } from "@mip/service-kit/loop.mjs";
 import { configEmail, erreursConfigEmail } from "@mip/backend/lib/net/resend.mjs";
 import { secretsDeSignature } from "@mip/backend/lib/net/signature-webhook.mjs";
-import {
-  CORPS_LIVRAISON_MAX,
-  ENTETE_NOTIFIER,
-  creerGestionnaireHook,
-} from "@mip/backend/lib/integrations/tickets/webhook-entrant.mjs";
 import {
   INTERVALLE_DEFAUT_MS,
   SEUIL_ALIGNEMENT_MS,
@@ -93,15 +79,6 @@ const config = defineConfig(
         return null;
       },
       description: "Signe les webhooks (x-mip-signature). « nouveau,ancien » pendant une rotation. Absent : identifiant de livraison seul.",
-    },
-    TICKET_SECRET_KEY: {
-      type: "string",
-      secret: true,
-      validate: (brut) => {
-        const octets = /^[0-9a-fA-F]{64}$/.test(brut) ? Buffer.from(brut, "hex") : Buffer.from(brut, "base64");
-        return octets.length === 32 ? null : "32 octets attendus, en hexadécimal ou en base64";
-      },
-      description: "Clé des références de tickets `enc:v1:` — la MÊME, à l'octet près, que celle qui les a chiffrées. Absente : ces intégrations passent en degraded.",
     },
   },
   { service: "notifier", log },
@@ -165,12 +142,6 @@ startService({
   log,
   pool,
   metrics,
-  // C11 — le hook entrant des tickets (`POST /v1/webhooks/tickets/{id}`), relayé
-  // octet pour octet par la console. Toute réponse est signée : le relais
-  // distingue ainsi le notifier du routeur Railway.
-  fetch: creerGestionnaireHook({ pool, log }),
-  maxBodyBytes: CORPS_LIVRAISON_MAX,
-  responseHeaders: { [ENTETE_NOTIFIER]: "1" },
   metricsToken: config.METRICS_TOKEN,
   lifecycle,
   ready: () => livreur.etat(),
@@ -183,5 +154,4 @@ log.info("notifier démarré", {
   // Ni la clé, ni les adresses : combien, et en quel mode.
   email: email ? { expediteur: email.from, mode_test: Boolean(email.destinatairesTest), destinataires_test: email.destinatairesTest?.size ?? 0 } : "non configuré",
   signature: Boolean(config.WEBHOOK_SIGNING_SECRET),
-  tickets_cle: Boolean(config.TICKET_SECRET_KEY),
 });

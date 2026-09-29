@@ -293,7 +293,6 @@ const CIBLES_ROUTES = [
   [/^\/api\/dashboards\//, "console-api (C6)"],
   [/^\/api\/replay\//, "console-api (C3)"],
   [/^\/api\/releases$/, "reste sur Vercel, relais serveur (C11)"],
-  [/^\/api\/webhooks\/tickets\//, "notifier, relais octet pour octet (C11)"],
 ];
 
 const AUTH_MODULES = /^@\/lib\/(auth|api\/auth|api\/handle|api\/admin|queries-read-tokens)$/;

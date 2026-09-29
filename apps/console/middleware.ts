@@ -87,16 +87,9 @@ export async function middleware(req: NextRequest) {
   // route répond 401/403 en JSON plutôt qu'une redirection. Sa garde
   // (lib/api/admin.ts) exige une session admin non démo et l'Origin de la
   // console pour toute mutation — la borne démo ci-dessous y est donc incluse.
-  // (Les jetons de CI et les connecteurs de tickets s'administrent depuis leurs
-  // écrans depuis C9 : leurs routes `/api/admin/*` ont été retirées.)
+  // (Les jetons de CI s'administrent depuis leur écran depuis C9 : leurs routes
+  // `/api/admin/*` ont été retirées.)
   if (req.nextUrl.pathname === "/api/sourcemaps") return NextResponse.next();
-  // /api/webhooks/* : livraisons entrantes d'un fournisseur de tickets (P8.6).
-  // Aucun cookie, aucune session : l'autorité est la SIGNATURE vérifiée dans le
-  // handler. Sans ce contournement, chaque livraison recevrait un 302 vers
-  // /login — que GitHub compterait comme une livraison réussie, et la
-  // synchronisation tomberait en silence. La route refuse elle-même toute
-  // requête portant le cookie de session.
-  if (req.nextUrl.pathname.startsWith("/api/webhooks/")) return NextResponse.next();
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const resolu = !token ? null : algorithmeDuJeton(token) === "ES256" ? await principalEs256(req, token) : await verifyJwt(token);

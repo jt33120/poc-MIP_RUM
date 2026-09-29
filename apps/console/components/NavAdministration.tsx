@@ -10,14 +10,13 @@ import { usePathname } from "next/navigation";
 import { ADMINISTRATION, lienAdministrationActif } from "./nav-items";
 import { ICON_PATHS, Icon } from "./icons";
 
-export function NavAdministration({ tickets }: { tickets: boolean }) {
+export function NavAdministration() {
   const pathname = usePathname() ?? "";
   const actif = lienAdministrationActif(pathname);
-  const liens = ADMINISTRATION.filter((l) => l.seulementSi !== "tickets" || tickets);
 
   return (
     <nav aria-label="Administration" className="flex flex-col gap-0.5">
-      {liens.map((it) => {
+      {ADMINISTRATION.map((it) => {
         const estActif = it === actif;
         return (
           <Link

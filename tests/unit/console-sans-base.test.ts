@@ -54,7 +54,7 @@ import "./local";`;
         import(/* @vite-ignore */ `${pathToFileURL(path.resolve("apps/console/next.config.mjs")).href}?${etiquette}=${Date.now()}`);
       await expect(config("refus")).rejects.toThrow(/DATABASE_URL/);
       delete process.env.DATABASE_URL;
-      for (const nom of Object.keys(process.env)) if (/^(PG|POSTGRES_|NEON_|IDENTITY_HASH_SECRET|TICKET_SECRET_KEY|AUTH_SECRET)/.test(nom)) delete process.env[nom];
+      for (const nom of Object.keys(process.env)) if (/^(PG|POSTGRES_|NEON_|IDENTITY_HASH_SECRET|AUTH_SECRET)/.test(nom)) delete process.env[nom];
       await expect(config("passe")).resolves.toBeTruthy();
     } finally {
       for (const nom of Object.keys(process.env)) if (!(nom in avant)) delete process.env[nom];

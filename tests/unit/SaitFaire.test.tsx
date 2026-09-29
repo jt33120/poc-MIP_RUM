@@ -5,7 +5,7 @@
 //   - PS7 : une carte par entrée, au verdict LU dans le document (`data-verdict`) et
 //     dit une seule fois pour toutes dans le chapeau (recette du 26/09/2026), « Limites : »
 //     puis une puce par identifiant, sa pastille en tête, sa phrase entière — rien de
-//     replié ; D12, seule inerte depuis le 28/09/2026, nulle part dans la partie ; les
+//     replié ; D12 (inerte jusqu'au retrait des tickets, le 29/09/2026) nulle part dans la partie ; les
 //     renvois « (voir R3) », « (voir R6) » sont des liens nommés par le titre du point,
 //     vers une ancre qui existe dans « Ce qui reste » ;
 //   - V-E : une case par capacité, une légende qui écrit chaque nombre et son
@@ -118,8 +118,8 @@ describe("PS7 — les cartes rendues (pendant unitaire de TP3)", () => {
     expect(ids).toContain("A4");
   });
 
-  it("TP4, côté partie 2 : aucune inerte (D12), ni en pastille ni dans le texte", () => {
-    for (const id of DEPLOYEES_INERTES) {
+  it("TP4, côté partie 2 : ni inerte ni D12 (retirée le 29/09/2026), ni en pastille ni dans le texte", () => {
+    for (const id of ["D12", ...DEPLOYEES_INERTES]) {
       expect(PARTIE).not.toContain(`data-id="${id}"`);
       expect(texte(PARTIE)).not.toMatch(new RegExp(`\\b${id}\\b`));
     }
