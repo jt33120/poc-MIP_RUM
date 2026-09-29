@@ -6,11 +6,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module ESM, sans déclarations
-import { MIP_CONSOLE, MIP_IDENTITY, ROLES } from "../../packages/db/roles/console-api.mjs";
+import { MIP_CONSOLE, MIP_IDENTITY, ROLES, SUPPRIMEES } from "../../packages/db/roles/console-api.mjs";
 
-const V93 = readFileSync(join(__dirname, "..", "..", "packages", "db", "sql", "migration-v93.sql"), "utf8");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
+const V93 = readFileSync(join(SQL_DIR, "migration-v93.sql"), "utf8");
 const SQL = V93.split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n");
-const liste = (brut: string) => brut.split(",").map((s) => s.trim().replace(/^'|'$/g, "")).filter(Boolean);
+/**
+ * Ce que v93 nomme, moins les tables qu'une migration ultérieure a supprimées
+ * (`SUPPRIMEES`) : les listes décrivent la base d'AUJOURD'HUI, v93 celle du 25/09.
+ */
+const liste = (brut: string) =>
+  brut.split(",").map((s) => s.trim().replace(/^'|'$/g, "")).filter((s) => s && !(s in SUPPRIMEES));
 const trie = (l: readonly string[]) => [...l].sort();
 
 type Spec = { nom: string; tables: Record<string, string[]>; colonnes: Record<string, Record<string, string[]>>; fonctions: string[]; reglages: Record<string, string>; limiteConnexions: number };
@@ -59,6 +65,16 @@ describe("C13 — migration-v93 ↔ packages/db/roles/console-api.mjs", () => {
     expect(trie(liste(m![1]))).toEqual(trie(MIP_CONSOLE.fonctions));
     expect(SQL).toContain("grant execute on function %s to mip_console");
     expect(SQL).not.toContain("to mip_identity using (true) with check (true)', t);\n    end if;\n  end loop;\n  for");
+  });
+
+  it("chaque table retirée des listes a bien été supprimée par la migration qu'elle cite", () => {
+    for (const [nom, raison] of Object.entries(SUPPRIMEES as Record<string, string>)) {
+      const version = raison.match(/^v(\d+) /)?.[1];
+      expect(version, nom).toBeDefined();
+      const sql = readFileSync(join(SQL_DIR, `migration-v${version}.sql`), "utf8");
+      expect(sql, nom).toMatch(new RegExp(`drop table if exists[^;]*\\b${nom}\\b`));
+      for (const spec of ROLES as Spec[]) expect(spec.tables[nom], `${spec.nom}.${nom}`).toBeUndefined();
+    }
   });
 
   it("aucun rôle ne lit un haché de mot de passe hors de l'identité, ni ne tronque une table", () => {
