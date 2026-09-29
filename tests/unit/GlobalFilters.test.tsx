@@ -42,6 +42,17 @@ describe("GlobalFilters", () => {
     expect(html).toContain('data-testid="filter-device"');
   });
 
+  it("sous 640 px, la barre est repliée dans une feuille dont le bouton résume le choix", () => {
+    const html = rendu("/errors", "period=7d&device=mobile&browser=Chrome");
+    expect(html).toContain('data-testid="filtres-feuille"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("7 j · Mobile · 1 filtre");
+    // Fermée par défaut sous 640 px ; au-delà, sans boîte (`sm:contents`) : les
+    // contrôles restent dans la barre, rendus au serveur.
+    expect(html).toMatch(/id="filtres-globaux" class="hidden [^"]*sm:contents"/);
+    expect(html).toContain('data-testid="filter-period"');
+  });
+
   it("ni période ni filtre applicables : aucune barre", () => {
     for (const chemin of ["/sessions/abc", "/dashboards", "/slo", "/alerts", "/forecast"]) {
       expect(rendu(chemin), chemin).toBe("");
