@@ -93,7 +93,24 @@ const BUNDLE_CONFORME = [...TABLES, ...Object.keys(COLONNES), "event_metric_base
   });
 
   it("la migration se rejoue sans erreur", async () => {
-    await pool.query(V89);
+    // v97 a supprimé trois tables que v89 nomme (tickets). Une migration figée ne se
+    // réécrit pas, et le migrateur ne rejoue jamais un fichier déjà inscrit : on
+    // rejoue donc v89 sur le schéma qu'elle visait, en rendant ces trois tables vides
+    // le temps d'une transaction annulée.
+    const c = await pool.connect();
+    try {
+      await c.query("begin");
+      await c.query(`
+        create table if not exists error_issue_ticket (id bigint);
+        create table if not exists ticket_outbox (id bigint);
+        create table if not exists ticket_integration (
+          id bigint, app_id text, provider text, target text, state text, enabled boolean, verified_at timestamptz);
+      `);
+      await c.query(V89);
+    } finally {
+      await c.query("rollback");
+      c.release();
+    }
   });
 
   it("une session mip_api est en lecture seule par défaut, requête bornée à 15 s", async () => {

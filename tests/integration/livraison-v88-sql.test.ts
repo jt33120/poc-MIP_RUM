@@ -157,7 +157,11 @@ function migrations(): string[] {
 
   it("l'URL du relais e-mail de la console (jeton compris) est effacée", async () => {
     await pool.query("update alert_config set email_relay_url = 'https://console.test/api/alerts/email?token=secret'");
-    await pool.query(V88);
+    // v88 durcissait aussi `ticket_integration`, table supprimée par v97 : on rejoue la
+    // partie de v88 qui précède les tickets, celle qui touche `alert_config`.
+    const debutTickets = V88.indexOf("update ticket_integration");
+    expect(debutTickets).toBeGreaterThan(V88.indexOf("update alert_config set email_relay_url = null"));
+    await pool.query(V88.slice(0, debutTickets));
     const { rows } = await pool.query("select email_relay_url from alert_config");
     expect(rows.every((r) => r.email_relay_url === null)).toBe(true);
   });
