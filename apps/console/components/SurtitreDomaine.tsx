@@ -5,7 +5,7 @@
 // Client parce qu'il lit le chemin : sans `domain` explicite, la page prend le
 // domaine de sa catégorie, ou de sa zone hors RUM (`surtitreDe`). Sans cela,
 // chaque écran rangé ailleurs que sous « Performance » affichait « Performance » :
-// toute l'administration, « API et MCP », Logs, SVI et IA (recette du 26/09/2026).
+// toute l'administration, « API et MCP », Logs et IA (recette du 26/09/2026).
 import { usePathname } from "next/navigation";
 import { surtitreDe } from "./nav-items";
 
@@ -24,7 +24,6 @@ export const DOMAINES = {
   admin: { label: "Administration", ...NEUTRE },
   integrations: { label: "Intégrations", ...NEUTRE },
   logs: { label: "Logs", ...NEUTRE },
-  svi: { label: "Supervision SVI", ...NEUTRE },
 } as const;
 
 export type PageDomain = keyof typeof DOMAINES;

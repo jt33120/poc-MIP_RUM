@@ -1,5 +1,5 @@
 {
-  "releve": "2026-09-25",
+  "releve": "2026-09-29",
   "ecrans": [
     "/",
     "/acquisition",
@@ -45,9 +45,6 @@
     "/sessions",
     "/sessions/[id]",
     "/slo",
-    "/svi",
-    "/svi/appels",
-    "/svi/appels/[callId]",
     "/tracing",
     "/tracing/[traceId]",
     "/ux"

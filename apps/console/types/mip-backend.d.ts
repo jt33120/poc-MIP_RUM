@@ -26,9 +26,6 @@ declare module "@mip/backend/lib/pg-ingest.mjs" {
     breadcrumbs: IngestRow[];
     events: IngestRow[];
     spans: IngestRow[];
-    sviCalls?: IngestRow[];
-    sviSteps?: IngestRow[];
-    sviLegs?: IngestRow[];
   }
 
   export function batchInsert(

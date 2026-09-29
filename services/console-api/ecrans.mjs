@@ -53,7 +53,6 @@ import { chargerSession } from "@/lib/chargeurs/session";
 import { chargerSondes } from "@/lib/chargeurs/sondes";
 import { chargerSessions } from "@/lib/chargeurs/sessions";
 import { chargerSlo } from "@/lib/chargeurs/slo";
-import { chargerSvi, chargerSviAppel, chargerSviAppels } from "@/lib/chargeurs/svi";
 import { chargerTableau } from "@/lib/chargeurs/tableau";
 import { chargerTableaux } from "@/lib/chargeurs/tableaux";
 import { chargerTrace } from "@/lib/chargeurs/trace";
@@ -104,9 +103,6 @@ export const ecrans = {
     paths: page(chargerPaths),
     experience: page(chargerExperience),
     goals: page(chargerGoals),
-    svi: page(chargerSvi),
-    sviAppels: page(chargerSviAppels),
-    sviAppel: page(chargerSviAppel),
     logs: page(chargerLogs),
     ai: page(chargerAi),
     // C6

@@ -163,7 +163,7 @@ export const CARTES: readonly CarteCapacite[] = [
       {
         id: "B1",
         texte:
-          "Les écrans plus anciens (journaux, SVI, assistant IA) filtrent encore par application nommée, pas par le périmètre effectif ; un écran qui ne sait pas appliquer un filtre l'annonce non appliqué.",
+          "Les écrans plus anciens (journaux, assistant IA) filtrent encore par application nommée, pas par le périmètre effectif ; un écran qui ne sait pas appliquer un filtre l'annonce non appliqué.",
       },
       {
         id: "B2",
