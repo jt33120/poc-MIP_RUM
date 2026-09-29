@@ -132,7 +132,11 @@ interface FormeGrille {
    * dessiner une barre isolée sur 24 h vides.
    */
   debutCollecte?: string;
-  /** Défaut true. Panneaux empilés : un seul panneau porte la note « Collecte commencée… ». */
+  /**
+   * Défaut true. Panneaux empilés : un seul panneau porte la note « Collecte
+   * commencée… » et les fenêtres hors collecte datées (les hachures, elles, sont sur
+   * chaque panneau).
+   */
   noteCollecte?: boolean;
   /**
    * Fenêtres hors collecte de la plage (voir `ThresholdSeries`) : un seau entièrement
@@ -470,7 +474,7 @@ function BarresSurGrille({
           </li>
         )}
       </ul>
-      <NoteHorsCollecte fenetres={fenetresVisibles} fuseau={fuseau} />
+      {noteCollecte && <NoteHorsCollecte fenetres={fenetresVisibles} fuseau={fuseau} />}
       <SeriesEcartees libelles={ecartees} />
       <PointsIgnores n={prep.ignores} />
       {legendeAnnotations && (

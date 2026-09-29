@@ -694,7 +694,11 @@ export function ThresholdSeries({
    * données à 14:00 »).
    */
   debutCollecte?: string;
-  /** Défaut true. Panneaux empilés : un seul panneau porte la note « Collecte commencée… ». */
+  /**
+   * Défaut true. Panneaux empilés : un seul panneau porte la note « Collecte
+   * commencée… » et les fenêtres hors collecte datées (les hachures, elles, sont sur
+   * chaque panneau).
+   */
   noteCollecte?: boolean;
   /**
    * Fenêtres hors collecte de la plage (chargeur `chargeurs/collecte.ts`) : un seau
@@ -1001,7 +1005,7 @@ export function ThresholdSeries({
           </li>
         )}
       </ul>
-      <NoteHorsCollecte fenetres={fenetresVisibles} fuseau={fuseau} />
+      {noteCollecte && <NoteHorsCollecte fenetres={fenetresVisibles} fuseau={fuseau} />}
       {bandes?.horsEchelle && (
         <p className="mt-1 text-xs text-ink-soft" data-testid="seuil-hors-echelle">
           {bandes.horsEchelle}

@@ -161,6 +161,18 @@ export interface FenetreCollecte {
   portee?: string;
 }
 
+/**
+ * Les fenêtres lues par le chargeur d'un écran (`sectionFenetresCollecte`), prêtes
+ * pour la prop `fenetresCollecte` d'un graphique. Une lecture en échec ne hachure
+ * rien : le registre aide à lire une série, il n'en est pas une — la série garde
+ * sa propre section, et son propre échec.
+ */
+export function fenetresLues(
+  lu: { readonly ok: true; readonly data: readonly FenetreCollecte[] } | { readonly ok: false } | null | undefined,
+): readonly FenetreCollecte[] | undefined {
+  return lu?.ok ? lu.data : undefined;
+}
+
 /** Ce que la collecte a été pendant un seau : `interrompue` (entièrement), `partielle`, ou `null` (nominale). */
 export type CollecteSeau = "interrompue" | "partielle" | null;
 

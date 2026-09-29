@@ -33,6 +33,7 @@ import {
   parseSessionSearchField,
 } from "../sessions-search";
 import { lireComparaison, lireEtatDeVue } from "../view-state";
+import { sectionFenetresCollecte } from "./collecte";
 import { blocsDe, section, sansSection, type Chargeur, type ParametresEcran } from "./commun";
 import { lirePanneauSession } from "./panneau-session";
 
@@ -121,6 +122,7 @@ export const chargerSessions = (async (principal, sp) => {
     couvVisiteurs,
     panneauLu,
     signaux,
+    fenetresCollecte,
   ] = await Promise.all([
     listeLue,
     blocs.resume ? section(() => visitStats(f)) : sansSection(null),
@@ -147,6 +149,9 @@ export const chargerSessions = (async (principal, sp) => {
     // session n'est lu si son app n'est pas dans ce que l'écran lit.
     idPanneau ? lirePanneauSession(idPanneau, query.scope.effectiveApps) : Promise.resolve(null),
     signauxLus,
+    // Les fenêtres hors collecte : hachures « non mesuré » des panneaux du volume,
+    // lues seulement quand ce bloc est affiché.
+    blocs.visiteurs ? sectionFenetresCollecte(query) : sansSection([]),
   ]);
 
   return {
@@ -175,5 +180,6 @@ export const chargerSessions = (async (principal, sp) => {
     couvVisiteurs,
     panneauLu,
     signaux,
+    fenetresCollecte,
   } as const;
 }) satisfies Chargeur<unknown>;
