@@ -18,9 +18,13 @@ import { REPERE_CLE_API, type RecettesAgents } from "@/lib/recettes-agents-otel"
 
 const TELECHARGER =
   "inline-flex w-fit items-center gap-1.5 rounded-lg bg-panel2 px-3 py-1.5 text-xs font-medium text-ink ring-1 ring-line transition hover:bg-app";
-const BLOC = "rounded-lg border border-line px-3 py-2";
-const RESUME = "cursor-pointer text-xs font-medium text-ink";
-const TEXTE = "text-xs leading-relaxed text-ink-soft";
+const BLOC = "min-w-0 rounded-lg border border-line px-3 py-2";
+// Les pièges citent des variables d'une seule pièce (OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED,
+// 52 caractères) : sans coupure possible, elles élargissaient la fiche client à 492 px sur un
+// écran de 390 (E2E tableaux-defilants, 29/09/2026). `anywhere`, et non `break-word`, parce que
+// seul `anywhere` réduit aussi la largeur minimale que la grille réserve au bloc.
+const RESUME = "cursor-pointer text-xs font-medium text-ink [overflow-wrap:anywhere]";
+const TEXTE = "text-xs leading-relaxed text-ink-soft [overflow-wrap:anywhere]";
 // Une adresse entière dans le texte : à 390 px, elle doit pouvoir se couper.
 const LIEN = "break-all text-brand hover:underline";
 
