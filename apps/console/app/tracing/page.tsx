@@ -43,7 +43,7 @@ import { chargerEcran } from "@/lib/ecran";
 import { bucketStarts, hrefWithQuery, paramReader, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
 import { fenetresLues, grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
 import { TRACES_PAR_APPEL, ancreAppel, lireAppel, type Appel } from "@/lib/tracing-ancres";
-import { APPELS_HERO, fragmentVers, libelleAppel, lignesHero, texteDecomposition, tracesParAppel } from "@/lib/tracing-hero";
+import { APPELS_HERO, REGLE_HERO, fragmentVers, libelleAppel, lignesHero, texteDecomposition, tracesParAppel } from "@/lib/tracing-hero";
 import { gabaritZoom, ligneIgnoree, lireComparaison } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { fmtPlage } from "@/lib/format";
@@ -282,6 +282,9 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
               valeur={c.front_p75}
               format="ms"
               sensMeilleur="bas"
+              {...(c.front_p75 != null
+                ? { noteMip: { mesure: "API", valeur: c.front_p75, texte: `p75 ${formater("ms", c.front_p75)}` } }
+                : {})}
               raisonNull="aucun appel API sur la plage"
               couverture={{ n: c.total, unite: "appels" }}
               href={lienEcran(sp, {}, "#hero-traces")}
@@ -358,6 +361,8 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                       {formater("count", lignesAppels.length)}
                     </span>
                     <span>ordre : au moins 30 appels d&apos;abord, puis p75 décroissant</span>
+                    {/* Règle écrite à côté des valeurs colorées (amendement de R-S, 29/09/2026). */}
+                    <span data-regle-mip="API" className="[overflow-wrap:anywhere]">{REGLE_HERO}</span>
                     {hero.exclues > 0 && (
                       <span>
                         {hero.exclues} appel{hero.exclues > 1 ? "s" : ""} sans durée, non classé{hero.exclues > 1 ? "s" : ""}
@@ -366,7 +371,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                   </>
                 ) : undefined
               }
-              lecture="Barre = durée p75 vue du navigateur. Part serveur = médiane, appel par appel, de la durée serveur rapportée à la durée navigateur, sur les appels suivis."
+              lecture="Barre = durée p75 vue du navigateur, colorée par la règle MIP des appels API (un ordre de grandeur de terrain, pas un seuil publié ; ● bon, ▲ à améliorer, ■ mauvais). Part serveur = médiane, appel par appel, de la durée serveur rapportée à la durée navigateur, sur les appels suivis."
               alternative={
                 hero.lignes.length > 0
                   ? {
