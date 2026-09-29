@@ -30,7 +30,7 @@ const DATABASE_URL =
 // latency_ms = first_load_time (vécu de chargement, comparable au LCP) ;
 // completion_time = durée du scénario robot complet, non comparable.
 const MIPPOC_MAPPING = {
-  TVMonaco_Loadpage: { app_id: "tvmonaco", site: "TVMonaco", route_hint: "/" },
+  SiteExemple_Loadpage: { app_id: "site-exemple", site: "SiteExemple", route_hint: "/" },
 };
 
 function mippocJsonSource(file) {
