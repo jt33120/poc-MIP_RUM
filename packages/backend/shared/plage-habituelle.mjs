@@ -128,6 +128,22 @@ export function evaluerHeure(heure, reference) {
   };
 }
 
+/**
+ * La bande attendue d'une heure SANS sa propre valeur (heure creuse, ou pas encore
+ * mesurée) : la plage de la référence seule, à ± 3 écarts robustes.
+ * @param {string} nom
+ * @param {number[]} reference  valeurs transformées
+ */
+export function bandeAttendue(nom, reference) {
+  const cd = centreEtDispersion(reference);
+  if (!cd) return null;
+  return {
+    mediane: detransformer(nom, cd.m),
+    bas: detransformer(nom, cd.m - Z_PLAGE * cd.sigma),
+    haut: detransformer(nom, cd.m + Z_PLAGE * cd.sigma),
+  };
+}
+
 /** Décalage du fuseau à un instant, en minutes (Europe/Paris : 60 ou 120). */
 export function decalageMin(ms, fuseau = FUSEAU_CRENEAUX) {
   const nom = new Intl.DateTimeFormat("en-US", { timeZone: fuseau, timeZoneName: "longOffset" })
