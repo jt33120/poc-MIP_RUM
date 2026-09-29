@@ -499,7 +499,7 @@ describe("writeRows — correspondance des colonnes rum_error", () => {
   function lot(errors: Row[]) {
     return {
       sessions: [], pageviews: [], metrics: [], errors, resources: [], longtasks: [], breadcrumbs: [],
-      events: [], spans: [], sviCalls: [], sviSteps: [], sviLegs: [],
+      events: [], spans: [],
     };
   }
 

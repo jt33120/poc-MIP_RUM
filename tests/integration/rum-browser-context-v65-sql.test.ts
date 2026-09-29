@@ -70,7 +70,6 @@ function causalRows(now = new Date()) {
       source_name: "frustration.error", source_span_id: "a100000000006501", action_id: ACTION,
       event_type: "action", user_id_hash: "a".repeat(64), context: { plan: "pro" },
     }],
-    sviCalls: [], sviSteps: [], sviLegs: [],
   };
 }
 

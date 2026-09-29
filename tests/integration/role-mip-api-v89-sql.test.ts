@@ -113,7 +113,6 @@ const BUNDLE_CONFORME = [...TABLES, ...Object.keys(COLONNES), "event_metric_base
         `update rum_session set app_id = 'p4-intrus' where app_id = '${APP}'`,
         `delete from rum_session where app_id = '${APP}'`,
         "truncate rum_metric",
-        "select upsert_svi_call('{}'::jsonb)",
         "select check_new_errors()",
         "select reconcile_alert_deliveries()",
         "select check_ai_op_anomalies()",
@@ -156,7 +155,7 @@ const BUNDLE_CONFORME = [...TABLES, ...Object.keys(COLONNES), "event_metric_base
       await c.query("grant select on notify_channel to mip_api");
       await c.query("grant select (password_hash) on console_user to mip_api");
       await c.query("create policy p4_ecrit on rum_session for update to mip_api using (true)");
-      await c.query("grant execute on function upsert_svi_call(jsonb) to public");
+      await c.query("grant execute on function check_new_errors() to public");
       await c.query("grant usage on all sequences in schema public to mip_api");
       const f = fautes(await verifierRoleApi(c, { code: BUNDLE_CONFORME }));
       expect(f).toEqual(expect.arrayContaining([
@@ -165,8 +164,8 @@ const BUNDLE_CONFORME = [...TABLES, ...Object.keys(COLONNES), "event_metric_base
         expect.stringContaining("notify_channel : droits SELECT"),
         expect.stringContaining("console_user : colonnes id, password_hash"),
         expect.stringContaining("policy rum_session.p4_ecrit"),
-        expect.stringContaining("hors liste — upsert_svi_call(jsonb)"),
-        expect.stringContaining("upsert_svi_call : encore exécutable"),
+        expect.stringContaining("hors liste — check_new_errors()"),
+        expect.stringContaining("check_new_errors : encore exécutable"),
         expect.stringContaining("séquences :"),
       ]));
     });
