@@ -732,14 +732,17 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </div>
         )}
 
-      {/* R1, zone 2 — santé (compacte) et trafic, sur une rangée dès 1280 px (grille de
-          12 colonnes, spec A2 § 3.1). Le trafic prend 7/12 : ses trois tuiles portent
-          des valeurs « 2,4 pour 100 » qu'une colonne de 5/12 ne loge pas sans déborder
-          (écart au § 5.1.1, dit en PR). */}
-      {(blocs.sante || blocs.trafic) && (
+      {/* R1 (spec A2 § 5.2) — les chiffres, sur UNE rangée dès 1280 px (grille de 12
+          colonnes, § 3.1) : la santé sur 4 colonnes ; sur 8, le trafic puis les Web
+          Vitals, empilés. La santé compacte (anneau, facteurs dessous) est aussi haute
+          que ces deux rangées de tuiles : côte à côte, le hero remonte d'environ 140 px
+          à 1440 × 900. Le trafic garde plus de 5/12 : ses tuiles portent des valeurs
+          « 2,4 pour 100 » qu'une colonne étroite ne loge pas (écart au § 5.1.1). Sous
+          1280 px, empilés dans l'ordre santé, trafic, Web Vitals. */}
+      {(blocs.sante || blocs.trafic || blocs.vitals) && (
         <div className="mb-4 grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-12 xl:gap-4">
           {blocs.sante && (
-            <div id="sante" className={`min-w-0 scroll-mt-16 ${blocs.trafic ? "xl:col-span-5" : "xl:col-span-12"}`}>
+            <div id="sante" className={`min-w-0 scroll-mt-16 ${blocs.trafic || blocs.vitals ? "xl:col-span-4" : "xl:col-span-12"}`}>
               <SectionErreur titre="Santé de la période">
                 {!health.ok ? (
                   <EchecLecture titre="Santé de la période" />
@@ -759,28 +762,31 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               </SectionErreur>
             </div>
           )}
-          {blocs.trafic && (
-            <div className={`min-w-0 ${blocs.sante ? "xl:col-span-7" : "xl:col-span-12"}`}>
-              <SectionErreur titre="Trafic">
-                <RangeeTuiles tuiles={tuilesTrafic} classes="grid-cols-2 sm:grid-cols-3" />
-              </SectionErreur>
+          {(blocs.trafic || blocs.vitals) && (
+            <div className={`flex min-w-0 flex-col gap-3 xl:gap-4 ${blocs.sante ? "xl:col-span-8" : "xl:col-span-12"}`}>
+              {blocs.trafic && (
+                <SectionErreur titre="Trafic">
+                  <RangeeTuiles tuiles={tuilesTrafic} classes="grid-cols-2 sm:grid-cols-3" />
+                </SectionErreur>
+              )}
+              {/* Zone 3 — Web Vitals au p75, verdict et intervalle (P*.1), sparkline sur la
+                  bande « Bon ». Cinq de front à partir de 1440 px seulement : sur 8/12 à
+                  1280 px, une tuile n'aurait que ~90 px pour « 350 ms » en 28 px. */}
+              {blocs.vitals && (
+                <SectionErreur titre="Web Vitals">
+                  <div className="min-w-0">
+                    <RangeeTuiles tuiles={tuilesVitaux} classes="grid-cols-2 md:grid-cols-3 min-[1440px]:grid-cols-5" />
+                    {etatEchantillon && (
+                      <div className="mt-3">
+                        <EtatSurface compact etat={etatEchantillon} />
+                      </div>
+                    )}
+                  </div>
+                </SectionErreur>
+              )}
             </div>
           )}
         </div>
-      )}
-
-      {/* Zone 3 — Web Vitals au p75, verdict et intervalle (P*.1), sparkline sur la bande « Bon ». */}
-      {blocs.vitals && (
-        <SectionErreur titre="Web Vitals">
-          <div className="mb-4 min-w-0">
-            <RangeeTuiles tuiles={tuilesVitaux} classes="grid-cols-2 md:grid-cols-3 xl:grid-cols-5" />
-            {etatEchantillon && (
-              <div className="mt-3">
-                <EtatSurface compact etat={etatEchantillon} />
-              </div>
-            )}
-          </div>
-        </SectionErreur>
       )}
 
       {/* R2 (spec A2 § 5.2) — « qu'est-ce qui a changé ? » : le HERO sur 8 colonnes et

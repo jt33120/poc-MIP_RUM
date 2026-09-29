@@ -226,12 +226,12 @@ export function HealthBanner({
               bandeau compact n'occupe que 5 colonnes sur 12 de la rangée : à 1440 px la
               grille recevait ~150 px pour quatre facteurs, soit des colonnes de ~26 px
               où « Stabilité des sessions » se coupait lettre par lettre. `auto-fit` avec
-              un plancher de 9 rem lit la place RÉELLEMENT disponible ; `sm:min-w-[19rem]`
+              un plancher de 9 rem lit la place RÉELLEMENT disponible ; une BASE de 19 rem
               (deux colonnes + leur gouttière) fait passer la grille SOUS l'anneau quand
-              la ligne ne peut pas en loger deux, au lieu de l'y écraser. Le plancher
-              n'est posé qu'à partir de `sm` : sous 390 px la carte est plus étroite que
-              19 rem, et il la ferait déborder. */}
-          <div className="grid min-w-0 flex-1 basis-full grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-4 gap-y-3 sm:basis-0 sm:min-w-[19rem]">
+              la ligne ne peut pas en loger deux, au lieu de l'y écraser. Une base, pas un
+              minimum (vague 2) : seule sous l'anneau, dans une colonne de 4/12 à 1280 px
+              (~270 px), la grille rétrécit au lieu de déborder de la carte. */}
+          <div className="grid min-w-0 flex-1 basis-full grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-4 gap-y-3 sm:basis-[19rem]">
             {health.factors.map((x) => (
               <FactorBar key={x.key} facteur={x} compact href={liens[x.key]} />
             ))}
