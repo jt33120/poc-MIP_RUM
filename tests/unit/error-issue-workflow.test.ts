@@ -1,8 +1,8 @@
 // P5.6 — contrat des mutations de workflow d'une issue, lu sans base.
 //
-// Ce qui entre en base doit déjà respecter error_issue_activity_v73 et
-// error_issue_ticket_v73 : commentaire scrubbé de 1 à 2 000 caractères APRÈS
-// masquage, URL HTTPS normalisée en ASCII sans identifiants, libellé d'une ligne.
+// Ce qui entre en base doit déjà respecter error_issue_activity_v73 : commentaire
+// scrubbé de 1 à 2 000 caractères APRÈS masquage. (Le lien de ticket manuel et sa
+// table error_issue_ticket sont retirés depuis le 29/09/2026.)
 // Le comportement transactionnel (409, périmètre, assigné, régression) est prouvé
 // sur PostgreSQL dans tests/integration/error-issues-sql.test.ts.
 import { describe, expect, it } from "vitest";
@@ -14,10 +14,8 @@ import {
 import {
   COMMENT_MAX_CHARS,
   hasSqlControlCharacters,
-  normalizeTicketUrl,
   parseBigintId,
   parseCommentRequest,
-  parseLinkRequest,
   parseTriageRequest,
 } from "../../apps/console/lib/error-issue-workflow";
 import { ISSUE_STATUSES } from "../../apps/console/lib/error-issues";
@@ -89,31 +87,9 @@ describe("POST /api/v1/issues/{id}/comments — corps", () => {
   });
 });
 
-describe("POST /api/v1/issues/{id}/links — corps", () => {
-  it("URL HTTPS normalisée en ASCII, sans identifiants, 2 048 caractères au plus", () => {
-    expect(normalizeTicketUrl("https://jira.exemple.fr/browse/MIP-12")).toBe("https://jira.exemple.fr/browse/MIP-12");
-    expect(normalizeTicketUrl(" https://Tickets.Exemple.fr/é?q=a b ")).toBe("https://tickets.exemple.fr/%C3%A9?q=a%20b");
-    expect(normalizeTicketUrl("https://bücher.exemple/x")).toBe("https://xn--bcher-kva.exemple/x");
-    expect(normalizeTicketUrl("http://jira.exemple.fr/browse/MIP-12")).toBeNull();
-    expect(normalizeTicketUrl("javascript:alert(1)")).toBeNull();
-    expect(normalizeTicketUrl("https://moi:secret@jira.exemple.fr/")).toBeNull();
-    expect(normalizeTicketUrl(`https://jira.exemple.fr/${"a".repeat(2030)}`)).toBeNull();
-    expect(normalizeTicketUrl("pas une url")).toBeNull();
-  });
-
-  it("libellé d'une ligne, scrubbé, 120 caractères au plus", () => {
-    const url = "https://github.com/org/depot/issues/7";
-    expect(parseLinkRequest({ ...base, url, label: " Ticket de marie@exemple.fr " })).toEqual({
-      ok: true,
-      value: { ...base, url, label: "Ticket de [email]" },
-    });
-    expect(parseLinkRequest({ ...base, url, label: "a\nb" })).toMatchObject({ ok: false, error: expect.stringMatching(/label/) });
-    // `[[:cntrl:]]` de PostgreSQL refuse aussi C1 (U+0080 à U+009F) : 400 ici plutôt que 500 en base.
-    expect(parseLinkRequest({ ...base, url, label: "MIP\u0085-1" })).toMatchObject({ ok: false, error: expect.stringMatching(/label/) });
+describe("caractères de contrôle refusés en base", () => {
+  it("`[[:cntrl:]]` de PostgreSQL refuse aussi C1 (U+0080 à U+009F) : 400 ici plutôt que 500 en base", () => {
     expect(hasSqlControlCharacters("a\u009fb")).toBe(true);
     expect(hasSqlControlCharacters("MIP-1 \u00a0é")).toBe(false);
-    expect(parseLinkRequest({ ...base, url, label: "x".repeat(121) })).toMatchObject({ ok: false });
-    expect(parseLinkRequest({ ...base, url, label: "" })).toMatchObject({ ok: false });
-    expect(parseLinkRequest({ ...base, url: "ftp://x", label: "x" })).toMatchObject({ ok: false, error: expect.stringMatching(/url invalide/) });
   });
 });

@@ -119,7 +119,6 @@ function ecrans(voie: Voie, reponse: Resultat<unknown> = { ok: true, data: { eta
     projets: { ok: true as const, data: [{ app_id: "demo", name: "Démo" }] },
     schema: { ok: false as const, raison: "base en panne : 10.0.0.3 refuse" },
     fuseaux: { demo: "Europe/Paris" },
-    tickets: null,
   }));
   const e = creerChargementEcrans({
     aiguillage: { voie: async () => voie, echec: echecs },
@@ -209,7 +208,6 @@ describe("la coquille", () => {
     projets: { ok: true, data: [{ app_id: "demo", name: "Démo" }] },
     schema: { ok: true, data: ["rum_session.country"] },
     fuseaux: { demo: "Europe/Paris" },
-    tickets: null,
   };
 
   it("servie par console-api : telle quelle", async () => {

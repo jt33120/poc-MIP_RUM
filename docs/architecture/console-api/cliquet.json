@@ -1,5 +1,5 @@
 {
-  "releve": "2026-09-25",
+  "releve": "2026-09-29",
   "ecrans": [
     "/",
     "/acquisition",
@@ -13,7 +13,6 @@
     "/admin/privacy",
     "/admin/read-tokens",
     "/admin/sourcemaps",
-    "/admin/ticket-integrations",
     "/admin/uptime",
     "/admin/usage",
     "/admin/users",
@@ -59,7 +58,6 @@
     "apps/console/app/admin/privacy/actions.ts",
     "apps/console/app/admin/read-tokens/actions.ts",
     "apps/console/app/admin/sourcemaps/actions.ts",
-    "apps/console/app/admin/ticket-integrations/actions.ts",
     "apps/console/app/admin/uptime/actions.ts",
     "apps/console/app/admin/users/actions.ts",
     "apps/console/app/alerts/actions.ts",
@@ -102,7 +100,6 @@
     "/api/v1/issues",
     "/api/v1/issues/[id]",
     "/api/v1/issues/[id]/activity",
-    "/api/v1/issues/[id]/tickets",
     "/api/v1/mobile/summary",
     "/api/v1/overview",
     "/api/v1/pages",
@@ -110,7 +107,6 @@
     "/api/v1/sessions/[id]",
     "/api/v1/tracing",
     "/api/v1/vitals",
-    "/api/webhooks/tickets/[integrationId]",
     "/demo",
     "/logout"
   ],
