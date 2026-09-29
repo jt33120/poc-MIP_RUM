@@ -216,14 +216,18 @@ export default defineRailway((ctx) => {
       // Le secret du relais de la console (bord de confiance `mip-edge/1`,
       // P3). Une valeur, ou deux séparées par une virgule pendant une rotation.
       EDGE_PROXY_SECRET: ctx.shared.EDGE_PROXY_SECRET,
-      // R8a — « false » TANT QUE LES CLÉS NE SONT PAS PROVISIONNÉES. Relevé du
-      // 23/09 : 6 apps sur 7 n'ont AUCUNE clé d'ingestion, dont celle du client
-      // (`gip-plateforme`). « true » les couperait toutes en 403, et le repli du
-      // relais de P3 ne se déclenche pas sur un 403 : leurs beacons seraient
-      // perdus. Ordre : `scripts/ops/provisionner-cles.mjs --appliquer`, clé
-      // posée dans chaque snippet, 200 vérifiés, ALORS « true » — ici, en PR :
-      // basculé dans le tableau de bord, le prochain apply le remettrait à false.
-      REQUIRE_API_KEY: "false",
+      // R8a — CLÉ OBLIGATOIRE depuis le 29/09/2026. Sans elle, les `app_id` étant
+      // publics, n'importe qui écrivait sous l'identité d'une application (et
+      // réveillait Neon, payé à l'usage). Fait dans l'ordre : clés générées pour
+      // les deux applications qui reçoivent du trafic (`gip-plateforme`,
+      // `mip-rum-console`, empreintes vérifiées au registre), posées dans le
+      // snippet d'UTI (client-uti-platform#227), dans l'environnement de son
+      // backend et dans le capteur de la console (#351 + variable Vercel). Les
+      // cinq autres applications n'avaient aucun trafic sur 7 jours ; l'extension
+      // n'envoie pas de clé et n'a aucun poste installé. Retour arrière :
+      // « false » ici, en PR (basculé dans le tableau de bord, le prochain apply
+      // le remettrait) ; le repli du relais ne se déclenche pas sur un 403.
+      REQUIRE_API_KEY: "true",
       // Jeton de /ready et /metrics (kit, ≥ 32 caractères). Partagé : la
       // supervision le porte pour tous les services du kit.
       METRICS_TOKEN: ctx.shared.METRICS_TOKEN,
