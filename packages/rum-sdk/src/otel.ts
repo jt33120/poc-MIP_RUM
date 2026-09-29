@@ -163,18 +163,53 @@ function httpExporter(url: string): SpanExporter {
   };
 }
 
-/** Vide le buffer courant vers l'exporter (décorateur retry). Sérialise les envois. */
+// La page a été quittée (`pagehide`) et pas encore restaurée (`pageshow`, retour
+// par le cache avant/arrière). Safari a longtemps déchargé une page sans émettre
+// `visibilitychange` : `pagehide` est alors le seul signal.
+let pageQuittee = false;
+
+/**
+ * Plus aucune réponse réseau n'est garantie : la page est masquée ou quittée, et
+ * le navigateur peut la détruire à la fin de la tâche en cours.
+ */
+function envoiSansAttente(): boolean {
+  return pageQuittee || (typeof document !== "undefined" && document.visibilityState === "hidden");
+}
+
+/**
+ * Vide le buffer courant vers l'exporter (décorateur retry).
+ *
+ * Page visible : les envois sont SÉRIALISÉS — un lot attend la réponse du
+ * précédent, pour qu'un enfant ne dépasse jamais sa racine.
+ *
+ * Page masquée ou quittée : le lot part TOUT DE SUITE, dans la tâche en cours.
+ * C'est le moment où `web-vitals` finalise LCP, CLS et INP, une métrique à la
+ * fois, chacune suivie d'un flush (index.ts). Chaînés sur la réponse du lot
+ * précédent, ils attendaient une réponse qui n'arrive jamais quand la page se
+ * ferme, et se perdaient sans même atteindre la file de rejeu : 70 FCP pour
+ * 5 LCP, 23 CLS et 3 INP en 24 h (audit du 28/09/2026, T2). L'ordre cède ici
+ * devant la perte : un lot en échec retombe dans la file de rejeu, un lot jamais
+ * parti n'existe plus.
+ */
 function flushBatch(): Promise<void> {
   if (!exporter || buffer.length === 0) return pending;
   const batch = buffer;
   buffer = [];
   const epoch = discardEpoch;
-  const operation = pending.then(() => new Promise<void>((resolve) => {
+  const envoyer = () => new Promise<void>((resolve) => {
     // Un refus de consentement survenu pendant l'attente annule ce lot avant
     // toute requête réseau. Un export déjà parti ne peut pas être rappelé.
     if (epoch !== discardEpoch) return resolve();
     exporter!.export(batch as unknown as ReadableSpan[], () => resolve());
-  }));
+  });
+  if (envoiSansAttente()) {
+    // L'exécuteur d'une promesse est synchrone : le fetch keepalive est lancé
+    // avant que l'écouteur `visibilitychange` ou `pagehide` ne rende la main.
+    const direct = envoyer();
+    pending = Promise.all([pending, direct]).then(() => {}, () => {});
+    return pending;
+  }
+  const operation = pending.then(envoyer);
   pending = operation.catch(() => {});
   return pending;
 }
@@ -222,7 +257,15 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
   // les valeurs finales (INP/CLS) sont émises au passage en hidden : on flush
   // juste après pour que la requête keepalive parte avant l'unload
   const flush = () => void flushBatch();
-  addEventListener("pagehide", flush);
+  addEventListener("pagehide", () => {
+    pageQuittee = true;
+    flush();
+  });
+  // Restaurée depuis le cache avant/arrière : la page vit de nouveau, les
+  // réponses arriveront, l'ordre des lots redevient la règle.
+  addEventListener("pageshow", () => {
+    pageQuittee = false;
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flush();
   });
