@@ -23,7 +23,6 @@ export const TABLES = Object.freeze([
   "error_issue",
   "error_issue_activity",
   "error_issue_alias",
-  "error_issue_ticket",
   "error_status",
   "metric_histogram_hourly",
   "metric_histogram_state",
@@ -43,7 +42,6 @@ export const TABLES = Object.freeze([
   "rum_span",
   "sourcemap",
   "syn_snapshot",
-  "ticket_outbox",
   "v_anomaly",
 ]);
 
@@ -58,8 +56,6 @@ export const COLONNES = Object.freeze({
   console_user: Object.freeze(["id"]),
   // l'existence d'un rejeu pour une erreur ; jamais son contenu (`body`)
   replay_chunk: Object.freeze(["app_id", "session_id"]),
-  // où part un ticket ; jamais `credential_ref`, `webhook_secret_ref`, `config`
-  ticket_integration: Object.freeze(["id", "app_id", "provider", "target", "state", "enabled", "verified_at"]),
 });
 
 /** Fonctions à droits de propriétaire (SECURITY DEFINER) que l'API exécute : des lectures. */
@@ -88,8 +84,21 @@ export const RETIREES_A_PUBLIC = Object.freeze([
   "check_ai_op_anomalies",
   "check_new_errors",
   "reconcile_alert_deliveries",
-  "upsert_svi_call",
 ]);
+
+/**
+ * Ce que v89 accordait (ou retirait à PUBLIC) et qu'une migration ULTÉRIEURE a
+ * supprimé de la base. La liste blanche ne peut plus le nommer (la garde dirait
+ * « absente de la base »), mais v89, figée, le nomme toujours :
+ * `tests/unit/role-mip-api.test.ts` compare donc v89, MOINS ces objets, aux
+ * listes ci-dessus. Chacun dit la migration qui l'a supprimé.
+ */
+export const SUPPRIMEES = Object.freeze({
+  error_issue_ticket: "v97 — liens de ticket : fonctionnalité retirée, table vide en production",
+  ticket_integration: "v97 — connecteur de tickets : fonctionnalité retirée, table vide en production",
+  ticket_outbox: "v97 — file du connecteur de tickets : fonctionnalité retirée, table vide en production",
+  upsert_svi_call: "v97 — écriture d'un appel SVI : supprimée avec les tables du SVI",
+});
 
 /** Réglages du rôle, posés par la migration (`alter role … set`). */
 export const REGLAGES = Object.freeze({
