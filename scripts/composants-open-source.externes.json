@@ -28,11 +28,186 @@
       "depot": "https://github.com/docker-library/postgres",
       "role": "Base de données des tests et de l'environnement local (image officielle)."
     },
-    "action:actions/checkout": { "licence": "MIT", "role": "Récupère le dépôt dans la CI." },
-    "action:actions/setup-node": { "licence": "MIT", "role": "Installe Node.js dans la CI." },
-    "action:actions/upload-artifact": { "licence": "MIT", "role": "Conserve les rapports de la CI." },
-    "action:pnpm/action-setup": { "licence": "MIT", "role": "Installe pnpm dans la CI." },
-    "action:railwayapp/config": { "licence": "MIT", "role": "Applique l'infrastructure Railway décrite dans le dépôt." }
+    "action:actions/checkout": {
+      "licence": "MIT",
+      "role": "Récupère le dépôt dans la CI."
+    },
+    "action:actions/setup-node": {
+      "licence": "MIT",
+      "role": "Installe Node.js dans la CI."
+    },
+    "action:actions/upload-artifact": {
+      "licence": "MIT",
+      "role": "Conserve les rapports de la CI."
+    },
+    "action:pnpm/action-setup": {
+      "licence": "MIT",
+      "role": "Installe pnpm dans la CI."
+    },
+    "action:railwayapp/config": {
+      "licence": "MIT",
+      "role": "Applique l'infrastructure Railway décrite dans le dépôt."
+    },
+    "python:fastapi": {
+      "licence": "MIT",
+      "depot": "https://github.com/fastapi/fastapi",
+      "role": "Framework du backend de démo de l'E2E (site cobaye)."
+    },
+    "python:uvicorn": {
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/Kludex/uvicorn",
+      "role": "Serveur ASGI du backend de démo de l'E2E."
+    },
+    "python:opentelemetry-distro": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "role": "Agent OpenTelemetry officiel (Python) sous lequel l'E2E lance le backend de démo."
+    },
+    "python:opentelemetry-instrumentation-fastapi": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "role": "Instrumentation officielle de FastAPI, chargée par l'agent."
+    },
+    "python:opentelemetry-exporter-otlp-proto-http": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "role": "Exportateur OTLP/HTTP protobuf officiel, vers l'ingestion."
+    },
+    "python:annotated-doc": {
+      "licence": "MIT",
+      "depot": "https://github.com/fastapi/annotated-doc",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:annotated-types": {
+      "licence": "MIT",
+      "depot": "https://github.com/annotated-types/annotated-types",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:anyio": {
+      "licence": "MIT",
+      "depot": "https://github.com/agronholm/anyio",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:asgiref": {
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/django/asgiref",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:click": {
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/pallets/click",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:googleapis-common-protos": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/googleapis/google-cloud-python",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:h11": {
+      "licence": "MIT",
+      "depot": "https://github.com/python-hyper/h11",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:idna": {
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/kjd/idna",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:opentelemetry-api": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:opentelemetry-exporter-http-transport": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:opentelemetry-exporter-otlp-common": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:opentelemetry-exporter-otlp-proto-common": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:opentelemetry-instrumentation": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:opentelemetry-instrumentation-asgi": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:opentelemetry-proto": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:opentelemetry-sdk": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:opentelemetry-semantic-conventions": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:opentelemetry-util-http": {
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:packaging": {
+      "licence": "Apache-2.0 OR BSD-2-Clause",
+      "depot": "https://github.com/pypa/packaging",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:protobuf": {
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/protocolbuffers/protobuf",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:pydantic": {
+      "licence": "MIT",
+      "depot": "https://github.com/pydantic/pydantic",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:pydantic-core": {
+      "licence": "MIT",
+      "depot": "https://github.com/pydantic/pydantic",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:starlette": {
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/Kludex/starlette",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:typing-extensions": {
+      "licence": "PSF-2.0",
+      "depot": "https://github.com/python/typing_extensions",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:typing-inspection": {
+      "licence": "MIT",
+      "depot": "https://github.com/pydantic/typing-inspection",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:urllib3": {
+      "licence": "MIT",
+      "depot": "https://github.com/urllib3/urllib3",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    },
+    "python:wrapt": {
+      "licence": "BSD-2-Clause",
+      "depot": "https://github.com/GrahamDumpleton/wrapt",
+      "role": "Dépendance figée de l'agent officiel ou de FastAPI (backend de démo de l'E2E)."
+    }
   },
   "precisionsNpm": {
     "swagger-ui-dist": {
@@ -46,11 +221,16 @@
     },
     "rrweb": {
       "note": "Embarqué dans le script d'enregistrement du rejeu servi aux sites clients.",
-      "fichiers": ["apps/console/public/mip-rum-replay.js"]
+      "fichiers": [
+        "apps/console/public/mip-rum-replay.js"
+      ]
     },
     "web-vitals": {
       "note": "Embarqué dans le SDK navigateur servi aux sites clients et dans l'extension.",
-      "fichiers": ["apps/console/public/mip-rum.js", "apps/extension/vendor/mip-rum.js"]
+      "fichiers": [
+        "apps/console/public/mip-rum.js",
+        "apps/extension/vendor/mip-rum.js"
+      ]
     }
   },
   "composants": [
@@ -61,7 +241,9 @@
       "role": "Agent Python : instrumentation automatique (`opentelemetry-instrument`) et export OTLP.",
       "licence": "Apache-2.0",
       "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
-      "utilisePar": ["Services Python des clients"]
+      "utilisePar": [
+        "Services Python des clients"
+      ]
     },
     {
       "categorie": "agents",
@@ -70,7 +252,9 @@
       "role": "SDK OpenTelemetry pour Python, sur lequel repose l'agent.",
       "licence": "Apache-2.0",
       "depot": "https://github.com/open-telemetry/opentelemetry-python",
-      "utilisePar": ["Services Python des clients"]
+      "utilisePar": [
+        "Services Python des clients"
+      ]
     },
     {
       "categorie": "agents",
@@ -79,7 +263,9 @@
       "role": "Instrumentation des applications FastAPI.",
       "licence": "Apache-2.0",
       "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
-      "utilisePar": ["Services Python des clients"]
+      "utilisePar": [
+        "Services Python des clients"
+      ]
     },
     {
       "categorie": "agents",
@@ -88,7 +274,9 @@
       "role": "Agent Java (`-javaagent`) : instrumentation automatique de la JVM.",
       "licence": "Apache-2.0",
       "depot": "https://github.com/open-telemetry/opentelemetry-java-instrumentation",
-      "utilisePar": ["Services Java des clients"]
+      "utilisePar": [
+        "Services Java des clients"
+      ]
     },
     {
       "categorie": "agents",
@@ -97,7 +285,9 @@
       "role": "Instrumentation automatique des applications .NET.",
       "licence": "Apache-2.0",
       "depot": "https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation",
-      "utilisePar": ["Services .NET des clients"]
+      "utilisePar": [
+        "Services .NET des clients"
+      ]
     },
     {
       "categorie": "agents",
@@ -106,7 +296,9 @@
       "role": "Instrumentation automatique des services Node.js.",
       "licence": "Apache-2.0",
       "depot": "https://github.com/open-telemetry/opentelemetry-js-contrib",
-      "utilisePar": ["Services Node.js des clients"]
+      "utilisePar": [
+        "Services Node.js des clients"
+      ]
     },
     {
       "categorie": "donnees",
@@ -115,7 +307,9 @@
       "role": "Estimation du pays d'origine à partir de l'adresse réseau, résolue en mémoire du collecteur. Téléchargée à la construction de son image, empreinte vérifiée.",
       "licence": "CC BY 4.0",
       "depot": "https://db-ip.com/db/download/ip-to-country-lite",
-      "utilisePar": ["collector"],
+      "utilisePar": [
+        "collector"
+      ],
       "attribution": "IP Geolocation by DB-IP"
     }
   ]

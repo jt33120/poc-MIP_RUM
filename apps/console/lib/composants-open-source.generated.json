@@ -9,11 +9,6 @@
       "categorie": "outils"
     },
     {
-      "chemin": "packages/agent-node",
-      "nom": "@mip/agent-node",
-      "categorie": "capteurs"
-    },
-    {
       "chemin": "packages/backend",
       "nom": "@mip/backend",
       "categorie": "backend"
@@ -617,17 +612,12 @@
       "portee": "developpement",
       "utilisePar": [
         {
-          "nom": "@mip/agent-node",
-          "dev": true
-        },
-        {
           "nom": "console",
           "dev": true
         }
       ],
       "sources": [
-        "apps/console/package.json",
-        "packages/agent-node/package.json"
+        "apps/console/package.json"
       ]
     },
     {
@@ -686,6 +676,70 @@
     },
     {
       "categorie": "outils",
+      "type": "python",
+      "nom": "annotated-doc",
+      "version": "0.0.5",
+      "licence": "MIT",
+      "depot": "https://github.com/fastapi/annotated-doc",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "annotated-types",
+      "version": "0.8.0",
+      "licence": "MIT",
+      "depot": "https://github.com/annotated-types/annotated-types",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "anyio",
+      "version": "4.15.1",
+      "licence": "MIT",
+      "depot": "https://github.com/agronholm/anyio",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "asgiref",
+      "version": "3.12.1",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/django/asgiref",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
       "type": "npm",
       "nom": "autoprefixer",
       "version": "10.5.0",
@@ -704,6 +758,22 @@
     },
     {
       "categorie": "outils",
+      "type": "python",
+      "nom": "click",
+      "version": "8.5.0",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/pallets/click",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
       "type": "npm",
       "nom": "esbuild",
       "version": "0.28.0",
@@ -711,10 +781,6 @@
       "depot": "https://github.com/evanw/esbuild",
       "portee": "developpement",
       "utilisePar": [
-        {
-          "nom": "@mip/agent-node",
-          "dev": true
-        },
         {
           "nom": "@mip/rum-core",
           "dev": true
@@ -742,12 +808,75 @@
       ],
       "sources": [
         "apps/extension/package.json",
-        "packages/agent-node/package.json",
         "packages/rum-core/package.json",
         "packages/rum-mobile/package.json",
         "packages/rum-sdk/package.json",
         "services/api/package.json",
         "services/console-api/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "fastapi",
+      "version": "0.141.1",
+      "licence": "MIT",
+      "depot": "https://github.com/fastapi/fastapi",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "googleapis-common-protos",
+      "version": "1.75.4",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/googleapis/google-cloud-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "h11",
+      "version": "0.16.0",
+      "licence": "MIT",
+      "depot": "https://github.com/python-hyper/h11",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "idna",
+      "version": "3.20",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/kjd/idna",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
       ]
     },
     {
@@ -765,6 +894,230 @@
       ],
       "sources": [
         ".nvmrc"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-api",
+      "version": "1.45.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-distro",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-exporter-http-transport",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-exporter-otlp-common",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-exporter-otlp-proto-common",
+      "version": "1.45.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-exporter-otlp-proto-http",
+      "version": "1.45.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-instrumentation",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-instrumentation-asgi",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-instrumentation-fastapi",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-proto",
+      "version": "1.45.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-sdk",
+      "version": "1.45.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-semantic-conventions",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-util-http",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "packaging",
+      "version": "26.3",
+      "licence": "Apache-2.0 OR BSD-2-Clause",
+      "depot": "https://github.com/pypa/packaging",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
       ]
     },
     {
@@ -804,6 +1157,54 @@
     },
     {
       "categorie": "outils",
+      "type": "python",
+      "nom": "protobuf",
+      "version": "7.36.2",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/protocolbuffers/protobuf",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "pydantic",
+      "version": "2.13.5",
+      "licence": "MIT",
+      "depot": "https://github.com/pydantic/pydantic",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "pydantic-core",
+      "version": "2.46.5",
+      "licence": "MIT",
+      "depot": "https://github.com/pydantic/pydantic",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
       "type": "npm",
       "nom": "railway",
       "version": "3.11.0",
@@ -818,6 +1219,22 @@
       ],
       "sources": [
         "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "starlette",
+      "version": "1.7.0",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/Kludex/starlette",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
       ]
     },
     {
@@ -847,10 +1264,6 @@
       "depot": "https://github.com/microsoft/TypeScript",
       "portee": "developpement",
       "utilisePar": [
-        {
-          "nom": "@mip/agent-node",
-          "dev": true
-        },
         {
           "nom": "@mip/console-api",
           "dev": true
@@ -883,12 +1296,75 @@
       "sources": [
         "apps/console/package.json",
         "apps/extension/package.json",
-        "packages/agent-node/package.json",
         "packages/console-api/package.json",
         "packages/console-contract/package.json",
         "packages/rum-core/package.json",
         "packages/rum-mobile/package.json",
         "packages/rum-sdk/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "typing-extensions",
+      "version": "4.16.0",
+      "licence": "PSF-2.0",
+      "depot": "https://github.com/python/typing_extensions",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "typing-inspection",
+      "version": "0.4.4",
+      "licence": "MIT",
+      "depot": "https://github.com/pydantic/typing-inspection",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "urllib3",
+      "version": "2.8.0",
+      "licence": "MIT",
+      "depot": "https://github.com/urllib3/urllib3",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "uvicorn",
+      "version": "0.54.0",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/Kludex/uvicorn",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
       ]
     },
     {
@@ -907,6 +1383,22 @@
       ],
       "sources": [
         "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "wrapt",
+      "version": "2.5.0",
+      "licence": "BSD-2-Clause",
+      "depot": "https://github.com/GrahamDumpleton/wrapt",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
       ]
     },
     {
