@@ -27,15 +27,15 @@ OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://mip-rum-console.vercel.app/api/ingest/v
 OTEL_METRICS_EXPORTER=none
 ```
 
-- **`mip.app_id`** est obligatoire : un lot sans lui est rejeté. C'est l'identifiant de
-  l'application créée dans la console (`docs/INTEGRATION.md` § 1). La clé du projet
-  s'ajoute à la même variable, sous l'attribut `mip.api_key` ; tant que la collecte
-  n'exige pas de clé (`REQUIRE_API_KEY=false` en production au 29/09/2026), on peut
-  l'omettre.
+- **`mip.app_id`** est obligatoire : un lot sans lui est accepté (200) puis ignoré. C'est
+  l'identifiant de l'application créée dans la console (`docs/INTEGRATION.md` § 1). La clé
+  du projet s'ajoute sous l'attribut `mip.api_key` : la production ne l'exige pas au
+  29/09/2026 (`REQUIRE_API_KEY: "false"`), et les preuves du § 2 s'en sont passées ; la
+  poser quand même : elle sera exigée (403 sinon) quand la variable passera à `true`.
 - **`deployment.environment.name`** (ou l'ancien `deployment.environment`) devient
   l'environnement affiché ; **`service.name`** devient le service.
-- **Un endpoint par signal**, pas `OTEL_EXPORTER_OTLP_ENDPOINT` : MIP n'a pas de route
-  `/v1/metrics`, d'où aussi `OTEL_METRICS_EXPORTER=none`.
+- **Un endpoint par signal** (URL complète, prise telle quelle). MIP n'a pas de route
+  `/v1/metrics` : `OTEL_METRICS_EXPORTER=none`, sinon l'agent journalise des échecs.
 - **Formats acceptés** : OTLP/HTTP en protobuf (`application/x-protobuf`) ou en JSON,
   compressé en gzip (ou deflate) ou non. Pas de gRPC. Autre type de contenu : 415.
 - **Limites** : 2 Mo par requête (413 au-delà, compressé ou non) ; 600 requêtes par
@@ -51,26 +51,35 @@ OTEL_METRICS_EXPORTER=none
 | Langage | État chez MIP | Agent officiel | Installer | Lancer | Doc officielle |
 |---|---|---|---|---|---|
 | Python (Flask) | éprouvé en production le 28/09/2026 | `opentelemetry-instrument` (distro 0.66b0, SDK 1.45.0 éprouvés) | `pip install opentelemetry-distro opentelemetry-exporter-otlp-proto-http` puis `opentelemetry-bootstrap -a install` | `opentelemetry-instrument flask --app app run` | https://opentelemetry.io/docs/zero-code/python/ |
-| Python (FastAPI) | <!-- preuve-fastapi --> à éprouver | `opentelemetry-instrument` | idem (le `bootstrap` ajoute l'instrumentation FastAPI) | `opentelemetry-instrument uvicorn main:app` | https://opentelemetry.io/docs/zero-code/python/ |
-| Node | éprouvé en test automatique seulement | `@opentelemetry/auto-instrumentations-node` | `npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node` | `node --require @opentelemetry/auto-instrumentations-node/register app.js` | https://opentelemetry.io/docs/zero-code/js/ |
+| Python (FastAPI) | éprouvé en production le 29/09/2026 | `opentelemetry-instrument` (distro 0.66b0, SDK 1.45.0, `opentelemetry-instrumentation-fastapi` 0.66b0 ; FastAPI 0.141.1, uvicorn 0.54.0, Python 3.13) | idem (le `bootstrap` ajoute l'instrumentation FastAPI) | `opentelemetry-instrument uvicorn main:app` | https://opentelemetry.io/docs/zero-code/python/ |
+| Node | éprouvé en production (traces) le 29/09/2026 | `@opentelemetry/auto-instrumentations-node` (0.80.0 éprouvé, sous Express 5.2.1) | `npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node` | `node --require @opentelemetry/auto-instrumentations-node/register app.js` | https://opentelemetry.io/docs/zero-code/js/ |
 | Java | éprouvé en production le 28/09/2026 | `opentelemetry-javaagent` (2.31.1 éprouvé) | télécharger `opentelemetry-javaagent.jar` (versions publiées sur GitHub) | `java -javaagent:opentelemetry-javaagent.jar -jar app.jar` | https://opentelemetry.io/docs/zero-code/java/agent/ |
 | .NET | éprouvé en production le 28/09/2026 | instrumentation automatique .NET (1.17.0 éprouvée) | script `otel-dotnet-auto-install.sh` (versions publiées sur GitHub) | `. $HOME/.otel-dotnet-auto/instrument.sh` puis `dotnet app.dll` | https://opentelemetry.io/docs/zero-code/dotnet/ |
 | Go | non éprouvé | SDK Go + bibliothèques d'instrumentation (pas d'agent à greffer) | `go get go.opentelemetry.io/otel/sdk go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` | dans le code : un `TracerProvider` et `otelhttp.NewHandler` | https://opentelemetry.io/docs/languages/go/ |
 | PHP | non éprouvé | extension `opentelemetry` + paquets Composer | `pecl install opentelemetry` ; `composer require open-telemetry/sdk open-telemetry/exporter-otlp` + le paquet `open-telemetry/opentelemetry-auto-<framework>` | `OTEL_PHP_AUTOLOAD_ENABLED=true` et le socle ; PHP 8.0 au moins | https://opentelemetry.io/docs/zero-code/php/ |
 | Ruby | non éprouvé | gems OpenTelemetry (pas d'agent sans code) | `opentelemetry-sdk`, `opentelemetry-exporter-otlp`, `opentelemetry-instrumentation-all` dans le `Gemfile` | un initialiseur : `OpenTelemetry::SDK.configure { \|c\| c.use_all }` | https://opentelemetry.io/docs/languages/ruby/getting-started/ |
 
-« Éprouvé en production le 28/09/2026 » (PR #342) : un vrai serveur, configuré par le
-seul socle ci-dessus, a envoyé traces, journaux et erreurs à la collecte de production,
-et la console les a montrés (routes serveur dans le tracing, groupes d'erreurs, cascade
-serveur → SQL ou sous-appel HTTP, session retrouvée par le `tracestate`). « En test
-automatique » : les exportateurs officiels Node vers le collector et une vraie base
-(`tests/integration/otlp-protobuf-agent-sql.test.ts`), pas un service en production.
+« Éprouvé en production » : un vrai serveur, configuré par le seul socle ci-dessus, sans
+`mip.api_key`, a envoyé à la collecte de production, et la console l'a montré.
+Le 28/09/2026 (PR #342), Flask, Java et .NET : traces, journaux et erreurs (routes
+serveur dans le tracing, groupes d'erreurs, cascade serveur → SQL ou sous-appel HTTP,
+session retrouvée par le `tracestate`). Le 29/09/2026, FastAPI (route
+`/commandes/:commande_id`, session par le `tracestate`, exception comptée une fois, 404
+→ `(non trouvée)`) et Node sous Express, pour les traces. En CI, le site cobaye de l'E2E
+tourne sous l'agent Python (`tests/e2e/site-cobaye/requirements.txt`,
+`tests/e2e/tracing.spec.ts`) ; les exportateurs Node officiels sont testés contre le
+collector et une vraie base (`tests/integration/otlp-protobuf-agent-sql.test.ts`).
+
+**Traces : rien d'autre à faire. Journaux : seulement ceux d'une bibliothèque de
+journalisation que l'agent relie** (`logging` en Python, pino, winston ou bunyan en Node,
+`java.util.logging` en Java, `ILogger` en .NET). Sans elle, l'agent n'envoie que des traces.
 
 ## 3. Pièges connus, par langage
 
 - **Python.** Le protocole par défaut est gRPC : `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`
   est obligatoire, et `opentelemetry-exporter-otlp-proto-http` suffit (pas besoin du
-  paquet gRPC). Les journaux sont partis sans autre variable en 1.45.0. Sous
+  paquet gRPC). Les journaux sont partis sans autre variable en 1.45.0 sous Flask ; sous
+  FastAPI, aucun : ceux d'uvicorn ne remontent pas au logger racine. Sous
   `opentelemetry-instrument`, un échec d'export ne s'affiche **pas** tant que
   l'application n'a pas de gestionnaire `logging` (par exemple `logging.basicConfig()`).
 - **Java.** L'agent ne démarre pas sous le lanceur de fichier source (`java Serveur.java`) :
@@ -81,8 +90,12 @@ automatique » : les exportateurs officiels Node vers le collector et une vraie 
   un dossier accessible en écriture : sans lui, le service s'arrête au démarrage hors de
   `/var/log` (constaté sous macOS, où il faut aussi `greadlink`, des coreutils). Un
   envoi réussi se lit dans le journal de l'agent : `Export succeeded for …/v1/traces`.
-- **Node.** Pas d'agent maison : l'ancien `packages/agent-node` est archivé. Seuls les
-  exportateurs officiels ont été éprouvés, en local.
+- **Node.** `http/protobuf` est le protocole par défaut de la version 0.80.0 ; le socle
+  suffit (`OTEL_TRACES_EXPORTER` et `OTEL_LOGS_EXPORTER` sont inutiles). **Aucun journal
+  sans pino, winston ou bunyan** : `console.log` ne part pas. Express 5 donne 4 spans par
+  requête, dont 3 portent l'exception (comptée une fois, § 4). Sous `register`, SIGTERM
+  vide les spans mais n'arrête pas le processus : en conteneur, il est tué (SIGKILL) à la
+  fin du délai de grâce. La détection de ressources envoie `host.name`, le nom de la machine.
 - **Go.** Pas d'agent qui se greffe au processus comme en Java ou .NET : l'instrumentation
   s'écrit dans le code. Le protocole se choisit par le paquet importé (`otlptracehttp`),
   jamais gRPC. L'instrumentation Go sans code (eBPF, compilation) est un projet en cours,

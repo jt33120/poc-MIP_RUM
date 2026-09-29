@@ -15,4 +15,5 @@ en tête la date et la raison de son archivage.
 | `RAPPORT_NUIT.md` / `RAPPORT_NUIT_2.md` | Comptes rendus de sprint (v0.2 / v0.3). |
 | `RAPPORT_V04.md` / `RAPPORT_V05.md` | Rapports de fonctionnalité (tracing / onboarding). |
 | `MIGRATION_MVP.md` | Plan de migration et MVP du 01/07/2026, pour la base Supabase d'alors (archivé le 26/09/2026). |
+| `capteurs-serveur-maison.md` | L'agent Node et le middleware FastAPI maison, retirés le 29/09/2026 au profit des agents OpenTelemetry officiels ([`docs/capteurs-serveur.md`](../capteurs-serveur.md)). |
 | `delivery/` | Journaux de livraison des lots P5 à P8, que recoupe le [document de couverture](../RUM_PARITY_STATUS.md). |

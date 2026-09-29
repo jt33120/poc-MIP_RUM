@@ -48,8 +48,8 @@ module `uptime` existe mais reste marginal (1 sonde configurée).
 |---|---|---|
 | SDK web | `packages/rum-sdk/src/` — 21 modules (26 fichiers au 26/09/2026) | Complet, en production |
 | SDK mobile | `packages/rum-mobile/src/` (React Native) | Écrit, adoption inconnue (au 26/09/2026 : `livre_non_deploye`, jamais lancé dans une application React Native — [document de couverture](../RUM_PARITY_STATUS.md), `C1`) |
-| Agent serveur Node | `packages/agent-node/src/` — HTTP + `pg` par hook `require` | Écrit, profondeur DB récente (au 26/09/2026 : aucun service Node n'émet vers la production, document de couverture `C5`) |
-| Intégration Python | `examples/integrations/fastapi/mip_rum_middleware.py` | Écrite, testée unitairement |
+| Serveur Node | agent OpenTelemetry officiel (`docs/capteurs-serveur.md`) ; l'agent maison `packages/agent-node` est archivé le 29/09/2026 | Éprouvé en production pour les traces le 29/09/2026 ; journaux seulement par pino, winston ou bunyan (document de couverture `C5`) |
+| Serveur Python | agent OpenTelemetry officiel (`docs/capteurs-serveur.md`) ; le middleware FastAPI maison est archivé le 29/09/2026 | Éprouvé en production : Flask le 28/09, FastAPI le 29/09/2026 (document de couverture `C6`) |
 | Extension navigateur | `apps/extension/` | Déployable sans toucher au site cible |
 
 Le SDK web couvre : Web Vitals, erreurs, ressources, tâches longues, formulaires,

@@ -1,518 +1,371 @@
-# Guide d'intégration MIP RUM (v0.2)
+# Intégrer MIP RUM
 
-Comment instrumenter une application web cliente avec le SDK MIP RUM : snippet, options, consentement RGPD, CSP, et dépannage. Public visé : équipe technique du client (ou intégrateur MIP).
+Au 29/09/2026. Ce guide s'adresse à l'équipe technique d'un client : il dit comment
+faire marcher la mesure, du navigateur au serveur. Les détails (options, CSP,
+consentement, routes…) sont en annexe, à la fin.
 
-## 0. Par la console (recommandé, v0.5)
+Toute la collecte arrive sur la console, `https://mip-rum-console.vercel.app/api/ingest/v1/`
+(`traces`, `logs`, `replay`), qui la relaie au service `collector` (Railway,
+`ingest_relay_pct` à 100 % depuis le 28/09/2026) et l'écrit elle-même si le relais
+échoue. Pour le client, une seule adresse.
 
-Le chemin nominal n'est plus ce document : **Console → Administration → Clients → Ajouter un client** (`/admin/customers`). La création génère la clé d'API (affichée une seule fois), autorise les domaines (CORS dynamique, effectif ≤ 60 s, sans redéploiement) et ouvre un wizard qui fournit le snippet prérempli, les middlewares backend téléchargeables (FastAPI, Express), l'adaptateur `otel-collector.yaml` et une checklist de vérification **live**. L'assistant IA qui proposait une intégration pour les stacks non couvertes a été retiré le 09/09/2026. Ce document reste la référence détaillée des options.
+## 1. Créer l'application dans la console
 
-## 1. En bref
+1. **Administration → Clients → « Ajouter un client »** : un nom, un identifiant
+   (`app_id` : minuscules, chiffres et tirets, par exemple `mon-application`) et les
+   **domaines du site** (les origines autorisées à envoyer des mesures, pour le CORS,
+   en liste blanche stricte : une origine absente n'est jamais acceptée par reflet).
+2. À la validation, la console génère la **clé d'API**, affichée une seule fois. Posée
+   dans une page, elle est lisible par tout visiteur : elle identifie le projet, elle ne
+   protège rien.
+3. Les domaines se modifient à tout moment depuis la fiche du client ; c'est pris en
+   compte en 60 s au plus, sans redéploiement.
 
-Deux balises `<script>` dans le `<head>`, rien d'autre à modifier :
+**La clé, honnêtement.** Au 29/09/2026, la production ne l'exige pas
+(`REQUIRE_API_KEY: "false"` dans `.railway/railway.ts`) : les preuves des agents serveur
+du 28 et du 29/09/2026 ont envoyé sans `mip.api_key`. Posez-la quand même, dans le
+snippet (`apiKey`) et côté serveur (`mip.api_key`) : quand la variable passera à `true`,
+un lot sans clé ou avec une clé fausse sera refusé en 403.
+
+La fiche du client ouvre ensuite un guide en cinq étapes : vérifier la configuration,
+poser le code de suivi, brancher le serveur, vérifier en direct, donner un accès au
+client.
+
+## 2. Navigateur
+
+### Le snippet : tous les visiteurs
+
+Deux balises dans le `<head>`, **avant tout autre script**. La fiche du client les donne
+pré-remplies :
 
 ```html
-<!-- MIP RUM -->
-<script src="https://<console>/mip-rum.js"></script>
+<script src="https://mip-rum-console.vercel.app/mip-rum.js"></script>
 <script>
   MIPRum.init({
-    endpoint: "https://<ingestion>/v1/traces",
-    appId: "mon-app",
-    clientId: "mon-client",
+    endpoint: "https://mip-rum-console.vercel.app/api/ingest/v1/traces",
+    appId: "mon-application",
     env: "prod",
-    apiKey: "<clé fournie par MIP>"
   });
 </script>
 ```
 
-URLs réelles du POC : SDK `https://mip-rum-console.vercel.app/mip-rum.js`, ingestion `https://mip-rum-console.vercel.app/api/ingest/v1/traces` (cf. [DEPLOY.md](../DEPLOY.md)). C'est la console (Vercel) qui reçoit l'ingestion en production au 26/09/2026 ; le service `collector` de Railway, qui sert la même collecte sous `/v1/traces`, est dans le code mais pas encore créé. Le SDK peut aussi être auto-hébergé : c'est un fichier IIFE statique unique (`packages/rum-sdk/dist/mip-rum.js`), à servir depuis le domaine du client (recommandé : évite les bloqueurs et simplifie la CSP).
+Ajouter l'option `apiKey` avec la clé du projet (§ 1).
 
-Prérequis côté MIP (à faire une fois par application) :
-1. Enregistrer l'application dans `app_registry` (`app_id`, `name`, `client_id`, hash sha256 de la clé d'API, `active = true`) — ce que fait l'écran « Ajouter un client ».
-2. Autoriser l'origine du site dans les **domaines autorisés** de l'app (`app_registry.allowed_origins`, depuis la console) — le CORS est en liste blanche stricte, pas de reflet d'origine inconnue. Le socle statique (`STATIC_ALLOWED_ORIGINS`, `packages/backend/shared/cors.mjs`) ne couvre que la plateforme G-IT et `localhost`.
+- **HTML statique, Vite, CRA** : dans le `<head>` de `index.html`.
+- **Next.js** : deux `<Script strategy="beforeInteractive">` dans `app/layout.tsx`
+  (App Router), ou les balises dans `pages/_document.tsx` (Pages Router).
+- **CMS, tag manager** : un tag « HTML personnalisé » déclenché sur toutes les pages.
+- **Sans toucher au code** : la fiche du client génère une configuration Cloudflare
+  Worker (qui injecte les balises et assouplit la CSP), nginx (`ngx_http_sub_module`)
+  ou Google Tag Manager (qui ne corrige pas la CSP). Détails : annexe I.
+- **Auto-hébergé** : `mip-rum.js` est un fichier unique (`packages/rum-sdk/dist/`), qui
+  peut être servi depuis le domaine du site ; moins exposé aux bloqueurs, CSP plus
+  simple (annexe C).
 
-## 2. Options de `MIPRum.init`
+Rien d'autre à coder : Web Vitals, erreurs, sessions et appels réseau sont mesurés, et les appels vers la même origine portent l'en-tête `traceparent`
+qui les relie au serveur (§ 3). Tout le reste est optionnel (annexe A).
 
-Source de vérité : l'interface `MIPRumConfig`, `packages/rum-sdk/src/types.ts`.
+### L'extension : sans toucher au site, pour les navigateurs qui l'ont
 
-| Option | Type | Défaut | Rôle |
-|---|---|---|---|
-| `endpoint` | `string` | **requis** | URL OTLP/HTTP JSON de l'ingestion (`…/v1/traces`) |
-| `appId` | `string` | **requis** | Identifiant de l'application (doit exister dans `app_registry`) |
-| `clientId` | `string` | — | Identifiant du client (groupement, organisation) |
-| `env` | `string` | — | Environnement (`prod`, `staging`, `dev`) |
-| `release` | `string` | — | Version de l'app (`mip.release`), recopiée sur chaque signal et clé des source maps : 1 à 120 caractères sans caractère de contrôle, jamais modifiée ; au-delà, ignorée (« Inconnue »). Voir [SOURCEMAPS.md](SOURCEMAPS.md) |
-| `sampleRate` | `number` 0..1 | `1.0` | Fraction de sessions **entièrement** collectées (tirage à l'init, persisté par session) |
-| `keepOnError` | `boolean` | `true` | Échantillonnage biaisé-erreurs : les sessions hors `sampleRate` ne sont pas jetées mais passent en mode « error-biased » (télémétrie de routine supprimée, **erreurs conservées**, la 1ʳᵉ erreur promeut la session en collecte complète pour la suite). `false` = ancien comportement (session non échantillonnée → rien) |
-| `errorSampleRate` | `number` 0..1 | `1.0` | Fraction des sessions hors `sampleRate` gardées sur erreur (n'a d'effet que si `keepOnError`) |
-| `flushIntervalMs` | `number` | `3000` | Intervalle de flush du batch OTLP (un flush immédiat est forcé quand la page passe en arrière-plan) |
-| `apiKey` | `string` | — | Clé d'API de l'application, transmise en attribut resource `mip.api_key` (sendBeacon ne porte pas de header). Vérifiée côté ingestion contre le hash sha256 de `app_registry` ; rejet 403 seulement si l'ingestion tourne avec `REQUIRE_API_KEY=true` (variable de la console sur Vercel, et du collector) |
-| `requireConsent` | `boolean` | `false` | Mode consentement RGPD : tant que `MIPRum.consent(true)` n'a pas été appelé, **aucune requête réseau ne part** (cf. §3) |
-| `honorDNT` | `boolean` | `true` | Souveraineté/RGPD : honore les signaux navigateur d'opt-out **Do Not Track** et **Global Privacy Control**. Si un refus est signalé, **aucune collecte** (0 session, 0 requête). Mettre `false` seulement si l'app recueille elle-même un consentement affirmatif via `MIPRum.consent()` (cf. §3) |
-| `slowResourceMs` | `number` | `300` | Seuil au-delà duquel une ressource (script, image, fetch…) est reportée comme lente (cap 20 ressources/page) |
-| `forms` | `boolean` | `true` | Form analytics : instrumentation des formulaires **au niveau du champ** (ordre de remplissage, temps par champ, abandon). Émet `form.submit` / `form.abandon`. **Ne capte jamais les valeurs** (identifiants + durées ; champs `password` réduits à `[password]`). `false` pour désactiver |
-| `captureErrors` | `{ console?, resources?, csp?, network? }` | tout à `false` | Collecte d'erreurs élargie, **voie par voie et sur demande** : `console.error`, échecs de chargement de ressources, violations CSP, échecs fetch/XHR. Les exceptions non interceptées et les promesses rejetées restent collectées sans option (cf. « Erreurs : collecte élargie ») |
-| `trace` | `boolean \| string[]` | `true` | Tracing distribué : `true` propage `traceparent` sur les appels même origine ; une liste ajoute des origines (ex. `["https://api.exemple.fr"]`) ; `false` coupe le tracing, et avec lui la voie `network` de `captureErrors` |
-| `frustration` | `boolean` | `true` | Signaux de frustration (rage / dead / error clicks, cf. [FRUSTRATION.md](FRUSTRATION.md)) ; `false` pour désactiver |
-| `replay` | `boolean \| number` | `false` | Session replay (bundle séparé `mip-rum-replay.js`, chargé à la demande) : `true` = toutes les sessions, un nombre 0..1 = taux |
-| `replayEndpoint` | `string` | `endpoint` où `/v1/traces` devient `/v1/replay` | Adresse d'ingestion du replay |
-| `replayMask` | `"all" \| "media" \| "inputs"` | `"all"` | Ce que le replay masque : saisies + texte + médias (`all`), saisies + médias (`media`), saisies seules (`inputs`). Un bloc `.mip-rum-block` n'est jamais capturé |
-| `feedback` | `boolean \| { label, accent, offset, onlyPaths, exceptPaths, cooldownDays, once, compactBelow, compact, discreet }` | `false` | Widget d'avis (CSAT) « Votre avis ? », chargé en lazy (`mip-rum-feedback.js`) ; la note part en `MIPRum.track("feedback", { score })`. `exceptPaths` masque le widget sur des préfixes de chemin, `compact` le replie en pastille à toutes les largeurs, `discreet` la rend neutre (couleur d'accent au survol) |
-| `collectionSource` | `"sdk" \| "extension"` | `"sdk"` | Étiquette du capteur (`mip.collection_source`) : `extension` quand le SDK est injecté par l'extension navigateur. N'affecte pas la collecte |
-| `beforeSend` | `(attrs, meta?) => attrs \| null` | — | Filtre de dernière chance ; `meta` expose le type/nom d'événement. Le second argument est optionnel pour préserver les callbacks existants. Retourner `null` supprime le span. Les identités, contexte, props et contenus sensibles restent supprimables ; seuls les champs structurels (session/app/trace/type/liaisons) sont restaurés par le SDK. |
+L'extension Chrome (MV3) injecte **le même SDK** sur les domaines enregistrés dans
+`/admin/extension-scope`, une fois que l'utilisateur l'a autorisée d'un clic dans son
+menu. Elle n'injecte rien si la page porte déjà le SDK (`window.MIPRum`).
 
-API runtime exposée sur `window.MIPRum` :
+**Sa limite** : elle ne mesure que les navigateurs où elle est installée (un pilote, un
+parc de postes gérés, un site dont on n'a pas le code), jamais l'ensemble des visiteurs.
+Pour une mesure exhaustive, c'est le snippet. Les deux écrivent dans les mêmes tables ;
+la console les distingue (`collection_source` : `sdk` ou `extension`).
+Installation et déploiement : `apps/extension/README.md`, `docs/DEPLOY_EXTENSION.md`.
 
-- `MIPRum.init(config)` — démarre la collecte (idempotent, le 2ᵉ appel est ignoré).
-- `MIPRum.consent(granted: boolean)` — accorde/retire le consentement (cf. §3).
-- `MIPRum.track(name, props?)` — événement métier custom, ex. `MIPRum.track("partner_search", { results: 12 })`. Émis comme span `track.<name>`, persisté en v0.2 dans la table `rum_event` (props en jsonb).
-- `MIPRum.setGlobalContext(context)` — remplace le contexte global des événements futurs.
-- `MIPRum.setUser({ id, ...context })` / `setAccount({ id, ...context })` — identité métier. Le brut reste en mémoire navigateur et en transit ; le serveur le remplace par un HMAC-SHA256 cloisonné par `appId` avant toute file ou écriture. En cas de panne avant réception, la file retry conserve l'événement mais omet volontairement l'identité : aucune valeur brute user/account n'entre dans `localStorage`, au prix d'une corrélation d'identité perdue pour cet événement. Reposer la même identité à chaque page (application multipage) garde la même session ; une identité différente, ou effacée par `clearUser()`, en ouvre une nouvelle sans changer le visiteur. Pour reconnaître l'identité d'une page à l'autre, seule une empreinte courte, salée par l'identifiant de session, accompagne la session dans `localStorage`.
-- `MIPRum.startView(name, context?)` — démarre une vue nommée, sans remplacer la route normalisée.
-- `MIPRum.addAction(name, context?)`, `addTiming(name, timestamp?)`, `addFeatureFlagEvaluation(name, value)` et `addError(error, context?, { fingerprint? })` — événements manuels typés. `addAction` ouvre la même fenêtre causale de 5 s qu'un clic automatique.
-- `MIPRum.getErrorCollectionStats()` — métriques de la collecte d'erreurs, voie par voie (cf. « Erreurs : collecte élargie »).
+## 3. Serveur : l'agent OpenTelemetry officiel
 
-Le contexte est un snapshot JSON immuable avec précédence `global < user/account < view < action < événement`.
-Les noms/clefs sont bornés à 100 caractères, les chaînes à 500, la profondeur à 4, le total à 64 clefs
-et 16 Kio sérialisés. Les champs `mip.*`, de session, trace, app et sampling restent réservés au SDK.
-`IDENTITY_HASH_SECRET` doit être configuré sur chaque port d'ingestion (la console sur Vercel ; le collector quand il sera créé) : s'il manque, la télémétrie continue
-mais les identités user/account sont omises et `/admin/health` affiche un état dégradé.
-- `MIPRum.flush()` — force l'export des spans en attente (utile en test).
+MIP ne fournit aucun capteur serveur : le service tourne sous l'agent OpenTelemetry
+**officiel** de son langage, configuré par des variables `OTEL_*`, et envoie traces et
+journaux en OTLP/HTTP (protobuf ou JSON). Le socle commun, la commande par langage
+(Python, Node, Java, .NET, Go, PHP, Ruby), ce qui a été éprouvé et les pièges :
+**[`docs/capteurs-serveur.md`](capteurs-serveur.md)**. Compléments (débit, messages
+d'échec, ce qui est écrit en base) : annexe J.
 
-### Actions causales
+Étape facultative : sans elle, la mesure navigateur marche ; il manque seulement la part
+serveur de chaque appel.
 
-Le SDK ouvre automatiquement une action sur chaque clic primaire visant un élément interactif. Le nom vient de `data-mip-action-name` lorsqu'il est valide, sinon d'un libellé accessible borné ; aucune valeur de champ n'est lue. L'action la plus récente reçoit les nouveaux effets pendant 5 secondes. Un fetch/XHR, une ressource ou une erreur conserve toutefois le snapshot pris à son origine, même si un autre clic survient avant sa fin.
+## 4. Vérifier que ça arrive
 
-Préférez un libellé métier stable et non personnel dans `data-mip-action-name` (`checkout.submit`, par exemple). Si le libellé accessible peut contenir un nom, un numéro de dossier ou toute autre donnée métier sensible, réécrivez `mip.event_name` dans `beforeSend`. Pour abandonner l'action entière, retournez `null` : supprimer ou invalider uniquement son nom rejette aussi la racine et empêche ses effets futurs de conserver un `action_id` orphelin. L'enveloppe causale (`session`, `trace`, `action_id`, type) reste protégée contre la modification.
+1. **La fiche du client**, étape « Vérifier » : la liste se met à jour toutes les 5
+   secondes (premières Web Vitals, sessions sur 24 h, appels suivis depuis le
+   navigateur, temps serveur). Ouvrir le site dans un autre onglet et la regarder
+   passer au vert.
+2. **Le navigateur du site** : `window.MIPRum` existe ; dans l'onglet Réseau, les
+   `POST …/api/ingest/v1/traces` répondent 200.
+3. **La console**, application sélectionnée : Vue d'ensemble, Sessions, Tracing, Erreurs.
 
-Les interfaces marquées `data-mip-rum-ui` sont exclues. Navigation, refus de consentement et rotation d'identité ferment l'action ; un ré-accord ne ressuscite jamais un clic survenu pendant le refus. La corrélation reste heuristique : elle explique une proximité causale bornée, pas une preuve métier.
+## 5. Dépannage
 
-### Erreurs : collecte élargie (opt-in)
-
-Les exceptions non interceptées et les promesses rejetées sont toujours collectées. Quatre voies s'y ajoutent, chacune sur demande explicite : une seule d'entre elles peut multiplier le volume d'erreurs d'une application du jour au lendemain. Mesurez-la sur une application de recette avant la production.
-
-```js
-MIPRum.init({
-  /* …options…, */
-  captureErrors: {
-    console: true,   // console.error
-    resources: true, // échecs de chargement img, script, link, média
-    csp: true,       // violations Content-Security-Policy
-    network: true,   // fetch/XHR : échecs réseau, délais dépassés, réponses 5xx
-    // network: { clientErrors: true, aborts: true } ajoute les 4xx et les abandons volontaires
-  },
-});
-```
-
-| Voie | Activation | `mip.error_kind` → source | Plafond / page | Ce qui part |
-|---|---|---|---|---|
-| `uncaught` | toujours | `error`, `unhandledrejection` → `browser_js` | 50 | type, message, pile, fichier et position ; non gérée |
-| `console` | `console: true` | `console` → `browser_console` | 20 | arguments joints, objets en JSON borné (profondeur 3, 20 entrées, 1 000 caractères, cycles en `[Circular]`, valeurs des clés sensibles en `[redacted]`), pile du premier `Error` ; gérée |
-| `resources` | `resources: true` | `resource` → `browser_resource` | 20 | balise et URL sans query, fragment ni identifiants ; jamais de statut HTTP, que l'événement ne donne pas |
-| `csp` | `csp: true` | `csp` → `browser_csp` | 10 | directive, hôte bloqué ou mot-clé (`inline`, `eval`…), fichier et position ; jamais l'extrait `sample` ni le texte de la politique |
-| `network` | `network: true` | `network` → `browser_network` | 20 | méthode, hôte et chemin, statut (`HTTP 503`) ou issue (`NetworkError`, `TimeoutError`, `AbortError`), lien vers le span de l'appel ; jamais query, corps ni en-têtes |
-
-**Un seul chemin.** Chaque voie suit celui des exceptions : silence de 10 s par empreinte (les répétitions sont comptées dans `mip.error_count`, pas perdues), plafond de page propre à la voie (une console bavarde ne fait jamais taire les exceptions), échantillonnage biaisé-erreurs — la première erreur, quelle que soit sa voie, promeut une session « error-biased » —, attribution à l'action causale, `beforeSend` (type `error`) et consentement. Une erreur constatée après un refus ou une révocation n'est jamais envoyée, même pour un appel parti avant.
-
-**Un objet, un incident.** `console.error(err)` suivi de `throw err`, ou deux journalisations du même objet dans une même tâche, ne font qu'un incident : la première capture gagne. `addError(err)` émet toujours ; un `console.error` du même objet dans la même tâche est alors ignoré.
-
-**Console.** L'original est appelé exactement une fois par appel, même si la capture échoue. Ce qui est journalisé pendant la capture — un `beforeSend` qui journalise — passe sans être capturé : le SDK ne se mesure pas lui-même. Seul `console.error` est enveloppé.
-
-**Réseau.** La voie repose sur les wrappers du tracing : avec `trace: false`, elle est inactive. Seuls les appels instrumentés sont observés — même origine et origines listées dans `trace`, 100 par page au plus — ; l'ingestion MIP et les origines tierces ne le sont jamais. Un abandon volontaire (`AbortController`) est classé à part et n'est signalé qu'avec `aborts: true`, un 4xx qu'avec `clientErrors: true`. L'erreur porte l'horodatage et l'action causale du **départ** de l'appel, sa trace, et le span `http.client` pour parent : la console la relie à l'appel. Le statut entre dans le type pour que 500 et 404 restent deux groupes.
-
-**CSP.** L'événement `securitypolicyviolation` et `ReportingObserver`, qui rattrape les violations antérieures au chargement du SDK, signalent souvent la même violation : elle ne compte qu'une fois. Le blocage de l'ingestion MIP elle-même n'est pas signalé — l'erreur repartirait vers l'origine bloquée. Là où `ReportingObserver` manque, seul l'événement est écouté, et `unsupported` le dit.
-
-**Métriques et API absentes.** `MIPRum.getErrorCollectionStats()` rend, voie par voie depuis `init()` : `enabled`, `unsupported` (API navigateur absentes), et les occurrences `emitted`, `capped` (tues par le plafond de page) et `rejected` (refusées par `beforeSend` ou le consentement). Ces compteurs restent dans le navigateur : ils ne sont pas transmis à l'ingestion.
-
-**Clé de regroupement.** `addError(error, context, { fingerprint })` accepte une clé opaque de 100 caractères au plus, sans donnée personnelle, transmise en `mip.error_fingerprint`. Quand le regroupement v2 des issues est actif pour l'app, elle prime sur la stack : toutes les erreurs portant la même clé forment une seule issue, quels que soient leur type et leur pile. L'ingestion la rescrubbe et n'en garde qu'une empreinte propre à l'app ; la clé elle-même n'est jamais stockée, et une clé vide une fois scrubbée est ignorée avec un diagnostic. Elle ne change pas la signature historique `fingerprint`. Une clé invalide est ignorée et l'erreur part quand même.
-
-**beforeSend.** `mip.error_kind`, `mip.error_handled` et `mip.parent_span_id` rejoignent les champs structurels restaurés : un hook peut masquer le message ou refuser l'erreur, pas changer sa voie ni son lien vers l'appel.
-
-## 3. Consent mode (RGPD)
-
-Par défaut (`requireConsent: false`), le SDK collecte dès `init` — adapté à un usage interne ou couvert par l'intérêt légitime documenté du client.
-
-Avec une CMP (bannière cookies/consentement) :
-
-```js
-MIPRum.init({ /* …options…, */ requireConsent: true });
-
-// au choix de l'utilisateur dans la CMP :
-maCMP.onConsent("analytics", (granted) => MIPRum.consent(granted));
-```
-
-Comportement :
-- `requireConsent: true` sans consentement → **zéro requête réseau** (vérifié par test automatisé).
-- `MIPRum.consent(true)` → la collecte démarre/reprend.
-- `MIPRum.consent(false)` → la collecte s'arrête.
-
-### Signaux navigateur d'opt-out (DNT / GPC)
-
-Indépendamment de la CMP, le SDK **honore par défaut** (`honorDNT: true`) les signaux navigateur de refus de suivi :
-
-- **Do Not Track** (`navigator.doNotTrack === "1"`, ou `window.doNotTrack === "yes"` sur d'anciens Firefox) ;
-- **Global Privacy Control** (`navigator.globalPrivacyControl === true`) — standard actuel, à valeur légale sous CCPA/CPRA et reconnu comme signal de refus RGPD.
-
-Si l'un de ces signaux est présent à l'`init`, **rien n'est collecté** : aucune session n'est créée, aucun listener posé, aucune requête émise. Aucune donnée, même bufferisée.
-
-`honorDNT: false` désactive cette prise en compte automatique — à réserver aux apps qui recueillent un **consentement affirmatif explicite** (susceptible de primer un signal général) et pilotent alors la collecte via `MIPRum.consent()`.
-
-## 4. CSP — Content Security Policy à prévoir
-
-Si le site applique une CSP, deux directives sont concernées :
-
-| Directive | À autoriser | Pourquoi |
+| Symptôme | Cause probable | Que faire |
 |---|---|---|
-| `script-src` | l'origine qui sert `mip-rum.js` (ou `'self'` si auto-hébergé) | chargement du SDK |
-| `connect-src` | l'origine de l'`endpoint` d'ingestion | `fetch`/`sendBeacon` OTLP |
+| Erreur CORS dans la console du navigateur | domaine absent des domaines autorisés | l'ajouter sur la fiche du client (60 s) |
+| 403 `inactive app`, `ingestion suspended` | application désactivée ou suspendue | la réactiver (administration) |
+| 403 `invalid api key`, `app requires an API key` | la collecte exige une clé, absente ou fausse | poser la bonne clé (`apiKey`, ou `mip.api_key` côté serveur) |
+| 429 | plus de 600 requêtes par minute pour l'application | attendre (`retry-after: 60`) ; le SDK rejoue ses lots plus tard. Si ça dure : une boucle d'émission, `flushIntervalMs` à allonger ; côté serveur, annexe J |
+| 413 | requête de plus de 2 Mo | réduire les lots (côté serveur : taille de lot de l'exportateur) |
+| 415 | ni JSON ni protobuf, ou gRPC | côté serveur : `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` |
+| 200, mais rien dans la console | `appId` (ou, côté serveur, `mip.app_id`) absent : le lot est accepté puis ignoré | vérifier `appId` dans `MIPRum.init`, `OTEL_RESOURCE_ATTRIBUTES` côté serveur |
+| Aucune requête, aucune erreur | refus de suivi du navigateur (DNT, GPC), consentement attendu (`requireConsent`), session hors échantillon, bloqueur de publicité, ou CSP qui bloque le script | annexes B, C, E ; tester avec `sampleRate: 1` ; servir le SDK depuis le domaine du site |
+| INP ou CLS absents | ils se finalisent quand la page passe en arrière-plan | normal : ils arrivent quand l'utilisateur masque ou quitte la page |
+| Appels du navigateur sans leur part serveur | API sur une autre origine, ou pas d'agent serveur | option `trace` du SDK (annexe A), CORS de l'API qui accepte `traceparent` et `tracestate`, § 3 |
+| Agent serveur muet | voir les pièges par langage | `docs/capteurs-serveur.md` § 3, annexe J |
 
-Exemple (SDK auto-hébergé, ingestion POC) :
+Joindre la collecte sans navigateur (un lot vide : rien n'est écrit) :
+
+```sh
+curl -s https://mip-rum-console.vercel.app/api/ingest/v1/traces \
+  -H "content-type: application/json" -d '{"resourceSpans":[]}'
+# attendu : {"partialSuccess":{}}
+```
+
+## 6. Pour aller plus loin
+
+- Toutes les options du SDK, commentées : `packages/rum-sdk/src/types.ts`.
+- Données personnelles, sous-traitants, rejeu : `docs/CONFORMITE.md`.
+- Source maps (piles d'erreurs lisibles) : `docs/SOURCEMAPS.md`, `docs/integration/sourcemaps-ci.md`.
+- Lire les données par API : `docs/RUM_READ_API.md`, `docs/API_CONSOLE.md`.
+- Les anciens capteurs serveur maison (archivés) : `docs/archive/capteurs-serveur-maison.md`.
+
+---
+
+## Annexe A — Options de `MIPRum.init` et API du SDK
+
+| Option | Défaut | Rôle |
+|---|---|---|
+| `endpoint` | (obligatoire) | adresse de collecte `…/api/ingest/v1/traces` |
+| `appId` | (obligatoire) | l'identifiant de l'application |
+| `clientId`, `env`, `release` | — | client, environnement, version (sert aux source maps) |
+| `apiKey` | — | clé du projet, envoyée en attribut de ressource `mip.api_key` |
+| `sampleRate` | 1 | part des sessions collectées en entier (annexe E) |
+| `keepOnError`, `errorSampleRate` | `true`, 1 | hors échantillon, garder les sessions qui ont une erreur |
+| `flushIntervalMs` | 3000 | intervalle d'envoi des lots |
+| `slowResourceMs` | 300 | seuil d'une ressource lente |
+| `requireConsent`, `honorDNT` | `false`, `true` | consentement et refus du navigateur (annexe B) |
+| `beforeSend` | — | dernier filtre des attributs de chaque span ; `null` jette le span |
+| `replay`, `replayMask`, `replayEndpoint` | `false`, `"all"` | rejeu de session : `true` ou un taux 0..1 ; masquage |
+| `trace` | `true` | `traceparent` sur la même origine ; une liste ajoute d'autres origines |
+| `captureErrors` | — | voies d'erreurs opt-in (annexe D) |
+| `frustration`, `forms` | `true`, `true` | clics rageurs et morts ; formulaires champ par champ, sans les valeurs |
+| `collectionSource` | `"sdk"` | `"extension"` quand l'extension injecte le SDK |
+| `feedback` | `false` | bouton « Votre avis ? » (note de 1 à 5) |
+
+Précisions :
+
+- **`release`** : 1 à 120 caractères, sans caractère de contrôle, recopiée sur chaque
+  signal ; au-delà, ignorée (« Inconnue »). C'est la clé des source maps.
+- **`replayEndpoint`** : par défaut, `endpoint` dont `/v1/traces` devient `/v1/replay`.
+- **`trace: false`** coupe le tracing, et avec lui la voie `network` de `captureErrors`.
+- **`feedback`** accepte aussi un objet : `label`, `accent`, `offset`, `onlyPaths`,
+  `exceptPaths`, `cooldownDays` (60 par défaut), `once`, `compact`, `compactBelow`,
+  `discreet`. La note part en `MIPRum.track("feedback", { score })`.
+- **`beforeSend(attrs, meta)`** : `meta` donne le type et le nom de l'événement. Le SDK
+  restaure les champs structurels (session, application, trace, type, liaisons ; pour
+  une erreur, sa voie et son lien vers l'appel) : un filtre peut masquer ou jeter, pas
+  déplacer.
+
+API : `MIPRum.consent(bool)`, `track(nom, props)`, `setUser` / `clearUser`,
+`setAccount` / `clearAccount`, `startView(nom)`, `addAction(nom)`, `addTiming(nom)`,
+`addFeatureFlagEvaluation(nom, valeur)`, `addError(erreur, contexte, { fingerprint })`,
+`setGlobalContext` et ses variantes, `getErrorCollectionStats()`, `flush()`.
+
+- `init` ne vaut qu'une fois : un second appel est ignoré.
+- `track(nom, props)` émet un span `track.<nom>`, rangé dans les événements métier.
+- `setUser` / `setAccount` : l'identifiant brut reste dans le navigateur et en transit ;
+  la collecte le remplace par une empreinte HMAC-SHA256 propre à l'application avant
+  toute écriture. Une identité différente, ou `clearUser()`, ouvre une nouvelle session
+  sans changer de visiteur.
+- **Contexte** : précédence `global < user/account < view < action < événement` ;
+  noms et clés de 100 caractères au plus, chaînes de 500, profondeur 4, 64 clés, 16 Kio
+  sérialisés. Les champs `mip.*`, de session, de trace et d'application sont réservés.
+- `addError(…, { fingerprint })` : une clé opaque de 100 caractères au plus, sans
+  donnée personnelle ; elle prime sur la pile pour regrouper les erreurs en une issue.
+- **Actions** : chaque clic sur un élément interactif ouvre une action, nommée par
+  `data-mip-action-name` (préférer un libellé métier stable, `checkout.submit`), sinon
+  par un libellé accessible borné ; appels, ressources et erreurs des 5 s suivantes s'y
+  rattachent. Les éléments marqués `data-mip-rum-ui` sont exclus. Si le libellé peut
+  contenir une donnée personnelle, le réécrire (`mip.event_name`) dans `beforeSend`.
+
+## Annexe B — Consentement et RGPD
+
+- **`requireConsent: true`** : rien ne part tant que l'outil de consentement n'a pas
+  appelé `MIPRum.consent(true)`, qui envoie alors ce qui attendait en mémoire.
+  `MIPRum.consent(false)` purge ce qui attendait (mémoire, file de rejeu, erreurs
+  compactées) et arrête la collecte. La fiche du client donne le snippet dans cette
+  version.
+- **`honorDNT: true`** (défaut) : si le navigateur signale un refus (Do Not Track ou
+  Global Privacy Control), aucune collecte. `false` est réservé aux applications qui
+  recueillent elles-mêmes un consentement affirmatif et pilotent `consent()`.
+- **Rejeu** : `replayMask: "all"` (défaut) masque saisies, texte et médias ; `"media"`
+  laisse le texte ; `"inputs"` ne masque que les saisies (tout ce que l'écran affiche est
+  alors enregistré). Un bloc marqué `.mip-rum-block` n'est jamais capturé.
+- **Formulaires** : identifiants de champ et durées seulement, jamais les valeurs.
+- **Sans cookie** : la session vit dans `localStorage` (30 min d'inactivité) ; le
+  visiteur est un tirage aléatoire, sans lien avec le terminal. Query strings et
+  fragments des URL sont retirés par le SDK, puis de nouveau par la collecte.
+- **Rétention** : 30 jours par défaut, réglable par application.
+- **À la charge du client** : mentionner la mesure d'audience et de performance dans sa
+  politique de confidentialité, et brancher `requireConsent` si sa CMP l'exige.
+- Le détail (identifiant de visiteur, minimisation, droits des personnes,
+  sous-traitants, hébergement) : `docs/CONFORMITE.md`.
+
+## Annexe C — Politique de sécurité (CSP)
+
+Autoriser `script-src https://mip-rum-console.vercel.app` (le script) et
+`connect-src https://mip-rum-console.vercel.app` (la collecte). Autre possibilité,
+recommandée : héberger `mip-rum.js` sur le domaine du site ; le rejeu charge alors
+`mip-rum-replay.js` depuis la même origine que le script principal, à poser à côté. Le
+Worker Cloudflare de la fiche client assouplit la CSP tout seul ; Google Tag Manager non.
+
+Le bloc d'initialisation est un script en ligne : la CSP doit l'autoriser (un nonce,
+`'unsafe-inline'`), sinon déplacer `MIPRum.init(…)` dans un fichier JavaScript du site.
 
 ```
 Content-Security-Policy: script-src 'self' https://mip-rum-console.vercel.app; connect-src 'self' https://mip-rum-console.vercel.app;
 ```
 
-Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe-inline'`, un nonce, ou déplacer l'init dans un fichier JS du site).
+## Annexe D — Collecte d'erreurs du navigateur
 
-## 5. Poids et impact performance
+Les exceptions non interceptées et les promesses rejetées sont toujours collectées.
+Les autres voies s'allument une à une (`captureErrors`), parce qu'elles peuvent changer
+le volume d'une application du jour au lendemain. Chaque voie a son plafond d'erreurs
+**distinctes** par page ; une même erreur répétée est comptée, et transmise au plus une
+fois toutes les 10 s avec son nombre d'occurrences.
 
-- Bundle cœur mesuré : **≈ 22 KB gzip** (≈ 64 KB raw ; 22,1 KB gzip sur un build local du 25/09/2026 ; budget de `packages/rum-sdk/build.mjs` : 35 KB gzip) — toutes les instrumentations incluses (vitals, erreurs et leurs voies opt-in console/ressources/CSP/réseau, ressources, long tasks, actions causales, breadcrumbs, tracing front→back, consent, retry, contexte et événements manuels). Le replay (rrweb) est un bundle séparé chargé à la demande.
-- Historique : v0.1 **22,3 KB**, v0.2 **23,8 KB**, puis **27,4 KB** avant l'allègement. Le SDK OpenTelemetry a été remplacé par un émetteur OTLP/HTTP JSON maison (même format sur le fil), d'où la chute à ~12 KB à l'époque ; les instrumentations ajoutées depuis (actions causales, voies d'erreurs opt-in, contexte, événements manuels) l'ont ramené au poids actuel.
-- C'est un SDK **OTLP-natif** (vrai OTLP sur le fil, backend remplaçable) — dans la fourchette des RUM du marché (Sentry ~20 KB, Datadog ~25 KB).
-- Émission par batch (flush toutes les `flushIntervalMs`), `sendBeacon`/flush forcé au passage en arrière-plan : pas de requête bloquante pendant la navigation.
-- Caps par page pour borner le volume : 20 ressources lentes, 30 long tasks, 50 breadcrumbs, 50 erreurs distinctes — plus 20 console, 20 ressources, 10 CSP et 20 réseau quand ces voies sont activées.
-- `sampleRate` permet de réduire la volumétrie sur les sites à fort trafic. Par défaut (`keepOnError`), l'échantillonnage est **biaisé-erreurs** : on garde 100 % des sessions à incident (via `errorSampleRate`) tout en n'échantillonnant que le trafic nominal — on ne perd jamais une session d'erreur en abaissant `sampleRate`.
+| Voie | Option | Ce qui est capté | Plafond par page |
+|---|---|---|---|
+| `uncaught` | toujours active | exceptions et promesses rejetées non interceptées | 50 |
+| `console` | `captureErrors.console` | `console.error`, marquée gérée | 20 |
+| `resources` | `captureErrors.resources` | échecs de chargement (image, script, feuille, média) | 20 |
+| `csp` | `captureErrors.csp` | violations CSP, dédupliquées | 10 |
+| `network` | `captureErrors.network` | échecs réseau, délais, réponses 5xx des appels suivis ; `{ clientErrors, aborts }` ajoute les 4xx et les abandons | 20 |
 
-  **Ce que l'échantillonnage fait aux chiffres, depuis le 09/09/2026.** Le SDK émet ses deux taux
-  (`mip.sample_rate`, `mip.error_sample_rate`) et l'ingestion en dérive la **probabilité d'inclusion
-  réelle** de chaque session — pas simplement `1 / sampleRate`, qui serait faux ici : une session
-  sans erreur n'apparaît qu'avec la probabilité `sampleRate`, une session avec erreur avec
-  `sampleRate + (1 − sampleRate) × errorSampleRate`.
+`MIPRum.getErrorCollectionStats()` rend, voie par voie, ce qui a été émis, tu par le
+plafond ou refusé (`beforeSend`, consentement). Ces compteurs restent dans le navigateur.
 
-  | | corrigé ? |
-  |---|---|
-  | sessions, pages vues, taux d'erreur | **oui** — repondérés, ils estiment la population |
-  | visiteurs uniques | non — extrapoler un compte de distincts demande une estimation de cardinalité |
-  | p75 LCP/INP | **oui**, depuis le 10/09/2026 — somme cumulée sur des seaux pondérés (migration-v61), à ±1 % près |
-  | temps de chargement moyen, signaux de frustration | non — moyenne et comptages bruts sur l'échantillon |
+Ce qui ne part jamais : query string, fragment, corps ni en-têtes d'un appel ou d'une
+ressource ; l'extrait de code d'une violation CSP ; les valeurs des clés sensibles d'un
+objet passé à `console.error`. La voie `network` n'observe que les appels suivis par le
+tracing (même origine et origines de `trace`, 100 par page au plus), jamais la collecte
+de MIP. `console.error(err)` suivi de `throw err` ne fait qu'un incident.
 
-  Les champs non corrigés portent sur l'échantillon **seul**, et cet échantillon sur-représente les
-  sessions en erreur, donc les plus lentes : ils penchent du côté pessimiste. Les percentiles ont
-  cessé d'en faire partie le 10/09/2026 : `percentile_cont` n'accepte pas de poids, mais une somme
-  cumulée sur une distribution en seaux n'en a pas besoin — le poids est DANS le seau. Le prix payé
-  est une résolution de ±1 % (soit ±25 ms sur un LCP de 2 500 ms), pas un biais.
-  L'API le déclare dans `sampling_notice` et la console l'affiche ; ce n'est pas au lecteur de le
-  deviner. Avant cette date, aucun de ces chiffres n'était corrigé ni signalé : à `sampleRate: 0.1`,
-  un taux d'erreur réel de 1 % s'affichait autour de 9 %.
+## Annexe E — Échantillonnage
 
-### Normaliser les routes d'une application
+`sampleRate` garde une part des sessions en entier ; par défaut (`keepOnError`), une
+session hors échantillon n'envoie que ses erreurs, et passe en collecte complète à la
+première. Ne pas l'abaisser sans raison de volume : la console repondère sessions, pages
+vues, taux d'erreur et percentiles LCP et INP par la probabilité d'inclusion de chaque
+session, et le dit (`sampling_notice` dans l'API), mais les visiteurs uniques, la
+moyenne de chargement et les signaux de frustration ne se redressent pas : extrapoler un
+compte de distincts demande une estimation de cardinalité, pas une somme de poids. Et
+l'échantillon sur-représente les sessions en erreur, donc les plus lentes.
 
-`normalizeRoute` (SDK) remplace les entiers, les UUID et les hexadécimaux longs. Il ne connaît ni
-vos slugs, ni vos références de commande — sur un catalogue, chaque page produit alors sa propre
-statistique, c'est-à-dire aucune statistique.
+La probabilité d'inclusion n'est pas `1 / sampleRate` : une session sans erreur est
+gardée avec la probabilité `sampleRate`, une session en erreur avec
+`sampleRate + (1 − sampleRate) × errorSampleRate`. Les percentiles repondérés le sont à
+±1 % près (des seaux pondérés) : une résolution, pas un biais.
 
-Depuis le 10/09/2026, chaque application peut ajouter ses règles (`route_pattern`, expressions
-rationnelles POSIX, appliquées **en base** donc quel que soit le chemin d'ingestion) :
+## Annexe F — Routes
+
+- **Navigateur** : le SDK remplace dans le chemin les nombres, les UUID et les
+  hexadécimaux de 16 caractères ou plus par `:id` (`/commandes/42` → `/commandes/:id`).
+- **Serveur** : la route vient de l'agent (`http.route`), ramenée à la forme `:nom`
+  (`docs/capteurs-serveur.md` § 4).
+- **Règles propres à une application** : ce que le SDK ne reconnaît pas (slugs, dates,
+  références) se normalise par des règles en expressions rationnelles POSIX (table
+  `route_pattern`, la première qui correspond gagne), posées par l'équipe MIP et
+  appliquées à l'écriture. `mip_apercu_backfill(app_id)` montre ce qu'une réécriture de
+  l'historique toucherait ; `backfill_route_patterns(app_id)` la fait, sans retour.
+- **Plafond** : 2 000 routes distinctes par application ; au-delà, une route inédite
+  devient `(other)`, et l'écran de santé de l'administration le signale.
+
+Une règle, par exemple :
 
 ```sql
 insert into route_pattern (app_id, motif, remplacement, priorite)
-values ('mon-app', '^/produit/[^/]+$', '/produit/:slug', 10);
+values ('mon-application', '^/produit/[^/]+$', '/produit/:slug', 10);
 ```
 
-Le **premier** motif qui correspond gagne (ordre `priorite`, puis `id`) ; les motifs ne s'enchaînent
-pas. Les groupes de capture fonctionnent (`\1`).
+L'ordre est `priorite`, puis `id` ; les règles ne s'enchaînent pas ; les groupes de
+capture marchent (`\1`). La réécriture de l'historique est **irréversible** : la route
+d'origine n'est gardée nulle part, d'où l'aperçu d'abord. Au plafond
+(`app_registry.route_limit`), les routes déjà connues continuent de passer : la réponse
+est d'écrire des règles, pas de relever le plafond.
 
-**Rejouer l'historique.** Une règle ajoutée aujourd'hui ne réécrit pas hier : la série d'une route se
-couperait en deux, et les deux moitiés auraient l'air de deux routes différentes. On regarde d'abord
-ce que ça changerait, puis on écrit :
+## Annexe G — Ingestion différée (exploitant)
 
-```sql
-select * from mip_apercu_backfill('mon-app');   -- n'écrit rien
-select backfill_route_patterns('mon-app');      -- DÉFINITIF
-```
+`INGEST_DEFERRED=true` fait acquitter la collecte (200) avant l'écriture : le lot est
+déposé dans une table `UNLOGGED` (`ingest_raw`) et écrit ensuite par un travailleur.
+Le prix : PostgreSQL vide cette table après un arrêt brutal, et un lot acquitté mais non
+encore écrit est alors perdu, sans trace. Éteint par défaut ; `/health` du service dit
+s'il est allumé (`ingest_deferred`).
 
-La réécriture est **irréversible** : la route d'origine n'est conservée nulle part. Un motif trop
-large détruit du détail sans retour possible — d'où l'aperçu.
+Seul le `collector` le connaît (la route de la console écrit toujours avant de
+répondre), et `.railway/railway.ts` ne le pose pas : éteint en production au 29/09/2026.
+Mesuré par `scripts/bench-ingest.mjs` : p95 divisé par deux environ, débit multiplié par
+2,5. `/admin/health` montre la file en attente, les lots abandonnés et l'âge du plus
+vieux : c'est ce qu'un redémarrage emporterait.
 
-**Le plafond.** Au-delà de `app_registry.route_limit` routes distinctes (2 000 par défaut), une route
-**inédite** est enregistrée sous `(other)`. Les routes déjà connues continuent de passer : le plafond
-arrête la croissance de la dimension, il ne casse pas les séries en cours. `/admin/health` affiche le
-nombre d'applications au plafond ; la réponse est d'écrire des motifs, pas de relever le plafond.
+## Annexe H — Poids et impact sur la page
 
-Coût mesuré sur le chemin d'écriture : 8 à 16 µs par ligne insérée selon les exécutions
-(`scripts/bench-route-trigger.mjs`), soit 0,1 à 0,2 ms sur un beacon d'une douzaine de lignes.
+- `mip-rum.js` : **22,6 Ko gzip** (64,7 Ko brut, build du 29/09/2026), sous le budget de
+  35 Ko gzip que `packages/rum-sdk/build.mjs` fait respecter. Le rejeu est un second
+  fichier (`mip-rum-replay.js`, 56,7 Ko gzip), chargé seulement si `replay` est allumé.
+- Envoi par lots (toutes les `flushIntervalMs`), vidés par `sendBeacon` quand la page
+  passe en arrière-plan : aucune requête bloquante pendant la navigation.
+- Plafonds par page : 20 ressources lentes, 30 tâches longues, 50 fils d'Ariane, 50
+  erreurs distinctes, plus ceux des voies d'erreurs (annexe D).
 
-### Ingestion différée (`INGEST_DEFERRED`) — optionnelle, et pas gratuite
+## Annexe I — Injection sans toucher au code
 
-**Réservée au collector** (`services/collector`, `packages/backend/lib/receiver.mjs`) : la route
-d'ingestion de la console, seule en service au 26/09/2026, écrit toujours de façon synchrone.
-Le mode n'est donc actif nulle part en production.
-
-Par défaut, le receveur écrit le lot dans les tables finales avant de répondre 200. Avec
-`INGEST_DEFERRED=true`, il le débarque dans `ingest_raw` et un travailleur (dans le même processus,
-toutes les 250 ms par défaut, `INGEST_DRAIN_MS`) écrit la suite.
-
-Mesuré par `scripts/bench-ingest.mjs` (vrai receveur, vrai PostgreSQL, 400 requêtes × 12 en vol,
-lot de 17 spans, modes alternés) :
-
-| | p50 | p95 | débit |
-|---|---|---|---|
-| synchrone | ~15 ms | ~22 ms | ~770 req/s |
-| différé | ~6 ms | ~11 ms | ~1 900 req/s |
-
-Soit **p95 divisé par deux et débit multiplié par 2,5** environ — les chiffres bougent d'une
-exécution à l'autre, la fourchette mesurée est −48 à −57 % sur le p95.
-
-**Le prix.** `ingest_raw` est une table **UNLOGGED** : PostgreSQL la vide après un arrêt brutal. Un
-lot acquitté `200` mais pas encore drainé est alors **perdu, définitivement et sans trace**. C'est
-acceptable pour de la télémétrie d'audience — on perd quelques secondes de mesures — et ça ne l'est
-pas pour de la donnée dont dépend une décision. D'où le mode optionnel, éteint par défaut.
-
-`/admin/health` affiche la file en attente, les lots abandonnés (cinq échecs d'écriture) et l'âge du
-plus vieux. Une file qui monte n'est pas un détail de performance : c'est la quantité de données
-qu'un redémarrage emporterait. `GET /health` du collector annonce `ingest_deferred`.
-
-## 6. RGPD — ce qui est collecté, ce qui est anonymisé
-
-Collecté (par session) :
-
-| Donnée | Détail |
-|---|---|
-| Web Vitals | LCP, INP, CLS, FCP, TTFB + attribution technique (élément, timings) |
-| Pageviews | **routes normalisées** (`/partners/:id` — les ids numériques/uuid/hex sont remplacés), type de navigation |
-| Erreurs JS | message (tronqué à 1 000 c.), type, stack (tronquée à 4 000 c.), fichier source |
-| Erreurs navigateur (opt-in) | console : arguments sérialisés et bornés, valeurs des clés sensibles masquées ; ressources et réseau : URL **sans query string** ni fragment, méthode et statut, jamais corps ni en-têtes ; CSP : directive et hôte bloqué, jamais l'extrait inline |
-| Ressources lentes | URL **sans query string**, type, durée, taille transférée |
-| Long tasks | durée |
-| Breadcrumbs | type (click/nav/error/custom) + label court |
-| Événements `track()` | nom + props fournies par le site |
-| Session | `visitor_id` (**tiré au hasard** par le SDK, persisté en `localStorage`, sans lien avec le terminal), user-agent, type de device |
-
-> **Changement du 09/09/2026.** Le SDK émettait auparavant un `user_hash` : un FNV-1a
-> de (user-agent + langue + résolution + fuseau). Il était décrit ici comme « anonymisé
-> et non réversible » — c'était faux dans les deux sens. Non réversible, oui ; mais il
-> ne désignait pas une personne (deux postes identiques d'un même parc obtenaient la
-> même valeur) et il était réidentifiant par recoupement, puisque entièrement dérivé
-> de caractéristiques du terminal. Il est remplacé par un tirage aléatoire, qu'un
-> visiteur peut effacer en vidant le stockage local de son navigateur. Voir
-> `packages/db/sql/migration-v57.sql`.
-
-Garanties :
-- **Aucune PII par construction** : pas de nom, email, IP stockée ; pas de cookie (session en `localStorage`, TTL 30 min d'inactivité) ; l'identifiant de visiteur est un tirage aléatoire, sans lien avec le terminal ni avec un compte.
-- **Scrub des URLs en double rideau** : query strings et fragments retirés côté SDK **et** côté ingestion.
-- `beforeSend` = point de filtrage final côté client (ex. masquer un label de breadcrumb sensible).
-- **Rétention 30 jours** par défaut, réglable par client (`app_registry.retention_days`) ; purge quotidienne par le service `scheduler` (`purge_rum_tenants(30)`, 03:17 UTC).
-- Hébergement UE : base Neon à Francfort (aws-eu-central-1), console Vercel en `fra1`, services Railway à Amsterdam (europe-west4) ; architecture auto-hébergeable on-prem.
-- Consent mode disponible (§3) si la base légale du client l'exige.
-
-À la charge du client : mentionner la mesure d'audience/performance dans sa politique de confidentialité, et brancher le consent mode si sa CMP le requiert.
-
-## 7. FAQ dépannage
-
-| Symptôme | Cause probable | Fix |
+| Point d'injection | Corrige la CSP ? | À savoir |
 |---|---|---|
-| Erreur CORS dans la console navigateur (`blocked by CORS policy`) | origine du site absente de la liste blanche | ajouter l'origine aux **domaines autorisés** de l'app dans la console (effectif ≤ 60 s, sans redéploiement) |
-| `403` sur les POST | `REQUIRE_API_KEY=true` côté ingestion et `apiKey` absente/incorrecte, ou app `active=false` ; ou ingestion suspendue pour l'app (après un effacement) | vérifier la clé fournie vs le hash en `app_registry` ; vérifier `active` et `ingestion_suspended_at` |
-| POST `200` mais **rien en base** | `appId` manquant ou inconnu (payload sans `mip.app_id` rejeté silencieusement) | vérifier `appId` dans `MIPRum.init` et l'enregistrement dans `app_registry` |
-| `429` sur les POST | rate limit dépassé (600 req/min/app par défaut, `RATE_LIMIT_PER_MIN`) | vérifier qu'il n'y a pas de boucle d'émission ; augmenter `flushIntervalMs` ; réduire `sampleRate` |
-| Aucune requête réseau du tout | `requireConsent: true` sans appel `MIPRum.consent(true)` ; ou session en mode « error-biased » sans erreur (collecte de routine supprimée) ou « off » (`keepOnError: false` + hors `sampleRate`) ; ou bloqueur de pub | vérifier la CMP ; tester avec `sampleRate: 1` ; servir le SDK et l'ingestion en first-party |
-| Données partielles (INP/CLS absents) | l'onglet n'est jamais passé en arrière-plan (ces vitals sont finalisés au `visibilitychange`) | comportement normal ; ils arrivent quand l'utilisateur quitte/masque la page |
-| Le SDK ne se charge pas | CSP `script-src` bloquante | cf. §4 |
-| `415` sur les POST d'un agent backend | `content-type` autre que `application/json` ou `application/x-protobuf`, ou `content-encoding` autre que `gzip` | `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` (ou `http/json`), `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` ou `none` (§ 10) |
+| Cloudflare Worker (`HTMLRewriter`) | oui (`script-src`, `connect-src`) | le plus robuste ; suppose Cloudflare devant le site |
+| nginx (`ngx_http_sub_module`) | à la main (`add_header`) | `sub_filter '</head>' …` et `proxy_set_header Accept-Encoding ""`, sinon un HTML compressé n'est pas réécrit |
+| Google Tag Manager | non | chargement asynchrone : premières mesures (TTFB, FCP) parfois partielles |
 
-Vérification rapide de l'endpoint sans navigateur :
+Aucune de ces configurations n'embarque la clé d'API. Un site statique (Vercel, Netlify,
+S3) n'a pas de proxy HTML à réécrire : Cloudflare devant le domaine, une injection au
+build dans `index.html`, ou, le plus simple quand on a le code, les deux balises en dur.
+Dans tous les cas, l'origine du site va dans les domaines autorisés (§ 1).
 
-```bash
-curl -s "https://<ingestion>/v1/traces" -H "content-type: application/json" \
-  -d @tests/fixtures/otlp-sample.json
-# attendu : {"partialSuccess":{}}
-```
+## Annexe J — Agents serveur : compléments
 
-## 8. Déploiement zéro-touch — injection front (v0.6)
+À lire avec `docs/capteurs-serveur.md`.
 
-Quand le client ne peut pas (COTS, legacy, équipe tierce) ou ne veut pas modifier son code source, le snippet est **injecté depuis l'infrastructure**. La console génère les trois configurations préremplies (page du client → étape 2 → « Injection zéro-touch »). Aucune n'embarque la clé d'API (clé front optionnelle, enforcement off) : elles ne font que poser les deux balises `<script>`.
-
-| Point d'injection | Quand | Couvre la CSP ? | Remarque |
-|---|---|---|---|
-| **Cloudflare Worker** (HTMLRewriter) | site derrière Cloudflare, ou CF qu'on met devant | **Oui** (réécrit `script-src` + `connect-src`) | recommandé — le plus robuste, le seul qui corrige la CSP |
-| **nginx** (`ngx_http_sub_module`) | le HTML passe par un nginx qu'on opère | manuel (`add_header`) | `sub_filter '</head>' '<balises></head>'` + `proxy_set_header Accept-Encoding ""` (sinon le HTML gzip n'est pas réécrit) |
-| **Google Tag Manager** | le client a déjà GTM | **Non** (la CSP du site doit déjà autoriser le SDK + l'ingestion) | self-service ; chargement async → premières métriques (TTFB/FCP) parfois partielles |
-
-Cas **SPA statique** (Vercel/Netlify/S3, ex. plateforme.groupement-it.com) : il n'y a pas de proxy HTML dans la chaîne pour faire du `sub_filter`. Options : mettre un Cloudflare devant le domaine (Worker ci-dessus), injecter au build (post-build sur `dist/index.html`), ou — le plus simple quand on a le repo — poser le snippet en dur. L'injection externe coûte alors **plus** que deux balises.
-
-Dans tous les cas : ajouter l'origine du site aux **domaines autorisés** de l'app dans la console (CORS dynamique, effectif ≤ 60 s).
-
-## 9. Backend sans code — auto-instrumentation OpenTelemetry (v0.6)
-
-Le tracing front→back (la décomposition navigateur / réseau / serveur) n'exige pas forcément le middleware MIP. Tout backend instrumentable par un **agent d'auto-instrumentation OpenTelemetry** (Python, Java, .NET, Go, Node, Ruby, PHP…) peut alimenter l'ingestion **sans une ligne de code applicatif** — l'ingestion accepte nativement les spans serveur OpenTelemetry standard (attributs semconv `http.route` / `http.request.method` / `http.response.status_code`, `kind=SERVER`, trace/span/parent au niveau du span, session propagée via `tracestate: mip=s:<id>`).
-
-Architecture : `app sous agent OTel → Collector → ingestion MIP`.
-
-1. **Lancer l'app sous son agent** (zéro code). Exemple Python :
-   ```bash
-   pip install opentelemetry-distro opentelemetry-exporter-otlp
-   opentelemetry-bootstrap -a install
-   OTEL_SERVICE_NAME=<app_id> \
-   OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318" \
-   opentelemetry-instrument uvicorn main:app --host 0.0.0.0 --port 8000
-   ```
-2. **Le Collector** (`otel-collector.yaml`, téléchargeable sur la page du client) absorbe le format de l'agent et réémet vers MIP : il ne garde que les spans `SERVER` (un par requête), injecte `mip.app_id` + `mip.api_key` (l'app n'a rien de spécifique à régler), et exporte en `otlphttp encoding: json` vers l'endpoint d'ingestion.
-
-| Choix | Middleware MIP (wizard de la console, § 0) | Auto-instrumentation OTel + Collector |
-|---|---|---|
-| Modification du code | 1 fichier + 3 lignes de wiring | aucune |
-| Composant à exploiter | aucun | 1 Collector (conteneur) |
-| Stacks | FastAPI/Express prouvés, autres via protocole | toute stack avec un agent OTel |
-| Recommandé quand | on a accès au code du backend | backend non modifiable / multi-langages |
-
-Depuis le 28/09/2026, l'ingestion lit aussi l'OTLP/HTTP **protobuf** (§ 10) : le Collector n'est plus nécessaire pour changer d'encodage — un agent peut viser directement l'endpoint. Il reste utile pour filtrer les spans serveur ou injecter l'identité MIP sans toucher à l'environnement de l'application.
-
-## 10. Backends : les agents OpenTelemetry officiels
-
-Les agents et SDK OpenTelemetry officiels exportent par défaut en **OTLP/HTTP protobuf** (`content-type: application/x-protobuf`). L'ingestion l'accepte sur les deux mêmes routes que le JSON, pour les **traces** et les **logs**, sans Collector intermédiaire. Le lot décodé suit exactement le chemin d'un lot JSON : même clé d'API, même limite de débit, même barrière RGPD, même hachage d'identité, mêmes lignes (`packages/backend/shared/otlp-corps.mjs`, contrat de parité `tests/contract/ingest-parity.test.ts`).
-
-### Ce que MIP attend
-
-| Élément | Valeur |
-|---|---|
-| Endpoint traces | `https://<ingestion>/v1/traces` — sur la console : `https://mip-rum-console.vercel.app/api/ingest/v1/traces` |
-| Endpoint logs | `https://<ingestion>/v1/logs` — sur la console : `https://mip-rum-console.vercel.app/api/ingest/v1/logs` |
-| Protocole | `http/protobuf` (ou `http/json`, là où l'agent le propose) ; **pas `grpc`** : l'ingestion est en HTTP seulement |
-| Compression | `gzip` ou aucune (la sortie décompressée est bornée au même plafond qu'un corps en clair, 2 Mo : au-delà, 413) |
-| Application | attribut de ressource `mip.app_id` (obligatoire : un lot sans `mip.app_id` est ignoré) |
-| Clé d'API | attribut de ressource `mip.api_key` (la même clé que le snippet navigateur ; exigée quand `REQUIRE_API_KEY=true`) |
-| Service | `OTEL_SERVICE_NAME` : devient la dimension « service » des spans et des erreurs backend |
-| Métriques | **aucune route** `/v1/metrics` : `OTEL_METRICS_EXPORTER=none`, sinon l'agent journalise des échecs d'export |
-
-Les variables d'environnement ci-dessous sont celles de la [spécification OpenTelemetry](https://opentelemetry.io/docs/specs/otel/protocol/exporter/), communes à tous les langages. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` et `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` sont utilisés **tels quels** (aucun chemin ajouté) : on y met l'URL complète. `OTEL_EXPORTER_OTLP_ENDPOINT`, lui, reçoit `/v1/traces` et `/v1/logs` en suffixe ; sur la console, sa valeur serait donc `https://mip-rum-console.vercel.app/api/ingest`.
-
-Socle commun, à poser dans l'environnement du processus (valeurs à remplacer) :
-
-```bash
-export OTEL_SERVICE_NAME="facturation"
-export OTEL_RESOURCE_ATTRIBUTES="mip.app_id=<app_id>,mip.api_key=<clé fournie par MIP>,deployment.environment.name=prod"
-export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
-export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="https://mip-rum-console.vercel.app/api/ingest/v1/traces"
-export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="https://mip-rum-console.vercel.app/api/ingest/v1/logs"
-export OTEL_EXPORTER_OTLP_COMPRESSION="gzip"
-export OTEL_TRACES_EXPORTER="otlp"
-export OTEL_LOGS_EXPORTER="otlp"      # « none » pour n'envoyer que les traces
-export OTEL_METRICS_EXPORTER="none"
-```
-
-`OTEL_RESOURCE_ATTRIBUTES` est une liste `clé=valeur` séparée par des virgules : une valeur qui contiendrait une virgule, un `=` ou un espace doit être encodée en pourcentage.
-
-**Propagation W3C.** Le propagateur par défaut des SDK est `tracecontext,baggage` (`OTEL_PROPAGATORS`) : l'agent lit l'en-tête `traceparent` que le SDK web pose sur les appels same-origin et sur les origines de `cfg.trace`, et recopie le `tracestate: mip=s:<session>` dans le champ `traceState` de son span serveur. C'est ce qui rattache la requête backend à la session du navigateur (waterfall « navigateur → serveur → SQL »). Ne changer `OTEL_PROPAGATORS` qu'en y gardant `tracecontext`.
-
-**Débit.** La limite de débit est par application (600 requêtes/min par défaut, § 7), et chaque export est une requête. Un agent exporte par lots, et seulement quand il a quelque chose à envoyer : les traces toutes les 5 s au plus (`OTEL_BSP_SCHEDULE_DELAY`, défaut 5000 ms), les logs toutes les secondes (`OTEL_BLRP_SCHEDULE_DELAY`, défaut 1000 ms) — soit jusqu'à ~72 requêtes/min par processus actif. Pour un parc de plusieurs processus, allonger `OTEL_BLRP_SCHEDULE_DELAY` (5000, par exemple), relever la limite de l'app, ou passer par un Collector qui regroupe les lots.
-
-### Par langage
-
-État au 28/09/2026. **Éprouvé en production** : un vrai serveur, lancé sous l'agent officiel et configuré par le seul socle commun ci-dessus, a exporté vers `https://mip-rum-console.vercel.app/api/ingest/v1/{traces,logs}` ; la console a relayé au `collector`, qui a répondu 200 et écrit les spans, les logs et les erreurs ; la console les a ensuite montrés (détail de trace avec la session du `tracestate`, erreurs backend avec leur service). L'essai n'a pas posé `mip.api_key` : le refus d'un lot sans clé sous `REQUIRE_API_KEY=true` est tenu par le contrat de parité (`tests/contract/ingest-parity.test.ts`). **Non éprouvé** : la recette suit la documentation de l'agent, sans plus.
-
-| Langage | État | Versions de l'essai |
-|---|---|---|
-| Python | éprouvé en production le 28/09/2026 | `opentelemetry-distro` 0.66b0, SDK 1.45.0, Flask 3.1.3, Python 3.13 |
-| Java | éprouvé en production le 28/09/2026 | `opentelemetry-javaagent` 2.31.1, JDK 21, serveur `com.sun.net.httpserver` |
-| .NET | éprouvé en production le 28/09/2026 | instrumentation automatique 1.17.0, ASP.NET Core 9, macOS arm64 |
-| Node | non éprouvé en production ; ses exportateurs OTLP protobuf le sont en local, contre le serveur de développement du collector et PostgreSQL (`tests/integration/otlp-protobuf-agent-sql.test.ts`), sans l'auto-instrumentation | SDK officiel |
-| Go, PHP, Ruby | non éprouvé | — |
-
-**Java** (éprouvé en production le 28/09/2026) — agent `opentelemetry-javaagent.jar` ([téléchargement](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar)) ; `http/protobuf` est son protocole par défaut depuis la version 2.0. GitHub publie l'empreinte SHA-256 du jar avec la release (champ `digest` de l'asset) : la comparer à celle du fichier téléchargé (`shasum -a 256`).
-
-```bash
-# socle commun ci-dessus, puis :
-java -javaagent:/chemin/opentelemetry-javaagent.jar -jar app.jar
-```
-
-Lancer une classe compilée ou un jar : sous le lanceur de fichier source (`java Serveur.java`), l'agent se croit dans un outil du JDK et ne démarre pas (« JDK tool detected … agent will not be started »). L'agent n'écrit rien quand un export réussit ; un refus s'affiche dans son journal (`WARN … HttpExporter - Failed to export logs. Server responded with HTTP status code <statut>`).
-
-**.NET** (éprouvé en production le 28/09/2026) — instrumentation automatique OpenTelemetry .NET (script `otel-dotnet-auto-install.sh` de la [documentation officielle](https://opentelemetry.io/docs/zero-code/dotnet/), qui installe dans `$HOME/.otel-dotnet-auto`, ou dans `OTEL_DOTNET_AUTO_HOME` s'il est posé). En version 1.17.0, le script vérifie la release et son attestation avec la CLI GitHub `gh` : sans elle, il s'arrête, sauf `SKIP_RELEASE_VERIFICATION=true`.
-
-```bash
-# socle commun ci-dessus, plus un dossier de journaux accessible en écriture :
-export OTEL_DOTNET_AUTO_LOG_DIRECTORY="/var/tmp/otel-dotnet"
-# puis, dans le shell qui lance l'application :
-. $HOME/.otel-dotnet-auto/instrument.sh
-dotnet MonApplication.dll
-```
-
-`OTEL_DOTNET_AUTO_LOG_DIRECTORY` : par défaut, l'instrumentation écrit ses journaux sous `/var/log/opentelemetry` ; pour un utilisateur qui ne peut pas y créer de dossier, le processus s'arrête au démarrage (`Permission denied`, constaté sous macOS). Ces journaux disent le sort de chaque export : `Export succeeded for https://…/api/ingest/v1/traces`. Sous macOS, `instrument.sh` appelle aussi `greadlink` (paquet `coreutils`).
-
-Sous Windows (PowerShell), le module fourni par le même projet : `Register-OpenTelemetryForCurrentSession -OTelServiceName "facturation"`, après avoir posé les mêmes variables en `$env:…`.
-
-**Python** (éprouvé en production le 28/09/2026 ; hors FastAPI, qui a son middleware MIP, § 0) — `opentelemetry-instrument`. Son protocole par défaut est `grpc` : `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` est **obligatoire** ici. L'exportateur HTTP seul suffit : l'ingestion n'a pas d'entrée gRPC.
-
-```bash
-pip install opentelemetry-distro opentelemetry-exporter-otlp-proto-http
-opentelemetry-bootstrap -a install
-# socle commun ci-dessus (protocole http/protobuf compris), puis :
-opentelemetry-instrument flask --app app run   # éprouvé ; gunicorn, uwsgi : même préfixe, non éprouvés
-```
-
-Avant OpenTelemetry Python 1.40.0, les logs du module `logging` ne partent qu'avec `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true` ; avec 1.45.0, ils sont partis sans. L'exportateur n'écrit rien quand un export réussit, et il signale un refus par le module `logging` (`Failed to export spans batch code: <statut>, reason: …`). Sous `opentelemetry-instrument`, la racine de `logging` ne porte que le gestionnaire OpenTelemetry : ce message ne s'affiche pas tant que l'application ne pose pas le sien, par exemple `logging.getLogger("opentelemetry").addHandler(logging.StreamHandler())`.
-
-**Go** (non éprouvé) — pas d'agent sans code : le SDK s'initialise dans `main` avec les exportateurs HTTP, qui lisent les mêmes variables (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_COMPRESSION`…) et parlent protobuf par construction.
-
-```go
-import (
-    "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-    "go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
-)
-
-exportateurTraces, err := otlptracehttp.New(ctx) // endpoint, compression : variables d'environnement
-exportateurLogs, err := otlploghttp.New(ctx)
-```
-
-L'instrumentation HTTP serveur (`otelhttp`, `otelgin`…) produit les spans `SERVER` attendus ; la ressource lit `OTEL_SERVICE_NAME` et `OTEL_RESOURCE_ATTRIBUTES` avec `resource.WithFromEnv()`.
-
-**PHP** (non éprouvé) — extension `opentelemetry` et autoload du SDK.
-
-```bash
-pecl install opentelemetry            # puis « extension=opentelemetry.so » dans php.ini
-composer require open-telemetry/sdk open-telemetry/exporter-otlp
-# + les paquets d'auto-instrumentation du framework (open-telemetry/opentelemetry-auto-slim, -laravel, -symfony…)
-# socle commun ci-dessus, plus :
-export OTEL_PHP_AUTOLOAD_ENABLED=true
-```
-
-**Ruby** (non éprouvé) — gems `opentelemetry-sdk`, `opentelemetry-exporter-otlp` (OTLP/HTTP protobuf, le seul encodage de cette gem) et `opentelemetry-instrumentation-all`, puis un initialiseur de trois lignes (Rails : `config/initializers/opentelemetry.rb`) :
-
-```ruby
-require "opentelemetry/sdk"
-require "opentelemetry/exporter/otlp"
-require "opentelemetry/instrumentation/all"
-OpenTelemetry::SDK.configure { |c| c.use_all }   # endpoint, ressource, service : variables d'environnement
-```
-
-**Node** (SDK officiel, sans le paquet `@mip/agent-node` ; non éprouvé en production) — auto-instrumentation.
-
-```bash
-npm install --save @opentelemetry/api @opentelemetry/auto-instrumentations-node
-# socle commun ci-dessus, puis :
-node --require @opentelemetry/auto-instrumentations-node/register app.js
-```
-
-### Ce que l'ingestion normalise
-
-**La route.** Chaque framework écrit l'attribut `http.route` dans sa syntaxe ; l'ingestion le ramène à la forme du SDK web, `:nom`, en gardant le nom du paramètre (`normalizeRouteTemplate`, `packages/backend/shared/otlp.mjs`) :
-
-| Framework | `http.route` reçu | Route enregistrée |
-|---|---|---|
-| FastAPI, OpenAPI | `/commandes/{commande_id}` | `/commandes/:commande_id` |
-| Flask, Django | `/commandes/<int:commande_id>` | `/commandes/:commande_id` |
-| ASP.NET Core | `/commandes/{id:int}`, `{id?}`, `{*slug}` | `/commandes/:id`, `:id`, `:slug` |
-| Express, Rails | `/commandes/:id(\d+)`, `/commandes/:id(.:format)`, `*chemin` | `/commandes/:id`, `:chemin` |
-
-**Une requête qu'aucune route n'a servie.** Un span serveur en 404 ou 405 **sans** `http.route` prend la route fixe `(non trouvée)`, jamais son chemin : le chemin est choisi par le client HTTP, et une rafale de scanner de vulnérabilités (`/wp-admin/…`, `/manager/html`…) remplirait sinon le registre des routes de l'application (§ 5, plafond de 2 000), après quoi toute nouvelle route réelle devient `(other)`. Avec `http.route`, un 404 métier (commande absente sur `/commandes/:id`) garde sa route. Le chemin reste lisible dans l'URL du span.
-
-**Une panne, une occurrence.** Un agent officiel publie souvent la même exception plusieurs fois : l'événement `exception` du span serveur, et chaque log `ERROR` qui la porte (sous Flask, trois signaux pour une panne). Sans `mip.exception_id` commun, l'ingestion tient pour une seule occurrence les exceptions de **même trace, même span (ou span parent dans le même lot), même type et même message** : elles reçoivent la même clé, et la seconde arrivée — dans le même lot ou plus tard, par l'autre signal — n'ajoute rien. Deux levées identiques enregistrées sur un même span (une boucle de réessai) restent deux occurrences ; un log sans trace ni span n'est jamais fusionné. Deux cas restent comptés deux fois, faute de connaître la parenté sans lire la base : un span enfant et son parent exportés dans deux lots différents, et un log émis dans un span enfant pour une exception enregistrée sur le parent.
-
-### Vérifier
-
-Un export réussi rend `200` avec un corps protobuf vide, que les exportateurs officiels lisent comme un succès complet (vérifié avec le SDK Node : `tests/integration/otlp-protobuf-agent-sql.test.ts` ; en production le 28/09/2026 avec les agents Python, Java et .NET : 200 à chaque export dans les journaux du `collector`, aucun échec côté agent). En base, un span `SERVER` porteur des attributs HTTP semconv devient une ligne `rum_span` de niveau `back` (rattachée à la session par le `tracestate`), ses appels SQL et sous-appels des lignes `detail`, ses exceptions et les logs `ERROR` porteurs d'`exception.type` des erreurs backend (`rum_error`), les logs des lignes `rum_log`. En cas d'échec, l'agent journalise le statut HTTP : `403` (clé, § 7), `415` (protocole : voir la ligne correspondante du § 7), `429` (débit).
-
-Constaté en production le 28/09/2026, à savoir avant de lire les écrans :
-
-- **La route** d'un span serveur est son `http.route`, tel que l'agent le pose. L'ingestion ne réécrivait alors que `{param}` en `:param` : Flask donnait `/api/commandes/<int:commande_id>`, ASP.NET Core `/api/commandes/:id:int` (la contrainte restait). Corrigé depuis : toutes ces syntaxes sont ramenées à `:nom` (« Ce que l'ingestion normalise », ci-dessus), à compter du déploiement du `collector` et de la console qui portent la correction ; les lignes déjà écrites gardent l'ancienne forme. `com.sun.net.httpserver`, qui n'a pas de gabarit, donne le chemin de son contexte (`/api/commandes`).
-- **Une exception comptait plusieurs fois.** L'événement d'exception du span serveur et chaque log `ERROR` porteur d'`exception.type` donnaient chacun une occurrence. Pour une seule panne : 3 sous Flask (le span, le log écrit par l'application, le log d'erreur de Flask), 2 en Java (le span, le log `SEVERE` écrit par l'application), 1 en .NET (le log d'ASP.NET Core : son span serveur ne portait pas l'exception). Corrigé depuis, dans les mêmes conditions : une panne, une occurrence (ci-dessus).
-- **Sans navigateur**, le `tracestate: mip=s:<session>` suffit à rattacher le span serveur à la session : le détail de la trace l'affiche, et dit la session introuvable tant que le SDK web ne l'a pas envoyée.
+- **Endpoints.** `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` et `…_LOGS_ENDPOINT` sont pris
+  tels quels (URL complète). `OTEL_EXPORTER_OTLP_ENDPOINT` reçoit, lui, `/v1/traces` et
+  `/v1/logs` en suffixe : sur la console, il vaudrait
+  `https://mip-rum-console.vercel.app/api/ingest`.
+- **`OTEL_RESOURCE_ATTRIBUTES`** est une liste `clé=valeur` séparée par des virgules :
+  une valeur qui contient une virgule, un `=` ou une espace s'encode en pourcentage.
+- **Propagation.** Le défaut des agents est `tracecontext,baggage` (`OTEL_PROPAGATORS`) ;
+  ne le changer qu'en gardant `tracecontext`. Sans navigateur, le
+  `tracestate: mip=s:<session>` suffit à rattacher le span serveur à la session ; la
+  console dit la session introuvable tant que le SDK web ne l'a pas envoyée.
+- **Débit.** La limite (600 requêtes par minute) est par application, et chaque export
+  est une requête. Un agent exporte les traces toutes les 5 s au plus
+  (`OTEL_BSP_SCHEDULE_DELAY`) et les journaux toutes les secondes
+  (`OTEL_BLRP_SCHEDULE_DELAY`) : jusqu'à ~72 requêtes par minute par processus actif.
+  Pour un parc, allonger `OTEL_BLRP_SCHEDULE_DELAY` (5000), relever la limite de
+  l'application, ou regrouper les lots par un Collector OpenTelemetry.
+- **Succès et échec.** Un export réussi rend 200 (corps protobuf vide). La plupart des
+  agents ne disent rien d'un succès ; un refus s'écrit dans leur journal, avec le statut :
+  Java `WARN … HttpExporter - Failed to export …`, Python
+  `Failed to export spans batch code: <statut>` (visible seulement si l'application a un
+  gestionnaire `logging`), .NET dans `OTEL_DOTNET_AUTO_LOG_DIRECTORY`
+  (`Export succeeded for …` quand tout va bien).
+- **En base.** Un span `SERVER` porteur des attributs HTTP devient un span serveur
+  rattaché à sa trace (et à la session par le `tracestate`) ; ses appels SQL et HTTP
+  sortants, des spans de détail ; ses exceptions, et les journaux `ERROR` porteurs
+  d'`exception.type`, des erreurs serveur (une panne, une occurrence :
+  `docs/capteurs-serveur.md` § 4) ; les autres journaux, des lignes de journal.
+- **.NET sous Windows** : le module PowerShell du même projet,
+  `Register-OpenTelemetryForCurrentSession -OTelServiceName "<service>"`, après avoir
+  posé les mêmes variables en `$env:…`.
+- **Python avant 1.40.0** : les journaux de `logging` ne partent qu'avec
+  `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true`.

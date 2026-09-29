@@ -120,8 +120,10 @@ describe("PS2 — les capteurs", () => {
 
   it("sous les cartes, les agents côté serveur (texte du plan, sans chemin du code)", () => {
     expect(texte).toContain(
-      "Côté serveur : un agent Node et un middleware FastAPI relient un appel du navigateur à son exécution serveur, sur un seul saut.",
+      "Côté serveur : l'agent OpenTelemetry officiel du langage relie un appel du navigateur à son exécution serveur, sur un seul saut ; éprouvé en production pour Python, Java, .NET et, pour les traces, Node.",
     );
+    // L'ancien texte : les capteurs serveur maison, archivés le 29/09/2026.
+    expect(texte).not.toMatch(/agent Node et un middleware FastAPI/);
     expect(texte).not.toMatch(/packages\/|examples\/|collection_source|<all_urls>/);
   });
 

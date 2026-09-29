@@ -201,7 +201,7 @@ section « Non exposé » de `docs/API_CONSOLE.md`) — nous les ouvrons sur dem
   `sessions`, `page_views`, `error_rate`, `p75_lcp_ms` et `p75_inp_ms` sont alors
   **repondérés** par la probabilité d'inclusion de chaque session ; `users`, `avg_load_ms` et
   `frustration_signals` ne le sont pas et portent sur l'échantillon seul (voir
-  [INTEGRATION.md](INTEGRATION.md), § 5).
+  [INTEGRATION.md](INTEGRATION.md), annexe E).
 - **avg_load_ms** = moyenne du **First Contentful Paint** (perception de « la page
   s'affiche »). `p75_lcp_ms` / `p75_inp_ms` = percentiles des Core Web Vitals LCP / INP.
 - **error_rate** = part des sessions ayant au moins une erreur front.

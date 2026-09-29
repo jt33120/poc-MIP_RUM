@@ -261,14 +261,15 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // AJOUTÉ LE 27/09/2026 ; RÉÉCRIT LE 28/09/2026 après la PR #338 (la collecte accepte
     // OTLP en protobuf) ; RÉDUIT LE MÊME JOUR après la PR #342 : les agents officiels
     // Python, Java et .NET sont éprouvés en production (docs/capteurs-serveur.md § 2,
-    // tableau par langage, depuis le 29/09/2026). Ce qui reste : Go, PHP et Ruby, et le
-    // SDK Node officiel hors test.
+    // tableau par langage, depuis le 29/09/2026). RÉDUIT LE 29/09/2026 : FastAPI et Node
+    // (traces) éprouvés en production sous leur agent officiel (C5, C6). Ce qui reste :
+    // Go, PHP et Ruby.
     id: "R11",
     titre: "Les backends Go, PHP et Ruby, pas encore éprouvés",
     manque:
-      "La collecte accepte depuis le 28/09/2026 le format des agents OpenTelemetry officiels, et ceux de Python, Java et .NET ont été éprouvés en production le même jour : un vrai serveur, configuré par la seule documentation d'intégration, a envoyé traces, journaux et erreurs, que la console a montrés. Aucun agent Go, PHP ou Ruby n'a encore envoyé de trace, et le SDK Node officiel ne l'a fait qu'en test automatique.",
+      "La collecte accepte depuis le 28/09/2026 le format des agents OpenTelemetry officiels, et ceux de Python, Java et .NET ont été éprouvés en production le même jour : un vrai serveur, configuré par la seule documentation d'intégration, a envoyé traces, journaux et erreurs, que la console a montrés. Le 29/09/2026, FastAPI sous l'agent Python et, pour les traces, Node ont suivi. Aucun agent Go, PHP ou Ruby n'a encore envoyé de trace.",
     debloque:
-      "Faire tourner l'agent officiel de Go, de PHP et de Ruby sur un vrai backend, configuré par la seule documentation, comme les trois premiers.",
+      "Faire tourner l'agent officiel de Go, de PHP et de Ruby sur un vrai backend, configuré par la seule documentation, comme les autres.",
     decide: "L'équipe MIP.",
     sources: [
       "C5",

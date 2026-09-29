@@ -89,7 +89,7 @@ test.beforeAll(async () => {
   );
 
   if (!LANCEUR) return;
-  // Le socle commun `OTEL_*` de docs/INTEGRATION.md § 10, et RIEN d'autre : c'est
+  // Le socle commun `OTEL_*` de docs/capteurs-serveur.md § 1, et RIEN d'autre : c'est
   // la configuration d'un client. Seul écart, le délai d'export (5 s par défaut)
   // ramené à 200 ms, pour que les spans arrivent pendant le test.
   backend = spawn(

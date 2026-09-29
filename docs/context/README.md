@@ -168,8 +168,9 @@ signale enfin une dégradation qui existe — mais `notify_channel` est toujours
 vide : l'alerte n'atteint personne. Le critère N3 n'est pas satisfait.
 
 **Les Logs ne sont pas passés N2, et la raison est structurelle**, pas un oubli de
-câblage. Le pipeline est correct de bout en bout (l'émetteur `agent-node` pose le
-`traceId` natif, `packages/backend/shared/otlp.mjs:1918` le lit). Ce qui manque, c'est l'ÉMISSION :
+câblage. Le pipeline est correct de bout en bout (l'émetteur `agent-node`, archivé le
+29/09/2026 au profit des agents OpenTelemetry officiels, posait le `traceId` natif,
+`packages/backend/shared/otlp.mjs:1918` le lit). Ce qui manque, c'est l'ÉMISSION :
 `forwardLog` n'a que **deux** appelants dans toute la console —
 
 1. la connexion (`apps/console/app/login/actions.ts`), une action serveur que `withServerTrace`

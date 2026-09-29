@@ -240,8 +240,8 @@ export const CARTES: readonly CarteCapacite[] = [
     // 29/09/2026 : plus de capteur serveur maison. L'agent Node et le middleware FastAPI
     // sont archivés (tag archive/capteurs-serveur-maison) ; le service tourne sous
     // l'agent OpenTelemetry officiel de son langage (docs/capteurs-serveur.md). Les
-    // lignes C5 et C6 du document de couverture restent à réécrire dans le même sens
-    // (document illisible pour l'agent qui a fait ce changement : Secret Guard).
+    // lignes C5 et C6 du document de couverture le disent depuis le 29/09/2026, avec les
+    // preuves du jour : FastAPI éprouvé en production, Node pour les traces.
     titre: "Relier le navigateur à un service serveur, et en capter les erreurs",
     faitQuoi:
       "Recevoir les traces et les journaux de l'agent OpenTelemetry officiel d'un service, capter ses erreurs sans inventer de session, et les rattacher à l'appel du navigateur.",
@@ -257,15 +257,15 @@ export const CARTES: readonly CarteCapacite[] = [
       {
         id: "C5",
         texte:
-          "L'agent Node maison est archivé depuis le 29/09/2026 : un service Node passe par l'agent OpenTelemetry officiel, éprouvé en test automatique seulement.",
+          "L'agent Node maison est archivé depuis le 29/09/2026 : un service Node passe par l'agent OpenTelemetry officiel, éprouvé en production le même jour pour les traces ; ses journaux ne partent que par une bibliothèque de journalisation (pino, winston, bunyan).",
       },
       {
         id: "C6",
         texte:
-          "Le middleware FastAPI maison est archivé depuis le 29/09/2026 : une API FastAPI passe par l'agent officiel Python, éprouvé en production sous Flask ; un seul saut de trace éprouvé, sans propagation d'un service à un autre.",
+          "Le middleware FastAPI maison est archivé depuis le 29/09/2026 : une API FastAPI passe par l'agent officiel Python, éprouvé en production le même jour, sans les journaux d'uvicorn ; un seul saut de trace éprouvé, sans propagation d'un service à un autre.",
       },
     ],
-    // § 6.5, sous le tableau des runtimes : un seul framework backend, un seul saut.
+    // § 6.5, sous le tableau des runtimes : un seul saut de tracing éprouvé.
     sources: [{ ligne: "A4" }, { ligne: "C5" }, { ligne: "C6" }, { passage: 340 }, { passage: 341 }],
   },
   {

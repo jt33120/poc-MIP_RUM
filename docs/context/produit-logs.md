@@ -16,12 +16,12 @@
 >   affiche un accès fermé et n'exécute aucune lecture (`apps/console/lib/capacites.ts:6`).
 >   Motif du commit : `rum_log` porte des journaux de serveur, pas une mesure de
 >   l'expérience vécue.
-> - **Le pont de journalisation existe** dans `agent-node` depuis le 29/07/2026
->   (commit `73e4f74a`) : `console.*` part en OTLP vers `/v1/logs` avec `trace_id`,
->   `span_id`, session et route injectés (`packages/agent-node/README.md`, § « Ce
->   qu'il capte »). Aucun service Node n'émet vers la production (document de
->   couverture, `C5`) : le critère de sortie n° 1 (§ 6) est rempli dans le code,
->   le n° 2 (un premier log ERROR réel, corrélé) reste ouvert.
+> - **Le pont de journalisation** de `agent-node` (commit `73e4f74a`, 29/07/2026 :
+>   `console.*` en OTLP vers `/v1/logs`, avec `trace_id`, `span_id`, session et route)
+>   est **archivé le 29/09/2026** avec l'agent (`docs/archive/capteurs-serveur-maison.md`).
+>   Côté serveur, les journaux viennent désormais de l'agent OpenTelemetry officiel, par
+>   une bibliothèque de journalisation qu'il relie (`docs/capteurs-serveur.md` § 2) ;
+>   le critère de sortie n° 2 (§ 6, un premier log ERROR réel, corrélé) reste ouvert.
 > - **L'ingestion** n'est plus une fonction Deno : route de la console
 >   `apps/console/app/api/ingest/v1/logs/route.ts` en production, receveur partagé
 >   `packages/backend/lib/receiver.mjs` pour le service autonome. Les chemins du

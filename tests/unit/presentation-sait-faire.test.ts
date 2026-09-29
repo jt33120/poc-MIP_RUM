@@ -105,7 +105,7 @@ const PASSAGES: Record<number, string> = {
   319: "« Pays estimé » partout",
   320: "Ce n'est **pas** une géolocalisation.",
   326: "Aucune adresse IP n'est stockée",
-  340: "Un seul framework backend, un seul saut de tracing",
+  340: "un seul saut de tracing éprouvé",
   341: "données.",
   390: "attendre le verdict de la CI **du commit de fusion**",
   503: "quatre paquets et la console",
