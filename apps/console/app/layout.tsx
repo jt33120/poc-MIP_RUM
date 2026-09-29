@@ -15,6 +15,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { getUser } from "@/lib/auth";
 import { estCoquilleNue } from "@/lib/chemins-publics";
 import { dogfoodingEndpoint } from "@/lib/ingest-endpoint";
+import { scriptCapteurConsole } from "@/lib/capteur-console";
 import { DashboardSettings } from "@/components/DashboardSettings";
 import { CATALOGUES, lireChoix } from "@/lib/dashboard-blocs";
 import { reglerBlocsAction } from "./actions-dashboard";
@@ -55,7 +56,12 @@ function rumInitScript(host: string | null): string {
   // régression de performance ne peut pas être rattachée à une mise en production —
   // et les traces d'erreur restent minifiées faute de savoir quelle source map lire.
   const release = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? "dev";
-  return `window.MIPRum && MIPRum.init({endpoint:${JSON.stringify(endpoint)},appId:"mip-rum-console",clientId:"mip",env:"prod",release:${JSON.stringify(release)},replay:${JSON.stringify(RUM_REPLAY_RATE)}});`;
+  return scriptCapteurConsole({
+    endpoint,
+    release,
+    replay: RUM_REPLAY_RATE,
+    apiKey: process.env.NEXT_PUBLIC_DOGFOOD_API_KEY,
+  });
 }
 
 // Configuration du widget d'avis, posée AVANT son chargement (il la lit au montage).
