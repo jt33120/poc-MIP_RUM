@@ -48,6 +48,18 @@ describe("InsightStrip", () => {
     expect(html).not.toContain("fired=");
   });
 
+  it("règles en infobulle (Vue d'ensemble) : plus de ligne visible, le texte reste pour l'écran vocal", () => {
+    const html = renderToStaticMarkup(
+      <InsightStrip constats={CONSTATS} regles={REGLES} fenetre="24 h fixes" ouvertParDefaut reglesEnInfobulle />,
+    );
+    expect(html).not.toContain("mt-0.5 block break-words text-xs");
+    expect(html).toContain('aria-label="Règle du constat"');
+    expect(html).toMatch(/<span class="sr-only">Règle : z-score &gt; 3 sur la moyenne horaire des 7 derniers jours<\/span>/);
+    const vide = renderToStaticMarkup(<InsightStrip constats={[]} regles={REGLES} fenetre="24 h fixes" reglesEnInfobulle />);
+    expect(vide).toContain('aria-label="Règles évaluées"');
+    expect(texte(vide)).toContain("Aucun constat automatique (règles : z-score > 3 sur 24 h ; +20 % ou plus, ±2 h).");
+  });
+
   it("ouvert à la demande", () => {
     const html = renderToStaticMarkup(<InsightStrip constats={CONSTATS} regles={REGLES} fenetre="24 h" ouvertParDefaut />);
     expect(html).toMatch(/<details open="">/);

@@ -350,11 +350,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </details>
               </div>
             </div>
-            <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-line bg-panel/80 px-4 py-2.5 backdrop-blur-md sm:px-6">
+            {/* Sous 640 px, UNE ligne de 53 px (spec A2 § 5.5) : la barre de filtres est
+                repliée dans une feuille (`GlobalFilters`), qui se déplie sous l'en-tête. */}
+            <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-panel/80 px-4 py-2.5 backdrop-blur-md sm:flex-wrap sm:px-6">
               <Suspense>
                 <GlobalFilters schema={schema} timeZones={timeZones} defaultTimeZone={FUSEAU_DEFAUT} />
               </Suspense>
-              <div className="ml-auto flex items-center gap-3">
+              <div className="ml-auto flex shrink-0 items-center gap-3 sm:shrink">
                 {/* Le fuseau de TOUTES les heures de la console, dit une fois ici
                     plutôt qu'à côté de chaque heure (recette du 26/09/2026 : UTC,
                     heure locale non dite et ISO brut se côtoyaient). */}

@@ -86,7 +86,7 @@ import { bucketStarts } from "@/lib/query-contract";
 import { gabaritZoom } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { accord, fmtInstant, pluriel } from "@/lib/format";
-import { categorie } from "@/lib/palette";
+import { AUTRES } from "@/lib/palette";
 import { RangeeKpi } from "@/components/charts/RangeeKpi";
 
 export const dynamic = "force-dynamic";
@@ -108,7 +108,7 @@ const dateUtc = (iso: string) => fmtInstant(iso, { annee: true, sansA: true });
 const nombre = (n: number) => n.toLocaleString("fr-FR");
 
 /** Teinte des barres de volume (écrans consultés) : neutre (ardoise), ni orange ni verdict. */
-const TEINTE_VOLUME = categorie(4);
+const TEINTE_VOLUME = AUTRES;
 
 /**
  * W-M1 : l'angle mort, écrit AVANT le premier chiffre. `ecransDeclares` : l'écran

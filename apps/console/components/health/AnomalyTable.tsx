@@ -19,12 +19,15 @@ export function AnomalyTable({
   health,
   lien,
   filtree = false,
+  sansApp = false,
 }: {
   health: Health;
   /** Route et heure de l'anomalie (`/pages?route=…&from=…&to=…`). */
   lien?: (a: AnomalyRow) => string;
   /** Sous un filtre de population : la détection ne connaît que l'app et la route. */
   filtree?: boolean;
+  /** Une seule app choisie : la colonne répéterait son identifiant technique à chaque ligne. */
+  sansApp?: boolean;
 }) {
   const n = health.anomalies.length;
   return (
@@ -51,7 +54,7 @@ export function AnomalyTable({
             </caption>
             <thead className="bg-panel2">
               <tr>
-                <th scope="col" className="th">App</th>
+                {!sansApp && <th scope="col" className="th">App</th>}
                 <th scope="col" className="th">Route</th>
                 <th scope="col" className="th">Heure</th>
                 <th scope="col" className="th">LCP p75</th>
@@ -66,7 +69,7 @@ export function AnomalyTable({
                   className="border-t border-line/60 transition hover:bg-panel2/60"
                   data-testid="anomalie"
                 >
-                  <td className="px-4 py-2 text-ink-soft">{a.app_id}</td>
+                  {!sansApp && <td className="px-4 py-2 text-ink-soft">{a.app_id}</td>}
                   <td className="px-4 py-2">
                     {lien ? (
                       <Link href={lien(a)} className="chip-mono underline-offset-2 hover:underline">

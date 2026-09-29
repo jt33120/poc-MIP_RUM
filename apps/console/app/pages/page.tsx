@@ -49,7 +49,7 @@ import { classerParGravite, estFaible } from "@/lib/impact";
 import { type SectionLue } from "@/lib/lecture";
 import { chargerPages } from "@/lib/chargeurs/pages";
 import { chargerEcran } from "@/lib/ecran";
-import { categorie } from "@/lib/palette";
+import { AUTRES, categorie } from "@/lib/palette";
 import {
   classementParRoute,
   ecartAEnsemblePages,
@@ -662,7 +662,7 @@ function FigureDistribution({
 const CLASSES_NAVIGATION = [
   { cle: "chargements", libelle: "Chargement", couleur: categorie(0) },
   { cle: "spa", libelle: "Changement de route SPA", couleur: categorie(1) },
-  { cle: "inconnu", libelle: "Type inconnu", couleur: categorie(4) },
+  { cle: "inconnu", libelle: "Type inconnu", couleur: AUTRES },
 ] as const;
 
 /** Nombre de routes montrées par « Vues par type de navigation » (§ 5.2.2). */

@@ -70,14 +70,14 @@ import {
 } from "@/lib/query-contract";
 import { grilleIso, libelleSeauComplet, type Annotation, type PointSerie, type SerieDef } from "@/lib/series";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
-import { categorie } from "@/lib/palette";
+import { AUTRES } from "@/lib/palette";
 
 /**
- * Teinte d'un compte classé (occurrences, vues par groupe) : neutre (ardoise). Un
+ * Teinte d'un compte classé (occurrences, vues par groupe) : neutre (gris du thème). Un
  * volume n'a pas de seuil : ni l'orange, lu comme « À améliorer » à côté des badges
  * de verdict, ni une couleur d'état (recette du 26/09/2026).
  */
-export const TEINTE_VOLUME = categorie(4);
+export const TEINTE_VOLUME = AUTRES;
 
 /** La période de référence d'une comparaison `cmp=prev`, déjà lue par l'appelant. */
 export interface PrecedentResultat {
