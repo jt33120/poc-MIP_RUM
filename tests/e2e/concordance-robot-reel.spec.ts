@@ -26,7 +26,11 @@ const pool = new pg.Pool({
 });
 
 const JOUR_MS = 86_400_000;
-/** Minuit UTC d'aujourd'hui : le seau du grain « jour » est aligné là. */
+/**
+ * Minuit UTC d'aujourd'hui. Le seau du grain « jour » part de minuit heure de
+ * Paris (22:00Z ou 23:00Z la veille) : les mesures de 10 h et 12 h UTC tombent
+ * dans le même jour de Paris que dans le jour UTC.
+ */
 const FIN_P8 = new Date(Math.floor(Date.now() / JOUR_MS) * JOUR_MS);
 const DEBUT_P8 = new Date(FIN_P8.getTime() - 14 * JOUR_MS);
 const jourP8 = (i: number) => new Date(DEBUT_P8.getTime() + i * JOUR_MS);
