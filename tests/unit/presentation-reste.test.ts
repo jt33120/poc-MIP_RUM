@@ -206,9 +206,11 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     const r11 = point("R11");
     expect(r11.manque).toContain("ceux de Python, Java et .NET ont été éprouvés en production le même jour");
     expect(r11.manque).toContain("Aucun agent Go, PHP ou Ruby n'a encore envoyé de trace");
-    expect(r11.manque).toContain("le SDK Node officiel ne l'a fait qu'en test automatique");
+    expect(r11.manque).toContain("Le 29/09/2026, FastAPI sous l'agent Python et, pour les traces, Node ont suivi.");
+    expect(capteurs).toContain("| Python (FastAPI) | éprouvé en production le 29/09/2026 |");
+    expect(capteurs).toContain("| Node | éprouvé en production (traces) le 29/09/2026 |");
     // L'ancien état : Java et .NET n'étaient pas éprouvés.
-    expect(affiche("R11")).not.toMatch(/aucun agent Java|Seul le SDK Node officiel a été éprouvé/);
+    expect(affiche("R11")).not.toMatch(/aucun agent Java|Seul le SDK Node officiel a été éprouvé|qu'en test automatique/);
   });
 
   it("R8 suit le même relevé — six applications sur sept sans clé d'ingestion", () => {
