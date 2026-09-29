@@ -6,16 +6,17 @@
 
 **Vercel sert l'interface, Neon stocke, Railway fait tout le reste** : collecter, traiter, livrer, et servir l'API aux machines. À la fin de la piste C (jalon M4), la console Vercel n'a plus ni accès à la base ni secret d'identité ; elle appelle `console-api`.
 
-## État au 28/09/2026
+## État au 29/09/2026
 
 **En service en production.**
-- La console Next.js sur Vercel (`mip-rum-console.vercel.app`, `fra1`) : l'interface, avec un accès direct à Neon pour ses écrans et ses écritures ; elle reçoit toute la collecte (`/api/ingest/v1/{traces,logs,replay}`, `/api/sourcemaps`), en relaie une part au `collector` et écrit le reste ; elle sert l'API v1 (`/api/v1/*`) ; la connexion passe par `console-api` depuis le 27/09.
+- La console Next.js sur Vercel (`mip-rum-console.vercel.app`, `fra1`) : l'interface, avec un accès direct à Neon pour ses écrans et ses écritures ; elle reçoit toute la collecte (`/api/ingest/v1/{traces,logs,replay}`, `/api/sourcemaps`) et la relaie en entier au `collector`, avec son écriture locale en repli ; elle sert l'API v1 (`/api/v1/*`) et en relaie les lectures au jeton au service `api` ; la connexion passe par `console-api` depuis le 27/09.
+- Relais de la collecte → `collector` (`ingest_relay_pct`) : **100 % depuis le 28/09/2026, 07:10 UTC** (10 % puis 50 % le 27/09 au soir). Le `collector` a répondu à 4 208 requêtes en 48 h au 29/09 (99,3 % en 2xx, 3 en 5xx), relevé Railway.
+- Relais des lectures au jeton → `api` (`api_relay_pct`) : **100 % depuis le 28/09/2026, 16:33 UTC**.
 - Sur Railway (projet `mip-rum-backend`, Amsterdam), les **six services** depuis l'apply du 27/09 (PR #332), en trois groupes : `collector`, `api` et `console-api` en deux répliques, avec un domaine public ; `mcp`, `scheduler` et `notifier` en une.
 - Neon, offre payante Launch depuis le 27/09 (à l'usage, calcul plafonné à 0,25 CU, veille active), après la coupure de l'offre gratuite du 24/09 ([ADR-0014](adr/0014-base-gratuite.md), remplacée). Un palier : la base d'un vrai produit se choisira selon le standard de la DSI de MIP. Migrations appliquées : jusqu'à v96 ; rôle `mip_api` ouvert.
 
 **En service, éteint par un drapeau.**
-- Relais de la collecte → `collector` (`ingest_relay_pct`) : **allumé**, 10 % puis 50 % le 27/09 au soir, 100 % prévu le 28/09.
-- Relais des lectures au jeton → `api` (`api_relay_pct`), bascule des écrans et des écritures vers `console-api` (`console_api_ecrans_pct`, `console_api_commandes_pct`) : à 0. GeoIP du `collector` : `GEOIP_IP_SOURCE=railway` dans l'IaC depuis le 28/09/2026 (effectif après l'apply), pour le seul trafic direct — le capteur de la console, une fois `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL` posée sur Vercel ; le relais ne porte jamais d'adresse.
+- Bascule des écrans et des écritures vers `console-api` (`console_api_ecrans_pct`, `console_api_commandes_pct`) : drapeaux absents de `platform_flag` au 29/09, donc à 0. GeoIP du `collector` : `GEOIP_IP_SOURCE=railway` dans l'IaC depuis le 28/09/2026 (effectif après l'apply), pour le seul trafic direct — le capteur de la console, une fois `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL` posée sur Vercel ; le relais ne porte jamais d'adresse.
 
 **Reste à faire.** Choisir la base d'un vrai produit avec la DSI de MIP, puis remettre les cadences à 5 minutes ; la montée des drapeaux, puis les modes stricts ; les textes de conformité de la PR #296 ; C12 (retirer la base de la console), C12b (image de la console, pile auto-hébergée), P6b.G (collecte directe, pour le GeoIP) ; les exercices sur staging ([présentation](../operations/presentation-dsi.md), § 2).
 
@@ -87,7 +88,7 @@ Le vocabulaire du canevas Railway suit le trajet de la donnée : **Capteurs → 
 | `mcp` | 2 · Restitution | Passerelle MCP pour agents IA ; relaie le jeton de l'appelant, **aucun accès à la base**. [README](../../services/README.md) | public, domaine généré | **déployé** ; appelle `api` sur le réseau privé (`MIP_API_HOST`, posé par l'apply du 27/09) |
 | `scheduler` | 3 · Traitements | Travaux planifiés sous bail (alertes, SLO, uptime, agrégats, purge, comptage) ; **seul migrateur**, au pré-déploiement. [README](../../services/scheduler/README.md) | privé | **déployé** (redéploiement du 27/09 : migrations v87 → v96) ; tick toutes les 15 minutes ; ne livre plus (`SCHEDULER_DELIVERY` à `off`) |
 | `notifier` | 3 · Traitements | Livre ce que la plateforme a décidé de dire : webhooks signés, e-mails Resend, tickets. Seul détenteur des secrets sortants. [README](../../services/notifier/README.md) | privé | **déployé** le 27/09 ; passes toutes les 15 minutes, 45 s après le tick |
-| console | Vercel | Interface Next.js. Jusqu'à M4 elle lit et écrit encore la base directement, et reçoit les mesures (route `/api/ingest/v1/*`). | public | **déployée** ; relais vers le collector allumé ; relais vers `api` et bascule des écrans vers `console-api` à 0 ; connexion par `console-api` |
+| console | Vercel | Interface Next.js. Jusqu'à M4 elle lit et écrit encore la base directement, et reçoit les mesures (route `/api/ingest/v1/*`). | public | **déployée** ; relais vers le collector et vers `api` à 100 % ; bascule des écrans vers `console-api` à 0 ; connexion par `console-api` |
 
 ## Principes, et la décision qui les porte
 

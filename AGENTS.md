@@ -18,11 +18,13 @@ Deux états coexistent, et la doc doit toujours dire lequel elle décrit :
 - **En service** (depuis l'apply du 27/09/2026) : la console sur Vercel (UI, API v1,
   ingestion, accès direct à la base ; connexion par `console-api`) ; sur Railway, les
   six services — `collector`, `api`, `console-api`, `mcp`, `scheduler` (travaux
-  planifiés, seul migrateur), `notifier`. Le relais de la collecte vers `collector`
-  est allumé (`ingest_relay_pct`).
-- **En service, éteint par un drapeau** (`platform_flag`) : le relais de l'API v1
-  vers `api` et la bascule des écrans et des écritures vers `console-api` (à 0) ;
-  le GeoIP du `collector`.
+  planifiés, seul migrateur), `notifier`. Deux relais sont à 100 % depuis le
+  28/09/2026 : la collecte vers `collector` (`ingest_relay_pct`) et les lectures au
+  jeton de l'API v1 vers `api` (`api_relay_pct`). La console garde son écriture
+  locale en repli.
+- **En service, éteint par un drapeau** (`platform_flag`) : la bascule des écrans
+  et des écritures vers `console-api` (drapeaux absents, donc à 0) ; le GeoIP du
+  `collector`.
 
 L'état détaillé et la suite : `docs/architecture/overview.md`.
 
