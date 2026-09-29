@@ -157,6 +157,8 @@ export interface FenetreCollecte {
   /** Instant ISO UTC ; `null` = en cours. */
   fin: string | null;
   etat: "degradee" | "interrompue";
+  /** `'*'` (toute la plateforme) ou l'application concernée ; absent = plateforme. */
+  portee?: string;
 }
 
 /** Ce que la collecte a été pendant un seau : `interrompue` (entièrement), `partielle`, ou `null` (nominale). */

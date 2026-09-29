@@ -57,8 +57,8 @@ export async function lireFenetresCollecte(
 
 async function lire(range: { from: string; to: string }, portees: string[]): Promise<FenetreCollecte[]> {
   try {
-    const rows = await q<{ debut: Date | string; fin: Date | string | null; etat: string }>(
-      `select debut, fin, etat
+    const rows = await q<{ debut: Date | string; fin: Date | string | null; etat: string; portee: string }>(
+      `select debut, fin, etat, portee
          from collecte_fenetre
         where etage = 'chaine'
           and etat in ('degradee', 'interrompue')
@@ -73,6 +73,7 @@ async function lire(range: { from: string; to: string }, portees: string[]): Pro
       debut: new Date(r.debut).toISOString(),
       fin: r.fin === null ? null : new Date(r.fin).toISOString(),
       etat: r.etat === "interrompue" ? "interrompue" : "degradee",
+      portee: r.portee,
     }));
   } catch (err) {
     if (registreCollecteAbsent(err)) return [];
