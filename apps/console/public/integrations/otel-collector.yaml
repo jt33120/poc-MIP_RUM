@@ -1,23 +1,21 @@
-# otel-collector.yaml — Adaptateur « codeless » MIP RUM.
+# otel-collector.yaml — Collector OpenTelemetry (open source) devant la collecte MIP.
 #
-# Reçoit l'OTLP de n'importe quel agent d'auto-instrumentation OpenTelemetry
-# (Python, Java, .NET, Go, Node, Ruby, PHP…) et le réémet vers l'ingestion MIP
-# en OTLP/HTTP JSON. AUCUNE ligne de code applicatif : on lance l'app du client
-# sous son agent OTel (ex. `opentelemetry-instrument uvicorn main:app`) en la
-# pointant vers ce Collector (http://127.0.0.1:4318).
+# FACULTATIF. La voie ordinaire : l'agent OpenTelemetry officiel du langage du
+# serveur exporte directement vers la collecte MIP (socle de variables OTEL_*
+# donné par l'assistant d'intégration de la console). Ce Collector sert quand le
+# serveur ne peut pas sortir vers Internet, ou quand on veut filtrer avant
+# l'envoi : les agents le visent alors (http://127.0.0.1:4318), et c'est lui qui
+# porte l'identité MIP et réémet vers la collecte.
 #
-# 1. Remplacer les trois <…> ci-dessous :
-#    <APP_ID>   : l'app_id du client (identique à la console)
-#    <API_KEY>  : la clé d'API affichée à la création du client
-#    <ENDPOINT> : l'endpoint d'ingestion de la console (…/v1/v1-traces)
+# 1. Remplacer les quatre <…> ci-dessous :
+#    <APP_ID>         : l'app_id de l'application (identique à la console)
+#    <API_KEY>        : la clé d'API affichée à la création de l'application
+#    <ADRESSE_TRACES> : l'adresse complète des traces (…/api/ingest/v1/traces)
+#    <ADRESSE_LOGS>   : l'adresse complète des journaux (…/api/ingest/v1/logs)
 # 2. Lancer le Collector :
 #    docker run -p 4318:4318 -p 4317:4317 \
 #      -v $(pwd)/otel-collector.yaml:/etc/otelcol-contrib/config.yaml \
 #      otel/opentelemetry-collector-contrib:latest
-#
-# Note Node : les agents JavaScript exportent déjà de l'OTLP/HTTP JSON — le
-# Collector y est optionnel (export direct possible), il reste utile pour
-# injecter l'identité MIP et filtrer les spans serveur.
 
 receivers:
   otlp:
@@ -26,17 +24,17 @@ receivers:
       grpc: {}
 
 processors:
-  # Ne garder qu'un span par requête entrante : le span SERVER. Les spans
-  # client/interne du backend (requêtes DB, appels sortants) ne sont pas ingérés
-  # — on reste sur le même modèle que le middleware (1 span back par requête).
+  # Choix de volume, à retirer pour tout envoyer : ne garder qu'un span par
+  # requête entrante, le span SERVER. Les spans client et internes du serveur
+  # (requêtes à la base, appels sortants) restent alors chez le client.
   filter/server_only:
     error_mode: ignore
     traces:
       span:
         - 'kind != SPAN_KIND_SERVER'
 
-  # Identité MIP injectée côté Collector : l'équipe du client n'a rien de
-  # spécifique à configurer dans son application.
+  # Identité MIP injectée côté Collector : l'application du client n'a rien de
+  # spécifique à MIP dans sa configuration.
   resource:
     attributes:
       - key: mip.app_id
@@ -50,9 +48,9 @@ processors:
 
 exporters:
   otlphttp/mip:
-    # endpoint exact (pas de /v1/traces ajouté automatiquement) + encodage JSON,
-    # le format lu par l'ingestion MIP.
-    traces_endpoint: "<ENDPOINT>"
+    # Adresses exactes : rien n'y est ajouté quand elles sont propres au signal.
+    traces_endpoint: "<ADRESSE_TRACES>"
+    logs_endpoint: "<ADRESSE_LOGS>"
     encoding: json
 
 service:
@@ -60,4 +58,8 @@ service:
     traces:
       receivers: [otlp]
       processors: [filter/server_only, resource, batch]
+      exporters: [otlphttp/mip]
+    logs:
+      receivers: [otlp]
+      processors: [resource, batch]
       exporters: [otlphttp/mip]

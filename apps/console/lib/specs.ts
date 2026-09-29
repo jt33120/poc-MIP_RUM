@@ -377,21 +377,25 @@ export const MESURES: Mesure[] = [
     detail:
       "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un arbre enraciné. Elle n'est pas encore une chronologie — un span part avec un début et une fin sur la même milliseconde, et la durée réelle ne voyage que dans un attribut propre à MIP. Un seul saut : du navigateur au serveur, pas d'un serveur à l'autre.",
   },
+  // Côté serveur, aucun capteur maison depuis le 29/09/2026 : l'émetteur est
+  // l'agent OpenTelemetry officiel du langage du client, hors de ce dépôt. Le
+  // module cité est donc l'aiguillage qui reçoit le signal, le seul code de MIP
+  // qui le nomme.
   {
     quoi: "Traces serveur",
     otlp: "http.server",
     table: "rum_span",
-    module: "packages/agent-node/src/core.ts",
+    module: "packages/backend/shared/otlp.mjs",
     detail:
-      "L'agent Node referme la corrélation côté serveur : il s'accroche au module HTTP de Node, donc sans changement de code dans l'application, et rattache à la trace de la page vue un span par requête plus un span enfant par requête SQL. Côté Python, un middleware FastAPI/Starlette d'un seul fichier fait la même chose.",
+      "Côté serveur, rien de propre à MIP : l'agent OpenTelemetry officiel du langage (Python, Node, Java, .NET…) lit l'en-tête traceparent posé par le navigateur et rattache ses spans à la trace de la page vue, sans changement de code dans l'application. La collecte reçoit l'OTLP standard, réglé par un socle commun de variables OTEL_*.",
   },
   {
     quoi: "Logs applicatifs",
     otlp: "resourceLogs",
     table: "rum_log",
-    module: "packages/agent-node/src/core.ts",
+    module: "packages/backend/shared/otlp.mjs",
     detail:
-      "Le troisième signal OpenTelemetry, qu'aucun de nos capteurs n'émettait : les journaux serveur au-dessus d'un niveau plancher, porteurs de l'identifiant de trace, donc lisibles à côté de la trace qui les a produits.",
+      "Le troisième signal OpenTelemetry : les journaux du serveur, exportés par le même agent officiel, porteurs de l'identifiant de trace, donc lisibles à côté de la trace qui les a produits.",
   },
   {
     quoi: "Signaux de frustration",
@@ -467,7 +471,9 @@ export const ANGLES_MORTS: AngleMort[] = [
     // vit aussi (`packages/backend`), et lui SAIT lire `svi.*` — c'est la chaîne
     // d'ingestion que la raison ci-dessus dit exister. Ce qui doit rester absent,
     // c'est un émetteur.
-    marqueur: [["packages/rum-core", "packages/rum-sdk", "packages/rum-mobile", "packages/agent-node"], "svi."],
+    // L'agent Node de MIP n'y figure plus : archivé le 29/09/2026, ce n'est plus
+    // un capteur, et la sonde refuse une cible introuvable.
+    marqueur: [["packages/rum-core", "packages/rum-sdk", "packages/rum-mobile"], "svi."],
   },
 ];
 

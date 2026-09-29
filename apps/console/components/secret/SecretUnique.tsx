@@ -177,6 +177,17 @@ function CopieSecret({ valeur }: { valeur: string }) {
   );
 }
 
+/**
+ * Le code avec le secret à la place du repère. Dans du JavaScript, le repère est
+ * une chaîne JSON (`"COLLE_ICI_LA_CLE_API"`) : on remplace la chaîne entière, et le
+ * secret est échappé comme tel. Dans les variables OTEL_* d'un agent serveur, il
+ * est nu au milieu d'une valeur (`mip.api_key=COLLE_ICI_LA_CLE_API,…`) :
+ * `guillemets: false` le remplace tel quel.
+ */
+export function porterSecret(code: string, repere: string, valeur: string, guillemets = true): string {
+  return guillemets ? code.split(JSON.stringify(repere)).join(JSON.stringify(valeur)) : code.split(repere).join(valeur);
+}
+
 /** Un code qui porte le secret à la place d'un repère (`COLLE_ICI_LA_CLE_API`) quand il a été remis. */
 export function CodeAvecSecret({
   nom,
@@ -184,14 +195,17 @@ export function CodeAvecSecret({
   repere,
   rendu,
   label,
+  guillemets = true,
 }: {
   nom: string;
   code: string;
   repere: string;
   rendu: "copie" | "bookmarklet";
   label?: string;
+  /** `false` : le repère est nu dans le code (valeur d'une variable shell), pas une chaîne JSON. */
+  guillemets?: boolean;
 }) {
   const remis = useSecret(nom);
-  const complet = remis ? code.split(JSON.stringify(repere)).join(JSON.stringify(remis.valeur)) : code;
+  const complet = remis ? porterSecret(code, repere, remis.valeur, guillemets) : code;
   return rendu === "bookmarklet" ? <Bookmarklet code={complet} label={label ?? ""} /> : <CopyBlock code={complet} />;
 }

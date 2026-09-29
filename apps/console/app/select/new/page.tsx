@@ -17,8 +17,10 @@ import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { OnboardingPoll } from "@/components/OnboardingPoll";
 import { CodeAvecSecret, FormulaireSecret, SecretAffiche, SecretFourni } from "@/components/secret/SecretUnique";
+import { BackendStep } from "@/components/wizard/BackendStep";
 import { WizardBadge } from "@/components/wizard/WizardStep";
 import { ingestEndpoint } from "@/lib/ingest-endpoint";
+import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
 import { chargerNouveauSite } from "@/lib/chargeurs/projets";
 import { chargerEcran } from "@/lib/ecran";
 import { fmtInstant, pluriel } from "@/lib/format";
@@ -220,8 +222,8 @@ async function Integration({
   const { app: appId, mode, client: customer, sonde: probe, domaines: extensionDomains } = ecran;
   const status = deriveStatus(probe);
   // La clé d'API, juste après la création : rendue au formulaire de l'étape 1 et
-  // remise ici (C9c) — le bandeau l'affiche, le bookmarklet et la commande de
-  // l'agent la portent à la place de leur repère. Sinon, le repère reste.
+  // remise ici (C9c) — le bandeau l'affiche, le bookmarklet et les recettes des
+  // agents serveur la portent à la place de leur repère. Sinon, le repère reste.
   const nomCle = cleDe(appId);
 
   const host = (await headers()).get("host") ?? "localhost:3000";
@@ -240,12 +242,13 @@ async function Integration({
     `s.onload=function(){window.MIPRum&&MIPRum.init({endpoint:${JSON.stringify(endpoint)},` +
     `appId:${JSON.stringify(appId)},clientId:'mip',env:'prod',apiKey:${JSON.stringify(bmKey)}});};` +
     `document.head.appendChild(s);})();`;
-  // Backend (optionnel) : l'agent Node sans configuration instrumente le serveur SANS
-  // changement de code -> spans http.server reliés à l'appel du navigateur.
-  const agentCmd =
-    `MIP_RUM_ENDPOINT=${JSON.stringify(endpoint)} MIP_RUM_APP_ID=${JSON.stringify(appId)} ` +
-    `MIP_RUM_API_KEY=${JSON.stringify(REPERE_CLE)} \\\n  ` +
-    `node -r @mip/agent-node/register app.js`;
+  // Serveur (facultatif) : l'agent OpenTelemetry officiel du langage, sans
+  // changement de code — ses spans serveur se rattachent à l'appel du navigateur.
+  // Plus de capteur maison depuis le 29/09/2026 (lib/recettes-agents-otel.ts).
+  const recettesServeur = recettesAgentsOtel({
+    appId,
+    adresses: { traces: endpoint, logs: ingestEndpoint("logs", host) },
+  });
 
   // La clé n'est exigée que si la collecte ferme l'accès sans clé ; lu ici plutôt
   // qu'importé de lib/ingest.ts, qui tirerait la base dans cet écran (cliquet de la
@@ -380,15 +383,13 @@ async function Integration({
         </h2>
         <p className="mt-2 text-xs text-ink-soft">
           Pour relier chaque appel du navigateur à son <strong>exécution serveur</strong>, et voir la part du
-          serveur dans un appel lent. Le plus simple sur Node : l&apos;<strong>agent sans configuration</strong>,
-          aucun changement de code —
+          serveur dans un appel lent.
         </p>
         <div className="mt-3">
-          <CodeAvecSecret nom={nomCle} code={agentCmd} repere={REPERE_CLE} rendu="copie" />
+          <BackendStep recettes={recettesServeur} nomSecret={nomCle} />
         </div>
         <p className="mt-2 text-xs text-ink-soft">
-          Autres technologies (FastAPI, Express, agent OpenTelemetry standard) et injection sans toucher au
-          code : le guide d&apos;intégration de la{" "}
+          Injection du code de suivi sans toucher au code du site : le guide d&apos;intégration de la{" "}
           <Link href={`/admin/customers/${encodeURIComponent(appId)}`} className="text-accent-ink underline-offset-2 hover:underline">
             fiche du projet
           </Link>
