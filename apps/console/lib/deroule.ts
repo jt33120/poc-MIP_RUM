@@ -205,6 +205,7 @@ import { LIMITE_CHRONOLOGIE, ancreEvenement } from "./recit-session";
 import { fmtJour } from "./format";
 import { isoSansMs } from "./series";
 import { statutAppel } from "./session-detail";
+import { TEXTE_SEUIL_COLLECTE_RESSOURCE } from "./resources";
 
 const JOUR_MS = 86_400_000;
 
@@ -249,13 +250,13 @@ export const PISTES_SESSION: PisteCascade[] = [
 /**
  * La collecte des ressources est VOLONTAIREMENT partielle, et la cascade le dit en
  * tête (§ 5.12.4) : la chronologie ne lit que celles rattachées à une action
- * (`sessionTimeline`, lib/queries.ts), et le SDK n'émet que les lentes (300 ms par
- * défaut, `DEFAULT_SLOW_RESOURCE_MS`) ou bloquant le rendu, 20 par page au plus
+ * (`sessionTimeline`, lib/queries.ts), et le SDK n'émet que les lentes
+ * (`SEUIL_COLLECTE_RESSOURCE_MS` de lib/resources.ts = `DEFAULT_SLOW_RESOURCE_MS`) ou bloquant le rendu, 20 par page au plus
  * (`RESOURCE_CAP_PER_PAGE`, remis à zéro à chaque vue, packages/rum-sdk/src/resources.ts)
  * — vérifié par test contre les constantes du SDK.
  */
 export const PARTIEL_RESSOURCES =
-  "ressources rattachées à une action seulement, lentes (300 ms et plus par défaut) ou bloquant le rendu, 20 par vue au plus";
+  `ressources rattachées à une action seulement, lentes (${TEXTE_SEUIL_COLLECTE_RESSOURCE} et plus par défaut) ou bloquant le rendu, 20 par vue au plus`;
 
 /** Ce que mesure la barre d'une vue : l'écart jusqu'à la suivante, pas un temps de lecture. */
 export const VUE_JUSQU_A_SUIVANTE = "jusqu'à la vue suivante";

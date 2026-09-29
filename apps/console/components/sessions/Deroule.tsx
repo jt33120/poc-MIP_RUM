@@ -29,9 +29,10 @@ import { Decalage, LIGNE_COURANTE, TimelineRow, fmtOffset } from "@/components/s
 import { elementsDuGroupe, filtrerParNature, grouperParVue } from "@/lib/deroule";
 import { fmtVital } from "@/lib/format";
 import type { TimelineItem } from "@/lib/queries";
-import { RATING_CLASS, type Rating, rating2026 } from "@/lib/rating";
+import { FORME_RATING, RATING_CLASS, type Rating, rating2026 } from "@/lib/rating";
 import { LIMITE_CHRONOLOGIE, ancreEvenement } from "@/lib/recit-session";
 import { KIND_STYLE } from "@/lib/timeline-constants";
+import { ValeurNoteeMip } from "@/components/NoteMip";
 import type { NatureChronologie } from "@/lib/view-state";
 
 export function Deroule({
@@ -245,6 +246,7 @@ function PastillesVitals({ vitals, ancre }: { vitals: TimelineItem[]; ancre: (it
             className={`scroll-mt-24 rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums target:ring-2 target:ring-brand ${verdict ? RATING_CLASS[verdict] : "border-line text-ink-soft"}`}
             data-testid="pastille-vital"
           >
+            {verdict && <span aria-hidden="true" className="mr-1">{FORME_RATING[verdict]}</span>}
             {v.title} {fmtVital(v.title ?? "", valeur)}
           </li>
         );
@@ -254,9 +256,10 @@ function PastillesVitals({ vitals, ancre }: { vitals: TimelineItem[]; ancre: (it
 }
 
 /**
- * Phases réseau d'une vue, repliées. Elles n'ont pas de seuil publié (elles ne
- * sont pas dans `CORE_VITALS`) : aucune couleur de verdict, aucune étiquette
- * « Vital » — seulement leur nom et leur durée.
+ * Phases réseau d'une vue, repliées. Elles n'ont pas de seuil PUBLIÉ (elles ne
+ * sont pas dans `CORE_VITALS`, aucune étiquette « Vital ») : depuis l'amendement de
+ * R-S du 29/09/2026, chacune se colore par sa règle MIP (`noteMip`), ÉCRITE à côté
+ * de sa durée — une ligne par phase, pour que la règle reste à côté à 390 px.
  */
 function PhasesReseau({ phases, ancre }: { phases: TimelineItem[]; ancre: (item: TimelineItem) => string }) {
   return (
@@ -264,13 +267,19 @@ function PhasesReseau({ phases, ancre }: { phases: TimelineItem[]; ancre: (item:
       <summary className="cursor-pointer rounded text-xs text-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
         Phases réseau ({phases.length})
       </summary>
-      <p className="mt-1 text-[11px] text-ink-faint">
-        Étapes de la navigation (DNS, connexion, TLS, requête, réponse) : aucun seuil publié, donc aucun verdict.
+      <p className="mt-1 text-[11px] text-ink-faint [overflow-wrap:anywhere]">
+        Étapes de la navigation (DNS, connexion, TLS, requête, réponse) : aucun seuil publié. La couleur suit une règle
+        MIP, ordre de grandeur de terrain écrit à côté de chaque durée, pas une norme.
       </p>
-      <ul className="mt-1 flex flex-wrap gap-1.5">
+      <ul className="mt-1 flex min-w-0 flex-col gap-1">
         {phases.map((p, i) => (
-          <li key={i} id={ancre(p)} className="chip-mono scroll-mt-24">
-            {p.title} {p.value == null ? "—" : `${Math.round(Number(p.value))} ms`}
+          <li key={i} id={ancre(p)} className="flex min-w-0 scroll-mt-24 flex-wrap items-baseline gap-x-1.5 text-xs" data-testid="phase-reseau">
+            <span className="font-mono">{p.title}</span>
+            <ValeurNoteeMip
+              mesure={p.title ?? ""}
+              valeur={p.value == null ? null : Number(p.value)}
+              texte={p.value == null ? "—" : fmtVital("", Number(p.value))}
+            />
           </li>
         ))}
       </ul>

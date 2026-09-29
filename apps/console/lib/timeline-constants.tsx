@@ -1,6 +1,8 @@
 // Styles et pictos par type d'événement de la timeline session (config statique).
 // Extrait de app/sessions/[id]/page.tsx — partagé entre la page et ses sous-composants.
-import type { TimelineKind } from "@/lib/queries";
+import type { TimelineItem, TimelineKind } from "@/lib/queries";
+import { CORE_VITALS, RATING_BAR, rating2026, type Rating } from "@/lib/rating";
+import { noteMip } from "@/lib/seuils";
 
 // styles + pictos par type d'événement de la timeline
 export const KIND_STYLE: Record<TimelineKind, { label: string; dot: string; badge: string }> = {
@@ -10,11 +12,13 @@ export const KIND_STYLE: Record<TimelineKind, { label: string; dot: string; badg
     badge:
       "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-400/10 dark:text-blue-300 dark:border-blue-400/30",
   },
+  // Le point et le badge d'une mesure sont NEUTRES ici : un point vert fixe disait
+  // « bon » pour toute mesure, phases réseau comprises (relevé du 29/09/2026). La
+  // couleur vient de la note de la ligne (`noteDeLigne`, `pointDeLigne`).
   vital: {
     label: "Web Vital",
-    dot: "bg-good",
-    badge:
-      "bg-good/10 text-good-ink border-good/30",
+    dot: "bg-ink-faint",
+    badge: "bg-panel2 text-ink-soft border-line",
   },
   error: {
     label: "Erreur JS",
@@ -46,10 +50,12 @@ export const KIND_STYLE: Record<TimelineKind, { label: string; dot: string; badg
     dot: "bg-fuchsia-600",
     badge: "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300 dark:bg-fuchsia-400/10 dark:text-fuchsia-300 dark:border-fuchsia-400/30",
   },
+  // Même correction : une ressource n'est pas « à améliorer » par nature (ambre fixe
+  // jusqu'au 29/09/2026) ; sa note se lit sur sa durée (`SEUILS_MIP.RESOURCE`).
   resource: {
     label: "Ressource",
-    dot: "bg-warn",
-    badge: "bg-warn/10 text-warn-ink border-warn/30",
+    dot: "bg-ink-faint",
+    badge: "bg-panel2 text-ink-soft border-line",
   },
   api: {
     label: "Appel API",
@@ -57,6 +63,48 @@ export const KIND_STYLE: Record<TimelineKind, { label: string; dot: string; badg
     badge: "bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-400/10 dark:text-sky-300 dark:border-sky-400/30",
   },
 };
+
+/**
+ * La mesure MIP d'une ligne de chronologie, ou `null` : une ligne `vital` qui n'est
+ * pas une Core Web Vital porte le nom de sa mesure (`rum_metric.name` : DNS, TCP…,
+ * les clés de `SEUILS_MIP`) ; une ressource se note par `RESOURCE`, un appel par `API`.
+ */
+export function mesureMipDeLigne(item: Pick<TimelineItem, "kind" | "title">): string | null {
+  if (item.kind === "vital") return item.title && !CORE_VITALS.includes(item.title) ? item.title : null;
+  if (item.kind === "resource") return "RESOURCE";
+  if (item.kind === "api") return "API";
+  return null;
+}
+
+/**
+ * La note d'une ligne : une Core Web Vital par ses seuils web.dev (la note stockée,
+ * sinon `rating2026`), une autre mesure par sa règle MIP (`noteMip`), rien sinon.
+ * Jamais « bon » par défaut : sans valeur ou sans règle, `null`.
+ */
+export function noteDeLigne(item: Pick<TimelineItem, "kind" | "title" | "value" | "rating">): Rating | null {
+  const valeur = item.value == null ? null : Number(item.value);
+  if (item.kind === "vital" && item.title && CORE_VITALS.includes(item.title)) {
+    if (item.rating === "good" || item.rating === "needs-improvement" || item.rating === "poor") return item.rating;
+    return valeur == null || !Number.isFinite(valeur) ? null : rating2026(item.title, valeur);
+  }
+  const mesure = mesureMipDeLigne(item);
+  return mesure ? noteMip(mesure, valeur) : null;
+}
+
+/** Le point de la ligne : couleur de sa note s'il y en a une, sinon celle de sa nature. */
+export function pointDeLigne(item: Pick<TimelineItem, "kind" | "title" | "value" | "rating">): string {
+  if (item.kind === "vital" || item.kind === "resource") {
+    const note = noteDeLigne(item);
+    return note ? RATING_BAR[note] : KIND_STYLE[item.kind].dot;
+  }
+  return KIND_STYLE[item.kind].dot;
+}
+
+/** Le libellé de la ligne : « Web Vital » pour les cinq seulement, « Mesure réseau » pour les autres. */
+export function libelleDeLigne(item: Pick<TimelineItem, "kind" | "title">): string {
+  if (item.kind === "vital" && !(item.title && CORE_VITALS.includes(item.title))) return "Mesure réseau";
+  return KIND_STYLE[item.kind].label;
+}
 
 /** Petit picto SVG monochrome (hérite de currentColor). */
 function Icon({ d }: { d: string }) {

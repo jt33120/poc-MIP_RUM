@@ -67,6 +67,17 @@ export const RATING_CLASS: Record<Rating, string> = {
   poor: "bg-bad/10 text-bad-ink border-bad/30",
 };
 
+/**
+ * La forme qui double la couleur d'une note (spec A2 § 3.4) : disque, triangle, carré —
+ * la même que les tuiles (`KpiTile`). Une note, vital ou MIP, ne se lit jamais par la
+ * seule couleur (§ 3.9).
+ */
+export const FORME_RATING: Record<Rating, string> = {
+  good: "●",
+  "needs-improvement": "▲",
+  poor: "■",
+};
+
 /** Couleur de jauge par rating (barres de seuils des VitalCards). */
 export const RATING_BAR: Record<Rating, string> = {
   good: "bg-good",

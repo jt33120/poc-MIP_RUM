@@ -6,7 +6,7 @@
 //                           Seuil nommé = borne web.dev d'une vital (`lib/rating.ts`) OU
 //                           règle MIP (`SEUILS_MIP`, `lib/seuils.ts`) à condition que la
 //                           règle soit ÉCRITE à l'écran à côté de la valeur
-//                           (`texteRegleMip` : « règle MIP : DNS > 150 ms ») — amendement
+//                           (`texteRegleMip` : « règle MIP : DNS > … », la borne « mauvais » lue dans `SEUILS_MIP`) — amendement
 //                           de R-S du 29/09/2026 (plan § 1.5). Une couleur sans règle
 //                           lisible affirmerait une norme qui n'existe pas ; les mesures
 //                           sans règle MIP (formulaires, CSAT, rétention…) restent neutres ;
