@@ -86,6 +86,10 @@ export function socleOtel({
 
 const DOC = "https://opentelemetry.io/docs/zero-code";
 const EPROUVE = "éprouvé en production le 28/09/2026";
+// Preuves du 29/09/2026 (même protocole que #342) : FastAPI sous opentelemetry-instrument,
+// et Node sous auto-instrumentations-node — les traces seulement, faute de journaux (piège ci-dessous).
+const EPROUVE_PYTHON = "éprouvé en production (Flask le 28/09/2026, FastAPI le 29/09/2026)";
+const EPROUVE_NODE = "éprouvé en production le 29/09/2026 (traces)";
 
 /** Les recettes serveur, préremplies pour une application. */
 export function recettesAgentsOtel({
@@ -104,7 +108,7 @@ export function recettesAgentsOtel({
       id: "python",
       titre: "Python (FastAPI, Django, Flask…)",
       precision: "opentelemetry-instrument",
-      etat: EPROUVE,
+      etat: EPROUVE_PYTHON,
       code: recette(
         "# 2. Installer l'agent, puis les instrumentations des bibliothèques présentes",
         "pip install opentelemetry-distro opentelemetry-exporter-otlp-proto-http",
@@ -126,7 +130,7 @@ export function recettesAgentsOtel({
       id: "node",
       titre: "Node.js (Express, Fastify, NestJS…)",
       precision: "@opentelemetry/auto-instrumentations-node",
-      etat: "non éprouvé en production",
+      etat: EPROUVE_NODE,
       code: recette(
         "# 2. Installer l'agent dans le projet",
         "npm install --save @opentelemetry/api @opentelemetry/auto-instrumentations-node",
@@ -137,6 +141,8 @@ export function recettesAgentsOtel({
       pieges: [
         "L'agent doit se charger avant tout autre module : --require sur la ligne de commande (ou NODE_OPTIONS), jamais un import au milieu du code.",
         "Une application en modules ES (import) demande en plus le crochet de chargement décrit dans la documentation Node.",
+        "Sans bibliothèque de journalisation instrumentée (pino, winston, bunyan), l'agent n'envoie aucun journal : seules les traces partent.",
+        "Sous --require …/register, un SIGTERM vide les spans mais n'arrête pas le processus : en conteneur, prévoir l'arrêt forcé après le délai de grâce.",
       ],
       documentation: `${DOC}/js/`,
     },

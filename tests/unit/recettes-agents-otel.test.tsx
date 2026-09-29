@@ -70,8 +70,9 @@ describe("recettes serveur : le socle commun, prérempli", () => {
 
   it("l'état dit ce qui a été éprouvé en production, et seulement cela", () => {
     const etat = Object.fromEntries(recettes.agents.map((a) => [a.id, a.etat]));
-    expect(etat.node).toBe("non éprouvé en production");
-    for (const id of ["python", "java", "dotnet"]) expect(etat[id]).toBe("éprouvé en production le 28/09/2026");
+    expect(etat.python).toBe("éprouvé en production (Flask le 28/09/2026, FastAPI le 29/09/2026)");
+    expect(etat.node).toBe("éprouvé en production le 29/09/2026 (traces)");
+    for (const id of ["java", "dotnet"]) expect(etat[id]).toBe("éprouvé en production le 28/09/2026");
   });
 
   it("Go, PHP et Ruby renvoient à la documentation OpenTelemetry", () => {
