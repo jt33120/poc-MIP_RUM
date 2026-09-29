@@ -390,7 +390,7 @@ describe("F32 — vitalDeVerdict (règle R-V) et libellés du résultat", () => 
     // Hors jeu Web Vitals, ou variante hors CORE_VITALS : jamais de verdict.
     expect(f32VitalDeVerdict(plan("dataset=resources&measure=duration_ms:p75&viz=value"))).toBeNull();
     expect(
-      f32VitalDeVerdict({ dataset: "vitals", measure: { field: "value", aggregation: "p75" }, variant: "SVI_LATENCE" }),
+      f32VitalDeVerdict({ dataset: "vitals", measure: { field: "value", aggregation: "p75" }, variant: "METRIQUE_MAISON" }),
     ).toBeNull();
   });
 

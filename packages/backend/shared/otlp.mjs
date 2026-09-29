@@ -1228,17 +1228,6 @@ function isServerKind(kind) {
 }
 
 /** Durée ms entre deux timestamps OTLP (nanos string|number) ; null si absent/invalide. */
-/**
- * Nombre fini, ou null. Un attribut OTLP peut arriver en chaîne (`"1200"`) selon
- * l'émetteur ; `Number("")` vaut 0 et `Number(null)` vaut 0, deux valeurs qui
- * passeraient pour des mesures réelles. On écarte donc explicitement le vide.
- */
-export function numOrNull(v) {
-  if (v == null || v === "") return null;
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 function durationMsBetween(startNanos, endNanos) {
   if (!startNanos || !endNanos) return null;
   try {
@@ -1347,11 +1336,6 @@ export function flattenOtlp(payload, opts = {}) {
   const actions = [];
   const spans = [];
   const apiKeys = [];
-  // SVI (migration-v51) : appels, étapes et tronçons voix. Collections séparées
-  // des spans RUM — un appel n'est pas un span, cf. l'en-tête de la migration.
-  const sviCalls = [];
-  const sviSteps = [];
-  const sviLegs = [];
   // P7.5 : capacités DÉCLARÉES par un runtime mobile, dédoublonnées dans le lot
   // par (app, runtime, release, capacité). Un lot qui redit six fois la même
   // chose ne doit pas écrire six lignes — ni six fois la même.
@@ -1407,144 +1391,6 @@ export function flattenOtlp(payload, opts = {}) {
       ...dimensions,
       ...eventMetadata(a),
     };
-  };
-
-  /**
-   * Ligne SVI (svi.call / svi.step / svi.leg). `null` si l'identifiant d'appel
-   * manque : sans lui, rien n'est rattachable et une ligne orpheline fausserait
-   * les taux plus sûrement qu'une ligne absente.
-   *
-   * La SAISIE n'est jamais transportée : on ne lit que `svi.input_class` et
-   * `svi.input_len`, et un nœud marqué sensible perd sa longueur ici, côté
-   * serveur — l'adaptateur est censé l'avoir déjà fait, mais on ne fait pas
-   * dépendre une garantie PCI de la bonne conduite d'un client.
-   */
-  const sviRow = (span, a, appId, nowMs) => {
-    const callId = a["svi.call_id"];
-    if (typeof callId !== "string" || callId === "") return null;
-    const startedAt = nanosToDate(span.startTimeUnixNano, nowMs);
-
-    if (span.name === "svi.call") {
-      const status = a["svi.status"] === "closed" ? "closed" : "open";
-      return {
-        app_id: appId,
-        call_id: callId,
-        trace_id: span.traceId || callId,
-        platform: a["svi.platform"] ?? "unknown",
-        adapter_version: a["svi.adapter_version"] ?? "0",
-        source_schema: a["svi.source_schema"] ?? null,
-        provenance: typeof a["svi.provenance"] === "string"
-          ? a["svi.provenance"].split(",").map((s) => s.trim()).filter(Boolean)
-          : [],
-        direction: a["svi.direction"] ?? "inbound",
-        entry_point: a["svi.entry_point"] ?? null,
-        flow_id: a["svi.flow_id"] ?? null,
-        flow_version: a["svi.flow_version"] ?? null,
-        caller_hash: a["svi.caller_hash"] ?? null,
-        caller_key_id: a["svi.caller_key_id"] ?? null,
-        caller_country: a["svi.caller_country"] ?? null,
-        started_at: startedAt,
-        answered_at: a["svi.answered_at"] ?? null,
-        ended_at: a["svi.ended_at"] ?? null,
-        status,
-        // Une issue n'a de sens que sur un appel clos : la contrainte
-        // svi_call_outcome_ck refuserait la ligne, autant ne pas la fabriquer.
-        outcome: status === "closed" ? (a["svi.outcome"] ?? "failed") : null,
-        outcome_detail: a["svi.outcome_detail"] ?? null,
-        close_reason: a["svi.close_reason"] ?? null,
-        hangup_party: a["svi.hangup_party"] ?? null,
-        duration_ms: numOrNull(a["svi.duration_ms"]),
-        ivr_ms: numOrNull(a["svi.ivr_ms"]),
-        queue_ms: numOrNull(a["svi.queue_ms"]),
-        talk_ms: numOrNull(a["svi.talk_ms"]),
-        setup_ms: numOrNull(a["svi.setup_ms"]),
-        queue_name: a["svi.queue_name"] ?? null,
-        wait_ms: numOrNull(a["svi.wait_ms"]),
-        transfer_target: a["svi.transfer_target"] ?? null,
-        agent_group: a["svi.agent_group"] ?? null,
-        menu_path_final: a["svi.menu_path_final"] ?? null,
-        menu_depth: numOrNull(a["svi.menu_depth"]),
-        exit_node: a["svi.exit_node"] ?? null,
-        task_name: a["svi.task_name"] ?? null,
-        task_success: typeof a["svi.task_success"] === "boolean" ? a["svi.task_success"] : null,
-        ai_agent: a["svi.ai_agent"] === true,
-        ai_disclosed_at: a["svi.ai_disclosed_at"] ?? null,
-        ai_disclosure_source: a["svi.ai_disclosure_source"] ?? null,
-        is_test: a["svi.is_test"] === true,
-        source_ref: a["svi.source_ref"] ?? null,
-      };
-    }
-
-    if (span.name === "svi.step") {
-      const seq = numOrNull(a["svi.seq"]);
-      const kind = a["svi.kind"];
-      if (seq == null || typeof kind !== "string") return null;
-      const sensitive = a["svi.input_sensitive"] === true;
-      const cls = sensitive ? "masked" : (a["svi.input_class"] ?? null);
-      return {
-        step_id: a["svi.step_id"] ?? `${callId}:${seq}:${kind}`,
-        parent_step_id: a["svi.parent_step_id"] ?? null,
-        app_id: appId,
-        call_id: callId,
-        seq,
-        kind,
-        node_id: a["svi.node_id"] ?? null,
-        node_label: a["svi.node_label"] ?? null,
-        menu_path: a["svi.menu_path"] ?? null,
-        depth: numOrNull(a["svi.depth"]),
-        branch: a["svi.branch"] ?? null,
-        input_class: cls,
-        // Garde serveur : un nœud sensible ne porte AUCUNE longueur, quoi
-        // qu'envoie le client (len=16 puis len=3 est un oracle PAN+CVV).
-        input_len: sensitive ? null : numOrNull(a["svi.input_len"]),
-        input_sensitive: sensitive,
-        no_match: a["svi.no_match"] === true,
-        no_input: a["svi.no_input"] === true,
-        reprompt_index: numOrNull(a["svi.reprompt_index"]) ?? 0,
-        asr_confidence: numOrNull(a["svi.asr_confidence"]),
-        rejected: typeof a["svi.rejected"] === "boolean" ? a["svi.rejected"] : null,
-        milestone: a["svi.milestone"] ?? null,
-        flow_outcome: a["svi.flow_outcome"] ?? null,
-        started_at: startedAt,
-        duration_ms: durationMsBetween(span.startTimeUnixNano, span.endTimeUnixNano),
-        exit_reason: a["svi.exit_reason"] ?? null,
-      };
-    }
-
-    if (span.name === "svi.leg") {
-      const legRef = a["svi.leg_ref"];
-      const dir = a["svi.dir"];
-      const method = a["svi.mos_method"];
-      // mos_method est NOT NULL en base : aucun MOS ne s'affiche sans sa
-      // provenance. On rejette plutôt que d'inventer une méthode de mesure.
-      if (typeof legRef !== "string" || (dir !== "rx" && dir !== "tx") || typeof method !== "string")
-        return null;
-      return {
-        app_id: appId, call_id: callId, leg_ref: legRef, dir,
-        role: a["svi.role"] ?? "ivr_edge",
-        codec: a["svi.codec"] ?? null,
-        ptime_ms: numOrNull(a["svi.ptime_ms"]),
-        sample_rate: numOrNull(a["svi.sample_rate"]),
-        carrier: a["svi.carrier"] ?? null,
-        mos_method: method,
-        mos_avg: numOrNull(a["svi.mos_avg"]),
-        mos_min: numOrNull(a["svi.mos_min"]),
-        r_factor_avg: numOrNull(a["svi.r_factor_avg"]),
-        r_factor_min: numOrNull(a["svi.r_factor_min"]),
-        jitter_avg_ms: numOrNull(a["svi.jitter_avg_ms"]),
-        jitter_max_ms: numOrNull(a["svi.jitter_max_ms"]),
-        loss_avg_pct: numOrNull(a["svi.loss_avg_pct"]),
-        loss_max_pct: numOrNull(a["svi.loss_max_pct"]),
-        rtt_avg_ms: numOrNull(a["svi.rtt_avg_ms"]),
-        rtt_max_ms: numOrNull(a["svi.rtt_max_ms"]),
-        packets_sent: numOrNull(a["svi.packets_sent"]),
-        packets_lost: numOrNull(a["svi.packets_lost"]),
-        e_model_params: a["svi.e_model_params"] ?? null,
-        started_at: startedAt,
-        ended_at: a["svi.ended_at"] ?? null,
-      };
-    }
-    return null;
   };
 
   for (const rs of Array.isArray(payload?.resourceSpans) ? payload.resourceSpans : []) {
@@ -1606,27 +1452,11 @@ export function flattenOtlp(payload, opts = {}) {
         for (const row of derivees.rows) errors.push(row);
         rejected += derivees.rejected;
 
-        // ── SVI (migration-v51) — EN TÊTE DE CHAÎNE, et ce n'est pas un détail.
-        // Plus bas, la branche « span interne » capture TOUT span porteur d'un
-        // trace_id/span_id sans mip.session_id, puis `if (!sessionId) rejected++`
-        // écarte le reste. Une branche svi.* placée après serait donc du CODE MORT :
-        // aucun appel n'a de session web. On route ici, avant tout le reste.
-        if (span.name.startsWith("svi.")) {
-          const row = sviRow(span, a, appId, now);
-          if (row) {
-            if (span.name === "svi.call") sviCalls.push(row);
-            else if (span.name === "svi.step") sviSteps.push(row);
-            else if (span.name === "svi.leg") sviLegs.push(row);
-            else rejected++; // svi.* inconnu : compté, jamais deviné
-          } else rejected++;
-          continue;
-        }
-
         // Événement métier `track.<nom>` d'un émetteur SANS session — agent
-        // Node, tâche planifiée (P7.4). EN TÊTE DE CHAÎNE, pour la même raison
-        // que svi.* juste au-dessus : plus bas, la branche « span interne »
-        // capture tout span sans `mip.session_id` et en ferait un faux span de
-        // détail, puis `if (!sessionId) rejected++` écarterait le reste.
+        // Node, tâche planifiée (P7.4). EN TÊTE DE CHAÎNE, et ce n'est pas un
+        // détail : plus bas, la branche « span interne » capture tout span sans
+        // `mip.session_id` et en ferait un faux span de détail, puis
+        // `if (!sessionId) rejected++` écarterait le reste.
         //
         // La ligne s'écrit avec `session_id` NULL : aucune session inventée, et
         // aucune clé étrangère vers une session que ce lot n'écrit pas. Sa
@@ -2141,9 +1971,6 @@ export function flattenOtlp(payload, opts = {}) {
     spans,
     eventIndex,
     apiKeys,
-    sviCalls,
-    sviSteps,
-    sviLegs,
     capabilities: [...capabilities.values()],
     rejected,
   };

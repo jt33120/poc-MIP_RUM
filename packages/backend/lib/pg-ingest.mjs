@@ -607,9 +607,6 @@ export async function writeRowsWithClient(client, {
   actions = [],
   spans,
   eventIndex = [],
-  sviCalls,
-  sviSteps,
-  sviLegs,
   // P7.5 — capacités DÉCLARÉES par un runtime mobile. Défaut `[]` : un lot
   // antérieur au modèle, ou déposé avant lui dans `ingest_raw`, n'en porte pas.
   capabilities = [],
@@ -746,34 +743,6 @@ export async function writeRowsWithClient(client, {
       );
     }
 
-    // SVI (migration-v51) : la fusion des lots est non triviale (ne jamais
-    // régresser un champ vers NULL, retenir le début le plus tôt / la fin la
-    // plus tard, ne jamais rouvrir un appel clos) — elle vit en base, appelée
-    // à l'identique par tous les chemins d'ingestion.
-    for (const call of sviCalls ?? []) {
-      await client.query("select upsert_svi_call($1::jsonb)", [JSON.stringify(call)]);
-    }
-    await batchInsert(
-      client,
-      "svi_step",
-      ["step_id", "parent_step_id", "app_id", "call_id", "seq", "kind", "node_id", "node_label",
-       "menu_path", "depth", "branch", "input_class", "input_len", "input_sensitive",
-       "no_match", "no_input", "reprompt_index", "asr_confidence", "rejected",
-       "milestone", "flow_outcome", "started_at", "duration_ms", "exit_reason"],
-      sviSteps ?? [],
-      "on conflict (step_id) do nothing",
-    );
-    await batchInsert(
-      client,
-      "svi_leg",
-      ["app_id", "call_id", "leg_ref", "role", "dir", "codec", "ptime_ms", "sample_rate",
-       "carrier", "mos_method", "mos_avg", "mos_min", "r_factor_avg", "r_factor_min",
-       "jitter_avg_ms", "jitter_max_ms", "loss_avg_pct", "loss_max_pct", "rtt_avg_ms",
-       "rtt_max_ms", "packets_sent", "packets_lost", "e_model_params", "started_at", "ended_at"],
-      (sviLegs ?? []).map((l) => ({ ...l,
-        e_model_params: l.e_model_params ? JSON.stringify(l.e_model_params) : null })),
-      "on conflict (app_id, call_id, leg_ref, dir) do nothing",
-    );
     // P7.5 : ce que le runtime mobile DÉCLARE collecter. Dans la transaction du
     // lot, comme le reste : une déclaration écrite alors que la télémétrie qui
     // l'accompagne est annulée décrirait une collecte qui n'a pas eu lieu.

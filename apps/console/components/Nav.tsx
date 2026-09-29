@@ -61,7 +61,7 @@ export function Nav({ reglages }: { reglages?: Record<string, React.ReactNode> }
         // « ouvrir dans un nouvel onglet ».
         // Sur son propre chemin (URL tapée ou partagée), l'entrée fermée est tout de
         // même marquée comme l'écran courant : sinon aucune entrée de la sidebar ne
-        // l'était (recette du 26/09/2026, écrans Logs, SVI, IA).
+        // l'était (recette du 26/09/2026, écrans Logs et IA).
         if (c.verrouille) {
           return (
             <span

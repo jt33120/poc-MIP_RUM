@@ -130,22 +130,6 @@ export const CATEGORIES: NavCategory[] = [
   // 'sdk' et 'extension', rien ne produit ces valeurs. C'est de l'observabilité
   // back-end corrélée au RUM par trace_id, pas une mesure de l'expérience vécue.
   { href: "/logs", label: "Logs", icon: "logs", domain: "neutral", verrouille: estFermee("/logs") },
-  // Supervision SVI (serveur vocal). Produit distinct du RUM web : un appel n'est
-  // pas une visite, cf. migration-v51. La vue d'ensemble porte le containment NET.
-  // Fermée comme la supervision IA : capacité annoncée, accès non ouvert. Les
-  // sous-onglets restent déclarés pour que la réouverture soit un seul mot à
-  // retirer, mais la sidebar ne les expose plus (l'entrée n'est plus cliquable).
-  {
-    href: "/svi",
-    label: "Supervision SVI",
-    icon: "activity",
-    domain: "neutral",
-    verrouille: estFermee("/svi"),
-    children: [
-      { href: "/svi", label: "Vue d'ensemble" },
-      { href: "/svi/appels", label: "Appels" },
-    ],
-  },
   // Espace PARTENAIRE (sponsorisé xSOM) — supervision IA lue depuis xSOM AI Guard,
   // distincte du RUM MIP (cf. ADR-0001). Fermée pour l'instant : l'entrée reste
   // visible pour annoncer la capacité, mais ne mène nulle part.
@@ -213,16 +197,15 @@ export function domaineDe(pathname: string): DomaineRum | null {
 /**
  * Surtitres HORS des cinq catégories RUM. Avant la recette du 26/09/2026, tout
  * écran qui n'y était pas rangé retombait sur « Performance » : l'administration,
- * « API et MCP », et les trois écrans fermés (Logs, Supervision SVI, Supervision
- * IA), alors que la sidebar les range ailleurs.
+ * « API et MCP », et les écrans fermés (Logs, Supervision IA), alors que la
+ * sidebar les range ailleurs.
  */
-export type DomaineHorsRum = "admin" | "integrations" | "logs" | "svi" | "ai";
+export type DomaineHorsRum = "admin" | "integrations" | "logs" | "ai";
 
 const DOMAINES_HORS_RUM: readonly (readonly [string, DomaineHorsRum])[] = [
   ["/admin", "admin"],
   ["/api-docs", "integrations"],
   ["/logs", "logs"],
-  ["/svi", "svi"],
   ["/ai", "ai"],
 ];
 

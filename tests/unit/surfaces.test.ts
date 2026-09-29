@@ -80,7 +80,6 @@ describe("chaque écran branché sur le contrat déclare ses capacités", () => 
     expect(surfaceFor("/errors")?.path).toBe("/errors");
     expect(surfaceFor("/sessions/s1")?.noFilters).toBeTruthy();
     expect(surfaceFor("/sessions")?.noFilters).toBeUndefined();
-    expect(surfaceFor("/svi/appels/42")?.path).toBe("/svi/");
     expect(surfaceFor("/")?.path).toBe("/");
     expect(surfaceFor("/admin/users")).toBeNull();
     expect(surfaceFor("/select")).toBeNull();
@@ -176,7 +175,7 @@ describe("matrice écran × filtre", () => {
   });
 
   it("lectures historiques restantes (`period-only`) : aucune dimension, tablette comprise", () => {
-    for (const path of ["/logs", "/ai", "/forecast", "/svi", "/svi/appels/1"]) {
+    for (const path of ["/logs", "/ai", "/forecast"]) {
       expect(disponibles(path), path).toEqual([]);
       expect(conditionAvailability(surface(path), { dimension: "device", operator: "eq", value: "tablet" }, schemaComplet())).toEqual({
         available: false,

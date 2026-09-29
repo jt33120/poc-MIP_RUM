@@ -1,5 +1,10 @@
 # Cadrage produit — Supervision SVI complète
 
+> **Archivé le 29/09/2026 : module SVI retiré.** Le propriétaire du produit a décidé ce
+> jour-là de retirer la supervision SVI : écrans `/svi`, ingestion des spans `svi.*` et
+> tables `svi_*`, toutes vides en production. Ce document décrit un état et des projets
+> qui n'ont plus cours ; une partie des fichiers qu'il cite n'existe plus.
+
 > **Décision prise** (29 juillet 2026) : ouvrir le chantier sur le **périmètre
 > complet** — disponibilité, qualité de la voix, parcours et satisfaction.
 > Ce document en pose les fondations : standards, marché, architecture cible,

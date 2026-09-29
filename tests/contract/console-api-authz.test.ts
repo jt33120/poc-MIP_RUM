@@ -87,7 +87,6 @@ const CHEMINS: Record<string, Record<string, string>> = {
   "screens.errorGroup": { fingerprint: EMPREINTE_A },
   "screens.issue": { id: ISSUE_A },
   "screens.trace": { traceId: TRACE_A },
-  "screens.sviCall": { callId: "authz-appel-inconnu" },
   // C6 — un tableau réel pour ses écrans ; des identifiants absents pour ses écritures.
   get "screens.dashboard"() {
     return { id: TABLEAU_A.id };
@@ -193,9 +192,6 @@ const ABOUTIS: Record<string, readonly string[]> = {
   errors: ["groupes", "issues"],
   issue: ["ok", "autre_app"],
   // Capacités FERMÉES (`lib/capacites.ts`) : le chargeur ne lit rien et le dit.
-  svi: ["fermee"],
-  sviAppels: ["fermee"],
-  sviAppel: ["fermee"],
   logs: ["fermee"],
   ai: ["fermee"],
 };

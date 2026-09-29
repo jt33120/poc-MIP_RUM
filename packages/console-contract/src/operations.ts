@@ -217,7 +217,7 @@ export const ECRANS = Object.freeze({
   tracing: ecran("screens.tracing", "/v1/screens/tracing"),
   trace: ecran<{ traceId: string }>("screens.trace", "/v1/screens/tracing/{traceId}"),
   correlation: ecran("screens.correlation", "/v1/screens/correlation"),
-  // C5 — usages, satisfaction, conversions, capacités fermées (SVI, logs, IA).
+  // C5 — usages, satisfaction, conversions, capacités fermées (logs, IA).
   acquisition: ecran("screens.acquisition", "/v1/screens/acquisition"),
   forms: ecran("screens.forms", "/v1/screens/forms"),
   retention: ecran("screens.retention", "/v1/screens/retention"),
@@ -225,9 +225,6 @@ export const ECRANS = Object.freeze({
   experience: ecran("screens.experience", "/v1/screens/experience"),
   goals: ecran("screens.goals", "/v1/screens/goals"),
   /** Capacité FERMÉE tant que `lib/capacites.ts` la liste : le chargeur ne lit rien et le dit. */
-  svi: ecran("screens.svi", "/v1/screens/svi"),
-  sviAppels: ecran("screens.sviCalls", "/v1/screens/svi/calls"),
-  sviAppel: ecran<{ callId: string }>("screens.sviCall", "/v1/screens/svi/calls/{callId}"),
   logs: ecran("screens.logs", "/v1/screens/logs"),
   ai: ecran("screens.ai", "/v1/screens/ai"),
   // C6 — espace de travail : tableaux de bord, vues enregistrées.

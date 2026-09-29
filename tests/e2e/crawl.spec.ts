@@ -79,7 +79,6 @@ const EXEMPLES: Record<string, string> = {
   "[fingerprint]": `select fingerprint as v, app_id as app from rum_error where fingerprint is not null order by app_id = '${APP}' desc, ts desc limit 1`,
   "[id]@issues": `select id::text as v, app_id as app from error_issue order by app_id = '${APP}' desc, last_seen desc limit 1`,
   "[id]@sessions": `select session_id as v, app_id as app from rum_session order by app_id = '${APP}' desc, started_at desc nulls last limit 1`,
-  "[callId]": `select call_id as v, app_id as app from svi_call order by app_id = '${APP}' desc, id desc limit 1`,
   "[traceId]": `select trace_id as v, app_id as app from rum_span where trace_id is not null order by app_id = '${APP}' desc limit 1`,
 };
 

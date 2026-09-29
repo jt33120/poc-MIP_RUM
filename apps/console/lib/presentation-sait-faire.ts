@@ -40,6 +40,10 @@
 //     capteur de la console. D14 quitte la liste des inertes (couverture-controle.ts) et
 //     prend sa carte ; les sites des clients restent en « Ce qui reste » (R6).
 //
+// RETRAIT DU MODULE SVI (29/09/2026). Les lignes B1 et D5 du document le disent ; les
+// puces B1 (K6) et D5 (K12) suivent : plus de lecture SVI, et la réserve de D5 — des
+// tables que la purge ne couvrait pas — est levée avec leur suppression.
+//
 // SOURCES. `{ ligne }` = une ligne de capacité, par identifiant ; `{ passage }` = le
 // numéro d'une ligne du document hors des tables de capacités ; `{ fichier }` =
 // « chemin:ligne » ou « chemin:début-fin » d'un fichier du dépôt, relatif à la
@@ -163,7 +167,7 @@ export const CARTES: readonly CarteCapacite[] = [
       {
         id: "B1",
         texte:
-          "Les écrans plus anciens (journaux, SVI, assistant IA) filtrent encore par application nommée, pas par le périmètre effectif ; un écran qui ne sait pas appliquer un filtre l'annonce non appliqué.",
+          "Les écrans plus anciens (journaux, assistant IA) filtrent encore par application nommée, pas par le périmètre effectif ; un écran qui ne sait pas appliquer un filtre l'annonce non appliqué.",
       },
       {
         id: "B2",
@@ -326,7 +330,8 @@ export const CARTES: readonly CarteCapacite[] = [
     limites: [
       {
         id: "D5",
-        texte: "La purge ne couvre pas encore les tables de supervision SVI.",
+        texte:
+          "Aucun relevé n'a encore revérifié la purge depuis le retrait, le 29/09/2026, des tables de supervision SVI qu'elle ne couvrait pas.",
       },
     ],
     sources: [{ ligne: "D5" }],

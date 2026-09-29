@@ -156,8 +156,6 @@ export const SURFACES: Surface[] = [
     rangeNote: "Cet écran lit une fenêtre fixe de 14 jours complets ; la période choisie en haut ne s'applique pas.",
     legacy: "period-only",
   },
-  { path: "/svi/", datasets: [], range: "presets", legacy: "period-only" },
-  { path: "/svi", datasets: [], range: "presets", legacy: "period-only" },
   {
     path: "/",
     datasets: ["vitals", "views", "errors", "sessions"],
