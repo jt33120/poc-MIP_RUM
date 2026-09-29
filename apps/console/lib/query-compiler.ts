@@ -290,8 +290,14 @@ export function compileScope(query: AnalyticsQuery, appColumn: string, bind: Bin
   if (apps !== null) return ` and ${appColumn} = any(${bind(apps)}::text[])`;
   // `not exists` plutôt que `not in` : une ligne sans app (événement d'alerte orphelin)
   // reste dans « toutes les apps » au lieu de disparaître sur un NULL.
+  //
+  // Les applications SONDE (v99, `mip-canari`) restent dehors même quand on inclut
+  // les internes : le canari n'est pas du trafic. Lu par `to_jsonb(…) ->> 'sonde'`
+  // et non par la colonne : la console peut partir avant que le scheduler
+  // n'applique v99, et une colonne citée absente ferait échouer la requête (42703).
+  // Choisir l'app explicitement (`effectiveApps`) la montre toujours.
   return query.filters.includeInternal
-    ? ""
+    ? ` and not exists (select 1 from app_registry sondes where sondes.app_id = ${appColumn} and (to_jsonb(sondes) ->> 'sonde') = 'true')`
     : ` and not exists (select 1 from app_registry internes where internes.internal and internes.app_id = ${appColumn})`;
 }
 
