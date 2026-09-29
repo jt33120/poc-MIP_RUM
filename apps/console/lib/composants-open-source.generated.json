@@ -1498,27 +1498,6 @@
       "categorie": "conteneurs",
       "type": "image",
       "nom": "node",
-      "version": "24-bookworm-slim",
-      "licence": "MIT",
-      "depot": "https://github.com/nodejs/docker-node",
-      "utilisePar": [
-        {
-          "nom": "Dockerfile.backend"
-        },
-        {
-          "nom": "Dockerfile.mcp"
-        }
-      ],
-      "sources": [
-        "infra/docker/Dockerfile.backend",
-        "infra/docker/Dockerfile.mcp"
-      ],
-      "role": "Image de base des services (image officielle, sur Debian 12 : ses paquets gardent leurs licences propres)."
-    },
-    {
-      "categorie": "conteneurs",
-      "type": "image",
-      "nom": "node",
       "version": "24.21.0-bookworm-slim",
       "licence": "MIT",
       "depot": "https://github.com/nodejs/docker-node",

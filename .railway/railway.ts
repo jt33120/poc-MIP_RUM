@@ -77,17 +77,15 @@ const REGION = "europe-west4-drams3a";
 //   - `pnpm-lock.yaml` : une version de `pg` ou du SDK MCP qui bouge change ce
 //     que l'image embarque, sans toucher un seul fichier du service.
 //   - `packages/service-kit/**` : le kit commun que P1 introduit (PR-C).
+// Les anciens chemins (`apps/ingest/**`, `apps/mcp/**` et les deux Dockerfiles
+// communs) sont sortis le 29/09/2026 : depuis l'apply du 27/09, les deux services
+// construisent `services/*/Dockerfile` (relu sur Railway le 29/09), et ces
+// fichiers n'existent plus.
 const SURVEILLE_SCHEDULER = [
-  // aujourd'hui
-  "apps/ingest/**", "services/scheduler/**", "infra/docker/Dockerfile.backend",
-  // après le remodelage
-  "packages/backend/**", "packages/db/**", "packages/service-kit/**", "infra/docker/**", "pnpm-lock.yaml",
+  "services/scheduler/**", "packages/backend/**", "packages/db/**", "packages/service-kit/**", "infra/docker/**", "pnpm-lock.yaml",
 ];
 const SURVEILLE_MCP = [
-  // aujourd'hui
-  "apps/mcp/**", "services/mcp/**", "infra/docker/Dockerfile.mcp",
-  // après le remodelage
-  "packages/mcp-tools/**", "packages/service-kit/**", "infra/docker/**", "pnpm-lock.yaml",
+  "services/mcp/**", "packages/mcp-tools/**", "packages/service-kit/**", "infra/docker/**", "pnpm-lock.yaml",
 ];
 // LE COLLECTOR NAÎT APRÈS LE REMODELAGE : aucun ancien chemin à porter. Sa liste
 // est exactement ce que lit `services/collector/Dockerfile`, pas un de plus :
@@ -357,11 +355,12 @@ export default defineRailway((ctx) => {
     deploy: { restartPolicyType: "ALWAYS", drainingSeconds: 20 },
     env: {
       DATABASE_URL: preserve(), LOG_LEVEL: preserve(), NODE_ENV: preserve(), PGPOOL_MAX: preserve(), PORT: preserve(),
-      // BASE GRATUITE (décision du 24/09/2026) : un tick toutes les 5 minutes
-      // gardait le calcul Neon éveillé en permanence et a épuisé les 100 CU-h
-      // du mois. À 15 minutes, la base dort ~63 % du temps (~65 CU-h). Pour un
-      // vrai produit RUM, offre payante et « 5 » ici (README du scheduler,
-      // « Base gratuite »). La vitrine lit la cadence publiée, pas cette ligne.
+      // CADENCE RALENTIE (décision du 24/09/2026, base gratuite à l'époque) : un
+      // tick toutes les 5 minutes gardait le calcul Neon éveillé en permanence et
+      // a épuisé les 100 CU-h du mois. Neon est payant à l'usage depuis le
+      // 27/09/2026 : à 15 minutes, la base dort ~63 % du temps, et chaque réveil
+      // se paie. « 5 » ici quand la base d'un vrai produit sera choisie (README
+      // du scheduler). La vitrine lit la cadence publiée, pas cette ligne.
       SCHEDULER_TICK_MIN: "15",
       // P5 — LE TICK NE LIVRE PLUS : le notifier, déclaré juste en dessous et
       // créé dans le MÊME apply, s'en charge. Le scheduler n'a pas la clé

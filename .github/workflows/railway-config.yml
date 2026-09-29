@@ -29,7 +29,9 @@
 # déclarés en `preserve()`.
 #
 # ACTIONS MANUELLES AVANT LA PREMIÈRE PR (hors dépôt, réglages GitHub) :
-#   - secret de dépôt `RAILWAY_PLAN_TOKEN` : jeton de projet Railway, pour `plan` ;
+#   - environnement `railway-plan` : relecteur requis, et son secret
+#     d'environnement `RAILWAY_PLAN_TOKEN` (jeton de projet Railway, pour `plan`) ;
+#     plus de secret de dépôt de ce nom (29/09/2026) ;
 #   - environnement `railway-production` : relecteur requis, déploiement limité
 #     à la branche `master`, et le secret d'environnement `RAILWAY_TOKEN` ;
 #   - le label `allow-destroy`.
@@ -65,6 +67,13 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # LE JETON DE PLAN N'EST REMIS QU'APRÈS UN CLIC (29/09/2026). Ce job exécute
+    # `.railway/railway.ts` DE LA PR, donc du code que n'importe quelle branche du
+    # dépôt peut écrire — agents compris. Sans environnement, `RAILWAY_PLAN_TOKEN`
+    # (un jeton du projet de production) était remis à ce code sans relecture.
+    # L'environnement `railway-plan` exige un relecteur ; le secret y vit, et non
+    # plus au niveau du dépôt, pour qu'un autre workflow ne puisse pas le lire.
+    environment: railway-plan
     permissions:
       contents: read
       # Le commentaire du plan sur la PR (repli `github-token` de l'action).
