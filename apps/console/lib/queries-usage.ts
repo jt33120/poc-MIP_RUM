@@ -14,7 +14,8 @@
 // et ne distinguait pas « rien à compter » d'une panne. Le témoin de passage est le
 // battement du travail quotidien (`scheduler_lease`, cadence `quotidien`) : il n'est
 // écrit qu'à un passage ABOUTI, métrage compris (packages/backend/jobs/bail.mjs),
-// et le métrage de ce passage porte sur la veille (UTC).
+// et le métrage de ce passage porte sur la veille (UTC), plus les jours qu'un passage
+// manqué a laissés sans comptage depuis le filigrane (migration-v98, 14 jours au plus).
 import { q } from "./db";
 
 export interface TenantUsageRow {
