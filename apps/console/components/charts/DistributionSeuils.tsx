@@ -31,7 +31,7 @@ import { etendueCentree, etiquettesAxeLisibles, largeurTexte, rangerEtiquettes }
 import { formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
 import { pluriel } from "@/lib/format";
 import { etiquettesGraduations } from "@/lib/graduations";
-import { RATING_HEX, SERIE } from "@/lib/palette";
+import { RATING_JETON, SERIE } from "@/lib/palette";
 import { RATING_LABEL, THRESHOLDS, rating2026, texteSeuils, type Rating } from "@/lib/rating";
 
 export interface Bac {
@@ -225,7 +225,7 @@ export function DistributionSeuils({
               y={HAUT}
               width={x(Math.min(a, plafond)) - x(de)}
               height={hauteurUtile}
-              fill={RATING_HEX[r]}
+              fill={RATING_JETON[r]}
               opacity={0.07}
               className="zone-seuil"
             />
@@ -242,7 +242,7 @@ export function DistributionSeuils({
               const x0 = x(Math.max(b.debut, de));
               const x1 = x(Math.min(b.fin, a, plafond));
               return (
-                <rect key={`${i}-${r}`} x={x0 + JOINT / 2} y={yBas - h} width={Math.max(x1 - x0 - JOINT, JOINT)} height={h} fill={RATING_HEX[r]} opacity={0.85}>
+                <rect key={`${i}-${r}`} x={x0 + JOINT / 2} y={yBas - h} width={Math.max(x1 - x0 - JOINT, JOINT)} height={h} fill={RATING_JETON[r]} opacity={0.85}>
                   <title>{`${borne(vital, b.debut)} – ${borne(vital, b.fin)} : ${pluriel(b.n, "mesure")}`}</title>
                 </rect>
               );
@@ -255,7 +255,7 @@ export function DistributionSeuils({
           y={yBas - hauteur(nDebord)}
           width={DEBORD}
           height={hauteur(nDebord)}
-          fill={zoneDebord ? RATING_HEX[zoneDebord] : "currentColor"}
+          fill={zoneDebord ? RATING_JETON[zoneDebord] : "currentColor"}
           opacity={zoneDebord ? 0.85 : 0.35}
           className={zoneDebord ? undefined : "text-ink-soft"}
         >

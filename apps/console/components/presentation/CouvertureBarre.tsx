@@ -20,16 +20,19 @@ import { CAPACITES, RELEVE, VERDICTS, VERDICT_LABEL, type Verdict } from "@/lib/
 import { categorie } from "@/lib/palette";
 import { repartitionCouverture } from "@/lib/presentation-sait-faire";
 
-/** La teinte d'un verdict : son rang dans le vocabulaire du document, stable d'un relevé à l'autre. */
+/**
+ * La teinte d'un verdict : son rang dans le vocabulaire du document, stable d'un relevé
+ * à l'autre. Sept verdicts pour six teintes : le septième (« non commencé ») prend le
+ * gris « Autres » — juste, puisque rien n'y est encore fait.
+ */
 export function couleurVerdict(verdict: Verdict): string {
   return categorie(VERDICTS.indexOf(verdict));
 }
 
 /**
- * Les verdicts dessinés en teinte pâle. La palette catégorielle a deux paires proches
- * — ciel et cyan, pierre et ardoise —, que la recette du 26/09/2026 confondait, en
- * sombre surtout : « non retenue » avec « déployées », « non commencées » avec
- * « bloquées ». Pâlir le second de chaque paire les sépare sans sortir de la palette.
+ * Les verdicts dessinés en teinte pâle, pour qu'ils pèsent moins que ce qui est livré.
+ * (Avec l'ancienne palette à huit, c'était aussi le seul moyen de séparer deux paires
+ * proches, ciel ↔ cyan et pierre ↔ ardoise, confondues à la recette du 26/09/2026.)
  */
 const PALES: ReadonlySet<Verdict> = new Set<Verdict>(["non_retenu", "non_commence"]);
 

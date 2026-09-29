@@ -12,14 +12,14 @@ import Link from "next/link";
 import { GlossaryTip } from "@/components/GlossaryTip";
 import { InfoTip } from "@/components/InfoTip";
 import { dominantFactors, type Health, type HealthFactor, HEALTH_CLASS, type HealthLabel } from "@/lib/health-libelles";
-import { RATING_HEX } from "@/lib/palette";
+import { RATING_JETON } from "@/lib/palette";
 import { pluriel } from "@/lib/format";
 
 const RING_STROKE: Record<HealthLabel, string> = {
-  Excellent: RATING_HEX.good,
+  Excellent: RATING_JETON.good,
   Bon: "rgb(var(--c-brand))", // bleu perf : bon, sans être le vert d'un seuil web.dev
-  Dégradé: RATING_HEX["needs-improvement"],
-  Critique: RATING_HEX.poor,
+  Dégradé: RATING_JETON["needs-improvement"],
+  Critique: RATING_JETON.poor,
 };
 
 /** Formule du score, écrite sous l'anneau (le bandeau est « à formule affichée », § 1.8). */

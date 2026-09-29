@@ -15,7 +15,7 @@
 // Les chiffres sont posés sur une pastille `bg-panel/90` : lisibles sur le palier le
 // plus soutenu, en clair comme en sombre.
 import { formater } from "@/lib/fmt-ids";
-import { PALIERS_SEQUENTIELLE, SEQUENTIELLE } from "@/lib/palette";
+import { PALIERS_SEQUENTIELLE_JETONS, sequentielleJeton } from "@/lib/palette";
 
 /** Hachures de la semaine en cours : un motif, pas une couleur de plus (§ 3.9). */
 const HACHURES = "repeating-linear-gradient(135deg, rgb(var(--c-ink-soft) / 0.35) 0 2px, transparent 2px 6px)";
@@ -83,7 +83,7 @@ export function MatriceCohortes({
                         </td>
                       );
                     }
-                    const fond = c.taux === null ? "transparent" : SEQUENTIELLE(c.taux);
+                    const fond = c.taux === null ? "transparent" : sequentielleJeton(c.taux);
                     const titre = `${l.cohorte}, S+${o} : ${nombre(c.retenus)} / ${nombre(l.taille)} (${formater("pct", c.taux)})${c.incomplete ? ", semaine incomplète" : ""}`;
                     return (
                       <td
@@ -118,7 +118,7 @@ export function MatriceCohortes({
         {/* En français courant : « Part revenue (intensité, sans verdict) » disait la
             règle de conception, pas ce que la couleur mesure (recette du 26/09/2026). */}
         <span>Part des visiteurs revenus&nbsp;:</span>
-        {PALIERS_SEQUENTIELLE.map((couleur, i) => (
+        {PALIERS_SEQUENTIELLE_JETONS.map((couleur, i) => (
           <span key={couleur} className="inline-flex items-center gap-1">
             <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: couleur }} />
             {i * 20}–{(i + 1) * 20} %
