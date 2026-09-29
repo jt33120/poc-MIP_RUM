@@ -2,7 +2,7 @@
 
 Aucun capteur MIP ici : le serveur tourne sous l'agent OpenTelemetry OFFICIEL de
 Python, sans une ligne d'instrumentation, exactement comme un backend client
-(docs/INTEGRATION.md § 10). Ce que ce fichier prouve, c'est que MIP accueille ce
+(docs/capteurs-serveur.md § 1). Ce que ce fichier prouve, c'est que MIP accueille ce
 que l'agent envoie tel quel.
 
 Installation (une fois, versions figées) :
