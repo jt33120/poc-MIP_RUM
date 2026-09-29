@@ -19,7 +19,8 @@ const TELECHARGER =
 const BLOC = "rounded-lg border border-line px-3 py-2";
 const RESUME = "cursor-pointer text-xs font-medium text-ink";
 const TEXTE = "text-xs leading-relaxed text-ink-soft";
-const LIEN = "text-brand hover:underline";
+// Une adresse entière dans le texte : à 390 px, elle doit pouvoir se couper.
+const LIEN = "break-all text-brand hover:underline";
 
 /** Étape 3 : les agents OpenTelemetry officiels, par langage (présentationnel). */
 export function BackendStep({ recettes, nomSecret }: { recettes: RecettesAgents; nomSecret: string }) {
