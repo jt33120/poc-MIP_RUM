@@ -1,16 +1,21 @@
-// Étape 3 de l'assistant d'intégration : brancher le serveur du client.
+// Brancher le serveur du client : l'étape 3 de la fiche d'une application et la
+// section « Brancher le serveur » de /select/new.
 //
 // Décision du 29/09/2026 : côté serveur, plus aucun capteur maison. Le client
 // installe l'agent OpenTelemetry OFFICIEL de son langage, réglé par un socle
-// commun de variables `OTEL_*` ; la collecte MIP reçoit l'OTLP standard. Le
-// middleware FastAPI, le middleware Express et l'agent Node de MIP sont archivés :
-// une recette qui y renverrait ferait installer au client un code que plus
-// personne ne maintient (`tests/unit/recettes-agents-otel.test.tsx` l'interdit).
+// commun de variables `OTEL_*` ; la collecte MIP reçoit l'OTLP standard (protobuf
+// ou JSON). Le middleware FastAPI, le middleware Express et l'agent Node de MIP
+// sont archivés : une recette qui y renverrait ferait installer au client un code
+// que plus personne ne maintient (`tests/unit/recettes-agents-otel.test.tsx`
+// l'interdit).
+//
+// Le socle et les pièges suivent `docs/INTEGRATION.md` § 10, où sont dits l'état
+// de chaque langage et ce qui a été éprouvé en production.
 //
 // Module pur, sans base : le socle est prérempli avec l'identifiant de
 // l'application et les adresses réelles de collecte ; la clé d'API reste un
-// repère que le mécanisme du secret remis (`CodeAvecSecret`) remplace quand la clé
-// vient d'être affichée, et que le client remplace sinon.
+// repère, nu dans la valeur, que le secret remis (`CodeAvecSecret`, `guillemets`
+// à `false`) remplace quand la clé vient d'être affichée, et le client sinon.
 
 /** Repère de la clé d'API, le même que celui du code de suivi du navigateur. */
 export const REPERE_CLE_API = "COLLE_ICI_LA_CLE_API";
@@ -25,8 +30,10 @@ export interface RecetteAgent {
   id: "python" | "node" | "java" | "dotnet";
   /** Titre du bloc dépliable. */
   titre: string;
-  /** Précision affichée à côté du titre. */
+  /** L'agent officiel, nommé. */
   precision: string;
+  /** Éprouvé en production ou non (docs/INTEGRATION.md § 10, « Par langage »). */
+  etat: string;
   /** Le socle, l'installation de l'agent, puis la commande de lancement : un seul bloc à copier. */
   code: string;
   /** Les pièges propres au langage, une phrase chacun. */
@@ -48,13 +55,12 @@ export interface RecettesAgents {
 /**
  * Le socle commun des variables `OTEL_*`, identique pour tous les agents officiels.
  *
- * - un point d'arrivée PAR SIGNAL, en URL complète : avec la variable générique
- *   (`OTEL_EXPORTER_OTLP_ENDPOINT`), l'agent ajouterait `/v1/traces` à l'adresse ;
- * - `http/protobuf` : le protocole par défaut de la plupart des agents, que la
- *   collecte accepte, compressé en gzip ;
- * - pas de métriques : la collecte ne les reçoit pas, et un export refusé à
- *   chaque intervalle ne ferait que du bruit ;
- * - l'identité MIP voyage en attributs de ressource, comme pour le navigateur.
+ * - une adresse PAR SIGNAL, en URL complète : la variable générique
+ *   (`OTEL_EXPORTER_OTLP_ENDPOINT`) recevrait `/v1/traces` en suffixe ;
+ * - `http/protobuf`, jamais `grpc` : l'ingestion est en HTTP seulement, et c'est
+ *   le défaut de Python ; compressé en gzip ;
+ * - pas de métriques : aucune route `/v1/metrics`, l'agent journaliserait ses échecs ;
+ * - l'identité MIP voyage en attributs de ressource : sans `mip.app_id`, le lot est ignoré.
  */
 export function socleOtel({
   appId,
@@ -69,19 +75,19 @@ export function socleOtel({
     `export OTEL_SERVICE_NAME="${service}"`,
     `export OTEL_RESOURCE_ATTRIBUTES="mip.app_id=${appId},mip.api_key=${REPERE_CLE_API},deployment.environment.name=prod"`,
     `export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"`,
-    `export OTEL_EXPORTER_OTLP_COMPRESSION="gzip"`,
     `export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="${adresses.traces}"`,
     `export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="${adresses.logs}"`,
+    `export OTEL_EXPORTER_OTLP_COMPRESSION="gzip"`,
     `export OTEL_TRACES_EXPORTER="otlp"`,
-    `export OTEL_LOGS_EXPORTER="otlp"`,
+    `export OTEL_LOGS_EXPORTER="otlp"      # « none » pour n'envoyer que les traces`,
     `export OTEL_METRICS_EXPORTER="none"`,
-    `export OTEL_PROPAGATORS="tracecontext,baggage"`,
   ].join("\n");
 }
 
 const DOC = "https://opentelemetry.io/docs/zero-code";
+const EPROUVE = "éprouvé en production le 28/09/2026";
 
-/** Les recettes de l'étape 3, préremplies pour une application. */
+/** Les recettes serveur, préremplies pour une application. */
 export function recettesAgentsOtel({
   appId,
   adresses,
@@ -90,40 +96,37 @@ export function recettesAgentsOtel({
   adresses: AdressesCollecte;
 }): RecettesAgents {
   const socle = socleOtel({ appId, adresses, service: `${appId}-api` });
-  const recette = (...lignes: string[]) => [
-    "# 1. Le socle commun (variables d'environnement du serveur)",
-    socle,
-    "",
-    ...lignes,
-  ].join("\n");
+  const recette = (...lignes: string[]) =>
+    ["# 1. Le socle commun, dans l'environnement du processus", socle, "", ...lignes].join("\n");
 
   const agents: RecetteAgent[] = [
     {
       id: "python",
       titre: "Python (FastAPI, Django, Flask…)",
-      precision: "agent officiel opentelemetry-python",
+      precision: "opentelemetry-instrument",
+      etat: EPROUVE,
       code: recette(
-        "# Les journaux Python ne partent que sur demande explicite",
-        `export OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED="true"`,
-        "",
         "# 2. Installer l'agent, puis les instrumentations des bibliothèques présentes",
-        "pip install opentelemetry-distro opentelemetry-exporter-otlp",
+        "pip install opentelemetry-distro opentelemetry-exporter-otlp-proto-http",
         "opentelemetry-bootstrap -a install",
         "",
-        "# 3. Lancer l'application sous l'agent (ici FastAPI avec uvicorn)",
-        "opentelemetry-instrument uvicorn main:app --host 0.0.0.0 --port 8000",
+        "# 3. Lancer l'application sous l'agent (FastAPI avec uvicorn ;",
+        "#    Flask : opentelemetry-instrument flask --app app run ; gunicorn : même préfixe)",
+        "opentelemetry-instrument uvicorn main:app",
       ),
       pieges: [
-        "Pas de --reload sous l'agent : le processus relancé par uvicorn n'est plus instrumenté.",
-        "Avec gunicorn et plusieurs workers, l'agent doit être initialisé dans chaque worker (crochet post_fork, voir la documentation Python).",
+        "Le protocole par défaut de l'agent Python est grpc : la ligne http/protobuf du socle est obligatoire ici.",
         "opentelemetry-bootstrap s'exécute après l'installation des dépendances de l'application : il n'instrumente que ce qu'il trouve.",
+        "Avant OpenTelemetry Python 1.40, les journaux du module logging ne partent qu'avec OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true.",
+        "Un export refusé ne s'affiche que si l'application pose son propre gestionnaire sur le journal « opentelemetry ».",
       ],
       documentation: `${DOC}/python/`,
     },
     {
       id: "node",
       titre: "Node.js (Express, Fastify, NestJS…)",
-      precision: "agent officiel @opentelemetry/auto-instrumentations-node",
+      precision: "@opentelemetry/auto-instrumentations-node",
+      etat: "non éprouvé en production",
       code: recette(
         "# 2. Installer l'agent dans le projet",
         "npm install --save @opentelemetry/api @opentelemetry/auto-instrumentations-node",
@@ -140,7 +143,8 @@ export function recettesAgentsOtel({
     {
       id: "java",
       titre: "Java (Spring Boot, Quarkus, Tomcat…)",
-      precision: "agent officiel opentelemetry-javaagent",
+      precision: "opentelemetry-javaagent.jar",
+      etat: EPROUVE,
       code: recette(
         "# 2. Télécharger l'agent (un seul fichier .jar)",
         "curl -sSfLO https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar",
@@ -150,26 +154,33 @@ export function recettesAgentsOtel({
       ),
       pieges: [
         "L'option -javaagent se place avant -jar ; dans un serveur d'applications, elle va dans les options de la JVM (JAVA_OPTS, CATALINA_OPTS…).",
+        "Lancer un jar ou une classe compilée : sous le lanceur de fichier source (java Serveur.java), l'agent ne démarre pas.",
+        "GitHub publie l'empreinte SHA-256 du jar avec la release : la comparer à celle du fichier téléchargé (shasum -a 256).",
       ],
       documentation: `${DOC}/java/agent/`,
     },
     {
       id: "dotnet",
       titre: ".NET (ASP.NET Core)",
-      precision: "instrumentation automatique officielle opentelemetry-dotnet-instrumentation",
+      precision: "instrumentation automatique OpenTelemetry .NET",
+      etat: EPROUVE,
       code: recette(
+        "# Un dossier de journaux accessible en écriture (défaut : /var/log/opentelemetry)",
+        `export OTEL_DOTNET_AUTO_LOG_DIRECTORY="/var/tmp/otel-dotnet"`,
+        "",
         "# 2. Installer l'instrumentation automatique (Linux, macOS)",
         "curl -sSfLO https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/releases/latest/download/otel-dotnet-auto-install.sh",
         "sh ./otel-dotnet-auto-install.sh",
-        'chmod +x "$HOME/.otel-dotnet-auto/instrument.sh"',
         "",
-        "# 3. Activer l'instrumentation dans le shell, puis lancer l'application",
+        "# 3. Dans le shell qui lance l'application",
         '. "$HOME/.otel-dotnet-auto/instrument.sh"',
         "dotnet MonApplication.dll",
       ),
       pieges: [
-        "instrument.sh se source (le point en tête) dans le shell qui lance l'application : exécuté à part, il ne règle rien.",
-        "Sous Windows et IIS, l'installation passe par le module PowerShell décrit dans la documentation .NET.",
+        "Le script d'installation vérifie la release avec la CLI GitHub (gh) : sans elle, il s'arrête, sauf SKIP_RELEASE_VERIFICATION=true.",
+        "instrument.sh se source (le point en tête) dans le shell qui lance l'application : exécuté à part, il ne règle rien. Sous macOS, il demande greadlink (paquet coreutils).",
+        "Sans dossier de journaux accessible en écriture, le processus s'arrête au démarrage (Permission denied).",
+        "Sous Windows, le module PowerShell du même projet : Register-OpenTelemetryForCurrentSession, après les mêmes variables en $env:….",
       ],
       documentation: `${DOC}/dotnet/`,
     },
@@ -182,8 +193,8 @@ export function recettesAgentsOtel({
   ];
 
   // Le Collector (open source) reste une option : il sert quand le serveur ne
-  // peut pas sortir vers Internet, ou quand on veut filtrer avant l'envoi. Les
-  // agents visent alors le Collector local ; c'est lui qui porte l'identité MIP.
+  // peut pas sortir vers Internet, ou pour regrouper les lots d'un parc de
+  // processus. Les agents visent alors le Collector local ; lui porte l'identité MIP.
   const collecteur = [
     "# 1. Remplir les repères de otel-collector.yaml :",
     `#    <APP_ID>         ${appId}`,

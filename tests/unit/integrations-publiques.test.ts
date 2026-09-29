@@ -16,18 +16,9 @@ const DOSSIER = join(RACINE, "apps/console/public/integrations");
 /** Ce qui trahit un capteur maison : un de nos middlewares, notre agent Node, leurs exemples. */
 const CAPTEUR_MAISON = /mip_rum_middleware|MIPRumMiddleware|mip-rum-express|agent-node|examples\/integrations/;
 
-/**
- * En attente, et SEULEMENT en attente : `tests/unit/onboarding-v05.test.ts` importe
- * encore le middleware Express. Le lot B2 n'a pas pu l'adapter (fichier illisible
- * pour l'agent, bloqué par l'outil de protection des secrets du poste). Le retirer
- * d'ici en même temps que le fichier et que son test.
- */
-const EN_ATTENTE_DE_RETRAIT = ["mip-rum-express.js"];
-
 describe("intégrations téléchargeables", () => {
   it("aucun capteur maison n'est servi : seule la configuration du Collector reste", () => {
-    const servis = readdirSync(DOSSIER).filter((f) => !EN_ATTENTE_DE_RETRAIT.includes(f));
-    expect(servis).toEqual(["otel-collector.yaml"]);
+    expect(readdirSync(DOSSIER)).toEqual(["otel-collector.yaml"]);
   });
 
   it("la configuration du Collector ne renvoie à aucun capteur maison", () => {

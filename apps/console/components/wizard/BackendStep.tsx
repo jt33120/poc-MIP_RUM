@@ -1,12 +1,14 @@
-// Corps de l'étape 3 du wizard d'onboarding : brancher le serveur du client avec
-// l'agent OpenTelemetry OFFICIEL de son langage. Rendu serveur. Extrait de
-// app/admin/customers/[appId]/page.tsx.
+// Brancher le serveur du client avec l'agent OpenTelemetry OFFICIEL de son
+// langage : étape 3 de la fiche d'une application (app/admin/customers/[appId])
+// et section « Brancher le serveur » de /select/new. Rendu serveur.
 //
 // Décision du 29/09/2026 : plus aucun capteur maison côté serveur — ni fichier à
 // télécharger, ni middleware à poser. Chaque recette (lib/recettes-agents-otel.ts)
 // est le socle commun des variables OTEL_*, prérempli, puis l'installation et le
 // lancement de l'agent. La clé d'API passe par le secret remis : juste après sa
 // création ou sa régénération, elle remplace le repère ; sinon le repère reste.
+// La page doit envelopper l'étape d'un `SecretFourni` : plusieurs blocs lisent la
+// même clé, et le premier qui la retirerait seul en priverait les autres.
 //
 // Recette du 26/09/2026 : plus de note interne, plus de nom de client, plus
 // d'émoji ; jetons du thème pour suivre le mode sombre.
@@ -22,8 +24,12 @@ const TEXTE = "text-xs leading-relaxed text-ink-soft";
 // Une adresse entière dans le texte : à 390 px, elle doit pouvoir se couper.
 const LIEN = "break-all text-brand hover:underline";
 
-/** Étape 3 : les agents OpenTelemetry officiels, par langage (présentationnel). */
+/** Les agents OpenTelemetry officiels, par langage (présentationnel). */
 export function BackendStep({ recettes, nomSecret }: { recettes: RecettesAgents; nomSecret: string }) {
+  // Le repère est nu dans les variables shell (`mip.api_key=COLLE_ICI_LA_CLE_API,…`).
+  const code = (texte: string) => (
+    <CodeAvecSecret nom={nomSecret} code={texte} repere={REPERE_CLE_API} rendu="copie" guillemets={false} />
+  );
   return (
     <>
       <p className="mb-3 text-xs text-ink-soft">
@@ -36,10 +42,13 @@ export function BackendStep({ recettes, nomSecret }: { recettes: RecettesAgents;
         {recettes.agents.map((agent, i) => (
           <details key={agent.id} className={BLOC} open={i === 0} data-testid={`recette-${agent.id}`}>
             <summary className={RESUME}>
-              {agent.titre} — <span className="text-ink-soft">{agent.precision}</span>
+              {agent.titre} —{" "}
+              <span className="text-ink-soft">
+                {agent.precision}, {agent.etat}
+              </span>
             </summary>
             <div className="mt-2 grid gap-2">
-              <CodeAvecSecret nom={nomSecret} code={agent.code} repere={REPERE_CLE_API} rendu="copie" />
+              {code(agent.code)}
               <ul className={`list-disc pl-5 ${TEXTE}`}>
                 {agent.pieges.map((piege) => (
                   <li key={piege}>{piege}</li>
@@ -56,7 +65,8 @@ export function BackendStep({ recettes, nomSecret }: { recettes: RecettesAgents;
         ))}
         <details className={BLOC} data-testid="recette-autres">
           <summary className={RESUME}>
-            Autre langage ({recettes.autres.map((a) => a.langage).join(", ")}…)
+            Autre langage ({recettes.autres.map((a) => a.langage).join(", ")}…) —{" "}
+            <span className="text-ink-soft">non éprouvé en production</span>
           </summary>
           <div className="mt-2 grid gap-2">
             <p className={TEXTE}>
@@ -70,35 +80,40 @@ export function BackendStep({ recettes, nomSecret }: { recettes: RecettesAgents;
                   </a>
                 </span>
               ))}
-              .
+              . Go n&apos;a pas d&apos;agent sans code : le SDK s&apos;initialise dans <code>main</code> et lit
+              les mêmes variables.
             </p>
-            <CodeAvecSecret nom={nomSecret} code={recettes.socle} repere={REPERE_CLE_API} rendu="copie" />
+            {code(recettes.socle)}
           </div>
         </details>
         <details className={BLOC} data-testid="recette-collecteur">
           <summary className={RESUME}>
-            Facultatif — passer par un Collector OpenTelemetry (serveur sans accès à Internet, filtrage)
+            Facultatif — passer par un Collector OpenTelemetry (serveur sans accès à Internet, parc de
+            processus)
           </summary>
           <p className={`mb-2 mt-2 ${TEXTE}`}>
-            Le Collector, open source, reçoit l&apos;export des agents sur le réseau du client et le
-            réémet vers la collecte MIP ; c&apos;est lui qui porte alors l&apos;identifiant et la clé de
-            l&apos;application.
+            Le Collector, open source, reçoit l&apos;export des agents sur le réseau du client, regroupe
+            les lots et les réémet vers la collecte MIP ; c&apos;est lui qui porte alors l&apos;identifiant
+            et la clé de l&apos;application.
           </p>
           <div className="grid gap-2">
             <a href="/integrations/otel-collector.yaml" download className={TELECHARGER}>
               <Icon paths={ICON_PATHS.download} className="h-3.5 w-3.5" strokeWidth={2.2} />
               otel-collector.yaml (identifiant, clé et adresses de collecte à compléter)
             </a>
-            <CodeAvecSecret nom={nomSecret} code={recettes.collecteur} repere={REPERE_CLE_API} rendu="copie" />
+            {code(recettes.collecteur)}
           </div>
         </details>
       </div>
       <p className={`mt-3 ${TEXTE}`}>
         Remplacez le repère <code>{REPERE_CLE_API}</code> par la clé d&apos;API de l&apos;application
         (affichée une seule fois, à sa création ou à sa régénération) ; elle reste côté serveur. Les
-        agents officiels lisent l&apos;en-tête <code>traceparent</code> que pose le code de suivi : si
-        l&apos;API est sur une autre origine que le site, elle doit l&apos;autoriser en CORS
-        (<code>Access-Control-Allow-Headers: traceparent</code>).
+        agents lisent les en-têtes <code>traceparent</code> et <code>tracestate</code> que pose le code
+        de suivi : si l&apos;API est sur une autre origine que le site, elle doit les autoriser en CORS
+        (<code>Access-Control-Allow-Headers: traceparent, tracestate</code>), sans quoi le navigateur
+        bloque l&apos;appel. Chaque export compte dans la limite de
+        débit de l&apos;application : pour un parc de plusieurs processus, allonger{" "}
+        <code>OTEL_BLRP_SCHEDULE_DELAY</code> (5000, par exemple) ou passer par le Collector.
       </p>
     </>
   );
