@@ -29,9 +29,10 @@
 --      (`alert_event` puis `route_alert`).
 --
 -- DROITS. Lecture pour `console_ro` (motif de v87), rien pour `anon` ni
--- `authenticated`. PAS de droit pour `mip_api` : le service `api` ne lit aucune
--- de ces tables, et sa garde (`scripts/ci/verify-db-roles.mjs`) signale une
--- table accordée que son bundle ne nomme pas. La carte « Santé de la chaîne de
+-- `authenticated`, et `mip_console` pour `collecte_fenetre` (§ 6 bis). PAS de
+-- droit pour `mip_api` : le service `api` ne lit aucune de ces tables, et sa
+-- garde (`scripts/ci/verify-db-roles.mjs`) signale une table accordée que son
+-- bundle ne nomme pas. La carte « Santé de la chaîne de
 -- mesure » (lot suivant) lira par `console-api` et accordera alors à
 -- `mip_console` ce qu'elle lit. RLS activée sur les quatre tables, comme sur
 -- toute table `public` depuis v97.
@@ -173,6 +174,27 @@ begin
       if seq is not null then execute format('revoke all on sequence %s from authenticated', seq); end if;
     end if;
   end loop;
+end $$;
+
+-- ── 6 bis. `mip_console` lit le registre des fenêtres ─────────────────────
+--
+-- `console-api` compile les lectures de la console (`apps/console/lib`) : la
+-- comparaison à la période précédente y consulte `collecte_fenetre` pour
+-- invalider un écart calculé sur une période trouée (#357). Sans ce droit, sa
+-- garde (`scripts/ci/verify-db-roles-console.mjs`) refuse un bundle qui nomme
+-- une relation qu'il ne peut pas lire. Motif de v97 pour `platform_flag` :
+-- SELECT et policy de lecture propres à `mip_console` ; la table rejoint
+-- `packages/db/roles/console-api.mjs`. `mip_api` n'en a pas besoin : le bundle
+-- du service `api` ne la nomme pas.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'mip_console') then
+    grant select on collecte_fenetre to mip_console;
+    if not exists (select 1 from pg_policy where polrelid = 'public.collecte_fenetre'::regclass
+                                               and polname = 'mip_console_acces') then
+      create policy mip_console_acces on collecte_fenetre as permissive for select to mip_console using (true);
+    end if;
+  end if;
 end $$;
 
 -- ── 7. Le comptage d'usage n'admet jamais une application sonde ─────────────
