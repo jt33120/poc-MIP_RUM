@@ -25,6 +25,9 @@
  *   /presentation/dossier  son dossier technique (recette du 26/09/2026) : le détail
  *                       que la vitrine résume. Chemin EXACT, comme la vitrine : une
  *                       autre page rangée sous /presentation reste privée
+ *   /presentation/open-source  l'inventaire des composants open source (29/09/2026) :
+ *                       qui veut vérifier les parties externes n'a pas à avoir de
+ *                       compte. Chemin EXACT lui aussi
  *   /extension-privacy  politique de confidentialité de l'extension : URL PUBLIQUE
  *                       exigée par le Chrome Web Store, donc jamais derrière un login
  *   /legal/*            CGU, CGV, confidentialité — des documents
@@ -36,6 +39,7 @@ export function estCheminPublic(pathname: string): boolean {
   return (
     pathname === "/presentation" ||
     pathname === "/presentation/dossier" ||
+    pathname === "/presentation/open-source" ||
     pathname === "/extension-privacy" ||
     pathname === "/legal" ||
     pathname.startsWith("/legal/")
