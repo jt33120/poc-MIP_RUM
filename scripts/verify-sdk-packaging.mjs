@@ -9,7 +9,6 @@
 //
 // Trois questions, une réponse chacune :
 //   1. Le bundle web contient-il du React Native ? Le bundle RN, du DOM ?
-//      L'agent Node, du React ?
 //   2. Un artefact publié référence-t-il encore un autre paquet du dépôt —
 //      c'est-à-dire du TypeScript non compilé à résoudre chez le client ?
 //   3. Un consommateur qui INSTALLE le paquet obtient-il les exports annoncés,
@@ -17,7 +16,9 @@
 //
 // Usage : node scripts/verify-sdk-packaging.mjs
 // Prérequis : pnpm --filter "@mip/rum-core" --filter "@mip/rum-sdk" \
-//             --filter "@mip/rum-mobile" --filter "@mip/agent-node" build
+//             --filter "@mip/rum-mobile" build
+// (L'agent Node maison, archivé le 29/09/2026, n'a plus de bundle à vérifier :
+// docs/archive/capteurs-serveur-maison.md.)
 
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -64,24 +65,11 @@ for (const [nom, source] of [["CJS", rnCjs], ["ESM", rnEsm]]) {
   }
 }
 
-const node = lire("packages/agent-node/dist/register.js");
-if (node) {
-  for (const interdit of ["react-native", "ErrorUtils", "rrweb"]) {
-    verifie(!node.includes(interdit), `bundle agent Node sans « ${interdit} »`);
-  }
-  // `react` seul serait un faux positif (« react » est un fragment fréquent) :
-  // on cherche une VRAIE résolution de module.
-  verifie(
-    !/require\(["']react/.test(node) && !/from ["']react/.test(node),
-    "bundle agent Node sans import de React",
-  );
-}
-
 // ───────── 2. Aucun artefact publié ne référence un paquet du dépôt ─────────
 //
-// Les trois bundles inlinent `@mip/rum-core`. S'il en restait un import, le
+// Les bundles inlinent `@mip/rum-core`. S'il en restait un import, le
 // consommateur devrait résoudre — et compiler — du TypeScript non publié.
-for (const [nom, source] of [["web", web], ["RN CJS", rnCjs], ["RN ESM", rnEsm], ["agent Node", node]]) {
+for (const [nom, source] of [["web", web], ["RN CJS", rnCjs], ["RN ESM", rnEsm]]) {
   if (!source) continue;
   verifie(
     !/require\(["']@mip\//.test(source) && !/from\s*["']@mip\//.test(source) && !/import\(["']@mip\//.test(source),

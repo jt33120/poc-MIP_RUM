@@ -4992,7 +4992,9 @@ Garder les deux cartes. Changements :
   > Côté serveur : un agent Node (`packages/agent-node`) et un middleware FastAPI
   > (`examples/integrations/fastapi`) relient un appel du navigateur à son exécution serveur, sur un seul saut.
 
-  Source : `RUM_PARITY_STATUS.md:173-174` (C5, C6).
+  Source : `RUM_PARITY_STATUS.md:173-174` (C5, C6). *Dépassé le 29/09/2026 : ces deux
+  capteurs maison sont archivés ; la vitrine dit les agents OpenTelemetry officiels
+  (`docs/capteurs-serveur.md`).*
 
 ##### PS3 — Le chemin de la mesure (`components/presentation/Topologie.tsx`, nouveau, SVG rendu serveur)
 

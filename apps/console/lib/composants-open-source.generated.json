@@ -1,0 +1,1699 @@
+{
+  "generePar": "node scripts/composants-open-source.mjs",
+  "releveLe": "29/09/2026",
+  "paquetsDuLockfile": 416,
+  "espaces": [
+    {
+      "chemin": ".",
+      "nom": "racine",
+      "categorie": "outils"
+    },
+    {
+      "chemin": "packages/backend",
+      "nom": "@mip/backend",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "packages/console-api",
+      "nom": "@mip/console-api",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "packages/console-contract",
+      "nom": "@mip/console-contract",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "packages/db",
+      "nom": "@mip/db",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "packages/mcp-tools",
+      "nom": "@mip/mcp-tools",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "packages/rum-core",
+      "nom": "@mip/rum-core",
+      "categorie": "capteurs"
+    },
+    {
+      "chemin": "packages/rum-mobile",
+      "nom": "@mip/rum-mobile",
+      "categorie": "capteurs"
+    },
+    {
+      "chemin": "packages/rum-sdk",
+      "nom": "@mip/rum-sdk",
+      "categorie": "capteurs"
+    },
+    {
+      "chemin": "packages/service-kit",
+      "nom": "@mip/service-kit",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "apps/console",
+      "nom": "console",
+      "categorie": "console"
+    },
+    {
+      "chemin": "apps/extension",
+      "nom": "extension",
+      "categorie": "capteurs"
+    },
+    {
+      "chemin": "services/api",
+      "nom": "@mip/service-api",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "services/collector",
+      "nom": "@mip/service-collector",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "services/console-api",
+      "nom": "@mip/service-console-api",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "services/mcp",
+      "nom": "@mip/service-mcp",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "services/notifier",
+      "nom": "@mip/service-notifier",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "services/scheduler",
+      "nom": "@mip/service-scheduler",
+      "categorie": "backend"
+    },
+    {
+      "chemin": "tools/sync-synthetic",
+      "nom": "sync-synthetic",
+      "categorie": "outils"
+    }
+  ],
+  "categories": [
+    "console",
+    "backend",
+    "capteurs",
+    "outils",
+    "ci",
+    "conteneurs",
+    "agents",
+    "donnees"
+  ],
+  "composants": [
+    {
+      "categorie": "console",
+      "type": "npm",
+      "nom": "@rrweb/replay",
+      "version": "2.0.1",
+      "licence": "MIT",
+      "depot": "https://github.com/rrweb-io/rrweb",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "console"
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "console",
+      "type": "npm",
+      "nom": "bcryptjs",
+      "version": "3.0.3",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/dcodeIO/bcrypt.js",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "@mip/service-console-api",
+          "dev": true
+        },
+        {
+          "nom": "console"
+        }
+      ],
+      "sources": [
+        "apps/console/package.json",
+        "services/console-api/package.json"
+      ]
+    },
+    {
+      "categorie": "console",
+      "type": "npm",
+      "nom": "next",
+      "version": "15.5.19",
+      "licence": "MIT",
+      "depot": "https://github.com/vercel/next.js",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "console"
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "console",
+      "type": "npm",
+      "nom": "react",
+      "version": "19.2.7",
+      "licence": "MIT",
+      "depot": "https://github.com/facebook/react/tree/HEAD/packages/react",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "console"
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "console",
+      "type": "npm",
+      "nom": "react-dom",
+      "version": "19.2.7",
+      "licence": "MIT",
+      "depot": "https://github.com/facebook/react/tree/HEAD/packages/react-dom",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "console"
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "console",
+      "type": "npm",
+      "nom": "recharts",
+      "version": "2.15.4",
+      "licence": "MIT",
+      "depot": "https://github.com/recharts/recharts",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "console"
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "console",
+      "type": "npm",
+      "nom": "swagger-ui-dist",
+      "version": "5.17.14",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/swagger-api/swagger-ui",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "console",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "apps/console/package.json",
+        "apps/console/public/vendor/swagger/swagger-ui-bundle.js",
+        "apps/console/public/vendor/swagger/swagger-ui.css"
+      ],
+      "note": "Copié tel quel dans les fichiers statiques de la console, qui sert ainsi la documentation interactive de l'API sans CDN tiers."
+    },
+    {
+      "categorie": "backend",
+      "type": "npm",
+      "nom": "@modelcontextprotocol/sdk",
+      "version": "1.30.0",
+      "licence": "MIT",
+      "depot": "https://github.com/modelcontextprotocol/typescript-sdk",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "@mip/mcp-tools"
+        }
+      ],
+      "sources": [
+        "packages/mcp-tools/package.json"
+      ]
+    },
+    {
+      "categorie": "backend",
+      "type": "npm",
+      "nom": "jose",
+      "version": "6.2.3",
+      "licence": "MIT",
+      "depot": "https://github.com/panva/jose",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "@mip/console-api"
+        },
+        {
+          "nom": "console"
+        }
+      ],
+      "sources": [
+        "apps/console/package.json",
+        "packages/console-api/package.json"
+      ]
+    },
+    {
+      "categorie": "backend",
+      "type": "npm",
+      "nom": "pg",
+      "version": "8.21.0",
+      "licence": "MIT",
+      "depot": "https://github.com/brianc/node-postgres/tree/HEAD/packages/pg",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "@mip/backend"
+        },
+        {
+          "nom": "@mip/db"
+        },
+        {
+          "nom": "@mip/service-api"
+        },
+        {
+          "nom": "@mip/service-collector"
+        },
+        {
+          "nom": "@mip/service-console-api"
+        },
+        {
+          "nom": "@mip/service-notifier"
+        },
+        {
+          "nom": "@mip/service-scheduler"
+        },
+        {
+          "nom": "console"
+        },
+        {
+          "nom": "racine",
+          "dev": true
+        },
+        {
+          "nom": "sync-synthetic"
+        }
+      ],
+      "sources": [
+        "apps/console/package.json",
+        "package.json",
+        "packages/backend/package.json",
+        "packages/db/package.json",
+        "services/api/package.json",
+        "services/collector/package.json",
+        "services/console-api/package.json",
+        "services/notifier/package.json",
+        "services/scheduler/package.json",
+        "tools/sync-synthetic/package.json"
+      ]
+    },
+    {
+      "categorie": "backend",
+      "type": "npm",
+      "nom": "zod",
+      "version": "4.5.4",
+      "licence": "MIT",
+      "depot": "https://github.com/colinhacks/zod",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "@mip/mcp-tools"
+        }
+      ],
+      "sources": [
+        "packages/mcp-tools/package.json"
+      ]
+    },
+    {
+      "categorie": "capteurs",
+      "type": "npm",
+      "nom": "rrweb",
+      "version": "2.0.1",
+      "licence": "MIT",
+      "depot": "https://github.com/rrweb-io/rrweb",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "@mip/rum-sdk"
+        }
+      ],
+      "sources": [
+        "apps/console/public/mip-rum-replay.js",
+        "packages/rum-sdk/package.json"
+      ],
+      "note": "Embarqué dans le script d'enregistrement du rejeu servi aux sites clients."
+    },
+    {
+      "categorie": "capteurs",
+      "type": "npm",
+      "nom": "web-vitals",
+      "version": "5.3.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/GoogleChrome/web-vitals",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "@mip/rum-sdk"
+        }
+      ],
+      "sources": [
+        "apps/console/public/mip-rum.js",
+        "apps/extension/vendor/mip-rum.js",
+        "packages/rum-sdk/package.json"
+      ],
+      "note": "Embarqué dans le SDK navigateur servi aux sites clients et dans l'extension."
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@axe-core/playwright",
+      "version": "4.13.0",
+      "licence": "MPL-2.0",
+      "depot": "https://github.com/dequelabs/axe-core-npm",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@opentelemetry/api",
+      "version": "1.9.1",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-js",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@opentelemetry/api-logs",
+      "version": "0.222.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-js",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@opentelemetry/core",
+      "version": "2.11.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-js",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@opentelemetry/exporter-logs-otlp-proto",
+      "version": "0.222.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-js",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@opentelemetry/exporter-trace-otlp-proto",
+      "version": "0.222.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-js",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@opentelemetry/otlp-transformer",
+      "version": "0.222.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-js",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@opentelemetry/resources",
+      "version": "2.11.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-js",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@opentelemetry/sdk-logs",
+      "version": "0.222.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-js",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@opentelemetry/sdk-trace-base",
+      "version": "2.11.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-js",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@playwright/test",
+      "version": "1.60.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/microsoft/playwright",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@types/chrome",
+      "version": "0.0.280",
+      "licence": "MIT",
+      "depot": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/HEAD/types/chrome",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "extension",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "apps/extension/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@types/node",
+      "version": "22.19.20",
+      "licence": "MIT",
+      "depot": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/HEAD/types/node",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "console",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@types/pg",
+      "version": "8.20.0",
+      "licence": "MIT",
+      "depot": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/HEAD/types/pg",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "console",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@types/react",
+      "version": "19.2.17",
+      "licence": "MIT",
+      "depot": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/HEAD/types/react",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "console",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "@types/react-dom",
+      "version": "19.2.3",
+      "licence": "MIT",
+      "depot": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/HEAD/types/react-dom",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "console",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "annotated-doc",
+      "version": "0.0.5",
+      "licence": "MIT",
+      "depot": "https://github.com/fastapi/annotated-doc",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "annotated-types",
+      "version": "0.8.0",
+      "licence": "MIT",
+      "depot": "https://github.com/annotated-types/annotated-types",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "anyio",
+      "version": "4.15.1",
+      "licence": "MIT",
+      "depot": "https://github.com/agronholm/anyio",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "asgiref",
+      "version": "3.12.1",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/django/asgiref",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "autoprefixer",
+      "version": "10.5.0",
+      "licence": "MIT",
+      "depot": "https://github.com/postcss/autoprefixer",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "console",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "click",
+      "version": "8.5.0",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/pallets/click",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "esbuild",
+      "version": "0.28.0",
+      "licence": "MIT",
+      "depot": "https://github.com/evanw/esbuild",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "@mip/rum-core",
+          "dev": true
+        },
+        {
+          "nom": "@mip/rum-mobile",
+          "dev": true
+        },
+        {
+          "nom": "@mip/rum-sdk",
+          "dev": true
+        },
+        {
+          "nom": "@mip/service-api",
+          "dev": true
+        },
+        {
+          "nom": "@mip/service-console-api",
+          "dev": true
+        },
+        {
+          "nom": "extension",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "apps/extension/package.json",
+        "packages/rum-core/package.json",
+        "packages/rum-mobile/package.json",
+        "packages/rum-sdk/package.json",
+        "services/api/package.json",
+        "services/console-api/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "fastapi",
+      "version": "0.141.1",
+      "licence": "MIT",
+      "depot": "https://github.com/fastapi/fastapi",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "googleapis-common-protos",
+      "version": "1.75.4",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/googleapis/google-cloud-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "h11",
+      "version": "0.16.0",
+      "licence": "MIT",
+      "depot": "https://github.com/python-hyper/h11",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "idna",
+      "version": "3.20",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/kjd/idna",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "outil",
+      "nom": "Node.js",
+      "version": "24",
+      "licence": "MIT",
+      "depot": "https://github.com/nodejs/node",
+      "role": "Environnement d'exécution de la console, des services et des outils.",
+      "utilisePar": [
+        {
+          "nom": "tout le dépôt"
+        }
+      ],
+      "sources": [
+        ".nvmrc"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-api",
+      "version": "1.45.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-distro",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-exporter-http-transport",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-exporter-otlp-common",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-exporter-otlp-proto-common",
+      "version": "1.45.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-exporter-otlp-proto-http",
+      "version": "1.45.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-instrumentation",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-instrumentation-asgi",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-instrumentation-fastapi",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-proto",
+      "version": "1.45.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-sdk",
+      "version": "1.45.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-semantic-conventions",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "opentelemetry-util-http",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "packaging",
+      "version": "26.3",
+      "licence": "Apache-2.0 OR BSD-2-Clause",
+      "depot": "https://github.com/pypa/packaging",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "outil",
+      "nom": "pnpm",
+      "version": "9.15.9",
+      "licence": "MIT",
+      "depot": "https://github.com/pnpm/pnpm",
+      "role": "Gestionnaire de paquets et des espaces de travail.",
+      "utilisePar": [
+        {
+          "nom": "tout le dépôt"
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "postcss",
+      "version": "8.5.15",
+      "licence": "MIT",
+      "depot": "https://github.com/postcss/postcss",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "console",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "protobuf",
+      "version": "7.36.2",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/protocolbuffers/protobuf",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "pydantic",
+      "version": "2.13.5",
+      "licence": "MIT",
+      "depot": "https://github.com/pydantic/pydantic",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "pydantic-core",
+      "version": "2.46.5",
+      "licence": "MIT",
+      "depot": "https://github.com/pydantic/pydantic",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "railway",
+      "version": "3.11.0",
+      "licence": "MIT",
+      "depot": "https://github.com/railwayapp/railway-ts-sdk",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "starlette",
+      "version": "1.7.0",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/Kludex/starlette",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "tailwindcss",
+      "version": "3.4.19",
+      "licence": "MIT",
+      "depot": "https://github.com/tailwindlabs/tailwindcss",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "console",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "typescript",
+      "version": "5.9.3",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/microsoft/TypeScript",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "@mip/console-api",
+          "dev": true
+        },
+        {
+          "nom": "@mip/console-contract",
+          "dev": true
+        },
+        {
+          "nom": "@mip/rum-core",
+          "dev": true
+        },
+        {
+          "nom": "@mip/rum-mobile",
+          "dev": true
+        },
+        {
+          "nom": "@mip/rum-sdk",
+          "dev": true
+        },
+        {
+          "nom": "console",
+          "dev": true
+        },
+        {
+          "nom": "extension",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "apps/console/package.json",
+        "apps/extension/package.json",
+        "packages/console-api/package.json",
+        "packages/console-contract/package.json",
+        "packages/rum-core/package.json",
+        "packages/rum-mobile/package.json",
+        "packages/rum-sdk/package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "typing-extensions",
+      "version": "4.16.0",
+      "licence": "PSF-2.0",
+      "depot": "https://github.com/python/typing_extensions",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "typing-inspection",
+      "version": "0.4.4",
+      "licence": "MIT",
+      "depot": "https://github.com/pydantic/typing-inspection",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "urllib3",
+      "version": "2.8.0",
+      "licence": "MIT",
+      "depot": "https://github.com/urllib3/urllib3",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "uvicorn",
+      "version": "0.54.0",
+      "licence": "BSD-3-Clause",
+      "depot": "https://github.com/Kludex/uvicorn",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "npm",
+      "nom": "vitest",
+      "version": "4.1.8",
+      "licence": "MIT",
+      "depot": "https://github.com/vitest-dev/vitest/tree/HEAD/packages/vitest",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
+      "type": "python",
+      "nom": "wrapt",
+      "version": "2.5.0",
+      "licence": "BSD-2-Clause",
+      "depot": "https://github.com/GrahamDumpleton/wrapt",
+      "utilisePar": [
+        {
+          "nom": "site-cobaye"
+        }
+      ],
+      "sources": [
+        "tests/e2e/site-cobaye/requirements.txt"
+      ]
+    },
+    {
+      "categorie": "ci",
+      "type": "action",
+      "nom": "actions/checkout",
+      "version": "v6",
+      "licence": "MIT",
+      "depot": "https://github.com/actions/checkout",
+      "utilisePar": [
+        {
+          "nom": "ci.yml"
+        },
+        {
+          "nom": "docker-smoke.yml"
+        },
+        {
+          "nom": "railway-config.yml"
+        }
+      ],
+      "sources": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/docker-smoke.yml",
+        ".github/workflows/railway-config.yml"
+      ],
+      "role": "Récupère le dépôt dans la CI."
+    },
+    {
+      "categorie": "ci",
+      "type": "action",
+      "nom": "actions/setup-node",
+      "version": "v6",
+      "licence": "MIT",
+      "depot": "https://github.com/actions/setup-node",
+      "utilisePar": [
+        {
+          "nom": "ci.yml"
+        }
+      ],
+      "sources": [
+        ".github/workflows/ci.yml"
+      ],
+      "role": "Installe Node.js dans la CI."
+    },
+    {
+      "categorie": "ci",
+      "type": "action",
+      "nom": "actions/upload-artifact",
+      "version": "v7",
+      "licence": "MIT",
+      "depot": "https://github.com/actions/upload-artifact",
+      "utilisePar": [
+        {
+          "nom": "ci.yml"
+        }
+      ],
+      "sources": [
+        ".github/workflows/ci.yml"
+      ],
+      "role": "Conserve les rapports de la CI."
+    },
+    {
+      "categorie": "ci",
+      "type": "action",
+      "nom": "pnpm/action-setup",
+      "version": "v6",
+      "licence": "MIT",
+      "depot": "https://github.com/pnpm/action-setup",
+      "utilisePar": [
+        {
+          "nom": "ci.yml"
+        }
+      ],
+      "sources": [
+        ".github/workflows/ci.yml"
+      ],
+      "role": "Installe pnpm dans la CI."
+    },
+    {
+      "categorie": "ci",
+      "type": "action",
+      "nom": "railwayapp/config",
+      "version": "v1.2.0 (9e17d41)",
+      "licence": "MIT",
+      "depot": "https://github.com/railwayapp/config",
+      "utilisePar": [
+        {
+          "nom": "railway-config.yml"
+        }
+      ],
+      "sources": [
+        ".github/workflows/railway-config.yml"
+      ],
+      "role": "Applique l'infrastructure Railway décrite dans le dépôt."
+    },
+    {
+      "categorie": "conteneurs",
+      "type": "image",
+      "nom": "node",
+      "version": "24-bookworm-slim",
+      "licence": "MIT",
+      "depot": "https://github.com/nodejs/docker-node",
+      "utilisePar": [
+        {
+          "nom": "Dockerfile.backend"
+        },
+        {
+          "nom": "Dockerfile.mcp"
+        }
+      ],
+      "sources": [
+        "infra/docker/Dockerfile.backend",
+        "infra/docker/Dockerfile.mcp"
+      ],
+      "role": "Image de base des services (image officielle, sur Debian 12 : ses paquets gardent leurs licences propres)."
+    },
+    {
+      "categorie": "conteneurs",
+      "type": "image",
+      "nom": "node",
+      "version": "24.21.0-bookworm-slim",
+      "licence": "MIT",
+      "depot": "https://github.com/nodejs/docker-node",
+      "utilisePar": [
+        {
+          "nom": "api"
+        },
+        {
+          "nom": "collector"
+        },
+        {
+          "nom": "console-api"
+        },
+        {
+          "nom": "mcp"
+        },
+        {
+          "nom": "notifier"
+        },
+        {
+          "nom": "scheduler"
+        }
+      ],
+      "sources": [
+        "services/api/Dockerfile",
+        "services/collector/Dockerfile",
+        "services/console-api/Dockerfile",
+        "services/mcp/Dockerfile",
+        "services/notifier/Dockerfile",
+        "services/scheduler/Dockerfile"
+      ],
+      "empreinte": "sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6",
+      "role": "Image de base des services (image officielle, sur Debian 12 : ses paquets gardent leurs licences propres)."
+    },
+    {
+      "categorie": "conteneurs",
+      "type": "image",
+      "nom": "postgres",
+      "version": "17",
+      "licence": "PostgreSQL",
+      "depot": "https://github.com/docker-library/postgres",
+      "utilisePar": [
+        {
+          "nom": "ci.yml"
+        },
+        {
+          "nom": "docker-compose.yml"
+        }
+      ],
+      "sources": [
+        ".github/workflows/ci.yml",
+        "infra/docker/docker-compose.yml"
+      ],
+      "role": "Base de données des tests et de l'environnement local (image officielle)."
+    },
+    {
+      "categorie": "agents",
+      "type": "externe",
+      "nom": "@opentelemetry/auto-instrumentations-node",
+      "version": "0.80.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-js-contrib",
+      "role": "Instrumentation automatique des services Node.js.",
+      "utilisePar": [
+        {
+          "nom": "Services Node.js des clients"
+        }
+      ],
+      "sources": [
+        "scripts/composants-open-source.externes.json"
+      ]
+    },
+    {
+      "categorie": "agents",
+      "type": "externe",
+      "nom": "OpenTelemetry .NET Automatic Instrumentation",
+      "version": "1.17.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation",
+      "role": "Instrumentation automatique des applications .NET.",
+      "utilisePar": [
+        {
+          "nom": "Services .NET des clients"
+        }
+      ],
+      "sources": [
+        "scripts/composants-open-source.externes.json"
+      ]
+    },
+    {
+      "categorie": "agents",
+      "type": "externe",
+      "nom": "opentelemetry-distro",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "role": "Agent Python : instrumentation automatique (`opentelemetry-instrument`) et export OTLP.",
+      "utilisePar": [
+        {
+          "nom": "Services Python des clients"
+        }
+      ],
+      "sources": [
+        "scripts/composants-open-source.externes.json"
+      ]
+    },
+    {
+      "categorie": "agents",
+      "type": "externe",
+      "nom": "opentelemetry-instrumentation-fastapi",
+      "version": "0.66b0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python-contrib",
+      "role": "Instrumentation des applications FastAPI.",
+      "utilisePar": [
+        {
+          "nom": "Services Python des clients"
+        }
+      ],
+      "sources": [
+        "scripts/composants-open-source.externes.json"
+      ]
+    },
+    {
+      "categorie": "agents",
+      "type": "externe",
+      "nom": "opentelemetry-javaagent",
+      "version": "2.31.1",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-java-instrumentation",
+      "role": "Agent Java (`-javaagent`) : instrumentation automatique de la JVM.",
+      "utilisePar": [
+        {
+          "nom": "Services Java des clients"
+        }
+      ],
+      "sources": [
+        "scripts/composants-open-source.externes.json"
+      ]
+    },
+    {
+      "categorie": "agents",
+      "type": "externe",
+      "nom": "opentelemetry-sdk",
+      "version": "1.45.0",
+      "licence": "Apache-2.0",
+      "depot": "https://github.com/open-telemetry/opentelemetry-python",
+      "role": "SDK OpenTelemetry pour Python, sur lequel repose l'agent.",
+      "utilisePar": [
+        {
+          "nom": "Services Python des clients"
+        }
+      ],
+      "sources": [
+        "scripts/composants-open-source.externes.json"
+      ]
+    },
+    {
+      "categorie": "donnees",
+      "type": "externe",
+      "nom": "DB-IP IP to Country Lite",
+      "version": "dbip-country-lite-2026-09",
+      "licence": "CC BY 4.0",
+      "depot": "https://db-ip.com/db/download/ip-to-country-lite",
+      "role": "Estimation du pays d'origine à partir de l'adresse réseau, résolue en mémoire du collecteur. Téléchargée à la construction de son image, empreinte vérifiée.",
+      "utilisePar": [
+        {
+          "nom": "collector"
+        }
+      ],
+      "sources": [
+        "packages/backend/data/dbip-country-lite.manifest.json",
+        "scripts/composants-open-source.externes.json"
+      ],
+      "attribution": "IP Geolocation by DB-IP"
+    }
+  ]
+}

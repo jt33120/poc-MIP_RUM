@@ -1,0 +1,46 @@
+# Backend de démo de l'E2E (backend.py), sous l'agent OpenTelemetry OFFICIEL.
+# Versions figées : l'E2E éprouve CE que l'agent envoie, pas la dernière version
+# publiée le jour du passage. Les monter est un changement délibéré, relu.
+#
+#   python3 -m venv tests/e2e/site-cobaye/.venv
+#   tests/e2e/site-cobaye/.venv/bin/pip install -r tests/e2e/site-cobaye/requirements.txt
+
+# L'application
+fastapi==0.141.1
+uvicorn==0.54.0
+
+# L'agent officiel : `opentelemetry-instrument`, l'instrumentation FastAPI et
+# l'exportateur OTLP HTTP (protobuf) — ce que `opentelemetry-bootstrap -a install`
+# retient pour ce serveur, sans gRPC.
+opentelemetry-distro==0.66b0
+opentelemetry-instrumentation-fastapi==0.66b0
+opentelemetry-exporter-otlp-proto-http==1.45.0
+
+# Leurs dépendances, figées elles aussi (résolution du 29/09/2026).
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+asgiref==3.12.1
+click==8.5.0
+googleapis-common-protos==1.75.4
+h11==0.16.0
+idna==3.20
+opentelemetry-api==1.45.0
+opentelemetry-exporter-http-transport==0.66b0
+opentelemetry-exporter-otlp-common==0.66b0
+opentelemetry-exporter-otlp-proto-common==1.45.0
+opentelemetry-instrumentation==0.66b0
+opentelemetry-instrumentation-asgi==0.66b0
+opentelemetry-proto==1.45.0
+opentelemetry-sdk==1.45.0
+opentelemetry-semantic-conventions==0.66b0
+opentelemetry-util-http==0.66b0
+packaging==26.3
+protobuf==7.36.2
+pydantic==2.13.5
+pydantic-core==2.46.5
+starlette==1.7.0
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+urllib3==2.8.0
+wrapt==2.5.0

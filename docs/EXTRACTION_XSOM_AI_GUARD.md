@@ -71,7 +71,9 @@ Chaîne complète : **Producteur (UTI backend)** → **Ingestion (edge Deno)** �
 **Constat vérifié : il n'existe AUCUNE instrumentation IA productrice dans ce repo.**
 Les spans `gen_ai.*` sont émis par le backend d'UTI (`uti-platform`, FastAPI/Python). Les
 deux SDK backend livrés ici (`@mip/agent-node`, middleware FastAPI `mip_rum_middleware.py`)
-n'émettent que des spans `http.server` — **pas d'IA**.
+n'émettaient que des spans `http.server` — **pas d'IA**. Ils sont archivés depuis le 29/09/2026
+(`docs/archive/capteurs-serveur-maison.md`) : côté serveur, MIP reçoit désormais les agents
+OpenTelemetry officiels (`docs/capteurs-serveur.md`).
 
 Le « contrat producteur » vit dans les **docs** (ce sont littéralement des prompts destinés à
 une session Claude sur `uti-platform`) :

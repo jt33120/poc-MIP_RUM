@@ -2,14 +2,16 @@
 
 Consignes pour les agents de code (Codex, Claude Code…) et pour les humains qui
 relisent leur travail. Ce fichier dit ce qui casse si on l'ignore ; le reste est
-dans `docs/`. Tenu à jour au 28/09/2026 ; `tests/unit/agents-md.test.ts` vérifie que
+dans `docs/`. Tenu à jour au 29/09/2026 ; `tests/unit/agents-md.test.ts` vérifie que
 chaque chemin qu'il cite existe.
 
 ## Le dépôt en bref
 
 MIP RUM est un outil de Real User Monitoring natif OpenTelemetry : des capteurs
-(SDK web, extension, mobile, agent Node, middleware FastAPI) envoient traces, logs
-et rejeux ; une base Postgres (Neon) les garde ; une console Next.js les montre.
+(SDK web, extension, mobile ; côté serveur, l'agent OpenTelemetry officiel du
+langage du client) envoient traces, logs et rejeux ; une base Postgres (Neon) les
+garde ; une console Next.js les montre. Plus aucun capteur serveur maison : l'agent
+Node et le middleware FastAPI sont archivés (`docs/archive/capteurs-serveur-maison.md`).
 
 Deux états coexistent, et la doc doit toujours dire lequel elle décrit :
 
@@ -34,7 +36,7 @@ L'état détaillé et la suite : `docs/architecture/overview.md`.
 | `packages/backend`, `packages/db` | Pipeline d'ingestion, travaux, migrations (`packages/db/sql`) |
 | `packages/console-api`, `packages/console-contract` | Backend de la console et son contrat |
 | `packages/service-kit` | Configuration, sondes, arrêt propre, pool : communs aux services |
-| `packages/rum-*`, `packages/agent-node` | Capteurs publiés |
+| `packages/rum-*` | Capteurs publiés (web, mobile) et leur cœur commun |
 | `.railway/railway.ts` | L'infrastructure Railway (IaC) |
 | `tests/{unit,integration,contract,e2e}` | Vitest, SQL, contrats de parité, Playwright |
 | `docs/` | Architecture, ADR, exploitation, API, intégration |
@@ -51,7 +53,6 @@ pnpm --filter console typecheck
 pnpm test:sql                     # Postgres requis : variables SQL_TEST_* (voir .github/workflows/ci.yml)
 pnpm test:contract                # bases migrées requises (idem)
 pnpm test:e2e                     # Postgres :5433, base mip_rum migrée par `node services/scheduler/migrate.mjs`
-python3 -m unittest discover -s examples/integrations/fastapi
 ```
 
 La CI (`.github/workflows/ci.yml`) est la référence : ce qu'elle lance, dans quel
@@ -71,8 +72,12 @@ ordre et sur quelles bases.
 - **Fichiers générés** : zones du `README.md` (`node scripts/readme-sections.mjs`)
   et `apps/console/lib/couverture.generated.json` (`node scripts/couverture-extraire.mjs`),
   chacun avec un mode `--verifier` ; `docs/api/console-api.md`
-  (`MAJ_DOC_CONSOLE_API=1 pnpm vitest run tests/unit/console-api-doc.test.ts`). Un
-  test échoue si l'un des trois dérive. `docs/architecture/console-api/inventaire.md`
+  (`MAJ_DOC_CONSOLE_API=1 pnpm vitest run tests/unit/console-api-doc.test.ts`) ;
+  `apps/console/lib/composants-open-source.generated.json`
+  (`node scripts/composants-open-source.mjs`, liste tenue à la main :
+  `scripts/composants-open-source.externes.json`), à refaire après tout changement
+  de dépendance, de Dockerfile ou de workflow. Un test échoue si l'un des quatre
+  dérive. `docs/architecture/console-api/inventaire.md`
   et `cliquet.json` se réécrivent par `node scripts/dev/inventaire-console.mjs` ;
   seul le cliquet est gardé par un test (voir « Console sans base »).
 - **Conformité** : toute nouvelle sortie de données vers un tiers, ou tout

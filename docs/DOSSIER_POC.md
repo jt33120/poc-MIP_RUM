@@ -35,8 +35,8 @@ Trois partis pris qui font la différence :
 | **SDK navigateur** | TypeScript, build IIFE (~quelques Ko), zéro dépendance runtime | Capte Core Web Vitals, erreurs JS, sessions, ressources, long tasks, breadcrumbs, appels API (spans `http.client`), replay |
 | **Replay** | `rrweb` (chargé en lazy, opt-in par app) | Reconstruction visuelle du parcours (instantanés DOM, pas de vidéo), masquage des saisies par défaut |
 | **Transport** | OTLP/HTTP JSON (OpenTelemetry Protocol), `navigator.sendBeacon` | Émission standard, survit à la fermeture d'onglet ; file de retry offline |
-| **Ingestion** | Route de la console **Next.js** sur **Vercel** en prod (`/api/ingest/v1/{traces,logs,replay}`), avec le parseur et le writer Node de `packages/backend` ; le collector Railway (`services/collector`) est écrit, pas déployé ; les fonctions Deno de Supabase ont été retirées le 23/09/2026 | Parse l'OTLP → Postgres ; CORS, clé d'API, rate limit, garde-fous de taille, retries, logs structurés |
-| **Tracing backend** | Middleware **FastAPI/Starlette** (stdlib) **ou** Express **ou** agent Node (`packages/agent-node`, patch de `node:http`) **ou** agent **OpenTelemetry codeless** + Collector | Émet le span serveur `http.server`, corrélé au front par `trace_id` (W3C `traceparent`) |
+| **Ingestion** | Route de la console **Next.js** sur **Vercel** en prod (`/api/ingest/v1/{traces,logs,replay}`), avec le parseur et le writer Node de `packages/backend` ; la console relaie la collecte au collector Railway (`services/collector`, en service depuis le 27/09/2026) ; les fonctions Deno de Supabase ont été retirées le 23/09/2026 | Parse l'OTLP → Postgres ; CORS, clé d'API, rate limit, garde-fous de taille, retries, logs structurés |
+| **Tracing backend** | Agent **OpenTelemetry officiel** du langage, sans capteur maison (`docs/capteurs-serveur.md`) ; les middlewares FastAPI et Express et l'agent Node maison sont archivés depuis le 29/09/2026 (`docs/archive/capteurs-serveur-maison.md`) | Émet le span serveur `http.server`, corrélé au front par `trace_id` (W3C `traceparent`) |
 | **Stockage** | **PostgreSQL** (Neon, offre gratuite, `aws-eu-central-1` Francfort) ; chemin **ClickHouse** prouvé en local (cf. §7) | Sessions, vitals, erreurs, spans, replay (bytea), synthétique |
 | **Console** | **Next.js 15** (App Router, React 19) sur Vercel (`fra1`), `recharts` | Dashboards temps réel (refresh 5 s), RBAC ; accès direct à la base (rôle `neondb_owner`, TLS vérifié par le magasin de certificats du système, `apps/console/lib/db.ts`). Le passage par le service `console-api` est écrit, pas branché |
 | **Alerting** | Règles SQL évaluées par le service **`scheduler`** (Railway, Amsterdam), qui livre aussi les webhooks ; `pg_net` et `pg_cron` sont refusés par Neon ; le service `notifier` est écrit, pas déployé | Webhooks sur seuils, rejeu borné avec backoff |
@@ -82,12 +82,12 @@ Trois points d'injection des 2 balises `<script>` dans le `<head>` :
 
 ### Backend (tracing serveur) — **une étape côté backend**
 Le span serveur et la corrélation `trace_id` ne sont **pas** zéro-touch côté
-navigateur seul. Deux options :
-- **Middleware** (FastAPI/Express) : 1 fichier, sans dépendance, jamais d'exception
-  vers l'app hôte ;
-- **Codeless OpenTelemetry** : lancer l'app sous l'agent OTel + un Collector qui
-  injecte `mip.app_id` et exporte en OTLP — **sans modifier le code**, mais il faut
-  maîtriser le lancement du process / disposer d'un Collector.
+navigateur seul. Une option, depuis le 29/09/2026 :
+- **Agent OpenTelemetry officiel** du langage, lancé avec des variables `OTEL_*`
+  (dont `mip.app_id` en attribut de ressource) et exportant en OTLP directement vers
+  la collecte de MIP — **sans modifier le code** en Python, Node, Java, .NET et PHP,
+  mais il faut maîtriser le lancement du process (`docs/capteurs-serveur.md`). Les
+  middlewares FastAPI et Express maison sont archivés.
 
 **Sans aucune action backend** : on a quand même la **vue navigateur** des appels
 API (latence perçue, statut, endpoint) — mais pas la part serveur vs réseau, et la
@@ -101,7 +101,7 @@ couverture tracing reste à 0 %.
 |---|---|
 | **SDK mobile natif** (iOS/Android) | Web uniquement ; deux SDK à maintenir — Phase 3 |
 | **Tracing multi-saut / microservices** | Aujourd'hui **1 saut** (front→1 backend). Le multi-hop passe par le Collector OTel (l'archi l'accepte déjà) — chantier dédié |
-| **Spans base de données / requêtes SQL** | Un span par requête SQL avec l'agent Node seulement ; pas de propagation backend→backend |
+| **Spans base de données / requêtes SQL** | Donnés par les agents OpenTelemetry officiels (cascade serveur → SQL vue en production sous Python, Java et .NET le 28/09/2026) ; propagation backend→backend non éprouvée |
 | **Branchement API DEM réelle (Ekara/mippoc)** | Corrélation prouvée sur seed/export ; interface `SyntheticSource` prête, brancher dès accès |
 | **ML avancé** | z-score statistique (assumé, explicable) ; saisonnalité/forecast = R&D |
 | **Multi-région / haute dispo / SLA** | Ni réplication ni bascule : un seul emplacement par composant (base et console à Francfort, services à Amsterdam) |
@@ -196,7 +196,7 @@ Pour le **multi-milliards** : Materialized View `AggregatingMergeTree`
 |---|---|---|
 | **Beaucoup de routes** | OK (templates `/x/:id`) | `LowCardinality` CH absorbe les routes répétées sans coût |
 | **Microservices backend** | 1 saut tracé | Agent OTel + Collector sur chaque service (propagation `trace_id` standard) |
-| **Spans DB / cache / file** | SQL avec l'agent Node ; cache et file : non | Auto-instrumentation OTel (codeless) côté services |
+| **Spans DB / cache / file** | SQL avec les agents OpenTelemetry officiels ; cache et file : non éprouvés | Auto-instrumentation OTel (codeless) côté services |
 | **Gros volume de replay** | PG bytea, caps 2 min/1 Mo, opt-in | Bascule **object storage** (S3 souverain), volumétrie indépendante du store métrique |
 | **Pics de charge** | Rate limit + batch | Rate limit relevable ; Collector tamponne et lisse les pics |
 | **HA / multi-région / SLA** | Mono-région | Réplication CH + Collector redondant — chantier infra |
@@ -220,7 +220,7 @@ Pour le **multi-milliards** : Materialized View `AggregatingMergeTree`
 |---|---|
 | **Ce que c'est** | RUM + tracing **OTel-natif, données en UE**, instrumentable **sans toucher au code** (front) |
 | **Couvre** | Vitals réels, erreurs groupées, sessions+replay, tracing front→back, alertes, corrélation robot/réel, multi-tenant/RBAC |
-| **Ne couvre pas (encore)** | Mobile natif, multi-saut, spans SQL hors agent Node, API DEM réelle, ML avancé, multi-région/HA, certifications, hébergeur de droit européen |
+| **Ne couvre pas (encore)** | Mobile natif, multi-saut, API DEM réelle, ML avancé, multi-région/HA, certifications, hébergeur de droit européen |
 | **Scale petit→moyen** | Postgres actuel suffit |
 | **Scale grand compte** | Bascule **ClickHouse** (prouvée Δ=0, ×15 compact, ~88 k l/s, marge ×100 à 1 M pv/jour) — **migration invisible côté client** |
 | **Vrai facteur limitant** | Pas l'architecture : le **store de démo** + l'**infra de prod** (HA, multi-région, certifs) à financer |

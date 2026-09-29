@@ -197,7 +197,7 @@ manques d'expérience** étaient criants pour un POC commercial — **traités i
 
 ## 6. Ce que cette itération a changé (récapitulatif)
 
-**Backend (`packages/backend`, `examples/integrations/fastapi`)**
+**Backend (`packages/backend`, `examples/integrations/fastapi`, ce dernier archivé depuis le 29/09/2026 : voir `docs/capteurs-serveur.md`)**
 - Nouveaux modules partagés runtime-agnostic : `shared/log.mjs`,
   `shared/retry.mjs`, `shared/limits.mjs`.
 - `v1-traces` (edge) et `dev-server.mjs` : 400/500, 413, retries, logs

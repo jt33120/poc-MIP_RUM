@@ -86,7 +86,6 @@ jobs:
           pnpm --filter @mip/rum-core exec tsc --noEmit
           pnpm --filter @mip/rum-sdk exec tsc --noEmit
           pnpm --filter @mip/rum-mobile exec tsc --noEmit
-          pnpm --filter @mip/agent-node exec tsc --noEmit
           pnpm --filter @mip/console-contract exec tsc --noEmit
           pnpm --filter @mip/console-api exec tsc --noEmit
           pnpm --filter console typecheck
@@ -94,10 +93,6 @@ jobs:
 
       - name: Tests unitaires (vitest)
         run: pnpm test:unit
-
-      # v0.4 — middleware FastAPI de tracing (stdlib pur : aucun pip install requis)
-      - name: Tests middleware Python (unittest)
-        run: python3 -m unittest discover -s examples/integrations/fastapi -v
 
   # R9 — CONSTRUIRE LE DÉPÔT COMME UN NOUVEL ARRIVANT LE FERAIT.
   #
@@ -453,9 +448,13 @@ jobs:
       - name: Seed synthétique (app demo-app, 24 h de runs)
         run: node tools/sync-synthetic/src/sync.mjs seed
 
-      # v0.4 — backend FastAPI de démo (cible du tracing distribué, spawné par l'E2E)
+      # Backend FastAPI de démo (cible du tracing distribué, spawné par l'E2E), sous
+      # l'agent OpenTelemetry OFFICIEL : FastAPI et l'agent, versions figées, dans le
+      # venv que `tests/e2e/tracing.spec.ts` cherche en premier.
       - name: Dépendances Python du backend démo
-        run: pip3 install fastapi uvicorn
+        run: |
+          python3 -m venv tests/e2e/site-cobaye/.venv
+          tests/e2e/site-cobaye/.venv/bin/pip install -r tests/e2e/site-cobaye/requirements.txt
 
       - name: Installer Chromium (+ dépendances système)
         run: pnpm exec playwright install chromium --with-deps

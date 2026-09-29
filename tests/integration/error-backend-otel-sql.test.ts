@@ -13,19 +13,25 @@
 // lignes, y compris sans session. Enfin, sur une base restée en v69, que le même
 // code ne perd aucun lot et active la collecte dès v70 appliquée.
 //
+// Les lots d'un service Node sont produits par le SDK OpenTelemetry OFFICIEL et
+// sérialisés par ses propres encodeurs (`@opentelemetry/otlp-transformer`), comme
+// le ferait un service sous l'agent officiel. Jusqu'au 29/09/2026, ces octets
+// venaient de l'agent Node maison (archivé : docs/archive/capteurs-serveur-maison.md).
+// Les exceptions gardent les attributs qu'il posait (`mip.exception_id`,
+// `mip.error_handled`, `mip.error_fatal`) : ils sont le contrat de l'ingestion,
+// qu'une application peut poser par l'API OpenTelemetry, pas celui d'un capteur.
+//
 //   SQL_TEST_DATABASE_URL=<base jetable> SQL_TEST_V68_DATABASE_URL=<autre base jetable> pnpm test:sql
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { type Attributes, context, SpanKind, SpanStatusCode, trace, TraceFlags } from "@opentelemetry/api";
+import { SeverityNumber } from "@opentelemetry/api-logs";
+import { JsonLogsSerializer, JsonTraceSerializer } from "@opentelemetry/otlp-transformer";
+import { defaultResource, resourceFromAttributes } from "@opentelemetry/resources";
+import { InMemoryLogRecordExporter, LoggerProvider, SimpleLogRecordProcessor } from "@opentelemetry/sdk-logs";
+import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  buildConfig,
-  buildHttpServerSpan,
-  buildLogPayload,
-  buildLogRecord,
-  buildPayload,
-  type ExceptionInput,
-} from "../../packages/agent-node/src/core";
 import { buildResourceSpans, msToHr } from "../../packages/rum-sdk/src/otlp-encode";
 // @ts-expect-error module JS partagé sans déclarations
 import { hashIdentity, secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.mjs";
@@ -102,15 +108,43 @@ const attributs = (attrs: Attrs) => Object.entries(attrs).map(([key, value]) => 
 const aplatir = (payload: unknown) => flattenOtlp(secureOtlpIdentities(payload, SECRET).payload);
 const aplatirLogs = (payload: unknown) => flattenOtlpLogs(secureOtlpIdentities(payload, SECRET).payload);
 
-/** Agent Node réel (core.ts) : resource, scope et span tels qu'ils partent. */
-function agent(app: string) {
-  return buildConfig({
-    MIP_RUM_ENDPOINT: "http://ingest.test/v1/traces",
-    MIP_RUM_APP_ID: app,
-    MIP_RUM_SERVICE: "checkout-api",
-    MIP_RUM_ENV: "staging",
-  });
+/** Exception levée par le service Node, telle que l'application la publie. */
+interface ExceptionInput {
+  error: { type: string; message: string; stack: string };
+  tsMs: number;
+  exceptionId: string | null;
+  handled: boolean | null;
+  fatal: boolean | null;
 }
+
+/**
+ * Resource d'un service Node sous le SDK officiel : celle que détecte
+ * `NodeSDK` (`telemetry.sdk.language = nodejs`, d'où `error_source = node`),
+ * complétée par `OTEL_RESOURCE_ATTRIBUTES` et `OTEL_SERVICE_NAME`.
+ */
+function ressourceNode(app: string) {
+  return defaultResource().merge(resourceFromAttributes({
+    "service.name": "checkout-api",
+    "mip.app_id": app,
+    "deployment.environment.name": "staging",
+  }));
+}
+
+/** Attributs `exception.*` (conventions OpenTelemetry) et marqueurs MIP ; un marqueur inconnu n'est pas émis. */
+function exceptionAttributes(e: ExceptionInput): Attributes {
+  const attrs: Attributes = {
+    "exception.type": e.error.type,
+    "exception.message": e.error.message,
+    "exception.stacktrace": e.error.stack,
+  };
+  if (e.exceptionId != null) attrs["mip.exception_id"] = e.exceptionId;
+  if (e.handled != null) attrs["mip.error_handled"] = e.handled;
+  if (e.fatal != null) attrs["mip.error_fatal"] = e.fatal;
+  return attrs;
+}
+
+/** Octets OTLP/JSON des encodeurs officiels, relus comme le port d'ingestion les reçoit. */
+const relire = (octets: Uint8Array | undefined) => JSON.parse(Buffer.from(octets!).toString("utf8"));
 
 function exception(n: number, message: string, over: Partial<ExceptionInput> = {}): ExceptionInput {
   return {
@@ -123,35 +157,57 @@ function exception(n: number, message: string, over: Partial<ExceptionInput> = {
   };
 }
 
-/** Span http.server de l'agent Node portant des exceptions, sans session. */
-function requeteNode(app: string, n: number, exceptions: ExceptionInput[]) {
-  return buildPayload(agent(app), [buildHttpServerSpan({
-    traceId: traceId(n),
-    spanId: spanId(n),
-    parentSpanId: null,
-    method: "POST",
-    route: "/api/pay",
-    url: null,
-    status: 500,
-    sessionId: null,
-    startMs: Date.now() - 3_000,
-    durationMs: 12,
-    exceptions,
-  })]);
+/**
+ * Requête HTTP serveur d'un service Node sous le SDK officiel (span SERVER,
+ * attributs semconv), portant ses exceptions en événements, sans session.
+ */
+function requeteNode(app: string, n: number, exceptions: ExceptionInput[]): { resourceSpans: unknown[] } {
+  const memoire = new InMemorySpanExporter();
+  const fournisseur = new BasicTracerProvider({
+    resource: ressourceNode(app),
+    // Identifiants fixés : les assertions portent sur `traceId(n)` et `spanId(n)`.
+    idGenerator: { generateTraceId: () => traceId(n), generateSpanId: () => spanId(n) },
+    spanProcessors: [new SimpleSpanProcessor(memoire)],
+  });
+  const debut = Date.now() - 3_000;
+  const requete = fournisseur.getTracer("@opentelemetry/instrumentation-http", "0.222.0").startSpan("POST /api/pay", {
+    kind: SpanKind.SERVER,
+    startTime: debut,
+    attributes: {
+      "http.request.method": "POST",
+      "http.route": "/api/pay",
+      "url.path": "/api/pay",
+      "http.response.status_code": 500,
+    },
+  });
+  for (const e of exceptions) requete.addEvent("exception", exceptionAttributes(e), e.tsMs);
+  requete.setStatus({ code: SpanStatusCode.ERROR });
+  requete.end(debut + 12);
+  return relire(JsonTraceSerializer.serializeRequest(memoire.getFinishedSpans()));
 }
 
-/** Log d'exception de l'agent Node, corrélé au span de la requête. */
+/** Log d'un service Node sous le SDK officiel, corrélé au span de la requête. */
 function logNode(app: string, n: number, exc: ExceptionInput | null, level: "warn" | "error" = "error") {
-  return buildLogPayload(agent(app), [buildLogRecord({
-    level,
+  const memoire = new InMemoryLogRecordExporter();
+  const fournisseur = new LoggerProvider({
+    resource: ressourceNode(app),
+    processors: [new SimpleLogRecordProcessor({ exporter: memoire })],
+  });
+  const tsMs = Date.now() - 1_000;
+  fournisseur.getLogger("checkout-api").emit({
+    timestamp: tsMs,
+    observedTimestamp: tsMs,
+    severityNumber: level === "error" ? SeverityNumber.ERROR : SeverityNumber.WARN,
+    severityText: level.toUpperCase(),
     body: exc ? `TypeError: ${exc.error.message}` : "paiement refusé",
-    tsMs: Date.now() - 1_000,
-    traceId: traceId(n),
-    spanId: spanId(n),
-    sessionId: null,
-    route: "/api/pay",
-    exception: exc,
-  })]);
+    attributes: { "mip.route": "/api/pay", ...(exc ? exceptionAttributes(exc) : {}) },
+    context: trace.setSpanContext(context.active(), {
+      traceId: traceId(n),
+      spanId: spanId(n),
+      traceFlags: TraceFlags.SAMPLED,
+    }),
+  });
+  return relire(JsonLogsSerializer.serializeRequest(memoire.getFinishedLogRecords()));
 }
 
 /** Émetteur OpenTelemetry Python tiers : événements `exception` sans `mip.exception_id`. */
@@ -506,7 +562,7 @@ suite("P5.3 — exceptions backend et OpenTelemetry — PostgreSQL", () => {
         where app_id = any($1::text[]) and day = $2::date order by app_id`,
       [[APP_METER, APP_LOGS], jour],
     )).rows;
-    // APP_METER : un seul événement facturé (le span http.server), trois occurrences.
+    // APP_METER : un seul événement facturé (le span serveur), trois occurrences.
     expect(usage).toEqual([
       { app_id: APP_LOGS, events: 0, errors: 1 },
       { app_id: APP_METER, events: 1, errors: 3 },
@@ -630,7 +686,7 @@ suiteV69("fenêtre de déploiement : code P5.3 sur une base restée en v69", () 
       "select ts::date::text as jour from rum_error where app_id = $1 limit 1", [APP_V69],
     );
     await poolV69.query("select meter_tenant_usage($1::date)", [jour]);
-    // Événements : pageview + erreur navigateur + span http.server (écrit deux
+    // Événements : pageview + erreur navigateur + span serveur (écrit deux
     // fois, stocké une fois). Occurrences : navigateur + span + log.
     expect((await poolV69.query(
       "select events::int as events, errors::int as errors from tenant_usage_daily where app_id = $1 and day = $2::date",

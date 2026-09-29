@@ -73,8 +73,9 @@ const CAPTEURS: Capteur[] = [
     ],
     pourQui: [
       "Mesure à grande échelle : trafic public, portails, commerce en ligne",
-      // Node ET FastAPI, comme la ligne « Côté serveur » sous les cartes (C5, C6).
-      "Lien du navigateur au serveur par l'en-tête traceparent (un saut, Node ou FastAPI)",
+      // Les agents officiels, comme la ligne « Côté serveur » sous les cartes (C5, C6) :
+      // plus de capteur serveur maison depuis le 29/09/2026.
+      "Lien du navigateur au serveur par l'en-tête traceparent (un saut, agents OpenTelemetry officiels)",
     ],
     fort: "Atteint tout le trafic public, bien au-delà du parc interne — moins les visiteurs qui refusent la mesure (DNT et GPC honorés par défaut) et ceux qu'un bloqueur arrête.",
     // Texte exact du plan (PS2). « ni un simulateur » : C1 (« Aucun appareil, aucun
@@ -222,12 +223,15 @@ export function Capteurs() {
         « Source de collecte » les compare l&apos;un à l&apos;autre.
       </p>
 
-      {/* Texte du plan (PS2), sans les chemins du code depuis la recette du 26/09/2026.
-          Sources : C5, C6 (RUM_PARITY_STATUS.md:173-174) — un seul saut de trace, ni
-          propagation d'un service à l'autre. */}
+      {/* Texte du plan (PS2), sans les chemins du code depuis la recette du 26/09/2026 ;
+          les agents officiels depuis le 29/09/2026 (l'agent Node et le middleware FastAPI
+          maison sont archivés). Sources : C5, C6 (RUM_PARITY_STATUS.md:173-174) et
+          docs/capteurs-serveur.md § 2 — Flask, Java et .NET le 28/09, FastAPI et Node
+          (traces) le 29/09 ; un seul saut de trace, ni propagation d'un service à l'autre. */}
       <p className="mt-3 text-sm leading-relaxed text-ink-soft" data-testid="capteurs-serveur">
-        Côté serveur : un agent Node et un middleware FastAPI relient un appel du navigateur à son
-        exécution serveur, sur un seul saut.
+        Côté serveur : l&apos;agent OpenTelemetry officiel du langage relie un appel du navigateur à
+        son exécution serveur, sur un seul saut ; éprouvé en production pour Python, Java, .NET et,
+        pour les traces, Node.
       </p>
     </SousPartie>
   );

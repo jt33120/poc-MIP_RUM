@@ -89,7 +89,7 @@ Base, ingestion, démo et console sur le poste, sans secret : les programmes se 
 ```bash
 pnpm install --frozen-lockfile
 docker compose -f infra/docker/docker-compose.yml run --rm migrate  # Postgres 17 sur :5433, base mip_rum migrée par le migrateur de production
-pnpm build:sdk                                                  # SDK web, React Native, agent Node
+pnpm build:sdk                                                  # SDK web et React Native
 node scripts/seed-admin.mjs                                     # compte admin local : mot de passe affiché une fois, régénéré à chaque appel
 node services/collector/dev-server.mjs                          # ingestion locale :4318 (MIP_E2E_TAMPON=1 : tampon /__recent de l'E2E)
 node tests/e2e/site-cobaye/serve.mjs                            # site cobaye des E2E :8080
@@ -134,7 +134,7 @@ pnpm test:contract                # vitest, tests/contract : parité console ↔
 pnpm test:e2e                     # Playwright ; lance lui-même ingestion, rejeu, démo, console-api et console (build de production, branchée sur console-api en mode strict) — Postgres migré requis
 ```
 
-La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) rejoue ces suites sur un Postgres 17 de service : build des SDK, typage des paquets et de la console, unitaires et middleware Python ; puis le schéma par le migrateur de production, les suites SQL sur bases dédiées, les contrats, le seed synthétique, l'E2E Chromium et le relevé « console sans base » (C12). [`docker-smoke.yml`](.github/workflows/docker-smoke.yml) construit et démarre l'image de chacun des six services (`collector`, `scheduler`, `notifier`, `api`, `mcp`, `console-api`). [`railway-config.yml`](.github/workflows/railway-config.yml) planifie l'infrastructure Railway sur chaque PR qui touche `.railway/` et l'applique après fusion, sur approbation.
+La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) rejoue ces suites sur un Postgres 17 de service : build des SDK, typage des paquets et de la console, unitaires ; puis le schéma par le migrateur de production, les suites SQL sur bases dédiées, les contrats, le seed synthétique, l'E2E Chromium et le relevé « console sans base » (C12). [`docker-smoke.yml`](.github/workflows/docker-smoke.yml) construit et démarre l'image de chacun des six services (`collector`, `scheduler`, `notifier`, `api`, `mcp`, `console-api`). [`railway-config.yml`](.github/workflows/railway-config.yml) planifie l'infrastructure Railway sur chaque PR qui touche `.railway/` et l'applique après fusion, sur approbation.
 
 Les zones générées de ce README se régénèrent par `node scripts/readme-sections.mjs` ; `tests/unit/readme.test.ts` échoue si elles ne sont plus à jour.
 
@@ -144,7 +144,6 @@ Les zones générées de ce README se régénèrent par `node scripts/readme-sec
 |---|---|
 | `packages/rum-core` | Primitives pures partagées par les runtimes (contexte, snapshots d'événement, `beforeSend`, encodeur OTLP) |
 | `packages/rum-sdk` | SDK Web (émetteur OTLP + web-vitals), build esbuild IIFE `mip-rum.js` ; poids gzip remesuré par `tests/unit/specs.test.ts` (`apps/console/lib/sdk-poids.ts`) |
-| `packages/agent-node` | Agent backend Node.js (`node -r @mip/agent-node/register`) : span `http.server` sans changement de code, plus une API publique (`track`, `captureException`, `withContext`, `flush`) ; aucun service Node n'émet vers la production (document de couverture, `C5`) |
 | `packages/rum-mobile` | SDK **React Native** : crashes, écrans, réseau (traceparent), événements → mêmes tables (`device_type=mobile`) ; livré, jamais lancé dans une application React Native (document de couverture, `C1` et `C10`) |
 | `packages/backend` | `@mip/backend` — noyau backend sans framework : parseur OTLP, receveur (`/v1/traces`, `/v1/logs`, `/v1/replay`, `/v1/sourcemaps`, et depuis C11 l'extension et les marqueurs de déploiement), écritures Postgres, travaux planifiés, livraison des alertes, connecteur de tickets. Importé par la console comme par les services. **En production, la route de la console reçoit toute la collecte et en relaie une part au `collector`** ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
 | `packages/db` | `@mip/db` — le schéma (`sql/` : `schema.sql`, migrations numérotées, index de pré-déploiement) et son migrateur, que seul le `scheduler` lance |
@@ -153,7 +152,7 @@ Les zones générées de ce README se régénèrent par `node scripts/readme-sec
 | `packages/console-api` · `packages/console-contract` | `@mip/console-api`, le backend de la console (pipeline de sécurité, table des opérations, traitements) ; `@mip/console-contract`, le contrat que la console et `console-api` lisent tous deux — [docs/api/console-api.md](docs/api/console-api.md) |
 | `services/*` | Points d'entrée minces au-dessus des paquets, un par service Railway : `collector`, `api`, `console-api`, `mcp`, `scheduler` et `notifier`, déclarés dans `.railway/railway.ts` et déployés depuis le 27/09/2026. Leurs images servent aussi l'auto-hébergement ([infra/docker/](infra/docker/)) — [services/README.md](services/README.md) |
 | `tools/sync-synthetic` | Synchro synthétique → `syn_snapshot` (interface `SyntheticSource` : seed ou export mippoc) |
-| _(hors workspaces)_ | `examples/integrations/fastapi` (middleware FastAPI, testé en CI) · `labs/clickhouse` et `labs/network-logs` (bancs et prototypes, non déployés) · `demo/` et `scripts/` restent à la racine : l'E2E et la CI les lancent par leur chemin |
+| _(hors workspaces)_ | `labs/clickhouse` et `labs/network-logs` (bancs et prototypes, non déployés) · `demo/` et `scripts/` restent à la racine : l'E2E et la CI les lancent par leur chemin |
 | `apps/extension` | Extension navigateur MV3 (injection du SDK par domaine enregistré) |
 | `apps/console` | Console (Next.js 15), collecteur `/api/ingest/v1` et API de lecture `/api/v1` ; les écrans sont listés dans `apps/console/components/nav-items.tsx`, la vitrine publique est `/presentation` |
 
@@ -171,7 +170,7 @@ En cas de désaccord entre ces documents, [docs/RUM_PARITY_STATUS.md](docs/RUM_P
 | [services/README.md](services/README.md) · [infra/docker/README.md](infra/docker/README.md) | Les six services, leurs images et leurs variables (un README par service, `services/<x>/README.md`) · les mêmes images en auto-hébergement, par profil compose |
 | [docs/context/](docs/context/) | **Contexte produit** : maturité par service (RUM, supervision IA, Logs), grille d'évaluation, écarts et critères de sortie |
 | [docs/INTEGRATION.md](docs/INTEGRATION.md) · [docs/integration/sourcemaps-ci.md](docs/integration/sourcemaps-ci.md) | Guide d'intégration client : snippet, options, consent mode, CSP, RGPD, dépannage · envoyer ses source maps depuis GitHub Actions ou GitLab CI |
-| [packages/agent-node/README.md](packages/agent-node/README.md) | Agent backend Node.js (`node -r @mip/agent-node/register`) |
+| [docs/capteurs-serveur.md](docs/capteurs-serveur.md) · [capteurs-serveur.csv](docs/capteurs-serveur.csv) | Côté serveur : l'agent OpenTelemetry officiel de chaque langage, sa commande, ce qui est éprouvé (l'agent Node et le middleware FastAPI maison sont archivés : [docs/archive/capteurs-serveur-maison.md](docs/archive/capteurs-serveur-maison.md)) |
 | [packages/rum-mobile/README.md](packages/rum-mobile/README.md) | SDK React Native (crashes, écrans, réseau, événements) |
 | [docs/API_CONSOLE.md](docs/API_CONSOLE.md) · [docs/RUM_READ_API.md](docs/RUM_READ_API.md) | API de lecture v1 (ITSM/CI-CD) + résumé partenaire |
 | [docs/MULTITENANT.md](docs/MULTITENANT.md) · [docs/ALERTING.md](docs/ALERTING.md) | Multi-tenant / RBAC · alerting (webhook/Slack ; e-mail par le service `notifier`, Resend en mode test — [services/notifier/README.md](services/notifier/README.md)) |

@@ -237,9 +237,14 @@ export const CARTES: readonly CarteCapacite[] = [
   },
   {
     id: "K9",
-    titre: "Relier le navigateur à un service Node ou FastAPI, et en capter les erreurs",
+    // 29/09/2026 : plus de capteur serveur maison. L'agent Node et le middleware FastAPI
+    // sont archivés (tag archive/capteurs-serveur-maison) ; le service tourne sous
+    // l'agent OpenTelemetry officiel de son langage (docs/capteurs-serveur.md). Les
+    // lignes C5 et C6 du document de couverture le disent depuis le 29/09/2026, avec les
+    // preuves du jour : FastAPI éprouvé en production, Node pour les traces.
+    titre: "Relier le navigateur à un service serveur, et en capter les erreurs",
     faitQuoi:
-      "Instrumenter un service Node ou une API FastAPI, capter ses erreurs sans inventer de session, et les rattacher à l'appel du navigateur.",
+      "Recevoir les traces et les journaux de l'agent OpenTelemetry officiel d'un service, capter ses erreurs sans inventer de session, et les rattacher à l'appel du navigateur.",
     limites: [
       {
         id: "A4",
@@ -252,15 +257,15 @@ export const CARTES: readonly CarteCapacite[] = [
       {
         id: "C5",
         texte:
-          "Aucun service Node n'émet vers la production ; un envoi peut être perdu à l'arrêt brutal du processus.",
+          "L'agent Node maison est archivé depuis le 29/09/2026 : un service Node passe par l'agent OpenTelemetry officiel, éprouvé en production le même jour pour les traces ; ses journaux ne partent que par une bibliothèque de journalisation (pino, winston, bunyan).",
       },
       {
         id: "C6",
         texte:
-          "Un seul framework (FastAPI/Starlette) et un seul saut de trace : ni propagation d'un service à un autre, ni span de base de données.",
+          "Le middleware FastAPI maison est archivé depuis le 29/09/2026 : une API FastAPI passe par l'agent officiel Python, éprouvé en production le même jour, sans les journaux d'uvicorn ; un seul saut de trace éprouvé, sans propagation d'un service à un autre.",
       },
     ],
-    // § 6.5, sous le tableau des runtimes : un seul framework backend, un seul saut.
+    // § 6.5, sous le tableau des runtimes : un seul saut de tracing éprouvé.
     sources: [{ ligne: "A4" }, { ligne: "C5" }, { ligne: "C6" }, { passage: 340 }, { passage: 341 }],
   },
   {
@@ -404,7 +409,9 @@ export const CARTES: readonly CarteCapacite[] = [
     id: "K15",
     titre: "Vérifier les types dans l'intégration continue",
     faitQuoi:
-      "L'intégration continue vérifie les types de six paquets (cœur commun, SDK web, paquet React Native, agent Node, contrat de la console, console-api), de la console et de l'extension navigateur.",
+      "L'intégration continue vérifie les types de cinq paquets (cœur commun, SDK web, paquet React Native, contrat de la console, console-api), de la console et de l'extension navigateur.",
+    // Cinq paquets depuis le 29/09/2026 : l'agent Node maison est archivé, sa ligne de
+    // typage quitte la CI avec lui.
     // Deux réserves : le JavaScript du backend hors du contrôle (l'extension y est
     // entrée le 24/09, PR #281), et une vérification qui n'arrête une fusion que si
     // l'on attend son verdict (§ 7 du document). « Paquets publiés » n'est pas
