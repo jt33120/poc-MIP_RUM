@@ -161,10 +161,8 @@ export const CATEGORIES: NavCategory[] = [
  * catégories, pour que la sidebar et le surtitre des pages lisent la même liste :
  * rendu en dur dans le layout, il n'avait ni état actif ni `aria-current`, et ses
  * icônes reprenaient celles de la navigation principale (recette du 26/09/2026).
- * `seulementSi` : entrée conditionnelle, que le layout décide (connecteurs de
- * tickets : seulement quand un fournisseur est branché).
  */
-export type LienAdministration = { href: string; label: string; icon: IconName; seulementSi?: "tickets" };
+export type LienAdministration = { href: string; label: string; icon: IconName };
 
 export const ADMINISTRATION: readonly LienAdministration[] = [
   { href: "/admin/customers", label: "Clients", icon: "building" },
@@ -172,7 +170,6 @@ export const ADMINISTRATION: readonly LienAdministration[] = [
   { href: "/admin/privacy", label: "Vie privée · RGPD", icon: "shield" },
   { href: "/admin/read-tokens", label: "Jetons de lecture", icon: "key" },
   { href: "/admin/sourcemaps", label: "Source maps", icon: "fileCode" },
-  { href: "/admin/ticket-integrations", label: "Connecteurs de tickets", icon: "bell", seulementSi: "tickets" },
   { href: "/admin/extension-scope", label: "Extension navigateur", icon: "puzzle" },
   { href: "/admin/extension-installs", label: "Postes équipés", icon: "monitor" },
   // Le titre de l'écran, en français : « Uptime » à la barre latérale, « Sondes de

@@ -151,7 +151,7 @@ export const INFRA: GroupeInfra[] = [
         k: "Notification",
         // Service `notifier` : seul détenteur des secrets sortants ; le scheduler ne livre
         // plus (SCHEDULER_DELIVERY « off », passes à 15 min : .railway/railway.ts).
-        v: "Livre ce que la plateforme a décidé de dire — webhooks signés, e-mails, tickets — et détient seul les secrets de ces envois. Il passe toutes les 15 minutes, juste après les travaux planifiés.",
+        v: "Livre ce que la plateforme a décidé de dire — webhooks signés, e-mails — et détient seul les secrets de ces envois. Il passe toutes les 15 minutes, juste après les travaux planifiés.",
         s: "atteint",
         preuve: "services/notifier/worker.mjs",
       },

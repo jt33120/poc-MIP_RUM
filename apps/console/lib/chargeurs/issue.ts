@@ -6,14 +6,8 @@
 // groupe, chaque lecture est une section (§ 3.8).
 //
 // CE QUI DÉPEND DU RÔLE est décidé ICI, par le principal (relu en base dans
-// console-api) : les adresses des comptes (acteurs, assignés), le contexte de
-// code de la pile, et l'aperçu d'un ticket ne sont lus que pour un administrateur
-// hors démo.
-//
-// L'ORIGINE DE LA CONSOLE (liens de l'aperçu d'un ticket) est calculée par la page
-// depuis sa requête (`origineConsole`) et passée en paramètre (`PARAM_ORIGINE`) :
-// un chargeur ne lit pas d'en-tête. Elle ne sert qu'à l'aperçu affiché ; la
-// création d'un ticket (C7) la prendra de sa configuration.
+// console-api) : les adresses des comptes (acteurs, assignés) et le contexte de
+// code de la pile ne sont lus que pour un administrateur hors démo.
 import type { PartGroupe } from "@/components/errors/DetailErreur";
 import { issueWorkflowView, listIssueActivity } from "../error-issue-workflow";
 import { isIssueId, issueDetail, resolveIssue } from "../error-issues";
@@ -21,13 +15,9 @@ import { errorSearchParams } from "../error-view";
 import { analyserFiltres } from "../filtres-ecran";
 import { listDeploys } from "../queries-deploys";
 import { errorScopeFor, parseErrorCursor, parseOccurrencesPage, partSessionsTouchees, releasesDeLIssue, scopeApps } from "../queries-errors";
-import { apercuTicket, integrationsUtilisables, livraisonsTicket } from "../queries-ticket-integrations";
 import { UnsupportedFilterError } from "../query-compiler";
 import { section, type Chargeur } from "./commun";
 import { lirePileErreur } from "./pile-erreur";
-
-/** L'origine publique de la console, posée par la page (`origineConsole(headers)`). */
-export const PARAM_ORIGINE = "origine";
 
 export const chargerIssue = (async (principal, sp, { id = "" }) => {
   if (!isIssueId(id)) return { etat: "introuvable" } as const;
@@ -69,19 +59,13 @@ export const chargerIssue = (async (principal, sp, { id = "" }) => {
   // Workflow P5.6 : null avant migration-v73. Un curseur d'historique illisible rend la page la plus récente.
   // Les adresses des comptes (acteurs, assignés) ne sont lues que pour un admin.
   const activiteCurseur = parseErrorCursor(url.get("activite")) ?? null;
-  const [workflow, pile, integrationsTickets, livraisons] = await Promise.all([
+  const [workflow, pile] = await Promise.all([
     issueWorkflowView(issue.id, issue.app_id, { emails: admin }),
     lirePileErreur(issue.app_id, detail.last_sample, admin),
-    // Connecteur de tickets (P8.6) : l'aperçu n'est composé que pour un admin qui a
-    // au moins un connecteur utilisable.
-    admin ? integrationsUtilisables(issue.app_id) : Promise.resolve([]),
-    livraisonsTicket(issue.id, apps),
   ]);
   const activite = workflow
     ? await listIssueActivity(issue.id, apps, { limit: 20, cursor: activiteCurseur }, { emails: admin })
     : null;
-  const origine = typeof sp[PARAM_ORIGINE] === "string" ? sp[PARAM_ORIGINE] : "";
-  const apercuTickets = integrationsTickets.length > 0 ? await apercuTicket(issue.id, apps, origine) : null;
 
   return {
     etat: "ok",
@@ -100,8 +84,5 @@ export const chargerIssue = (async (principal, sp, { id = "" }) => {
     activite,
     activiteCurseur,
     pile,
-    integrationsTickets,
-    livraisons,
-    apercu: apercuTickets?.apercu ?? null,
   } as const;
 }) satisfies Chargeur<unknown>;

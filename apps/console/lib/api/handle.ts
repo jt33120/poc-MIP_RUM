@@ -273,17 +273,11 @@ export interface ApiMutationContext {
   params: Record<string, string>;
 }
 
-/**
- * Réponse d'une mutation : `app` renseigne `meta`, `status` vaut 200 par défaut.
- *
- * `202` existe depuis P8.6 : une demande de ticket est ACCEPTÉE, pas honorée —
- * la ressource distante n'existe pas encore quand on répond. Rendre 201 y serait
- * un mensonge, et 200 laisserait croire que tout est fini.
- */
+/** Réponse d'une mutation : `app` renseigne `meta`, `status` vaut 200 par défaut. */
 export interface ApiMutationResult {
   app: string;
   data: unknown;
-  status?: 200 | 201 | 202;
+  status?: 200 | 201;
 }
 
 /** Corps JSON d'une mutation : quelques kilo-octets suffisent à un commentaire de 2 000 caractères. */
