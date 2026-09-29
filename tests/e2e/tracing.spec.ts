@@ -1,10 +1,12 @@
 // E2E v0.4 — tracing distribué bout-en-bout :
 // démo (:8080) -> fetch + XHR instrumentés (traceparent) -> backend FastAPI (:8001)
-// avec mip_rum_middleware -> spans front/back en base, corrélés par trace_id ->
-// console /tracing + timeline session.
-// Le backend de démo est spawné ici (tests/e2e/site-cobaye/.venv ou python3 avec fastapi) ;
-// sans FastAPI disponible, la suite est skippée proprement.
+// sous l'agent OpenTelemetry OFFICIEL (`opentelemetry-instrument`, aucun capteur
+// MIP) -> spans front/back en base, corrélés par trace_id -> console /tracing +
+// timeline session.
+// Le backend de démo est spawné ici (tests/e2e/site-cobaye/.venv, sinon le PATH) ;
+// s'il manque l'agent ou FastAPI, les deux tests bout en bout sont sautés.
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
 import { debordements, LARGEURS } from "./helpers/debordements";
@@ -39,25 +41,43 @@ const pool = new pg.Pool({
     process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum",
 });
 
-function pythonBin(): string | null {
-  for (const bin of ["tests/e2e/site-cobaye/.venv/bin/python", "python3"]) {
+/**
+ * Les trois exécutables du backend de démo : le Python qui porte FastAPI et
+ * l'agent, `opentelemetry-instrument` et `uvicorn`. Le venv d'abord (celui que la
+ * CI remplit depuis requirements.txt), puis le PATH. Un candidat n'est retenu que
+ * si son Python importe à la fois l'application et l'agent : sans l'agent, le
+ * backend répondrait sans rien envoyer, et le test échouerait loin de sa cause.
+ */
+function lanceurOtel(): { python: string; instrument: string; uvicorn: string } | null {
+  const VENV = "tests/e2e/site-cobaye/.venv/bin";
+  const candidats = [
+    { python: `${VENV}/python`, instrument: `${VENV}/opentelemetry-instrument`, uvicorn: `${VENV}/uvicorn` },
+    { python: "python3", instrument: "opentelemetry-instrument", uvicorn: "uvicorn" },
+  ];
+  for (const c of candidats) {
+    if (c.python.includes("/") && !existsSync(c.python)) continue;
     try {
-      execFileSync(bin, ["-c", "import fastapi, uvicorn"], { stdio: "ignore" });
-      return bin;
+      execFileSync(
+        c.python,
+        ["-c", "import fastapi, uvicorn, opentelemetry.instrumentation.fastapi, opentelemetry.exporter.otlp.proto.http"],
+        { stdio: "ignore" },
+      );
+      return c;
     } catch {
       /* candidat suivant */
     }
   }
   return null;
 }
-const PY = pythonBin();
+const LANCEUR = lanceurOtel();
 
 let backend: ChildProcess | null = null;
 
 // Sans FastAPI, seuls les deux tests bout en bout sont sautés (chacun le dit) : un
 // `test.skip` dans ce crochet de fichier sauterait aussi les blocs d'écran (F60),
 // qui sèment leurs spans en base et n'ont pas besoin du backend de démo.
-const SANS_FASTAPI = "fastapi/uvicorn indisponibles (tests/e2e/site-cobaye/.venv absent et python3 nu)";
+const SANS_FASTAPI =
+  "fastapi/uvicorn ou l'agent OpenTelemetry indisponibles (tests/e2e/site-cobaye/.venv absent, et rien sur le PATH : pip install -r tests/e2e/site-cobaye/requirements.txt)";
 
 test.beforeAll(async () => {
   await pool.query(
@@ -68,19 +88,39 @@ test.beforeAll(async () => {
     [E2E_EMAIL, bcryptHash(E2E_PASSWORD)],
   );
 
-  if (!PY) return;
-  backend = spawn(PY, ["tests/e2e/site-cobaye/backend.py"], {
-    env: {
-      ...process.env,
-      MIP_RUM_ENDPOINT: "http://localhost:4318/v1/traces",
-      MIP_RUM_APP_ID: "demo-app",
-      MIP_RUM_API_KEY: "demo-key-local",
-      MIP_RUM_FLUSH_S: "1",
-      MIP_RUM_BATCH: "1",
+  if (!LANCEUR) return;
+  // Le socle commun `OTEL_*` de docs/INTEGRATION.md § 10, et RIEN d'autre : c'est
+  // la configuration d'un client. Seul écart, le délai d'export (5 s par défaut)
+  // ramené à 200 ms, pour que les spans arrivent pendant le test.
+  backend = spawn(
+    LANCEUR.instrument,
+    [LANCEUR.uvicorn, "--app-dir", "tests/e2e/site-cobaye", "backend:app", "--host", "127.0.0.1", "--port", "8001", "--log-level", "warning"],
+    {
+      env: {
+        ...process.env,
+        OTEL_SERVICE_NAME: "site-cobaye-backend",
+        OTEL_RESOURCE_ATTRIBUTES: "mip.app_id=demo-app,mip.api_key=demo-key-local,deployment.environment.name=e2e",
+        OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://localhost:4318/v1/traces",
+        OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "http://localhost:4318/v1/logs",
+        OTEL_EXPORTER_OTLP_COMPRESSION: "gzip",
+        OTEL_TRACES_EXPORTER: "otlp",
+        OTEL_LOGS_EXPORTER: "otlp",
+        OTEL_METRICS_EXPORTER: "none",
+        OTEL_BSP_SCHEDULE_DELAY: "200",
+        OTEL_BLRP_SCHEDULE_DELAY: "200",
+      },
+      stdio: ["ignore", "ignore", "pipe"],
     },
-    stdio: "ignore",
+  );
+  // Le journal d'erreur de l'agent, gardé pour le message d'échec (lu en continu :
+  // un tube plein bloquerait le serveur).
+  let journal = "";
+  backend.stderr?.on("data", (d: Buffer) => {
+    journal = (journal + d.toString()).slice(-4000);
   });
-  for (let i = 0; i < 40; i++) {
+  // L'agent charge ses instrumentations avant qu'uvicorn n'écoute : 20 s.
+  for (let i = 0; i < 80; i++) {
     try {
       if ((await fetch("http://localhost:8001/health")).ok) return;
     } catch {
@@ -88,7 +128,7 @@ test.beforeAll(async () => {
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  throw new Error("backend démo :8001 indisponible après 10 s");
+  throw new Error(`backend démo :8001 indisponible après 20 s\n${journal}`);
 });
 
 test.afterAll(async () => {
@@ -120,7 +160,7 @@ async function pollRows(sql: string, params: unknown[], minCount: number, timeou
 }
 
 test("fetch + XHR -> spans front ET back corrélés par trace_id en base", async ({ page }) => {
-  test.skip(!PY, SANS_FASTAPI);
+  test.skip(!LANCEUR, SANS_FASTAPI);
   await page.goto("http://localhost:8080/", { waitUntil: "load" });
   await page.click("#btn-api-fetch");
   await page.click("#btn-api-xhr");
@@ -128,7 +168,7 @@ test("fetch + XHR -> spans front ET back corrélés par trace_id en base", async
   const sid = await page.evaluate(
     () => JSON.parse(localStorage.getItem("mip_rum_session")!).sid,
   );
-  await page.waitForTimeout(2500); // flush SDK (2 s) — le middleware flushe en 1 s
+  await page.waitForTimeout(2500); // flush SDK (2 s) — l'agent exporte toutes les 200 ms
 
   const fronts = await pollRows(
     "select trace_id, url, method, status_code, duration_ms from rum_span where session_id = $1 and tier = 'front'",
@@ -141,7 +181,11 @@ test("fetch + XHR -> spans front ET back corrélés par trace_id en base", async
     expect(Number(f.status_code)).toBe(200);
   }
 
-  // chaque appel front a son jumeau backend (même trace_id), route template FastAPI
+  // chaque appel front a son jumeau backend (même trace_id). La route est le
+  // template FastAPI (`http.route` = /api/demo/items/{item_id}) sous sa forme
+  // canonique `:nom`, que l'ingestion donne à tout `http.route` (normalizeRouteTemplate).
+  // Les spans internes ASGI (« … http send ») ne sont pas des spans serveur : tier
+  // `detail`, hors de cette requête.
   const backs = await pollRows(
     `select b.route, b.session_id, b.parent_span_id, b.duration_ms
      from rum_span b
@@ -152,8 +196,9 @@ test("fetch + XHR -> spans front ET back corrélés par trace_id en base", async
   );
   expect(backs.length).toBeGreaterThanOrEqual(2);
   for (const b of backs) {
-    expect(b.route).toBe("/api/demo/items/{item_id}");
-    expect(b.session_id).toBe(sid); // tracestate mip=s:<sid> lu par le middleware
+    expect(b.route).toBe("/api/demo/items/:item_id");
+    // tracestate mip=s:<sid> : propagé par l'agent dans le traceState du span serveur, lu par l'ingestion
+    expect(b.session_id).toBe(sid);
     expect(b.parent_span_id).not.toBeNull();
     expect(Number(b.duration_ms)).toBeGreaterThanOrEqual(140); // sleep 150 ms simulé
   }
@@ -162,11 +207,11 @@ test("fetch + XHR -> spans front ET back corrélés par trace_id en base", async
 test("console : /tracing affiche la corrélation et la timeline montre l'appel API", async ({
   page,
 }) => {
-  test.skip(!PY, SANS_FASTAPI);
+  test.skip(!LANCEUR, SANS_FASTAPI);
   await loginConsole(page);
 
   await page.goto(`${consoleUrl}/tracing`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("back-routes")).toContainText("/api/demo/items/{item_id}");
+  await expect(page.getByTestId("back-routes")).toContainText("/api/demo/items/:item_id");
   await expect(page.getByTestId("api-calls")).toContainText("/api/demo/items/");
   // F60 : la couverture est la tuile « Appels suivis jusqu'au serveur » ; mesurée, jamais « — ».
   // Par son libellé exact : la tuile « Durée p75 côté serveur » en parle aussi dans sa phrase.
