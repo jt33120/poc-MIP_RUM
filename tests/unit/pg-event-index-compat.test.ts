@@ -25,7 +25,6 @@ describe("writeRows avant v65", () => {
     await expect(writeRows(pool, {
       sessions: [], pageviews: [], metrics: [], errors: [], resources: [], longtasks: [], breadcrumbs: [], events: [], spans: [],
       eventIndex: [{ app_id: "a", session_id: "s", ts: new Date(), route: "/x", kind: "event", source_name: "track", source_span_id: "00000000000000a1" }],
-      sviCalls: [], sviSteps: [], sviLegs: [],
     })).resolves.toEqual({ erreurs: { recues: 0, inserees: 0, ignorees: 0 } });
     expect(query.mock.calls.some(([sql]) => String(sql).includes("insert into rum_event_index"))).toBe(false);
     expect(query.mock.calls.map(([sql]) => sql).join("\n")).toContain("commit");
@@ -80,7 +79,6 @@ describe("writeRows avant v65", () => {
         source_name: "frustration.error", source_span_id: "00000000000000a2", event_type: "action",
         user_id_hash: "a".repeat(64), context: { plan: "pro" },
       }],
-      sviCalls: [], sviSteps: [], sviLegs: [],
     // La base simulée ne rend aucune ligne RETURNING : reçue, pas insérée.
     })).resolves.toEqual({ erreurs: { recues: 1, inserees: 0, ignorees: 0 } });
 
@@ -127,7 +125,6 @@ describe("writeRows avant v65", () => {
       actions: [{ action_id: actionId, span_id: "00000000000000a1", session_id: "s", app_id: "a", type: "click", name: "Payer", route: "/", context: {}, ts: now }],
       errors: [{ span_id: "00000000000000e1", session_id: "s", app_id: "a", route: "/", kind: "error", message: "boom", error_type: "Error", stack: "", source: null, lineno: null, colno: null, release: null, fingerprint: "f", occurrences: 1, action_id: actionId, ts: now }],
       eventIndex: [{ app_id: "a", session_id: "s", ts: now, route: "/", kind: "event", source_name: "frustration.error", source_span_id: "00000000000000f1", action_id: actionId }],
-      sviCalls: [], sviSteps: [], sviLegs: [],
     });
     const statements = query.mock.calls.map(([sql]) => String(sql));
     const root = statements.findIndex((sql) => sql.startsWith("insert into rum_action"));

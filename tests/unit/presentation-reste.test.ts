@@ -40,15 +40,14 @@ function ligne(id: string): Capacite {
   return c;
 }
 
-describe("les dix points, dans l'ordre fixe du plan", () => {
-  it("titres exacts, R1 à R11 sans R2 (fait le 28/09/2026) : les identifiants ne sont pas renumérotés", () => {
+describe("les neuf points, dans l'ordre fixe du plan", () => {
+  it("titres exacts, R1 à R11 sans R2 (fait le 28/09/2026) ni R7 (tickets retirés le 29/09/2026) : les identifiants ne sont pas renumérotés", () => {
     expect(POINTS_RESTE.map((p) => [p.id, p.titre])).toEqual([
       ["R1", "Une recette de l'écran mobile sur une vraie application"],
       ["R3", "Source maps dans l'intégration continue du client"],
       ["R4", "Crashes natifs iOS et Android"],
       ["R5", "React Native : une matrice de compatibilité vide"],
       ["R6", "Le pays par adresse IP sur les sites des clients"],
-      ["R7", "Tickets : le connecteur existe, la cible ITSM n'est pas confirmée"],
       ["R8", "Souveraineté et mise en service chez un client"],
       ["R9", "Une chaîne de livraison qui dit vrai"],
       ["R10", "Une base choisie pour un vrai produit"],
@@ -239,12 +238,20 @@ describe("les pastilles d'un point : les lignes du document qu'il cite", () => {
     expect(lignesCitees(faux).map((c) => c.id)).toEqual(["D10"]);
   });
 
-  it("D12, déployée mais inerte, est une pastille de « Ce qui reste » (règle 3 du § 8.0) ; D14 aussi, pour les clients", () => {
+  it("D14 est une pastille de « Ce qui reste », pour les sites des clients ; D12 et D13, retirées, sortent de la liste", () => {
     // D14 n'est plus inerte depuis le 28/09/2026 (elle a sa carte, K16) ; R6 la cite
     // encore, pour les sites des clients.
-    for (const [id, porteur] of [["D12", "R7"], ["D14", "R6"]] as const) {
-      expect(ligne(id).verdict, id).toBe("deploye_non_eprouve");
-      expect(lignesCitees(point(porteur)).map((c) => c.id), id).toContain(id);
+    expect(ligne("D14").verdict).toBe("deploye_non_eprouve");
+    expect(lignesCitees(point("R6")).map((c) => c.id)).toContain("D14");
+    // Les tickets sont retirés le 29/09/2026 (décision du propriétaire du produit) : D12
+    // et D13 passent « non retenu », R7 sort de la liste et dit le retrait, daté.
+    for (const id of ["D12", "D13"]) {
+      expect(ligne(id).verdict, id).toBe("non_retenu");
+      expect(ligne(id).preuve, id).toContain("29/09/2026");
     }
+    expect(POINTS_RESTE.map((p) => p.id)).not.toContain("R7");
+    const r7 = POINTS_FAITS.find((p) => p.id === "R7")!;
+    expect(r7.fait).toContain("Retirés le 29/09/2026");
+    expect(r7.sources).toEqual(expect.arrayContaining(["D12", "D13"]));
   });
 });

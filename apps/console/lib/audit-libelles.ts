@@ -59,6 +59,8 @@ const LIBELLES: Record<string, string> = {
   sourcemap_token_create: "Jeton de CI créé",
   sourcemap_token_revoke: "Jeton de CI révoqué",
   sourcemap_replace: "Source map remplacée",
+  // Tickets : fonctionnalité retirée le 29/09/2026. Les libellés restent pour les
+  // lignes que le journal en garde.
   ticket_integration_create: "Connecteur de tickets créé",
   ticket_integration_update: "Connecteur de tickets modifié",
   ticket_integration_patch: "Connecteur de tickets modifié",

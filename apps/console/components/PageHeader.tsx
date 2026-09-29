@@ -20,7 +20,7 @@ export function PageHeader({
   help?: GlossaryId;
   /** Catégorie de navigation (surtitre et couleur, § 2.4) : `perf`, `robot`,
    *  `usages`, `fiabilite`, `explorer`, `ai`, ou une zone hors RUM (`admin`,
-   *  `integrations`, `logs`, `svi`). Absent : celle qui range la route courante
+   *  `integrations`, `logs`). Absent : celle qui range la route courante
    *  dans la navigation (`surtitreDe`), « perf » à défaut. */
   domain?: PageDomain;
   children?: React.ReactNode;

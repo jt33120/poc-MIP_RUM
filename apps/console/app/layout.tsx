@@ -236,11 +236,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const schema = coquille.schema.ok ? coquille.schema.data : [];
   const timeZones = coquille.fuseaux;
 
-  // P8.6 : l'entrée « Connecteurs de tickets » n'apparaît que lorsqu'un
-  // fournisseur est branché et testé. La page applique la MÊME décision et rend
-  // un 404 sinon : un lien caché n'est pas une autorisation.
-  const tickets = coquille.tickets?.ok === true && coquille.tickets.data;
-  const coquilleDegradee = !coquille.projets.ok || !coquille.schema.ok || coquille.tickets?.ok === false;
+  const coquilleDegradee = !coquille.projets.ok || !coquille.schema.ok;
 
   return (
     <html lang="fr" suppressHydrationWarning>
@@ -276,7 +272,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
                   Administration
                 </div>
-                <NavAdministration tickets={Boolean(tickets)} />
+                <NavAdministration />
               </div>
             )}
             <div className="mt-auto pt-6">

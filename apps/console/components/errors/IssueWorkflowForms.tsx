@@ -1,5 +1,5 @@
 "use client";
-// Formulaires du workflow d'une issue (P5.6) : triage, commentaire, lien de ticket.
+// Formulaires du workflow d'une issue (P5.6) : triage, commentaire.
 // Chacun appelle la server action du workflow (`app/errors/issues/actions.ts`, C7)
 // avec la révision lue par la page — plus une route v1 : une écriture de la console
 // passe par sa commande, que console-api servira.
@@ -247,143 +247,12 @@ export function IssueCommentForm({ issueId, appId, revision }: { issueId: string
         />
       </label>
       <p className="mt-1 text-xs text-ink-faint">
-        Les adresses e-mail, jetons et longues suites de chiffres sont masqués à l&apos;enregistrement. Rien n&apos;est
-        envoyé à un outil de tickets.
+        Les adresses e-mail, jetons et longues suites de chiffres sont masqués à l&apos;enregistrement.
       </p>
       <button type="submit" className="btn-accent mt-2" disabled={inactif} data-testid="issue-comment-submit">
         {occupe ? "Envoi…" : "Commenter"}
       </button>
       <Retour etat={etat} recharger={() => garder({ body: texte })} testid="issue-comment" />
-    </form>
-  );
-}
-
-/** Lien de ticket manuel : HTTPS seulement, libellé court. */
-export function IssueLinkForm({ issueId, appId, revision }: { issueId: string; appId: string; revision: string }) {
-  const pret = useHydrate();
-  const { etat, envoyer, occupe } = useMutation(issueId, "links");
-  const [url, setUrl] = useState("");
-  const [libelle, setLibelle] = useState("");
-  const [repris, garder] = useBrouillon<{ url: string; label: string }>(issueId, "lien");
-  useEffect(() => {
-    if (!repris) return;
-    setUrl(repris.url);
-    setLibelle(repris.label);
-  }, [repris]);
-  const inactif = !pret || occupe;
-
-  async function soumettre(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await envoyer({ app: appId, url, label: libelle, expectedRevision: revision });
-  }
-
-  return (
-    <form onSubmit={soumettre} aria-label="Lier un ticket" data-testid="issue-link-form">
-      <div className="flex flex-wrap items-end gap-3">
-        <label className={CHAMP}>
-          URL du ticket
-          <input
-            name="url"
-            type="url"
-            required
-            maxLength={2048}
-            pattern="https://.+"
-            placeholder="https://…"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            disabled={inactif}
-            className={`${INPUT_CLASS} w-72 max-w-full`}
-            data-testid="issue-link-url"
-          />
-        </label>
-        <label className={CHAMP}>
-          Libellé
-          <input
-            name="label"
-            required
-            maxLength={120}
-            placeholder="PROJ-123"
-            value={libelle}
-            onChange={(e) => setLibelle(e.target.value)}
-            disabled={inactif}
-            className={`${INPUT_CLASS} w-40 max-w-full`}
-            data-testid="issue-link-label"
-          />
-        </label>
-        <button type="submit" className="btn-ghost border border-line" disabled={inactif}>
-          {occupe ? "Ajout…" : "Lier"}
-        </button>
-      </div>
-      <Retour etat={etat} recharger={() => garder({ url, label: libelle })} testid="issue-link" />
-    </form>
-  );
-}
-
-/**
- * Créer un ticket chez le fournisseur configuré (P8.6).
- *
- * L'APERÇU N'EST PAS UN APERÇU. Le titre, la description et le lien affichés
- * au-dessus de ce formulaire sont le résultat de la MÊME fonction que celle qui
- * fige la charge dans la file de sortie, sur la même lecture de l'issue. Ce
- * formulaire n'envoie donc pas un contenu : il envoie une décision (« oui,
- * envoie ce qui est affiché »), et la révision qu'il porte garantit que l'issue
- * n'a pas changé depuis. Si elle a changé, la réponse est un 409 et l'écran
- * propose de recharger pour REVOIR ce qui partirait.
- *
- * La réponse est un 202 : la demande est acceptée, le ticket n'existe pas
- * encore. On le dit à l'écran plutôt que d'annoncer une création.
- */
-export function IssueTicketForm({
-  issueId,
-  appId,
-  revision,
-  integrations,
-}: {
-  issueId: string;
-  appId: string;
-  revision: string;
-  integrations: { id: string; label: string }[];
-}) {
-  const pret = useHydrate();
-  const { etat, envoyer, occupe } = useMutation(issueId, "tickets");
-  const [choix, setChoix] = useState(integrations[0]?.id ?? "");
-  const [repris, garder] = useBrouillon<{ integrationId: string }>(issueId, "ticket");
-  useEffect(() => {
-    if (repris) setChoix(repris.integrationId);
-  }, [repris]);
-  const inactif = !pret || occupe || integrations.length === 0;
-
-  async function soumettre(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await envoyer({ app: appId, integrationId: choix, expectedRevision: revision });
-  }
-
-  return (
-    <form onSubmit={soumettre} aria-label="Créer un ticket" data-testid="issue-ticket-form">
-      <div className="flex flex-wrap items-end gap-3">
-        <label className={CHAMP}>
-          Destination
-          <select
-            name="integrationId"
-            required
-            value={choix}
-            onChange={(e) => setChoix(e.target.value)}
-            disabled={inactif}
-            className={`${INPUT_CLASS} w-72 max-w-full`}
-            data-testid="issue-ticket-integration"
-          >
-            {integrations.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" className="btn-accent" disabled={inactif} data-testid="issue-ticket-submit">
-          {occupe ? "Envoi…" : "Créer le ticket"}
-        </button>
-      </div>
-      <Retour etat={etat} recharger={() => garder({ integrationId: choix })} testid="issue-ticket" />
     </form>
   );
 }

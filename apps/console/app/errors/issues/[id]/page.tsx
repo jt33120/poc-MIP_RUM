@@ -2,7 +2,7 @@
 // reprend avec leurs statuts et leurs notes, puis impact, tendance, stack et
 // occurrences sur la fenêtre et les filtres — la même base que la liste.
 //
-// Workflow (P5.6) : triage, assignation et liens de ticket sous l'état, historique
+// Workflow (P5.6) : triage et assignation sous l'état, historique
 // et commentaires en fin de page ; les formulaires ne sont rendus qu'à un admin hors
 // démo, et l'API applique la même règle. L'URL reste valide après un retour arrière
 // du regroupement v2, et quand le bug se tait sur la période.
@@ -15,7 +15,7 @@
 // exemplaire, occurrences. La rangée de sept tuiles `ErrorStat` et la courbe sans axe
 // `ObservedTrend` disparaissent (§ 5.3.4). Du bloc 1, l'en-tête reprend « Voir le
 // rejeu » (`BoutonRejeu`, revue de fin de vague 7). Reste propre à l'issue : son
-// en-tête, son état, triage et assignation, tickets, activité.
+// en-tête, son état, triage et assignation, activité.
 //
 // DEUX SOURCES PROPRES À L'ISSUE, dites à l'écran. La part des sessions touchées
 // compte les lignes DE L'ISSUE (`partSessionsTouchees` sur une `IssueRef`, même
@@ -24,7 +24,6 @@
 // la fenêtre ni les filtres ne bornent — plus les releases de sa première et de sa
 // dernière occurrence dans le temps (recette du 26/09/2026).
 import Link from "next/link";
-import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { ECRANS } from "@mip/console-contract";
 import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
@@ -44,7 +43,6 @@ import { ERROR_LINK, ErrorOccurrences } from "@/components/errors/ErrorOccurrenc
 import { ErrorStackCard } from "@/components/errors/ErrorStackCard";
 import { GroupingBasisBadge, IssueOriginBadge, IssueStatusBadge, ReappearedBadge } from "@/components/errors/IssueBadges";
 import { IssueActivitySection, IssueTriageCard } from "@/components/errors/IssueWorkflow";
-import { IssueTicketCard } from "@/components/errors/IssueTickets";
 import { errorGroupHref, errorSearchParams, errorsHref, issueHref } from "@/lib/error-view";
 import { SectionErreur } from "@/components/states/SectionErreur";
 import { TableDefilante } from "@/components/TableDefilante";
@@ -52,12 +50,11 @@ import { annotationsDeploiements } from "@/lib/annotations";
 import { ISSUE_STATUS_LABELS, type IssueDetailResult } from "@/lib/error-issues";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
-import { chargerIssue, PARAM_ORIGINE } from "@/lib/chargeurs/issue";
+import { chargerIssue } from "@/lib/chargeurs/issue";
 import { chargerEcran } from "@/lib/ecran";
 import { bucketStarts } from "@/lib/query-contract";
 import { grilleIso } from "@/lib/series";
 import { gabaritZoom } from "@/lib/view-state";
-import { origineConsole } from "@/lib/queries-ticket-integrations";
 import { type ErrorFilters } from "@/lib/queries-errors";
 
 export const dynamic = "force-dynamic";
@@ -77,9 +74,8 @@ export default async function IssuePage({
 }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   // Le chargeur (`lib/chargeurs/issue.ts`) résout l'issue dans le périmètre et lit
-  // ses sections ; l'origine de la console (liens de l'aperçu d'un ticket) lui est
-  // passée en paramètre, calculée ici depuis la requête.
-  const d = await chargerEcran(ECRANS.issue, chargerIssue, { ...sp, [PARAM_ORIGINE]: origineConsole(await headers()) }, { id });
+  // ses sections.
+  const d = await chargerEcran(ECRANS.issue, chargerIssue, sp, { id });
   if (d.etat === "introuvable") notFound();
   if (d.etat === "refus") return <FilterProblemNotice title="Erreurs JS" problem={d.problem} />;
   const { issue, f } = d;
@@ -98,7 +94,7 @@ export default async function IssuePage({
     );
   }
 
-  const { label, bucketLabel, query, cursor, detail, part, deploys, versions, admin, workflow, activite, activiteCurseur, pile, livraisons } = d;
+  const { label, bucketLabel, query, cursor, detail, part, deploys, versions, admin, workflow, activite, activiteCurseur, pile } = d;
   const { range } = query;
   const url = errorSearchParams(sp);
   const { impact, trend, last_sample: last, occurrences, sampling, enrichment } = detail;
@@ -106,8 +102,6 @@ export default async function IssuePage({
   // fenêtre » ni « les plus récentes » — cette page seulement.
   const portee = porteeOccurrences({ curseur: cursor !== null, suite: detail.next_cursor !== null });
   const pageExtra = url.has("limit") ? { limit: url.get("limit") ?? "" } : undefined;
-  const integrationsTickets = d.integrationsTickets;
-  const apercuTickets = d.apercu === null ? null : { apercu: d.apercu };
 
   // Zoom sur un seau : la plage change, et rien d'autre (§ 3.3) ; la pagination des
   // occurrences repart du début (`cursor` est laissé derrière par `gabaritZoom`).
@@ -155,14 +149,6 @@ export default async function IssuePage({
         workflow={workflow}
         canWrite={admin}
         alertHref={`/alerts?app=${encodeURIComponent(issue.app_id)}&issue=${issue.id}`}
-      />
-
-      <IssueTicketCard
-        issue={issue}
-        integrations={integrationsTickets}
-        apercu={apercuTickets?.apercu ?? null}
-        deliveries={livraisons.kind === "ok" ? livraisons.value.deliveries : []}
-        canWrite={admin}
       />
 
       <ErrorNotices sampling={sampling} enrichment={enrichment} />

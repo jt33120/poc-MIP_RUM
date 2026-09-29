@@ -283,7 +283,7 @@ describe("dispatcher — webhooks signés", () => {
 describe("scheduler — SCHEDULER_DELIVERY=off : le tick décide, il ne livre plus", () => {
   const poolFactice = () => ({ query: vi.fn(async () => ({ rows: [{ result: 0, present: true }] })) });
 
-  it("off : ni routage de l'outbox, ni webhooks, ni tickets, ni réconciliation", async () => {
+  it("off : ni routage de l'outbox, ni webhooks, ni réconciliation", async () => {
     const dispatch = vi.fn();
     const bilan = await travaux(poolFactice() as never, { log: muet, dispatch, livraison: false }).tick();
     expect(Object.keys(bilan.resultats)).toEqual(["check_alerts", "check_slo_burn", "uptime"]);
@@ -299,7 +299,6 @@ describe("scheduler — SCHEDULER_DELIVERY=off : le tick décide, il ne livre pl
       "check_slo_burn",
       "uptime",
       "dispatch_alerts",
-      "dispatch_tickets",
       "reconcile_deliveries",
     ]);
   });
@@ -315,7 +314,6 @@ describe("livreur — la passe du notifier", () => {
         const t = texteDe(q);
         textes.push(t);
         if (t.includes("to_regprocedure")) return { rows: [{ present: true }] };
-        if (t.includes("to_regclass('public.ticket_outbox')")) return { rows: [{ v84: false }] };
         if (t.includes("from alert_delivery where status = 'queued'")) return { rows: [{ en_attente: 3, plus_ancienne_s: plusAncienneS }] };
         return { rows: [{ result: 0 }] };
       }),
@@ -323,14 +321,14 @@ describe("livreur — la passe du notifier", () => {
     };
   }
 
-  it("une passe : outbox, livraison, tickets — dans cet ordre, sous une échéance courte ; configuration transmise", async () => {
+  it("une passe : outbox puis livraison — dans cet ordre, sous une échéance courte ; configuration transmise", async () => {
     const pool = poolLivreur();
     const dispatch = vi.fn(async () => ({ sent: 0, failed: 0, dead: 0, skipped: 0 }));
     const email = { apiKey: "k", from: "a@b.co", destinatairesTest: null };
     const t0 = 1_000_000;
     const livreur = creerLivreur({ pool: pool as never, log: muet, dispatch, email, secretSignature: "s".repeat(32), budgetMs: 10_000, maintenant: () => t0 });
     const bilan = await livreur.passe();
-    expect(Object.keys(bilan.resultats)).toEqual(["route_error_issue_notifications", "dispatch_alerts", "dispatch_tickets"]);
+    expect(Object.keys(bilan.resultats)).toEqual(["route_error_issue_notifications", "dispatch_alerts"]);
     expect(bilan.ok).toBe(true);
     const options = (dispatch.mock.calls[0] as unknown as [unknown, Record<string, unknown>])[1];
     expect(options).toMatchObject({ echeance: t0 + 10_000, email, secretSignature: "s".repeat(32) });
@@ -383,7 +381,7 @@ describe("livreur — la passe du notifier", () => {
     t += 1_000;
     const bilan = await livreur.passe();
     expect(bilan.ok).toBe(false);
-    expect(Object.keys(bilan.resultats)).toContain("dispatch_tickets");
+    expect(Object.keys(bilan.resultats)).toContain("route_error_issue_notifications");
     const e = await livreur.etat();
     expect(e.passe).toMatchObject({ statut: "echec", etapes_en_echec: ["dispatch_alerts"], dernier_succes: succes });
   });
@@ -403,7 +401,7 @@ describe("services — configuration au démarrage", () => {
     const g = await lancer("services/notifier/worker.mjs", ["--print-env-example"], {});
     expect(g.code).toBe(0);
     expect(g.sortie).toMatch(/^DATABASE_URL=$/m);
-    for (const v of ["RESEND_API_KEY", "ALERT_EMAIL_FROM", "ALERT_EMAIL_TEST_RECIPIENTS", "WEBHOOK_SIGNING_SECRET", "TICKET_SECRET_KEY", "NOTIFIER_INTERVAL_MS", "METRICS_TOKEN"]) {
+    for (const v of ["RESEND_API_KEY", "ALERT_EMAIL_FROM", "ALERT_EMAIL_TEST_RECIPIENTS", "WEBHOOK_SIGNING_SECRET", "NOTIFIER_INTERVAL_MS", "METRICS_TOKEN"]) {
       expect(g.sortie).toContain(`${v}=`);
     }
   }, 15_000);

@@ -40,7 +40,6 @@ export const MAX_TENTATIVES = 5;
 const COLLECTIONS = [
   "sessions", "pageviews", "metrics", "errors", "resources", "longtasks",
   "breadcrumbs", "events", "actions", "spans", "eventIndex",
-  "sviCalls", "sviSteps", "sviLegs",
 ];
 
 /** Le lot porte-t-il encore quelque chose à écrire ? */
@@ -124,9 +123,6 @@ function completer(lot) {
     // contiennent néanmoins les collections normalisées : la reconstruire ici
     // est sûre, et évite de réserver la nouvelle API aux seuls lots récents.
     eventIndex: lot.eventIndex ?? buildEventIndex(lot),
-    sviCalls: lot.sviCalls ?? vide,
-    sviSteps: lot.sviSteps ?? vide,
-    sviLegs: lot.sviLegs ?? vide,
     // P7.5 : sans cette ligne, `completer` reconstruit un lot SANS ses capacités
     // déclarées, et le chemin différé les perdrait en silence — l'écran /mobile
     // afficherait « Inconnu » pour une application qui déclare bien les siennes.

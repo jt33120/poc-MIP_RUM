@@ -10,8 +10,6 @@ const simul = vi.hoisted(() => ({
   user: null as null | { email: string; role: "admin" | "viewer"; apps: string[] | null; demo?: boolean },
   triageIssue: vi.fn(),
   commentIssue: vi.fn(),
-  linkIssue: vi.fn(),
-  demanderTicket: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({ getUser: async () => simul.user }));
 vi.mock("@/lib/db", () => ({ q: vi.fn(async () => []), tx: vi.fn() }));
@@ -19,11 +17,6 @@ vi.mock("@/lib/error-issue-workflow", async (original) => ({
   ...(await original<object>()),
   triageIssue: simul.triageIssue,
   commentIssue: simul.commentIssue,
-  linkIssue: simul.linkIssue,
-}));
-vi.mock("@/lib/queries-ticket-integrations", async (original) => ({
-  ...(await original<object>()),
-  demanderTicket: simul.demanderTicket,
 }));
 
 const { muterIssue } = await import("@/app/errors/issues/actions");
@@ -33,10 +26,8 @@ const ADMIN_A = { email: "admin@mip", role: "admin" as const, apps: ["app-a"] };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Hors requête, l'origine de la console vient de sa configuration.
-  process.env.MIP_CONSOLE_URL = "https://console.exemple.fr";
   simul.user = ADMIN_A;
-  for (const f of [simul.triageIssue, simul.commentIssue, simul.linkIssue, simul.demanderTicket]) f.mockResolvedValue({ kind: "ok", value: {} });
+  for (const f of [simul.triageIssue, simul.commentIssue]) f.mockResolvedValue({ kind: "ok", value: {} });
 });
 
 describe("C7 — qui peut écrire le workflow d'une issue", () => {
@@ -52,7 +43,7 @@ describe("C7 — qui peut écrire le workflow d'une issue", () => {
     simul.user = { email: "v@mip", role: "viewer", apps: ["app-a"] };
     expect(await muterIssue(ISSUE, "comments", { app: "app-a", body: "vu", expectedRevision: "3" })).toEqual({ etat: "erreur", message: "Réservé aux administrateurs." });
     simul.user = { email: "d@mip", role: "admin", apps: ["app-a"], demo: true };
-    expect(await muterIssue(ISSUE, "links", { app: "app-a", url: "https://t.exemple.fr/1", label: "T-1", expectedRevision: "3" })).toMatchObject({ etat: "erreur" });
+    expect(await muterIssue(ISSUE, "comments", { app: "app-a", body: "vu", expectedRevision: "3" })).toMatchObject({ etat: "erreur" });
     simul.user = ADMIN_A;
     expect(await muterIssue(ISSUE, "triage", { app: "app-b", status: "resolved", expectedRevision: "3" })).toEqual({
       etat: "erreur",
@@ -60,7 +51,6 @@ describe("C7 — qui peut écrire le workflow d'une issue", () => {
     });
     expect(simul.triageIssue).not.toHaveBeenCalled();
     expect(simul.commentIssue).not.toHaveBeenCalled();
-    expect(simul.linkIssue).not.toHaveBeenCalled();
   });
 
   it("un identifiant d'issue qui n'est pas un UUID : refusé en entrée, rien ne part", async () => {
@@ -83,22 +73,16 @@ describe("C7 — ce que le formulaire dit de la décision", () => {
     expect(simul.triageIssue).not.toHaveBeenCalled();
   });
 
-  it("introuvable et doublon : des refus, pas des pannes", async () => {
+  it("introuvable : un refus, pas une panne", async () => {
     simul.commentIssue.mockResolvedValue({ kind: "not_found" });
     expect(await muterIssue(ISSUE, "comments", { app: "app-a", body: "vu", expectedRevision: "3" })).toEqual({ etat: "erreur", message: "Issue introuvable." });
-    simul.linkIssue.mockResolvedValue({ kind: "duplicate", error: "ce lien est déjà attaché à l'issue" });
-    expect(await muterIssue(ISSUE, "links", { app: "app-a", url: "https://t.exemple.fr/1", label: "T-1", expectedRevision: "3" })).toEqual({
-      etat: "erreur",
-      message: "ce lien est déjà attaché à l'issue",
-    });
   });
 
-  it("demande de ticket : l'origine de la console vient de SA requête, jamais du formulaire", async () => {
-    // Une origine glissée dans le formulaire est écrasée par celle de la console.
-    expect(await muterIssue(ISSUE, "tickets", { app: "app-a", integrationId: "7", expectedRevision: "3", origine: "https://piege.test" })).toEqual({ etat: "ok" });
-    const [ctx, demande, origine] = simul.demanderTicket.mock.calls[0];
-    expect(ctx).toMatchObject({ issueId: ISSUE, apps: ["app-a"] });
-    expect(demande).toEqual({ app: "app-a", integrationId: "7", expectedRevision: "3" });
-    expect(origine).toBe("https://console.exemple.fr");
+  it("le lien et la demande de ticket, retirés le 29/09/2026 : une action inconnue, rien ne part", async () => {
+    for (const action of ["links", "tickets"]) {
+      expect(await muterIssue(ISSUE, action as never, { app: "app-a", expectedRevision: "3" })).toEqual({ etat: "erreur", message: "action inconnue" });
+    }
+    expect(simul.triageIssue).not.toHaveBeenCalled();
+    expect(simul.commentIssue).not.toHaveBeenCalled();
   });
 });

@@ -64,7 +64,6 @@ describe("CATEGORIES (§ 2.2)", () => {
       "Fiabilité",
       "Explorer",
       "Logs",
-      "Supervision SVI",
       "Supervision IA",
       "API et MCP",
     ]);
@@ -172,7 +171,7 @@ describe("domaineDe (surtitre de PageHeader, § 2.4)", () => {
 });
 
 // Recette du 26/09/2026 : hors des cinq catégories RUM, le surtitre retombait sur
-// « Performance » (administration, API et MCP, Logs, SVI, IA), et le bloc
+// « Performance » (administration, API et MCP, Logs, IA), et le bloc
 // Administration n'avait pas d'état actif.
 describe("surtitreDe — le surtitre suit la sidebar, y compris hors RUM", () => {
   it.each([
@@ -182,8 +181,6 @@ describe("surtitreDe — le surtitre suit la sidebar, y compris hors RUM", () =>
     ["/admin/customers/demo-app", "admin"],
     ["/api-docs", "integrations"],
     ["/logs", "logs"],
-    ["/svi", "svi"],
-    ["/svi/appels/42", "svi"],
     ["/ai", "ai"],
   ])("%s → %s", (chemin, domaine) => {
     expect(surtitreDe(chemin)).toBe(domaine);

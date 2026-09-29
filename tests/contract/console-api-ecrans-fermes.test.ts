@@ -1,4 +1,4 @@
-// C5 — LES CAPACITÉS FERMÉES (SVI, logs, IA), OUVERTES POUR LE TEST.
+// C5 — LES CAPACITÉS FERMÉES (logs, IA), OUVERTES POUR LE TEST.
 //
 // Tant que `lib/capacites.ts` les liste, leurs chargeurs ne lisent rien (la
 // matrice d'autorisations le vérifie : état `fermee`). Ce fichier les ROUVRE — le
@@ -19,8 +19,7 @@ const principal = { email: "fermes@test.local", role: "viewer" as const, apps: [
 
 (url ? describe : describe.skip)("C5 — capacités fermées : leurs chargeurs, rouverts, tournent sur la base", () => {
   const pool = new pg.Pool({ connectionString: url ?? undefined, max: 2 });
-  let chargeurs: typeof import("../../apps/console/lib/chargeurs/svi") &
-    typeof import("../../apps/console/lib/chargeurs/logs") &
+  let chargeurs: typeof import("../../apps/console/lib/chargeurs/logs") &
     typeof import("../../apps/console/lib/chargeurs/ai");
 
   beforeAll(async () => {
@@ -28,7 +27,6 @@ const principal = { email: "fermes@test.local", role: "viewer" as const, apps: [
     // La couche de données de la console lit `DATABASE_URL` : la base de la matrice.
     process.env.DATABASE_URL = url!;
     chargeurs = {
-      ...(await import("../../apps/console/lib/chargeurs/svi")),
       ...(await import("../../apps/console/lib/chargeurs/logs")),
       ...(await import("../../apps/console/lib/chargeurs/ai")),
     };
@@ -37,12 +35,6 @@ const principal = { email: "fermes@test.local", role: "viewer" as const, apps: [
   afterAll(async () => {
     await pool.query("delete from app_registry where app_id = $1", [APP]);
     await pool.end();
-  });
-
-  it("SVI : vue d'ensemble, appels ; un appel inconnu est introuvable", async () => {
-    expect((await chargeurs.chargerSvi(principal, { app: APP }, {})).etat).toBe("ok");
-    expect((await chargeurs.chargerSviAppels(principal, { app: APP }, {})).etat).toBe("ok");
-    expect((await chargeurs.chargerSviAppel(principal, { app: APP }, { callId: "appel-inconnu" })).etat).toBe("introuvable");
   });
 
   it("logs : toutes sévérités, et sous un niveau", async () => {

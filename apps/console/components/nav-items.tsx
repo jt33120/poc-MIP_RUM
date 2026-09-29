@@ -130,22 +130,6 @@ export const CATEGORIES: NavCategory[] = [
   // 'sdk' et 'extension', rien ne produit ces valeurs. C'est de l'observabilité
   // back-end corrélée au RUM par trace_id, pas une mesure de l'expérience vécue.
   { href: "/logs", label: "Logs", icon: "logs", domain: "neutral", verrouille: estFermee("/logs") },
-  // Supervision SVI (serveur vocal). Produit distinct du RUM web : un appel n'est
-  // pas une visite, cf. migration-v51. La vue d'ensemble porte le containment NET.
-  // Fermée comme la supervision IA : capacité annoncée, accès non ouvert. Les
-  // sous-onglets restent déclarés pour que la réouverture soit un seul mot à
-  // retirer, mais la sidebar ne les expose plus (l'entrée n'est plus cliquable).
-  {
-    href: "/svi",
-    label: "Supervision SVI",
-    icon: "activity",
-    domain: "neutral",
-    verrouille: estFermee("/svi"),
-    children: [
-      { href: "/svi", label: "Vue d'ensemble" },
-      { href: "/svi/appels", label: "Appels" },
-    ],
-  },
   // Espace PARTENAIRE (sponsorisé xSOM) — supervision IA lue depuis xSOM AI Guard,
   // distincte du RUM MIP (cf. ADR-0001). Fermée pour l'instant : l'entrée reste
   // visible pour annoncer la capacité, mais ne mène nulle part.
@@ -161,10 +145,8 @@ export const CATEGORIES: NavCategory[] = [
  * catégories, pour que la sidebar et le surtitre des pages lisent la même liste :
  * rendu en dur dans le layout, il n'avait ni état actif ni `aria-current`, et ses
  * icônes reprenaient celles de la navigation principale (recette du 26/09/2026).
- * `seulementSi` : entrée conditionnelle, que le layout décide (connecteurs de
- * tickets : seulement quand un fournisseur est branché).
  */
-export type LienAdministration = { href: string; label: string; icon: IconName; seulementSi?: "tickets" };
+export type LienAdministration = { href: string; label: string; icon: IconName };
 
 export const ADMINISTRATION: readonly LienAdministration[] = [
   { href: "/admin/customers", label: "Clients", icon: "building" },
@@ -172,7 +154,6 @@ export const ADMINISTRATION: readonly LienAdministration[] = [
   { href: "/admin/privacy", label: "Vie privée · RGPD", icon: "shield" },
   { href: "/admin/read-tokens", label: "Jetons de lecture", icon: "key" },
   { href: "/admin/sourcemaps", label: "Source maps", icon: "fileCode" },
-  { href: "/admin/ticket-integrations", label: "Connecteurs de tickets", icon: "bell", seulementSi: "tickets" },
   { href: "/admin/extension-scope", label: "Extension navigateur", icon: "puzzle" },
   { href: "/admin/extension-installs", label: "Postes équipés", icon: "monitor" },
   // Le titre de l'écran, en français : « Uptime » à la barre latérale, « Sondes de
@@ -213,16 +194,15 @@ export function domaineDe(pathname: string): DomaineRum | null {
 /**
  * Surtitres HORS des cinq catégories RUM. Avant la recette du 26/09/2026, tout
  * écran qui n'y était pas rangé retombait sur « Performance » : l'administration,
- * « API et MCP », et les trois écrans fermés (Logs, Supervision SVI, Supervision
- * IA), alors que la sidebar les range ailleurs.
+ * « API et MCP », et les écrans fermés (Logs, Supervision IA), alors que la
+ * sidebar les range ailleurs.
  */
-export type DomaineHorsRum = "admin" | "integrations" | "logs" | "svi" | "ai";
+export type DomaineHorsRum = "admin" | "integrations" | "logs" | "ai";
 
 const DOMAINES_HORS_RUM: readonly (readonly [string, DomaineHorsRum])[] = [
   ["/admin", "admin"],
   ["/api-docs", "integrations"],
   ["/logs", "logs"],
-  ["/svi", "svi"],
   ["/ai", "ai"],
 ];
 

@@ -9,7 +9,7 @@ import type { ChargeurEcran, ChargeursEcrans } from "@mip/console-api";
 const recu: ChargeurEcran = async (principal, parametres, chemin) => ({ principal, parametres, chemin });
 
 export const ECRANS_FACTICES: ChargeursEcrans = {
-  coquille: async () => ({ projets: { ok: true as const, data: [] }, schema: { ok: true as const, data: [] }, fuseaux: {}, tickets: null }),
+  coquille: async () => ({ projets: { ok: true as const, data: [] }, schema: { ok: true as const, data: [] }, fuseaux: {} }),
   pages: Object.fromEntries((Object.keys(ECRANS) as CleEcran[]).map((cle) => [cle, recu])) as ChargeursEcrans["pages"],
   administration: Object.fromEntries((Object.keys(ECRANS_ADMIN) as CleEcranAdmin[]).map((cle) => [cle, recu])) as ChargeursEcrans["administration"],
   session: Object.fromEntries((Object.keys(ECRANS_SESSION) as CleEcranSession[]).map((cle) => [cle, recu])) as ChargeursEcrans["session"],

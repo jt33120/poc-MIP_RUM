@@ -64,8 +64,6 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `goals.delete` | `DELETE /v1/goals/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `goal.delete` |
 | `goals.update` | `PATCH /v1/goals/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `goal.update` |
 | `issues.comment` | `POST /v1/issues/{id}/comments` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.comment` |
-| `issues.link` | `POST /v1/issues/{id}/links` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.link` |
-| `issues.requestTicket` | `POST /v1/issues/{id}/tickets` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.request_ticket` |
 | `issues.triage` | `POST /v1/issues/{id}/triage` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.triage` |
 | `auth.me` | `GET /v1/me` | session | — | lecture | exigé | — |
 | `mobileCapabilities.verify` | `POST /v1/mobile-capabilities/verifications` | administrateur de la plateforme | — | **refusée** | exigé | `mobile_capability.verify` |
@@ -97,7 +95,6 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `screens.adminPrivacy` | `GET /v1/screens/admin/privacy` | session administrateur | — | lecture | exigé | — |
 | `screens.adminReadTokens` | `GET /v1/screens/admin/read-tokens` | session administrateur | — | lecture | exigé | — |
 | `screens.adminSourcemaps` | `GET /v1/screens/admin/sourcemaps` | session administrateur | — | lecture | exigé | — |
-| `screens.adminTicketIntegrations` | `GET /v1/screens/admin/ticket-integrations` | session administrateur | — | lecture | exigé | — |
 | `screens.uptime` | `GET /v1/screens/admin/uptime` | session administrateur | — | lecture | exigé | — |
 | `screens.adminUsage` | `GET /v1/screens/admin/usage` | session administrateur | — | lecture | exigé | — |
 | `screens.adminUsers` | `GET /v1/screens/admin/users` | session administrateur | — | lecture | exigé | — |
@@ -128,9 +125,6 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `screens.sessions` | `GET /v1/screens/sessions` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.session` | `GET /v1/screens/sessions/{id}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.slo` | `GET /v1/screens/slo` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
-| `screens.svi` | `GET /v1/screens/svi` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
-| `screens.sviCalls` | `GET /v1/screens/svi/calls` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
-| `screens.sviCall` | `GET /v1/screens/svi/calls/{callId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.tracing` | `GET /v1/screens/tracing` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.trace` | `GET /v1/screens/tracing/{traceId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.ux` | `GET /v1/screens/ux` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
@@ -141,8 +135,6 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `slo.setActive` | `PUT /v1/slos/{id}/active` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `slo.set_active` |
 | `sourcemapTokens.create` | `POST /v1/sourcemap-tokens` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `sourcemap_token.create` |
 | `sourcemapTokens.revoke` | `DELETE /v1/sourcemap-tokens/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `sourcemap_token.revoke` |
-| `ticketIntegrations.create` | `POST /v1/ticket-integrations` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `ticket_integration.create` |
-| `ticketIntegrations.update` | `PATCH /v1/ticket-integrations/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `ticket_integration.update` |
 | `uptime.create` | `POST /v1/uptime-checks` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `uptime_check.create` |
 | `uptime.delete` | `DELETE /v1/uptime-checks/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `uptime_check.delete` |
 | `uptime.setEnabled` | `PUT /v1/uptime-checks/{id}/enabled` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `uptime_check.set_enabled` |

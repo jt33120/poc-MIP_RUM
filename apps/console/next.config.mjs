@@ -10,7 +10,7 @@ const correctifHydratation = require("./scripts/correctif-react-hydratation.cjs"
 // qui les garderait pourrait encore s'en servir. Liste blanche par préfixe, pas une
 // liste de valeurs : un `PGHOST` ajouté demain est refusé comme `DATABASE_URL`.
 // Relevé des autres gardes : `node scripts/ci/console-sans-base.mjs`.
-const VARIABLES_DE_BASE = /^(DATABASE_URL|DATABASE_URL_.*|PG[A-Z_]*|POSTGRES_.*|NEON_.*|IDENTITY_HASH_SECRET|TICKET_SECRET_KEY|AUTH_SECRET)$/;
+const VARIABLES_DE_BASE = /^(DATABASE_URL|DATABASE_URL_.*|PG[A-Z_]*|POSTGRES_.*|NEON_.*|IDENTITY_HASH_SECRET|AUTH_SECRET)$/;
 if (process.env.MIP_CONSOLE_SANS_BASE === "1") {
   const presentes = Object.keys(process.env).filter((nom) => VARIABLES_DE_BASE.test(nom) && process.env[nom]);
   if (presentes.length) {

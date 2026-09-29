@@ -36,7 +36,7 @@ Le kit met en œuvre les points 2 à 7 du **contrat de service** (plan backend, 
 
 Toute autre route va au `handler` (style `node:http`) ou au `fetch` (style Web) du service. Sans l'un ni l'autre (le scheduler), elle reçoit un 404.
 
-**Signature.** Option `responseHeaders` (`{ nom: valeur }`, validée au démarrage) : posée sur **chaque** réponse du service — routes, sondes, 404, 413, 500, et jusqu'aux 400/408/431 que Node rend seul (requête illisible, en-têtes trop gros, délais). Le collector y met `x-mip-collector: 1` (l'`api`, `x-mip-api: 1` ; le notifier, `x-mip-notifier: 1`), pour que le relais de la console distingue leurs réponses de celles du routeur Railway. Les en-têtes de la route s'y ajoutent, ils ne la remplacent pas.
+**Signature.** Option `responseHeaders` (`{ nom: valeur }`, validée au démarrage) : posée sur **chaque** réponse du service — routes, sondes, 404, 413, 500, et jusqu'aux 400/408/431 que Node rend seul (requête illisible, en-têtes trop gros, délais). Le collector y met `x-mip-collector: 1` (l'`api`, `x-mip-api: 1`), pour que le relais de la console distingue leurs réponses de celles du routeur Railway. Les en-têtes de la route s'y ajoutent, ils ne la remplacent pas.
 
 ## Variables d'environnement lues par le kit
 

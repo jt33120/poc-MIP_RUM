@@ -151,7 +151,7 @@ export const INFRA: GroupeInfra[] = [
         k: "Notification",
         // Service `notifier` : seul détenteur des secrets sortants ; le scheduler ne livre
         // plus (SCHEDULER_DELIVERY « off », passes à 15 min : .railway/railway.ts).
-        v: "Livre ce que la plateforme a décidé de dire — webhooks signés, e-mails, tickets — et détient seul les secrets de ces envois. Il passe toutes les 15 minutes, juste après les travaux planifiés.",
+        v: "Livre ce que la plateforme a décidé de dire — webhooks signés, e-mails — et détient seul les secrets de ces envois. Il passe toutes les 15 minutes, juste après les travaux planifiés.",
         s: "atteint",
         preuve: "services/notifier/worker.mjs",
       },
@@ -461,19 +461,6 @@ export const ANGLES_MORTS: AngleMort[] = [
     raison:
       "Les spans sont standard dans leur structure — parenté, nature, issue — mais pas dans leur vocabulaire. Une erreur est émise comme un span nommé « exception » là où OpenTelemetry attend un événement porté par le span concerné, et les attributs HTTP suivent l'ancienne convention http.method / http.url, dépréciée au profit de http.request.method / url.full. Un backend tiers ne comptera donc pas nos erreurs comme des erreurs.",
     marqueur: ["packages/rum-sdk/src", "http.request.method"],
-  },
-  {
-    label: "Supervision d'un serveur vocal (SVI)",
-    raison:
-      "La chaîne d'ingestion, le schéma et les écrans existent ; aucun capteur de MIP RUM n'émet cette télémétrie. Elle doit venir de la plateforme vocale du client — rien ne se mesure tout seul aujourd'hui.",
-    // Les CAPTEURS seulement. Le marqueur fouillait tout `packages/` quand ce
-    // dossier ne contenait qu'eux ; depuis le remodelage P1, le noyau backend y
-    // vit aussi (`packages/backend`), et lui SAIT lire `svi.*` — c'est la chaîne
-    // d'ingestion que la raison ci-dessus dit exister. Ce qui doit rester absent,
-    // c'est un émetteur.
-    // L'agent Node de MIP n'y figure plus : archivé le 29/09/2026, ce n'est plus
-    // un capteur, et la sonde refuse une cible introuvable.
-    marqueur: [["packages/rum-core", "packages/rum-sdk", "packages/rum-mobile"], "svi."],
   },
 ];
 

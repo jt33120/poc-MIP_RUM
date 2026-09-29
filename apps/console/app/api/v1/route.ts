@@ -70,7 +70,7 @@ export const GET = handle(async () => ({
   },
   // Écritures : hors de l'énumération ci-dessus, qui décrit la lecture. Signalées
   // explicitement plutôt que passées sous silence. Une seule reste publique, celle
-  // de la CI ; les écritures de l'opérateur (triage et commentaires d'issues,
-  // tickets, vues enregistrées) passent par l'écran de la console depuis C7.
+  // de la CI ; les écritures de l'opérateur (triage et commentaires d'issues, vues
+  // enregistrées) passent par l'écran de la console depuis C7.
   write: [{ method: "POST", path: "/api/v1/deploys", desc: "enregistre un marqueur de déploiement (intégration CI/CD)" }],
 }));

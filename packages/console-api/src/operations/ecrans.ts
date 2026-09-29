@@ -64,7 +64,6 @@ export interface ChargeursEcrans {
     readonly projets: Lecture<readonly { app_id: string; name: string }[]>;
     readonly schema: Lecture<readonly string[]>;
     readonly fuseaux: Readonly<Record<string, string>>;
-    readonly tickets: Lecture<boolean> | null;
   }>;
   /** C3 → C6 — un chargeur par écran du contrat (`ECRANS`), sans exception : le type l'exige. */
   readonly pages: { readonly [K in CleEcran]: ChargeurEcran };
@@ -108,7 +107,6 @@ export function operationsEcrans(c: ChargeursEcrans): Enregistrement[] {
         projets: versSection(l.projets, { ...ctx, section: "projets" }),
         schema: versSection(l.schema, { ...ctx, section: "schema" }),
         fuseaux: l.fuseaux,
-        tickets: l.tickets === null ? null : versSection(l.tickets, { ...ctx, section: "tickets" }),
       };
       return reponse;
     }),

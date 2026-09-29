@@ -90,7 +90,7 @@ export function GlobalFilters({
   const comparable = !!surface && surface.range !== "none";
   const releases = useReleases(comparable ? contextSearchParams(sp).toString() : null);
   // Écrans sans filtres globaux (administration…) : rien à proposer. Écran d'une
-  // capacité fermée (Logs, SVI, IA) : rien à filtrer non plus — une période et une
+  // capacité fermée (Logs, IA) : rien à filtrer non plus — une période et une
   // comparaison actives au-dessus d'une page vide faisaient croire à des données
   // (recette du 26/09/2026).
   if (!surface || estFermee(pathname)) return null;

@@ -291,7 +291,7 @@ describe("writeRows — symbolication avant la transaction, seulement après v71
   }
   const lot = (errors: unknown[]) => ({
     sessions: [], pageviews: [], metrics: [], errors, resources: [], longtasks: [], breadcrumbs: [],
-    events: [], spans: [], sviCalls: [], sviSteps: [], sviLegs: [],
+    events: [], spans: [],
   });
   const erreur = { span_id: "00000000000000a1", app_id: "a", release: "1.0", stack: stackPour("main.js"), ts: new Date() };
 

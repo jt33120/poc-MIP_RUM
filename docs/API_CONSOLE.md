@@ -173,14 +173,21 @@ Un seul contrat de filtres pour la console, l'API et l'export. Ce qui change pou
 - **Tablette** : `device=tablet` est désormais appliqué par tous les endpoints, y compris
   `overview`, `vitals`, `pages`, `tracing` et `health-grid`, qui l'ignoraient.
 
+### 29/09/2026 — les tickets sont retirés
+
+Décision du propriétaire du produit : la fonctionnalité des tickets (connecteur GitHub Issues, file d'envoi,
+webhook entrant, lien de ticket manuel) est retirée. `GET /api/v1/issues/{id}/tickets` n'existe plus, ni les
+schémas `IssueLink`, `IssueTicketDelivery` et `IssueTicketDeliveries` de la spec OpenAPI ; l'historique d'une
+issue (`GET /api/v1/issues/{id}/activity`) ne porte plus de `kind: "link"` ni de champ `link`.
+
 ### 25/09/2026 — les écritures de l'opérateur quittent l'API publique (C7)
 
 `POST /api/v1/issues/{id}/triage`, `/comments`, `/links` et `/tickets`, `POST /api/v1/explorer/views`,
 `PATCH` et `DELETE /api/v1/explorer/views/{id}` sont retirées. Elles n'acceptaient que le cookie d'une
 session de la console, de même origine : aucune machine ne pouvait s'en servir, et le seul client était
 l'écran de la console, qui écrit désormais par ses server actions (section « Écritures »). Les lectures
-correspondantes restent : `GET /api/v1/issues/{id}/activity`, `GET /api/v1/issues/{id}/tickets`,
-`GET /api/v1/explorer/views`.
+correspondantes restent : `GET /api/v1/issues/{id}/activity`, `GET /api/v1/issues/{id}/tickets` (retirée
+le 29/09/2026, avec les tickets), `GET /api/v1/explorer/views`.
 
 ### 17/09/2026 — workflow des issues, suivi de revue (P5.6)
 
@@ -415,28 +422,14 @@ quel dans `cursor` avec les mêmes filtres. `400` pour `status`, `source`, `rele
   l'issue ; hors périmètre, `404`.
 - `kind` : `status` (ancien et nouveau statut ; une résolution porte sa release et son env de référence),
   `assignee` (ancien et nouvel assigné), `comment` (texte scrubbé ; `legacy_fingerprint` quand c'est la note
-  d'un groupe historique reprise une seule fois), `link` (lien de ticket) et `regression` (release qui a rouvert
-  l'issue et release de référence dépassée). `actor` : `user` (compte console) ou `system`. Jamais de stack, de
+  d'un groupe historique reprise une seule fois) et `regression` (release qui a rouvert l'issue et release de
+  référence dépassée). `actor` : `user` (compte console) ou `system`. Jamais de stack, de
   message d'erreur ni d'identité RUM.
-- Adresses des comptes (acteur, assignés, auteur d'un lien) : pour une session admin seulement. Un jeton d'API
+- Adresses des comptes (acteur, assignés) : pour une session admin seulement. Un jeton d'API
   ou une session viewer reçoit `email: null` — comme pour un compte supprimé.
 - Le plus récent d'abord ; `limit` 1..100 (défaut 50) ; `next_cursor` (horodatage à la microseconde et
   identifiant) à renvoyer dans `cursor`. `400` `id invalide (UUID attendu)` ou `cursor invalide` ; `503` avant
   migration-v73.
-
-### `GET /api/v1/issues/{id}/tickets` — demandes de ticket et état de livraison
-`data = { deliveries: IssueTicketDelivery[] }` (schéma `IssueTicketDelivery` de la spec OpenAPI).
-
-- Lecture : session ou jeton, dans le périmètre du principal. `meta.app` est l'app de l'issue ; hors périmètre,
-  `404`. `503` avant migration-v84.
-- `state` dit ce qui s'est réellement passé : `pending` (en file), `sent` (créé chez le fournisseur,
-  `external_id` et `external_url` renseignés), `failed` (rien n'a été créé), **`delivery_uncertain`** (un délai
-  a été dépassé après l'envoi : le ticket existe peut-être, un opérateur doit vérifier — MIP ne relance jamais
-  tout seul), `cancelled`.
-- `last_error` est un **code** (`auth_refusee`, `cible_introuvable`, `debit_depasse`, `livraison_incertaine`…),
-  jamais un message : un message de fournisseur peut citer la donnée qu'on refuse de faire sortir.
-- Les tickets eux-mêmes restent dans `GET /api/v1/issues/{id}/activity` (`kind: "link"`), qu'ils viennent du
-  connecteur ou d'un lien collé à la main.
 
 ### `GET /api/v1/sessions` — sessions récentes
 `data = { sessions: SessionRow[], page: { limit, offset } }` (`limit` 1..200, défaut 50 ; pas de
@@ -690,17 +683,15 @@ Une seule route non-`GET` écrit, annoncée séparément dans le descripteur `GE
 plutôt que noyée dans l'énumération des lectures : le marqueur de déploiement, qu'envoie une chaîne
 d'intégration continue. Tout le reste de `/api/v1` est en lecture seule.
 
-**Les écritures de l'opérateur ont quitté cette API le 25/09/2026 (C7)** : le triage, les commentaires et
-les liens d'une issue, la demande de création d'un ticket, et les vues enregistrées. Elles n'étaient
+**Les écritures de l'opérateur ont quitté cette API le 25/09/2026 (C7)** : le triage et les commentaires
+d'une issue, et les vues enregistrées (le lien de ticket et la demande de création d'un ticket, partis le même
+jour, sont retirés de la console le 29/09/2026). Elles n'étaient
 atteignables qu'avec le cookie d'une session de la console, depuis son propre écran ; elles passent
 désormais par cet écran, dont les server actions appellent leurs **commandes**
 (`apps/console/lib/commandes/`) — celles que `console-api` servira à la console seule
 ([docs/api/console-api.md](api/console-api.md)), jamais à un navigateur ni à une machine. Leurs règles
 n'ont pas changé : administrateur de l'application de l'issue, révision citée (`conflit` si l'issue a
-changé depuis sa lecture), commentaire scrubbé et borné à 2 000 caractères après masquage, lien HTTPS
-normalisé et jamais deux fois, demande de ticket idempotente (`ticket:<intégration>:<issue>`) dont la
-charge — message scrubbé, application, release, compteur, lien console — ne contient ni la pile d'appels
-ni une identité. Un jeton `CONSOLE_API_TOKENS` n'a jamais eu, et n'a toujours pas, de droit d'écriture.
+changé depuis sa lecture), commentaire scrubbé et borné à 2 000 caractères après masquage. Un jeton `CONSOLE_API_TOKENS` n'a jamais eu, et n'a toujours pas, de droit d'écriture.
 
 ### `POST /api/v1/deploys` — marqueur de déploiement
 Enregistre un marqueur de déploiement depuis une chaîne d'intégration continue, ce qui permet aux écrans de

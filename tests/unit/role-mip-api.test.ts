@@ -13,16 +13,23 @@ import {
   LIMITE_CONNEXIONS,
   REGLAGES,
   RETIREES_A_PUBLIC,
+  SUPPRIMEES,
   TABLES,
   // @ts-expect-error module ESM, sans déclarations
 } from "../../packages/db/roles/mip-api.mjs";
 // @ts-expect-error module ESM, sans déclarations
 import { nomme } from "../../scripts/ci/verify-db-roles.mjs";
 
-const V89 = readFileSync(join(__dirname, "..", "..", "packages", "db", "sql", "migration-v89.sql"), "utf8");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
+const V89 = readFileSync(join(SQL_DIR, "migration-v89.sql"), "utf8");
 /** Le SQL seul, sans les commentaires : ce que la base exécute. */
 const SQL = V89.split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n");
-const liste = (brut: string) => brut.split(",").map((s) => s.trim().replace(/^'|'$/g, "")).filter(Boolean);
+/**
+ * Ce que v89 nomme, moins ce qu'une migration ultérieure a supprimé de la base
+ * (`SUPPRIMEES`) : la liste blanche décrit la base d'AUJOURD'HUI, v89 celle du 24/09.
+ */
+const liste = (brut: string) =>
+  brut.split(",").map((s) => s.trim().replace(/^'|'$/g, "")).filter((s) => s && !(s in SUPPRIMEES));
 const trie = (l: readonly string[]) => [...l].sort();
 
 describe("P4 — migration-v89 ↔ packages/db/roles/mip-api.mjs", () => {
@@ -33,7 +40,9 @@ describe("P4 — migration-v89 ↔ packages/db/roles/mip-api.mjs", () => {
 
   it("les tables lues par colonnes, colonne par colonne", () => {
     const accordees = Object.fromEntries(
-      [...SQL.matchAll(/grant select \(([^)]+)\) on (\w+) to mip_api;/g)].map(([, cols, table]) => [table, trie(liste(cols))]),
+      [...SQL.matchAll(/grant select \(([^)]+)\) on (\w+) to mip_api;/g)]
+        .filter(([, , table]) => !(table in SUPPRIMEES))
+        .map(([, cols, table]) => [table, trie(liste(cols))]),
     );
     expect(accordees).toEqual(Object.fromEntries(Object.entries(COLONNES).map(([t, c]) => [t, trie(c as string[])])));
   });
@@ -65,6 +74,17 @@ describe("P4 — migration-v89 ↔ packages/db/roles/mip-api.mjs", () => {
     expect(SQL).not.toMatch(/alter default privileges/i);
     expect(SQL).not.toMatch(/password/i);
     expect(SQL).not.toMatch(/grant (insert|update|delete|truncate|all)\b/i);
+  });
+
+  it("chaque objet retiré de la liste a bien été supprimé par la migration qu'il cite", () => {
+    for (const [nom, raison] of Object.entries(SUPPRIMEES as Record<string, string>)) {
+      const version = raison.match(/^v(\d+) /)?.[1];
+      expect(version, nom).toBeDefined();
+      const sql = readFileSync(join(SQL_DIR, `migration-v${version}.sql`), "utf8");
+      expect(sql, nom).toMatch(new RegExp(`drop (table|function) if exists[^;]*\\b${nom}\\b`));
+    }
+    const listees = new Set([...TABLES, ...Object.keys(COLONNES), ...FONCTIONS, ...RETIREES_A_PUBLIC]);
+    expect(Object.keys(SUPPRIMEES).filter((n) => listees.has(n))).toEqual([]);
   });
 
   it("aucune relation n'est à la fois accordée et déclarée hors lecture", () => {
