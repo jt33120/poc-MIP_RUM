@@ -5,7 +5,8 @@
 // dans `@mip/backend/jobs/cadence.mjs` ; le processus (configuration, arrêt
 // propre, pool, sondes, boucles) dans `@mip/service-kit`.
 //
-//   tick        toutes les 5 min   alertes, SLO, sondes uptime (+ livraison, voir plus bas)
+//   tick        toutes les 5 min   canari, alertes, SLO, sondes uptime, journal des
+//                                  sondes et alerte d'absence (+ livraison, voir plus bas)
 //               (15 sur la base gratuite : SCHEDULER_TICK_MIN, voir `cadence.mjs`)
 //   horaire     à HH:05            rollups, histogrammes, nouvelles erreurs, anomalies
 //   quotidien   à 03:17 UTC        purge de rétention, comptage du volume
@@ -46,6 +47,7 @@ import { startLoop } from "@mip/service-kit/loop.mjs";
 import { dispatchOnce } from "@mip/backend/lib/dispatch-alerts.mjs";
 import { TICKS_ADMIS_MIN, TICK_DEFAUT_MIN, decrireCadences, prochainDelai, tolerancesMs } from "@mip/backend/jobs/cadence.mjs";
 import { travaux } from "@mip/backend/jobs/planifie.mjs";
+import { SILENCE_APP_MIN_DEFAUT, URL_CANARI_DEFAUT, creerSondes } from "@mip/backend/jobs/sondes.mjs";
 import {
   CADENCES_PLANIFIEES,
   creerOrdonnanceur,
@@ -84,6 +86,28 @@ const config = defineConfig(
       default: "on",
       description: "off : le tick ne livre plus (webhooks, e-mails) — le notifier s'en charge. Retour arrière : on.",
     },
+    // Le canari de bout en bout (`@mip/backend/jobs/sondes.mjs`) : l'URL PUBLIQUE
+    // des capteurs, celle des clients. Pas de secret : la clé du canari est
+    // tirée au démarrage, jamais configurée.
+    CANARI: {
+      type: "enum",
+      values: ["on", "off"],
+      default: "on",
+      description: "off : le tick n'émet plus le canari (ni journal des sondes, ni alerte d'absence). Retour arrière : on.",
+    },
+    CANARI_CONSOLE_URL: {
+      type: "url",
+      default: URL_CANARI_DEFAUT,
+      protocols: ["https:"],
+      description: "Porte d'ingestion que le canari traverse (console → relais → collector → base).",
+    },
+    SILENCE_APP_MIN: {
+      type: "int",
+      default: SILENCE_APP_MIN_DEFAUT,
+      min: 5,
+      max: 10_080,
+      description: "Alerte d'absence : minutes sans aucune donnée pour une application qui en recevait.",
+    },
   },
   { service: "scheduler", log },
 );
@@ -100,9 +124,15 @@ const pool = createPool(pg, {
 
 const tickMin = Number(config.SCHEDULER_TICK_MIN);
 
+// Le canari : UNE clé par processus, tirée ici, dont seule l'empreinte va en base.
+const sondes =
+  config.CANARI === "on"
+    ? creerSondes({ pool, url: config.CANARI_CONSOLE_URL, log, cadenceMin: tickMin, silenceMin: config.SILENCE_APP_MIN })
+    : null;
+
 const ordonnanceur = creerOrdonnanceur({
   pool,
-  jobs: travaux(pool, { log, dispatch: dispatchOnce, livraison: config.SCHEDULER_DELIVERY === "on" }),
+  jobs: travaux(pool, { log, dispatch: dispatchOnce, livraison: config.SCHEDULER_DELIVERY === "on", sondes }),
   porteur: titulaireBail(process.env),
   log,
   metrics,
@@ -157,4 +187,6 @@ log.info("scheduler démarré", {
   cadences: decrireCadences(tickMin),
   deadman: Boolean(config.DEADMAN_URL),
   livraison: config.SCHEDULER_DELIVERY,
+  canari: config.CANARI,
+  silence_app_min: config.SILENCE_APP_MIN,
 });
