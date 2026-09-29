@@ -76,7 +76,8 @@
 //   - R9 : la restauration est éprouvée sur la branche de répétition ; restent sa partie
 //     « identités », les bancs sans seuil et le JavaScript du backend ;
 //   - R11 ne dit plus que Go, PHP et Ruby : les agents Python, Java et .NET sont
-//     éprouvés en production (docs/INTEGRATION.md § 10).
+//     éprouvés en production (docs/capteurs-serveur.md § 2, depuis le 29/09/2026 ;
+//     avant, docs/INTEGRATION.md § 10).
 // R3, R4, R5, R7, R8 et R10 dépendent de tiers et n'ont pas bougé.
 import { capaciteParId, type Capacite } from "./couverture";
 import type { PointFait, PointReste } from "./couverture-controle";
@@ -259,8 +260,9 @@ export const POINTS_RESTE: readonly PointReste[] = [
   {
     // AJOUTÉ LE 27/09/2026 ; RÉÉCRIT LE 28/09/2026 après la PR #338 (la collecte accepte
     // OTLP en protobuf) ; RÉDUIT LE MÊME JOUR après la PR #342 : les agents officiels
-    // Python, Java et .NET sont éprouvés en production (docs/INTEGRATION.md § 10, tableau
-    // par langage). Ce qui reste : Go, PHP et Ruby, et le SDK Node officiel hors test.
+    // Python, Java et .NET sont éprouvés en production (docs/capteurs-serveur.md § 2,
+    // tableau par langage, depuis le 29/09/2026). Ce qui reste : Go, PHP et Ruby, et le
+    // SDK Node officiel hors test.
     id: "R11",
     titre: "Les backends Go, PHP et Ruby, pas encore éprouvés",
     manque:
@@ -272,7 +274,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
       "C5",
       "C6",
       "packages/backend/shared/otlp-corps.mjs:10-21",
-      "docs/INTEGRATION.md:410-418",
+      "docs/capteurs-serveur.md:51-60",
       "tests/integration/otlp-protobuf-agent-sql.test.ts:1-12",
       `${DOC}:774-778`,
     ],
