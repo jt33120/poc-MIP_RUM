@@ -57,3 +57,33 @@ describe("couvertureJourReference", () => {
     expect(c.etat).toBe("complete");
   });
 });
+
+describe("couvertureJourReference — collecte interrompue (sixième règle)", () => {
+  // FIXTURES : en production, les fenêtres viennent du registre en base.
+  const avant = new Date("2026-09-01T00:00:00Z");
+
+  it("interruption pendant le jour de référence : partielle, datée", () => {
+    const c = couvertureJourReference({
+      ...base,
+      debut: avant,
+      fenetres: [{ debut: "2026-09-14T08:00:00Z", fin: "2026-09-14T12:00:00Z", etat: "interrompue" }],
+    });
+    expect(c).toEqual({ etat: "partielle", raison: "collecte interrompue du 14/09 à 10:00 au 14/09 à 14:00", n: 820 });
+  });
+
+  it("interruption pendant le jour comparé (J, sept jours après) : partielle, et le dit", () => {
+    const c = couvertureJourReference({
+      ...base,
+      debut: avant,
+      fenetres: [{ debut: "2026-09-21T08:00:00Z", fin: null, etat: "interrompue" }],
+    });
+    expect(c.etat).toBe("partielle");
+    expect(c.raison).toBe("collecte interrompue depuis le 21/09 à 10:00, pendant le jour comparé");
+  });
+
+  it("interruption entre les deux jours, ou dégradée : l'écart reste valide", () => {
+    const entre = { debut: "2026-09-17T08:00:00Z", fin: "2026-09-17T12:00:00Z", etat: "interrompue" as const };
+    const degradee = { debut: "2026-09-14T08:00:00Z", fin: "2026-09-14T12:00:00Z", etat: "degradee" as const };
+    expect(couvertureJourReference({ ...base, debut: avant, fenetres: [entre, degradee] }).etat).toBe("complete");
+  });
+});
