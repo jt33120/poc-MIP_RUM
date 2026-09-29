@@ -82,7 +82,12 @@ export function BandeauR0({
       <a href="#constats" className={`shrink-0 text-xs font-medium ${LIEN}`} data-testid="r0-constats">
         {constatsPartiels ? "constats partiels" : pluriel(nbConstats, "constat", "constats")}
       </a>
-      <span className="shrink-0 text-xs text-ink-soft" data-testid="r0-deploiement">
+      {/* Une version peut être longue (SHA complet, étiquette de CI) : coupée à 390 px,
+          tronquée sur la ligne unique à partir de 1280 px, jamais un débordement. */}
+      <span
+        className="min-w-0 text-xs text-ink-soft [overflow-wrap:anywhere] xl:max-w-[24rem] xl:shrink-0 xl:truncate"
+        data-testid="r0-deploiement"
+      >
         {deploiement === "echec" ? (
           "Déploiements non lus"
         ) : deploiement === null ? (
