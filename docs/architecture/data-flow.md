@@ -63,7 +63,8 @@ Chaque lot prend **le verrou consultatif de son application** puis fait ~15 alle
 | Rejeu de session (rrweb) | `/api/ingest/v1/replay` → `/v1/replay` | chunk gzip de 2 Mio au plus, `x-mip-seq` obligatoire (400 sinon), stocké en base (`replay_chunk.body`, [ADR-0009](adr/0009-blobs-en-postgres.md)) |
 | Source maps de CI | `/api/sourcemaps` → `/v1/sourcemaps` | jeton d'upload dédié par application, 20 Mio ; [guide d'intégration](../integration/sourcemaps-ci.md) |
 | Extension MV3 | même route que le SDK | injecte le SDK par domaine enregistré |
-| SDK mobile, agent Node | même route | livrés, jamais lancés en production |
+| SDK mobile | même route | livré, jamais lancé en production |
+| Agents OpenTelemetry officiels (serveur) | `/api/ingest/v1/traces` et `/v1/logs`, OTLP protobuf ou JSON | aucun capteur serveur maison depuis le 29/09/2026 ([capteurs serveur](../capteurs-serveur.md)) |
 
 ## 2. Le trajet d'une alerte
 

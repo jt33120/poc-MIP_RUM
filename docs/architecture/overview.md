@@ -41,7 +41,7 @@ flowchart LR
 ```mermaid
 flowchart LR
   subgraph capteurs["Capteurs"]
-    sdk["SDK web / extension MV3<br/>SDK mobile, agent Node"]
+    sdk["SDK web / extension MV3<br/>SDK mobile, agents OTel officiels"]
     cic["CI client"]
   end
   subgraph vercel["Vercel — fra1"]
