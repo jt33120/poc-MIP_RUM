@@ -1,7 +1,8 @@
-// Le cadre commun de la présentation (/presentation) et du dossier technique
-// (/presentation/dossier) : la marque, l'en-tête, le pied de page.
+// Le cadre commun de la présentation (/presentation), du dossier technique
+// (/presentation/dossier) et des composants open source (/presentation/open-source) :
+// la marque, l'en-tête, le pied de page.
 //
-// Deux pages, un seul cadre : un visiteur qui passe de la vitrine au dossier doit
+// Plusieurs pages, un seul cadre : un visiteur qui passe de la vitrine au dossier doit
 // sentir qu'il est resté au même endroit, et l'attribution de la base GeoIP (CC BY
 // 4.0) ne doit pas exister sur une page et manquer sur l'autre.
 //
@@ -78,6 +79,10 @@ export function Pied() {
         <span>MIP RUM — preuve de concept</span>
         <Link href="/presentation/dossier" className="hover:text-ink">
           Dossier technique
+        </Link>
+        {/* L'inventaire des composants tiers, pour qui veut les vérifier (29/09/2026). */}
+        <Link href="/presentation/open-source" className="hover:text-ink">
+          Composants open source
         </Link>
         <Link href="/legal/cgu" className="hover:text-ink">
           Conditions d&apos;utilisation
