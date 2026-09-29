@@ -36,4 +36,12 @@ describe("AnomalyTable", () => {
     expect(zScore).toBeDefined();
     expect(zScore).not.toMatch(/good|bad/);
   });
+
+  it("une seule app choisie : pas de colonne App (identifiant technique répété à chaque ligne)", () => {
+    const avec = renderToStaticMarkup(<AnomalyTable health={{ ...SANTE, anomalies: [ANOMALIE] }} />);
+    const sans = renderToStaticMarkup(<AnomalyTable health={{ ...SANTE, anomalies: [ANOMALIE] }} sansApp />);
+    expect(avec).toContain(">App</th>");
+    expect(sans).not.toContain(">App</th>");
+    expect(sans).toContain("/checkout");
+  });
 });

@@ -840,7 +840,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 />
               </div>
             )}
-            <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut />
+            <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut reglesEnInfobulle />
           </SectionErreur>
         </div>
       </div>
@@ -1027,9 +1027,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 </>
               }
               lecture={
+                // Une phrase de lecture, pas deux (audit A1 T5 : 1 553 mots sur cet écran).
                 businessHours
-                  ? "Vue Lun–Ven, 8 h–19 h. Teinte d'une seule couleur : plus foncée, plus de mesures « Bon » ; aucune couleur de verdict."
-                  : "Une case vide : aucune donnée sur ce créneau (le RUM n'enregistre que le trafic réel). Teinte d'une seule couleur : plus foncée, plus de mesures « Bon » ; aucune couleur de verdict."
+                  ? "Lun–Ven, 8 h–19 h. Plus foncé : plus de mesures « Bon » (une seule teinte, sans verdict)."
+                  : "Case vide : aucune visite sur ce créneau. Plus foncé : plus de mesures « Bon » (une seule teinte, sans verdict)."
               }
             >
               {/* Heures ouvrées (Lun–Ven, 8 h–19 h) : les créneaux où l'on attend du trafic. */}
@@ -1077,6 +1078,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <AnomalyTable
               health={health.data}
               filtree={health.data.factors.some((x) => x.key === "anomalies" && x.raisonNull === "sous filtre")}
+              sansApp={!!query.scope.requestedApp}
               lien={(a) => {
                 const debut = new Date(a.bucket).getTime();
                 return lien("/pages", {
