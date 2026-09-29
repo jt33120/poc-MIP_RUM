@@ -60,7 +60,7 @@ schéma d'avant **et** d'après sa propre migration. Du 24 au 27/09, l'écart a 
 
 Chaque service ne se reconstruit que sur ce qui le concerne :
 
-- `scheduler` : la liste `SURVEILLE_SCHEDULER` de `.railway/railway.ts` (noyau, migrations, kit, son dossier, lockfile, et les anciens chemins d'avant le remodelage P1) ;
+- `scheduler` : la liste `SURVEILLE_SCHEDULER` de `.railway/railway.ts` (noyau, migrations, kit, son dossier, `infra/docker/**`, lockfile ; les anciens chemins d'avant le remodelage P1 en sont sortis le 29/09/2026) ;
 - `mcp` : la liste `SURVEILLE_MCP` du même fichier ;
 - `collector`, `api`, `console-api`, `notifier` : chacun sa liste, dans le même fichier. La source fait foi : ne pas les recopier ici.
 

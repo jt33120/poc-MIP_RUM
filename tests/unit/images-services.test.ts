@@ -208,17 +208,18 @@ describe("images — l'IaC Railway, et la sortie des images communes", () => {
     expect(iac).not.toMatch(/dockerfilePath: "infra\/docker\//);
   });
 
-  it("l'initialisation par psql a disparu ; plus rien ne construit les images communes", () => {
+  it("l'initialisation par psql a disparu ; les images communes aussi", () => {
     expect(existsSync("infra/docker/db/initdb.sh")).toBe(false);
-    // Les deux anciennes images RESTENT le temps de l'apply de l'IaC : le
-    // tableau de bord Railway les désigne encore, et Railway construit à chaque
-    // push. Marquées obsolètes, et construites par AUCUN fichier du dépôt ; les
-    // supprimer est l'étape d'après (voir leur en-tête).
+    // Les deux anciennes images sont restées le temps de l'apply de l'IaC du
+    // 27/09/2026, puis ont été retirées le 29/09 : `scheduler` et `mcp` construisent
+    // `services/*/Dockerfile`. Ni l'IaC, ni le compose, ni la fumée ne les citent.
+    const iac = lire(".railway/railway.ts");
     const compose = instructions(lire("infra/docker/docker-compose.yml"));
     const fumee = lire(".github/workflows/docker-smoke.yml");
     for (const ancien of ["infra/docker/Dockerfile.backend", "infra/docker/Dockerfile.mcp"]) {
-      if (existsSync(ancien)) expect(lire(ancien).split("\n")[0], ancien).toMatch(/^# OBSOLÈTE/);
+      expect(existsSync(ancien), ancien).toBe(false);
       const nom = ancien.split("/").pop()!;
+      expect(iac).not.toContain(`"${ancien}"`);
       expect(compose).not.toContain(nom);
       expect(fumee).not.toContain(nom);
     }
