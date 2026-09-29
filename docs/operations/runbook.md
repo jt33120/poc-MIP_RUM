@@ -12,6 +12,7 @@
 | Que contient la production ? | `railway run --service scheduler node scripts/ops/releve-p0.mjs` — migrations, dernier événement par app, clés d'ingestion, tailles, cadence publiée, connexions (lecture seule) |
 | Journaux d'un service | `railway logs --service <scheduler\|mcp\|collector\|notifier> --lines 200` (build : `--build`) — `collector` et `notifier` une fois créés |
 | État d'un service | `curl https://<domaine>/live` (processus) · `/health` (processus + base — ne pas le sonder de l'extérieur, il réveille la base) · `/ready` et `/metrics` sous `Authorization: Bearer $METRICS_TOKEN` (le scheduler n'a pas de `METRICS_TOKEN` dans `.railway/railway.ts` : chez lui, les deux répondent 404) |
+| Un service est-il tombé ? | GitHub → Actions → « Sonde externe » (`.github/workflows/sonde-externe.yml`) : toutes les 15 min, `/live` de `collector`, `api`, `console-api`, `/api/live` de la console et `/health` de `mcp` (sans base). Un run rouge nomme le service ; relancer à la main par « Run workflow ». |
 | Déploiements Railway | `railway deployment list --service <nom>` |
 | Qui a fait quoi dans la console | table `audit_log` (écran `/admin/audit`) — **en ajout seul** une fois migration-v90 appliquée (pas encore en production au 26/09) : un `update`, un `delete` ou un `truncate` y rend alors 42501. Rien ne l'efface, pas même l'effacement d'un client. |
 | Déploiements et journaux Vercel | tableau de bord Vercel, projet `mip-rum-console` (ou le MCP Vercel) |
