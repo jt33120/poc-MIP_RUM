@@ -18,8 +18,10 @@
 | Cadence | Quand (UTC) | Étapes | Bail |
 |---|---|---|---|
 | `tick` | :00, :05, :10… — ou :00, :15, :30, :45 avec `SCHEDULER_TICK_MIN=15` (+ un passage au démarrage) | `canari_emettre`, `check_alerts`, `route_error_issue_notifications`, `check_slo_burn`, uptime, `canari_verifier` (journal, registre, alerte d'absence), `dispatch_alerts`, `reconcile_deliveries` — avec `SCHEDULER_DELIVERY=off` : sans les deux étapes de livraison ; avec `CANARI=off` : sans les deux étapes du canari | 600 s |
-| `horaire` | HH:05 | `refresh_rum_rollups(26)`, `refresh_metric_histogram(26)`, `check_new_errors`, `check_ai_op_anomalies`, notes historiques | 900 s |
-| `quotidien` | 03:17 | `purge_rum_tenants(30)`, `meter_tenant_usage` | 3 600 s |
+| `horaire` | HH:05 | `refresh_rum_rollups(26)`, `refresh_metric_histogram(26)`, `check_new_errors`, `check_ai_op_anomalies`, notes historiques, `detections_horaires` (v101 : `refresh_vital_horaire(3)` puis plage habituelle et épisodes) | 900 s |
+| `quotidien` | 03:17 | `purge_rum_tenants(30)`, `meter_tenant_usage`, `purge_console_sessions`, `purge_detections(8)` (v101) | 3 600 s |
+
+**Les détections horaires (v101).** `detections_horaires` recalcule les p75 des trois dernières heures fermées dans `vital_horaire` (SQL, upsert idempotent, délai de 60 s), puis, en JS sur ces agrégats (`packages/backend/jobs/detections.mjs`), compare chacune des quatre dernières heures fermées à sa **plage habituelle** (médiane et écart absolu médian du même créneau des semaines passées, repli quotidien puis 48 h ; A2 § 7.1) et ouvre ou ferme les épisodes dans `signal_detecte`. Aucun réveil de la base en plus : l'étape est greffée sur le passage horaire. Une app sans ingestion depuis plus de 15 min est **suspendue** pour le passage (aucun constat ouvert, fermé ni mis à jour) : une panne de collecte ne doit pas passer pour une amélioration. Sur une base sans v101, l'étape rend « migration-v101 non appliquée » au lieu d'échouer.
 
 **La livraison part au notifier (P5).** Webhooks et e-mails sont l'affaire du service [`notifier`](../notifier/README.md), toutes les 15 s par défaut, seul détenteur des secrets sortants — pas encore créé sur Railway : en production, le tick livre. Tant que `SCHEDULER_DELIVERY` vaut `on`, le tick livre aussi, comme avant ; `off` le réduit à **décider** — les livraisons restent `queued` pour le notifier. Le scheduler n'a pas de clé Resend : une livraison e-mail qu'il prend est soldée `skipped`, d'où `off` posé au plus tard quand le notifier démarre.
 
@@ -27,7 +29,7 @@ Chaque étape SQL est bornée par un `statement_timeout` posé **dans sa transac
 
 ## Le canari et le journal des sondes
 
-**Pourquoi.** Les trous du 24 au 27/09/2026 ne se sont vus qu'en regardant des graphiques vides. Chaque tick prouve désormais que la porte des clients écrit (`packages/backend/jobs/sondes.mjs`, migration-v99) :
+**Pourquoi.** Les trous du 24 au 27/09/2026 ne se sont vus qu'en regardant des graphiques vides. Chaque tick prouve désormais que la porte des clients écrit (`packages/backend/jobs/sondes.mjs`, migration-v103) :
 
 1. **`canari_emettre`, en tête du tick.** Un lot OTLP/HTTP JSON de quelques centaines d'octets — une page vue (`/canari`, URL en `.invalid`), un vital (LCP fixe, 1 000 ms), un span serveur, application `mip-canari` — part en `POST` sur l'URL **publique** des capteurs (`CANARI_CONSOLE_URL`, par défaut `https://mip-rum-console.vercel.app/api/ingest/v1/traces`) : console Vercel → relais → collector → base, le chemin des clients. Verdict : `ok` ≤ 2 s, `lent` jusqu'à 8 s, `echec` au-delà, sur un statut non 2xx ou sans réponse. Aucune donnée personnelle, jamais d'erreur, aucun destinataire nouveau.
 2. **`canari_verifier`, avant la livraison.** Relecture par clé unique des lignes du passage (`rum_session`, `rum_pageview`, `rum_metric`, `rum_span`, `rum_event_index`) ; une ligne par étage dans `sonde_passage` (`ingest_console`, `ecriture`), en un seul `insert` ; état de la chaîne (`interrompue` si rien n'est écrit, `degradee` si lent ou si une projection manque) ; registre `collecte_fenetre` (portée `*`, étage `chaine`) : la fenêtre ouverte se ferme, se prolonge ou est remplacée. Un silence du journal plus long que `2 × cadence + 5 min` (coupure de la base) est **reconstitué** en fenêtre `interrompue`, `source = 'reconstitution'`.

@@ -13,11 +13,17 @@
 //   - `blindSpots` (F13) : la tuile d'angle mort lit la concordance robot × réel (F57),
 //     plus l'ancien champ `blindSpots` — ni la Vue d'ensemble ni `components/perf`.
 //
+// Et, depuis la vague 4 (29/09/2026), le pendant de P2 pour les SEUILS MIP
+// (`lib/seuils.ts`) : aucune de leurs bornes recopiée dans `app/**` ni `components/**`.
+// Un écran lit `SEUILS_MIP`, `noteMip` et `texteRegleMip` ; une borne recopiée garde
+// l'ancienne valeur le jour où la règle change, et la couleur ment.
+//
 // Un commentaire compte : le plan grep le texte, pas l'AST. Une borne se cite par son
-// nom (`THRESHOLDS`, « borne Bon »), jamais par sa valeur.
+// nom (`THRESHOLDS`, « borne Bon », `SEUILS_MIP.DNS.mauvais`), jamais par sa valeur.
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
+import { SEUILS_MIP, type MesureMip, type UniteSeuil } from "../../apps/console/lib/seuils";
 
 const CONSOLE = join(__dirname, "..", "..", "apps", "console");
 
@@ -66,5 +72,143 @@ describe("gardes de code du domaine performance (F27)", () => {
     expect(motif.test("bandes 200 / 500 ms")).toBe(true);
     expect(motif.test("lcp: 2500")).toBe(true);
     expect(motif.test("un seau de 1200 ms")).toBe(false);
+  });
+});
+
+// ───────────────────────────── Seuils MIP (vague 4) ─────────────────────────────
+//
+// Les bornes MIP sont des nombres ordinaires (100, 300, 1 000…) : les chercher nues
+// rougirait sur chaque `hauteur={150}`. Une ligne n'est donc retenue que si elle
+// réunit les DEUX : un mot qui désigne la mesure (« DNS », « ressource »…) ET une de
+// ses bornes écrite comme une borne — avec son unité (« 150 ms », « 1 s », « 5 % »,
+// « 1 Mbit/s ») ou après un comparateur (« > 150 », « >= 0.05 »). Les motifs sont
+// construits depuis `SEUILS_MIP` : une borne qui change est cherchée à sa nouvelle
+// valeur sans toucher ce test.
+
+/** Les mots qui désignent une mesure MIP sur une ligne. */
+const MOTS_MIP: Record<MesureMip, RegExp> = {
+  REDIRECT: /redirect|redirection/i,
+  DNS: /\bdns\b/i,
+  TCP: /\btcp\b/i,
+  TLS: /\btls\b/i,
+  // « requête » et « réponse » sont partout (SQL, HTTP) : seule la clé de phase compte.
+  REQUEST: /\bREQUEST\b/,
+  RESPONSE: /\bRESPONSE\b/,
+  RTT: /\brtt\b|aller-retour/i,
+  DOWNLINK: /downlink|débit/i,
+  LONGTASK: /long ?tasks?|tâches? longues?/i,
+  LOAF: /\bloaf\b|animation longue|animation frame/i,
+  RESOURCE: /ressource|resource/i,
+  API: /\bapi\b|http\.duration|\bappels?\b/i,
+  RAGE_CLICKS: /\brage|rageur/i,
+  DEAD_CLICKS: /\bdead\b|clics? morts?/i,
+  BROWSER_ERRORS: /erreur|error/i,
+};
+
+/** Une borne écrite comme une borne : unité accolée, ou comparateur devant. Jamais le nombre nu. */
+function motifsBorne(valeur: number, unite: UniteSeuil): RegExp[] {
+  // La borne 0 (REDIRECT) n'est pas cherchable : « 0 ms » est partout, et ce n'est
+  // pas une règle qu'on recopie.
+  if (valeur === 0) return [];
+  // Espace entre le nombre et l'unité : rien, espace, insécable, ou son écriture
+  // ` ` / `&nbsp;` dans le source.
+  const esp = String.raw`(?:\\u00a0|&nbsp;| |\s)?`;
+  const nombre = (v: number) => {
+    const t = String(v);
+    if (t.includes(".")) return t.replace(".", "[.,]");
+    // 1000 s'écrit aussi « 1 000 », « 1_000 », « 1 000 » (insécable).
+    return t.length > 3 ? `${t.slice(0, -3)}[ _ ]?${t.slice(-3)}` : t;
+  };
+  const avant = String.raw`(?<![\d.,])`;
+  const motifs = [new RegExp(String.raw`[<>≤≥]=?\s*${nombre(valeur)}(?![\d])`)];
+  if (unite === "part") {
+    motifs.push(new RegExp(String.raw`${avant}${nombre(Math.round(valeur * 1000) / 10)}(?:[.,]0)?\s*${esp}%`));
+  } else if (unite === "Mbit/s") {
+    motifs.push(new RegExp(String.raw`${avant}${nombre(valeur)}\s*${esp}Mbit`, "i"));
+  } else {
+    motifs.push(new RegExp(String.raw`${avant}${nombre(valeur)}\s*${esp}ms\b`));
+    if (valeur >= 1000) motifs.push(new RegExp(String.raw`${avant}${nombre(valeur / 1000)}(?:[.,]0)?\s*${esp}s\b`));
+  }
+  return motifs;
+}
+
+/** Une ligne recopie-t-elle une borne MIP ? Rend les mesures concernées. */
+function mesuresRecopiees(ligne: string): MesureMip[] {
+  return (Object.keys(SEUILS_MIP) as MesureMip[]).filter((mesure) => {
+    const s = SEUILS_MIP[mesure];
+    if (!MOTS_MIP[mesure].test(ligne)) return false;
+    return [...motifsBorne(s.bon, s.unite), ...motifsBorne(s.mauvais, s.unite)].some((m) => m.test(ligne));
+  });
+}
+
+/**
+ * Occurrences CONNUES, relevées le 29/09/2026 à la création de la garde — explicites
+ * et datées, pour ne pas faire rougir la CI d'une dette antérieure. Le lot 4b (les
+ * écrans) les corrige et les retire d'ici. Une exception qui ne correspond plus à
+ * aucune ligne fait échouer le test suivant : la retirer.
+ *
+ * Toutes deux écrivent le seuil de COLLECTE du SDK (`DEFAULT_SLOW_RESOURCE_MS`,
+ * `packages/rum-sdk/src/resources.ts`), qui vaut aujourd'hui la borne « bon » de
+ * `SEUILS_MIP.RESOURCE` — ce n'est pas une règle de verdict, mais c'est la même
+ * valeur écrite en dur (comme `RESOURCE_THRESHOLD_NOTICE` de `lib/resources.ts`,
+ * hors du périmètre de cette garde).
+ */
+const EXCEPTIONS_MIP: readonly { fichier: string; extrait: string; releve: string }[] = [
+  { fichier: "app/admin/composants/sections/panneau.tsx", extrait: "ressources de plus de 300 ms seulement", releve: "29/09/2026" },
+  { fichier: "components/charts/Cascade.tsx", extrait: "La collecte de ressources est volontairement partielle (300 ms", releve: "29/09/2026" },
+];
+
+function bornesMipTrouvees(): string[] {
+  const fichiers = [...fichiersDe(app()), ...fichiersDe(join(CONSOLE, "components"))];
+  return fichiers.flatMap((f) =>
+    readFileSync(f, "utf8")
+      .split("\n")
+      .flatMap((ligne, i) => {
+        const mesures = mesuresRecopiees(ligne);
+        return mesures.length ? [`${relative(CONSOLE, f)}:${i + 1}: [${mesures.join(", ")}] ${ligne.trim()}`] : [];
+      }),
+  );
+}
+
+const estException = (trouvee: string) =>
+  EXCEPTIONS_MIP.some((e) => trouvee.startsWith(`${e.fichier}:`) && trouvee.includes(e.extrait));
+
+describe("gardes de code des seuils MIP (vague 4)", () => {
+  it("aucune borne de SEUILS_MIP recopiée dans app/** ni components/** (hors exceptions datées)", () => {
+    expect(bornesMipTrouvees().filter((t) => !estException(t))).toEqual([]);
+  });
+
+  it("chaque exception datée correspond encore à une ligne (sinon, la retirer d'EXCEPTIONS_MIP)", () => {
+    const trouvees = bornesMipTrouvees();
+    for (const e of EXCEPTIONS_MIP) {
+      expect(e.releve).toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
+      expect(
+        trouvees.some((t) => t.startsWith(`${e.fichier}:`) && t.includes(e.extrait)),
+        `exception obsolète : ${e.fichier} « ${e.extrait} »`,
+      ).toBe(true);
+    }
+  });
+
+  it("chaque mesure de SEUILS_MIP a ses mots", () => {
+    expect(Object.keys(MOTS_MIP).sort()).toEqual(Object.keys(SEUILS_MIP).sort());
+  });
+
+  it("le motif MIP reconnaît une borne recopiée et ignore un nombre nu (le test n'est pas vide par construction)", () => {
+    // Recopiées : unité accolée ou comparateur, à côté du mot de la mesure.
+    expect(mesuresRecopiees("règle : DNS > 150 ms")).toEqual(["DNS"]);
+    expect(mesuresRecopiees("if (p75DNS >= 150) ton = 'bad'")).toEqual([]); // « DNS » collé : pas un mot
+    expect(mesuresRecopiees("const dns = p75 > 150 ? 'bad' : 'ok'")).toEqual(["DNS"]);
+    expect(mesuresRecopiees("Ressources lentes : au-delà de 1 000 ms")).toContain("RESOURCE");
+    expect(mesuresRecopiees("appel API lent (> 1 s)")).toEqual(["API"]); // 1 s = 1 000 ms
+    expect(mesuresRecopiees("appel API lent (1 s et plus)")).toEqual(["API"]);
+    expect(mesuresRecopiees("appel API lent (> 2 s)")).toEqual([]);
+    expect(mesuresRecopiees("clics rageurs : mauvais au-delà de 5 %")).toEqual(["RAGE_CLICKS"]);
+    expect(mesuresRecopiees("if (part > 0.08) // clics morts")).toEqual(["DEAD_CLICKS"]);
+    expect(mesuresRecopiees("débit < 1 Mbit/s")).toEqual(["DOWNLINK"]);
+    expect(mesuresRecopiees("Tâches longues de plus de 250 ms")).toEqual(["LONGTASK"]);
+    // Ignorés : un nombre nu, une valeur de démonstration, un nombre plus long.
+    expect(mesuresRecopiees("<Chart titre=\"Tâches longues\" hauteur={150} />")).toEqual([]);
+    expect(mesuresRecopiees("{ valeur: \"Firefox\", nBase: 300, partTouches: 0.05, href: \"/errors\" }")).toEqual([]);
+    expect(mesuresRecopiees("DNS : 1500 ms")).toEqual([]);
   });
 });
