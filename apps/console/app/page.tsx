@@ -1161,7 +1161,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         {/* Recette du 30/09/2026 : rien à signaler, pas de colonne — le hero prend la
             largeur. « Aucun constat » reste dit, une fois, dans le bandeau du haut. */}
         {!constatsVides && (
-        <div id="constats" className={`flex min-w-0 scroll-mt-16 flex-col ${blocs.hero ? "xl:col-span-4" : "xl:col-span-12"}`}>
+        <div id="constats" className={`flex min-w-0 scroll-mt-16 flex-col ${blocs.hero ? "xl:relative xl:col-span-4" : "xl:col-span-12"}`}>
+          {/* À côté du graphique principal, la colonne prend SA hauteur (même bord bas) :
+              au-delà, les constats défilent dans la colonne, la rangée ne s'allonge pas. */}
+          <div className={`flex min-w-0 grow flex-col ${blocs.hero ? "xl:absolute xl:inset-0 xl:overflow-y-auto" : ""}`}>
           <SectionErreur titre="Constats">
             {constats.echecs.length > 0 && (
               <div className="mb-2">
@@ -1177,6 +1180,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             )}
             <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut reglesEnInfobulle etire />
           </SectionErreur>
+          </div>
         </div>
         )}
       </div>
