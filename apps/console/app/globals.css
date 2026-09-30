@@ -3,29 +3,20 @@
 @tailwind utilities;
 
 /* ------------------------------------------------------------------ */
-/* Fond « papier millimétré » — identité visuelle des écrans d'accueil  */
-/* (vitrine publique, sélection de projet, ajout de site).              */
+/* Fond des écrans d'accueil (vitrine publique, dossier open source).   */
+/* Uni depuis la recette du 30/09/2026 : le « papier millimétré »       */
+/* (quadrillage et halos) est retiré partout, il brouillait la lecture. */
 /*                                                                      */
 /* Placé APRÈS @tailwind utilities : à spécificité égale, c'est la       */
 /* dernière règle qui gagne, donc .mip-sci l'emporte sur un bg-* de      */
 /* Tailwind posé sur le même élément. Ne pas remonter ce bloc.          */
 /* ------------------------------------------------------------------ */
 .mip-sci {
-  background-color: rgb(var(--c-app));
-  background-image:
-    radial-gradient(900px 420px at 12% -15%, rgba(37, 99, 235, 0.10), transparent 70%),
-    radial-gradient(760px 380px at 92% 115%, rgba(0, 51, 153, 0.08), transparent 70%),
-    linear-gradient(rgba(37, 99, 235, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(37, 99, 235, 0.055) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+  background-color: rgb(var(--c-panel));
+  background-image: none;
 }
 .dark .mip-sci {
-  background-color: #060d24;
-  background-image:
-    radial-gradient(900px 420px at 12% -15%, rgba(59, 110, 235, 0.22), transparent 70%),
-    radial-gradient(760px 380px at 92% 115%, rgba(248, 145, 1, 0.07), transparent 70%),
-    linear-gradient(rgba(137, 173, 255, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(137, 173, 255, 0.07) 1px, transparent 1px);
+  background-color: rgb(var(--c-app));
 }
 
 /* ------------------------------------------------------------------ */

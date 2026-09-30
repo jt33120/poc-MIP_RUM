@@ -11,10 +11,16 @@ import { executerCommande } from "@/lib/commande";
 import { apresRefus } from "@/lib/commande-suite";
 import { cleDe, type SecretRemis } from "@/lib/secret-remis";
 
+const SERVEURS = new Set(["python", "node", "java", "dotnet", "autre"]);
+
 export async function createSiteAction(_precedent: SecretRemis, fd: FormData): Promise<SecretRemis> {
   const rawId = String(fd.get("app_id") ?? "").trim();
   // Mode de collecte choisi à l'étape 1 : 'sdk' (injection JS) | 'extension'.
   const mode = String(fd.get("mode") ?? "sdk") === "extension" ? "extension" : "sdk";
+  // Serveur facultatif : son langage n'est pas stocké, il choisit seulement la
+  // recette montrée à l'étape 2 (la page revalide la valeur).
+  const serveur = String(fd.get("serveur") ?? "");
+  const suite = SERVEURS.has(serveur) ? `&serveur=${serveur}` : "";
   const r = await executerCommande("creerSite", {
     corps: { name: String(fd.get("name") ?? ""), url: String(fd.get("url") ?? ""), ...(rawId ? { app_id: rawId } : {}), mode },
   });
@@ -28,6 +34,6 @@ export async function createSiteAction(_precedent: SecretRemis, fd: FormData): P
   return d.etat === "cree"
     ? // `cree=1` : la page d'intégration dit « est créé » juste après la création, et
       // seulement alors (recette du 26/09/2026 : elle le disait d'un projet existant).
-      { nom: cleDe(d.app), valeur: d.cle, pour: d.app, aller: `/select/new?app=${encodeURIComponent(d.app)}&mode=${d.mode}&cree=1` }
+      { nom: cleDe(d.app), valeur: d.cle, pour: d.app, aller: `/select/new?app=${encodeURIComponent(d.app)}&mode=${d.mode}${suite}&cree=1` }
     : null;
 }
