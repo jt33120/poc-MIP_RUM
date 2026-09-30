@@ -16,7 +16,14 @@
 // obligatoire du § 3.2 : même fenêtre, sans normalisation de trafic.
 import { ALERT_MODES, ALERT_SEVERITIES } from "@/lib/alerting";
 import { MESURES_MIN_RELEASE, SEUIL_REGRESSION_DEFAUT } from "@/lib/alerting";
-import { ALERT_COMPARATORS, ALERT_METRICS, libelleSeverite, metricLabel } from "@/lib/alertes-metriques";
+import {
+  ALERT_COMPARATORS,
+  ALERT_METRICS,
+  libelleSeverite,
+  metricLabel,
+  origineSeuilPropose,
+  seuilMauvaisDeMetrique,
+} from "@/lib/alertes-metriques";
 import type { AlertRuleRow } from "@/lib/queries-v2";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
 import { PHRASE_FENETRE } from "@/components/ReleaseCompare";
@@ -86,7 +93,14 @@ export function RuleFields({
     family === "issue"
       ? rule!.metric.slice(6)
       : (defaultIssue ?? (metriqueProposee?.startsWith("issue:") ? metriqueProposee.slice(6) : ""));
-  const seuil = rule?.threshold ?? regle?.seuil ?? "";
+  // Vague 4 : une règle NEUVE sans seuil d'URL propose la borne « mauvais » de la
+  // métrique choisie à l'ouverture (web.dev pour un vital, `SEUILS_MIP` sinon), et
+  // le comparateur qui la franchit (« < » pour le débit). Formulaire sans JavaScript :
+  // changer de métrique ne change pas ce nombre, la phrase sous le champ le dit.
+  const proposition = seuilMauvaisDeMetrique(selectedMetric);
+  const seuilPropose = rule?.threshold == null && regle?.seuil == null ? proposition : null;
+  const seuil = rule?.threshold ?? regle?.seuil ?? seuilPropose?.seuil ?? "";
+  const comparateur = rule?.comparator ?? proposition?.comparateur ?? ">";
   const route = rule?.route ?? regle?.route ?? "";
   const mode = rule?.mode && (ALERT_MODES as readonly string[]).includes(rule.mode) ? rule.mode : "threshold";
   // Hausse tolérée d'une règle de release existante (son `threshold`, en %), sinon +20 %.
@@ -218,7 +232,7 @@ export function RuleFields({
               Seuil fixe
             </span>
             <Field label="Comparateur">
-              <select name="comparator" defaultValue={rule?.comparator ?? ">"} className={INPUT_CLASS}>
+              <select name="comparator" defaultValue={comparateur} className={INPUT_CLASS} data-testid="champ-comparateur">
                 {ALERT_COMPARATORS.map((c) => (
                   <option key={c} value={c}>
                     {c}
@@ -240,6 +254,12 @@ export function RuleFields({
                 data-testid="champ-seuil"
               />
             </Field>
+            {seuilPropose && (
+              <p className="basis-full min-w-0 break-words text-[11px] text-ink-soft" data-testid="seuil-propose">
+                Seuil proposé : la borne « mauvais » de {metricLabel(selectedMetric)} — {origineSeuilPropose(selectedMetric)}.
+                À ajuster si vous changez de métrique.
+              </p>
+            )}
           </div>
 
           <div className="regle-champs-baseline mt-3 flex flex-wrap items-end gap-3" data-testid="champs-baseline">
@@ -329,7 +349,10 @@ export function RuleFields({
         <strong>Logs en erreur</strong> et <strong>Événement personnalisé</strong> se cumulent sur la
         fenêtre — les heures inactives valent zéro pour l&apos;habitude. <strong>Issue</strong> somme les
         occurrences observées hors robots ; son habitude ne retient que les fenêtres où l&apos;issue était
-        suivie, et rend « données insuffisantes » sous 4 fenêtres comparables.
+        suivie, et rend « données insuffisantes » sous 4 fenêtres comparables. <strong>Débit descendant</strong>,
+        <strong> tâches longues</strong>, <strong>ressources</strong>, <strong>appels API</strong> et les
+        <strong> parts de sessions</strong> (clics rageurs, clics morts, erreurs navigateur) : seuil fixe
+        seulement. Le débit se lit au 25ᵉ centile — bas est mauvais, d&apos;où le comparateur « &lt; ».
       </p>
     </>
   );
