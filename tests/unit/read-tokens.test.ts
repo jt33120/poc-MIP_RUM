@@ -1,4 +1,5 @@
-// Jetons de lecture — hash déterministe, génération, fenêtre, validité. Logique pure.
+// Jetons d'accès (ex-« jetons de lecture », écran /admin/read-tokens) — hash
+// déterministe, génération, fenêtre, validité. Logique pure.
 import { describe, expect, it } from "vitest";
 import {
   generateToken,
@@ -40,7 +41,7 @@ describe("parseWindow", () => {
   });
 });
 
-describe("validiteLecture (recette du 26/09/2026 : un jeton de lecture a une échéance)", () => {
+describe("validiteLecture (recette du 26/09/2026 : un jeton d'accès a une échéance)", () => {
   it("absente : la durée par défaut, jamais « sans fin »", () => {
     expect(validiteLecture(undefined)).toBe(VALIDITE_LECTURE_DEFAUT_JOURS);
     expect(validiteLecture("")).toBe(VALIDITE_LECTURE_DEFAUT_JOURS);

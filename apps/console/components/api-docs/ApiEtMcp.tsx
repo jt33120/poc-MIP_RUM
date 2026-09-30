@@ -90,9 +90,24 @@ function Champ({ libelle, aide, children }: { libelle: string; aide?: ReactNode;
 }
 
 /** Un repli d'une ligne : titre, compte, et ce qu'il contient en petit à droite. */
-function Repli({ titre, compte, resume, testId, children }: { titre: string; compte?: number; resume: string; testId: string; children: ReactNode }) {
+function Repli({
+  titre,
+  compte,
+  resume,
+  testId,
+  ancre,
+  children,
+}: {
+  titre: string;
+  compte?: number;
+  resume: string;
+  testId: string;
+  /** Ancre de l'ancienne page (#routes, #exemples) : les liens partagés y mènent encore. */
+  ancre?: string;
+  children: ReactNode;
+}) {
   return (
-    <details className="card group min-w-0 overflow-hidden" data-testid={testId}>
+    <details id={ancre} className="card group min-w-0 scroll-mt-24 overflow-hidden" data-testid={testId}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-panel2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-perf [&::-webkit-details-marker]:hidden">
         <Icon paths={ICON_PATHS.chevronRight} className="h-4 w-4 shrink-0 text-ink-faint transition-transform group-open:rotate-90" />
         <span className="min-w-0 truncate">{titre}</span>
@@ -141,7 +156,7 @@ export function ApiEtMcp({
     <div className="flex min-w-0 flex-col gap-2">
       <div className="grid min-w-0 gap-2 lg:grid-cols-2">
         {/* ── Brancher un agent IA ─────────────────────────────────────────── */}
-        <section className="card flex min-w-0 flex-col gap-3 p-4" aria-labelledby="bloc-mcp-titre" data-testid="bloc-mcp">
+        <section id="mcp" className="card flex min-w-0 scroll-mt-24 flex-col gap-3 p-4" aria-labelledby="bloc-mcp-titre" data-testid="bloc-mcp">
           <EnTeteBloc
             icone="ai"
             id="bloc-mcp-titre"
@@ -187,7 +202,7 @@ export function ApiEtMcp({
         </section>
 
         {/* ── API REST ─────────────────────────────────────────────────────── */}
-        <section className="card flex min-w-0 flex-col gap-3 p-4" aria-labelledby="bloc-api-titre" data-testid="bloc-api">
+        <section id="api" className="card flex min-w-0 scroll-mt-24 flex-col gap-3 p-4" aria-labelledby="bloc-api-titre" data-testid="bloc-api">
           <EnTeteBloc
             icone="fileCode"
             id="bloc-api-titre"
@@ -230,7 +245,7 @@ export function ApiEtMcp({
       </div>
 
       {/* ── Les trois jetons ───────────────────────────────────────────────── */}
-      <section className="card min-w-0 overflow-hidden" aria-labelledby="jetons-titre" data-testid="jetons">
+      <section id="jeton" className="card min-w-0 scroll-mt-24 overflow-hidden" aria-labelledby="jetons-titre" data-testid="jetons">
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
           <Icon paths={ICON_PATHS.key} className="h-4 w-4 shrink-0 text-ink-faint" />
           <h2 id="jetons-titre" className="text-sm font-semibold text-ink">
@@ -300,7 +315,7 @@ export function ApiEtMcp({
       </section>
 
       {/* ── Le détail, replié ──────────────────────────────────────────────── */}
-      <Repli titre="Routes de l'API v1" compte={routes.length} resume="méthode, chemin, rôle · filtres communs" testId="api-routes">
+      <Repli titre="Routes de l'API v1" compte={routes.length} resume="méthode, chemin, rôle · filtres communs" testId="api-routes" ancre="routes">
         <TableDefilante label="Routes de l'API v1">
           <table className="w-full min-w-[640px] text-xs">
             <caption className="sr-only">Routes de l&apos;API v1 : {lectures} lectures et {ecritures} écriture</caption>
@@ -340,7 +355,7 @@ export function ApiEtMcp({
         </div>
       </Repli>
 
-      <Repli titre="Exemples d'appels" compte={3} resume="curl, un par jeton" testId="api-exemples">
+      <Repli titre="Exemples d'appels" compte={3} resume="curl, un par jeton" testId="api-exemples" ancre="exemples">
         <div className="p-3">
           <CopyBlock code={exemplesApi(origine)} label="Copier les exemples" />
         </div>

@@ -110,7 +110,7 @@ describe("aucune route réelle n'est passée sous silence", () => {
     // UN POST N'EST PAS UNE ÉCRITURE. P6.4 ajoute `POST /api/v1/explorer/query`, qui
     // LIT : son verbe vient de la taille de l'AST, pas d'un changement d'état. Le
     // ranger parmi les écritures dirait à un client — et à un modèle — qu'il lui faut
-    // une session admin de même origine, alors qu'un jeton de lecture suffit. Les deux
+    // une session admin de même origine, alors qu'un jeton d'API suffit. Les deux
     // listes sont donc tenues séparément, et toutes deux exactes : une route non-GET
     // qui n'apparaît dans ni l'une ni l'autre est une route mal classée.
     const LECTURES_EN_POST = ["POST /api/v1/explorer/query"];
