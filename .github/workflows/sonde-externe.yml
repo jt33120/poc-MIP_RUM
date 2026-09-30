@@ -1,0 +1,61 @@
+# SONDE EXTERNE — ce qu'aucune sonde interne ne voit : un service éteint.
+#
+# Toutes les 15 min, un runner GitHub (hors de Vercel, de Railway et de Neon)
+# interroge la sonde « vivant » de chaque service exposé. Un service qui ne répond
+# pas 200 fait échouer le job, et GitHub prévient par e-mail les personnes qui
+# suivent le dépôt. Dépôt public : les minutes sont gratuites.
+#
+# JAMAIS `/health` sur un service qui a une base : `/health` fait un `select 1`,
+# et une sonde externe qui en fait un tous les quarts d'heure empêche Neon de
+# dormir (incident du 24/09/2026, packages/service-kit/README.md). On interroge
+# `/live`, qui ne touche pas la base, et `/api/live` pour la console. Le seul
+# `/health` de la liste est celui de `mcp`, qui n'a aucun accès à Postgres
+# (services/mcp/http.mjs) et n'expose pas `/live`.
+#
+# Ne sont pas sondés d'ici : `scheduler` et `notifier`, sans domaine public — le
+# canari du scheduler et la carte « Santé de la chaîne de mesure » les couvrent.
+# `tests/unit/sonde-externe.test.ts` garde ces règles.
+name: Sonde externe
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: sonde-externe
+  cancel-in-progress: false
+
+jobs:
+  vivant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Chaque service répond-il ?
+        shell: bash
+        run: |
+          set -u
+          cibles=(
+            "console      https://mip-rum-console.vercel.app/api/live"
+            "collector    https://collector-production-d769.up.railway.app/live"
+            "api          https://api-production-2bbd.up.railway.app/live"
+            "console-api  https://console-api-production-ee1a.up.railway.app/live"
+            "mcp          https://mcp-production-201c.up.railway.app/health"
+          )
+          echec=0
+          for ligne in "${cibles[@]}"; do
+            read -r nom url <<<"$ligne"
+            # Trois essais espacés : un redémarrage de Railway (quelques secondes)
+            # n'est pas une panne.
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+              --retry 2 --retry-delay 20 --retry-all-errors "$url" || true)
+            if [ "$code" = "200" ]; then
+              echo "✓ $nom ($code)"
+            else
+              echo "::error title=Sonde externe::$nom ne répond pas 200 ($code) — $url"
+              echec=1
+            fi
+          done
+          exit "$echec"

@@ -289,7 +289,9 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
     }));
     const r = constatsVueEnsemble(entrees({ regresses: { ok: true, data: groupes } }), LIENS);
     expect(r.constats).toHaveLength(6);
-    expect(espaces(r.constats[0].titre)).toBe("Erreur réapparue : empreinte fp0 (1 occurrence sur la période)");
+    // Sans message ni type : jamais l'empreinte brute à l'écran (vague 2, audit A1 T5).
+    expect(espaces(r.constats[0].titre)).toBe("Erreur réapparue : erreur sans message (1 occurrence sur la période)");
+    expect(r.constats[0].titre).not.toContain("fp0");
     expect(r.constats[0].href).toBe("/errors?panel=error%3Afp0");
     expect(r.constats[5]).toMatchObject({ titre: "et 2\u00a0autres groupes d'erreurs régressés", href: "/errors?statut=regressed" });
   });

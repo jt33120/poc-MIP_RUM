@@ -264,7 +264,8 @@ describe("cadences et fonctions SQL appelées", () => {
     expect(pool.requetes.some((q) => q.includes("purge_console_sessions()"))).toBe(true);
     // Après les deux étapes existantes : une purge de sessions qui casse n'emporte
     // ni la rétention des clients, ni le comptage de la veille.
-    expect(Object.keys(bilan.resultats)).toEqual(["purge_rum_tenants", "meter_tenant_usage", "purge_console_sessions"]);
+    // v101 : la rétention des détections, en dernier et dans une étape à elle.
+    expect(Object.keys(bilan.resultats)).toEqual(["purge_rum_tenants", "meter_tenant_usage", "purge_console_sessions", "purge_detections"]);
   });
 
   it("l'horaire rafraîchit les DEUX pré-agrégats, les deux détections et reprend les notes historiques", async () => {
@@ -280,6 +281,8 @@ describe("cadences et fonctions SQL appelées", () => {
       "check_new_errors",
       "check_ai_op_anomalies",
       "import_legacy_issue_notes",
+      // v101 : APRÈS les pré-agrégats, la plage habituelle et ses épisodes.
+      "detections_horaires",
     ]);
     expect(pool.requetes.some((q) => q.includes("refresh_metric_histogram(26)"))).toBe(true);
   });

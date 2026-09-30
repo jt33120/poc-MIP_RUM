@@ -4,7 +4,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { MatriceConcordance, compteCellule, type MatriceConcordanceProps } from "@/components/charts/MatriceConcordance";
-import { PALIERS_SEQUENTIELLE } from "@/lib/palette";
+import { PALIERS_SEQUENTIELLE_JETONS } from "@/lib/palette";
 
 const texte = (html: string) =>
   html
@@ -60,8 +60,8 @@ describe("MatriceConcordance", () => {
   });
 
   it("intensité séquentielle proportionnelle au compte ; aucune teinte de verdict hors cases nommées", () => {
-    expect(cellule(html, "ok", "good")).toContain(`background-color:${PALIERS_SEQUENTIELLE[4]}`);
-    expect(cellule(html, "ok", "poor")).toContain(`background-color:${PALIERS_SEQUENTIELLE[0]}`);
+    expect(cellule(html, "ok", "good")).toContain(`background-color:${PALIERS_SEQUENTIELLE_JETONS[4]}`);
+    expect(cellule(html, "ok", "poor")).toContain(`background-color:${PALIERS_SEQUENTIELLE_JETONS[0]}`);
     // Une case NON nommée ne porte ni ring ni texte de couleur de sens.
     expect(cellule(html, "ok", "good")).not.toMatch(/ring-bad|ring-warn|text-bad|text-warn/);
     expect(cellule(html, "incident", "poor")).not.toMatch(/ring-bad|ring-warn|text-bad|text-warn/);

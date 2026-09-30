@@ -12,7 +12,7 @@
 //     (un marqueur = un événement), jamais une « state timeline ».
 //   - Les 30 jours de la frise et des barres sont FIXES : la plage de l'écran ne
 //     s'y applique pas (une règle est évaluée sur SA fenêtre).
-import { libelleCourtMetrique, libelleSeverite } from "./alertes-metriques";
+import { estDureeDeMetrique, estPartDeMetrique, libelleCourtMetrique, libelleSeverite } from "./alertes-metriques";
 import { formater } from "./fmt-ids";
 import { metricLabel, type AlertDayRow, type AlertEventRow, type AlertFiringRow, type AlertRuleRow } from "./queries-v2";
 import type { PisteDeclenchements, Severite } from "../components/charts/FriseDeclenchements";
@@ -243,7 +243,9 @@ export function libelleDeRegle(r: Pick<AlertRuleRow, "metric" | "route">): strin
  * décimales.
  */
 export function seuilDeRegle(metric: string, seuil: number): string {
-  if (metric === "error_rate") return formater("pct", seuil);
+  // Vague 4 : les parts de sessions (clics rageurs…) s'écrivent en pour cent comme
+  // le taux d'erreur.
+  if (estPartDeMetrique(metric)) return formater("pct", seuil);
   if (metric === "CLS") return formater("cls", seuil);
   return Number.isFinite(seuil) ? seuil.toLocaleString("fr-FR", { maximumFractionDigits: 3 }) : "—";
 }
@@ -281,9 +283,11 @@ export function reglageDeRegle(
  */
 export function valeurDeMetrique(metric: string, v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
-  if (metric === "error_rate") return `${(v * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })}\u00a0%`;
+  if (estPartDeMetrique(metric)) return `${(v * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })}\u00a0%`;
   if (metric === "CLS") return formater("cls", v);
-  if (VITAUX.includes(metric)) return formater("ms", v);
+  // Vague 4 : phases réseau, tâches longues, ressources, API — des millisecondes.
+  if (VITAUX.includes(metric) || estDureeDeMetrique(metric)) return formater("ms", v);
+  if (metric === "DOWNLINK") return `${v.toLocaleString("fr-FR", { maximumFractionDigits: 2 })}\u00a0Mbit/s`;
   return v.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
 }
 

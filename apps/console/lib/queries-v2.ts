@@ -928,7 +928,10 @@ export async function correlationConcordance(f: FiltersLike, effectifMin = EFFEC
 export interface CorrJourRow {
   app_id: string;
   route: string;
-  /** Début du jour UTC (seau de 86 400 secondes aligné sur l'origine UTC). */
+  /**
+   * Minuit, heure de Paris, du jour (seau d'un jour aligné sur l'heure murale de
+   * Paris, `bucketExpr`) : 23 ou 25 h les jours de changement d'heure.
+   */
   jour: Date | string;
   /** Premier chargement moyen du robot ce jour-là ; `null` : aucun passage. */
   syn_latency_avg: number | null;

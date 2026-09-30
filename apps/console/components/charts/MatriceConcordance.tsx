@@ -15,7 +15,7 @@
 // n'entre pas dans la matrice (robot seul, réel seul, réel insuffisant, état robot
 // inconnu) est compté À CÔTÉ, jamais versé dans une case.
 import Link from "next/link";
-import { SEQUENTIELLE } from "@/lib/palette";
+import { sequentielleJeton } from "@/lib/palette";
 
 export interface MatriceConcordanceProps {
   /** États robot : ok, warn, incident. */
@@ -84,7 +84,7 @@ export function MatriceConcordance({ lignes, colonnes, cellules, nommees, horsMa
                 {colonnes.map((c) => {
                   const n = compteCellule(cellules, l.cle, c.cle);
                   const nom = nommee(l.cle, c.cle);
-                  const fond = n > 0 && max > 0 ? SEQUENTIELLE(n / max) : undefined;
+                  const fond = n > 0 && max > 0 ? sequentielleJeton(n / max) : undefined;
                   const titre = `${nombre(n)} ${unite} : robot « ${l.libelle} », réel « ${c.libelle} »${nom ? ` — ${nom.nom}` : ""}`;
                   const contenu = (
                     <>

@@ -38,6 +38,7 @@ import { UnsupportedFilterError } from "../query-compiler";
 import { paramReader } from "../query-contract";
 import { dimensionSchema } from "../query-schema";
 import { lireEtatDeVue } from "../view-state";
+import { sectionFenetresCollecte } from "./collecte";
 import { couvertureDesSources, section, type Chargeur } from "./commun";
 import { lirePanneauErreur } from "./panneau-erreur";
 
@@ -84,7 +85,7 @@ export const chargerErrors = (async (principal, sp) => {
 
   // Tuiles et hero (F18) : CHAQUE LECTURE EST INDÉPENDANTE (§ 3.8).
   const prev = vue.cmp === "prev";
-  const [totaux, totauxPrec, part, partPrec, nouveaux, nouveauxPrec, top, deploys, couvErreurs, couvPart] =
+  const [totaux, totauxPrec, part, partPrec, nouveaux, nouveauxPrec, top, deploys, couvErreurs, couvPart, fenetresCollecte] =
     await Promise.all([
       section(() => totauxErreurs(f)),
       prev ? section(() => totauxErreurs(f, true)) : Promise.resolve(null),
@@ -96,6 +97,8 @@ export const chargerErrors = (async (principal, sp) => {
       section(() => listDeploys(ecran.filters, 20)),
       prev ? couvertureDesSources(query, SOURCES_ERREURS) : Promise.resolve(null),
       prev ? couvertureDesSources(query, SOURCES_PART) : Promise.resolve(null),
+      // Les fenêtres hors collecte : hachures « non mesuré » du hero.
+      sectionFenetresCollecte(query),
     ]);
   const commun = {
     query,
@@ -116,6 +119,7 @@ export const chargerErrors = (async (principal, sp) => {
     deploys,
     couvErreurs,
     couvPart,
+    fenetresCollecte,
   };
 
   if (modeIssues) {

@@ -252,7 +252,7 @@ export const LIBELLE_ISSUE: Record<IssueConcordance, string> = {
  */
 export function regleConcordance(seuil = SEUIL_SUIT, joursMin = JOURS_MIN_CONCORDANCE, mesuresMin = MESURES_MIN_JOUR): string {
   return (
-    `Corrélation de rang de Spearman entre le premier chargement moyen du robot et le LCP p75 réel, jour par jour (UTC). ` +
+    `Corrélation de rang de Spearman entre le premier chargement moyen du robot et le LCP p75 réel, jour par jour (de minuit à minuit, heure de Paris). ` +
     `Un jour commun demande un passage du robot et au moins ${mesuresMin} mesures LCP réelles ; il en faut ${joursMin}. ` +
     `« Suit » quand la borne basse dépasse ${fmtRho(seuil)}, « ne suit pas » quand la borne haute est en dessous, sinon rien n'est établi. ` +
     `Le seuil de ${fmtRho(seuil)} est un choix de produit, pas une norme.`

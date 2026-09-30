@@ -49,7 +49,7 @@ import { classerParGravite, estFaible } from "@/lib/impact";
 import { type SectionLue } from "@/lib/lecture";
 import { chargerPages } from "@/lib/chargeurs/pages";
 import { chargerEcran } from "@/lib/ecran";
-import { categorie } from "@/lib/palette";
+import { AUTRES, categorie } from "@/lib/palette";
 import {
   classementParRoute,
   ecartAEnsemblePages,
@@ -74,6 +74,7 @@ import {
   type VuesParNavType,
 } from "@/lib/queries";
 import { VITALS_BREAKDOWN_DATASETS } from "@/lib/queries-breakdowns";
+import { fenetresLues } from "@/lib/series";
 import { ecartP75, type IntervalleP75 } from "@/lib/stats/incertitude";
 import { ecrirePanel, ecrireVue, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue, lireTri } from "@/lib/view-state";
 import { annotationsDeploiements, type AnnotationsDeploiements } from "@/lib/annotations";
@@ -151,6 +152,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
     ressources,
     blocages,
     pires,
+    fenetresCollecte,
     distributions,
     histos,
     choix,
@@ -254,6 +256,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
     zoomHref: gabaritZoom(hrefWithQuery("/pages", ecran.query, { period: null, from: "{from}", to: "{to}" }), sp),
     annotations: annotations.annotations,
     annotationsIndisponibles: annotations.indisponible ?? undefined,
+    fenetresCollecte: fenetresLues(fenetresCollecte),
     sessionHref: (id: string) => hrefWithQuery(`/sessions/${encodeURIComponent(id)}`, ecran.query),
   };
 
@@ -659,7 +662,7 @@ function FigureDistribution({
 const CLASSES_NAVIGATION = [
   { cle: "chargements", libelle: "Chargement", couleur: categorie(0) },
   { cle: "spa", libelle: "Changement de route SPA", couleur: categorie(1) },
-  { cle: "inconnu", libelle: "Type inconnu", couleur: categorie(4) },
+  { cle: "inconnu", libelle: "Type inconnu", couleur: AUTRES },
 ] as const;
 
 /** Nombre de routes montrées par « Vues par type de navigation » (§ 5.2.2). */

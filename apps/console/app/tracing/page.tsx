@@ -41,7 +41,7 @@ import { formater } from "@/lib/fmt-ids";
 import { chargerTracing } from "@/lib/chargeurs/tracing";
 import { chargerEcran } from "@/lib/ecran";
 import { bucketStarts, hrefWithQuery, paramReader, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
-import { grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
+import { fenetresLues, grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
 import { TRACES_PAR_APPEL, ancreAppel, lireAppel, type Appel } from "@/lib/tracing-ancres";
 import { APPELS_HERO, fragmentVers, libelleAppel, lignesHero, texteDecomposition, tracesParAppel } from "@/lib/tracing-hero";
 import { gabaritZoom, ligneIgnoree, lireComparaison } from "@/lib/view-state";
@@ -437,6 +437,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                   seauSecondes={query.range.bucketSeconds}
                   fuseau={FUSEAU_AFFICHAGE}
                   zoomHref={zoom}
+                  fenetresCollecte={fenetresLues(ecran.fenetresCollecte)}
                   ariaLabel={`Latence p75 des appels API par tranche de ${ecran.bucketLabel}, navigateur et serveur, ${plage}`}
                 />
               ) : (

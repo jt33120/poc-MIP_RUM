@@ -322,3 +322,76 @@ describe("B8 — dimensions de lecture de la session sous comparaison", () => {
     expect(sourcesSousFiltres(requete("period=7d&seg=v2:runtime:is_null"), SESSIONS_B8)).toEqual([SESSIONS_B8]);
   });
 });
+
+describe("règle 6 — collecte interrompue (registre `collecte_fenetre`)", () => {
+  // FIXTURES : en production, les fenêtres viennent de la base, jamais du code.
+  const sept = () => requete("period=7d");
+  const dansPrecedente = {
+    debut: new Date(NOW - 10 * JOUR).toISOString(),
+    fin: new Date(NOW - 9 * JOUR).toISOString(),
+    etat: "interrompue" as const,
+  };
+  const evaluerAvec = (query: ReturnType<typeof requete>, fenetres: Parameters<typeof evaluerCouverture>[0]["fenetres"]) =>
+    evaluerCouverture({ query, source: VUES, debut: new Date(NOW - 90 * JOUR), nowMs: NOW, retentionJours: 30, fenetres });
+
+  it("une interruption dans la période précédente invalide l'écart, datée en heure de Paris", () => {
+    const c = evaluerAvec(sept(), [dansPrecedente]);
+    expect(c.etat).toBe("partielle");
+    expect(c.raison).toMatch(/^collecte interrompue du \d{2}\/\d{2} à \d{2}:\d{2} au \d{2}\/\d{2} à \d{2}:\d{2}$/);
+    expect(deltasDeLaRangee("prev", [c])).toEqual({ deltas: false, note: `période précédente incomplète : ${c.raison}` });
+  });
+
+  it("une interruption dans la période courante l'invalide aussi, et le dit", () => {
+    const courante = { debut: new Date(NOW - 2 * JOUR).toISOString(), fin: null, etat: "interrompue" as const };
+    const c = evaluerAvec(sept(), [courante]);
+    expect(c.etat).toBe("partielle");
+    expect(c.raison).toMatch(/^collecte interrompue depuis le .+, pendant la période affichée$/);
+  });
+
+  it("une fenêtre dégradée, ou hors des deux périodes, laisse la couverture complète", () => {
+    expect(evaluerAvec(sept(), [{ ...dansPrecedente, etat: "degradee" }]).etat).toBe("complete");
+    const avant = {
+      debut: new Date(NOW - 20 * JOUR).toISOString(),
+      fin: new Date(NOW - 19 * JOUR).toISOString(),
+      etat: "interrompue" as const,
+    };
+    expect(evaluerAvec(sept(), [avant]).etat).toBe("complete");
+    expect(evaluerAvec(sept(), []).etat).toBe("complete");
+  });
+
+  it("les règles 1 à 3 gardent la priorité (leur raison est plus précise)", () => {
+    const c = evaluerCouverture({
+      query: sept(),
+      source: VUES,
+      debut: new Date(NOW - 8 * JOUR),
+      nowMs: NOW,
+      retentionJours: 30,
+      fenetres: [dansPrecedente],
+    });
+    expect(c.raison).toContain("depuis le");
+    expect(c.raison).not.toContain("collecte interrompue");
+  });
+
+  it("l'emporte sur « début de collecte non lu » : une panne connue vaut mieux qu'un inconnu", () => {
+    const c = evaluerCouverture({ query: sept(), source: VUES, debut: "echec", nowMs: NOW, retentionJours: 30, fenetres: [dansPrecedente] });
+    expect(c.etat).toBe("partielle");
+  });
+
+  it("couverturePrecedente : un registre absent (42P01) ne met rien en échec", async () => {
+    const { lireFenetresCollecte, viderCacheFenetresCollecte } = await import("../../apps/console/lib/queries-collecte");
+    viderCacheFenetresCollecte();
+    lecture.mockImplementationOnce(async () => {
+      throw Object.assign(new Error('relation "collecte_fenetre" does not exist'), { code: "42P01" });
+    });
+    expect(await lireFenetresCollecte({ from: "2026-09-01T00:00:00Z", to: "2026-09-08T00:00:00Z" }, ["a"])).toEqual([]);
+  });
+
+  it("… mais une autre erreur de lecture remonte (une panne se dit)", async () => {
+    const { lireFenetresCollecte, viderCacheFenetresCollecte } = await import("../../apps/console/lib/queries-collecte");
+    viderCacheFenetresCollecte();
+    lecture.mockImplementationOnce(async () => {
+      throw Object.assign(new Error("connexion refusée"), { code: "57P01" });
+    });
+    await expect(lireFenetresCollecte({ from: "2026-09-01T00:00:00Z", to: "2026-09-08T00:00:00Z" }, ["a"])).rejects.toThrow();
+  });
+});

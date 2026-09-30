@@ -18,8 +18,10 @@
 | Cadence | Quand (UTC) | Étapes | Bail |
 |---|---|---|---|
 | `tick` | :00, :05, :10… — ou :00, :15, :30, :45 avec `SCHEDULER_TICK_MIN=15` (+ un passage au démarrage) | `check_alerts`, `route_error_issue_notifications`, `check_slo_burn`, uptime, `dispatch_alerts`, `reconcile_deliveries` — avec `SCHEDULER_DELIVERY=off` : `check_alerts`, `check_slo_burn`, uptime seulement | 600 s |
-| `horaire` | HH:05 | `refresh_rum_rollups(26)`, `refresh_metric_histogram(26)`, `check_new_errors`, `check_ai_op_anomalies`, notes historiques | 900 s |
-| `quotidien` | 03:17 | `purge_rum_tenants(30)`, `meter_tenant_usage` | 3 600 s |
+| `horaire` | HH:05 | `refresh_rum_rollups(26)`, `refresh_metric_histogram(26)`, `check_new_errors`, `check_ai_op_anomalies`, notes historiques, `detections_horaires` (v101 : `refresh_vital_horaire(3)` puis plage habituelle et épisodes) | 900 s |
+| `quotidien` | 03:17 | `purge_rum_tenants(30)`, `meter_tenant_usage`, `purge_console_sessions`, `purge_detections(8)` (v101) | 3 600 s |
+
+**Les détections horaires (v101).** `detections_horaires` recalcule les p75 des trois dernières heures fermées dans `vital_horaire` (SQL, upsert idempotent, délai de 60 s), puis, en JS sur ces agrégats (`packages/backend/jobs/detections.mjs`), compare chacune des quatre dernières heures fermées à sa **plage habituelle** (médiane et écart absolu médian du même créneau des semaines passées, repli quotidien puis 48 h ; A2 § 7.1) et ouvre ou ferme les épisodes dans `signal_detecte`. Aucun réveil de la base en plus : l'étape est greffée sur le passage horaire. Une app sans ingestion depuis plus de 15 min est **suspendue** pour le passage (aucun constat ouvert, fermé ni mis à jour) : une panne de collecte ne doit pas passer pour une amélioration. Sur une base sans v101, l'étape rend « migration-v101 non appliquée » au lieu d'échouer.
 
 **La livraison part au notifier (P5).** Webhooks et e-mails sont l'affaire du service [`notifier`](../notifier/README.md), toutes les 15 s par défaut, seul détenteur des secrets sortants — pas encore créé sur Railway : en production, le tick livre. Tant que `SCHEDULER_DELIVERY` vaut `on`, le tick livre aussi, comme avant ; `off` le réduit à **décider** — les livraisons restent `queued` pour le notifier. Le scheduler n'a pas de clé Resend : une livraison e-mail qu'il prend est soldée `skipped`, d'où `off` posé au plus tard quand le notifier démarre.
 

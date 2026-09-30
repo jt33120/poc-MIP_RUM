@@ -40,7 +40,8 @@ describe("RankBar", () => {
   it("couleur par défaut : la série principale de lib/palette.ts ; valeur null : aucune barre", () => {
     const html = renderToStaticMarkup(<RankBar data={LIGNES} />);
     const couleur = SERIE.principale.toLowerCase();
-    expect(html.toLowerCase().match(new RegExp(`background-color:${couleur}`, "g"))).toHaveLength(1);
+    // Un jeton `rgb(var(--c-serie))` : compté comme texte, ses parenthèses ne sont pas une regex.
+    expect(html.toLowerCase().split(`background-color:${couleur}`).length - 1).toBe(1);
   });
 
   // Recette du 26/09/2026 : « Direct ou référen… » à 390 px.

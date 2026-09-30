@@ -107,6 +107,22 @@
   --c-seq-2: 129 140 248;
   --c-seq-3: 99 102 241;
   --c-seq-4: 67 56 202;
+  /* Série principale (le « réel ») : l'orange de marque #f89101 ne tient que 2,32:1
+     sur le blanc des cartes, sous les 3:1 d'un élément graphique (WCAG 1.4.11) ;
+     #d97b00 (accent-deep) tient 3,10:1. SERIE.principale de lib/palette.ts. */
+  --c-serie: 217 123 0;
+  /* Écart défavorable à l'attendu, détecté par calcul (spec A2 § 3.5) — pas un
+     verdict de seuil : toujours doublé d'un losange et d'un texte. */
+  --c-signal: 157 23 77;
+  --c-signal-favorable: 14 116 144;
+  /* Divergente (écart à l'attendu, A2 § 3.8) : −3 mieux … 0 neutre … +3 pire. */
+  --c-div-m3: 14 116 144;
+  --c-div-m2: 6 182 212;
+  --c-div-m1: 165 243 252;
+  --c-div-0: 241 245 249;
+  --c-div-p1: 251 207 232;
+  --c-div-p2: 236 72 153;
+  --c-div-p3: 157 23 77;
   color-scheme: light;
 }
 
@@ -135,6 +151,16 @@
   --c-seq-2: 79 70 229;
   --c-seq-3: 129 140 248;
   --c-seq-4: 199 210 254;
+  --c-serie: 248 145 1; /* l'orange de marque tient 7,72:1 sur la nuit */
+  --c-signal: 249 168 212;
+  --c-signal-favorable: 103 232 249;
+  --c-div-m3: 103 232 249;
+  --c-div-m2: 8 145 178;
+  --c-div-m1: 22 78 99;
+  --c-div-0: 30 41 59;
+  --c-div-p1: 131 24 67;
+  --c-div-p2: 219 39 119;
+  --c-div-p3: 249 168 212;
   color-scheme: dark;
 }
 

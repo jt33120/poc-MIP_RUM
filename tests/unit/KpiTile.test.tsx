@@ -355,3 +355,35 @@ describe("KpiTile — valeur approchée", () => {
     expect(/data-testid="kpi-valeur"[^>]*>([^<]*)</.exec(html)?.[1]).toBe("—");
   });
 });
+
+// Spec A2 § 4 et audit A1 (« À garder ») : les MÊMES refus dans une tuile compacte —
+// une ligne visible, le reste dans l'infobulle et pour les lecteurs d'écran.
+describe("KpiTile — tuile compacte (rangée KPI de la vue d'ensemble)", () => {
+  const INDISPONIBLE = { indisponible: "5 mesures, 13 requises" } as const;
+  const faible = (): string =>
+    rendu({ compact: true, valeur: 1500, intervalle: INDISPONIBLE, couverture: { n: 5, unite: "mesures" } });
+
+  it("un vital sur 5 mesures : une ligne visible, la raison, sans la répéter", () => {
+    const html = faible();
+    const [visible, masque] = html.split('<div class="sr-only">');
+    // En TEXTE affiché (hors attributs `aria-label` et `title`), une seule fois.
+    expect(visible.match(/>[^<]*verdict non établi[^<]*</g)).toHaveLength(1);
+    // Les lignes de détail restent dans le document, repères de test compris.
+    expect(masque).toContain('data-testid="kpi-intervalle"');
+    expect(masque).toContain('data-testid="kpi-verdict"');
+    // Échantillon faible : dit au pied, une fois.
+    expect(html).toContain("5 mesures · échantillon faible");
+  });
+
+  it("l'infobulle de la tuile porte le détail (intervalle, effectif)", () => {
+    const titre = /title="([^"]*)"/.exec(faible())?.[1] ?? "";
+    expect(titre).toContain("intervalle non calculable");
+    expect(titre).toContain("5 mesures");
+  });
+
+  it("le verdict établi est doublé d'une forme (disque, triangle, carré)", () => {
+    const html = rendu({ compact: true, valeur: 2000, intervalle: { bas: 1900, haut: 2200, niveau: 0.95, methode: "quantile_normal" } });
+    expect(html).toMatch(/data-testid="kpi-verdict"[^>]*>Bon</);
+    expect(html).toMatch(/before:content-\[(&#x27;|')●(&#x27;|')\]/);
+  });
+});

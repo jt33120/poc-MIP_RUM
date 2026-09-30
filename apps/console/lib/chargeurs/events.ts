@@ -15,6 +15,7 @@ import {
   parseEventQuery,
   type EventAttributeSource,
 } from "../queries-events";
+import { sectionFenetresCollecte } from "./collecte";
 import { section, type Chargeur, type ParametresEcran } from "./commun";
 
 /** La requête propre du Journal ; `null` : un filtre illisible (nom trop long, facette incomplète). */
@@ -48,9 +49,11 @@ export const chargerEvents = (async (principal, sp) => {
   const demande = demandeDuJournal(sp);
   if (!demande) return { etat: "filtre_invalide", ...contexte } as const;
   const { query, page, cursor, cle } = demande;
-  const [resultat, deploys] = await Promise.all([
+  const [resultat, deploys, fenetresCollecte] = await Promise.all([
     section(() => exploreEvents(ecran.deviceFilters, query, page, cursor, { valeursDe: cle })),
     section(() => listDeploys(ecran.filters, 20)),
+    // Les fenêtres hors collecte : hachures « non mesuré » du volume des événements.
+    sectionFenetresCollecte(ecran.query),
   ]);
-  return { etat: "ok", ...contexte, resultat, deploys } as const;
+  return { etat: "ok", ...contexte, resultat, deploys, fenetresCollecte } as const;
 }) satisfies Chargeur<unknown>;
