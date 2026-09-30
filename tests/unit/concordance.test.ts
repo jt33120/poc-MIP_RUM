@@ -22,7 +22,7 @@ import {
   spearman,
   texteConcordanceCourt,
   type JourCommun,
-} from "../../apps/console/lib/stats/concordance";
+} from "../../packages/stats/src/concordance";
 
 /** ρ par la formule des différences de rangs — valable SANS ex-aequo. */
 function rhoParDifferences(x: readonly number[], y: readonly number[]): number {

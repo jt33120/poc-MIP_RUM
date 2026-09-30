@@ -55,24 +55,17 @@ import { type VitalAgg, type VitalSeriesPoint } from "@/lib/queries";
 import { VITALS_BREAKDOWN_DATASETS, type VitalsBreakdownRow } from "@/lib/queries-breakdowns";
 import { GRID_DAYS } from "@/lib/queries-grid";
 import { type ComparaisonVersions } from "@/lib/queries-deploys";
-import { ecartP75 } from "@/lib/stats/incertitude";
+import { ecartP75 } from "@mip/stats/incertitude";
 import { deltasDeLaRangee, type CouverturePrecedente } from "@/lib/comparaison";
 import { RAISON_AUCUNE_VUE, ratioPour100, serieRatioPour100, sparklineDeCompte } from "@/lib/perf-domain";
 import { choisirReleases, vuesProduit, type Entree } from "@/lib/presets";
 import { annotationsDeploiements } from "@/lib/annotations";
 // P*.7 — datation d'une rupture : fenêtre fixe de 14 jours, à part de la plage de l'écran.
-import { fusionnerAnnotations } from "@/lib/annotations";
+import { annotationRupture, fusionnerAnnotations } from "@/lib/annotations";
 import { bornesJourLocal } from "@/lib/fuseau-local";
 import { instantDe, jourDans } from "@/lib/series";
-import { tendance } from "@/lib/forecast";
-import {
-  REGLE_RUPTURE,
-  annotationRupture,
-  daterRupture,
-  deploiementCoincident,
-  phraseRupture,
-  phraseSansRupture,
-} from "@/lib/stats/rupture";
+import { analyserSerieQuotidienne } from "@mip/stats/serie-quotidienne";
+import { REGLE_RUPTURE, phraseRupture, phraseSansRupture } from "@mip/stats/rupture";
 import { explorerHref } from "@/lib/explorer-page-params";
 import { accord } from "@/lib/format";
 import { ecrirePanel, gabaritZoom, lireComparaison, lireEtatDeVue, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
@@ -506,23 +499,15 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // donc sur la fenêtre fixe de 14 jours complets (fuseau de l'app), et la phrase du
   // hero écrit cette fenêtre pour qu'on ne la lise pas comme la plage choisie.
   const jourDeploy = (ts: Date | string) => jourDans(instantDe(ts), fuseau);
-  const datationP7 = daterRupture(
-    (lcpQuotidienP7.ok ? lcpQuotidienP7.data : []).map((r) => ({ jour: r.jour, valeur: r.p75, effectif: r.n })),
-  );
-  const ruptureDeploiementP7 =
-    datationP7.ok && datationP7.rupture
-      ? deploiementCoincident(
-          datationP7.rupture.jour,
-          deploys.ok ? deploys.data.map((d) => ({ jour: jourDeploy(d.ts), version: d.version })) : [],
-        )
-      : null;
-  // La tendance de la même fenêtre (F65) : sans rupture, elle distingue « ça dérive »
+  // Le calcul de `GET /api/v1/trends` et de l'écran « Tendances » (`@mip/stats`). La
+  // tendance de la même fenêtre (F65) : sans rupture, elle distingue « ça dérive »
   // de « il ne se passe rien » ; avec une rupture, elle rappelle qu'une dérive
   // régulière sépare la série aussi nettement qu'une marche.
-  const tendanceP7 = tendance(
-    (lcpQuotidienP7.ok ? lcpQuotidienP7.data : []).map((r) => r.p75),
-    (lcpQuotidienP7.ok ? lcpQuotidienP7.data : []).map((r) => r.n),
+  const analyseP7 = analyserSerieQuotidienne(
+    (lcpQuotidienP7.ok ? lcpQuotidienP7.data : []).map((r) => ({ jour: r.jour, valeur: r.p75, effectif: r.n })),
+    { deploiements: deploys.ok ? deploys.data.map((d) => ({ jour: jourDeploy(d.ts), version: d.version })) : [] },
   );
+  const { datation: datationP7, deploiement: ruptureDeploiementP7, tendance: tendanceP7 } = analyseP7;
   // Refus : une phrase utile d'abord (recette du 26/09/2026 : six lignes de méthode
   // avant l'information) ; le détail du test est dans le repli « Méthode ».
   const phraseDatationP7 = !lcpQuotidienP7.ok

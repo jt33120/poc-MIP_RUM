@@ -55,6 +55,9 @@ export default defineConfig({
       // build (le service les compile dans son bundle). Même règle : leur SOURCE.
       { find: /^@mip\/console-contract$/, replacement: `${process.cwd()}/packages/console-contract/src/index.ts` },
       { find: /^@mip\/console-api$/, replacement: `${process.cwd()}/packages/console-api/src/index.ts` },
+      // La statistique partagée (console, service api, console-api) : un module par
+      // sous-chemin (`@mip/stats/rupture`), comme son `exports`.
+      { find: /^@mip\/stats\/([a-z-]+)$/, replacement: `${process.cwd()}/packages/stats/src/$1.ts` },
       ...REACT.map((specifier) => ({
         find: new RegExp(`^${specifier.replace("/", "\\/")}$`),
         replacement: depuisConsole.resolve(specifier),

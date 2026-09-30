@@ -57,7 +57,7 @@ import {
 import { hrefWithQuery, paramReader, previousRange, rangeLabel, type AnalyticsQuery } from "@/lib/query-contract";
 import { THRESHOLDS } from "@/lib/rating";
 import { fenetresLues, libelleSeauComplet, type FenetreCollecte } from "@/lib/series";
-import { ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
+import { ecartProportions, intervalleWilson } from "@mip/stats/incertitude";
 import { ecrirePanel, gabaritZoom, lireComparaison, lireTri } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { fmtDate, pluriel } from "@/lib/format";

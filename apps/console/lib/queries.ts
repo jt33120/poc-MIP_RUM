@@ -19,7 +19,7 @@ import {
   intervalleP75Lu,
   rangsQuantileNormalSql,
   type IntervalleP75,
-} from "./stats/incertitude";
+} from "@mip/stats/incertitude";
 
 export interface AppItem {
   app_id: string;

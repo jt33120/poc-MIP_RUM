@@ -12,7 +12,7 @@ import type { AlertFiringRow } from "./queries-v2";
 import { verdictDeploiement, type DeployImpact } from "./deploys-verdict";
 import { RAISON_MOINS_DE_DEUX_RELEASES, type ChoixReleases } from "./presets";
 import type { AnalyticsQuery, ResolvedRange } from "./query-contract";
-import type { IntervalleP75 } from "./stats/incertitude";
+import type { IntervalleP75 } from "@mip/stats/incertitude";
 
 // ─────────────────────────────── Références (§ 3.12) ───────────────────────────────
 

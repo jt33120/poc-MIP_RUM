@@ -5,7 +5,7 @@
 // tous de `lireVital`.
 import { describe, expect, it } from "vitest";
 import { THRESHOLDS } from "../../apps/console/lib/rating";
-import { intervalleP75Lu } from "../../apps/console/lib/stats/incertitude";
+import { intervalleP75Lu } from "../../packages/stats/src/incertitude";
 import { echelleJauge, lireVital } from "../../apps/console/lib/vital-lecture";
 
 const [BON, MAUVAIS] = THRESHOLDS.LCP;

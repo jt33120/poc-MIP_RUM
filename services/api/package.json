@@ -18,6 +18,7 @@
     "@mip/backend": "workspace:*",
     "@mip/mcp-tools": "workspace:*",
     "@mip/service-kit": "workspace:*",
+    "@mip/stats": "workspace:*",
     "esbuild": "0.28.0"
   }
 }

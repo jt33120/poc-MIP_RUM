@@ -31,10 +31,13 @@
 // cité comme une COÏNCIDENCE DE DATE ; la réserve d'interprétation (« pas une cause
 // établie ») est écrite par l'écran qui affiche, pas ici. Un test de gabarit
 // interdit le mot dans tout ce que ce module produit.
+//
+// L'annotation verticale du graphe (`annotationRupture`) est restée dans la
+// console (`apps/console/lib/annotations.ts`) : c'est un objet de dessin, pas un
+// calcul, et l'API n'en a pas l'usage.
 import { mesuresMinimales } from "./incertitude";
 import { formaterP } from "./surrepresentation";
 import { refus, type Resultat } from "./types";
-import type { Annotation } from "../series";
 
 /** Jours valides sous lesquels aucune datation n'est tentée (P*.7). */
 export const JOURS_VALIDES_REQUIS_RUPTURE = 10;
@@ -272,18 +275,4 @@ export function phraseSansRupture(d: Datation, tendanceEtablie = false): string 
   return tendanceEtablie
     ? `Évolution progressive, pas de rupture datée (${chiffres}).`
     : `Aucune rupture datée (${chiffres}).`;
-}
-
-/**
- * L'annotation verticale de la rupture (§ 3.7). `instant` est le premier instant du
- * jour local, calculé par l'écran (`bornesJourLocal`) : ce module ne connaît pas les
- * fuseaux. `href` ouvre la plage de ce jour.
- */
-export function annotationRupture(r: Rupture, instant: string, href?: string): Annotation {
-  return {
-    t: instant,
-    libelle: `Rupture à la ${r.sens}`,
-    type: "rupture",
-    ...(href ? { href } : {}),
-  };
 }

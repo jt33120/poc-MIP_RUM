@@ -20,10 +20,15 @@
 // prédiction) remplacera `tendance()` sans toucher à la mise en page.
 //
 // P*.7 — « DEPUIS QUAND ? ». La tendance dit si la série DÉRIVE ; elle ne dit pas
-// si elle a changé de NIVEAU à une date. Le test de Pettitt (`lib/stats/rupture.ts`)
+// si elle a changé de NIVEAU à une date. Le test de Pettitt (`@mip/stats/rupture`)
 // le date sur les mêmes jours valides, pose son annotation de type « rupture » sur
 // le hero et écrit sa phrase sous la figure — ou refuse en chiffres. Un déploiement
 // à ± 1 jour est cité comme une coïncidence de date ; la réserve est écrite ici.
+//
+// UN SEUL CALCUL. Tendance, échéance, datation et déploiement coïncident viennent
+// d'`analyserSerieQuotidienne` (`@mip/stats`), la fonction que `GET /api/v1/trends`
+// applique aux cinq vitals : l'écran et l'API ne peuvent pas dire deux choses de
+// la même série.
 //
 // Chaque section lit par `lire()` : une lecture en échec ne fait tomber qu'elle.
 import Link from "next/link";
@@ -44,14 +49,15 @@ import {
   K_BRUIT,
   MESURES_MIN_JOUR,
   buildForecastNarrative,
-  cleJour,
-  echeanceLcp,
   pointsTendance,
   premiereTendancePossible,
   projectAt,
   tendance,
   type Tendance,
-} from "@/lib/forecast";
+} from "@mip/stats/tendance";
+import { analyserSerieQuotidienne } from "@mip/stats/serie-quotidienne";
+import { annotationRupture } from "@/lib/annotations";
+import { cleJour } from "@/lib/forecast";
 import { liensDesJours } from "@/lib/forecast-liens";
 import { bornesJourLocal, nomFuseau } from "@/lib/fuseau-local";
 import { fenetresLues, instantDe, jourDans } from "@/lib/series";
@@ -60,15 +66,12 @@ import {
   MESURES_MIN_JOUR_RUPTURE,
   SEUIL_P_RUPTURE,
   REGLE_RUPTURE,
-  annotationRupture,
-  daterRupture,
-  deploiementCoincident,
   phraseRupture,
   phraseSansRupture,
-} from "@/lib/stats/rupture";
+} from "@mip/stats/rupture";
 // Le seuil publié dans « Méthode » est FORMATÉ par la même fonction que les p des
 // phrases : deux écritures du même nombre finiraient par diverger.
-import { formaterP } from "@/lib/stats/surrepresentation";
+import { formaterP } from "@mip/stats/surrepresentation";
 import { chargerForecast } from "@/lib/chargeurs/forecast";
 import { chargerEcran } from "@/lib/ecran";
 import { ratioPour100 } from "@/lib/perf-domain";
@@ -154,16 +157,28 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
   const ratios = jours.map((_j, i) => ratioPour100(occurrences[i], vues[i]));
 
   // ─────────────── Tendances ───────────────
-  const tLcp = tendance(lcp, mesures);
-  const tRatio = tendance(ratios, vues);
-  const hero = pointsTendance(jours, lcp, mesures, tLcp);
-
+  // `deploy_marker` est horodaté en instant ; la rupture est un JOUR de l'app :
+  // on ramène chaque marqueur au jour du fuseau de l'app avant de comparer.
+  const joursDeploys = deploysLu.ok
+    ? deploysLu.data.map((d) => ({ jour: jourDans(instantDe(d.ts), fuseau), version: d.version }))
+    : [];
   // Échéance (TE1) : contre la dernière valeur RETENUE (≥ 30 mesures) ; un seuil
   // déjà dépassé se dit même sans pente — c'est une mesure, pas une projection.
-  // « Dépassé » au sens de lib/rating.ts : 2 500 ms est encore « Bon » (`echeanceLcp`).
-  const courant = [...tLcp.retenues].reverse().find((v) => v !== null) ?? null;
-  const eta = echeanceLcp(tLcp.fit, courant);
-  const synthese = buildForecastNarrative([{ label: "LCP p75", thresholdLabel: LCP_BON_TEXTE, eta, tendance: tLcp }]);
+  // « Dépassé » au sens de lib/rating.ts : 2 500 ms est encore « Bon ».
+  // P*.7 : même série, mêmes jours, mais une autre question — la tendance dit si le
+  // LCP DÉRIVE, Pettitt dit s'il a changé de NIVEAU à une date. Un jour n'entre dans
+  // le test qu'au-dessus de MESURES_MIN_JOUR_RUPTURE (13, minimum d'une p75, P*.1) :
+  // c'est un seuil PLUS BAS que celui de la droite (30), et les deux sont écrits.
+  const analyseLcp = analyserSerieQuotidienne(
+    jours.map((jour, i) => ({ jour, valeur: lcp[i], effectif: mesures[i] })),
+    { borne: LCP_BON, deploiements: joursDeploys },
+  );
+  const tLcp = analyseLcp.tendance;
+  const tRatio = tendance(ratios, vues);
+  const hero = pointsTendance(jours, lcp, mesures, tLcp);
+  const synthese = buildForecastNarrative([
+    { label: "LCP p75", thresholdLabel: LCP_BON_TEXTE, eta: analyseLcp.eta, tendance: tLcp },
+  ]);
 
   // ─────────────── Liens (bornes UTC du jour local, § 3.3) ───────────────
   const gabarit = (chemin: string) => hrefWithQuery(chemin, query, { period: null, from: "{from}", to: "{to}" });
@@ -171,18 +186,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
   const liensErreurs = liensDesJours(gabarit("/errors"), jours, fuseau);
 
   // ─────────────── Datation d'une rupture (P*.7) ───────────────
-  // Même série, mêmes jours, mais une autre question : la tendance dit si le LCP
-  // DÉRIVE, Pettitt dit s'il a changé de NIVEAU à une date. Un jour n'entre dans le
-  // test qu'au-dessus de MESURES_MIN_JOUR_RUPTURE (13, minimum d'une p75, P*.1) :
-  // c'est un seuil PLUS BAS que celui de la droite (30), et les deux sont écrits.
-  const datation = daterRupture(jours.map((jour, i) => ({ jour, valeur: lcp[i], effectif: mesures[i] })));
-  // `deploy_marker` est horodaté en instant ; la rupture est un JOUR de l'app :
-  // on ramène chaque marqueur au jour du fuseau de l'app avant de comparer.
-  const joursDeploys = deploysLu.ok
-    ? deploysLu.data.map((d) => ({ jour: jourDans(instantDe(d.ts), fuseau), version: d.version }))
-    : [];
-  const ruptureDeploiement =
-    datation.ok && datation.rupture ? deploiementCoincident(datation.rupture.jour, joursDeploys) : null;
+  const { datation, deploiement: ruptureDeploiement } = analyseLcp;
   const phraseDatation = !datation.ok
     ? datation.raison
     : datation.rupture

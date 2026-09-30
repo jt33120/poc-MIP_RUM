@@ -67,7 +67,7 @@ import { categorie } from "@/lib/palette";
 import { hrefWithQuery, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
 import { fenetresLues, libelleSeauComplet, type FenetreCollecte } from "@/lib/series";
 import { referencePrecedente } from "@/lib/sessions-kpi";
-import { ecartProportions } from "@/lib/stats/incertitude";
+import { ecartProportions } from "@mip/stats/incertitude";
 import { gabaritZoom } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 

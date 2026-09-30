@@ -13,6 +13,7 @@
     "@mip/backend": "workspace:*",
     "@mip/console-contract": "workspace:*",
     "@mip/mcp-tools": "workspace:*",
+    "@mip/stats": "workspace:*",
     "@rrweb/replay": "2.0.1",
     "bcryptjs": "3.0.3",
     "jose": "6.2.3",

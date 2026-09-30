@@ -3,7 +3,7 @@
 // Ce que ce fichier prouve ne se lit pas dans la migration :
 //
 //   · que `refresh_vital_horaire` rend les p75 de `percentile_cont`, l'intervalle
-//     par statistiques d'ordre aux rangs de `lib/stats/incertitude.ts` (exacts
+//     par statistiques d'ordre aux rangs de `packages/stats/src/incertitude.ts` (exacts
 //     sous 30 mesures, normaux au-delà), une ligne par route seulement à 13
 //     mesures, et le même résultat quand on le rejoue ;
 //   · que la purge efface au-delà de 8 semaines et rien d'autre ;

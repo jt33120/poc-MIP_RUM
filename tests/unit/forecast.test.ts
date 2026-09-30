@@ -1,22 +1,22 @@
-// AIOps — prévision (régression linéaire). Logique pure.
+// Tendance d'une série quotidienne (régression linéaire) : `@mip/stats/tendance`,
+// logique pure ; l'axe des jours de la console (`lib/forecast.ts`).
 import { describe, expect, it } from "vitest";
 import {
   HORIZON_JOURS,
   buildForecastNarrative,
-  cleJour,
+  dispersionResidus,
+  echeanceSeuil,
   etaToThreshold,
   forecastNext,
   linfit,
-  trendDir,
-} from "../../apps/console/lib/forecast";
-import {
-  dispersionResidus,
-  echeanceLcp,
-  joursComplets,
   penteSignificative,
   pointsTendance,
+  premiereTendancePossible,
   tendance,
-} from "../../apps/console/lib/forecast";
+  trendDir,
+} from "../../packages/stats/src/tendance";
+import { cleJour, joursComplets } from "../../apps/console/lib/forecast";
+import { THRESHOLDS, rating2026 } from "../../apps/console/lib/rating";
 
 describe("linfit", () => {
   it("ajuste une droite parfaite y = 2x + 1", () => {
@@ -244,7 +244,18 @@ describe("pointsTendance — droite sur les 14 jours, projection seulement si é
 //
 // `rating2026` classe « Bon » jusqu'à la borne INCLUSE : un LCP p75 de 2 500 ms est
 // Bon. L'écran disait « dépasse déjà son seuil » à 2 500 ms (`>=`).
-describe("echeanceLcp — la borne « Bon » est incluse", () => {
+// La borne vient de lib/rating.ts : le paquet reçoit un nombre, la console le lit.
+const LCP_BON = THRESHOLDS.LCP[0];
+const echeanceLcp = (fit: Parameters<typeof echeanceSeuil>[0], courant: number | null) => echeanceSeuil(fit, courant, LCP_BON);
+
+describe("echeanceSeuil — la borne « Bon » est incluse", () => {
+  it("« franchie » veut dire ce que dit rating2026 : au-delà de la borne, pas à la borne", () => {
+    expect(rating2026("LCP", LCP_BON)).toBe("good");
+    expect(rating2026("LCP", LCP_BON + 1)).not.toBe("good");
+    expect(echeanceLcp(null, LCP_BON)).toBeNull();
+    expect(echeanceLcp(null, LCP_BON + 1)).toBe(0);
+  });
+
   const plat = linfit([2500, 2500, 2500, 2500, 2500, 2500, 2500])!;
 
   it("2 500 ms, tendance plate : pas franchi, aucune échéance", () => {
@@ -280,8 +291,7 @@ describe("echeanceLcp — la borne « Bon » est incluse", () => {
 // Recette du 26/09/2026 : l'état vide disait « 0 sur 14, 7 requis » sans dire QUAND
 // l'écran servirait.
 describe("premiereTendancePossible", () => {
-  it("collecte commencée aujourd'hui (26/09, dernier jour complet 25/09) : au plus tôt le 03/10", async () => {
-    const { premiereTendancePossible } = await import("../../apps/console/lib/forecast");
+  it("collecte commencée aujourd'hui (26/09, dernier jour complet 25/09) : au plus tôt le 03/10", () => {
     expect(premiereTendancePossible("2026-09-25", 0)).toBe("2026-10-03");
     expect(premiereTendancePossible("2026-09-25", 5)).toBe("2026-09-28");
     expect(premiereTendancePossible("2026-09-25", 7)).toBeNull();

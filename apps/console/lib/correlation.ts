@@ -11,8 +11,8 @@ import { grilleIso } from "./series";
 // P*.8 — concordance robot ↔ réel (ρ de Spearman sur les jours communs).
 import { ecrireSerie } from "./correlation-serie";
 import type { CorrJourRow } from "./queries-v2";
-import { concordance, joursCommuns, type Concordance as ConcordanceRang, type JourLu } from "./stats/concordance";
-import type { Resultat } from "./stats/types";
+import { concordance, joursCommuns, type Concordance as ConcordanceRang, type JourLu } from "@mip/stats/concordance";
+import type { Resultat } from "@mip/stats/types";
 
 /** Le ρ d'un couple, ou son refus chiffré : les deux s'affichent (RM2). */
 export type ResultatConcordance = Resultat<ConcordanceRang>;

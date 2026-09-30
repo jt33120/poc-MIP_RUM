@@ -29,7 +29,7 @@ import { formater } from "@/lib/fmt-ids";
 import { classerParGravite, SEUIL_ECHANTILLON_FAIBLE } from "@/lib/impact";
 import { texteRaisonTaux } from "@/lib/mobile-capabilities";
 import type { MobileParRelease, MobileReleaseRow } from "@/lib/queries-mobile";
-import { intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
+import { intervalleWilson, texteIntervalle } from "@mip/stats/incertitude";
 import { accord, fmtDate, pluriel } from "@/lib/format";
 
 export type TriStabilite = "fourni" | "gravite" | "volume";

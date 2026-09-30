@@ -1,5 +1,5 @@
 // Vitrine — P*.1 : l'intervalle sur chaque chiffre clé (plan § 7.2). Rendus sur
-// des données FIXES écrites ici, calculées par les fonctions de lib/stats (aucune
+// des données FIXES écrites ici, calculées par les fonctions de @mip/stats (aucune
 // lecture en base) : la tuile, la carte de vital et la table des percentiles dans
 // chacun de leurs états d'incertitude.
 //
@@ -10,7 +10,7 @@ import { PercentileTable } from "@/components/Distribution";
 import { VitalCard } from "@/components/VitalCard";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { fmtVital } from "@/lib/format";
-import { ecartP75, ecartProportions, intervalleQuantile, intervalleWilson } from "@/lib/stats/incertitude";
+import { ecartP75, ecartProportions, intervalleQuantile, intervalleWilson } from "@mip/stats/incertitude";
 
 function Section({ id, titre, sous, children }: { id: string; titre: string; sous: string; children: ReactNode }) {
   return (

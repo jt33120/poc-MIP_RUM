@@ -87,7 +87,7 @@ export function rangsQuantileExact(n: number, q = Q75, niveau = 0.95): Resultat<
 
 /**
  * Rangs NORMAUX, pour n ≥ 30 : la même formule tourne en SQL, dans le balayage
- * qui calcule déjà la p75 (lib/queries.ts, `vitalsP75`). Couverture vérifiée ≥ 95 %
+ * qui calcule déjà la p75 (`apps/console/lib/queries.ts`, `vitalsP75`). Couverture vérifiée ≥ 95 %
  * pour tout n de 30 à 5 000 par la binomiale exacte (tests/unit/stats-incertitude.test.ts).
  */
 export function rangsQuantileNormal(n: number, q = Q75): { r: number; s: number } {

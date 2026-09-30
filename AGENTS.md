@@ -38,6 +38,7 @@ L'état détaillé et la suite : `docs/architecture/overview.md`.
 | `packages/backend`, `packages/db` | Pipeline d'ingestion, travaux, migrations (`packages/db/sql`) |
 | `packages/console-api`, `packages/console-contract` | Backend de la console et son contrat |
 | `packages/service-kit` | Configuration, sondes, arrêt propre, pool : communs aux services |
+| `packages/stats` | Statistique pure (`@mip/stats`) : un seul calcul pour la console, l'API v1 et `console-api` |
 | `packages/rum-*` | Capteurs publiés (web, mobile) et leur cœur commun |
 | `.railway/railway.ts` | L'infrastructure Railway (IaC) |
 | `tests/{unit,integration,contract,e2e}` | Vitest, SQL, contrats de parité, Playwright |

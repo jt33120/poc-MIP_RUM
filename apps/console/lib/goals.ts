@@ -2,7 +2,7 @@
 // une valeur (route pour un objectif de page vue, nom d'événement pour un objectif
 // d'événement) selon son type de correspondance. Le SQL (queries-goals) reflète
 // cette définition ; ici c'est la référence + le taux de conversion.
-import { FAIBLE_SOUS_PROPORTION } from "./stats/incertitude";
+import { FAIBLE_SOUS_PROPORTION } from "@mip/stats/incertitude";
 
 export type GoalKind = "pageview" | "event";
 export type MatchType = "exact" | "contains";
@@ -38,7 +38,7 @@ export interface GoalConversion extends GoalDef {
 // ═══════════════════════ Lecture de l'écran (F66, § 5.14) ═══════════════════════
 //
 // L'intervalle de Wilson de chaque taux est celui de P*.1 (`intervalleWilson`,
-// lib/stats/incertitude.ts) : une seule implémentation pour toute la console.
+// @mip/stats/incertitude) : une seule implémentation, console et API comprises.
 
 /** « page vue = /merci », « événement contient checkout » : la condition, en mots. */
 export function libelleCondition(g: Pick<GoalDef, "kind" | "match_type" | "pattern">): string {

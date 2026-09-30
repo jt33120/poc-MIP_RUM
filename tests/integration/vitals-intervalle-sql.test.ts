@@ -17,7 +17,7 @@ import {
   intervalleQuantile,
   rangsQuantileNormal,
   rangsQuantileNormalSql,
-} from "../../apps/console/lib/stats/incertitude";
+} from "../../packages/stats/src/incertitude";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");

@@ -18,7 +18,7 @@ import {
   formaterP,
   phraseSurrepresentation,
   type DimensionObservee,
-} from "../../apps/console/lib/stats/surrepresentation";
+} from "../../packages/stats/src/surrepresentation";
 
 const pct = (v: number) => `${Math.round(v * 100)} %`;
 

@@ -62,6 +62,9 @@ importers:
       '@mip/mcp-tools':
         specifier: workspace:*
         version: link:../../packages/mcp-tools
+      '@mip/stats':
+        specifier: workspace:*
+        version: link:../../packages/stats
       '@rrweb/replay':
         specifier: 2.0.1
         version: 2.0.1
@@ -219,6 +222,12 @@ importers:
 
   packages/service-kit: {}
 
+  packages/stats:
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   services/api:
     dependencies:
       pg:
@@ -234,6 +243,9 @@ importers:
       '@mip/service-kit':
         specifier: workspace:*
         version: link:../../packages/service-kit
+      '@mip/stats':
+        specifier: workspace:*
+        version: link:../../packages/stats
       esbuild:
         specifier: 0.28.0
         version: 0.28.0
@@ -268,6 +280,9 @@ importers:
       '@mip/service-kit':
         specifier: workspace:*
         version: link:../../packages/service-kit
+      '@mip/stats':
+        specifier: workspace:*
+        version: link:../../packages/stats
       bcryptjs:
         specifier: 3.0.3
         version: 3.0.3

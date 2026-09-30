@@ -7,7 +7,7 @@
 // rendu (tests/unit/vital-card.test.ts).
 import { fmtVital } from "./format";
 import { RATING_LABEL, THRESHOLDS, rating2026, type Rating } from "./rating";
-import type { IntervalleP75 } from "./stats/incertitude";
+import type { IntervalleP75 } from "@mip/stats/incertitude";
 
 export type VerdictVital =
   | { kind: "etabli"; rating: Rating }

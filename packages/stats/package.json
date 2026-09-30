@@ -1,0 +1,17 @@
+{
+  "name": "@mip/stats",
+  "version": "0.1.0",
+  "private": true,
+  "description": "La statistique explicable de MIP RUM (épique P*) : incertitude des p75, tendances, datation d'une rupture, sur-représentation, concordance. Logique pure — ni base, ni réseau, ni dépendance : la console, le service api et console-api la compilent telle quelle, pour un seul calcul.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

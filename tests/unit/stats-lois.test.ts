@@ -1,4 +1,4 @@
-// Lois de probabilité de lib/stats/lois.ts contre des valeurs tabulées ou
+// Lois de probabilité de packages/stats/src/lois.ts contre des valeurs tabulées ou
 // recalculées indépendamment (règle RM10 : pas de bibliothèque, donc des preuves).
 import { describe, expect, it } from "vitest";
 import {
@@ -8,7 +8,7 @@ import {
   lnFactorielle,
   normQuantile,
   tStudentQuantile,
-} from "../../apps/console/lib/stats/lois";
+} from "../../packages/stats/src/lois";
 
 describe("lnFactorielle", () => {
   it("exacte sur la table, continue au passage à Stirling", () => {

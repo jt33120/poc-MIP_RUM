@@ -77,7 +77,7 @@ import {
 } from "@/lib/queries";
 import { VITALS_BREAKDOWN_DATASETS } from "@/lib/queries-breakdowns";
 import { fenetresLues } from "@/lib/series";
-import { ecartP75, type IntervalleP75 } from "@/lib/stats/incertitude";
+import { ecartP75, type IntervalleP75 } from "@mip/stats/incertitude";
 import { ecrirePanel, ecrireVue, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue, lireTri } from "@/lib/view-state";
 import { annotationsDeploiements, type AnnotationsDeploiements } from "@/lib/annotations";
 

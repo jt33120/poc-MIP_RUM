@@ -2,7 +2,7 @@ import Link from "next/link";
 import { fmtVital } from "@/lib/format";
 import { GLOSSARY, type GlossaryId } from "@/lib/glossary";
 import { RATING_BAR, RATING_CLASS, RATING_LABEL, THRESHOLDS, texteSeuils } from "@/lib/rating";
-import type { Ecart, IntervalleP75 } from "@/lib/stats/incertitude";
+import type { Ecart, IntervalleP75 } from "@mip/stats/incertitude";
 import { echelleJauge, lireVital, type LectureVital } from "@/lib/vital-lecture";
 import { Sparkline } from "./charts/Sparkline";
 import { DeltaBadge } from "./SupervisionHero";

@@ -19,6 +19,7 @@
     "@mip/console-api": "workspace:*",
     "@mip/console-contract": "workspace:*",
     "@mip/service-kit": "workspace:*",
+    "@mip/stats": "workspace:*",
     "bcryptjs": "3.0.3",
     "esbuild": "0.28.0"
   }

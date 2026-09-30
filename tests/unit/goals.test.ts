@@ -13,7 +13,7 @@ import {
   lignesAppareils,
   meilleurObjectif,
 } from "../../apps/console/lib/goals";
-import { intervalleWilson } from "../../apps/console/lib/stats/incertitude";
+import { intervalleWilson } from "../../packages/stats/src/incertitude";
 
 describe("goalMatches", () => {
   it("exact = égalité stricte", () => {

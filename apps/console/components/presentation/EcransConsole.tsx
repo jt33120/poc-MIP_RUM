@@ -103,7 +103,7 @@ export function EcransConsole({ user, demoOuverte = false }: { user: SessionUser
 
       {/* Méthodes d'analyse. Le plan écrivait « Trois analyses automatiques » : les lots
           P* en ont ajouté depuis (intervalles, sur-représentation, datation de rupture,
-          concordance ; lib/stats/). Un compte exact vieillirait au prochain lot :
+          concordance ; paquet @mip/stats). Un compte exact vieillirait au prochain lot :
           « notamment ». Sources : lib/glossary.ts (health, anomaly, forecast),
           components/health/HealthBanner.tsx (FORMULE_SANTE, la pondération affichée) ;
           le relevé ne couvre que P5 à P8 (RUM_PARITY_STATUS.md:1). */}

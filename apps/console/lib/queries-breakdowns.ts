@@ -10,7 +10,7 @@ import { BREAKDOWN_CAP, type BreakdownDimension } from "./breakdowns";
 import type { FiltersLike } from "./filters";
 import { dimensionSupport, sessionJoin, unsupportedError, UnsupportedFilterError, type DatasetId } from "./query-compiler";
 import { sqlContext, type SqlContext } from "./query-sql";
-import { SEUIL_RANGS_NORMAUX, Z95, intervalleP75Lu, rangsQuantileNormalSql, type IntervalleP75 } from "./stats/incertitude";
+import { SEUIL_RANGS_NORMAUX, Z95, intervalleP75Lu, rangsQuantileNormalSql, type IntervalleP75 } from "@mip/stats/incertitude";
 
 /** Jeux de données découpés par l'accueil et `/pages` : les Web Vitals. */
 export const VITALS_BREAKDOWN_DATASETS = ["vitals"] as const satisfies readonly DatasetId[];

@@ -3,10 +3,10 @@
 // Ce tableau fonde l'épique P* : à 30 sessions par jour, ce qu'on peut dire et
 // ce qu'on ne peut pas. S'il était recopié à la main dans un texte, rien ne dirait
 // qu'il est faux le jour où une formule change. Ici, chaque cellule est
-// RECALCULÉE depuis lib/stats/incertitude.ts et comparée au texte du plan, à
+// RECALCULÉE depuis packages/stats/src/incertitude.ts et comparée au texte du plan, à
 // 0,1 point près.
 import { describe, expect, it } from "vitest";
-import { ecartDetectable, mesuresMinimales, regleDeTrois, wilson } from "../../apps/console/lib/stats/incertitude";
+import { ecartDetectable, mesuresMinimales, regleDeTrois, wilson } from "../../packages/stats/src/incertitude";
 
 // Cellules du § 7.0, en points de pourcentage, telles que le plan les écrit.
 const PLAN = {
