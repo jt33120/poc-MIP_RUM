@@ -253,6 +253,7 @@ describe("vocabulaire des constats", () => {
       "apps/console/lib/chargeurs/detections-accueil.ts",
       "apps/console/lib/detections-ecran.ts",
       "apps/console/components/vue-ensemble/ConstatsDetectes.tsx",
+      "apps/console/components/vue-ensemble/HeatmapLatence.tsx",
     ]
       .map((f) => readFileSync(join(racine, f), "utf8"))
       // Les commentaires expliquent la règle (et la nomment) : ils ne vont pas à l'écran.

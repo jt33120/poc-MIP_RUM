@@ -13,7 +13,9 @@ import { ChargeErreursLcp, HeroCwv, type AnnotationsFigure, type ModeSeries } fr
 import { LIBELLE_ANGLE_MORT, TuileAngleMort, type EtatAngleMort } from "@/components/vue-ensemble/AngleMort";
 import { BandeauR0 } from "@/components/vue-ensemble/BandeauR0";
 import { ConstatsDetectes, type EtatConstatsDetectes } from "@/components/vue-ensemble/ConstatsDetectes";
-import { chargerDetectionsAccueil } from "@/lib/chargeurs/detections-accueil";
+import { HeatmapLatence } from "@/components/vue-ensemble/HeatmapLatence";
+import { construireHeatmap } from "@/lib/heatmap-latence";
+import { chargerDetectionsAccueil, VITAL_HEATMAP } from "@/lib/chargeurs/detections-accueil";
 import { anomaliesSansDoublon, cartesConstats, plageDuHero, type PlageHero } from "@/lib/detections-ecran";
 import { blocsDe } from "@/lib/chargeurs/commun";
 import { chargerOverview, DECOUPAGE_LUS, VITAUX_HERO } from "@/lib/chargeurs/overview";
@@ -561,6 +563,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     plage: period.label,
   };
   const serieDe = (nom: VitalName) => seriesVitaux[VITAUX.indexOf(nom)];
+  // Heatmap de latence (A2 § 6.2) : lue sous les mêmes conditions que la plage (grille
+  // horaire, population entière, une app) ; sinon absente, sans bruit.
+  const lectureHeatmap = detections.etat === "ok" ? detections.heatmap : null;
+  const heatmap =
+    lectureHeatmap?.ok && lectureHeatmap.data.etat === "ok" ? construireHeatmap(VITAL_HEATMAP, grilleContrat, lectureHeatmap.data.lignes) : null;
   // La plage habituelle du hero (A2 § 6.1), vital par vital, ou la raison de son absence.
   const plagesHero: Partial<Record<string, PlageHero>> | undefined =
     detections.etat !== "ok"
@@ -890,6 +897,15 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </SectionErreur>
         </div>
       </div>
+
+      {/* R4 (spec A2 § 5.3) — la forme de l'expérience : la heatmap de latence du LCP. */}
+      {blocs.hero && (heatmap || (lectureHeatmap && !lectureHeatmap.ok)) && (
+        <div className="mb-6 min-w-0">
+          <SectionErreur titre="Heatmap de latence">
+            {heatmap ? <HeatmapLatence heatmap={heatmap} plage={period.label} /> : <EchecLecture titre="Heatmap de latence" />}
+          </SectionErreur>
+        </div>
+      )}
 
       {/* Zone 6 — la dégradation coïncide-t-elle avec la charge ou avec des erreurs ?
           Trois panneaux empilés, un axe chacun (P5) — 8/12 ; à côté, 4/12, les heures
