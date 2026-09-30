@@ -22,7 +22,16 @@ import { formater, formatDuVital, type VitalName } from "@/lib/fmt-ids";
 import type { SectionLue } from "@/lib/lecture";
 import { bucketLabel } from "@/lib/query-contract";
 import { libelleSeauComplet, type Annotation, type PointSerie, type SerieDef } from "@/lib/series";
-import { pointsCharge, pointsRelease, pointsVital, serieVide, sommeLue, type SeauVital } from "@/lib/vue-ensemble";
+import {
+  pointsCharge,
+  pointsHeroErreurs,
+  pointsHeroTrafic,
+  pointsRelease,
+  pointsVital,
+  serieVide,
+  sommeLue,
+  type SeauVital,
+} from "@/lib/vue-ensemble";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { LIBELLE_PLAGE, phrasePlagesHero, type PlageHero } from "@/lib/detections-ecran";
 import { pluriel } from "@/lib/format";
@@ -230,6 +239,158 @@ export function HeroCwv({
         })}
       </div>
     </section>
+  );
+}
+
+// ─────────────────────── Onglets « Erreurs » et « Trafic » du graphique principal ───────────────────────
+//
+// A2 § 6.1 : le graphique principal montre, au choix, les vitaux (défaut), le taux
+// d'erreurs ou le trafic. Les deux onglets réutilisent les comptes par seau DÉJÀ lus
+// pour la rangée Trafic et « Charge, erreurs et LCP » : aucune lecture de plus.
+
+type LigneVues = { bucket: string; chargements: number; spa: number; inconnu: number };
+
+/** Ce que les onglets Erreurs et Trafic disent d'une comparaison qu'ils ne tracent pas. */
+function noteComparaison(mode: ModeSeries): string | null {
+  if (mode.kind === "prev") return "La comparaison à la période précédente se lit dans les tuiles de la rangée Trafic.";
+  if (mode.kind === "release") return "La comparaison de releases se lit dans l'onglet Web Vitals ; ici, toute la population.";
+  return null;
+}
+
+export function HeroErreurs({
+  vues,
+  erreurs,
+  mode,
+  ...commun
+}: Commun & {
+  vues: SectionLue<LigneVues[]>;
+  erreurs: SectionLue<{ restreint: boolean; points: { bucket: string; navigateur: number }[] }>;
+  mode: ModeSeries;
+}) {
+  const seau = bucketLabel(commun.seauSecondes);
+  // Sans la colonne de source (v69), le numérateur porte toutes les sources : le titre le dit (CP14).
+  const titre =
+    erreurs.ok && !erreurs.data.restreint
+      ? "Occurrences d'erreurs (toutes sources) pour 100 pages vues"
+      : "Occurrences d'erreurs navigateur pour 100 pages vues";
+  if (!vues.ok || !erreurs.ok) {
+    return <Figure titre={titre} id="hero-taux-erreurs" etat={{ kind: "erreur", titre }} />;
+  }
+  const points = pointsHeroErreurs(commun.grille, vues.data, erreurs.data.points);
+  const totalVues = somme(points.map((p) => p.vues ?? 0));
+  const totalOcc = somme(points.map((p) => p.occurrences ?? 0));
+  const etat: Etat | undefined =
+    totalVues === 0 ? { kind: "vide", population: "page vue (dénominateur du taux)", plage: commun.plage } : undefined;
+  const note = noteComparaison(mode);
+  return (
+    <Figure
+      titre={titre}
+      id="hero-taux-erreurs"
+      etat={etat}
+      lecture={
+        <>
+          Un taux, pas un compte : les occurrences de la tranche rapportées à ses pages vues. Une tranche sans page vue
+          n&apos;a pas de taux (trou, jamais 0).{note ? ` ${note}` : null}
+        </>
+      }
+      meta={
+        <>
+          <span>pour 100 pages vues, par tranche de {seau}</span>
+          <span>{commun.grille.length} tranches</span>
+          <span>
+            {formater("count", totalOcc)} occurrences · {formater("count", totalVues)} pages vues
+          </span>
+          <span>{commun.plage}</span>
+        </>
+      }
+      alternative={{
+        legende: `${titre}, par tranche de ${seau}`,
+        colonnes: ["Période", "Occurrences", "Pages vues", "Pour 100 pages vues"],
+        lignes: points.map((p) => [ligneSeau(p.t, commun.seauSecondes), p.occurrences, p.vues, formater("pour100", p.pour100)]),
+      }}
+    >
+      <ThresholdSeries
+        grille={commun.grille}
+        points={points as unknown as PointSerie[]}
+        series={[{ cle: "pour100", libelle: "Pour 100 pages vues", role: "principale" }]}
+        format="pour100"
+        seauSecondes={commun.seauSecondes}
+        fuseau={FUSEAU_AFFICHAGE}
+        zoomHref={commun.zoomHref}
+        debutPlage={commun.debutPlage}
+        annotations={commun.annotations.annotations}
+        annotationsIndisponibles={commun.annotations.indisponible ?? undefined}
+        hauteur={240}
+        ariaLabel={`${titre} par tranche de ${seau}, ${commun.grille.length} tranches`}
+      />
+    </Figure>
+  );
+}
+
+export function HeroTrafic({
+  vues,
+  sessions,
+  mode,
+  ...commun
+}: Commun & {
+  vues: SectionLue<LigneVues[]>;
+  sessions: SectionLue<{ bucket: string | Date; sessions: number }[]>;
+  mode: ModeSeries;
+}) {
+  const seau = bucketLabel(commun.seauSecondes);
+  const titre = "Pages vues et sessions commencées";
+  const points = pointsHeroTrafic(commun.grille, vues.ok ? vues.data : null, sessions.ok ? sessions.data : null);
+  if (!points) return <Figure titre={titre} id="hero-trafic" etat={{ kind: "erreur", titre }} />;
+  const totalVues = somme(points.map((p) => p.vues));
+  const totalSessions = somme(points.map((p) => p.sessions));
+  const etat: Etat | undefined =
+    totalVues === 0 && totalSessions === 0 ? { kind: "vide", population: "page vue ni session", plage: commun.plage } : undefined;
+  const note = noteComparaison(mode);
+  return (
+    <Figure
+      titre={titre}
+      id="hero-trafic"
+      etat={etat}
+      lecture={
+        <>
+          Deux comptes sur le même axe : une session compte une fois, à son début ; ses pages vues comptent chacune dans
+          leur tranche.{note ? ` ${note}` : null}
+        </>
+      }
+      meta={
+        <>
+          <span>par tranche de {seau}</span>
+          <span>{commun.grille.length} tranches</span>
+          <span>
+            {formater("count", totalVues)} pages vues · {formater("count", totalSessions)} sessions
+          </span>
+          <span>{commun.plage}</span>
+        </>
+      }
+      alternative={{
+        legende: `${titre}, par tranche de ${seau}`,
+        colonnes: ["Période", "Pages vues", "Sessions commencées"],
+        lignes: points.map((p) => [ligneSeau(p.t, commun.seauSecondes), p.vues, p.sessions]),
+      }}
+    >
+      <ThresholdSeries
+        grille={commun.grille}
+        points={points as unknown as PointSerie[]}
+        series={[
+          { cle: "vues", libelle: "Pages vues", role: "principale", additive: true },
+          { cle: "sessions", libelle: "Sessions commencées", role: "categorie", categorieIndex: 1, additive: true },
+        ]}
+        format="count"
+        seauSecondes={commun.seauSecondes}
+        fuseau={FUSEAU_AFFICHAGE}
+        zoomHref={commun.zoomHref}
+        debutPlage={commun.debutPlage}
+        annotations={commun.annotations.annotations}
+        annotationsIndisponibles={commun.annotations.indisponible ?? undefined}
+        hauteur={240}
+        ariaLabel={`${titre} par tranche de ${seau}, ${commun.grille.length} tranches`}
+      />
+    </Figure>
   );
 }
 
