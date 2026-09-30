@@ -33,13 +33,12 @@
 --      silencieuse du capteur de la console, posée par l'opérateur (§ 11, 12).
 --
 -- DROITS. Lecture pour `console_ro` (motif de v87), rien pour `anon` ni
--- `authenticated`, et `mip_console` pour `collecte_fenetre` (§ 6 bis). PAS de
--- droit pour `mip_api` : le service `api` ne lit aucune de ces tables, et sa
--- garde (`scripts/ci/verify-db-roles.mjs`) signale une table accordée que son
--- bundle ne nomme pas. La carte « Santé de la chaîne de
--- mesure » (lot suivant) lira par `console-api` et accordera alors à
--- `mip_console` ce qu'elle lit. RLS activée sur les quatre tables, comme sur
--- toute table `public` depuis v97.
+-- `authenticated`, et `mip_console` pour `collecte_fenetre`, `sonde_passage` et
+-- `sonde_battement` (§ 6 bis : la comparaison des périodes et la carte « Santé
+-- de la chaîne de mesure »). PAS de droit pour `mip_api` : le service `api` ne
+-- lit aucune de ces tables, et sa garde (`scripts/ci/verify-db-roles.mjs`)
+-- signale une table accordée que son bundle ne nomme pas. RLS activée sur les
+-- quatre tables, comme sur toute table `public` depuis v97.
 --
 -- VERROUS. Quatre tables NEUVES ; `app_registry` gagne une colonne à défaut
 -- constant (pas de réécriture, ACCESS EXCLUSIVE bref) ; `tenant_usage_daily`
@@ -186,16 +185,20 @@ begin
   end loop;
 end $$;
 
--- ── 6 bis. `mip_console` lit le registre des fenêtres ─────────────────────
+-- ── 6 bis. `mip_console` lit le registre, le journal et les battements ─────
 --
 -- `console-api` compile les lectures de la console (`apps/console/lib`) : la
 -- comparaison à la période précédente y consulte `collecte_fenetre` pour
--- invalider un écart calculé sur une période trouée (#357). Sans ce droit, sa
--- garde (`scripts/ci/verify-db-roles-console.mjs`) refuse un bundle qui nomme
--- une relation qu'il ne peut pas lire. Motif de v97 pour `platform_flag` :
--- SELECT et policy de lecture propres à `mip_console` ; la table rejoint
--- `packages/db/roles/console-api.mjs`. `mip_api` n'en a pas besoin : le bundle
--- du service `api` ne la nomme pas.
+-- invalider un écart calculé sur une période trouée (#357), et la carte « Santé
+-- de la chaîne de mesure » de `/admin/health` (`lib/queries-chaine.ts`) lit en
+-- plus le dernier passage (`sonde_passage`) et les battements
+-- (`sonde_battement`). Sans ces droits, sa garde
+-- (`scripts/ci/verify-db-roles-console.mjs`) refuse un bundle qui nomme une
+-- relation qu'il ne peut pas lire. Motif de v97 pour `platform_flag` : SELECT
+-- et policy de lecture propres à `mip_console` (l'écran est réservé à
+-- l'administrateur de la plateforme, le chargeur le garde) ; les tables
+-- rejoignent `packages/db/roles/console-api.mjs`. `mip_api` n'en a pas besoin :
+-- le bundle du service `api` ne les nomme pas.
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'mip_console') then
@@ -203,6 +206,16 @@ begin
     if not exists (select 1 from pg_policy where polrelid = 'public.collecte_fenetre'::regclass
                                                and polname = 'mip_console_acces') then
       create policy mip_console_acces on collecte_fenetre as permissive for select to mip_console using (true);
+    end if;
+    grant select on sonde_passage to mip_console;
+    if not exists (select 1 from pg_policy where polrelid = 'public.sonde_passage'::regclass
+                                               and polname = 'mip_console_acces') then
+      create policy mip_console_acces on sonde_passage as permissive for select to mip_console using (true);
+    end if;
+    grant select on sonde_battement to mip_console;
+    if not exists (select 1 from pg_policy where polrelid = 'public.sonde_battement'::regclass
+                                               and polname = 'mip_console_acces') then
+      create policy mip_console_acces on sonde_battement as permissive for select to mip_console using (true);
     end if;
   end if;
 end $$;
@@ -469,15 +482,17 @@ end $$;
 -- du 29/08 18:00 au 08/09 12:00 UTC, le capteur de la console postait vers un
 -- hôte décommissionné, la route d'ingestion répondait 200 et rien n'arrivait
 -- (étude A3, T2). Posée par l'opérateur, une fois, et seulement là où
--- l'application existe : une autre installation n'a pas cette histoire.
+-- l'application existait déjà à l'époque (créée le 14/08 en production) : une
+-- installation neuve n'a pas cette histoire.
 insert into collecte_fenetre (portee, etage, etat, debut, fin, cause, preuve, source)
-select 'mip-rum-console', 'capteur', 'interrompue',
+select 'mip-rum-console', 'chaine', 'interrompue',
        '2026-08-29 18:00:00+00'::timestamptz, '2026-09-08 12:00:00+00'::timestamptz,
        'capteur de la console vers un hôte décommissionné',
        'aucune ligne de l''app avant le 08/09 12:10 UTC ; la route d''ingestion répondait 200, sans erreur ; '
        'correctif e0e7c561 (08/09 12:39) ; étude A3, T2',
        'operateur'
- where exists (select 1 from app_registry where app_id = 'mip-rum-console')
+ where exists (select 1 from app_registry
+                where app_id = 'mip-rum-console' and created_at < '2026-08-29 18:00:00+00'::timestamptz)
 on conflict (portee, etage, debut) where source <> 'sonde' do nothing;
 
 -- Écritures : exécutées par le scheduler (propriétaire) seulement.

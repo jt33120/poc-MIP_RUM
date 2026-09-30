@@ -18,7 +18,9 @@ import { listApps, registeredApps, type AppItem } from "../queries";
 import { getCustomer, listCustomers, probeOnboarding } from "../queries-customers";
 import { listInstalls } from "../queries-extension-installs";
 import { listExtensionScopes } from "../queries-extension-scope";
+import { lireSanteChaine } from "../queries-chaine";
 import { internalHealth } from "../queries-health";
+import { cadenceTickPubliee } from "../queries-planifie";
 import { echeanceLectureDisponible, listReadTokens } from "../queries-read-tokens";
 import { listSourcemapReleases, releaseManifest, releasesDeployees, schemaSourcemapAbsent, type ReleaseManifest, type SourcemapRelease } from "../queries-sourcemap";
 import { listSourcemapTokens, type SourcemapToken } from "../queries-sourcemap-tokens";
@@ -70,9 +72,19 @@ export const chargerSante = (async (principal) => {
   const g = garde(principal);
   if (g.etat !== "admin") return g;
   if (!g.plateforme) return { etat: "interdit" } as const;
-  // Lecture en échec : les tuiles ne sont PAS rendues à zéro (F02).
-  const [sante, identite, causales] = await Promise.all([section(internalHealth), identityPersistenceHealth(), causalActionsHealth()]);
-  return { etat: "ok", sante, identite, causales } as const;
+  // Lecture en échec : les tuiles ne sont PAS rendues à zéro (F02). La chaîne de
+  // mesure (canari, registre des fenêtres) est une section à part : son échec ne
+  // cache pas le reste de la page.
+  const [sante, identite, causales, chaine] = await Promise.all([
+    section(internalHealth),
+    identityPersistenceHealth(),
+    causalActionsHealth(),
+    section(async () => {
+      const [brute, cadenceMin] = await Promise.all([lireSanteChaine(), cadenceTickPubliee()]);
+      return { brute, cadenceMin };
+    }),
+  ]);
+  return { etat: "ok", sante, identite, causales, chaine } as const;
 }) satisfies Chargeur<unknown>;
 
 /** L'inventaire des postes de l'extension (`/admin/extension-installs`) : un poste observe plusieurs applications. */

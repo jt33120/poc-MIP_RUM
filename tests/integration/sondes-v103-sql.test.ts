@@ -21,7 +21,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 // @ts-expect-error module JS partagé sans déclarations
 import { APP_CANARI, construireLotCanari, creerSondes } from "../../packages/backend/jobs/sondes.mjs";
 
@@ -381,17 +381,73 @@ function migrations(): string[] {
     });
   });
 
-  it("T2 : posée par l'opérateur là où la console existe, une seule fois, migration rejouée", async () => {
+  it("T2 : posée par l'opérateur là où la console existait à l'époque, une seule fois, migration rejouée", async () => {
     await annulee(async (c) => {
-      await c.query("insert into app_registry (app_id, name, active) values ('mip-rum-console', 'console', true) on conflict (app_id) do nothing");
       const v103 = readFileSync(join(SQL_DIR, "migration-v103.sql"), "utf8");
+      const t2 = "select count(*)::int as n from collecte_fenetre where portee = 'mip-rum-console' and source = 'operateur'";
+      // Une installation neuve (application créée aujourd'hui) n'a pas cette histoire.
+      await c.query("insert into app_registry (app_id, name, active) values ('mip-rum-console', 'console', true) on conflict (app_id) do update set created_at = now()");
+      await c.query(v103);
+      expect((await c.query(t2)).rows[0].n).toBe(0);
+      // La production : l'application existe depuis le 14/08.
+      await c.query("update app_registry set created_at = '2026-08-14 09:00:00+00' where app_id = 'mip-rum-console'");
       await c.query(v103);
       await c.query(v103);
       const { rows } = await c.query(
         `select etage, etat, source, debut = '2026-08-29 18:00:00+00' as debut, fin = '2026-09-08 12:00:00+00' as fin, preuve like '%e0e7c561%' as preuve
            from collecte_fenetre where portee = 'mip-rum-console' and source = 'operateur'`,
       );
-      expect(rows).toEqual([{ etage: "capteur", etat: "interrompue", source: "operateur", debut: true, fin: true, preuve: true }]);
+      expect(rows).toEqual([{ etage: "chaine", etat: "interrompue", source: "operateur", debut: true, fin: true, preuve: true }]);
     });
+  });
+  it("la carte « Santé de la chaîne de mesure » : dernier passage, ses étages, fenêtres ouvertes d'abord, taux, battements", async () => {
+    // La lecture passe par le pool de la console (autre connexion) : les lignes
+    // sont validées, puis effacées quoi qu'il arrive.
+    const passage = "00000000-0000-4000-8000-00000000c0de";
+    const ancien = "00000000-0000-4000-8000-00000000c0d0";
+    try {
+      await pool.query(
+        `insert into sonde_passage (passage_id, etage, emis_at, resultat, latence_ms, http_status, chemin) values
+           ($1, 'ingest_console', now() - interval '20 minutes', 'echec', 9000, 503, null),
+           ($1, 'ecriture', now() - interval '20 minutes', 'absent', null, null, null),
+           ($2, 'ingest_console', now() - interval '5 minutes', 'ok', 420, 200, 'relais'),
+           ($2, 'ecriture', now() - interval '5 minutes', 'ok', null, null, null),
+           ($2, 'ingest_collector', now() - interval '5 minutes', 'ok', 180, 200, 'direct')`,
+        [ancien, passage],
+      );
+      await pool.query(
+        `insert into collecte_fenetre (portee, etage, etat, debut, fin, cause, source) values
+           ('*', 'chaine', 'interrompue', now() - interval '3 days', now() - interval '2 days', 'v103-carte close', 'reconstitution'),
+           ('*', 'chaine', 'degradee', now() - interval '10 minutes', null, 'v103-carte ouverte', 'sonde'),
+           ('*', 'chaine', 'interrompue', now() - interval '40 days', now() - interval '39 days', 'v103-carte trop vieille', 'reconstitution')`,
+      );
+      await pool.query("insert into sonde_battement (service, dernier_ok) values ('notifier', now() - interval '30 seconds')");
+
+      delete (globalThis as { pgPool?: unknown }).pgPool;
+      vi.resetModules();
+      process.env.DATABASE_URL = url;
+      const { lireSanteChaine } = await import("../../apps/console/lib/queries-chaine");
+      const { pool: poolConsole } = await import("../../apps/console/lib/db");
+      try {
+        const sante = await lireSanteChaine();
+        expect(sante).not.toBeNull();
+        expect(sante!.dernier?.passage_id).toBe(passage);
+        expect(sante!.etages.map((e) => [e.etage, e.resultat, e.chemin])).toEqual([
+          ["ecriture", "ok", null],
+          ["ingest_collector", "ok", "direct"],
+          ["ingest_console", "ok", "relais"],
+        ]);
+        expect(sante!.fenetres.map((f) => f.cause).filter((x) => x?.startsWith("v103-carte"))).toEqual(["v103-carte ouverte", "v103-carte close"]);
+        expect(sante!.fenetres[0]).toMatchObject({ fin: null, etat: "degradee", source: "sonde" });
+        expect(sante!.taux7j).toEqual({ total: 2, aboutis: 1 });
+        expect(sante!.battements.map((b) => b.service)).toEqual(["notifier"]);
+      } finally {
+        await poolConsole.end();
+      }
+    } finally {
+      await pool.query("delete from sonde_passage where passage_id = any($1::uuid[])", [[passage, ancien]]);
+      await pool.query("delete from collecte_fenetre where cause like 'v103-carte %'");
+      await pool.query("delete from sonde_battement where service = 'notifier'");
+    }
   });
 });
