@@ -61,10 +61,12 @@ export interface ComptesRegles {
   actives: number;
   /** `last_state = 'breached'` à la dernière évaluation (A3). */
   franchies: number;
-  /** `no_data` + jamais évaluées : `no_data` n'est PAS `ok` (A4). */
+  /** `no_data` + `hors_collecte` + jamais évaluées : aucune n'est `ok` (A4). */
   sansDonnees: number;
   /** Dont jamais évaluées (ou base antérieure à migration-v73) : écrit sous la tuile. */
   jamaisEvaluees: number;
+  /** Dont hors collecte (migration-v105) : la collecte était coupée sur leur fenêtre. */
+  horsCollecte: number;
 }
 
 /**
@@ -74,12 +76,30 @@ export interface ComptesRegles {
 export function comptesRegles(regles: readonly Pick<AlertRuleRow, "active" | "last_state">[]): ComptesRegles {
   const actives = regles.filter((r) => r.active);
   const jamaisEvaluees = actives.filter((r) => r.last_state == null).length;
+  const horsCollecte = actives.filter((r) => r.last_state === "hors_collecte").length;
   return {
     actives: actives.length,
     franchies: actives.filter((r) => r.last_state === "breached").length,
-    sansDonnees: actives.filter((r) => r.last_state === "no_data").length + jamaisEvaluees,
+    sansDonnees: actives.filter((r) => r.last_state === "no_data").length + jamaisEvaluees + horsCollecte,
     jamaisEvaluees,
+    horsCollecte,
   };
+}
+
+/**
+ * La phrase sous la tuile « Règles sans données » : ce qui manque, et pourquoi.
+ * Une règle hors collecte ne manque pas d'historique : la collecte était coupée.
+ */
+export function lectureSansDonnees(c: ComptesRegles): string {
+  if (c.sansDonnees === 0) return "toutes les règles actives ont assez d'historique";
+  if (c.horsCollecte === c.sansDonnees) {
+    return "collecte interrompue sur leur fenêtre : rien n'a pu être mesuré, aucune alerte ne part";
+  }
+  const dont = [
+    c.jamaisEvaluees > 0 ? pluriel(c.jamaisEvaluees, "règle jamais évaluée", "règles jamais évaluées") : null,
+    c.horsCollecte > 0 ? `${c.horsCollecte} hors collecte (collecte interrompue)` : null,
+  ].filter(Boolean);
+  return `pas assez d'historique pour conclure${dont.length ? `, dont ${dont.join(" et ")}` : ""}`;
 }
 
 // ──────────────────────────── Hero, barres par jour ───────────────────────────
@@ -140,6 +160,7 @@ const ETATS_REGLE: Record<string, { libelle: string; ton: "good" | "bad" | "neut
   ok: { libelle: "Normale", ton: "good" },
   breached: { libelle: "Franchie", ton: "bad" },
   no_data: { libelle: "Données insuffisantes", ton: "neutre" },
+  hors_collecte: { libelle: "Hors collecte", ton: "neutre" },
 };
 
 /** État actuel d'une règle, tel que la frise et la table l'écrivent (jamais « 0 »). */

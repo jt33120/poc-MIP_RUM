@@ -214,6 +214,17 @@ describe("F64 — RuleRow : l'état d'abord, l'écriture seulement pour un admin
     expect(html).toContain("2 non acquittées");
   });
 
+  it("hors collecte (v105) : l'état le dit avec sa raison, jamais une valeur ni « normale »", () => {
+    const raison = "collecte interrompue pour cette application depuis le 30/09/2026 08:00 UTC (en cours) : l'application n'émet plus son battement";
+    const html = renderToStaticMarkup(
+      <RuleRow rule={{ ...REGLE, last_state: "hors_collecte", last_value: 1234, last_reason: raison }} apps={APPS} />,
+    );
+    expect(texte(html)).toContain(`Hors collecte — ${raison}`);
+    expect(texte(html)).not.toContain("Normale");
+    expect(texte(html)).not.toContain("1 234");
+    expect(html).toContain('data-etat="hors_collecte"');
+  });
+
   it("l'ancre `regle-<id>` existe : la frise et les tuiles y mènent", () => {
     expect(renderToStaticMarkup(<RuleRow rule={REGLE} apps={APPS} admin />)).toContain('id="regle-7"');
   });

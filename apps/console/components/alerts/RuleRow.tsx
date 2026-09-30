@@ -24,9 +24,18 @@ const ETATS: Record<RuleState, { label: string; cls: string }> = {
     label: "Données insuffisantes",
     cls: "border border-warn/30 bg-warn/10 text-warn-ink",
   },
+  // v105 : la collecte était coupée sur la fenêtre ; ni « normale » ni « sans
+  // données » — rien n'a pu arriver, la raison dit quelle coupure.
+  hors_collecte: {
+    label: "Hors collecte",
+    cls: "border border-dashed border-line bg-panel2 text-ink-soft",
+  },
 };
 
-/** Dernière évaluation : no_data dit pourquoi, au lieu de passer pour une valeur normale. */
+/** États sans verdict : leur raison est écrite, jamais une valeur. */
+const SANS_VERDICT: ReadonlySet<string> = new Set(["no_data", "hors_collecte"]);
+
+/** Dernière évaluation : no_data et hors_collecte disent pourquoi, au lieu de passer pour une valeur normale. */
 function RuleEvaluation({ rule }: { rule: AlertRuleRow }) {
   if (!rule.last_state || !rule.last_evaluated_at) {
     return (
@@ -43,11 +52,11 @@ function RuleEvaluation({ rule }: { rule: AlertRuleRow }) {
       className={`self-center rounded px-2 py-0.5 text-xs font-medium ${etat.cls}`}
     >
       {etat.label}
-      {rule.last_state === "no_data" && rule.last_reason ? ` — ${rule.last_reason}` : ""}
+      {SANS_VERDICT.has(rule.last_state) && rule.last_reason ? ` — ${rule.last_reason}` : ""}
       {/* Une règle de release dit CE QU'ELLE A COMPARÉ (v86 : releases, p75, effectifs,
           écart) ; une valeur seule ne dirait pas contre quelle release. */}
-      {rule.last_state !== "no_data" && rule.mode === "release" && rule.last_reason ? ` — ${rule.last_reason}` : ""}
-      {rule.last_state !== "no_data" && !(rule.mode === "release" && rule.last_reason) && rule.last_value !== null
+      {!SANS_VERDICT.has(rule.last_state) && rule.mode === "release" && rule.last_reason ? ` — ${rule.last_reason}` : ""}
+      {!SANS_VERDICT.has(rule.last_state) && !(rule.mode === "release" && rule.last_reason) && rule.last_value !== null
         ? ` (${valeurDeMetrique(rule.metric, rule.last_value)})`
         : ""}
       <span className="ml-1 text-ink-faint">· évaluée {fmtDate(rule.last_evaluated_at)}</span>
