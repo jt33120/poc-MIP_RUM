@@ -41,6 +41,7 @@ const REPERES = [
   /^#heatmap-latence$/,
   /^\[data-testid="angle-mort"\]$/,
   /^\[data-testid="onboarding-nudge"\]$/,
+  /^\[data-testid="r0-(constats|deploiement)"\]$/,
 ];
 
 describe("condensé de la Vue d'ensemble — forme", () => {
@@ -166,13 +167,24 @@ describe("condensé — santé, constats, segments", () => {
     expect(fait("detecte:17")).toMatchObject({ cible: "#constat-detecte-17", repli: "#constats", ton: "mauvais" });
   });
 
-  it("sans constat, la colonne se tait : le fait vise le tableau des anomalies", () => {
+  it("sans constat, la colonne se tait : le fait vise le compte du bandeau, puis le tableau des anomalies", () => {
     const d = construireDigestVueEnsemble(
       entrees({ constats: { liste: [], echecs: [], detectes: { kind: "absent" }, affiches: false } }),
     );
     const c = d.faits.find((f) => f.cle === "constats")!;
-    expect(c).toMatchObject({ valeur: `0${NBSP}constat`, ton: "bon", cible: "#anomalies" });
+    expect(c).toMatchObject({ valeur: `0${NBSP}constat`, ton: "bon", cible: '[data-testid="r0-constats"]', repli: "#anomalies" });
     expect(c.detail).toContain("rien à signaler");
+  });
+
+  it("le dernier déploiement, écrit dans le bandeau « En bref »", () => {
+    const d = construireDigestVueEnsemble(entrees({ deploiement: { version: "2.4.0", ts: "2026-09-30T09:00:00Z" } }));
+    expect(d.faits.find((f) => f.cle === "deploiement")).toMatchObject({
+      valeur: "2.4.0",
+      detail: "le 30/09/2026 à 11:00",
+      cible: '[data-testid="r0-deploiement"]',
+    });
+    const echec = construireDigestVueEnsemble(entrees({ deploiement: "echec" }));
+    expect(echec.faits.find((f) => f.cle === "deploiement")).toMatchObject({ valeur: "—", detail: "déploiements non lus" });
   });
 
   it("aucune adresse e-mail d'un message d'erreur ne sort : elle est masquée", () => {

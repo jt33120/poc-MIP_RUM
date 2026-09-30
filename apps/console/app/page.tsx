@@ -728,6 +728,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     app: query.scope.requestedApp,
     periode: period.label,
     sansVisite: sansVisite ? { titre: sansVisite.titre, detail: sansVisite.detail } : null,
+    deploiement: deploiementBandeau,
     sante: blocs.sante ? (health.ok ? health.data : "echec") : null,
     cases: [...(blocs.trafic ? tuilesTrafic : []), ...(blocs.vitals ? tuilesVitaux : [])],
     series: blocs.hero ? VITAUX_HERO.map((nom) => ({ vital: nom, lu: serieDe(nom) })) : null,

@@ -342,13 +342,15 @@ function lignesChangements(d: Digest): string[] {
     if (raison) lignes.push(phrase(`Aucune variation affichée : ${RAISON_SANS_VARIATION.exec(raison.detail!)![1].trim()}`, raison));
     else lignes.push("Le tableau de bord ne compare pas cette période à une autre : aucune variation n'est affichée.");
   }
+  const deploiement = fait(d, "deploiement");
+  if (connue(deploiement)) lignes.push(phrase(`Dernier déploiement : ${deploiement.valeur}${deploiement.detail ? `, ${deploiement.detail}` : ""}`, deploiement));
   const release = fait(d, "release");
   if (release) lignes.push(phrase(`${release.libelle} : ${release.valeur}${variation(release)}`, release));
   const datation = fait(d, "datation");
   if (datation) lignes.push(phrase(`${datation.libelle} : ${datation.valeur}`, datation));
   for (const x of faits(d, "detecte:").slice(0, 2)) lignes.push(phrase(`Écart détecté : « ${x.valeur} »`, x));
-  const deploiement = faits(d, "constat:regression:").find((f) => /^Déploiement/.test(f.valeur));
-  if (deploiement) lignes.push(phrase(`« ${deploiement.valeur} »`, deploiement));
+  const regression = faits(d, "constat:regression:").find((f) => /^Déploiement/.test(f.valeur));
+  if (regression) lignes.push(phrase(`« ${regression.valeur} »`, regression));
   return lignes;
 }
 

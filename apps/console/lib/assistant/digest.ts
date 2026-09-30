@@ -161,6 +161,8 @@ export interface EntreesDigest {
     erreurs: readonly { bucket: string; navigateur: number }[] | null;
   } | null;
   sansVisite?: { titre: string; detail: string } | null;
+  /** Le dernier déploiement, écrit dans le bandeau « En bref » ; `"echec"` : non lu. */
+  deploiement?: { version: string | null; ts: Date | string } | "echec" | null;
 }
 
 // ─────────────────────────────── Outils d'écriture ───────────────────────────────
@@ -277,6 +279,7 @@ export function construireDigestVueEnsemble(e: EntreesDigest): Digest {
   faitsSante(e.sante, ajouter);
   for (const c of e.cases ?? []) ajouter(faitCase(c));
   faitsConstats(e, ajouter);
+  if (e.deploiement) ajouter(faitDeploiement(e.deploiement));
   for (const s of e.series ?? []) ajouter(faitSerie(s.vital, s.lu));
   if (e.datation) ajouter(faitDatation(e.datation));
   if (e.latence) ajouter(faitLatence(e.latence));
@@ -448,9 +451,11 @@ function faitsConstats(e: EntreesDigest, ajouter: (b: Brouillon) => void) {
   if (cartes.length) parType.set("Écart détecté", cartes.length);
   const repartition = [...parType].map(([nom, n]) => `${nom.toLowerCase()} : ${n}`).join(", ");
   const partielles = [...c.echecs, ...(c.detectes.kind === "echec" ? ["écarts détectés par calcul"] : [])];
-  // Sans constat, la colonne se tait : le fait vise alors le tableau des anomalies
-  // (la première source des constats), ou la santé.
-  const cibleVide = e.anomalies ? "#anomalies" : "#sante";
+  // Sans constat, la colonne se tait : le fait vise alors le compte du bandeau « En
+  // bref » (« 0 constat »), et, si le bandeau se tait aussi (ni constat ni
+  // déploiement), le tableau des anomalies — la première source des constats.
+  const cibleVide = '[data-testid="r0-constats"]';
+  const repliVide = e.anomalies ? "#anomalies" : "#sante";
   ajouter({
     cle: "constats",
     categorie: "Constats",
@@ -463,6 +468,7 @@ function faitsConstats(e: EntreesDigest, ajouter: (b: Brouillon) => void) {
       .filter(Boolean)
       .join(" · "),
     cible: c.affiches ? "#constats" : cibleVide,
+    repli: c.affiches ? undefined : repliVide,
     ton: total === 0 ? "bon" : c.liste.some((x) => TON_CONSTAT[x.type] === "mauvais") ? "mauvais" : "moyen",
   });
   c.liste.slice(0, MAX_CONSTATS).forEach((x, i) =>
@@ -473,7 +479,7 @@ function faitsConstats(e: EntreesDigest, ajouter: (b: Brouillon) => void) {
       valeur: x.titre,
       detail: `règle : ${x.regle}`,
       cible: c.affiches ? `#constats [data-testid="constat"]:nth-child(${i + 1})` : cibleVide,
-      repli: c.affiches ? "#constats" : undefined,
+      repli: c.affiches ? "#constats" : repliVide,
       ton: TON_CONSTAT[x.type],
     }),
   );
@@ -489,6 +495,20 @@ function faitsConstats(e: EntreesDigest, ajouter: (b: Brouillon) => void) {
       ton: TON_PRIORITE[carte.niveauPriorite],
     });
   }
+}
+
+function faitDeploiement(d: NonNullable<EntreesDigest["deploiement"]>): Brouillon {
+  const cible = '[data-testid="r0-deploiement"]';
+  if (d === "echec") return { cle: "deploiement", categorie: "Release", libelle: "Dernier déploiement", valeur: "—", detail: "déploiements non lus", cible };
+  return {
+    cle: "deploiement",
+    categorie: "Release",
+    libelle: "Dernier déploiement",
+    valeur: d.version ?? "sans version",
+    detail: `le ${fmtInstant(d.ts, { annee: true })}`,
+    cible,
+    repli: '[data-testid="release-compare"]',
+  };
 }
 
 // ───────────────────────────── Le graphique principal ─────────────────────────────

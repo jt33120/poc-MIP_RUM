@@ -165,6 +165,12 @@ describe("les trois autres questions", () => {
     expect(r.texte).toMatch(/Écart détecté : « LCP p75 au-dessus de sa plage habituelle depuis 11:00 »/);
   });
 
+  it("changements : le dernier déploiement est dit, daté, avec sa source", () => {
+    const d = construireDigestVueEnsemble(entrees({ deploiement: { version: "2.4.0", ts: "2026-09-30T09:00:00Z" } }));
+    const r = repondreParRegles(QUESTIONS_SUGGEREES[3], d);
+    expect(r.texte).toMatch(/Dernier déploiement : 2\.4\.0, le 30\/09\/2026 à 11:00 \[F\d+\]\./);
+  });
+
   it("sans variation affichée, la raison de la case est dite", () => {
     const d = construireDigestVueEnsemble(
       entrees({
