@@ -443,6 +443,20 @@ function migrations(): string[] {
         expect(sante!.fenetres[0]).toMatchObject({ fin: null, etat: "degradee", source: "sonde" });
         expect(sante!.taux7j).toEqual({ total: 2, aboutis: 1 });
         expect(sante!.battements.map((b) => b.service)).toEqual(["notifier"]);
+        // La frise de 7 jours : par heure (forme de `grilleIso`), le compte de chaque résultat ; les latences par étage.
+        const console7j = sante!.heures.filter((h) => h.etage === "ingest_console");
+        expect(console7j.every((h) => /^\d{4}-\d\d-\d\dT\d\d:00:00Z$/.test(h.heure))).toBe(true);
+        expect(console7j.reduce((s, h) => s + (h.resultats.echec ?? 0), 0)).toBeGreaterThanOrEqual(1);
+        expect(sante!.heures.some((h) => h.etage === "ecriture" && (h.resultats.absent ?? 0) >= 1)).toBe(true);
+        const collector = sante!.latences7j.find((l) => l.etage === "ingest_collector");
+        expect(collector?.n).toBeGreaterThanOrEqual(1);
+        expect(collector?.p50).toEqual(expect.any(Number));
+        expect(sante!.latences7j.some((l) => l.etage === "ecriture")).toBe(false);
+        // Le badge de l'en-tête : la petite lecture, même fenêtre ouverte.
+        const { lireEtatMesure } = await import("../../apps/console/lib/queries-chaine");
+        const mesure = await lireEtatMesure();
+        expect(mesure?.dernier).toEqual(expect.any(String));
+        expect(mesure?.ouverte).toMatchObject({ etat: "degradee", cause: "v103-carte ouverte" });
       } finally {
         await poolConsole.end();
       }

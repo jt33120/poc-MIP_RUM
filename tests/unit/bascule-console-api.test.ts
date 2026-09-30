@@ -119,6 +119,7 @@ function ecrans(voie: Voie, reponse: Resultat<unknown> = { ok: true, data: { eta
     projets: { ok: true as const, data: [{ app_id: "demo", name: "Démo" }] },
     schema: { ok: false as const, raison: "base en panne : 10.0.0.3 refuse" },
     fuseaux: { demo: "Europe/Paris" },
+    mesure: { ok: true as const, data: { dernier: "2026-09-30T10:00:00.000Z", ouverte: null, cadenceMin: 15 } },
   }));
   const e = creerChargementEcrans({
     aiguillage: { voie: async () => voie, echec: echecs },
@@ -222,6 +223,8 @@ describe("la coquille", () => {
     const c = await e.lireCoquille(coquilleLocale);
     expect(c.schema).toEqual({ ok: false, code: "lecture_en_echec" });
     expect(JSON.stringify(c)).not.toContain("10.0.0.3");
+    // Le badge de l'en-tête voyage avec la coquille, en section.
+    expect(c.mesure).toEqual({ ok: true, data: { dernier: "2026-09-30T10:00:00.000Z", ouverte: null, cadenceMin: 15 } });
   });
 
   it("le service en échec : la console la sert (hors strict) ; en strict, elle s'affiche partielle", async () => {
