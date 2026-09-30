@@ -1162,8 +1162,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             largeur. « Aucun constat » reste dit, une fois, dans le bandeau du haut. */}
         {!constatsVides && (
         <div id="constats" className={`flex min-w-0 scroll-mt-16 flex-col ${blocs.hero ? "xl:relative xl:col-span-4" : "xl:col-span-12"}`}>
-          {/* À côté du graphique principal, la colonne prend SA hauteur (même bord bas) :
-              au-delà, les constats défilent dans la colonne, la rangée ne s'allonge pas. */}
+          {/* À côté du graphique principal, la colonne ne dépasse pas SA hauteur : au-delà,
+              les constats défilent dans la colonne, la rangée ne s'allonge pas. La carte n'est
+              pas étirée : un constat seul dans une grande carte blanche se lisait « vide »
+              (audit du 01/10/2026 : contenu sur 32 % de la carte). */}
           <div className={`flex min-w-0 grow flex-col ${blocs.hero ? "xl:absolute xl:inset-0 xl:overflow-y-auto" : ""}`}>
           <SectionErreur titre="Constats">
             {constats.echecs.length > 0 && (
@@ -1178,7 +1180,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             {(etatDetectes.kind === "echec" || (etatDetectes.kind === "ok" && etatDetectes.cartes.length > 0)) && (
               <ConstatsDetectes etat={etatDetectes} />
             )}
-            <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut reglesEnInfobulle etire />
+            <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut reglesEnInfobulle />
           </SectionErreur>
           </div>
         </div>
