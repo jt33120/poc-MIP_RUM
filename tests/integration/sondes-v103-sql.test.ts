@@ -1,4 +1,4 @@
-// Vague 1 — migration-v99 (sondes de la chaîne de mesure), sur un vrai PostgreSQL.
+// Vague 1 — migration-v103 (sondes de la chaîne de mesure), sur un vrai PostgreSQL.
 //
 // Ce que ce fichier prouve ne se lit pas dans le code :
 //
@@ -37,7 +37,7 @@ function migrations(): string[] {
     .map((f) => join(SQL_DIR, f));
 }
 
-(url ? describe : describe.skip)("v99 — sondes de la chaîne de mesure sur PostgreSQL", () => {
+(url ? describe : describe.skip)("v103 — sondes de la chaîne de mesure sur PostgreSQL", () => {
   const pool = new pg.Pool(url ? { connectionString: url, max: 4 } : {});
 
   /** Exécute `corps` dans une transaction toujours annulée. */
@@ -67,7 +67,7 @@ function migrations(): string[] {
   beforeAll(async () => {
     for (const fichier of migrations()) await pool.query(readFileSync(fichier, "utf8"));
     // Rejouable : le fichier passe une seconde fois sans rien changer.
-    await pool.query(readFileSync(join(SQL_DIR, "migration-v99.sql"), "utf8"));
+    await pool.query(readFileSync(join(SQL_DIR, "migration-v103.sql"), "utf8"));
   }, 300_000);
 
   afterAll(async () => {
@@ -99,14 +99,14 @@ function migrations(): string[] {
 
   it("le comptage d'usage n'admet jamais une application sonde", async () => {
     await annulee(async (c) => {
-      await app(c, "v99-cliente");
+      await app(c, "v103-cliente");
       await c.query(
         `insert into tenant_usage_daily (app_id, day, events) values ($1, current_date - 1, 5), ($2, current_date - 1, 5)
          on conflict (app_id, day) do update set events = excluded.events`,
-        [APP_CANARI, "v99-cliente"],
+        [APP_CANARI, "v103-cliente"],
       );
-      const { rows } = await c.query("select app_id from tenant_usage_daily where app_id = any($1) order by app_id", [[APP_CANARI, "v99-cliente"]]);
-      expect(rows.map((r) => r.app_id)).toEqual(["v99-cliente"]);
+      const { rows } = await c.query("select app_id from tenant_usage_daily where app_id = any($1) order by app_id", [[APP_CANARI, "v103-cliente"]]);
+      expect(rows.map((r) => r.app_id)).toEqual(["v103-cliente"]);
     });
   });
 
@@ -121,16 +121,16 @@ function migrations(): string[] {
       );
       await c.query(
         `insert into collecte_fenetre (portee, etage, etat, debut, fin, cause) values
-           ('v99-purge', 'chaine', 'interrompue', now() - interval '500 days', now() - interval '401 days', 'v99-vieille'),
-           ('v99-purge', 'chaine', 'interrompue', now() - interval '399 days', now() - interval '398 days', 'v99-recente'),
-           ('v99-purge', 'chaine', 'degradee',   now() - interval '600 days', null, 'v99-en-cours')`,
+           ('v103-purge', 'chaine', 'interrompue', now() - interval '500 days', now() - interval '401 days', 'v103-vieille'),
+           ('v103-purge', 'chaine', 'interrompue', now() - interval '399 days', now() - interval '398 days', 'v103-recente'),
+           ('v103-purge', 'chaine', 'degradee',   now() - interval '600 days', null, 'v103-en-cours')`,
       );
       const { rows: [{ r }] } = await c.query("select purge_rum_tenants(30) as r");
       expect(r.sondes.sonde_passage).toBeGreaterThanOrEqual(1);
       const { rows: journal } = await c.query("select passage_id::text from sonde_passage where passage_id = any($1::uuid[])", [[`${p}01`, `${p}02`]]);
       expect(journal.map((l) => l.passage_id)).toEqual([`${p}02`]);
-      const { rows: registre } = await c.query("select cause from collecte_fenetre where portee = 'v99-purge' order by cause");
-      expect(registre.map((l) => l.cause)).toEqual(["v99-en-cours", "v99-recente"]);
+      const { rows: registre } = await c.query("select cause from collecte_fenetre where portee = 'v103-purge' order by cause");
+      expect(registre.map((l) => l.cause)).toEqual(["v103-en-cours", "v103-recente"]);
     });
   });
 
@@ -149,20 +149,20 @@ function migrations(): string[] {
 
   it("heures habituelles : lues dans le rollup, 4 jours sur 7, au fuseau de l'app, jour en cours exclu", async () => {
     await annulee(async (c) => {
-      await app(c, "v99-jour");
-      await app(c, "v99-inactive");
-      await c.query("update app_registry set active = false where app_id = 'v99-inactive'");
-      await rollup(c, "v99-jour", SEPT, [10, 11, 12, 13, 14, 15, 16]);
-      await rollup(c, "v99-jour", [1, 2, 3], [17]); // 3 jours sur 7 : pas une habitude
-      await rollup(c, "v99-jour", [1, 2], [9]); // deux appareils, deux jours : toujours 2 jours
-      await rollup(c, "v99-jour", [1, 2], [9], "mobile");
-      await rollup(c, "v99-jour", SEPT, [20], "", 0); // une cellule vide ne compte pas
-      await rollup(c, "v99-jour", [0], [5]); // aujourd'hui : exclu
-      await signal(c, "v99-jour", 120);
-      const { rows } = await c.query("select * from sonde_etat_silence(7, 4, 7, $1)", [["v99-jour", "v99-inactive", APP_CANARI]]);
+      await app(c, "v103-jour");
+      await app(c, "v103-inactive");
+      await c.query("update app_registry set active = false where app_id = 'v103-inactive'");
+      await rollup(c, "v103-jour", SEPT, [10, 11, 12, 13, 14, 15, 16]);
+      await rollup(c, "v103-jour", [1, 2, 3], [17]); // 3 jours sur 7 : pas une habitude
+      await rollup(c, "v103-jour", [1, 2], [9]); // deux appareils, deux jours : toujours 2 jours
+      await rollup(c, "v103-jour", [1, 2], [9], "mobile");
+      await rollup(c, "v103-jour", SEPT, [20], "", 0); // une cellule vide ne compte pas
+      await rollup(c, "v103-jour", [0], [5]); // aujourd'hui : exclu
+      await signal(c, "v103-jour", 120);
+      const { rows } = await c.query("select * from sonde_etat_silence(7, 4, 7, $1)", [["v103-jour", "v103-inactive", APP_CANARI]]);
       expect(rows).toEqual([
         expect.objectContaining({
-          app_id: "v99-jour",
+          app_id: "v103-jour",
           fuseau: "Europe/Paris",
           heures_habituelles: [10, 11, 12, 13, 14, 15, 16],
           fenetre_id: null,
@@ -174,45 +174,45 @@ function migrations(): string[] {
 
   it("le silence anormal sur la vraie base : l'app muette à ses heures alerte UNE fois, l'app en heure creuse jamais", async () => {
     await annulee(async (c) => {
-      await app(c, "v99-toujours");
-      await app(c, "v99-creuse");
-      await rollup(c, "v99-toujours", SEPT, TOUTES);
+      await app(c, "v103-toujours");
+      await app(c, "v103-creuse");
+      await rollup(c, "v103-toujours", SEPT, TOUTES);
       // Heures creuses : celles que touche la dernière heure écoulée (heure de Paris).
       const { rows: [{ creuses }] } = await c.query(
         `select array[extract(hour from (now() - interval '60 minutes') at time zone 'Europe/Paris')::int,
                       extract(hour from now() at time zone 'Europe/Paris')::int] as creuses`,
       );
-      await rollup(c, "v99-creuse", SEPT, TOUTES.filter((h) => !creuses.includes(h)));
-      await signal(c, "v99-toujours", 120);
-      await signal(c, "v99-creuse", 120);
+      await rollup(c, "v103-creuse", SEPT, TOUTES.filter((h) => !creuses.includes(h)));
+      await signal(c, "v103-toujours", 120);
+      await signal(c, "v103-creuse", 120);
 
       const poolTx = { query: (q: string, p?: unknown[]) => c.query(q, p) };
       const sondes = creerSondes({ pool: poolTx, log: { info() {}, warn() {}, error() {} }, silenceMin: 60 });
       // Toute la base est vue ; seules les deux apps de ce cas nous intéressent.
       const fenetres = async () =>
         (await c.query(
-          "select portee, alerte_event_id, fin from collecte_fenetre where etage = 'silence' and portee in ('v99-toujours', 'v99-creuse') order by portee",
+          "select portee, alerte_event_id, fin from collecte_fenetre where etage = 'silence' and portee in ('v103-toujours', 'v103-creuse') order by portee",
         )).rows;
 
       await sondes.traiterSilences(true);
       const premieres = await fenetres();
-      expect(premieres).toEqual([{ portee: "v99-toujours", alerte_event_id: expect.anything(), fin: null }]);
+      expect(premieres).toEqual([{ portee: "v103-toujours", alerte_event_id: expect.anything(), fin: null }]);
       const { rows: [ev] } = await c.query("select rule_id, severity, message from alert_event where id = $1", [premieres[0].alerte_event_id]);
-      expect(ev).toMatchObject({ rule_id: null, severity: "warning", message: expect.stringMatching(/v99-toujours.*60 min.*habituellement/) });
+      expect(ev).toMatchObject({ rule_id: null, severity: "warning", message: expect.stringMatching(/v103-toujours.*60 min.*habituellement/) });
 
       // Passage suivant, toujours muette : pas de seconde alerte.
       await sondes.traiterSilences(true);
       expect(await fenetres()).toEqual(premieres);
       const { rows: [{ n }] } = await c.query(
-        "select count(*)::int as n from alert_event where message like 'Collecte muette — app v99-toujours%'",
+        "select count(*)::int as n from alert_event where message like 'Collecte muette — app v103-toujours%'",
       );
       expect(n).toBe(1);
 
       // La donnée revient : la fenêtre se ferme à la première donnée revenue.
-      await signal(c, "v99-toujours", 1);
+      await signal(c, "v103-toujours", 1);
       await sondes.traiterSilences(true);
       const { rows: [close] } = await c.query(
-        "select fin > debut as borne, fin <= now() as passee from collecte_fenetre where portee = 'v99-toujours' and etage = 'silence'",
+        "select fin > debut as borne, fin <= now() as passee from collecte_fenetre where portee = 'v103-toujours' and etage = 'silence'",
       );
       expect(close).toEqual({ borne: true, passee: true });
     });
@@ -220,33 +220,33 @@ function migrations(): string[] {
 
   it("sonde_ouvrir_silence : une fenêtre, une alerte, puis plus rien ; muette quand la chaîne est coupée", async () => {
     await annulee(async (c) => {
-      await app(c, "v99-coupee");
-      await rollup(c, "v99-coupee", SEPT, TOUTES);
-      await signal(c, "v99-coupee", 120);
+      await app(c, "v103-coupee");
+      await rollup(c, "v103-coupee", SEPT, TOUTES);
+      await signal(c, "v103-coupee", 120);
       const poolTx = { query: (q: string, p?: unknown[]) => c.query(q, p) };
       const sondes = creerSondes({ pool: poolTx, log: { info() {}, warn() {}, error() {} }, silenceMin: 60 });
       await sondes.traiterSilences(false);
-      const { rows: aucune } = await c.query("select 1 from collecte_fenetre where portee = 'v99-coupee'");
+      const { rows: aucune } = await c.query("select 1 from collecte_fenetre where portee = 'v103-coupee'");
       expect(aucune).toEqual([]);
 
       const ouvrir = () =>
-        c.query("select sonde_ouvrir_silence('v99-coupee', now() - interval '2 hours', 60, array[10, 11]) as alerte");
+        c.query("select sonde_ouvrir_silence('v103-coupee', now() - interval '2 hours', 60, array[10, 11]) as alerte");
       const { rows: [{ alerte: premiere }] } = await ouvrir();
       const { rows: [{ alerte: seconde }] } = await ouvrir();
       expect(premiere).not.toBeNull();
       expect(seconde).toBeNull();
       await expect(c.query("select sonde_fermer_silence(-1) as ok")).resolves.toMatchObject({ rows: [{ ok: false }] });
       // En dernier : l'erreur annule la transaction.
-      await expect(c.query("select sonde_ouvrir_silence('v99-coupee', now(), 1, '{}')")).rejects.toThrow(/seuil de silence invalide/);
+      await expect(c.query("select sonde_ouvrir_silence('v103-coupee', now(), 1, '{}')")).rejects.toThrow(/seuil de silence invalide/);
     });
   });
 
   it("sonde_alerter : une seule alerte par fenêtre, rien pour une fenêtre inconnue", async () => {
     await annulee(async (c) => {
       const { rows: [{ id }] } = await c.query(
-        "insert into collecte_fenetre (portee, etage, etat, debut) values ('v99-alerte', 'chaine', 'interrompue', now()) returning id",
+        "insert into collecte_fenetre (portee, etage, etat, debut) values ('v103-alerte', 'chaine', 'interrompue', now()) returning id",
       );
-      const appel = () => c.query("select sonde_alerter($1, 'v99-alerte', 'critical', 'v99 : canari en échec', '{}'::jsonb) as ev", [id]);
+      const appel = () => c.query("select sonde_alerter($1, 'v103-alerte', 'critical', 'v103 : canari en échec', '{}'::jsonb) as ev", [id]);
       const { rows: [{ ev: premier }] } = await appel();
       const { rows: [{ ev: second }] } = await appel();
       expect(premier).not.toBeNull();

@@ -1,9 +1,10 @@
--- migration-v99 — Les sondes de la chaîne de mesure : journal des passages,
+-- migration-v103 — Les sondes de la chaîne de mesure : journal des passages,
 -- registre des fenêtres de collecte, application canari, alerte d'absence.
 --
 -- Additive et rejouable, PostgreSQL 15 à 17. Refonte du monitoring, vague 1,
--- lot L1 de l'étude des sondes (29/09/2026). v98 est réservée à un autre lot de
--- la même nuit : ce fichier ne suppose NI son absence NI sa présence (aucune
+-- lot L1 de l'étude des sondes (29/09/2026). Numérotée v99 à l'écriture, renumérotée
+-- v103 le 30/09/2026 (v100 et v101 fusionnées avant elle). v102 (agrégats) est d'un
+-- autre lot de la même nuit : ce fichier ne suppose NI son absence NI sa présence (aucune
 -- définition recopiée, voir § 7).
 --
 -- CE QUE LA BASE Y GAGNE :
@@ -69,7 +70,7 @@ create table if not exists sonde_passage (
 create index if not exists sonde_passage_etage_emis_idx on sonde_passage (etage, portee, emis_at desc);
 
 comment on table sonde_passage is
-  'Journal des sondes (v99) : une ligne par passage du scheduler et par étage sondé. Une fenêtre '
+  'Journal des sondes (v103) : une ligne par passage du scheduler et par étage sondé. Une fenêtre '
   'sans ligne est une interruption. Purgé à 90 jours par purge_rum_tenants.';
 
 -- ── 2. Le registre des fenêtres de collecte ─────────────────────────────────
@@ -98,7 +99,7 @@ create unique index if not exists collecte_fenetre_une_ouverte
   on collecte_fenetre (portee, etage) where fin is null;
 
 comment on table collecte_fenetre is
-  'Registre des fenêtres de collecte NON nominales (v99). Pas de ligne = collecte en service. '
+  'Registre des fenêtres de collecte NON nominales (v103). Pas de ligne = collecte en service. '
   'fin null = en cours. Purgé à 400 jours (fenêtres closes) par purge_rum_tenants.';
 
 -- ── 3. Les battements attendus d'une application (sonde déclarée) ───────────
@@ -128,7 +129,7 @@ create table if not exists sonde_battement (
 -- 7 jours : le canari ne sert qu'à prouver le passage.
 alter table app_registry add column if not exists sonde boolean not null default false;
 comment on column app_registry.sonde is
-  'Application de sonde (v99, mip-canari) : exclue du périmètre des écrans, du comptage d''usage et '
+  'Application de sonde (v103, mip-canari) : exclue du périmètre des écrans, du comptage d''usage et '
   'de l''alerte d''absence, même quand les apps internes sont incluses.';
 
 insert into app_registry (app_id, name, internal, active, sonde, retention_days, timezone, notes)
@@ -244,7 +245,7 @@ declare
   src   text;
   ancre constant text := E'\n  return result;\n';
   ajout constant text :=
-    E'\n  -- v99 : journal des sondes (90 j) et registre des fenêtres de collecte (400 j).\n'
+    E'\n  -- v103 : journal des sondes (90 j) et registre des fenêtres de collecte (400 j).\n'
     '  result := result || jsonb_build_object(''sondes'', purge_sondes(90, 400));\n'
     '  return result;\n';
 begin
@@ -253,13 +254,13 @@ begin
    where ns.nspname = 'public' and p.proname = 'purge_rum_tenants'
      and p.pronargs = 1 and p.proargtypes[0] = 'integer'::regtype;
   if src is null then
-    raise exception 'v99: purge_rum_tenants(integer) introuvable — appliquer v14 d''abord';
+    raise exception 'v103: purge_rum_tenants(integer) introuvable — appliquer v14 d''abord';
   end if;
   if position('purge_sondes(' in src) > 0 then
     return;
   end if;
   if (length(src) - length(replace(src, ancre, ''))) / length(ancre) <> 1 then
-    raise exception 'v99: point d''insertion ambigu dans purge_rum_tenants (% occurrences)',
+    raise exception 'v103: point d''insertion ambigu dans purge_rum_tenants (% occurrences)',
       (length(src) - length(replace(src, ancre, ''))) / length(ancre);
   end if;
   execute 'create or replace function purge_rum_tenants(default_days int default 30) returns jsonb language plpgsql as '
@@ -412,7 +413,7 @@ begin
 end $$;
 
 comment on function sonde_etat_silence(integer, integer, integer, text[]) is
-  'Alerte d''absence (v99) : par application, dernière donnée, heures locales d''activité habituelle '
+  'Alerte d''absence (v103) : par application, dernière donnée, heures locales d''activité habituelle '
   '(rum_rollup_hourly, au moins p_min_jours des p_jours derniers jours) et fenêtre silence ouverte.';
 comment on function sonde_alerter(bigint, text, text, text, jsonb) is
-  'Lève l''alerte d''une fenêtre de collecte, une seule par fenêtre : alert_event puis route_alert (v99).';
+  'Lève l''alerte d''une fenêtre de collecte, une seule par fenêtre : alert_event puis route_alert (v103).';

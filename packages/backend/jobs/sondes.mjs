@@ -8,7 +8,7 @@
 // collector → base), puis relit les lignes qu'il doit avoir produites. Le
 // verdict est gardé, étage par étage (`sonde_passage`), et les périodes non
 // nominales sont tenues dans un registre (`collecte_fenetre`) que les graphiques
-// liront. Migration : `packages/db/sql/migration-v99.sql`.
+// liront. Migration : `packages/db/sql/migration-v103.sql`.
 //
 // SE GREFFER SUR LE TICK, NE JAMAIS RÉVEILLER LA BASE. Aucune boucle à part :
 // l'émission est la PREMIÈRE étape du tick, la vérification la dernière avant la
@@ -379,7 +379,7 @@ export function creerSondes({
     name: "canari_emettre",
     run: async () => {
       courant = null;
-      if (!(await schema())) return { absent: "migration-v99 non appliquée" };
+      if (!(await schema())) return { absent: "migration-v103 non appliquée" };
       const passageId = randomUUID();
       const emisA = new Date(maintenant());
       const etatCle = await assurerCle();

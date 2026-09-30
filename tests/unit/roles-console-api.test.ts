@@ -24,7 +24,7 @@ const trie = (l: readonly string[]) => [...l].sort();
  * policy), et retirée de la comparaison avec v93.
  */
 const APRES_V93: Record<string, { version: number; privileges: string[] }> = {
-  collecte_fenetre: { version: 99, privileges: ["SELECT"] },
+  collecte_fenetre: { version: 103, privileges: ["SELECT"] },
 };
 const sansApresV93 = <T>(o: Record<string, T>) => Object.fromEntries(Object.entries(o).filter(([t]) => !(t in APRES_V93)));
 
