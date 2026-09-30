@@ -711,9 +711,11 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
     it("un script intégré se regroupe par fonction, routes en détail ; une invocation-URL devient « au chargement »", async () => {
       const lignes = await frustration.scriptsBloquants(f22(WEB_F22));
       expect(lignes).toEqual([
-        { url: null, quoi: "BUTTON#go.onclick", n: 2, totalMs: 150, worstMs: 100, routes: ["/partners/:id"], nbRoutes: 1 },
-        { url: "https://cdn.example/app.js", quoi: "render", n: 1, totalMs: 40, worstMs: 40, routes: ["/"], nbRoutes: 1 },
-        { url: null, quoi: null, n: 1, totalMs: 30, worstMs: 30, routes: ["/partners"], nbRoutes: 1 },
+        // dureeP75Ms : p75 de la DURÉE des trames du couple, toutes routes confondues
+        // (100 et 50 → 87,5, arrondi à 88).
+        { url: null, quoi: "BUTTON#go.onclick", n: 2, totalMs: 150, worstMs: 100, dureeP75Ms: 88, routes: ["/partners/:id"], nbRoutes: 1 },
+        { url: "https://cdn.example/app.js", quoi: "render", n: 1, totalMs: 40, worstMs: 40, dureeP75Ms: 40, routes: ["/"], nbRoutes: 1 },
+        { url: null, quoi: null, n: 1, totalMs: 30, worstMs: 30, dureeP75Ms: 30, routes: ["/partners"], nbRoutes: 1 },
       ]);
     });
   });
