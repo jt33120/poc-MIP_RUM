@@ -34,7 +34,7 @@ export const PARAMS = {
   device:
     "Type d'appareil : 'mobile', 'desktop', 'tablet' ou 'all' (défaut). La tablette est désormais comptée comme telle par TOUS les endpoints, y compris overview, vitals, pages, tracing et health-grid.",
   limit:
-    "Nombre d'éléments par page (1 à 200). Le détail d'un groupe d'erreurs, la liste des issues et le détail d'une issue plafonnent à 100 par page.",
+    "Nombre d'éléments par page (1 à 200). Le détail d'un groupe d'erreurs, la liste des issues, le détail d'une issue et les détections plafonnent à 100.",
   offset: "Décalage de pagination, à partir de 0.",
   series:
     "Vitals à détailler en série temporelle : liste séparée par des virgules ('LCP,INP') ou 'all'. Par défaut aucune série n'est renvoyée, seulement les p75.",
@@ -292,6 +292,45 @@ export const OUTILS = [
       "« la dégradation est-elle continue ou par à-coups ? » — questions auxquelles un agrégat sur la période ne répond pas.",
     chemin: "/health-grid",
     params: FILTRES,
+  },
+  // Les statistiques des écrans, servies par l'API (paquet `@mip/stats`) : le même
+  // calcul que l'écran « Tendances » et l'encart des constats de la console.
+  {
+    nom: "mip_rum_get_trends",
+    titre: "Tendances des Core Web Vitals",
+    resume: "Pente et bruit sur 14 jours complets, échéance contre la borne « Bon », rupture datée — ou ce qui manque, en chiffres.",
+    description:
+      "Répond à « est-ce que ça se dégrade, depuis quand, et quand franchira-t-on le seuil ? » pour les cinq Core Web Vitals " +
+      "(LCP, INP, CLS, FCP, TTFB), sur les 14 derniers jours COMPLETS du fuseau de l'app, journée en cours exclue. La fenêtre est FIXE : " +
+      "cet outil n'a pas de `period`. Pour chaque vital (`data.vitals[]`) : " +
+      "`tendance.etat` vaut `significative` (pente établie, `pente` par jour), `bruit` (droite tracée mais indiscernable du bruit : " +
+      "n'annoncer AUCUNE tendance) ou `insuffisante` (moins de 7 jours d'au moins 30 mesures : dire `joursValides` sur `joursRequis`, " +
+      "jamais « stable »). `echeance.etat` : `depasse` (la dernière valeur retenue dépasse déjà la borne « Bon », incluse), `prevu` " +
+      "(franchissement vers J+`dans`, le `jour`, dans un horizon de 7 jours), `aucun`, ou `non_ecrit` (aucune projection ne doit être citée). " +
+      "`rupture` est le test de Pettitt : `ok: false` avec `manque` (par exemple 4 jours valides, 10 requis — le dire tel quel), " +
+      "`rupture: null` (aucune rupture datée, `p` donné), ou une rupture datée (premier jour du nouveau niveau, médianes des p75 " +
+      "quotidiennes avant et après). `deploiement` est une COÏNCIDENCE DE DATE, jamais une cause. `phrase` est la formulation de " +
+      "l'écran, réserves comprises : la reprendre plutôt que la paraphraser. Ce n'est pas une prévision : aucune saisonnalité.",
+    chemin: "/trends",
+    params: ["app", "device"],
+  },
+  {
+    nom: "mip_rum_list_detections",
+    titre: "Épisodes hors de la plage habituelle",
+    resume: "p75 horaires sorties de leur plage habituelle sur la période, avec cette plage et l'heure qui fait preuve.",
+    description:
+      "Répond à « qu'est-ce qui sort de l'ordinaire, depuis quand, et par rapport à quoi ? ». Liste les épisodes détectés par calcul " +
+      "qui recoupent la période : la p75 horaire d'un vital (toutes routes, ou une route) sortie de sa PLAGE HABITUELLE — médiane et " +
+      "écart absolu médian du même créneau des semaines passées, à défaut des 14 derniers jours, à défaut des 48 dernières heures. " +
+      "Les plus prioritaires d'abord (`priorite` = impact × ampleur × confiance). Chaque épisode porte `phrase` (rédigée par règles), " +
+      "`plageHabituelle` (`mediane`, `bas`, `haut`, niveau de repli), `observe` (l'heure qui fait preuve : `p75`, effectif `n`, écart " +
+      "robuste `z`), `debut` et `fin` (null = épisode en cours). `etat: \"absent\"` veut dire que la détection n'existe pas encore sur " +
+      "cette base — PAS « rien à signaler » ; une liste vide avec `etat: \"ok\"` veut dire aucun épisode sur la période. " +
+      "Population : toutes les mesures reçues, robots compris ; ni l'appareil ni une dimension ne découpent un épisode. " +
+      "`tronque: true` : d'autres épisodes, moins prioritaires, existent peut-être (relancer avec `limit` jusqu'à 100). " +
+      "Vocabulaire : « détecté par calcul », « associé à » — jamais une cause.",
+    chemin: "/detections",
+    params: ["app", "period", "limit"],
   },
   {
     nom: "mip_rum_query_explorer",
