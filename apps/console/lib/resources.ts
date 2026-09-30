@@ -11,7 +11,23 @@
 // à l'hôte extrait de l'URL déjà collectée. Le serveur ne résout, ne contacte et
 // ne récupère jamais une URL de ressource : une URL hostile ne déclenche rien.
 
+import { SEUILS_MIP } from "./seuils";
+
 export const RESOURCE_CAP = 15;
+
+/**
+ * Le seuil de COLLECTE des ressources du SDK (`DEFAULT_SLOW_RESOURCE_MS`,
+ * `packages/rum-sdk/src/resources.ts`) : sous cette durée, une ressource n'est pas
+ * envoyée, sauf si elle bloque le rendu. La borne « bon » de `SEUILS_MIP.RESOURCE`
+ * a été choisie ÉGALE à ce seuil (voir `lib/seuils.ts`) : on la lit ici au lieu de
+ * réécrire la valeur dans chaque texte. Un test la compare à la constante du SDK :
+ * si l'une bouge sans l'autre, il échoue.
+ */
+export const SEUIL_COLLECTE_RESSOURCE_MS: number = SEUILS_MIP.RESOURCE.bon;
+
+/** Le seuil de collecte, écrit dans son unité. */
+// Espace ordinaire, comme les textes qui le citaient avant (et les tests qui les lisent).
+export const TEXTE_SEUIL_COLLECTE_RESSOURCE = `${SEUIL_COLLECTE_RESSOURCE_MS} ms`;
 
 /** Part de l'origine d'une ressource par rapport à l'application mesurée. */
 export type ResourceParty = "first" | "third" | "unknown";
@@ -30,7 +46,7 @@ export const PARTY_HINTS: Record<ResourceParty, string> = {
 };
 
 export const RESOURCE_THRESHOLD_NOTICE =
-  "Ressources collectées selon le seuil du SDK : une ressource n'est envoyée que si elle dépasse le seuil de lenteur configuré (300 ms par défaut) ou si elle bloque le rendu, et au plus vingt par page vue. Ces chiffres décrivent donc les ressources retenues, pas tout le trafic réseau — et ne sont pas extrapolés.";
+  `Ressources collectées selon le seuil du SDK : une ressource n'est envoyée que si elle dépasse le seuil de lenteur configuré (${TEXTE_SEUIL_COLLECTE_RESSOURCE} par défaut) ou si elle bloque le rendu, et au plus vingt par page vue. Ces chiffres décrivent donc les ressources retenues, pas tout le trafic réseau — et ne sont pas extrapolés.`;
 
 /**
  * Hôte d'une origine déclarée : minuscules, sans schéma, sans identifiants et

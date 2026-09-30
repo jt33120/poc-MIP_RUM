@@ -20,8 +20,8 @@
 // largeurs — à 390 px il n'y a pas la place d'une colonne de plus, et la cascade doit
 // rester horizontale.
 //
-// `partiel` EN TÊTE. La collecte de ressources est volontairement partielle (300 ms,
-// 20 par vue) : le dire AVANT le dessin, sinon une cascade incomplète se lit comme
+// `partiel` EN TÊTE. La collecte de ressources est volontairement partielle (seuil de
+// collecte du SDK, `SEUIL_COLLECTE_RESSOURCE_MS` de lib/resources.ts, et 20 par vue) : le dire AVANT le dessin, sinon une cascade incomplète se lit comme
 // complète (contre-exemple : le « 32 out of 32 » de Datadog, qui n'a rien à avouer).
 //
 // L'alternative textuelle est intégrée (même motif que `RankBar`) : libellé, piste,

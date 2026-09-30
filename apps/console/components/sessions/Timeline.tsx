@@ -18,9 +18,10 @@
 import Link from "next/link";
 import { fmtDate, fmtVital } from "@/lib/format";
 import type { TimelineItem } from "@/lib/queries";
-import { RATING_CLASS, type Rating } from "@/lib/rating";
+import { FORME_RATING, RATING_CLASS } from "@/lib/rating";
 import { libelleAction, libelleRepere } from "@/lib/libelle-action";
-import { KIND_ICON, KIND_STYLE, libelleEvenement } from "@/lib/timeline-constants";
+import { KIND_ICON, KIND_STYLE, libelleDeLigne, libelleEvenement, mesureMipDeLigne, noteDeLigne, pointDeLigne } from "@/lib/timeline-constants";
+import { ValeurNoteeMip } from "@/components/NoteMip";
 
 /** Types de repère du SDK (`rum_breadcrumb.type`), en français ; un autre type reste tel quel. */
 const TYPES_REPERE: Record<string, string> = {
@@ -132,7 +133,8 @@ export function TimelineRow({
   return (
     <li id={id} data-ligne={id} className={`relative scroll-mt-24 rounded-r pb-4 pl-6 last:pb-0 target:bg-brand/10 ${LIGNE_COURANTE}`}>
       <span
-        className={`absolute -left-[9px] top-1 flex h-4 w-4 items-center justify-center rounded-full text-white ${st.dot}`}
+        data-point={noteDeLigne(item) ?? ""}
+        className={`absolute -left-[9px] top-1 flex h-4 w-4 items-center justify-center rounded-full text-white ${pointDeLigne(item)}`}
       >
         {KIND_ICON[item.kind]}
       </span>
@@ -143,7 +145,7 @@ export function TimelineRow({
           instant={instant}
           className="w-20 shrink-0 font-mono text-xs tabular-nums"
         />
-        <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${st.badge}`}>{st.label}</span>
+        <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${st.badge}`}>{libelleDeLigne(item)}</span>
         <ItemBody item={item} />
         {item.action_id && item.kind !== "action" && !imbrique && (
           <span className="rounded-full border border-fuchsia-300 bg-fuchsia-50 px-2 py-0.5 text-[11px] font-medium text-fuchsia-800 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/10 dark:text-fuchsia-300">
@@ -174,12 +176,26 @@ function ItemBody({ item }: { item: TimelineItem }) {
         </>
       );
     case "vital": {
-      const cls = item.rating ? RATING_CLASS[item.rating as Rating] : "";
+      const valeur = item.value != null ? Number(item.value) : null;
+      const mesure = mesureMipDeLigne(item);
+      if (mesure) {
+        // Phase réseau, RTT, débit : règle MIP, écrite à côté de la valeur (R-S amendée).
+        return (
+          <>
+            <span className="font-semibold">{item.title}</span>
+            <ValeurNoteeMip mesure={mesure} valeur={valeur} texte={mesure === "DOWNLINK" ? (valeur == null ? "—" : `${valeur.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mbit/s`) : fmtVital(item.title ?? "", valeur)} />
+            {item.detail && <span className="font-mono text-xs text-ink-faint">{item.detail}</span>}
+          </>
+        );
+      }
+      const note = noteDeLigne(item);
+      const cls = note ? RATING_CLASS[note] : "";
       return (
         <>
           <span className="font-semibold">{item.title}</span>
           <span className={`rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums ${cls}`}>
-            {fmtVital(item.title ?? "", item.value != null ? Number(item.value) : null)}
+            {note && <span aria-hidden="true" className="mr-1">{FORME_RATING[note]}</span>}
+            {fmtVital(item.title ?? "", valeur)}
           </span>
           {item.detail && <span className="font-mono text-xs text-ink-faint">{item.detail}</span>}
         </>
@@ -237,9 +253,11 @@ function ItemBody({ item }: { item: TimelineItem }) {
     case "resource":
       return (
         <>
-          <span className="font-semibold text-warn-ink">
-            {item.value != null ? `${Math.round(Number(item.value))} ms` : item.title}
-          </span>
+          {item.value != null ? (
+            <ValeurNoteeMip mesure="RESOURCE" valeur={Number(item.value)} texte={fmtVital("", Number(item.value))} />
+          ) : (
+            <span className="font-semibold text-ink-soft">{item.title}</span>
+          )}
           {item.detail && <span className="max-w-xl truncate font-mono text-xs text-ink-faint" title={item.detail}>{item.detail}</span>}
         </>
       );
@@ -248,13 +266,14 @@ function ItemBody({ item }: { item: TimelineItem }) {
       return (
         <>
           <span className="chip-mono">{item.title}</span>
-          <span
-            className={`font-semibold tabular-nums ${
-              item.rating === "poor" ? "text-bad-ink" : "text-sky-700 dark:text-sky-400"
-            }`}
-          >
-            {item.value != null ? `${Math.round(Number(item.value))} ms` : "—"}
-          </span>
+          {/* La durée se note par la règle MIP des appels API (`SEUILS_MIP.API`) ; un échec
+              (statut ≥ 400 ou nul, `rating = 'poor'` de la requête) est dit en toutes lettres. */}
+          <ValeurNoteeMip
+            mesure="API"
+            valeur={item.value != null ? Number(item.value) : null}
+            texte={item.value != null ? fmtVital("", Number(item.value)) : "—"}
+          />
+          {item.rating === "poor" && <span className="text-xs font-semibold text-bad-ink">échec</span>}
           {item.detail && <span className="text-xs text-ink-soft">{item.detail}</span>}
         </>
       );

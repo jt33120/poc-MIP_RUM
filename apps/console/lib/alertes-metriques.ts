@@ -104,7 +104,7 @@ export function seuilMauvaisDeMetrique(metric: string): { seuil: number; compara
 
 /**
  * D'où vient le seuil proposé, en une phrase : « LCP : bon ≤ 2,5 s, mauvais au-delà
- * de 4,0 s (web.dev) » ou « règle MIP : DNS > 150 ms ». Chaîne vide sans seuil.
+ * de 4,0 s (web.dev) » ou `texteRegleMip` (« règle MIP : DNS > … »). Chaîne vide sans seuil.
  */
 export function origineSeuilPropose(metric: string): string {
   if (propre(THRESHOLDS, metric)) return `${metric} : ${texteSeuils(metric)} (web.dev)`;

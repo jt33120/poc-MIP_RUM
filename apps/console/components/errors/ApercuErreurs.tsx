@@ -2,8 +2,10 @@
 // lit, ce module présente — un état par lecture, jamais un zéro pour une panne.
 //
 // LA RANGÉE DE TUILES EST UNE POPULATION : les occurrences d'erreurs de la fenêtre
-// (§ 3.12). Quatre questions, quatre tuiles, aucune couleur de verdict (R-S : aucun
-// seuil publié n'existe pour un compte d'erreurs) :
+// (§ 3.12). Quatre questions, quatre tuiles, aucune couleur de verdict sur les
+// COMPTES (R-S : aucun seuil publié n'existe pour un compte d'erreurs). Seule la PART
+// des sessions touchées porte une note, celle de la règle MIP `BROWSER_ERRORS`,
+// écrite dans la tuile (amendement de R-S du 29/09/2026) :
 //   - « Occurrences » : `sum(occurrences)` (V1), jamais un compte de lignes ;
 //   - « Sessions touchées » : sessions distinctes portant une occurrence ; INCONNU
 //     quand aucune occurrence n'est rattachée à une session (erreurs backend), jamais 0 ;
@@ -161,6 +163,9 @@ export function TuilesErreurs({
             raisonNull={valeurPart.raison ?? undefined}
             format="pct"
             sensMeilleur="bas"
+            {...(valeurPart.valeur !== null
+              ? { noteMip: { mesure: "BROWSER_ERRORS", valeur: valeurPart.valeur, texte: formater("pct", valeurPart.valeur) } }
+              : {})}
             reference={ref}
             {...precedente(partPrec, couvPart, () => valeurPartAvant)}
             couverture={

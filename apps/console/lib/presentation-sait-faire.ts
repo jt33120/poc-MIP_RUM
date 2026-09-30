@@ -51,6 +51,7 @@
 // racine ou à apps/console. Le relevé du 23/09 a gardé, ligne pour ligne, la
 // numérotation des §§ 1 à 11 du relevé du 18/09 : les numéros du plan valent encore.
 import { CAPACITES, VERDICTS, type Capacite, type Verdict } from "./couverture";
+import { TEXTE_SEUIL_COLLECTE_RESSOURCE } from "./resources";
 import type { CarteCapacite, Source } from "./couverture-controle";
 
 export type { CarteCapacite, Source };
@@ -183,7 +184,7 @@ export const CARTES: readonly CarteCapacite[] = [
       {
         id: "B4",
         texte:
-          "Seules les ressources retenues par le SDK (plus de 300 ms, 20 par page vue) sont mesurées : un échantillon biaisé vers le lent, jamais extrapolé ; aucune somme des blocages.",
+          `Seules les ressources retenues par le SDK (plus de ${TEXTE_SEUIL_COLLECTE_RESSOURCE}, 20 par page vue) sont mesurées : un échantillon biaisé vers le lent, jamais extrapolé ; aucune somme des blocages.`,
       },
     ],
     // § 6.4 : le pays vient du fuseau horaire du terminal ; « Pays estimé »

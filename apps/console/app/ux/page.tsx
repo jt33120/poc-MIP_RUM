@@ -33,6 +33,7 @@ import { chargerUx } from "@/lib/chargeurs/ux";
 import { chargerEcran } from "@/lib/ecran";
 import { accord, decouperUrlScript, fmtVital, pluriel } from "@/lib/format";
 import { formater } from "@/lib/fmt-ids";
+import { MESURE_DU_SIGNAL, partSessionsTouchees } from "@/lib/notes-mip";
 import { libelleSeauComplet } from "@/lib/series";
 import { pointsVital } from "@/lib/vue-ensemble";
 import { type CouverturePrecedente } from "@/lib/comparaison";
@@ -300,7 +301,12 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
   );
 }
 
-/** Les trois tuiles de signaux : comptes ENTIERS (jamais les 50 lignes de `topFrustrations`), neutres (R-S). */
+/**
+ * Les trois tuiles de signaux : comptes ENTIERS (jamais les 50 lignes de `topFrustrations`),
+ * neutres ; la part des sessions touchées par les clics rageurs et morts est notée
+ * par sa règle MIP, écrite dans la tuile (R-S amendée). Les clics « erreur » n'ont
+ * pas de règle et restent neutres.
+ */
 function TuilesSignaux({
   totaux,
   totauxPrec,
@@ -324,9 +330,17 @@ function TuilesSignaux({
             : !totauxPrec.ok
               ? { precedent: null, couverturePrecedente: PRECEDENTE_EN_ECHEC }
               : { precedent: avant?.n ?? 0, couverturePrecedente: couverture };
+        // Règle MIP (amendement de R-S, 29/09/2026) : le COMPTE reste neutre (il grandit
+        // avec le trafic) ; c'est la PART des sessions touchées qui est notée, et la
+        // tuile l'écrit avec sa règle.
+        const mesure = MESURE_DU_SIGNAL[t.kind];
+        const part = partSessionsTouchees(t.sessions, totaux.capteur.sessionsCouvertes);
         return (
           <KpiTile
             key={t.kind}
+            {...(mesure && part != null
+              ? { noteMip: { mesure, valeur: part, texte: `${formater("pct", part)} des sessions touchées` } }
+              : {})}
             label={LIBELLES_SIGNAL[t.kind]}
             valeur={t.n}
             format="count"

@@ -7,17 +7,20 @@
 //     lire une différence de percentiles comme une durée ;
 //   - la part serveur est une proportion (0-100 %), dite « non décomposé » quand aucun
 //     appel n'a de jumeau serveur — jamais « 0 % serveur » ;
-//   - aucune couleur de verdict : aucun seuil n'est publié pour une durée d'API (R-S) ;
+//   - couleur de la RÈGLE MIP des appels API (`SEUILS_MIP.API`, amendement de R-S du
+//     29/09/2026), forme devant la valeur, règle écrite en tête (`REGLE_HERO`) ;
 //   - le libellé mène à la ligne de « Tous les appels API » (ancre encodée), et
 //     « Traces de cet appel » filtre les traces lentes sur l'appel.
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement, Fragment, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import type { ApiCallDecomposition } from "../../apps/console/lib/queries-tracing";
-import { RATING_HEX, SERIE } from "../../apps/console/lib/palette";
+import { RATING_HEX, RATING_JETON, SERIE } from "../../apps/console/lib/palette";
+import { SEUILS_MIP, texteRegleMip } from "../../apps/console/lib/seuils";
 import { ancreAppel, type Appel } from "../../apps/console/lib/tracing-ancres";
 import {
   APPELS_HERO,
+  REGLE_HERO,
   fragmentVers,
   libelleAppel,
   lignesHero,
@@ -91,17 +94,26 @@ describe("lignesHero — T6", () => {
     expect(html).toContain(`appel=${encodeURIComponent("POST /api/a b")}#traces`.replace(/&/g, "&amp;"));
   });
 
-  it("aucune couleur de verdict : orange pour les appels, gris pour « Ensemble »", () => {
-    const { lignes } = lignesHero([appel(), appel({ url: "/api/x", front_p75: 5000 })], {
-      ...OPTIONS,
-      ensemble: { front_p75: 900, back_p75: null, correlated: 0 },
-    });
-    const verdicts = Object.values(RATING_HEX);
-    for (const l of lignes) expect(verdicts).not.toContain(l.color);
+  it("couleur de la règle MIP des appels API (SEUILS_MIP.API), forme devant la valeur ; « Ensemble » reste gris", () => {
+    const { lignes } = lignesHero(
+      [
+        appel({ front_p75: SEUILS_MIP.API.bon }),
+        appel({ url: "/api/m", front_p75: SEUILS_MIP.API.bon + 1 }),
+        appel({ url: "/api/x", front_p75: SEUILS_MIP.API.mauvais + 1 }),
+      ],
+      { ...OPTIONS, ensemble: { front_p75: 900, back_p75: null, correlated: 0 } },
+    );
     expect(lignes[0]).toMatchObject({ label: "Ensemble", color: SERIE.reference });
     expect(lignes[0].href).toBeUndefined();
     expect(lignes[0].sub).toBe("serveur : aucun appel suivi");
-    expect(lignes.slice(1).every((l) => l.color === SERIE.principale)).toBe(true);
+    expect(lignes.slice(1).map((l) => l.color)).toEqual([RATING_JETON.good, RATING_JETON["needs-improvement"], RATING_JETON.poor]);
+    expect(String(lignes[3].display)).toMatch(/^■ /);
+    expect(String(lignes[1].display)).toMatch(/^● /);
+    // Aucune couleur constante de verdict (RATING_HEX) : les jetons suivent le thème.
+    for (const l of lignes) expect(Object.values(RATING_HEX)).not.toContain(l.color);
+    // La règle que l'écran écrit en tête du classement.
+    expect(REGLE_HERO).toBe(texteRegleMip("API"));
+    expect(lignes[3].title).toContain(REGLE_HERO);
   });
 
   it("« Ensemble » en tête : p75 navigateur global, et le p75 serveur sur les appels suivis", () => {

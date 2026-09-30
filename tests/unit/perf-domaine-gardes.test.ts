@@ -142,24 +142,30 @@ function mesuresRecopiees(ligne: string): MesureMip[] {
 }
 
 /**
- * Occurrences CONNUES, relevées le 29/09/2026 à la création de la garde — explicites
- * et datées, pour ne pas faire rougir la CI d'une dette antérieure. Le lot 4b (les
- * écrans) les corrige et les retire d'ici. Une exception qui ne correspond plus à
- * aucune ligne fait échouer le test suivant : la retirer.
- *
- * Toutes deux écrivent le seuil de COLLECTE du SDK (`DEFAULT_SLOW_RESOURCE_MS`,
- * `packages/rum-sdk/src/resources.ts`), qui vaut aujourd'hui la borne « bon » de
- * `SEUILS_MIP.RESOURCE` — ce n'est pas une règle de verdict, mais c'est la même
- * valeur écrite en dur (comme `RESOURCE_THRESHOLD_NOTICE` de `lib/resources.ts`,
- * hors du périmètre de cette garde).
+ * Occurrences tolérées. VIDE depuis le lot 4b (29/09/2026) : les deux exceptions
+ * relevées à la création de la garde (`panneau.tsx`, `Cascade.tsx`) écrivaient le
+ * seuil de COLLECTE du SDK (`DEFAULT_SLOW_RESOURCE_MS`), égal à la borne « bon » de
+ * `SEUILS_MIP.RESOURCE` ; elles lisent maintenant `SEUIL_COLLECTE_RESSOURCE_MS` /
+ * `TEXTE_SEUIL_COLLECTE_RESSOURCE` (`lib/resources.ts`), comme les trois copies de
+ * `lib/` (`RESOURCE_THRESHOLD_NOTICE`, `lib/deroule.ts`, `lib/presentation-sait-faire.ts`).
+ * Ne pas en rajouter : lire la borne.
  */
-const EXCEPTIONS_MIP: readonly { fichier: string; extrait: string; releve: string }[] = [
-  { fichier: "app/admin/composants/sections/panneau.tsx", extrait: "ressources de plus de 300 ms seulement", releve: "29/09/2026" },
-  { fichier: "components/charts/Cascade.tsx", extrait: "La collecte de ressources est volontairement partielle (300 ms", releve: "29/09/2026" },
-];
+const EXCEPTIONS_MIP: readonly { fichier: string; extrait: string; releve: string }[] = [];
+
+/**
+ * Les deux seuls fichiers de `lib/` qui ÉCRIVENT des bornes : le référentiel MIP et
+ * celui des vitals (dont les commentaires citent les budgets web.dev en clair).
+ * Depuis le lot 4b, la garde couvre aussi le reste de `lib/` : le 300 ms de
+ * `lib/resources.ts` y avait échappé.
+ */
+const SOURCES_DES_BORNES = new Set(["lib/seuils.ts", "lib/rating.ts"]);
 
 function bornesMipTrouvees(): string[] {
-  const fichiers = [...fichiersDe(app()), ...fichiersDe(join(CONSOLE, "components"))];
+  const fichiers = [
+    ...fichiersDe(app()),
+    ...fichiersDe(join(CONSOLE, "components")),
+    ...fichiersDe(join(CONSOLE, "lib")).filter((f) => /\.tsx?$/.test(f) && !SOURCES_DES_BORNES.has(relative(CONSOLE, f))),
+  ];
   return fichiers.flatMap((f) =>
     readFileSync(f, "utf8")
       .split("\n")
@@ -176,6 +182,10 @@ const estException = (trouvee: string) =>
 describe("gardes de code des seuils MIP (vague 4)", () => {
   it("aucune borne de SEUILS_MIP recopiée dans app/** ni components/** (hors exceptions datées)", () => {
     expect(bornesMipTrouvees().filter((t) => !estException(t))).toEqual([]);
+  });
+
+  it("plus aucune exception : les deux relevées le 29/09/2026 sont résorbées (lot 4b)", () => {
+    expect(EXCEPTIONS_MIP).toEqual([]);
   });
 
   it("chaque exception datée correspond encore à une ligne (sinon, la retirer d'EXCEPTIONS_MIP)", () => {

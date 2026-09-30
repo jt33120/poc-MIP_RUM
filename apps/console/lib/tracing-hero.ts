@@ -13,9 +13,12 @@
 // 0-100 % (`ShareBar`), à côté de la barre — jamais convertie en millisecondes,
 // jamais empilée. Ainsi aucune longueur ne se lit « le serveur prend X ms ».
 //
-// AUCUNE COULEUR DE VERDICT. Aucun seuil n'est publié pour une durée d'API (R-S) :
-// la barre porte la couleur de la série mesurée (orange), la ligne « Ensemble » celle
-// de la référence (gris).
+// COULEUR DE LA RÈGLE MIP (amendement de R-S, 29/09/2026). Aucun seuil n'est publié
+// pour une durée d'API ; la barre d'un appel porte la note de `SEUILS_MIP.API`
+// (`noteMip("API", p75)`), la forme précède la valeur, et l'écran écrit la règle en
+// tête du classement (`REGLE_HERO`). La ligne « Ensemble » garde la couleur de la
+// référence (gris) : c'est un repère, pas un appel. À NE PAS CONFONDRE avec
+// `REGLE_SANTE_API` (`lib/map.ts`), la santé d'un nœud de la carte des services.
 //
 // Écrit sans JSX (`createElement`) : un module de `lib/`, importable d'un test sans
 // transformation particulière.
@@ -25,6 +28,11 @@ import type { RankDatum } from "@/components/charts/RankBar";
 import { ShareBar } from "@/components/tracing/ShareBar";
 import { formater } from "./fmt-ids";
 import { SERIE } from "./palette";
+import { noteAffichee, texteNote } from "./notes-mip";
+import { texteRegleMip } from "./seuils";
+
+/** La règle écrite en tête du classement, à côté des valeurs colorées. */
+export const REGLE_HERO = texteRegleMip("API");
 import type { ApiCallDecomposition } from "./queries-tracing";
 import type { Appel } from "./tracing-ancres";
 
@@ -187,14 +195,15 @@ export function lignesHero(appels: readonly ApiCallDecomposition[], options: Opt
   for (const a of mesures) {
     const appel: Appel = { method: a.method, url: a.url };
     const libelle = libelleAppel(a);
+    const note = noteAffichee("API", a.front_p75);
     lignes.push({
       label: libelle,
       value: a.front_p75,
-      display: formater("ms", a.front_p75),
-      color: SERIE.principale,
+      display: texteNote(note, formater("ms", a.front_p75)),
+      color: note?.jeton ?? SERIE.principale,
       href: options.hrefAppel(appel),
       sub: sousLigne(a, options.hrefTraces(appel)),
-      title: `${libelle} — p75 ${formater("ms", a.front_p75)} vu du navigateur, ${pluriel(a.n, "appel")} ; ${texteDecomposition(a)}`,
+      title: `${libelle} — p75 ${formater("ms", a.front_p75)} vu du navigateur${note ? ` (${note.libelle}, ${note.regle})` : ""}, ${pluriel(a.n, "appel")} ; ${texteDecomposition(a)}`,
     });
   }
   return { lignes, exclues: top.length - mesures.length };

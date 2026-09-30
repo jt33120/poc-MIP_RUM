@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import { Cascade, type ElementCascade, type MarqueurCascade, type PisteCascade, type TonCascade } from "@/components/charts/Cascade";
 import { Figure } from "@/components/charts/Figure";
 import { formater } from "@/lib/fmt-ids";
+import { TEXTE_SEUIL_COLLECTE_RESSOURCE } from "@/lib/resources";
 import { RATING_LABEL, rating2026, type Rating } from "@/lib/rating";
 import { ecrirePanel } from "@/lib/view-state";
 import { PanneauOuvert, type PanneauDemo } from "./panneau-ouvert";
@@ -78,7 +79,7 @@ const REPERES: MarqueurCascade[] = [
   { t: 3000, libelle: "Chargement" },
 ];
 
-const PARTIEL = "ressources de plus de 300 ms seulement, 20 par vue";
+const PARTIEL = `ressources de plus de ${TEXTE_SEUIL_COLLECTE_RESSOURCE} seulement, 20 par vue`;
 
 // ─────────────────────────────── Le panneau ───────────────────────────────
 
