@@ -53,3 +53,16 @@ describe("ModelesDepart", () => {
     }
   });
 });
+
+// Recette du 30/09/2026 — des images plutôt que du texte : chaque carte porte le
+// pictogramme de la forme de son résultat (décoratif, le titre reste le nom).
+describe("ModelesDepart — pictogramme de la représentation", () => {
+  it("chaque analyse de départ dit sa forme ; le pictogramme est décoratif", () => {
+    const modeles = modelesDeDepart(requete("app=demo"), schemaComplet());
+    expect(modeles.every((m) => m.representation !== undefined)).toBe(true);
+    const html = renderToStaticMarkup(<ModelesDepart modeles={modeles} />);
+    const cartes = html.split("<li ").slice(1);
+    expect(cartes).toHaveLength(6);
+    for (const carte of cartes) expect(carte).toMatch(/<span aria-hidden="true"[^>]*><svg/);
+  });
+});
