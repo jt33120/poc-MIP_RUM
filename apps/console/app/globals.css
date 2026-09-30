@@ -132,6 +132,25 @@
 .nav-sous-lien[data-actif="true"] { background: linear-gradient(90deg, rgba(248, 145, 1, 0.14), rgba(248, 145, 1, 0.02)); }
 .nav-sous-lien:hover::before,
 .nav-sous-lien[data-actif="true"]::before { transform: scaleY(1); }
+/* Le schéma d'installation (SchemaInstallation.tsx) : les mesures qui coulent vers la
+   collecte, le SDK et l'agent qui battent, les voyants des serveurs, et les options
+   qui arrivent en cascade quand un côté s'ouvre. */
+.schema-flux { animation: schema-flux 1.2s linear infinite; }
+.schema-flux--inverse { animation-direction: reverse; }
+@keyframes schema-flux { to { stroke-dashoffset: -20; } }
+.schema-pouls { transform-box: fill-box; transform-origin: center; animation: schema-pouls 2.4s ease-in-out infinite; }
+@keyframes schema-pouls { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.schema-led { animation: schema-led 1.6s steps(2, jump-none) infinite; }
+@keyframes schema-led { 50% { opacity: 0.3; } }
+.schema-foyer { animation: vitrine-pouls 3.2s ease-in-out infinite; }
+.schema-detail .schema-choix { opacity: 0; transform: translateY(8px); transition: opacity 0.4s ease, transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.schema-volet[data-ouvert="true"] .schema-choix { opacity: 1; transform: none; }
+.schema-volet[data-ouvert="true"] .schema-choix:nth-child(2) { transition-delay: 60ms; }
+.schema-volet[data-ouvert="true"] .schema-choix:nth-child(3) { transition-delay: 120ms; }
+.schema-volet[data-ouvert="true"] .schema-choix:nth-child(4) { transition-delay: 180ms; }
+.schema-volet[data-ouvert="true"] .schema-choix:nth-child(5) { transition-delay: 240ms; }
+.schema-volet[data-ouvert="true"] .schema-choix:nth-child(6) { transition-delay: 300ms; }
+.schema-volet[data-ouvert="true"] .schema-choix:nth-child(7) { transition-delay: 360ms; }
 /* Les entrées montent au défilement : `--p` vient de SectionDefilee, `--i` décale
    chaque pièce d'un cran. Pas de transition : c'est le défilement qui anime. */
 .entrees-piece {

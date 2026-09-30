@@ -5,8 +5,8 @@
 // Ce que ce fichier prouve, et qu'aucun test unitaire ne peut prouver :
 //   · le vrai bundle du service, sur la vraie base de l'E2E, répond derrière sa
 //     garde (404 nu sans secret client, 403 à un navigateur) ;
-//   · le dossier technique de la vitrine (`/presentation/dossier`, où vivent les
-//     spécifications depuis la recette du 26/09/2026) lit l'état de la plateforme PAR console-api,
+//   · le graphe technique de la vitrine (`/presentation/graphe-technique`, où vivent
+//     les spécifications depuis le 30/09/2026) lit l'état de la plateforme PAR console-api,
 //     après une poignée de main signée — le compteur du service le dit. Sans ce
 //     compteur, un repli local silencieux (C0b retombe sur la base au moindre
 //     échec) ferait passer le test pour de mauvaises raisons.
@@ -48,8 +48,8 @@ test.describe("C0 — console-api dans l'E2E", () => {
     expect(navigateur.headers.get("access-control-allow-origin")).toBeNull();
   });
 
-  test("le dossier technique lit l'état de la plateforme PAR console-api, après la poignée de main", async ({ page }) => {
-    const res = await page.goto(`${consoleUrl}/presentation/dossier`);
+  test("le graphe technique lit l'état de la plateforme PAR console-api, après la poignée de main", async ({ page }) => {
+    const res = await page.goto(`${consoleUrl}/presentation/graphe-technique`);
     expect(res?.status()).toBe(200);
     await expect(page.getByTestId("erreur-ecran")).toHaveCount(0);
     // La réponse de console-api est gardée une minute par le cache de Next : un

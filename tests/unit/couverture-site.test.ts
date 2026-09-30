@@ -339,6 +339,7 @@ function fichiersVitrine(): string[] {
     "apps/console/app/presentation/installation/page.tsx",
     "apps/console/app/presentation/installation/[parcours]/page.tsx",
     "apps/console/components/presentation/installation/DocInstallation.tsx",
+    "apps/console/components/presentation/installation/SchemaInstallation.tsx",
     "apps/console/components/presentation/vitrine/NavVitrine.tsx",
     "apps/console/components/presentation/vitrine/PageVitrine.tsx",
     "apps/console/lib/specs.ts",
