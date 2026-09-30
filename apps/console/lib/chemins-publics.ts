@@ -28,6 +28,9 @@
  *   /presentation/open-source  l'inventaire des composants open source (29/09/2026) :
  *                       qui veut vérifier les parties externes n'a pas à avoir de
  *                       compte. Chemin EXACT lui aussi
+ *   /presentation/archive  la vitrine d'avant la refonte du 30/09/2026, gardée
+ *                       lisible le temps que son texte trouve sa place. Chemin EXACT
+ *   /inscription        l'entrée « S'inscrire » de la vitrine : forcément avant tout compte
  *   /extension-privacy  politique de confidentialité de l'extension : URL PUBLIQUE
  *                       exigée par le Chrome Web Store, donc jamais derrière un login
  *   /legal/*            CGU, CGV, confidentialité — des documents
@@ -40,6 +43,8 @@ export function estCheminPublic(pathname: string): boolean {
     pathname === "/presentation" ||
     pathname === "/presentation/dossier" ||
     pathname === "/presentation/open-source" ||
+    pathname === "/presentation/archive" ||
+    pathname === "/inscription" ||
     pathname === "/extension-privacy" ||
     pathname === "/legal" ||
     pathname.startsWith("/legal/")

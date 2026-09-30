@@ -27,6 +27,8 @@ import { expect, test } from "@playwright/test";
 const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
 /** Le dossier technique, où vivent les trois parties et le détail. */
 const dossierUrl = `${consoleUrl}/presentation/dossier`;
+/** La vitrine d'avant la refonte du 30/09/2026, archivée : ses tests la suivent là. */
+const archiveUrl = `${consoleUrl}/presentation/archive`;
 
 /** Ce que la page doit afficher, relu dans l'extraction du document de couverture. */
 function couverture() {
@@ -91,7 +93,21 @@ test.describe("P**.2 — ossature : le dossier technique, trois parties", () => 
       Boolean(process.env.DEMO_USER_APPS?.trim()),
       "TP9 suppose une console lancée sans DEMO_USER_APPS, comme en CI",
     );
+    // La vitrine : l'entrée « compte démo » verrouillée, la connexion et l'inscription ouvertes.
     await page.goto(`${consoleUrl}/presentation`);
+    await expect(page.getByTestId("vitrine-demo")).toHaveAttribute("aria-disabled", "true");
+    await expect(page.locator('a[href="/login?demo=1"]')).toHaveCount(0);
+    await expect(page.getByTestId("vitrine-connexion")).toHaveAttribute("href", "/login");
+    await expect(page.getByTestId("vitrine-inscription")).toHaveAttribute("href", "/inscription");
+    await expect(page.getByTestId("vitrine-console")).toHaveCount(0);
+    // Démo fermée, la connexion pré-remplie redevient la connexion ordinaire, et le dit.
+    await page.goto(`${consoleUrl}/login?demo=1`);
+    await expect(page.getByTestId("login-demo-fermee")).toBeVisible();
+    await expect(page.getByTestId("login-form")).toBeVisible();
+    await expect(page.getByTestId("login-demo-form")).toHaveCount(0);
+
+    // L'archive garde ses trois rangées d'actions.
+    await page.goto(archiveUrl);
     for (const id of ["presentation-demo", "presentation-demo-top", "presentation-demo-fin"]) {
       await expect(page.getByTestId(id)).toHaveAttribute("aria-disabled", "true");
     }
@@ -170,6 +186,9 @@ test.describe("P**.3 — Partie 1 : ce qu'il contient", () => {
       await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
 
       await page.goto(`${consoleUrl}/presentation`);
+      await expect(page.getByTestId("vitrine-console")).toBeVisible();
+      await expect(page.getByTestId("vitrine-demo")).toHaveCount(0);
+      await page.goto(archiveUrl);
       await expect(page.getByTestId("presentation-console")).toBeVisible();
       await expect(page.getByTestId("presentation-demo")).toHaveCount(0);
 
@@ -558,13 +577,33 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
    */
   const COLONNES_CAPACITES: Record<(typeof LARGEURS_PSS8)[number], number> = { 390: 1, 768: 2, 1440: 2 };
 
-  test("TP5 — la présentation : rien ne dépasse à 390, 768 et 1440 px, et le premier écran d'un téléphone n'a qu'une rangée d'actions", async ({
+  test("TP-V1 — la vitrine : rien ne dépasse à 390, 768 et 1440 px, du film à la dernière étape de l'aperçu", async ({
     page,
   }) => {
     const fautes: string[] = [];
     for (const largeur of LARGEURS_PSS8) {
       await page.setViewportSize({ width: largeur, height: 900 });
       await page.goto(`${consoleUrl}/presentation`);
+      await expect(page.getByTestId("vitrine-film")).toBeVisible();
+      for (const f of await debordementsPss8(page)) fautes.push(`${largeur} px, film — ${f}`);
+      // Chaque étape de l'aperçu : la section épinglée ne doit rien pousser hors de l'écran.
+      const etapes = await page.getByTestId("apercu-legende").count();
+      for (let k = 0; k < etapes; k++) {
+        await page.getByRole("button", { name: new RegExp(`^${["Santé", "Pages", "Erreurs", "Session", "Tracing"][k]}$`) }).click();
+        await expect(page.getByTestId("apercu-legende").nth(k)).toHaveAttribute("data-actif", "true");
+        for (const f of await debordementsPss8(page)) fautes.push(`${largeur} px, étape ${k + 1} — ${f}`);
+      }
+    }
+    expect(fautes).toEqual([]);
+  });
+
+  test("TP5 — la présentation archivée : rien ne dépasse à 390, 768 et 1440 px, et le premier écran d'un téléphone n'a qu'une rangée d'actions", async ({
+    page,
+  }) => {
+    const fautes: string[] = [];
+    for (const largeur of LARGEURS_PSS8) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(archiveUrl);
       await page.evaluate(() =>
         document.querySelectorAll("details").forEach((d) => {
           d.open = true;
@@ -637,7 +676,7 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
   test("TP8 — une image dit ce qu'elle montre ou se tait ; la légende dit « jeu de démonstration », datée par le seul manifeste", async ({
     page,
   }) => {
-    await page.goto(`${consoleUrl}/presentation`);
+    await page.goto(archiveUrl);
     const images = await page.locator("img").evaluateAll((imgs) =>
       imgs.map((img) => ({
         src: img.getAttribute("src") ?? "",
@@ -671,7 +710,7 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
     test.use({ colorScheme: "dark" });
 
     test("TP8 — la capture sombre est visible, la claire masquée", async ({ page }) => {
-      await page.goto(`${consoleUrl}/presentation`);
+      await page.goto(archiveUrl);
       // Sans choix enregistré, le script anti-flash du layout suit prefers-color-scheme.
       await expect(page.locator("html")).toHaveClass(/(^|\s)dark(\s|$)/);
       await expect(page.locator('img[src*="overview-dark"]').filter({ visible: true })).toHaveCount(1);

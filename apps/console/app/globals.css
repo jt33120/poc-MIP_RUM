@@ -28,6 +28,77 @@
     linear-gradient(90deg, rgba(137, 173, 255, 0.07) 1px, transparent 1px);
 }
 
+/* ------------------------------------------------------------------ */
+/* Vitrine (/presentation, refonte du 30/09/2026) : le fond animé du    */
+/* premier écran (en attendant le film), l'entrée des titres, et les    */
+/* glissés de l'aperçu défilant (components/presentation/vitrine/).     */
+/* Sous prefers-reduced-motion, la règle générale plus bas les arrête.  */
+/* ------------------------------------------------------------------ */
+.vitrine-fond {
+  background:
+    radial-gradient(55% 55% at 76% 39%, rgba(248, 145, 1, 0.18), transparent 70%),
+    radial-gradient(60% 70% at 8% 0%, rgba(0, 51, 153, 0.55), transparent 70%),
+    radial-gradient(70% 50% at 50% 110%, rgba(0, 51, 153, 0.35), transparent 70%),
+    linear-gradient(rgba(248, 145, 1, 0.045) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, rgba(248, 145, 1, 0.045) 1px, transparent 1px) 0 0 / 48px 48px,
+    #040a1c;
+}
+/* Une impulsion par fil, du bas vers le foyer, puis un temps mort (demi-période). */
+.vitrine-fil {
+  stroke-dasharray: 12 188;
+  animation: vitrine-fil 5s linear infinite;
+}
+@keyframes vitrine-fil {
+  from { stroke-dashoffset: 12; }
+  to   { stroke-dashoffset: -188; }
+}
+.vitrine-foyer {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: vitrine-pouls 3.2s ease-in-out infinite;
+}
+@keyframes vitrine-pouls {
+  0%, 100% { transform: scale(0.85); opacity: 0.7; }
+  50%      { transform: scale(1.1); opacity: 1; }
+}
+/* Titres révélés ligne par ligne, comme au montage du film. */
+.vitrine-ligne { overflow: hidden; padding-bottom: 0.08em; }
+.vitrine-ligne > span {
+  display: inline-block;
+  animation: vitrine-monte 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes vitrine-monte {
+  from { transform: translateY(110%); }
+  to   { transform: none; }
+}
+.vitrine-descendre { animation: vitrine-descendre 1.8s ease-in-out infinite; }
+@keyframes vitrine-descendre {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(5px); }
+}
+.apercu-halo {
+  background:
+    radial-gradient(46% 38% at 50% 78%, rgba(248, 145, 1, 0.14), transparent 70%),
+    radial-gradient(34% 30% at 12% 20%, rgba(0, 51, 153, 0.35), transparent 70%),
+    radial-gradient(30% 26% at 88% 28%, rgba(0, 51, 153, 0.3), transparent 70%);
+}
+.apercu-legende {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.45s ease, transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.apercu-legende[data-actif="true"] { opacity: 1; transform: none; }
+/* La capture active est en place ; les passées sont sorties à gauche, les suivantes
+   attendent à droite : chaque étape fait glisser la suivante à la place de l'autre. */
+.apercu-vue {
+  transition: opacity 0.6s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.apercu-vue[data-etat="actif"] { opacity: 1; transform: none; }
+.apercu-vue[data-etat="avant"] { opacity: 0; transform: translateX(-7%) scale(0.97); }
+.apercu-vue[data-etat="apres"] { opacity: 0; transform: translateX(7%) scale(0.97); }
+.apercu-etapes { transition: opacity 0.4s ease; }
+
 /* Bande claire : la section garde la palette du thème CLAIR même quand le
    reste de la page est en sombre, pour alterner les fonds le long de la page.
    Redéfinir les variables suffit — chaque classe Tailwind à l'intérieur

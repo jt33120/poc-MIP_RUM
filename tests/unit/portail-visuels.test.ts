@@ -11,7 +11,7 @@
 //
 // VRAI DANS LES DEUX ÉTATS. Avant le passage de scripts/captures-portail.mjs : pas de
 // manifeste, les deux captures de la vue d'ensemble citées par
-// components/presentation/Landing.tsx. Après : les images d'issue et du mobile sont
+// components/presentation/Preuves.tsx. Après : les images d'issue et du mobile sont
 // citées par le manifeste, le manifeste par lib/portail-manifeste.ts, et chacune doit
 // avoir les dimensions que le manifeste lui prête.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";

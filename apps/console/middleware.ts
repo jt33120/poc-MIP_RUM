@@ -220,11 +220,12 @@ export const config = {
   runtime: "nodejs",
   // `vendor` = assets tiers auto-hébergés (Swagger UI) ; `downloads` = artefacts
   // téléchargeables (le .zip de l'extension) ; `portail` = captures de la console
-  // affichées par la vitrine publique — sans cette exclusion le visiteur anonyme
+  // affichées par la vitrine publique, `vitrine/` = celles de son aperçu défilant
+  // (scripts/captures-vitrine.mjs) — sans cette exclusion le visiteur anonyme
   // reçoit un 302 vers /login à la place de l'image, et l'optimiseur next/image,
   // qui refetch l'URL à travers le middleware, ne voit qu'une redirection.
   // Servis depuis public/, exclus de la porte d'auth comme _next et le SDK public
   // (sinon un GET de fichier statique serait traité comme une page et redirigé
   // vers /select).
-  matcher: ["/((?!login|mip-rum|_next/|favicon|vendor|downloads|portail).*)"],
+  matcher: ["/((?!login|mip-rum|_next/|favicon|vendor|downloads|portail|vitrine/).*)"],
 };

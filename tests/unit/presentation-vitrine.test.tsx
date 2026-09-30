@@ -16,7 +16,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { BandeauDemo } from "@/components/presentation/BandeauDemo";
 import { Hebergement } from "@/components/presentation/Hebergement";
-import { Landing } from "@/components/presentation/Landing";
+import { LandingArchive as Landing } from "@/components/presentation/archive/LandingArchive";
 import { Preuves } from "@/components/presentation/Preuves";
 import { RELEVE_PERIME_JOURS } from "@/components/presentation/Releve";
 import { StatutPoc } from "@/components/presentation/StatutPoc";

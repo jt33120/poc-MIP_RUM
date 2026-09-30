@@ -13,7 +13,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Ancres } from "@/components/presentation/Ancres";
-import { Actions } from "@/components/presentation/Landing";
+import { Actions } from "@/components/presentation/Actions";
 import { Partie } from "@/components/presentation/Partie";
 import { RELEVE_PERIME_JOURS, Releve, relevePerime } from "@/components/presentation/Releve";
 import type { SessionUser } from "@/lib/auth";
