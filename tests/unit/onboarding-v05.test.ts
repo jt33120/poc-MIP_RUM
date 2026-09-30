@@ -78,4 +78,21 @@ describe("formatApiKey / deriveStatus / buildSnippet", () => {
     expect(snip).toContain("requireConsent: true");
     expect(snip).not.toContain("mip_"); // jamais de clé réelle dans le snippet
   });
+
+  it("snippet, collecte directe (P6b.G) : l'en-tête dit la voie, sans `voie` rien ne bouge", () => {
+    const base = {
+      sdkUrl: "https://console/mip-rum.js",
+      appId: "client-pilote",
+      clientId: null,
+      withConsent: false,
+    };
+    const avant = buildSnippet({ ...base, endpoint: "https://console/api/ingest/v1/traces" });
+    // Paramètre facultatif : un appelant qui l'ignore (la page d'installation) reçoit le code d'avant.
+    expect(buildSnippet({ ...base, endpoint: "https://console/api/ingest/v1/traces", voie: "console" })).toBe(avant);
+    expect(avant.split("\n")[0]).toBe("<!-- MIP RUM -->");
+
+    const directe = buildSnippet({ ...base, endpoint: "https://collector.test/v1/traces", voie: "directe" });
+    expect(directe.split("\n")[0]).toContain("collecte directe");
+    expect(directe).toContain('endpoint: "https://collector.test/v1/traces"');
+  });
 });

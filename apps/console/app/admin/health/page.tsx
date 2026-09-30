@@ -8,7 +8,7 @@ import { EchecLecture } from "@/components/states/SectionErreur";
 import { chargerSante } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { verdictSante, FILE_ATTENTION, RETARD_CONSO_ATTENTION_H, RETARD_CONSO_INCIDENT_H, type VerdictSante } from "@/lib/health-verdict";
-import { dogfoodingEndpoint, ingestEndpoint, origineCollecteurDogfooding } from "@/lib/ingest-endpoint";
+import { dogfoodingEndpoint, ingestEndpoint, ingestEndpointDirect, origineCollecteurDogfooding } from "@/lib/ingest-endpoint";
 import type { HealthSnapshot } from "@/lib/metrics-format";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +32,7 @@ export default async function Health() {
   const endpoint = dogfoodingEndpoint(hote);          // la console -> elle-même
   const direct = origineCollecteurDogfooding(hote) !== null; // ou au collector, en direct (P6b.G)
   const snippet = ingestEndpoint("traces", hote);     // ce qu'on remet aux CLIENTS
+  const directeClients = ingestEndpointDirect("traces"); // ou, par défaut, le collector (P6b.G)
   const force = Boolean(process.env.NEXT_PUBLIC_RUM_ENDPOINT);
   const memeHote = (() => {
     try {
@@ -120,7 +121,24 @@ export default async function Health() {
         </div>
 
         <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-          Adresse de collecte remise aux clients (code de suivi)
+          Collecte directe des navigateurs des clients
+        </div>
+        {directeClients && <Adresse url={directeClients} />}
+        <div className="mt-1 text-xs text-ink-soft" data-testid="collecte-directe-clients">
+          {directeClients
+            ? "Ouverte : le code de suivi et l'extension visent le collecteur, qui déduit le pays de l'adresse IP. Le code par la console reste proposé pour un site dont la CSP fige connect-src."
+            : "Fermée : le code de suivi et l'extension passent par la console, qui ne transmet pas l'adresse IP ; le pays reste estimé."}
+          {directeClients && (
+            <DetailTechnique>
+              Réglage : <code>NEXT_PUBLIC_DIRECT_COLLECTOR_URL</code>.
+            </DetailTechnique>
+          )}
+        </div>
+
+        <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+          {directeClients
+            ? "Adresse de collecte par la console (CSP figée, agents serveur)"
+            : "Adresse de collecte remise aux clients (code de suivi)"}
         </div>
         <Adresse url={snippet} />
         <div className={`mt-1 text-xs ${memeHote ? "text-ink-soft" : "text-warn-ink"}`}>
