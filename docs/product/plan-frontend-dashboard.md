@@ -405,6 +405,18 @@ santé propre (`REGLE_SANTE_API`, 1 s / 3 s combinée au taux d'erreur, écrite 
 un nœud, pas un appel ; les écrans qui mesurent la durée des appels API lisent `SEUILS_MIP.API`. Une note
 MIP est de l'**affichage** : le score de santé, la heatmap et les rollups ne comptent que `CORE_VITALS`
 (`tests/unit/agregats-qualite.test.ts`).
+*Complément du 30/09/2026 — tâches longues et scripts bloquants.* `SEUILS_MIP.LONGTASK` et `.LOAF`
+notent la **durée** p75 d'une tâche ou d'une trame, jamais son **temps de blocage**
+(`coalesce(blocking_ms, duration_ms)`) : **le temps de blocage n'a pas de règle MIP, il reste neutre**, et
+l'écran l'écrit. Écrans concernés : `/pages` « Tâches longues dans le temps » (`LongtasksView`) écrit
+au-dessus des panneaux la durée p75 de la période par API, les trames longues notées par `LOAF` et les
+tâches longues par `LONGTASK`, chaque règle écrite à côté (`longtaskSeries`, colonnes `duree_p75_loaf` /
+`duree_p75_longtask`) ; le p75 du blocage par tranche et la table des pires blocages restent neutres.
+`/ux` « Scripts qui bloquent le fil principal » (`components/ScriptsBloquants.tsx`) : chaque ligne est une
+trame longue (seule LoAF attribue un script), sa durée p75 est notée par `LOAF` (`scriptsBloquants`,
+`dureeP75Ms`), la règle écrite une fois en tête de figure ; les barres, le blocage cumulé et le pire cas
+restent neutres. Les lignes d'origine non distinguée (`source` nulle, avant le 09/09/2026) n'entrent pas
+dans la durée p75 de `/pages` : aucune des deux règles ne sait les noter.
 
 **R-P — Populations canoniques.** En tuile, « Sessions » veut dire **sessions commencées**
 (`started_at ∈ [from, to)`, `engagementStats(f).sessions_started`, `lib/queries-sessions.ts:L20-33`) sur

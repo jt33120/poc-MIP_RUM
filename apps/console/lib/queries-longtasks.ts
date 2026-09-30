@@ -28,9 +28,25 @@ export interface LongtaskBucket {
   inconnu: number;
   /** p75 du blocage observé du seau, en millisecondes ; null sans mesure. */
   p75_ms: number | null;
+  /**
+   * p75 de la DURÉE des trames longues (LoAF) sur toute la période filtrée, le
+   * même sur chaque ligne ; null sans trame. C'est la grandeur que note
+   * `SEUILS_MIP.LOAF` — pas le blocage, qui n'a pas de règle MIP.
+   */
+  duree_p75_loaf: number | null;
+  /** p75 de la DURÉE des tâches longues sur la période (`SEUILS_MIP.LONGTASK`) ; null sans tâche. */
+  duree_p75_longtask: number | null;
 }
 
-/** Série des blocages par seau, zéros compris — un seau sans blocage vaut 0. */
+/**
+ * Série des blocages par seau, zéros compris — un seau sans blocage vaut 0.
+ *
+ * Elle porte aussi, répété sur chaque ligne, le p75 de la DURÉE par API sur toute la
+ * période (`duree_p75_*`) : un p75 ne se recompose pas à partir des p75 des seaux, et
+ * le lire ici évite une lecture de plus pour l'écran. Les lignes antérieures à la
+ * distinction des API (`source` null) n'y entrent pas : on ne sait pas quelle règle
+ * les note.
+ */
 export async function longtaskSeries(f: FiltersLike): Promise<LongtaskBucket[]> {
   const sql = await sqlContext(f);
   const where = sql.where({ dataset: "longtasks", row: "l", session: "s", time: "l.ts" });
@@ -46,14 +62,25 @@ export async function longtaskSeries(f: FiltersLike): Promise<LongtaskBucket[]> 
          ${sessionJoin("l", "s")}
         where true${where}
         group by 1
+     ), periode as (
+       select percentile_cont(0.75) within group (order by l.duration_ms)
+                filter (where l.source = 'loaf') as duree_p75_loaf,
+              percentile_cont(0.75) within group (order by l.duration_ms)
+                filter (where l.source = 'longtask') as duree_p75_longtask
+         from rum_longtask l
+         ${sessionJoin("l", "s")}
+        where true${where}
      )
      select b.bucket,
             coalesce(a.loaf, 0) as loaf,
             coalesce(a.longtask, 0) as longtask,
             coalesce(a.inconnu, 0) as inconnu,
-            a.p75_ms
+            a.p75_ms,
+            p.duree_p75_loaf,
+            p.duree_p75_longtask
        from ${serie} as b(bucket)
        left join agrege a on a.bucket = b.bucket
+      cross join periode p
       order by 1`,
     sql.params,
   );
