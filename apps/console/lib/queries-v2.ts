@@ -92,8 +92,11 @@ export async function setErrorStatus(
 // Alerting (alert_rule / alert_event / check_alerts)
 // ---------------------------------------------------------------------------
 
-/** Dernière évaluation d'une règle par check_alerts (migration-v73). */
-export const RULE_STATES = ["ok", "breached", "no_data"] as const;
+/**
+ * Dernière évaluation d'une règle par check_alerts (migration-v73). `hors_collecte`
+ * (migration-v105) : la fenêtre recoupe une collecte interrompue, rien n'est jugé.
+ */
+export const RULE_STATES = ["ok", "breached", "no_data", "hors_collecte"] as const;
 export type RuleState = (typeof RULE_STATES)[number];
 
 export function isAlertMetric(metric: string): boolean {

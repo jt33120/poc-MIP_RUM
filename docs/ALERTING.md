@@ -124,6 +124,19 @@ calcul Neon est suspendu (jusqu'au 01/10/2026), rien n'est évalué ni livré.
   `breached`, `no_data`), `last_value`, `last_reason`, `last_evaluated_at`, affichés sur
   `/alerts`. Issue absente ou regroupement inactif, fenêtre incomplète, aucune mesure,
   comparables insuffisants : jamais un zéro silencieux.
+- **`hors_collecte`** (migration-v105) : quand la fenêtre d'évaluation d'une règle
+  recoupe une fenêtre `interrompue` du registre des fenêtres de collecte
+  (`collecte_fenetre`, étage `chaine`, portée `'*'` ou l'application de la règle),
+  `check_alerts` ne calcule rien, ne lève aucune alerte (ni déclenchement, ni retour à
+  la normale) et écrit l'état `hors_collecte`, avec la fenêtre datée et sa cause dans
+  `last_reason`. `/alerts` l'affiche « Hors collecte » et le compte dans « Règles sans
+  données ». Une fenêtre seulement `degradee` ne suspend rien.
+- **Battement attendu par application** (migration-v105, `sonde_attendue`) : à chaque
+  tick, le scheduler compte les spans serveur de la route déclarée depuis
+  `tolerance_min` minutes. S'ils manquent alors que la chaîne est `ok`, il ouvre une
+  fenêtre `interrompue` à la portée de l'application (cause « l'application n'émet plus
+  son battement ») et lève une alerte, une seule par épisode ; la fenêtre se ferme au
+  premier battement revenu. Aucun battement n'est déclaré par la migration.
 - **`check_new_errors`** (watermark v64) écarte la ligne d'une issue qui a sa notification
   `new` dans l'outbox (v74) : notifiée une fois, pas deux. Une issue née avant v73, sans
   notification, reste couverte par le watermark.

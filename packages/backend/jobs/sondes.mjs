@@ -8,7 +8,8 @@
 // collector → base), puis relit les lignes qu'il doit avoir produites. Le
 // verdict est gardé, étage par étage (`sonde_passage`), et les périodes non
 // nominales sont tenues dans un registre (`collecte_fenetre`) que les graphiques
-// liront. Migration : `packages/db/sql/migration-v103.sql`.
+// liront. Migration : `packages/db/sql/migration-v103.sql` ; le battement attendu
+// par application (`sonde_attendue`) : `migration-v105.sql`.
 //
 // SE GREFFER SUR LE TICK, NE JAMAIS RÉVEILLER LA BASE. Aucune boucle à part :
 // l'émission est la PREMIÈRE étape du tick, la vérification la dernière avant la
@@ -316,6 +317,50 @@ export function decisionSilence({ dernier, maintenant, silenceMin, fuseau, heure
   return { action: "ouvrir", heures };
 }
 
+/**
+ * LE BATTEMENT ATTENDU d'une application (`sonde_attendue`, migration-v105) : ce
+ * qu'il faut faire de sa fenêtre de sonde, sachant ses battements déclarés.
+ *
+ * Chaque battement porte le compte reçu depuis sa tolérance (`recents`, lu par la
+ * base) et le dernier reçu (`dernier`, horizon 7 jours). L'application est MUETTE
+ * quand aucun de ses battements vus n'est arrivé dans sa tolérance : un seul qui
+ * passe prouve que sa collecte passe.
+ *
+ *   un battement présent ................ fermer la fenêtre ouverte, sinon rien
+ *   muette, fenêtre déjà ouverte ........ rien (une alerte par épisode)
+ *   muette, chaîne pas `ok` ............. rien : la panne est celle de la
+ *                                         plateforme, et sa fenêtre le dit déjà
+ *   muette, chaîne `ok` ................. ouvrir, datée du dernier battement
+ *   aucun battement dans l'horizon ...... rien : un battement jamais reçu est une
+ *                                         déclaration à relire, pas une panne
+ *
+ * @param {{ battements: Array<{ route: string, dernier: Date|string|null, recents: number,
+ *           toleranceMin: number, cadenceMin?: number }>, ouverte: boolean, chaineOk: boolean }} p
+ * @returns {{ action: "ouvrir"|"fermer"|"rien", raison?: string, depuis?: Date, preuve?: string }}
+ */
+export function decisionBattement({ battements, ouverte, chaineOk }) {
+  const vus = (battements ?? []).filter((b) => b.dernier != null);
+  if (!vus.length) return { action: "rien", raison: "aucun battement reçu" };
+  if (vus.some((b) => Number(b.recents) > 0)) return ouverte ? { action: "fermer" } : { action: "rien" };
+  if (ouverte) return { action: "rien", raison: "épisode en cours" };
+  if (!chaineOk) return { action: "rien", raison: "chaîne non nominale" };
+  const depuis = new Date(Math.max(...vus.map((b) => new Date(b.dernier).getTime())));
+  const preuve = vus
+    .map(
+      (b) =>
+        `dernier ${b.route} le ${dateUtc(b.dernier)} UTC, attendu toutes les ${b.cadenceMin ?? "?"} min, tolérance ${b.toleranceMin} min`,
+    )
+    .join(" ; ")
+    .slice(0, 300);
+  return { action: "ouvrir", depuis, preuve };
+}
+
+/** « 30/09/2026 10:15 » : les dates des documents et des alertes, en UTC. */
+function dateUtc(instant) {
+  const iso = new Date(instant).toISOString();
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)} ${iso.slice(11, 16)}`;
+}
+
 /** `x-mip-chemin` de la réponse, s'il est posé (relais) — sinon inconnu. */
 export function cheminDeReponse(entetes) {
   const brut = typeof entetes?.get === "function" ? entetes.get("x-mip-chemin") : entetes?.["x-mip-chemin"];
@@ -614,6 +659,59 @@ export function creerSondes({
   }
 
   /**
+   * Les battements déclarés (`sonde_etat_battements`, v105), groupés par
+   * application ; la décision ici (`decisionBattement`) ; une écriture seulement
+   * quand une fenêtre s'ouvre ou se ferme. Avant v105, la fonction manque
+   * (42883) : rien n'est jugé, le tick continue.
+   */
+  async function traiterBattements(chaineOk) {
+    let rows;
+    try {
+      ({ rows } = await pool.query("select * from sonde_etat_battements()"));
+    } catch (err) {
+      if (err?.code === "42883") return { absent: "migration-v105 non appliquée" };
+      throw err;
+    }
+    const bilan = { apps: 0, ouvertes: 0, fermees: 0, alertes: 0, jamais_recus: 0 };
+    const parApp = new Map();
+    for (const r of rows) {
+      if (!parApp.has(r.app_id)) parApp.set(r.app_id, []);
+      parApp.get(r.app_id).push(r);
+    }
+    for (const [appId, lignes] of parApp) {
+      bilan.apps++;
+      const fenetreId = lignes.find((l) => l.fenetre_id != null)?.fenetre_id ?? null;
+      const d = decisionBattement({
+        battements: lignes.map((l) => ({
+          route: l.route,
+          dernier: l.dernier,
+          recents: Number(l.recents ?? 0),
+          toleranceMin: Number(l.tolerance_min),
+          cadenceMin: Number(l.cadence_min),
+        })),
+        ouverte: fenetreId != null,
+        chaineOk,
+      });
+      if (d.action === "fermer") {
+        const { rows: r } = await pool.query("select sonde_fermer_battement($1) as ok", [fenetreId]);
+        if (r[0]?.ok) bilan.fermees++;
+      } else if (d.action === "ouvrir") {
+        const { rows: r } = await pool.query("select sonde_ouvrir_battement($1, $2) as alerte", [appId, d.preuve]);
+        // NULL : une fenêtre était déjà ouverte (autre instance, ou posée à la
+        // main), ou le battement est revenu entre la lecture et l'ouverture.
+        if (r[0]?.alerte != null) {
+          bilan.ouvertes++;
+          bilan.alertes++;
+          log.warn?.("sondes : battement absent, fenêtre ouverte", { app_id: appId, depuis: d.depuis.toISOString() });
+        }
+      } else if (d.raison === "aucun battement reçu") {
+        bilan.jamais_recus++;
+      }
+    }
+    return bilan;
+  }
+
+  /**
    * PREMIER DÉMARRAGE (A3 § 2.4, point 5) : les 30 jours d'avant le journal,
    * lus dans `uptime_result` par la base (`sonde_reconstituer_uptime`,
    * rejouable). Une fois par processus ; un échec se retente au tick suivant
@@ -706,6 +804,9 @@ export function creerSondes({
       // L'alerte d'absence par application : muette quand la chaîne elle-même
       // est coupée (sa fenêtre le dit déjà, une fois pour toutes les apps).
       const silence = await traiterSilences(etat !== "interrompue");
+      // Le battement attendu par application : il n'accuse l'application que si
+      // la chaîne est prouvée `ok` ; sinon, sa panne peut être celle de la plateforme.
+      const battement = await traiterBattements(etat === "ok");
       return {
         etat: etat ?? "inconnu",
         emission: c.emission.resultat,
@@ -715,9 +816,10 @@ export function creerSondes({
         reconstitution_uptime: reconstitueUptime,
         alerte_canari: alerte,
         silence,
+        battement,
       };
     },
   };
 
-  return { emettre, verifier, traiterSilences, empreinte };
+  return { emettre, verifier, traiterSilences, traiterBattements, empreinte };
 }

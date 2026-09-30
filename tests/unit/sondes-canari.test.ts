@@ -8,7 +8,10 @@
 //   · le registre ferme, prolonge, remplace ou ouvre la bonne fenêtre, et la
 //     reconstitution ne s'invente pas de silence ;
 //   · le travail du tick : la clé n'est écrite qu'en empreinte, un refus juste
-//     après l'avoir écrite n'accuse pas la chaîne, et le journal part en UN insert.
+//     après l'avoir écrite n'accuse pas la chaîne, et le journal part en UN insert ;
+//   · le battement attendu par application (v105) : muette seulement si aucun
+//     battement vu n'est arrivé dans sa tolérance, jamais quand la chaîne n'est
+//     pas `ok` ni pour un battement jamais reçu, une alerte par épisode.
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -20,6 +23,7 @@ import {
   cheminDeReponse,
   construireLotCanari,
   creerSondes,
+  decisionBattement,
   decisionSilence,
   etatChaine,
   heureLocale,
@@ -465,5 +469,76 @@ describe("l'alerte d'absence : un silence ANORMAL seulement", () => {
     expect(v.silence).toEqual({ ouvertes: 1, fermees: 0, alertes: 1, heures_creuses: 1 });
     const ouvertures = pool.appels.filter((a) => /sonde_ouvrir_silence/.test(a.text));
     expect(ouvertures.map((a) => a.params)).toEqual([["muette", new Date(paris(28, 17, 0)), 60, [10, 11]]]);
+  });
+});
+
+describe("le battement attendu par application (v105)", () => {
+  const DERNIER = new Date("2026-09-30T08:00:00.000Z");
+  const gip = (recents: number, dernier: Date | null = DERNIER) => ({
+    route: "/health/db",
+    dernier,
+    recents,
+    toleranceMin: 20,
+    cadenceMin: 15,
+  });
+
+  it("présent : rien, ou la fenêtre ouverte se ferme", () => {
+    expect(decisionBattement({ battements: [gip(1)], ouverte: false, chaineOk: true })).toEqual({ action: "rien" });
+    expect(decisionBattement({ battements: [gip(2)], ouverte: true, chaineOk: false })).toEqual({ action: "fermer" });
+  });
+
+  it("muette, chaîne ok : ouvrir, datée du dernier battement, preuve lisible", () => {
+    const d = decisionBattement({ battements: [gip(0)], ouverte: false, chaineOk: true });
+    expect(d).toEqual({
+      action: "ouvrir",
+      depuis: DERNIER,
+      preuve: "dernier /health/db le 30/09/2026 08:00 UTC, attendu toutes les 15 min, tolérance 20 min",
+    });
+  });
+
+  it("muette mais chaîne non nominale, ou épisode en cours : rien", () => {
+    expect(decisionBattement({ battements: [gip(0)], ouverte: false, chaineOk: false })).toMatchObject({ action: "rien", raison: "chaîne non nominale" });
+    expect(decisionBattement({ battements: [gip(0)], ouverte: true, chaineOk: true })).toMatchObject({ action: "rien", raison: "épisode en cours" });
+  });
+
+  it("jamais reçu : une déclaration à relire, pas une panne ; un battement qui passe suffit", () => {
+    expect(decisionBattement({ battements: [gip(0, null)], ouverte: false, chaineOk: true })).toMatchObject({ action: "rien", raison: "aucun battement reçu" });
+    expect(decisionBattement({ battements: [], ouverte: false, chaineOk: true })).toMatchObject({ action: "rien" });
+    // Deux battements déclarés, l'un passe : l'application parle.
+    expect(decisionBattement({ battements: [gip(0), { ...gip(1), route: "/health" }], ouverte: false, chaineOk: true })).toEqual({ action: "rien" });
+    // Le jamais-reçu ne compte pas contre l'autre, muet : on ouvre.
+    expect(decisionBattement({ battements: [gip(0), { ...gip(0, null), route: "/jamais" }], ouverte: false, chaineOk: true })).toMatchObject({ action: "ouvrir" });
+  });
+
+  it("le tick : ouvre pour la muette si la chaîne est ok, ferme la revenue, ne touche pas au reste", async () => {
+    const pool = poolFactice([
+      [
+        /sonde_etat_battements/,
+        () => [
+          { app_id: "muette", route: "/health/db", cadence_min: 15, tolerance_min: 20, dernier: DERNIER, recents: 0, fenetre_id: null },
+          { app_id: "revenue", route: "/health/db", cadence_min: 15, tolerance_min: 20, dernier: new Date(), recents: 1, fenetre_id: 7 },
+          { app_id: "jamais", route: "/health/db", cadence_min: 15, tolerance_min: 20, dernier: null, recents: 0, fenetre_id: null },
+        ],
+      ],
+      [/sonde_ouvrir_battement/, () => [{ alerte: 42 }]],
+      [/sonde_fermer_battement/, () => [{ ok: true }]],
+    ]);
+    const sondes = creerSondes({ pool, log: muet, cle: CLE });
+    expect(await sondes.traiterBattements(true)).toEqual({ apps: 3, ouvertes: 1, fermees: 1, alertes: 1, jamais_recus: 1 });
+    const ouvertures = pool.appels.filter((a) => /sonde_ouvrir_battement/.test(a.text));
+    expect(ouvertures.map((a) => a.params)).toEqual([
+      ["muette", "dernier /health/db le 30/09/2026 08:00 UTC, attendu toutes les 15 min, tolérance 20 min"],
+    ]);
+    expect(pool.appels.filter((a) => /sonde_fermer_battement/.test(a.text)).map((a) => a.params)).toEqual([[7]]);
+    // Chaîne non nominale : la revenue se ferme quand même, rien ne s'ouvre.
+    expect(await sondes.traiterBattements(false)).toMatchObject({ ouvertes: 0, fermees: 1 });
+  });
+
+  it("avant v105 (fonction absente) : rien n'est jugé, le tick continue ; une autre erreur remonte", async () => {
+    const absente = Object.assign(new Error("function sonde_etat_battements() does not exist"), { code: "42883" });
+    const pool = { query: vi.fn(async () => Promise.reject(absente)) };
+    expect(await creerSondes({ pool, log: muet, cle: CLE }).traiterBattements(true)).toEqual({ absent: "migration-v105 non appliquée" });
+    const autre = { query: vi.fn(async () => Promise.reject(Object.assign(new Error("boom"), { code: "57P01" }))) };
+    await expect(creerSondes({ pool: autre, log: muet, cle: CLE }).traiterBattements(true)).rejects.toThrow("boom");
   });
 });

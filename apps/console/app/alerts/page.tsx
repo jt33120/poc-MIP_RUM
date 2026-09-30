@@ -64,6 +64,7 @@ import {
   PLAFOND_DECLENCHEMENTS,
   PLAFOND_FLUX,
   comptesRegles,
+  lectureSansDonnees,
   pistesDeDeclenchements,
   pointsParJour,
   SEVERITES_AFFICHEES,
@@ -243,18 +244,9 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
             valeur={comptes ? comptes.sansDonnees : null}
             format="count"
             raisonNull="lecture en échec"
-            // Une règle sans données n'est pas « normale » : elle ne surveille rien encore.
-            lecture={
-              comptes
-                ? comptes.sansDonnees === 0
-                  ? "toutes les règles actives ont assez d'historique"
-                  : `pas assez d'historique pour conclure${
-                      comptes.jamaisEvaluees > 0
-                        ? `, dont ${pluriel(comptes.jamaisEvaluees, "règle jamais évaluée", "règles jamais évaluées")}`
-                        : ""
-                    }`
-                : undefined
-            }
+            // Une règle sans données n'est pas « normale » : elle ne surveille rien encore,
+            // ou la collecte était coupée sur sa fenêtre (v105).
+            lecture={comptes ? lectureSansDonnees(comptes) : undefined}
             href="#regles"
           />
           <KpiTile
