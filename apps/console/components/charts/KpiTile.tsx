@@ -30,7 +30,7 @@ import { lireVital, texteVerdict } from "@/lib/vital-lecture";
 import { ValeurNoteeMip } from "../NoteMip";
 import { noteMip as noterMip } from "@/lib/seuils";
 import { FicheMesure } from "./FicheMesure";
-import { ApercuFond, GrapheMesure } from "./GrapheMesure";
+import { ApercuFond, GrapheMesure, JaugeSeuils } from "./GrapheMesure";
 
 export type SensMeilleur = "bas" | "haut" | "neutre";
 
@@ -553,6 +553,17 @@ export function KpiTile({
             <DeltaBadge pct={comparaison.pct} reference={comparaison.reference} sensMeilleur={sens} />
           )}
         </div>
+        {vital && connue && (
+          <div className="mt-4">
+            <JaugeSeuils
+              seuils={THRESHOLDS[vital]}
+              valeur={valeur}
+              format={format}
+              intervalle={intervalleCalcule}
+              effectif={texteEffectif}
+            />
+          </div>
+        )}
         {serie && serie.length > 1 && (
           <div className="mt-4">
             <GrapheMesure

@@ -11,6 +11,10 @@
 // des points (et le seuil « mauvais ») ; un point au-dessus est posé au sommet,
 // marqué ▲, et le pied du graphique dit combien et jusqu'où.
 import { formater, type FormatId } from "@/lib/fmt-ids";
+import { sommetRobuste } from "@/lib/series";
+
+// Partagé avec les séries (`echelleY`) : réexporté pour les appelants de ce module.
+export { sommetRobuste };
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 const L = 640;
@@ -18,15 +22,6 @@ const H = 260;
 const M = { haut: 16, droite: 16, bas: 44, gauche: 64 };
 const LARG = L - M.gauche - M.droite;
 const HAUT = H - M.haut - M.bas;
-
-/** Sommet d'échelle robuste : le 90ᵉ centile × 1,25, jamais sous le seuil « mauvais ». */
-export function sommetRobuste(valeurs: number[], seuilHaut?: number): number {
-  const tries = [...valeurs].sort((a, b) => a - b);
-  const max = tries[tries.length - 1] ?? 0;
-  const p90 = tries[Math.min(tries.length - 1, Math.floor(0.9 * (tries.length - 1)))] ?? 0;
-  const robuste = Math.max(p90 * 1.25, seuilHaut ? seuilHaut * 1.1 : 0);
-  return max > robuste * 1.5 ? robuste : Math.max(max, seuilHaut ? seuilHaut * 1.05 : 0);
-}
 
 /** Un pas « rond » (1, 2, 2,5 ou 5 × 10ⁿ) qui découpe [0, max] en ~4 graduations. */
 export function pasRond(max: number): number {
@@ -108,7 +103,7 @@ export function GrapheMesure({
         <g key={g}>
           <line x1={M.gauche} x2={L - M.droite} y1={y(g)} y2={y(g)} className="stroke-line" strokeWidth="1" />
           <text x={M.gauche - 8} y={y(g) + 3.5} textAnchor="end" className="fill-ink-soft text-[10px] tabular-nums">
-            {formater(format, g)}
+            {g === 0 ? "0" : formater(format, g)}
           </text>
         </g>
       ))}
@@ -201,5 +196,58 @@ export function ApercuFond({ valeurs }: { valeurs: (number | null)[] }) {
       <path d={`${ligne} L${dernier},30 L${premier},30 Z`} className="fill-perf/[0.07]" />
       <path d={ligne} fill="none" className="stroke-perf/35" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
     </svg>
+  );
+}
+
+/**
+ * La jauge de seuils d'un Web Vital (recette du 30/09/2026, d'après la fenêtre de détail
+ * des références) : trois zones proportionnées aux seuils web.dev — Bon, À améliorer,
+ * Mauvais —, un repère sur la p75, l'intervalle à 95 % en trait fin sous le repère, les
+ * deux seuils écrits. La zone « Mauvais » s'étend jusqu'à 1,5 × le seuil (ou la valeur,
+ * si elle va plus loin) : la jauge garde la valeur visible sans écraser les deux autres.
+ */
+export function JaugeSeuils({
+  seuils,
+  valeur,
+  format,
+  intervalle,
+  effectif,
+}: {
+  seuils: [number, number];
+  valeur: number;
+  format: FormatId;
+  intervalle?: { bas: number; haut: number } | null;
+  /** « 1 066 mesures » : écrit sous la jauge. */
+  effectif?: string | null;
+}) {
+  const [bon, mauvais] = seuils;
+  const fin = Math.max(mauvais * 1.5, valeur * 1.12, intervalle ? intervalle.haut * 1.05 : 0);
+  const pct = (v: number) => `${Math.min(100, Math.max(0, (v / fin) * 100)).toFixed(2)}%`;
+  return (
+    <figure className="m-0" aria-label={`Jauge : ${formater(format, valeur)}, seuils ${formater(format, bon)} et ${formater(format, mauvais)}`}>
+      <div className="relative h-3 w-full overflow-hidden rounded-full" aria-hidden>
+        <span className="absolute inset-y-0 left-0 bg-good/70" style={{ width: pct(bon) }} />
+        <span className="absolute inset-y-0 bg-warn/70" style={{ left: pct(bon), width: `calc(${pct(mauvais)} - ${pct(bon)})` }} />
+        <span className="absolute inset-y-0 right-0 bg-bad/70" style={{ left: pct(mauvais) }} />
+      </div>
+      <div className="relative h-5" aria-hidden>
+        {intervalle && (
+          <span
+            className="absolute top-1 h-1 rounded-full bg-ink/40"
+            style={{ left: pct(intervalle.bas), width: `calc(${pct(intervalle.haut)} - ${pct(intervalle.bas)})` }}
+          />
+        )}
+        <span className="absolute -top-4 h-5 w-0.5 -translate-x-1/2 rounded bg-ink" style={{ left: pct(valeur) }} />
+      </div>
+      <figcaption className="relative -mt-1 flex h-4 text-[10px] tabular-nums text-ink-soft">
+        <span className="absolute -translate-x-1/2" style={{ left: pct(bon) }}>
+          {formater(format, bon)}
+        </span>
+        <span className="absolute -translate-x-1/2" style={{ left: pct(mauvais) }}>
+          {formater(format, mauvais)}
+        </span>
+      </figcaption>
+      {effectif && <p className="mt-1 text-[11px] text-ink-faint">Basé sur {effectif}</p>}
+    </figure>
   );
 }

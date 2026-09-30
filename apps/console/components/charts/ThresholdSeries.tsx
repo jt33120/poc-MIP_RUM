@@ -739,6 +739,7 @@ export function ThresholdSeries({
   fenetresCollecte,
   debutPlage,
   apercu = false,
+  echelleRobuste = true,
 }: {
   /** OBLIGATOIRE : débuts de seau attendus, ISO UTC (`bucketStarts`) ou jours « AAAA-MM-JJ ». */
   grille: string[];
@@ -818,6 +819,11 @@ export function ThresholdSeries({
    * chiffrée et cliquable, se lit.
    */
   apercu?: boolean;
+  /**
+   * Échelle robuste (défaut, 30/09/2026) : une tranche aberrante ne tasse plus la courbe ;
+   * elle est rognée au sommet et DITE sous le graphique (nombre, valeur maximale).
+   */
+  echelleRobuste?: boolean;
 }) {
   const router = useRouter();
   const motifs = useIdSvg("en-cours");
@@ -851,8 +857,8 @@ export function ThresholdSeries({
   // compte n'a pas de seuil (R-S). Le plan l'interdit ; on ne la dessine pas.
   const vitalEffectif = aDesBarres ? undefined : vital;
   const echelle = useMemo(
-    () => echelleY(prep.lignes, visibles, format, { vital: vitalEffectif, bande }),
-    [prep.lignes, visibles, format, vitalEffectif, bande],
+    () => echelleY(prep.lignes, visibles, format, { vital: vitalEffectif, bande, robuste: echelleRobuste }),
+    [prep.lignes, visibles, format, vitalEffectif, bande, echelleRobuste],
   );
   const haut = echelle.haut;
   const etiquetteY = useMemo(() => formateurGraduations(echelle.valeurs, format), [echelle.valeurs, format]);
@@ -1221,6 +1227,12 @@ export function ThresholdSeries({
         )}
       </ul>
       {noteCollecte && <NoteHorsCollecte fenetres={fenetresVisibles} fuseau={fuseau} />}
+      {echelle.depassements && (
+        <p className="mt-1 text-[11px] text-ink-soft" data-testid="donnees-hors-echelle">
+          ▲ {echelle.depassements.n} {echelle.depassements.n > 1 ? "tranches" : "tranche"} au-dessus de l&apos;échelle
+          (jusqu&apos;à {formater(format, echelle.depassements.max)}), rognée{echelle.depassements.n > 1 ? "s" : ""} au sommet.
+        </p>
+      )}
       {bandes?.horsEchelle && (
         <p className="mt-1 text-xs text-ink-soft" data-testid="seuil-hors-echelle">
           {bandes.horsEchelle}
