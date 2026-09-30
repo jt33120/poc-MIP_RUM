@@ -25,7 +25,9 @@ export interface DemoConfig {
   apps: string[];
 }
 
-const EMAIL_PAR_DEFAUT = "demo@mip-rum.local";
+/** L'identité de la session démo quand DEMO_USER_EMAIL n'en donne pas d'autre. */
+export const EMAIL_DEMO_PAR_DEFAUT = "demo@mip-rum.local";
+const EMAIL_PAR_DEFAUT = EMAIL_DEMO_PAR_DEFAUT;
 
 /**
  * Configuration de la démo, ou null si elle n'est pas ouverte.

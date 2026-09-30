@@ -1,8 +1,9 @@
 // Page « Présentation » : la vitrine publique, UNE page pour tous (plan § 8.2, P**.2),
-// réduite à deux ou trois écrans par la recette du 26/09/2026 ; le détail est dans le
-// dossier technique (/presentation/dossier).
+// refondue le 30/09/2026 pour la démo — un film, deux entrées, un aperçu défilant
+// (components/presentation/Landing.tsx) ; le détail est dans le dossier technique
+// (/presentation/dossier), l'ancienne vitrine dans /presentation/archive.
 //
-// Visiteur ou connecté, c'est le même composant : seule l'action proposée change
+// Visiteur ou connecté, c'est le même composant : seule l'entrée proposée change
 // (« Ouvrir la console » au lieu de la démo et de la connexion). /presentation est un
 // chemin public (lib/chemins-publics.ts), que le layout ne met jamais dans la coquille
 // de la console.

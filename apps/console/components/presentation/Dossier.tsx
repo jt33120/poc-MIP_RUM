@@ -15,7 +15,7 @@ import { Ancres } from "@/components/presentation/Ancres";
 import { Annexe } from "@/components/presentation/Annexe";
 import { EnTete, Pied } from "@/components/presentation/Cadre";
 import { Contient } from "@/components/presentation/Contient";
-import { Actions } from "@/components/presentation/Landing";
+import { Actions } from "@/components/presentation/Actions";
 import { Releve } from "@/components/presentation/Releve";
 import { Reste } from "@/components/presentation/Reste";
 import { SaitFaire } from "@/components/presentation/SaitFaire";

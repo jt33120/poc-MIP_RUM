@@ -77,7 +77,7 @@
 //   - `pnpm test:unit` (tests/unit/portail-visuels.test.ts : chaque fichier cité et
 //     ≤ 250 Ko) et la recette TP8 : la légende porte désormais une date.
 //   - Regarder les six images, relire l'alt de la vue d'ensemble
-//     (components/presentation/Landing.tsx) contre la nouvelle capture, versionner
+//     (components/presentation/Preuves.tsx) contre la nouvelle capture, versionner
 //     images ET manifeste dans le même commit.
 //   - Si le regroupement v2 a été activé pour l'étape 4, le désactiver (base locale) :
 //       update error_grouping_config set active_version = null, deactivated_at = now(),

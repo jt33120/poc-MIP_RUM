@@ -9,6 +9,9 @@ describe("estCheminPublic", () => {
   it("ouvre la vitrine, son dossier technique et la confidentialité de l'extension", () => {
     expect(estCheminPublic("/presentation")).toBe(true);
     expect(estCheminPublic("/presentation/dossier")).toBe(true);
+    expect(estCheminPublic("/presentation/archive")).toBe(true);
+    // L'entrée « S'inscrire » de la vitrine : par définition, avant tout compte.
+    expect(estCheminPublic("/inscription")).toBe(true);
     // URL exigée par le Chrome Web Store : elle ne peut pas être derrière un login.
     expect(estCheminPublic("/extension-privacy")).toBe(true);
   });
@@ -34,6 +37,7 @@ describe("estCheminPublic", () => {
     // Le dossier est ouvert par son chemin exact, pas par son préfixe.
     expect(estCheminPublic("/presentation/dossier/secret")).toBe(false);
     expect(estCheminPublic("/presentation/dossiers")).toBe(false);
+    expect(estCheminPublic("/presentation/archive/secret")).toBe(false);
   });
 
   it("laisse privés les écrans de console et l'administration", () => {

@@ -8,7 +8,7 @@
 // Monté sur le dossier technique (/presentation/dossier, partie « Ce qu'il
 // contient », connecté seulement) : un chemin PUBLIC, hors coquille de la console. Son lien vers
 // l'administration est donc un <a> (même raison que « Ouvrir la console »,
-// components/presentation/Landing.tsx), et son texte ne promet rien que la page
+// components/presentation/Actions.tsx), et son texte ne promet rien que la page
 // démente : plus d'accès « en toute étanchéité », quand l'onglet « Écart au
 // marché » dit que l'isolation repose encore sur le code (Specs.tsx). Texte de
 // moins de 18 px en `ink-soft`, jamais `ink-faint` (§ 3.9) : la réserve sur la clé
