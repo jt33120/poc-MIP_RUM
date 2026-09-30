@@ -61,7 +61,7 @@ import {
 } from "@/lib/correlation";
 // P*.8 — concordance robot ↔ réel, mesurée sur les jours communs.
 import { concordanceAbsente, concordanceParCouple, type ResultatConcordance } from "@/lib/correlation";
-import { LIBELLE_ISSUE, MENTION_RHO, phraseConcordance, regleConcordance, texteConcordanceCourt } from "@/lib/stats/concordance";
+import { LIBELLE_ISSUE, MENTION_RHO, phraseConcordance, regleConcordance, texteConcordanceCourt } from "@mip/stats/concordance";
 import { ecrireSerie, libelleSerie } from "@/lib/correlation-serie";
 import { explorerHref } from "@/lib/explorer-page-params";
 import type { SearchParams } from "@/lib/filters";

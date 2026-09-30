@@ -20,6 +20,7 @@ import type { AlertEventRow } from "./queries-v2";
 import type { DeployRow } from "./queries-deploys";
 import type { ResolvedRange } from "./query-contract";
 import type { Annotation } from "./series";
+import type { Rupture } from "@mip/stats/rupture";
 
 /** Au-delà de ce nombre dans la fenêtre, les annotations sont regroupées. */
 export const MAX_ANNOTATIONS = 6;
@@ -292,4 +293,18 @@ export function fusionnerAnnotations(
 export function raisonsAnnotations(familles: readonly { indisponible: string | null }[]): string | undefined {
   const raisons = [...new Set(familles.map((f) => f.indisponible).filter((r): r is string => r !== null))];
   return raisons.length > 0 ? raisons.join(" ; ") : undefined;
+}
+
+/**
+ * L'annotation verticale d'une rupture datée (§ 3.7, P*.7). `instant` est le premier
+ * instant du jour local, calculé par l'écran (`bornesJourLocal`) : le calcul
+ * (`@mip/stats/rupture`) ne connaît pas les fuseaux. `href` ouvre la plage de ce jour.
+ */
+export function annotationRupture(r: Pick<Rupture, "sens">, instant: string, href?: string): Annotation {
+  return {
+    t: instant,
+    libelle: `Rupture à la ${r.sens}`,
+    type: "rupture",
+    ...(href ? { href } : {}),
+  };
 }

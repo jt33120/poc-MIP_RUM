@@ -21,9 +21,10 @@ if (process.env.MIP_CONSOLE_SANS_BASE === "1") {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   serverExternalPackages: ["pg"],
-  // Le contrat de console-api (piste C) est un paquet du dépôt en TypeScript, sans
-  // étape de build : Next le compile avec la console.
-  transpilePackages: ["@mip/console-contract"],
+  // Le contrat de console-api (piste C) et la statistique partagée avec l'API
+  // (`@mip/stats`) sont des paquets du dépôt en TypeScript, sans étape de build :
+  // Next les compile avec la console.
+  transpilePackages: ["@mip/console-contract", "@mip/stats"],
   // La vitrine date sa capture par le manifeste des captures, lu sur le disque à
   // chaque requête (lib/portail-manifeste.ts). Un fichier de public/ est servi à
   // part, pas embarqué dans la fonction serveur : on l'y ajoute nommément. Absent

@@ -32,8 +32,8 @@ import { formater, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import type { VersionRow, VersionSource } from "@/lib/queries-deploys";
 import { relativeChange } from "@/lib/query-contract";
 import { RATING_CLASS, RATING_LABEL } from "@/lib/rating";
-import type { IntervalleP75 } from "@/lib/stats/incertitude";
-import type { Intervalle } from "@/lib/stats/types";
+import type { IntervalleP75 } from "@mip/stats/incertitude";
+import type { Intervalle } from "@mip/stats/types";
 import { fmtInstant } from "@/lib/format";
 import { lireVital, texteVerdict } from "@/lib/vital-lecture";
 

@@ -13,7 +13,6 @@ import {
   ECART_DEPLOIEMENT_JOURS,
   JOURS_VALIDES_REQUIS_RUPTURE,
   MESURES_MIN_JOUR_RUPTURE,
-  annotationRupture,
   daterRupture,
   deploiementCoincident,
   ecartJours,
@@ -23,7 +22,8 @@ import {
   phraseRupture,
   phraseSansRupture,
   type JourMesure,
-} from "../../apps/console/lib/stats/rupture";
+} from "../../packages/stats/src/rupture";
+import { annotationRupture } from "../../apps/console/lib/annotations";
 
 /** Jours « 2026-09-01 », « 2026-09-02 »… (le mois de septembre en compte 30). */
 function jours(n: number, depuis = 1): string[] {

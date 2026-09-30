@@ -374,7 +374,7 @@ export function ecartAuTauxEnsemble(taux: number | null, ensemble: number | null
 // UNE liste, celle des groupes de `vitalsBreakdown(f, "route", 200)`, classée par le
 // p75 du vital choisi. Vues et tâches longues viennent d'une autre lecture
 // (`slowRoutes`) et s'y joignent par route, côté serveur.
-import type { Ecart, IntervalleP75 } from "./stats/incertitude";
+import type { Ecart, IntervalleP75 } from "@mip/stats/incertitude";
 import type { RouteRow, SlowResource } from "./queries";
 import type { VitalsBreakdownRow } from "./queries-breakdowns";
 import { ecartALaReference, estFaible, SEUIL_ECHANTILLON_FAIBLE } from "./impact";

@@ -27,7 +27,8 @@ Marche à suivre : appeler d'abord mip_rum_list_apps pour connaître les applica
 
 Limites à respecter, elles ne sont pas contournables :
 - LECTURE SEULE. Aucun outil ne modifie quoi que ce soit.
-- Trois fenêtres seulement : 1h, 24h, 7d. Aucun outil n'accepte de dates libres, et il n'existe pas d'historique plus profond ici.
+- Trois fenêtres seulement : 1h, 24h, 7d. Aucun outil n'accepte de dates libres, et il n'existe pas d'historique plus profond ici — sauf mip_rum_get_trends, dont la fenêtre est FIXE : les 14 derniers jours complets.
+- Les statistiques (mip_rum_get_trends, mip_rum_list_detections, mip_rum_get_error_overrepresentation) disent ce qu'elles ne savent pas, EN CHIFFRES (« 4 jours valides, 10 requis ») : le répéter tel quel, jamais le traduire en « stable » ni en « rien à signaler ». Une rupture, un épisode ou un déploiement coïncident est une association datée, jamais une cause.
 - Le périmètre dépend du jeton. Une app hors périmètre est REFUSÉE (403) : appeler mip_rum_list_apps plutôt que deviner un slug. Sans app, la réponse couvre toutes les apps autorisées du jeton.
 - Le détail d'un groupe d'erreurs ou d'une issue porte l'app de la RESSOURCE, qui peut différer de celle demandée : l'outil le signale explicitement. Lire cet avertissement avant de conclure.
 - La liste des sessions est paginée sans total. Les groupes d'erreurs, les issues et l'Explorer d'événements fournissent un total filtré ; le détail d'un groupe d'erreurs et l'Explorer paginent par curseur opaque stable (data.page.next_cursor), les issues et leur détail par data.next_cursor.

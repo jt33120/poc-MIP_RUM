@@ -18,7 +18,7 @@ import { fmtVital } from "@/lib/format";
 import { RATING_JETON } from "@/lib/palette";
 import type { HistoRow, VitalPercentiles } from "@/lib/queries";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
-import type { IntervalleP75 } from "@/lib/stats/incertitude";
+import type { IntervalleP75 } from "@mip/stats/incertitude";
 import { lireVital, texteVerdict } from "@/lib/vital-lecture";
 
 const VITAL_ORDER = ["LCP", "INP", "CLS", "FCP", "TTFB"];

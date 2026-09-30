@@ -959,7 +959,7 @@ export interface CorrJourRow {
  * un jour sans route ne désigne aucun couple. La plage est bornée à 30 jours par
  * le contrat (V6) : au plus 30 lignes par couple. Seuls les jours où au moins un
  * côté a mesuré sont rendus ; l'appelant écarte les jours incomplets
- * (`joursCommuns`, lib/stats/concordance.ts).
+ * (`joursCommuns`, `@mip/stats/concordance`).
  */
 export async function correlationQuotidienne(
   app: string | null,

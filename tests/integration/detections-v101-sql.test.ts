@@ -3,7 +3,7 @@
 // Ce que ce fichier prouve ne se lit pas dans la migration :
 //
 //   · que `refresh_vital_horaire` rend les p75 de `percentile_cont`, l'intervalle
-//     par statistiques d'ordre aux rangs de `lib/stats/incertitude.ts` (exacts
+//     par statistiques d'ordre aux rangs de `packages/stats/src/incertitude.ts` (exacts
 //     sous 30 mesures, normaux au-delà), une ligne par route seulement à 13
 //     mesures, et le même résultat quand on le rejoue ;
 //   · que la purge efface au-delà de 8 semaines et rien d'autre ;
@@ -173,13 +173,18 @@ function migrations(): string[] {
     const { rows: pol } = await pool.query(
       "select tablename, policyname, roles::text, cmd, qual from pg_policies where tablename in ('vital_horaire', 'signal_detecte') order by tablename, policyname",
     );
-    // Deux familles, et rien d'autre : celle de `console_ro` (v101), bornée à la
+    // Trois familles, et rien d'autre : celle de `console_ro` (v101), bornée à la
     // portée ; celle de `mip_console` (v104), en LECTURE seule — console-api borne
-    // sa lecture par la requête, comme sur toutes ses tables (v93).
+    // sa lecture par la requête, comme sur toutes ses tables (v93) ; celle de
+    // `mip_api` (v106), en LECTURE seule, sur `signal_detecte` seulement — le service
+    // api lit les épisodes pour `GET /api/v1/detections` et borne sa lecture au
+    // périmètre du jeton par la requête (v89 § 5).
     for (const p of pol) {
       if (p.policyname === "mip_console_acces") {
         expect(p.roles).toBe("{mip_console}");
         expect(p.cmd).toBe("SELECT");
+      } else if (p.policyname === "mip_api_lecture") {
+        expect(p).toMatchObject({ tablename: "signal_detecte", roles: "{mip_api}", cmd: "SELECT", qual: "true" });
       } else {
         expect(p.roles).toBe("{console_ro}");
         expect(p.qual).toContain("current_app_ids()");

@@ -76,7 +76,7 @@ import { vuesMobiles, type Entree } from "@/lib/presets";
 import { type MobileSummary as MobileSummaryBrut } from "@/lib/queries-mobile";
 import type { Fil } from "@mip/console-contract";
 import { hrefWithQuery, intersectQuery, paramReader, previousRange, rangeLabel } from "@/lib/query-contract";
-import { ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
+import { ecartProportions, intervalleWilson } from "@mip/stats/incertitude";
 import { lireComparaison, lireTri } from "@/lib/view-state";
 import { explorerPlanParams } from "@/lib/explorer-page-params";
 import { lienCohorte, SANS_RELEASE } from "@/lib/mobile-capabilities";

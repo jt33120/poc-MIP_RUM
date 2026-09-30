@@ -17,7 +17,7 @@ import { STILL_ACTIVE_MINUTES } from "./engagement";
 import { fmtVital } from "./format";
 import type { TimelineItem } from "./queries";
 import { CORE_VITALS, RATING_LABEL, THRESHOLDS, rating2026, texteSeuils, type Rating } from "./rating";
-import type { Resultat } from "./stats/types";
+import type { Resultat } from "@mip/stats/types";
 
 /** Plafond de `sessionTimeline` (`limit 500`) : au-delà, la fin n'est pas reçue. */
 export const LIMITE_CHRONOLOGIE = 500;

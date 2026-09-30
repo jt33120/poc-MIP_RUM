@@ -152,6 +152,24 @@ autre. Sur une fenêtre glissante (`period`), une donnée inchangée revalide en
 
 ## Journal des changements
 
+### 30/09/2026 — les statistiques des écrans, servies par l'API
+
+Trois routes de lecture s'ajoutent, sans rien changer aux autres : `GET /api/v1/trends` (tendances des
+cinq Core Web Vitals sur 14 jours complets, rupture datée), `GET /api/v1/detections` (épisodes hors de
+la plage habituelle) et `GET /api/v1/errors/{fingerprint}/overrepresentation` (valeurs de session
+sur-représentées parmi les sessions touchées par un groupe d'erreurs). Elles rendent le calcul que la
+console faisait au rendu de ses écrans — ou qu'elle tenait prêt sans l'afficher, pour la
+sur-représentation —, désormais dans un paquet partagé (`packages/stats`, `@mip/stats`) : l'écran
+« Tendances », la Vue d'ensemble et l'API appellent la même fonction. Les objets de calcul gardent le vocabulaire du paquet (clés en français,
+`camelCase`), comme l'`intervalle` des p75, déjà servi par `/overview` et désormais déclaré dans la spec
+OpenAPI (`VitalAgg.intervalle`). Le serveur MCP les expose en trois outils (`docs/MCP.md`).
+
+Ces trois routes sont **servies par le service de lecture seul** (`api`, sur Railway) : la console les
+transmet au jeton, sans chemin local — une route nouvelle n'ajoute aucune lecture de base à la console
+(cliquet de la console sans base). D'où deux différences avec les routes historiques : une **session** de
+la console n'y est pas acceptée (`401` `jeton_requis`), et un service injoignable rend `503`
+`service_indisponible` (avec `Retry-After`), jamais une réponse locale.
+
 ### 17/09/2026 — filtres unifiés : périmètre refusé plutôt que rabattu, plage personnalisée, dimensions (P6.2)
 
 Un seul contrat de filtres pour la console, l'API et l'export. Ce qui change pour un client :
@@ -262,6 +280,10 @@ que celui de la liste. Ce qui change pour un client :
 ### `GET /api/v1/overview` — vue d'ensemble
 `data = { health: Health, vitals: { current: VitalAgg[], previous: VitalAgg[] }, stats: { current: OverviewStats, previous: OverviewStats } }`.
 Les `previous` couvrent la **période précédente** (calcul des deltas côté front).
+Chaque `VitalAgg` porte `intervalle`, l'intervalle à 95 % de sa p75 (`@mip/stats/incertitude`) :
+`{ bas, haut, niveau: 0.95, methode }` — rangs exacts sous 30 mesures, normaux au-delà —, ou
+`{ indisponible: "7 mesures, 13 requises" }` sous 13 mesures. Deux p75 dont les intervalles se
+chevauchent ne se distinguent pas : c'est la règle des tuiles de la console.
 
 ### `GET /api/v1/vitals` — Core Web Vitals
 `data = { p75: VitalAgg[], series: Record<string, SeriesRow[]> }`.
@@ -360,6 +382,33 @@ vient d'ouvrir.
 - `400` `fingerprint invalide` (vide, plus de 64 caractères ou caractère de contrôle) ; `404` `groupe
   d'erreurs introuvable` si le groupe n'a aucune occurrence sur cette fenêtre avec ces filtres, ou pour une
   session viewer sans aucune app.
+
+### `GET /api/v1/errors/{fingerprint}/overrepresentation` — valeurs sur-représentées d'un groupe
+`data = { groupe: { app, fingerprint }, population, totaux: { touches, base }, dimensions[], analyse }`
+(effectifs lus par `apps/console/lib/queries-surrepresentation.ts`, réponse assemblée par
+`apps/console/lib/api/surrepresentation.ts`, schéma `Overrepresentation` de la spec OpenAPI). **Au jeton
+seulement**, servie par le service de lecture (implémentation : `apps/console/lib/api/service/surrepresentation.ts`) ;
+la console la transmet (`401` à une session, `503` si le service est injoignable).
+
+« Parmi les sessions touchées par ce groupe, une valeur de session est-elle plus fréquente qu'ailleurs ? »
+Le test publié de `@mip/stats/surrepresentation` : **Fisher exact unilatéral** par valeur, correction de
+**Benjamini-Hochberg** (fausses découvertes 5 %) sur toutes les valeurs testées de la réponse.
+
+- **Une seule population : des sessions.** La base : les sessions de l'app actives sur la période (dernière
+  activité dans la fenêtre), sous les filtres du contrat, robots exclus par défaut. Les touchées : celles de la
+  base qui portent au moins une occurrence du groupe sur la même période — une session à cinquante occurrences
+  compte une fois ; une occurrence sans session n'entre pas.
+- **Des dimensions de session** : `browser`, `os`, `device`, `country` (estimé), `release` (celle de la
+  session). Ni la route ni la release de l'occurrence : une session en porte plusieurs. 20 valeurs au plus par
+  dimension, les plus touchées d'abord. « Inconnu » est affiché, jamais testé.
+- **Refus avant volume** : moins de 10 sessions touchées ou de 30 sessions de base, `analyse.ok: false` et
+  `manque` (« 7 sessions touchées, 10 requises ») ; une valeur portée par moins de 3 sessions touchées n'est pas
+  testée (`test: null`).
+- `analyse.retenues` : les valeurs dont le p ajusté passe, de la plus significative à la moins, chacune avec sa
+  phrase (effectifs, parts, p ajusté, nombre de valeurs testées) et sa réserve : **une association observée,
+  pas une cause**.
+- Même résolution de l'empreinte que le détail : sans `app`, une empreinte présente dans plusieurs apps du
+  périmètre répond `400` avec les apps candidates ; `404` si le groupe n'a aucune occurrence sur la fenêtre.
 
 ### `GET /api/v1/issues` — issues d'erreurs
 `data = { issues: IssueEntry[], total, next_cursor, sampling: ErrorSampling, coverage: IssueCoverage }`
@@ -524,6 +573,63 @@ le numérateur et le dénominateur d'un taux décriraient deux populations.
 ### `GET /api/v1/health-grid` — heatmap santé
 `data = { grid: HealthGridCell[], dailyTraffic: DailyTraffic[] }`
 (cellule = une heure, jour×heure ; + trafic quotidien).
+
+### `GET /api/v1/trends` — tendances des Core Web Vitals
+`data = { fenetre, regles: { tendance, rupture }, vitals: TrendVital[] }` (assemblée par
+`apps/console/lib/api/tendances.ts`, schémas `Trends`, `TrendVital` et `Datation` de la spec OpenAPI).
+Le calcul de l'écran « Tendances » (`analyserSerieQuotidienne`, `@mip/stats/serie-quotidienne`),
+appliqué aux cinq vitals. **Au jeton seulement**, servie par le service de lecture (implémentation :
+`apps/console/lib/api/service/trends.ts`) ; la console la transmet (`401` à une session, `503` si le
+service est injoignable).
+
+- **Fenêtre fixe** : les 14 jours **complets** qui précèdent aujourd'hui dans le fuseau de l'app
+  (`fenetre.du`, `fenetre.au`, `fenetre.fuseau`), journée en cours exclue. `period`, `from` et `to`
+  sont **refusés** (`400` `range_not_applicable`, `parameter`) plutôt qu'ignorés. Les autres filtres du
+  contrat (`app`, `device`, dimensions, segment, bots, apps internes) s'appliquent à la série.
+- `vitals[].serie` : un point par jour, jours vides compris (`p75: null`, `n: 0` — jamais 0 ms).
+- `vitals[].tendance` : droite des moindres carrés sur les jours d'au moins 30 mesures ; `etat`
+  `insuffisante` (moins de 7 jours valides : `joursValides` sur `joursRequis`, aucune droite),
+  `bruit` (la variation sur la fenêtre ne dépasse pas deux écarts types des résidus) ou
+  `significative`. `pente` par jour, `ordonnee` au premier jour, `dispersion`, `courant` (dernière
+  valeur retenue).
+- `vitals[].echeance` : contre `borneBon` (**incluse** : 2 500 ms est encore « Bon » pour le LCP).
+  `depasse` (la dernière valeur retenue la dépasse déjà : une mesure, dite même sans pente),
+  `prevu` (pente établie, franchissement dans l'horizon de 7 jours : `dans` = J+k, `jour`), `aucun`
+  (pente établie, rien dans l'horizon) ou `non_ecrit` (pente dans le bruit ou tendance insuffisante :
+  **aucune** projection). Ce n'est pas une prévision : aucune saisonnalité.
+- `vitals[].rupture` : test de Pettitt sur les jours d'au moins 13 mesures (minimum d'une p75). Refus
+  chiffré sous 10 jours valides (`ok: false`, `manque: { requis, observe, unite }`) ; `ok: true` et
+  `rupture: null` = aucune rupture retenue (p ≥ 0,05, `p` écrit). Une rupture datée porte son jour
+  (premier jour du nouveau niveau), les **médianes des p75 quotidiennes** avant et après (jamais une p75
+  de période), `p`, `K` et les effectifs.
+- `vitals[].deploiement` : un marqueur de déploiement à ± 1 jour de la rupture — une **coïncidence de
+  date**, jamais une cause. `phrase` : la phrase de l'écran, réserves comprises.
+
+### `GET /api/v1/detections` — épisodes hors de la plage habituelle
+`data = { etat, detections: Detection[], limite, tronque, population, regle }` (assemblée par
+`apps/console/lib/api/detections.ts`, schémas `Detections` et `Detection` de la spec OpenAPI). **Au jeton
+seulement**, servie par le service de lecture (implémentation : `apps/console/lib/api/service/detections.ts`) ;
+la console la transmet (`401` à une session, `503` si le service est injoignable).
+
+Les constats que le travail `detections_horaires` du scheduler écrit dans `signal_detecte` (migration
+v101) : une p75 horaire d'un vital (toutes routes, ou une route) sortie de sa **plage habituelle** —
+médiane et écart absolu médian du même créneau des semaines passées, à défaut des 14 derniers jours, à
+défaut des 48 dernières heures (`packages/backend/shared/plage-habituelle.mjs`). L'API ne recalcule rien.
+
+- Épisodes qui **recoupent** la période (`period` ou `from`/`to`), masqués exclus, triés par `priorite`
+  (impact × ampleur × confiance) décroissante. `limit` 1..100 (défaut 50) ; `tronque: true` quand la
+  limite est atteinte.
+- Chaque épisode : `vital`, `route` (`null` = toutes routes), `debut`, `fin` (`null` = en cours),
+  `statut`, `phrase` (rédigée par règles, jamais par un modèle de langage), `plageHabituelle`
+  (`mediane`, `bas`, `haut`, `niveau` de repli, `legende`), `observe` (l'heure qui fait preuve : `p75`,
+  son intervalle, `n`, `z` en écarts robustes, `ecartRelatif`), et `methode`, `preuves`, `impact` tels
+  que le scheduler les a écrits.
+- **Population** : toutes les mesures reçues, robots compris ; un constat se lit par application, vital
+  et route. `device` et les dimensions sont **refusés** (`400` `unsupported_dimension`).
+- `etat: "absent"` : la table n'existe pas encore sur cette base (v101 non appliquée) — ni une erreur, ni
+  « aucun épisode ».
+- Lue par le service `api` sous `mip_api` depuis la migration v106 (droit de lecture sur
+  `signal_detecte` et `deploy_marker`).
 
 ---
 

@@ -17,6 +17,26 @@
 
 /** Les POST qui LISENT. Une entrée de plus ici est une décision relue. */
 export const POST_DE_LECTURE = Object.freeze(["/api/v1/explorer/query"]);
+
+/**
+ * LES ROUTES SERVIES PAR CE SERVICE SEUL. Leur fichier de route dans la console ne
+ * fait que TRANSMETTRE la lecture au jeton (`apps/console/lib/api/service-seul.ts`) :
+ * sans chemin local, la console n'y gagne aucune lecture de base (cliquet de la
+ * console sans base). Le service, lui, compile à ce chemin l'implémentation
+ * nommée ici, au lieu du fichier de route. C'est l'état final que les routes
+ * historiques rejoindront à la décommission (C12) ; une route NOUVELLE de l'API v1
+ * y naît directement. Une entrée de plus ici est une décision relue.
+ *
+ * `module` : chemin depuis la racine du dépôt.
+ */
+export const ROUTES_SERVICE_SEUL = Object.freeze([
+  Object.freeze({ chemin: "/api/v1/trends", module: "apps/console/lib/api/service/trends.ts" }),
+  Object.freeze({ chemin: "/api/v1/detections", module: "apps/console/lib/api/service/detections.ts" }),
+  Object.freeze({
+    chemin: "/api/v1/errors/[fingerprint]/overrepresentation",
+    module: "apps/console/lib/api/service/surrepresentation.ts",
+  }),
+]);
 const METHODES_LECTURE = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /**

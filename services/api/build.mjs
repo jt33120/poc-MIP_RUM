@@ -19,17 +19,35 @@
 //   · ni `dev-secret-mip-rum` (le secret de session de développement) dans le code ;
 //   · aucun module `next/…` réel ;
 //   · ni le relais de la console, ni `lib/platform-flag.ts` : le service ne
-//     relaie pas, et `mip_api` n'a pas à lire `platform_flag`.
+//     relaie pas, et `mip_api` n'a pas à lire `platform_flag` ;
+//   · ni la transmission des routes servies par le service SEUL
+//     (`lib/api/service-seul.ts`) : à leur chemin, le service compile leur
+//     implémentation (`ROUTES_SERVICE_SEUL`, `routeur.mjs`), pas le fichier de
+//     route de la console qui la lui transmet.
 import { build } from "esbuild";
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cheminDuFichier } from "./routeur.mjs";
+import { ROUTES_SERVICE_SEUL, cheminDuFichier } from "./routeur.mjs";
 
 const ICI = path.dirname(fileURLToPath(import.meta.url));
 const RACINE = path.resolve(ICI, "..", "..");
 const CONSOLE = path.join(RACINE, "apps", "console");
 const APP = path.join(CONSOLE, "app");
+
+/**
+ * La table servie : `{ chemin, fichier }` pour chaque fichier de route de la console,
+ * sauf les routes servies par ce service seul (`ROUTES_SERVICE_SEUL`), dont le fichier
+ * de la console ne fait que transmettre : le service compile à leur place leur
+ * implémentation. Une entrée par fichier de route, ni plus ni moins.
+ */
+export function tableDesRoutes() {
+  const seul = new Map(ROUTES_SERVICE_SEUL.map((r) => [r.chemin, path.join(RACINE, r.module)]));
+  return fichiersDeRoutes().map((fichier) => {
+    const chemin = cheminDuFichier(path.relative(APP, fichier));
+    return { chemin, fichier: seul.get(chemin) ?? fichier };
+  });
+}
 
 /** Les fichiers de route servis : l'API v1 entière, et le résumé partenaire. */
 export function fichiersDeRoutes() {
@@ -69,9 +87,9 @@ const substitutions = {
     // La table des routes, module virtuel généré depuis l'arborescence.
     b.onResolve({ filter: /^mip:routes$/ }, () => ({ path: "routes", namespace: "mip-routes" }));
     b.onLoad({ filter: /.*/, namespace: "mip-routes" }, () => {
-      const fichiers = fichiersDeRoutes();
-      const lignes = fichiers.map((f, i) => `import * as r${i} from ${JSON.stringify(f)};`);
-      const table = fichiers.map((f, i) => `{ chemin: ${JSON.stringify(cheminDuFichier(path.relative(APP, f)))}, module: r${i} }`);
+      const routes = tableDesRoutes();
+      const lignes = routes.map((r, i) => `import * as r${i} from ${JSON.stringify(r.fichier)};`);
+      const table = routes.map((r, i) => `{ chemin: ${JSON.stringify(r.chemin)}, module: r${i} }`);
       return { contents: `${lignes.join("\n")}\nexport const ROUTES = [\n  ${table.join(",\n  ")}\n];\n`, resolveDir: RACINE, loader: "js" };
     });
   },
@@ -91,6 +109,11 @@ export function fautesDuBundle(entrees, code) {
   if (code.includes("dev-secret-mip-rum")) fautes.push("le secret de session de développement est dans le bundle");
   if (normalisees.some((e) => /apps\/console\/lib\/(api-relay|ingest-relay|platform-flag)\.ts$/.test(e))) {
     fautes.push("le relais de la console (ou sa lecture de platform_flag) est dans le bundle : le service est la cible du relais");
+  }
+  // Une route servie par le service seul a, dans la console, un fichier qui ne fait
+  // que transmettre : s'il entrait ici, le service se transmettrait la lecture.
+  if (normalisees.some((e) => /apps\/console\/lib\/api\/service-seul\.ts$/.test(e))) {
+    fautes.push("la transmission de la console (lib/api/service-seul.ts) est dans le bundle : le service calcule ces routes lui-même");
   }
   return fautes;
 }

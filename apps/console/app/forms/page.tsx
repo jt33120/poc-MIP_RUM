@@ -57,7 +57,7 @@ import { couvertureDeTuile, gesteElargir, plafondAtteint, plageDansPhrase } from
 import { SERIE } from "@/lib/palette";
 import { hrefWithQuery, previousRange } from "@/lib/query-contract";
 import { referencePrecedente } from "@/lib/sessions-kpi";
-import { ecartProportions } from "@/lib/stats/incertitude";
+import { ecartProportions } from "@mip/stats/incertitude";
 
 export const dynamic = "force-dynamic";
 

@@ -29,9 +29,9 @@ function avec(id: string, change: Partial<Capacite>): Capacite[] {
 }
 
 describe("1 — les nombres des accès programmatiques sont lus dans le document", () => {
-  it("E1 : familles de routes ; E2 : outils MCP (repères du relevé du 23/09/2026)", () => {
-    expect(FAMILLES_API_V1).toBe(18);
-    expect(OUTILS_MCP).toBe(16);
+  it("E1 : familles de routes ; E2 : outils MCP (repères du relevé du 30/09/2026)", () => {
+    expect(FAMILLES_API_V1).toBe(20);
+    expect(OUTILS_MCP).toBe(19);
   });
 
   it("un nombre qui disparaît de sa cellule est tu, pas gardé", () => {

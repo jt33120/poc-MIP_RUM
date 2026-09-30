@@ -22,7 +22,7 @@ import { Sparkline } from "./Sparkline";
 import type { CouverturePrecedente } from "@/lib/comparaison";
 import { formater, referenceSansVs, libelleReference, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import { RATING_CLASS, RATING_LABEL, THRESHOLDS } from "@/lib/rating";
-import type { Ecart, IntervalleP75 } from "@/lib/stats/incertitude";
+import type { Ecart, IntervalleP75 } from "@mip/stats/incertitude";
 import { GlossaryTip } from "../GlossaryTip";
 import { InfoTip } from "../InfoTip";
 import { pluriel } from "@/lib/format";

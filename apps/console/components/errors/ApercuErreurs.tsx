@@ -28,7 +28,7 @@ import type { SectionLue } from "@/lib/lecture";
 import { autresGroupes, libelleGroupeErreur, partTouchees } from "@/lib/perf-domain";
 import type { GroupeFrequent, PartSessionsTouchees, TotauxErreurs } from "@/lib/queries-errors";
 import { libelleSeauComplet, type Annotation, type FenetreCollecte, type PointSerie } from "@/lib/series";
-import { FAIBLE_SOUS_PROPORTION, ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
+import { FAIBLE_SOUS_PROPORTION, ecartProportions, intervalleWilson } from "@mip/stats/incertitude";
 
 // Nombre de groupes dessinés dans le hero : dans `lib/error-view.ts`, que le
 // chargeur de l'écran lit aussi (il en demande autant à la base).

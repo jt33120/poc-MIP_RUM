@@ -182,6 +182,18 @@ const filtres = (app = A): Filters => ({
     });
   });
 
+  // `GET /api/v1/trends` lit les cinq vitals en un balayage ; `dailyLcpSeries` en est
+  // le cas à un vital. Un vital sans aucune mesure garde ses quatorze jours vides.
+  describe("dailyVitalsSeries(f, noms, { exclureAujourdhui: true }) — la lecture de /api/v1/trends", () => {
+    it("un vital demandé = quatorze lignes ; le LCP est celui de dailyLcpSeries, l'INP absent reste vide", async () => {
+      const series = await lib.dailyVitalsSeries(filtres(), ["LCP", "INP"], { exclureAujourdhui: true });
+      expect(Object.keys(series).sort()).toEqual(["INP", "LCP"]);
+      expect(series.LCP).toEqual(await lib.dailyLcpSeries(filtres(), { exclureAujourdhui: true }));
+      expect(series.INP.map((l) => l.jour)).toEqual(jours.slice(0, 14));
+      expect(series.INP.every((l) => l.p75 === null && l.n === 0)).toBe(true);
+    });
+  });
+
   describe("sans l'option : la fenêtre d'avant, pour la Vue d'ensemble", () => {
     it("dailyLcpSeries(f) : J−13 … J, aujourd'hui compris", async () => {
       const lignes = await lib.dailyLcpSeries(filtres());

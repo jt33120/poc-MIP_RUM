@@ -54,7 +54,7 @@ import {
 } from "@/lib/queries-frustration";
 import { hrefWithQuery, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
 import { RATING_CLASS, RATING_HEX, rating2026 } from "@/lib/rating";
-import { ecartP75 } from "@/lib/stats/incertitude";
+import { ecartP75 } from "@mip/stats/incertitude";
 import { ecrirePanel, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { RangeeKpi } from "@/components/charts/RangeeKpi";

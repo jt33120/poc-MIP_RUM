@@ -57,7 +57,7 @@ import { chargerEcran } from "@/lib/ecran";
 import { listGoals, type GoalConversionLue, type GoalConversionsParAppareil } from "@/lib/queries-goals";
 import { hrefWithQuery, paramReader, previousRange, rangeLabel } from "@/lib/query-contract";
 import { SERIE } from "@/lib/palette";
-import { FAIBLE_SOUS_PROPORTION, intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
+import { FAIBLE_SOUS_PROPORTION, intervalleWilson, texteIntervalle } from "@mip/stats/incertitude";
 import { lireComparaison } from "@/lib/view-state";
 import { createGoalAction, deleteGoalAction, toggleGoalAction } from "./actions";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";

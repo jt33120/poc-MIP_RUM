@@ -45,7 +45,7 @@ import { formater, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import { accord } from "@/lib/format";
 import type { TriClassement } from "@/lib/impact";
 import { RATING_BAR, RATING_CLASS, RATING_LABEL, type Rating } from "@/lib/rating";
-import type { IntervalleP75 } from "@/lib/stats/incertitude";
+import type { IntervalleP75 } from "@mip/stats/incertitude";
 import { lireVital, texteVerdict, type VerdictVital } from "@/lib/vital-lecture";
 
 export interface ImpactMesure {

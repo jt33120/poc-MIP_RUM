@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  AJOUTEES,
   COLONNES,
   FONCTIONS,
   HORS_LECTURE,
@@ -26,7 +27,8 @@ const V89 = readFileSync(join(SQL_DIR, "migration-v89.sql"), "utf8");
 const SQL = V89.split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n");
 /**
  * Ce que v89 nomme, moins ce qu'une migration ultérieure a supprimé de la base
- * (`SUPPRIMEES`) : la liste blanche décrit la base d'AUJOURD'HUI, v89 celle du 24/09.
+ * (`SUPPRIMEES`), plus ce qu'une migration ultérieure a accordé (`AJOUTEES`) : la
+ * liste blanche décrit la base d'AUJOURD'HUI, v89 celle du 24/09.
  */
 const liste = (brut: string) =>
   brut.split(",").map((s) => s.trim().replace(/^'|'$/g, "")).filter((s) => s && !(s in SUPPRIMEES));
@@ -35,7 +37,7 @@ const trie = (l: readonly string[]) => [...l].sort();
 describe("P4 — migration-v89 ↔ packages/db/roles/mip-api.mjs", () => {
   it("les tables lues en entier sont celles de la liste", () => {
     const m = SQL.match(/grant select on table\s+([\s\S]+?)\s+to mip_api;/);
-    expect(trie(liste(m![1]))).toEqual(trie(TABLES));
+    expect(trie([...liste(m![1]), ...Object.keys(AJOUTEES)])).toEqual(trie(TABLES));
   });
 
   it("les tables lues par colonnes, colonne par colonne", () => {
@@ -49,9 +51,29 @@ describe("P4 — migration-v89 ↔ packages/db/roles/mip-api.mjs", () => {
 
   it("une policy de lecture est prévue pour chaque table accordée, et aucune autre", () => {
     const m = SQL.match(/c\.relname in \(([\s\S]+?)\)\s+loop/);
-    expect(trie(liste(m![1]))).toEqual(trie([...TABLES.filter((t: string) => t !== "v_anomaly"), ...Object.keys(COLONNES)]));
+    // Les tables ajoutées après v89 sont toutes sous RLS : leur policy est posée par
+    // leur propre migration (test suivant).
+    expect(trie([...liste(m![1]), ...Object.keys(AJOUTEES)])).toEqual(
+      trie([...TABLES.filter((t: string) => t !== "v_anomaly"), ...Object.keys(COLONNES)]),
+    );
     expect(SQL).toContain("for select to mip_api using (true)");
     expect(SQL).not.toMatch(/create policy[^;]*for (all|insert|update|delete)/i);
+  });
+
+  it("chaque table ajoutée après v89 est accordée par la migration qu'elle cite, avec sa policy de lecture", () => {
+    for (const [table, raison] of Object.entries(AJOUTEES as Record<string, string>)) {
+      const version = raison.match(/^v(\d+) /)?.[1];
+      expect(version, table).toBeDefined();
+      expect(Number(version), table).toBeGreaterThan(89);
+      const brut = readFileSync(join(SQL_DIR, `migration-v${version}.sql`), "utf8");
+      const sql = brut.split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n");
+      const accordees = [...sql.matchAll(/grant select on table\s+([\s\S]+?)\s+to mip_api;/g)].flatMap((g) => liste(g[1]));
+      expect(accordees, table).toContain(table);
+      expect(sql, table).toMatch(new RegExp(`array\\[[^\\]]*'${table}'[^\\]]*\\]`));
+      expect(sql, table).toContain("create policy mip_api_lecture on public.%I as permissive for select to mip_api using (true)");
+      expect(sql, table).not.toMatch(/grant (insert|update|delete|truncate|all)\b/i);
+    }
+    expect(Object.keys(AJOUTEES).filter((t) => !(TABLES as readonly string[]).includes(t))).toEqual([]);
   });
 
   it("les fonctions : la lecture accordée, les écritures retirées à PUBLIC", () => {

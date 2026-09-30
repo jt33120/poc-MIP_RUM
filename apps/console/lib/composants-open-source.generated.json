@@ -54,6 +54,11 @@
       "categorie": "backend"
     },
     {
+      "chemin": "packages/stats",
+      "nom": "@mip/stats",
+      "categorie": "backend"
+    },
+    {
       "chemin": "apps/console",
       "nom": "console",
       "categorie": "console"
@@ -1285,6 +1290,10 @@
           "dev": true
         },
         {
+          "nom": "@mip/stats",
+          "dev": true
+        },
+        {
           "nom": "console",
           "dev": true
         },
@@ -1300,7 +1309,8 @@
         "packages/console-contract/package.json",
         "packages/rum-core/package.json",
         "packages/rum-mobile/package.json",
-        "packages/rum-sdk/package.json"
+        "packages/rum-sdk/package.json",
+        "packages/stats/package.json"
       ]
     },
     {

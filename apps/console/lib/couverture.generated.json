@@ -415,7 +415,7 @@
       "famille": "Surfaces d'accès",
       "capacite": "Lire par l'API publique v1",
       "verdict": "deploye_non_eprouve",
-      "preuve": "`apps/console/app/api/v1/` — 18 familles de routes, enveloppe `{meta,data}` ; `tests/unit/api-v1-contract.test.ts`, OpenAPI servi par `/api-docs`",
+      "preuve": "`apps/console/app/api/v1/` — 20 familles de routes (dont `trends` et `detections` ; ces deux-là et `errors/{fingerprint}/overrepresentation` sont servies par le service `api` seul depuis le 30/09), enveloppe `{meta,data}` ; `tests/unit/api-v1-contract.test.ts`, OpenAPI servi par `/api-docs`",
       "limite": "Les jetons `CONSOLE_API_TOKENS` sont **en lecture**, à **une exception** près : `POST /api/v1/deploys`, qui enregistre un marqueur de déploiement, les accepte encore jusqu'au 31/12/2026 (`FIN_JETONS_HISTORIQUES`, `packages/backend/lib/deploiements.mjs`), annoncé comme ancien chemin — le jeton de CI `deploys:write` le remplace ; une session y est refusée (`apps/console/app/api/v1/deploys/route.ts`). Aucun droit d'upload. Aucune de ces routes n'a été appelée sur de la donnée réellement ingérée.",
       "ligne": 203
     },
@@ -424,7 +424,7 @@
       "famille": "Surfaces d'accès",
       "capacite": "Lire par MCP",
       "verdict": "deploye_non_eprouve",
-      "preuve": "`packages/mcp-tools/lib/catalogue.mjs` — **16 outils**, recomptés le 23/09 (`mip_rum_list_apps` … `mip_rum_mobile_summary`) ; fumée `mcp` du workflow `docker-smoke`, qui compare ce nombre en dur ; service Railway `mcp` (sur `6485f45` le 18/09 ; sur `20261eb` au relevé du 26/09, § 13), avec domaine public",
+      "preuve": "`packages/mcp-tools/lib/catalogue.mjs` — **19 outils**, recomptés le 30/09 (`mip_rum_list_apps` … `mip_rum_get_error_overrepresentation`) ; fumée `mcp` du workflow `docker-smoke`, qui compare ce nombre en dur ; service Railway `mcp` (sur `6485f45` le 18/09 ; sur `20261eb` au relevé du 26/09, § 13), avec domaine public",
       "limite": "Read-only par construction. Le catalogue n'expose **pas encore les dimensions** de P6 : les outils P4/P5 restent sur app, période et appareil.",
       "ligne": 204
     },

@@ -1,7 +1,7 @@
 // Incertitude des chiffres clés (P*.1) : les rangs, Wilson, Newcombe, la règle
 // de trois et l'écart détectable, vérifiés par la binomiale EXACTE.
 import { describe, expect, it } from "vitest";
-import { binomCdf } from "../../apps/console/lib/stats/lois";
+import { binomCdf } from "../../packages/stats/src/lois";
 import {
   couvertureRangs,
   ecartDetectable,
@@ -15,7 +15,7 @@ import {
   rangsQuantileNormal,
   regleDeTrois,
   wilson,
-} from "../../apps/console/lib/stats/incertitude";
+} from "../../packages/stats/src/incertitude";
 
 // Table du plan (§ 7.2, P*.1), recalculée par binomiale exacte à sa rédaction.
 const TABLE: Record<number, [number, number, number]> = {

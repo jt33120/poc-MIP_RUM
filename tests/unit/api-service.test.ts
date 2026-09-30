@@ -11,11 +11,12 @@
 //     route ajoutée là doit exister ici, au même chemin.
 //   - Qu'un segment fixe perde contre un paramètre (`/explorer/schema` pris pour
 //     une vue d'identifiant « schema »).
-import { readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   POST_DE_LECTURE,
+  ROUTES_SERVICE_SEUL,
   cheminDuFichier,
   creerRouteur,
   methodeServie,
@@ -24,7 +25,7 @@ import {
 import { NextRequest, NextResponse, after } from "../../services/api/shims/next-server.mjs";
 import { SESSION_COOKIE, verifyJwt } from "../../services/api/shims/auth.mjs";
 import { brancherPool, q, withTenant } from "../../services/api/shims/db.mjs";
-import { construire, fautesDuBundle, fichiersDeRoutes } from "../../services/api/build.mjs";
+import { construire, fautesDuBundle, fichiersDeRoutes, tableDesRoutes } from "../../services/api/build.mjs";
 
 const APP = join("apps", "console", "app");
 
@@ -60,6 +61,24 @@ describe("routeur — les chemins de la console, tels quels", () => {
     })(join(APP, "api", "v1"));
     const servis = fichiersDeRoutes().map((f: string) => relative(process.cwd(), f));
     expect(servis.sort()).toEqual([...attendus, join(APP, "api", "rum", "summary", "route.ts")].sort());
+  });
+
+  // Une route servie par le service SEUL : la console la TRANSMET (aucune lecture de
+  // base, cliquet C-R), le service compile son implémentation au même chemin.
+  it("routes servies par le service seul : la console transmet, le service calcule, au même chemin", () => {
+    expect(ROUTES_SERVICE_SEUL.length).toBeGreaterThan(0);
+    const table = new Map(tableDesRoutes().map((r: { chemin: string; fichier: string }) => [r.chemin, relative(process.cwd(), r.fichier)]));
+    // Une entrée par fichier de route, ni plus ni moins.
+    expect(table.size).toBe(fichiersDeRoutes().length);
+    for (const { chemin, module } of ROUTES_SERVICE_SEUL) {
+      expect(table.get(chemin), chemin).toBe(module);
+      expect(existsSync(module), module).toBe(true);
+      const fichierConsole = join(APP, ...chemin.split("/").filter(Boolean), "route.ts");
+      // Ce que la route de la console importe : la transmission et le préflight, rien
+      // qui lise — son implémentation n'y entre pas.
+      const imports = [...readFileSync(fichierConsole, "utf8").matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
+      expect(imports.sort(), fichierConsole).toEqual(["@/lib/api/respond", "@/lib/api/service-seul"]);
+    }
   });
 });
 
@@ -141,6 +160,9 @@ describe("le bundle — ce qu'il ne doit jamais contenir", () => {
     // Le service est la CIBLE du relais : ni le relais, ni sa lecture du drapeau.
     expect(fautesDuBundle(["apps/console/lib/api-relay.ts"], "")).toHaveLength(1);
     expect(fautesDuBundle(["apps/console/lib/platform-flag.ts"], "")).toHaveLength(1);
+    // Ni la transmission des routes servies par le service seul : il se la transmettrait.
+    expect(fautesDuBundle(["apps/console/lib/api/service-seul.ts"], "")).toHaveLength(1);
+    expect(fautesDuBundle(["apps/console/lib/api/service/trends.ts"], "")).toEqual([]);
   });
 
   it("le vrai bundle se construit, sans aucune de ces pièces", async () => {
@@ -149,5 +171,8 @@ describe("le bundle — ce qu'il ne doit jamais contenir", () => {
     expect(r.entrees.some((e: string) => e.endsWith("apps/console/lib/auth.ts"))).toBe(false);
     expect(r.entrees.some((e: string) => e.includes("services/api/shims/auth.mjs"))).toBe(true);
     expect(r.entrees.some((e: string) => e.endsWith("apps/console/lib/db.ts"))).toBe(false);
+    // Les routes servies par le service seul : leur implémentation, et le calcul partagé.
+    for (const { module } of ROUTES_SERVICE_SEUL) expect(r.entrees, module).toContain(module);
+    expect(r.entrees).toContain("packages/stats/src/serie-quotidienne.ts");
   }, 60_000);
 });

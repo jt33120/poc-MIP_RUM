@@ -5,7 +5,7 @@
 // Le « score d'expérience /100 » qui vivait ici a été retiré : il pondérait au
 // jugé des paliers de LCP sans source. L'écran montre désormais ses constituants
 // côte à côte, chacun avec sa source.
-import type { IntervalleP75 } from "./stats/incertitude";
+import type { IntervalleP75 } from "@mip/stats/incertitude";
 
 /** Une note ≥ 4/5 (ou 👍) compte comme positive. */
 export const CSAT_POSITIVE = 4;

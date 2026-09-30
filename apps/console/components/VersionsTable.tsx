@@ -17,7 +17,7 @@ import { comparable, ecartPoints, tauxErreur, versionReference } from "@/lib/dep
 import type { ComparaisonVersions } from "@/lib/queries-deploys";
 import { fmtVital, fmtPct, fmtNombre } from "@/lib/format";
 import { RATING_CLASS, rating2026 } from "@/lib/rating";
-import { ecartProportions, intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
+import { ecartProportions, intervalleWilson, texteIntervalle } from "@mip/stats/incertitude";
 
 /** Cellule de vital, colorée au barème web.dev (lib/rating.ts). Vide quand la mesure manque. */
 function VitalCell({ name, v }: { name: "LCP" | "INP"; v: number | null }) {

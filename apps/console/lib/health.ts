@@ -19,7 +19,7 @@ import { compileScope, sessionJoin } from "./query-compiler";
 import { conditionsOf } from "./query-contract";
 import { sqlContext } from "./query-sql";
 import { CORE_VITALS } from "./rating";
-import { intervalleWilson, texteIntervalle } from "./stats/incertitude";
+import { intervalleWilson, texteIntervalle } from "@mip/stats/incertitude";
 import { healthLabel, type HealthFactor, type AnomalyRow, type Health } from "./health-libelles";
 import { pluriel } from "./format";
 // Ce que l'affichage lit — libellés, classes, `Health`, `dominantFactors` — vit
