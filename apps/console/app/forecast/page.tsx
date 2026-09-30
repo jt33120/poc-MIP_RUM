@@ -425,11 +425,19 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
                 <span className="whitespace-nowrap text-[22px] font-semibold leading-8 tracking-tight text-ink" data-testid="synthese-valeur">
                   {valeurSynthese}
                 </span>
-                <span className="truncate text-[10px] text-ink-faint">
-                  {etaEcrite != null && etaEcrite > 0 && etaEcrite <= HORIZON_JOURS
-                    ? `franchit ${LCP_BON_TEXTE} · horizon ${HORIZON_JOURS} j`
-                    : `seuil ${LCP_BON_TEXTE} · horizon ${HORIZON_JOURS} j`}
-                </span>
+                {lcpLu.ok && tLcp.etat === "insuffisante" && phrasePremiereTendance ? (
+                  // Sans tendance calculable, la date des premières tendances reste VISIBLE
+                  // en pied de case (coupée, entière au survol et dans la fenêtre).
+                  <span className="truncate text-[10px] text-ink-faint" data-testid="premiere-tendance" title={phrasePremiereTendance}>
+                    {phrasePremiereTendance}
+                  </span>
+                ) : (
+                  <span className="truncate text-[10px] text-ink-faint">
+                    {etaEcrite != null && etaEcrite > 0 && etaEcrite <= HORIZON_JOURS
+                      ? `franchit ${LCP_BON_TEXTE} · horizon ${HORIZON_JOURS} j`
+                      : `seuil ${LCP_BON_TEXTE} · horizon ${HORIZON_JOURS} j`}
+                  </span>
+                )}
               </>
             }
           >
@@ -443,9 +451,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               </ul>
             )}
             {lcpLu.ok && tLcp.etat === "insuffisante" && phrasePremiereTendance && (
-              <p className="mt-2 text-sm text-ink-soft" data-testid="premiere-tendance">
-                {phrasePremiereTendance}
-              </p>
+              <p className="mt-2 text-sm text-ink-soft">{phrasePremiereTendance}</p>
             )}
             <dl className="mt-4 grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1.5 border-t border-line pt-3 text-xs leading-snug">
               <dt className="text-ink-faint">Tendance</dt>
