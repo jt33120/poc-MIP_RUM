@@ -9,11 +9,17 @@ import { useState } from "react";
 
 export function ChampCopiable({ valeur, libelle, testId }: { valeur: string; libelle: string; testId?: string }) {
   const [copie, setCopie] = useState(false);
+  // Le nom va au GROUPE : ARIA interdit `aria-label` sur `<code>`. Le champ est
+  // focalisable pour défiler au clavier quand la valeur dépasse sa largeur.
   return (
-    <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-line bg-panel2" data-testid={testId}>
+    <div
+      role="group"
+      aria-label={libelle}
+      className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-line bg-panel2"
+      data-testid={testId}
+    >
       <code
-        className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-2.5 py-1.5 font-mono text-xs leading-5 text-ink"
-        aria-label={libelle}
+        className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-2.5 py-1.5 font-mono text-xs leading-5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-perf"
         tabIndex={0}
       >
         {valeur}
