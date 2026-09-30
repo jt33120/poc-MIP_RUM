@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { principalDeJeton, SESSION_COOKIE, verifyJwt, type SessionUser } from "@/lib/auth";
 import { estCheminPublic } from "@/lib/chemins-publics";
-import { authorizedAppsOf } from "@/lib/query-contract";
+import { authorizedAppsOf, canoniserAliasPlage } from "@/lib/query-contract";
 import { algorithmeDuJeton, verifierJetonConsoleApi } from "@/lib/session-console";
 
 // Auth v0.3 (B3) : JWT cookie httpOnly signé AUTH_SECRET — remplace le basic auth v0.2.
@@ -166,6 +166,15 @@ export async function middleware(req: NextRequest) {
   // qui n'a pas encore choisi de projet.
   const gated = estPageDeConsole(req);
   if (gated) {
+    // `?range=7d` : alias de `period` (et `range=30d` : les 30 derniers jours),
+    // réécrit AVANT la porte projet pour que l'écran, la barre de filtres et les
+    // liens n'aient qu'un nom de paramètre à connaître.
+    const canonique = canoniserAliasPlage(req.nextUrl.searchParams, Date.now());
+    if (canonique) {
+      const url = req.nextUrl.clone();
+      url.search = canonique.toString();
+      return NextResponse.redirect(url, 302);
+    }
     const requested = req.nextUrl.searchParams.get("app");
     const cookieApp = req.cookies.get("mip-project")?.value ?? null; // cf. lib/project.ts
     // Périmètre signé (lib/query-contract.ts) : null = toutes les apps, [] = AUCUNE.

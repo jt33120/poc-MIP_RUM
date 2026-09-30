@@ -289,6 +289,74 @@ export function sommeLue(valeurs: readonly (number | null)[]): number | null {
   return valeurs.some((v) => v === null) ? null : valeurs.reduce<number>((a, b) => a + (b ?? 0), 0);
 }
 
+// ─────────────────────── Onglets du graphique principal (A2 § 6.1) ───────────────────────
+
+/** Onglets du graphique principal de `/` ; `vitaux` par défaut. Paramètre d'URL `serie=`. */
+export const ONGLETS_HERO = ["vitaux", "erreurs", "trafic"] as const;
+export type OngletHero = (typeof ONGLETS_HERO)[number];
+
+/** L'onglet demandé par `?serie=`, `vitaux` pour toute autre valeur (jamais un refus : c'est un choix d'affichage). */
+export function ongletHeroDe(brut: unknown): OngletHero {
+  const v = typeof brut === "string" ? brut.trim().toLowerCase() : "";
+  return (ONGLETS_HERO as readonly string[]).includes(v) ? (v as OngletHero) : "vitaux";
+}
+
+export interface PointHeroErreurs {
+  t: string;
+  /** Occurrences pour 100 pages vues du seau ; `null` : aucune vue (pas de dénominateur) ou lecture en échec. */
+  pour100: number | null;
+  occurrences: number | null;
+  vues: number | null;
+}
+
+/**
+ * Onglet « Erreurs » : occurrences (navigateur, CP14) pour 100 pages vues, seau par
+ * seau, sur la grille du contrat. Deux COMPTES lus pour « Charge, erreurs et LCP »
+ * (`errorSeries`, `pageviewSeries`) : aucune lecture de plus. Un seau sans vue est
+ * un TROU (`null`), jamais 0 : sans dénominateur, il n'y a pas de taux.
+ */
+export function pointsHeroErreurs(
+  grille: readonly string[],
+  vues: readonly { bucket: string; chargements: number; spa: number; inconnu: number }[],
+  erreurs: readonly { bucket: string; navigateur: number }[],
+): PointHeroErreurs[] {
+  const v = parSeau(vues);
+  const e = parSeau(erreurs);
+  return grille.map((t) => {
+    const ms = Date.parse(t);
+    const lv = v.get(ms);
+    const total = lv ? lv.chargements + lv.spa + lv.inconnu : 0;
+    const occurrences = e.get(ms)?.navigateur ?? 0;
+    return { t, pour100: total > 0 ? (100 * occurrences) / total : null, occurrences, vues: total };
+  });
+}
+
+export interface PointHeroTrafic {
+  t: string;
+  vues: number;
+  sessions: number;
+}
+
+/**
+ * Onglet « Trafic » : pages vues et sessions commencées par seau (deux comptes, un
+ * seau absent vaut 0), lues pour la rangée Trafic (`pageviewSeries`,
+ * `observedVisitorsTrend`) : aucune lecture de plus. `null` : lecture en échec.
+ */
+export function pointsHeroTrafic(
+  grille: readonly string[],
+  vues: readonly { bucket: string; chargements: number; spa: number; inconnu: number }[] | null,
+  sessions: readonly { bucket: string | Date; sessions: number }[] | null,
+): PointHeroTrafic[] | null {
+  if (!vues || !sessions) return null;
+  const v = parSeau(vues);
+  const s = new Map(sessions.map((l) => [new Date(l.bucket).getTime(), l.sessions]));
+  return grille.map((t) => {
+    const ms = Date.parse(t);
+    const lv = v.get(ms);
+    return { t, vues: lv ? lv.chargements + lv.spa + lv.inconnu : 0, sessions: s.get(ms) ?? 0 };
+  });
+}
+
 // ─────────────────────── Segments les plus dégradés (F13, zone 7) ───────────────────────
 
 /** Vitals que le découpage lit (`vitalsBreakdown` ne porte que LCP, INP, CLS : CP2). */

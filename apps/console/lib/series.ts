@@ -242,6 +242,75 @@ export function collecteDesSeaux(
   });
 }
 
+// ─────────────────────────────── Seaux aux bords ───────────────────────────────
+
+/**
+ * Les deux seaux du bord de la grille qui ne sont pas des seaux entiers.
+ *
+ * POURQUOI. La grille part du seau qui CONTIENT le début de la plage
+ * (`bucketStarts` arrondit vers le bas) : sur « 24 h » demandées à 10:17, le
+ * premier seau de 10:00 n'en compte que 43 minutes, et sa barre, dessinée pleine
+ * largeur, paraissait un creux de trafic. À l'autre bout, le seau en cours finit
+ * dans le futur : dessiné pleine largeur, il promettait une heure qui n'a pas eu lieu.
+ */
+export interface BordsGrille {
+  /** Part du PREMIER seau couverte par la plage, dans ]0, 1[ ; `null` : seau entier, ou début de plage inconnu. */
+  premierPartiel: number | null;
+  /** Part ÉCOULÉE du DERNIER seau, dans [0, 1[ ; `null` : seau fini, ou `maintenant` inconnu (avant le montage). */
+  dernierEnCours: number | null;
+}
+
+export function bordsDeGrille(
+  grille: readonly string[],
+  seauSecondes: number,
+  { debutPlage, maintenant, fuseau = "UTC" }: { debutPlage?: string | null; maintenant: number | null; fuseau?: string },
+): BordsGrille {
+  const bords: BordsGrille = { premierPartiel: null, dernierEnCours: null };
+  const premier = grille[0];
+  const debut = debutPlage ? Date.parse(debutPlage) : Number.NaN;
+  const b0 = premier === undefined ? null : bornesSeau(premier, seauSecondes, fuseau);
+  if (b0 && Number.isFinite(debut) && debut > b0[0] && debut < b0[1]) {
+    bords.premierPartiel = (b0[1] - debut) / (b0[1] - b0[0]);
+  }
+  const dernier = grille[grille.length - 1];
+  const bn = dernier === undefined ? null : bornesSeau(dernier, seauSecondes, fuseau);
+  if (bn && maintenant !== null && Number.isFinite(maintenant) && bn[1] > maintenant) {
+    // Un seau qui n'a pas commencé (projection) n'est pas « en cours » : part 0.
+    bords.dernierEnCours = Math.min(Math.max((maintenant - bn[0]) / (bn[1] - bn[0]), 0), 1);
+  }
+  return bords;
+}
+
+/**
+ * La portion `[debut, fin]` (en parts de 0 à 1) du seau `index` que la barre doit
+ * couvrir : le premier seau partiel garde sa FIN (la plage en couvre la fin), le
+ * seau en cours son DÉBUT (il s'arrête à « maintenant »). `null` : barre entière.
+ */
+export function portionDeBarre(index: number, n: number, bords: BordsGrille): { debut: number; fin: number } | null {
+  const debut = index === 0 && bords.premierPartiel !== null ? 1 - bords.premierPartiel : 0;
+  const fin = index === n - 1 && bords.dernierEnCours !== null ? bords.dernierEnCours : 1;
+  return debut === 0 && fin === 1 ? null : { debut, fin: Math.max(fin, debut) };
+}
+
+/**
+ * Rectangle d'une barre réduite à sa portion. Jamais moins d'un pixel : une barre
+ * de 0 px ferait disparaître une valeur mesurée (un seau en cours tout juste ouvert).
+ */
+export function rognerBarre(x: number, largeur: number, portion: { debut: number; fin: number }): { x: number; largeur: number } {
+  const w = Math.min(largeur, Math.max(1, largeur * (portion.fin - portion.debut)));
+  const x0 = x + largeur * portion.debut;
+  return { x: Math.min(x0, x + largeur - w), largeur: w };
+}
+
+/** Le premier seau partiel, dit en français (légende et infobulle). */
+export function libellePremiereTranchePartielle(debutPlage: string, seauSecondes: number, fuseau: string): string {
+  const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: fuseau, hour: "2-digit", minute: "2-digit" }).format(
+    new Date(debutPlage),
+  );
+  const tranche = seauSecondes >= 86_400 ? "premier jour partiel" : "première tranche partielle";
+  return `${tranche} (plage commencée à ${heure})`;
+}
+
 /** Les fenêtres qui recoupent la grille, dans l'ordre : celles que la légende nomme. */
 export function fenetresDeLaGrille(
   fenetres: readonly FenetreCollecte[],
@@ -383,7 +452,8 @@ export interface PointsPrepares {
  * - `segments` découpe chaque série en suites continues : `[h0, h2]` sur la grille
  *   `[h0, h1, h2]` donne deux segments `[0,0]` et `[2,2]`, jamais une droite.
  * - Point creux : effectif du seau connu et sous `faibleSous`, ou dernier seau de
- *   la grille encore en cours (`seauEnCours`), ou seau à collecte partielle.
+ *   la grille encore en cours (`seauEnCours`), premier seau que la plage ne couvre
+ *   qu'en partie (`premierPartiel`, `bordsDeGrille`), ou seau à collecte partielle.
  * - `collecte` (aligné sur la grille, `collecteDesSeaux`) : dans un seau
  *   `interrompue`, un 0 ou une absence devient `null` — « non mesuré », même pour
  *   un compte. Une valeur non nulle reçue est gardée (des lignes sont arrivées :
@@ -393,7 +463,7 @@ export function preparerPoints(
   grille: string[],
   points: PointSerie[],
   series: SerieDef[],
-  options: { faibleSous?: number; seauEnCours?: boolean; collecte?: readonly CollecteSeau[] } = {},
+  options: { faibleSous?: number; seauEnCours?: boolean; premierPartiel?: boolean; collecte?: readonly CollecteSeau[] } = {},
 ): PointsPrepares {
   const faibleSous = options.faibleSous ?? FAIBLE_SOUS_DEFAUT;
   const parInstant = new Map<number, PointSerie>();
@@ -455,7 +525,8 @@ export function preparerPoints(
       const n = s.effectifCle ? nombreOuNull(l[s.effectifCle]) : null;
       const faible = n !== null && n < faibleSous;
       if (faible) faibleEffectif = true;
-      if (faible || (options.seauEnCours && i === dernier) || partielle.has(i)) creux[s.cle].push(i);
+      const bord = (options.seauEnCours && i === dernier) || (options.premierPartiel && i === 0);
+      if (faible || bord || partielle.has(i)) creux[s.cle].push(i);
     });
   }
   return { lignes, segments, creux, faibleEffectif, ignores, horsCollecte, collectePartielle };
