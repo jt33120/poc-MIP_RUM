@@ -211,6 +211,9 @@ export default async function Journal({ searchParams }: { searchParams: Promise<
 
 // ─────────────────────────────── Formulaire ───────────────────────────────
 
+/** Libellé flottant d'un champ (charte § 3.2) : au-dessus, en petites capitales, dans son `span`. */
+const LIBELLE_CHAMP = "text-[10px] font-semibold uppercase tracking-wider text-ink-faint";
+
 function FormulaireJournal({
   query,
   cle,
@@ -234,29 +237,26 @@ function FormulaireJournal({
   // valeur précédente après un clic sur une facette (valeur par défaut non réappliquée).
   const version = [query.name, source, clef, attribut?.type, String(attribut?.value)].join("|");
   return (
-    <form
-      key={version}
-      method="get"
-      className="card mb-6 grid gap-3 p-4 md:grid-cols-3 xl:grid-cols-6"
-      aria-label="Filtres du journal"
-    >
+    // Une barre de filtres sur une ligne (recette du 30/09/2026), libellés au-dessus des
+    // champs ; les valeurs de la clé choisie en puces, sous la barre.
+    <form key={version} method="get" className="card mb-3 flex min-w-0 flex-wrap items-end gap-2 p-3" aria-label="Filtres du journal">
       {/* Le contexte global suit la recherche : plage, appareil, dimensions, segment. */}
       {[...queryToSearchParams(contexte)].map(([nom, valeur]) => (
         <input key={nom} type="hidden" name={nom} value={valeur} />
       ))}
       <input type="hidden" name="kind" value="event" />
-      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-        Nom d’événement
-        <input name="name" defaultValue={query.name ?? ""} list="event-names" placeholder="checkout" className={INPUT_CLASS} />
+      <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+        <span className={LIBELLE_CHAMP}>Nom d’événement</span>
+        <input name="name" defaultValue={query.name ?? ""} list="event-names" placeholder="checkout" className={`${INPUT_CLASS} w-44 max-w-full`} />
         <datalist id="event-names">
           {noms.map((n) => (
             <option key={n} value={n} />
           ))}
         </datalist>
       </label>
-      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-        Source de l&apos;attribut
-        <select name="attr_source" defaultValue={source} className={INPUT_CLASS}>
+      <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+        <span className={LIBELLE_CHAMP}>Source de l&apos;attribut</span>
+        <select name="attr_source" defaultValue={source} className={`${INPUT_CLASS} w-40 max-w-full`}>
           <option value="">Aucune</option>
           {EVENT_ATTRIBUTE_SOURCES.map((s) => (
             <option key={s} value={s}>
@@ -265,13 +265,13 @@ function FormulaireJournal({
           ))}
         </select>
       </label>
-      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-        Clé
-        <input name="attr_key" defaultValue={clef} placeholder="plan" className={INPUT_CLASS} />
+      <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+        <span className={LIBELLE_CHAMP}>Clé</span>
+        <input name="attr_key" defaultValue={clef} placeholder="plan" className={`${INPUT_CLASS} w-32 max-w-full`} />
       </label>
-      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-        Type
-        <select name="attr_type" defaultValue={attribut?.type ?? "string"} className={INPUT_CLASS}>
+      <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+        <span className={LIBELLE_CHAMP}>Type</span>
+        <select name="attr_type" defaultValue={attribut?.type ?? "string"} className={`${INPUT_CLASS} w-28 max-w-full`}>
           {EVENT_ATTRIBUTE_TYPES.map((t) => (
             <option key={t} value={t}>
               {LIBELLES_TYPE_ATTRIBUT[t] ?? t}
@@ -279,19 +279,14 @@ function FormulaireJournal({
           ))}
         </select>
       </label>
-      <div className="flex min-w-0 flex-col gap-1.5">
-        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-          Valeur exacte
-          <input
-            name="attr_value"
-            defaultValue={attribut?.value == null ? "" : String(attribut.value)}
-            className={INPUT_CLASS}
-          />
-        </label>
-        {valeurs.length > 0 && clef && source && (
-          <PucesValeurs valeurs={valeurs} source={source} clef={clef} actuelle={attribut} brut={brut} />
-        )}
-      </div>
+      <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+        <span className={LIBELLE_CHAMP}>Valeur exacte</span>
+        <input
+          name="attr_value"
+          defaultValue={attribut?.value == null ? "" : String(attribut.value)}
+          className={`${INPUT_CLASS} w-40 max-w-full`}
+        />
+      </label>
       <div className="flex flex-wrap items-end gap-2">
         <button className="btn-accent" type="submit">
           Appliquer
@@ -300,6 +295,11 @@ function FormulaireJournal({
           Réinitialiser
         </Link>
       </div>
+      {valeurs.length > 0 && clef && source && (
+        <div className="basis-full">
+          <PucesValeurs valeurs={valeurs} source={source} clef={clef} actuelle={attribut} brut={brut} />
+        </div>
+      )}
     </form>
   );
 }
@@ -429,8 +429,8 @@ function ResultatJournal({
         </div>
       )}
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-12">
-        <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_14rem] xl:col-span-9 xl:col-start-4 xl:row-start-1">
+      <div className="grid min-w-0 gap-2 xl:grid-cols-12">
+        <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(0,1fr)_14rem] xl:col-span-9 xl:col-start-4 xl:row-start-1">
           <SectionErreur titre="Volume du résultat">
             <Figure
               titre="Volume du résultat"
@@ -443,12 +443,12 @@ function ResultatJournal({
                   </span>
                   <span>{label}</span>
                   <span>tranches de {bucketLabel}</span>
-                  {/* La date de mise en service du journal n'est lue nulle part : la
-                      phrase le dit sans elle (jadis « depuis la migration v65 »). */}
-                  <span>journal tenu depuis sa mise en service : les événements plus anciens n&apos;y figurent pas</span>
+                  <span>source : SDK MIP RUM (événements personnalisés et signaux du capteur)</span>
                 </>
               }
-              lecture="Chaque barre compte les événements du résultat dans sa tranche, filtres compris ; une tranche vide vaut 0, une tranche hors collecte est hachurée « non mesuré ». Un clic sur une barre zoome sur sa plage."
+              // La date de mise en service du journal n'est lue nulle part : la phrase le
+              // dit sans elle (jadis « depuis la migration v65 »), dans la méthode.
+              lecture="Chaque barre compte les événements du résultat dans sa tranche, filtres compris ; une tranche vide vaut 0, une tranche hors collecte est hachurée « non mesuré ». Un clic sur une barre zoome sur sa plage. Journal tenu depuis sa mise en service : les événements plus anciens n'y figurent pas."
               alternative={{
                 legende: `Événements du résultat par tranche de ${bucketLabel}`,
                 colonnes: ["Période", "Événements"],
@@ -552,7 +552,9 @@ function Facettes({
   const cleActive = query.attribute ?? cle;
   return (
     <aside
-      className="card min-w-0 p-4 xl:col-span-3 xl:col-start-1 xl:row-span-2 xl:row-start-1"
+      // `self-start` + collante (recette du 30/09/2026) : étirée sur la hauteur du journal,
+      // la colonne était vide aux trois quarts ; elle suit désormais le défilement.
+      className="card min-w-0 p-3 xl:sticky xl:top-4 xl:col-span-3 xl:col-start-1 xl:row-span-2 xl:row-start-1 xl:self-start"
       aria-label="Facettes du résultat"
       data-testid="facettes"
     >
@@ -570,7 +572,7 @@ function Facettes({
       <h2 className="hidden text-[11px] font-semibold uppercase tracking-wider text-ink-soft xl:block">
         Facettes du résultat
       </h2>
-      <div className="mt-3 hidden min-w-0 space-y-5 peer-checked:block xl:block">
+      <div className="mt-3 hidden min-w-0 space-y-4 peer-checked:block xl:block">
         {!enrichi ? (
           <p className="text-xs text-ink-soft">Facettes indisponibles : {diagnosticJournal(r.enrichment.diagnostic)}.</p>
         ) : (
@@ -596,7 +598,11 @@ function Facettes({
               />
             </section>
             <section aria-labelledby="facette-attributs" className="min-w-0">
-              <h3 id="facette-attributs" className="mb-2 text-xs font-semibold text-ink">
+              <h3
+                id="facette-attributs"
+                className="mb-2 text-xs font-semibold text-ink"
+                title="Un clic choisit la clé ; ses valeurs s'affichent sous « Valeur exacte ». Comptes : événements qui portent la clé (30 clés au plus)."
+              >
                 Attributs fréquents
               </h3>
               {r.facets.attributes.length === 0 ? (
@@ -629,7 +635,8 @@ function Facettes({
                   })}
                 </ul>
               )}
-              <p className="mt-2 text-[11px] text-ink-soft">
+              {/* La règle des comptes, lue par un lecteur d'écran ; au survol du titre pour les autres. */}
+              <p className="sr-only">
                 Un clic choisit la clé ; ses valeurs s&apos;affichent sous « Valeur exacte ». Comptes : événements qui
                 portent la clé (30 clés au plus).
               </p>
@@ -643,7 +650,8 @@ function Facettes({
 
 // ─────────────────────────────── Table ───────────────────────────────
 
-const CELLULE = "sm:table-cell sm:px-4 sm:py-3 sm:align-top";
+// Lignes denses (recette du 30/09/2026) : une trentaine de pixels, alignées au milieu.
+const CELLULE = "sm:table-cell sm:px-3 sm:py-1.5 sm:align-middle";
 
 /** Une cellule : en carte sous 640 px, son libellé la précède. */
 function Cellule({ libelle, children, className = "" }: { libelle: string; children: ReactNode; className?: string }) {
@@ -683,6 +691,9 @@ function TableJournal({
         <thead className="hidden bg-panel2 sm:table-header-group">
           <tr>
             <th scope="col" className="th">
+              Date
+            </th>
+            <th scope="col" className="th">
               Événement
             </th>
             <th scope="col" className="th">
@@ -693,9 +704,6 @@ function TableJournal({
             </th>
             <th scope="col" className="th">
               Session
-            </th>
-            <th scope="col" className="th">
-              Date
             </th>
             {colonnes.map((c) => (
               <th
@@ -720,10 +728,11 @@ function TableJournal({
                 key={e.id}
                 data-testid="journal-ligne"
                 aria-current={ouvert ? "true" : undefined}
-                className={`block border-t border-line/60 px-4 py-3 first:border-t-0 sm:table-row sm:p-0 ${
+                className={`block border-t border-line/60 px-3 py-2 first:border-t-0 sm:table-row sm:p-0 ${
                   ouvert ? "bg-accent/5" : "hover:bg-panel2/60"
                 }`}
               >
+                <td className={`hidden whitespace-nowrap text-xs tabular-nums text-ink-soft ${CELLULE}`}>{dateUtc(e.ts)}</td>
                 <td className={`block min-w-0 ${CELLULE}`}>
                   <Link
                     href={lienPanneauJournal(brut, ecrirePanel({ type: "event", id: e.id }))}
@@ -732,7 +741,7 @@ function TableJournal({
                   >
                     {nomEvenement(e)}
                   </Link>
-                  {avecApp && <div className="mt-1 break-all font-mono text-[11px] text-ink-soft">{e.app_id}</div>}
+                  {avecApp && <div className="break-all font-mono text-[11px] text-ink-soft">{e.app_id}</div>}
                   <div className="mt-1 text-xs text-ink-soft sm:hidden">{dateUtc(e.ts)}</div>
                 </td>
                 <Cellule libelle="Route">
@@ -752,7 +761,6 @@ function TableJournal({
                     <span className="text-ink-soft">—</span>
                   )}
                 </Cellule>
-                <td className={`hidden whitespace-nowrap text-xs text-ink-soft ${CELLULE}`}>{dateUtc(e.ts)}</td>
                 {colonnes.map((c) => {
                   const v = valeurColonnePromue(e, c);
                   return (
@@ -815,7 +823,7 @@ function PanneauEvenement({
       suivantHref={ouvrir(suivant)}
     >
       <div className="space-y-4">
-        <p className="text-xs text-ink-soft">
+        <p className="sr-only">
           Une ligne du journal affiché ({label}) ; « précédent » et « suivant » parcourent cette page du journal.
         </p>
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm" data-testid="panneau-evenement">
