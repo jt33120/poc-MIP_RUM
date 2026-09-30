@@ -14,7 +14,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   APP_CANARI,
   GRACE_CLE_MS,
+  SEUILS_C2,
   TABLES_VERIFIEES,
+  URL_COLLECTOR_DEFAUT,
   cheminDeReponse,
   construireLotCanari,
   creerSondes,
@@ -115,6 +117,29 @@ describe("les verdicts", () => {
     expect(etatChaine({ emission: "saute", ecriture: "saute" })).toBeNull();
   });
 
+  it("deux chemins (C1 console, C2 collector) : interrompue si les deux échouent, dégradée si un seul (A3 § 2.4)", () => {
+    const ok = { emission: "ok", ecriture: "ok" };
+    const tombe = { emission: "echec", ecriture: null };
+    expect(etatChaine({ ...ok, c2: ok })).toBe("ok");
+    expect(etatChaine({ emission: "echec", ecriture: "absent", c2: ok })).toBe("degradee");
+    expect(etatChaine({ ...ok, c2: tombe })).toBe("degradee");
+    // Le collector répond 200 mais n'écrit rien : c'est un échec du chemin.
+    expect(etatChaine({ ...ok, c2: { emission: "ok", ecriture: "absent" } })).toBe("degradee");
+    expect(etatChaine({ emission: "echec", ecriture: "absent", c2: tombe })).toBe("interrompue");
+    expect(etatChaine({ ...ok, c2: { emission: "lent", ecriture: "ok" } })).toBe("degradee");
+    // Un chemin sauté (clé renouvelée) ne compte pas : l'autre décide seul.
+    expect(etatChaine({ emission: "saute", ecriture: "saute", c2: tombe })).toBe("interrompue");
+    expect(etatChaine({ emission: "echec", ecriture: "absent", c2: { emission: "saute" } })).toBe("interrompue");
+    expect(etatChaine({ emission: "saute", c2: { emission: "saute" } })).toBeNull();
+  });
+
+  it("C2 a ses propres seuils : ok ≤ 1,5 s, lent jusqu'à 4 s (échéance dure du collector), échec au-delà", () => {
+    expect(jugerEmission({ statut: 200, latenceMs: 1_500 }, SEUILS_C2)).toBe("ok");
+    expect(jugerEmission({ statut: 200, latenceMs: 1_501 }, SEUILS_C2)).toBe("lent");
+    expect(jugerEmission({ statut: 200, latenceMs: 4_001 }, SEUILS_C2)).toBe("echec");
+    expect(URL_COLLECTOR_DEFAUT).toBe("https://collector-production-d769.up.railway.app/v1/traces");
+  });
+
   it("le chemin ne se lit que dans l'en-tête du relais, et seulement s'il est connu", () => {
     expect(cheminDeReponse(new Headers({ "x-mip-chemin": "relais" }))).toBe("relais");
     expect(cheminDeReponse(new Headers({ "x-mip-chemin": " Local " }))).toBe("local");
@@ -183,12 +208,22 @@ describe("le travail du tick", () => {
     presence = true,
     horloge = 1_000_000,
     etatSilence = [] as unknown[],
+    // C2 coupé par défaut : ces cas-ci tiennent le chemin de la console seul.
+    urlCollector = null as string | null,
+    statutC2 = 200,
+    presenceC2 = true,
   } = {}) {
     let t = horloge;
     const pool = poolFactice([
       [/to_regclass/, () => [{ present: true }]],
       [/with app as/, () => [{ presente: 1, ecrite }]],
-      [/select exists\(select 1 from rum_session/, () => [Object.fromEntries(TABLES_VERIFIEES.map((x: string) => [x, presence]))]],
+      [
+        /select exists\(select 1 from rum_session/,
+        (params) => [
+          Object.fromEntries(TABLES_VERIFIEES.map((x: string) => [x, String(params[1]).endsWith("-c2") ? presenceC2 : presence])),
+        ],
+      ],
+      [/sonde_reconstituer_uptime/, () => [{ n: 0 }]],
       [/select max\(emis_at\)/, () => [{ dernier: null }]],
       [/from collecte_fenetre where portee = '\*'/, () => []],
       [/insert into collecte_fenetre/, () => [{ id: 1 }]],
@@ -199,10 +234,24 @@ describe("le travail du tick", () => {
     const envois: Array<{ url: string; init: { body: string; headers: Record<string, string> } }> = [];
     const fetchImpl = vi.fn(async (url: string, init: { body: string; headers: Record<string, string> }) => {
       envois.push({ url, init });
-      t += 150;
-      return new Response(null, { status: statut });
+      const c2 = url === urlCollector;
+      return new Response(null, { status: c2 ? statutC2 : statut });
     });
-    const sondes = creerSondes({ pool, url: "https://ingest.example.test/api/ingest/v1/traces", log: muet, fetchImpl, maintenant: () => t, cle: CLE });
+    const horlogeParChemin = { t0: t };
+    const sondes = creerSondes({
+      pool,
+      url: "https://ingest.example.test/api/ingest/v1/traces",
+      urlCollector,
+      log: muet,
+      fetchImpl: async (u: string, init: { body: string; headers: Record<string, string> }) => {
+        const r = await fetchImpl(u, init);
+        // Les deux chemins partent ensemble : chacun mesure 150 ms.
+        t = horlogeParChemin.t0 + 150;
+        return r;
+      },
+      maintenant: () => t,
+      cle: CLE,
+    });
     return { pool, envois, sondes };
   }
 
@@ -243,6 +292,52 @@ describe("le travail du tick", () => {
     expect(v).toMatchObject({ etat: "interrompue", emission: "echec", ecriture: "absent" });
     const ouverture = pool.appels.find((a) => /insert into collecte_fenetre/.test(a.text))!;
     expect(ouverture.params[0]).toBe("interrompue");
+  });
+
+  it("C2 : le même lot, en direct sur le collector, avec la même clé ; journalisé `ingest_collector`, chemin direct", async () => {
+    const C2 = "https://collector.example.test/v1/traces";
+    const { pool, envois, sondes } = monter({ urlCollector: C2 });
+    const e = await sondes.emettre.run();
+    expect(e).toMatchObject({ resultat: "ok", c2: { resultat: "ok", http_status: 200 } });
+    expect(envois.map((x) => x.url).sort()).toEqual([C2, "https://ingest.example.test/api/ingest/v1/traces"].sort());
+    const lotC2 = envois.find((x) => x.url === C2)!.init.body;
+    expect(lotC2).toContain(CLE);
+    expect(lotC2).toContain("-c2");
+    const v = await sondes.verifier.run();
+    expect(v).toMatchObject({ etat: "ok", collector: "ok", reconstitution_uptime: 0 });
+    const insert = pool.appels.find((a) => /insert into sonde_passage/.test(a.text))!;
+    expect(insert.params).toContain("ingest_collector");
+    expect(insert.params).toContain("direct");
+  });
+
+  it("C1 tombe, C2 passe : chaîne dégradée (pas d'alerte canari) ; les deux tombent : interrompue", async () => {
+    const C2 = "https://collector.example.test/v1/traces";
+    const un = monter({ urlCollector: C2, statut: 503, presence: false });
+    await un.sondes.emettre.run();
+    expect(await un.sondes.verifier.run()).toMatchObject({ etat: "degradee", emission: "echec", collector: "ok", alerte_canari: null });
+    const ouverture = un.pool.appels.find((a) => /insert into collecte_fenetre/.test(a.text))!;
+    expect(ouverture.params[0]).toBe("degradee");
+    expect(ouverture.params[2]).toMatch(/chemin console en échec/);
+
+    const deux = monter({ urlCollector: C2, statut: 503, presence: false, statutC2: 503, presenceC2: false });
+    await deux.sondes.emettre.run();
+    expect(await deux.sondes.verifier.run()).toMatchObject({ etat: "interrompue", collector: "echec" });
+
+    // Le collector répond 200 sans écrire : `absent`, le chemin compte comme tombé.
+    const trois = monter({ urlCollector: C2, presenceC2: false });
+    await trois.sondes.emettre.run();
+    expect(await trois.sondes.verifier.run()).toMatchObject({ etat: "degradee", collector: "absent" });
+  });
+
+  it("premier démarrage : la reconstitution depuis uptime_result, une fois par processus", async () => {
+    const { pool, sondes } = monter();
+    for (let i = 0; i < 2; i++) {
+      await sondes.emettre.run();
+      await sondes.verifier.run();
+    }
+    const appels = pool.appels.filter((a) => /sonde_reconstituer_uptime/.test(a.text));
+    expect(appels).toHaveLength(1);
+    expect(appels[0].params).toEqual([30, 15]);
   });
 
   it("le tick l'encadre : émission en tête, vérification avant la livraison ; sans sondes, rien ne change", async () => {

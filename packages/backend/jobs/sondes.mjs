@@ -32,11 +32,20 @@ import { safeFetch } from "../lib/net/safe-fetch.mjs";
 
 export const APP_CANARI = "mip-canari";
 export const URL_CANARI_DEFAUT = "https://mip-rum-console.vercel.app/api/ingest/v1/traces";
+/**
+ * C2 : le même lot, en direct sur le domaine public du collector (Railway, déjà
+ * déclaré) — la collecte directe (P6b.G) prouvée à part de la console.
+ */
+export const URL_COLLECTOR_DEFAUT = "https://collector-production-d769.up.railway.app/v1/traces";
 export const AGENT_CANARI = "mip-canari/1";
 /** Délai total du POST : le relais coupe à 8 s, la marge couvre la réponse. */
 export const DELAI_CANARI_MS = 10_000;
 /** Seuils de l'écriture C1 (console → relais → collector → base), étude A3 § 2.5. */
 export const SEUILS_C1 = Object.freeze({ okMs: 2_000, echecMs: 8_000 });
+/** Seuils de l'écriture C2 (collector direct) : son échéance dure est de 4 s. */
+export const SEUILS_C2 = Object.freeze({ okMs: 1_500, echecMs: 4_000 });
+/** La reconstitution du premier démarrage remonte 30 jours dans `uptime_result`. */
+export const JOURS_RECONSTITUTION = 30;
 /** Le registre des clés est mis en cache 60 s par instance (pg-ingest) ; la marge. */
 export const GRACE_CLE_MS = 70_000;
 /** Défaut de l'alerte d'absence par application, en minutes. */
@@ -187,15 +196,26 @@ export function jugerEcriture(presence) {
 }
 
 /**
- * L'état de la chaîne pour ce passage (A3 § 2.4, point 2, un seul chemin sondé).
- * `null` : rien de sûr (émission sautée), le registre n'est pas touché.
+ * L'état de la chaîne pour ce passage (A3 § 2.4, point 2). Deux chemins : C1
+ * (console → relais → collector → base) et C2 (collector direct), chacun jugé
+ * par son émission ET son écriture. `interrompue` si TOUS les chemins sondés
+ * échouent ; `degradee` si un seul échoue, si l'un est lent, si une projection
+ * manque, ou si la console a écrit par son repli local ; `ok` sinon. Un chemin
+ * sauté (clé renouvelée) ou absent (`c2` nul) ne compte pas. `null` : rien de
+ * sûr, le registre n'est pas touché.
  *
+ * @param {{ emission: string|null, ecriture?: string|null, chemin?: string|null,
+ *           c2?: { emission: string|null, ecriture?: string|null } | null }} p
  * @returns {"ok" | "degradee" | "interrompue" | null}
  */
-export function etatChaine({ emission, ecriture, chemin = null }) {
-  if (emission === "saute" || emission == null) return null;
-  if (emission === "echec" || ecriture === "absent") return "interrompue";
-  if (emission === "lent" || ecriture === "echec" || chemin === "local") return "degradee";
+export function etatChaine({ emission, ecriture, chemin = null, c2 = null }) {
+  const chemins = [{ emission, ecriture }, ...(c2 ? [c2] : [])].filter((c) => c.emission != null && c.emission !== "saute");
+  if (!chemins.length) return null;
+  const echoue = (c) => c.emission === "echec" || c.ecriture === "absent";
+  if (chemins.every(echoue)) return "interrompue";
+  if (chemins.some(echoue)) return "degradee";
+  if (chemins.some((c) => c.emission === "lent" || c.ecriture === "echec")) return "degradee";
+  if (chemin === "local") return "degradee";
   return "ok";
 }
 
@@ -313,13 +333,16 @@ const court = (s, n) => (s == null ? null : String(s).slice(0, n));
  * un échec du scheduler — le battement du tick n'en dépend pas. Elles lèvent
  * seulement si la base refuse d'écrire le journal (comme toute autre étape).
  *
- * @param {{ pool: { query: Function }, url?: string, log?: object, cadenceMin?: number,
+ * `urlCollector` : la porte de C2 (collector direct) ; `null` la coupe.
+ *
+ * @param {{ pool: { query: Function }, url?: string, urlCollector?: string|null, log?: object, cadenceMin?: number,
  *           silenceMin?: number, fetchImpl?: Function, maintenant?: () => number,
  *           cle?: string }} options
  */
 export function creerSondes({
   pool,
   url = URL_CANARI_DEFAUT,
+  urlCollector = URL_COLLECTOR_DEFAUT,
   log = console,
   cadenceMin = 15,
   silenceMin = SILENCE_APP_MIN_DEFAUT,
@@ -332,6 +355,8 @@ export function creerSondes({
   const empreinte = sha256(cle);
   let cleEcriteA = 0;
   let schemaPresent = false;
+  /** La reconstitution depuis `uptime_result` : une fois par processus, réussie. */
+  let uptimeReconstitue = false;
   /** Le passage en cours, entre l'émission et la vérification. */
   let courant = null;
 
@@ -359,10 +384,10 @@ export function creerSondes({
     return "inchangee";
   }
 
-  async function envoyer(payload) {
+  async function envoyer(cible, payload) {
     const debut = maintenant();
     try {
-      const res = await fetchImpl(url, {
+      const res = await fetchImpl(cible, {
         method: "POST",
         headers: { "content-type": "application/json", "user-agent": AGENT_CANARI },
         body: JSON.stringify(payload),
@@ -384,27 +409,47 @@ export function creerSondes({
       const emisA = new Date(maintenant());
       const etatCle = await assurerCle();
       if (etatCle === "absente") {
-        courant = { passageId, emisA, ids: null, emission: { resultat: "saute", latence_ms: null, http_status: null, chemin: null, detail: "app mip-canari absente du registre" } };
+        courant = { passageId, emisA, ids: null, emission: { resultat: "saute", latence_ms: null, http_status: null, chemin: null, detail: "app mip-canari absente du registre" }, c2: null };
         return { resultat: "saute", raison: "app absente" };
       }
-      const { payload, ids } = construireLotCanari({ passageId, emisA, cle });
-      const r = await envoyer(payload);
-      let resultat = jugerEmission(r);
-      let detail = r.erreur ?? (resultat === "echec" && r.statut != null ? `HTTP ${r.statut}` : null);
-      // Une clé réécrite il y a moins d'une minute : le registre en cache chez
-      // l'ingestion peut encore porter l'ancienne. Ce refus n'accuse pas la chaîne.
-      if (r.statut === 403 && maintenant() - cleEcriteA < GRACE_CLE_MS) {
-        resultat = "saute";
-        detail = "cle_renouvelee";
-      }
-      courant = {
-        passageId,
-        emisA,
-        ids,
-        emission: { resultat, latence_ms: Math.max(0, Math.round(r.latenceMs)), http_status: r.statut, chemin: r.chemin, detail: court(detail, 200) },
+      /** Un chemin : son lot, son envoi, son verdict. */
+      const sonder = async (cible, chemin, seuils) => {
+        const { payload, ids } = construireLotCanari({ passageId, emisA, cle, chemin });
+        const r = await envoyer(cible, payload);
+        let resultat = jugerEmission(r, seuils);
+        let detail = r.erreur ?? (resultat === "echec" && r.statut != null ? `HTTP ${r.statut}` : null);
+        // Une clé réécrite il y a moins d'une minute : le registre en cache chez
+        // l'ingestion peut encore porter l'ancienne. Ce refus n'accuse pas la chaîne.
+        if (r.statut === 403 && maintenant() - cleEcriteA < GRACE_CLE_MS) {
+          resultat = "saute";
+          detail = "cle_renouvelee";
+        }
+        if (resultat !== "ok") log.warn?.("canari : émission non nominale", { chemin, resultat, http_status: r.statut, latence_ms: r.latenceMs, detail });
+        return {
+          ids,
+          emission: {
+            resultat,
+            latence_ms: Math.max(0, Math.round(r.latenceMs)),
+            http_status: r.statut,
+            // C2 ne passe par aucun relais : son chemin est connu d'avance.
+            chemin: chemin === "c2" ? "direct" : r.chemin,
+            detail: court(detail, 200),
+          },
+        };
       };
-      if (resultat !== "ok") log.warn?.("canari : émission non nominale", { resultat, http_status: r.statut, latence_ms: r.latenceMs, detail });
-      return { resultat, http_status: r.statut, latence_ms: courant.emission.latence_ms, cle: etatCle };
+      // Les deux chemins partent ensemble : le tick n'attend que le plus lent.
+      const [c1, c2] = await Promise.all([
+        sonder(url, "c1", SEUILS_C1),
+        urlCollector ? sonder(urlCollector, "c2", SEUILS_C2) : Promise.resolve(null),
+      ]);
+      courant = { passageId, emisA, ids: c1.ids, emission: c1.emission, c2 };
+      return {
+        resultat: c1.emission.resultat,
+        http_status: c1.emission.http_status,
+        latence_ms: c1.emission.latence_ms,
+        cle: etatCle,
+        ...(c2 ? { c2: { resultat: c2.emission.resultat, http_status: c2.emission.http_status, latence_ms: c2.emission.latence_ms } } : {}),
+      };
     },
   };
 
@@ -421,11 +466,19 @@ export function creerSondes({
     return rows[0] ?? {};
   }
 
-  async function journaliser(c, ecriture, verifieA) {
+  /**
+   * `ingest_console` (émission C1), `ecriture` (les lignes de C1) et, si C2 est
+   * sondé, `ingest_collector` : l'étage 4 prouve que la collecte directe ÉCRIT,
+   * son verdict porte donc aussi ses lignes (`absent` si elles manquent).
+   */
+  async function journaliser(c, ecriture, verifieA, c2) {
     const lignes = [
       ["ingest_console", c.emisA, null, c.emission.resultat, c.emission.latence_ms, c.emission.chemin, c.emission.http_status, c.emission.detail],
       ["ecriture", c.emisA, verifieA, ecriture.resultat, null, null, null, court(ecriture.detail, 200)],
     ];
+    if (c2) {
+      lignes.push(["ingest_collector", c.emisA, verifieA, c2.resultat, c2.latence_ms, "direct", c2.http_status, court(c2.detail, 200)]);
+    }
     const valeurs = [];
     const params = [c.passageId];
     for (const l of lignes) {
@@ -459,7 +512,8 @@ export function creerSondes({
       }
       await pool.query(
         `insert into collecte_fenetre (portee, etage, etat, debut, fin, cause, preuve, source)
-         values ('*', 'chaine', 'interrompue', $1, $2, 'base ou scheduler injoignable : aucun passage journalisé', $3, 'reconstitution')`,
+         values ('*', 'chaine', 'interrompue', $1, $2, 'base ou scheduler injoignable : aucun passage journalisé', $3, 'reconstitution')
+         on conflict (portee, etage, debut) where source <> 'sonde' do nothing`,
         [reconstitution.debut, reconstitution.fin, court(`aucune ligne de sonde entre deux passages ; reprise au passage ${c.passageId}`, 300)],
       );
     }
@@ -490,22 +544,25 @@ export function creerSondes({
   /** Deux passages de suite où rien ne s'est écrit : une alerte, une seule par épisode. */
   async function alerterSiDeuxEchecs(fenetreId, preuve) {
     if (fenetreId == null) return null;
+    // Un passage est en échec quand C1 échoue ET que C2, s'il a été sondé, aussi.
     const { rows } = await pool.query(
       `select passage_id,
-              bool_or((etage = 'ingest_console' and resultat = 'echec') or (etage = 'ecriture' and resultat = 'absent')) as echec
+              bool_or((etage = 'ingest_console' and resultat = 'echec') or (etage = 'ecriture' and resultat = 'absent'))
+                and (not bool_or(etage = 'ingest_collector')
+                     or bool_or(etage = 'ingest_collector' and resultat in ('echec', 'absent'))) as echec
          from sonde_passage
-        where portee = '*' and etage in ('ingest_console', 'ecriture') and emis_at > now() - interval '1 day'
+        where portee = '*' and etage in ('ingest_console', 'ecriture', 'ingest_collector') and emis_at > now() - interval '1 day'
         group by passage_id
         order by max(emis_at) desc
         limit 2`,
     );
     if (rows.length < 2 || !rows.every((r) => r.echec)) return null;
-    const msg = `Canari en échec deux passages de suite — la chaîne de mesure (console → relais → collector → base) n'écrit plus. ${preuve ?? ""}`.trim();
+    const msg = `Canari en échec deux passages de suite — ni la console ni le collector n'écrivent plus la mesure. ${preuve ?? ""}`.trim();
     const { rows: ev } = await pool.query("select sonde_alerter($1, $2, 'critical', $3, $4::jsonb) as id", [
       fenetreId,
       APP_CANARI,
       msg,
-      JSON.stringify({ kind: "canari_echec", url, text: msg }),
+      JSON.stringify({ kind: "canari_echec", url, url_collector: urlCollector, text: msg }),
     ]);
     return ev[0]?.id ?? null;
   }
@@ -551,6 +608,26 @@ export function creerSondes({
     return bilan;
   }
 
+  /**
+   * PREMIER DÉMARRAGE (A3 § 2.4, point 5) : les 30 jours d'avant le journal,
+   * lus dans `uptime_result` par la base (`sonde_reconstituer_uptime`,
+   * rejouable). Une fois par processus ; un échec se retente au tick suivant
+   * sans faire échouer celui-ci. Rend le nombre de fenêtres posées, ou null.
+   */
+  async function reconstituerUptime() {
+    if (uptimeReconstitue) return null;
+    try {
+      const { rows } = await pool.query("select sonde_reconstituer_uptime($1, $2) as n", [JOURS_RECONSTITUTION, cadenceMin]);
+      uptimeReconstitue = true;
+      const n = Number(rows[0]?.n ?? 0);
+      if (n > 0) log.info?.("sondes : fenêtres reconstituées depuis uptime_result", { fenetres: n });
+      return n;
+    } catch (err) {
+      log.warn?.("sondes : reconstitution depuis uptime_result en échec", { err: court(err?.message ?? err, 200) });
+      return null;
+    }
+  }
+
   const verifier = {
     name: "canari_verifier",
     run: async () => {
@@ -564,14 +641,33 @@ export function creerSondes({
         const juge = jugerEcriture(await lirePresence(c.ids));
         ecriture = { resultat: juge.resultat, detail: juge.manquantes.length ? `manque : ${juge.manquantes.join(", ")}` : null };
       }
+      // C2 : ses lignes ne se relisent que si le collector a répondu 2xx.
+      let c2 = null;
+      if (c.c2) {
+        const e = c.c2.emission;
+        const juge = e.resultat === "ok" || e.resultat === "lent" ? jugerEcriture(await lirePresence(c.c2.ids)) : null;
+        c2 = {
+          ...e,
+          emission: e.resultat,
+          ecriture: juge?.resultat ?? null,
+          resultat: juge?.resultat === "absent" ? "absent" : e.resultat,
+          detail: juge?.manquantes.length ? `manque : ${juge.manquantes.join(", ")}` : e.detail,
+        };
+      }
       const verifieA = new Date(maintenant());
-      const etat = etatChaine({ emission: c.emission.resultat, ecriture: ecriture.resultat, chemin: c.emission.chemin });
+      const etat = etatChaine({
+        emission: c.emission.resultat,
+        ecriture: ecriture.resultat,
+        chemin: c.emission.chemin,
+        c2: c2 ? { emission: c2.emission, ecriture: c2.ecriture } : null,
+      });
 
       // Le dernier passage AVANT celui-ci, pour la reconstitution.
       const { rows: precedent } = await pool.query(
         "select max(emis_at) as dernier from sonde_passage where etage = 'ingest_console' and portee = '*'",
       );
-      await journaliser(c, ecriture, verifieA);
+      await journaliser(c, ecriture, verifieA, c2);
+      const reconstitueUptime = await reconstituerUptime();
 
       const preuve = court(
         [
@@ -580,14 +676,23 @@ export function creerSondes({
           c.emission.latence_ms != null ? `${c.emission.latence_ms} ms` : null,
           c.emission.detail,
           ecriture.detail,
+          c2 ? `C2 ${c2.resultat}${c2.http_status != null ? ` HTTP ${c2.http_status}` : ""}${c2.latence_ms != null ? ` ${c2.latence_ms} ms` : ""}` : null,
         ].filter(Boolean).join(" ; "),
         300,
       );
+      const c1Echoue = c.emission.resultat === "echec" || ecriture.resultat === "absent";
+      const c2Echoue = c2 != null && (c2.resultat === "echec" || c2.resultat === "absent");
       const cause =
         etat === "interrompue"
-          ? "le canari n'a pas été écrit (console → relais → collector → base)"
+          ? c2
+            ? "le canari n'a été écrit ni par la console ni par le collector"
+            : "le canari n'a pas été écrit (console → relais → collector → base)"
           : etat === "degradee"
-            ? "canari lent, écrit par le repli local, ou projection manquante"
+            ? c1Echoue
+              ? "chemin console en échec, collecte directe en service"
+              : c2Echoue
+                ? "collecte directe (collector) en échec, chemin console en service"
+                : "canari lent, écrit par le repli local, ou projection manquante"
             : null;
       const reconstitution = planReconstitution({ dernierPassage: precedent[0]?.dernier ?? null, maintenant: c.emisA, cadenceMin });
       const fenetreId = await tenirRegistre({ etat, c, cause, preuve, reconstitution });
@@ -600,7 +705,9 @@ export function creerSondes({
         etat: etat ?? "inconnu",
         emission: c.emission.resultat,
         ecriture: ecriture.resultat,
+        ...(c2 ? { collector: c2.resultat } : {}),
         reconstitution: Boolean(reconstitution),
+        reconstitution_uptime: reconstitueUptime,
         alerte_canari: alerte,
         silence,
       };

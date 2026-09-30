@@ -47,7 +47,7 @@ import { startLoop } from "@mip/service-kit/loop.mjs";
 import { dispatchOnce } from "@mip/backend/lib/dispatch-alerts.mjs";
 import { TICKS_ADMIS_MIN, TICK_DEFAUT_MIN, decrireCadences, prochainDelai, tolerancesMs } from "@mip/backend/jobs/cadence.mjs";
 import { travaux } from "@mip/backend/jobs/planifie.mjs";
-import { SILENCE_APP_MIN_DEFAUT, URL_CANARI_DEFAUT, creerSondes } from "@mip/backend/jobs/sondes.mjs";
+import { SILENCE_APP_MIN_DEFAUT, URL_CANARI_DEFAUT, URL_COLLECTOR_DEFAUT, creerSondes } from "@mip/backend/jobs/sondes.mjs";
 import {
   CADENCES_PLANIFIEES,
   creerOrdonnanceur,
@@ -101,6 +101,14 @@ const config = defineConfig(
       protocols: ["https:"],
       description: "Porte d'ingestion que le canari traverse (console → relais → collector → base).",
     },
+    // C2 : le même lot en direct sur le collector (même clé), pour distinguer
+    // une panne de la console d'une panne de la collecte.
+    CANARI_COLLECTOR_URL: {
+      type: "url",
+      default: URL_COLLECTOR_DEFAUT,
+      protocols: ["https:"],
+      description: "Porte du collector que le canari C2 traverse en direct (collector → base).",
+    },
     SILENCE_APP_MIN: {
       type: "int",
       default: SILENCE_APP_MIN_DEFAUT,
@@ -127,7 +135,7 @@ const tickMin = Number(config.SCHEDULER_TICK_MIN);
 // Le canari : UNE clé par processus, tirée ici, dont seule l'empreinte va en base.
 const sondes =
   config.CANARI === "on"
-    ? creerSondes({ pool, url: config.CANARI_CONSOLE_URL, log, cadenceMin: tickMin, silenceMin: config.SILENCE_APP_MIN })
+    ? creerSondes({ pool, url: config.CANARI_CONSOLE_URL, urlCollector: config.CANARI_COLLECTOR_URL, log, cadenceMin: tickMin, silenceMin: config.SILENCE_APP_MIN })
     : null;
 
 const ordonnanceur = creerOrdonnanceur({

@@ -256,7 +256,7 @@ function migrations(): string[] {
     });
   });
 
-  it("le travail du tick, sur la vraie table : un 503 ouvre une fenêtre, le passage suivant réussi la ferme", async () => {
+  it("le travail du tick, sur la vraie table : C1 et C2 en 503 ouvrent une fenêtre, le passage suivant réussi la ferme", async () => {
     await annulee(async (c) => {
       // Le client de la transaction tient lieu de pool : tout est annulé à la fin.
       const poolTx = { query: (q: string, p?: unknown[]) => c.query(q, p) };
@@ -265,6 +265,7 @@ function migrations(): string[] {
       const sondes = creerSondes({
         pool: poolTx,
         url: "https://ingest.example.test/api/ingest/v1/traces",
+        urlCollector: "https://collector.example.test/v1/traces",
         log: { info() {}, warn() {}, error() {} },
         maintenant: () => t,
         fetchImpl: async (_u: string, init: { body: string }) => {
@@ -291,7 +292,7 @@ function migrations(): string[] {
       });
       await sondes.emettre.run();
       const echec = await sondes.verifier.run();
-      expect(echec).toMatchObject({ etat: "interrompue", emission: "echec", ecriture: "absent" });
+      expect(echec).toMatchObject({ etat: "interrompue", emission: "echec", ecriture: "absent", collector: "echec", reconstitution_uptime: 0 });
       const { rows: [hash] } = await c.query("select api_key_hash from app_registry where app_id = $1", [APP_CANARI]);
       expect(hash.api_key_hash).toBe(sondes.empreinte);
 
@@ -299,14 +300,16 @@ function migrations(): string[] {
       statut = 200;
       await sondes.emettre.run();
       const ok = await sondes.verifier.run();
-      expect(ok).toMatchObject({ etat: "ok", emission: "ok", ecriture: "ok" });
+      expect(ok).toMatchObject({ etat: "ok", emission: "ok", ecriture: "ok", collector: "ok" });
       const { rows: journal } = await c.query(
         "select etage, resultat from sonde_passage where portee = '*' order by emis_at, etage",
       );
-      expect(journal.slice(-4)).toEqual([
+      expect(journal.slice(-6)).toEqual([
         { etage: "ecriture", resultat: "absent" },
+        { etage: "ingest_collector", resultat: "echec" },
         { etage: "ingest_console", resultat: "echec" },
         { etage: "ecriture", resultat: "ok" },
+        { etage: "ingest_collector", resultat: "ok" },
         { etage: "ingest_console", resultat: "ok" },
       ]);
       const { rows: fenetres } = await c.query(
@@ -316,6 +319,79 @@ function migrations(): string[] {
       // Le lot lui-même ne porte que la clé, jamais écrite en clair en base.
       const { payload } = construireLotCanari({ passageId: "00000000-0000-4000-8000-000000000000", emisA: new Date(), cle: "x" });
       expect(JSON.stringify(payload)).toContain("mip.api_key");
+    });
+  });
+  /** Des lignes d'uptime, une par tick de `pasMin`, de `deH` à `aH` heures dans le passé. */
+  async function ticksUptime(c: pg.PoolClient, checkId: number, deH: number, aH: number, pasMin = 15) {
+    await c.query(
+      `insert into uptime_result (check_id, ts, ok, status_code, latency_ms)
+       select $1::bigint, now() - make_interval(secs => $2::float8 * 3600) + make_interval(mins => $4::int * g), true, 200, 50
+         from generate_series(0, floor(($2::float8 - $3::float8) * 60 / $4::int)::int) g`,
+      [checkId, deH, aH, pasMin],
+    );
+  }
+
+  const checkUptime = async (c: pg.PoolClient) =>
+    (await c.query(
+      "insert into uptime_check (app_id, name, url) values ($1, 'v103', 'https://console.example.test/api/health') returning id",
+      [APP_CANARI],
+    )).rows[0].id as number;
+
+  it("premier démarrage : la coupure se lit dans uptime_result (forme de T1, 87 h), une fois, sans les ticks manqués ordinaires", async () => {
+    await annulee(async (c) => {
+      const id = await checkUptime(c);
+      // 13 jours de ticks, un silence de 87 h (comme du 24/09 03:30 au 27/09 19:45 UTC),
+      // puis des ticks jusqu'à maintenant, avec un tick manqué ordinaire (30 min).
+      await ticksUptime(c, id, 20 * 24, 7 * 24);
+      await ticksUptime(c, id, 7 * 24 - 87, 30);
+      await ticksUptime(c, id, 29.5, 0.1);
+      const { rows: [{ n }] } = await c.query("select sonde_reconstituer_uptime(30, 15) as n");
+      expect(n).toBe(1);
+      const { rows: fenetres } = await c.query(
+        `select etat, source, round(extract(epoch from fin - debut) / 3600)::int as heures,
+                debut = (select max(ts) from uptime_result where check_id = $1 and ts < now() - interval '7 days' + interval '1 minute') as debut_derniere_preuve,
+                preuve like 'uptime_result muet du %' as preuve
+           from collecte_fenetre where portee = '*' and etage = 'chaine'`,
+        [id],
+      );
+      expect(fenetres).toEqual([{ etat: "interrompue", source: "reconstitution", heures: 87, debut_derniere_preuve: true, preuve: true }]);
+      // Rejouée (à chaque démarrage) : rien de plus.
+      const { rows: [{ n: encore }] } = await c.query("select sonde_reconstituer_uptime(30, 15) as n");
+      expect(encore).toBe(0);
+      await expect(c.query("select sonde_reconstituer_uptime(30, 0)")).rejects.toThrow(/cadence invalide/);
+    });
+  });
+
+  it("reconstitution : rien après le premier passage du journal (il fait foi) ; un arrêt juste avant lui compte", async () => {
+    await annulee(async (c) => {
+      const id = await checkUptime(c);
+      // Ticks jusqu'à il y a 10 h, puis rien ; le journal commence il y a 5 h ;
+      // après lui, un silence d'uptime de 3 h que seul le journal peut juger.
+      await ticksUptime(c, id, 48, 10);
+      await ticksUptime(c, id, 2, 0.1);
+      await c.query(
+        "insert into sonde_passage (passage_id, etage, emis_at, resultat) values (gen_random_uuid(), 'ingest_console', now() - interval '5 hours', 'ok')",
+      );
+      await c.query("select sonde_reconstituer_uptime(30, 15)");
+      const { rows } = await c.query(
+        `select round(extract(epoch from fin - debut) / 3600)::int as heures, fin = now() - interval '5 hours' as fin_au_journal
+           from collecte_fenetre where portee = '*' and etage = 'chaine' and source = 'reconstitution'`,
+      );
+      expect(rows).toEqual([{ heures: 5, fin_au_journal: true }]);
+    });
+  });
+
+  it("T2 : posée par l'opérateur là où la console existe, une seule fois, migration rejouée", async () => {
+    await annulee(async (c) => {
+      await c.query("insert into app_registry (app_id, name, active) values ('mip-rum-console', 'console', true) on conflict (app_id) do nothing");
+      const v103 = readFileSync(join(SQL_DIR, "migration-v103.sql"), "utf8");
+      await c.query(v103);
+      await c.query(v103);
+      const { rows } = await c.query(
+        `select etage, etat, source, debut = '2026-08-29 18:00:00+00' as debut, fin = '2026-09-08 12:00:00+00' as fin, preuve like '%e0e7c561%' as preuve
+           from collecte_fenetre where portee = 'mip-rum-console' and source = 'operateur'`,
+      );
+      expect(rows).toEqual([{ etage: "capteur", etat: "interrompue", source: "operateur", debut: true, fin: true, preuve: true }]);
     });
   });
 });

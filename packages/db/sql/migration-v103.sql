@@ -27,7 +27,10 @@
 --      heures d'activité habituelles (lues dans `rum_rollup_hourly`) ; le
 --      scheduler décide ; `sonde_ouvrir_silence` ouvre une fenêtre `silence`
 --      et `sonde_alerter` lève UNE alerte par fenêtre, par le chemin des autres
---      (`alert_event` puis `route_alert`).
+--      (`alert_event` puis `route_alert`) ;
+--   8. les 30 jours d'avant le journal, reconstitués depuis `uptime_result` au
+--      démarrage du scheduler (`sonde_reconstituer_uptime`), et T2, la panne
+--      silencieuse du capteur de la console, posée par l'opérateur (§ 11, 12).
 --
 -- DROITS. Lecture pour `console_ro` (motif de v87), rien pour `anon` ni
 -- `authenticated`, et `mip_console` pour `collecte_fenetre` (§ 6 bis). PAS de
@@ -97,6 +100,12 @@ alter table collecte_fenetre add column if not exists alerte_event_id bigint;
 create index if not exists collecte_fenetre_portee_debut_idx on collecte_fenetre (portee, debut);
 create unique index if not exists collecte_fenetre_une_ouverte
   on collecte_fenetre (portee, etage) where fin is null;
+-- Une fenêtre reconstituée ou posée à la main n'existe qu'une fois : la
+-- reconstitution se rejoue à chaque démarrage du scheduler et la migration se
+-- rejoue, tous deux en `on conflict do nothing` sur cet index. Les fenêtres
+-- des sondes en sont exclues : leur unicité est celle de la fenêtre ouverte.
+create unique index if not exists collecte_fenetre_hors_sonde_uniq
+  on collecte_fenetre (portee, etage, debut) where source <> 'sonde';
 
 comment on table collecte_fenetre is
   'Registre des fenêtres de collecte NON nominales (v103). Pas de ligne = collecte en service. '
@@ -398,6 +407,79 @@ begin
   return true;
 end $$;
 
+-- ── 11. Reconstituer les 30 jours d'avant le journal ────────────────────────
+--
+-- Le journal des sondes commence au premier passage du canari : avant, aucune
+-- preuve. `uptime_result` en tient lieu : le tick y écrit une ligne par check à
+-- chaque passage (v42), c'est le seul historique de fait que le scheduler
+-- tournait ET écrivait en base. Un silence plus long que `2 × cadence + 5 min`
+-- entre deux lignes est une interruption : base coupée (quota Neon du 24/09,
+-- T1 de l'étude A3) ou scheduler arrêté. Aucune date n'est codée ici : la
+-- coupure se lit dans les données.
+--
+-- Bornes : de la DERNIÈRE ligne avant le silence à la PREMIÈRE revenue — les
+-- deux seules preuves. Le premier passage du journal compte comme une ligne
+-- revenue (un scheduler arrêté juste avant le déploiement du canari), et rien
+-- n'est reconstitué après lui : de là, le journal fait foi (`planReconstitution`).
+--
+-- Rejouable : le scheduler l'appelle une fois par démarrage. Une fenêtre qui
+-- recoupe une fenêtre de chaîne déjà connue n'est pas posée, et l'index
+-- `collecte_fenetre_hors_sonde_uniq` écarte le doublon exact. Coût : un
+-- parcours de 30 jours de `uptime_result` par démarrage (quelques dizaines de
+-- milliers de lignes au plus), dans la fenêtre où le tick a réveillé la base.
+-- Rend le nombre de fenêtres posées.
+create or replace function sonde_reconstituer_uptime(p_jours int default 30, p_cadence_min int default 15)
+returns int language plpgsql set search_path = public, pg_temp as $$
+declare borne timestamptz; n int;
+begin
+  if p_cadence_min is null or p_cadence_min < 1 or p_cadence_min > 60 then
+    raise exception 'sonde_reconstituer_uptime : cadence invalide (% min)', p_cadence_min;
+  end if;
+  select min(emis_at) into borne from sonde_passage where etage = 'ingest_console' and portee = '*';
+  with lignes as (
+    select r.ts from uptime_result r
+     where r.ts > now() - make_interval(days => greatest(coalesce(p_jours, 30), 1))
+       and r.ts < coalesce(borne, now())
+    union all
+    select borne where borne is not null
+  ), silences as (
+    select ts as avant, lead(ts) over (order by ts) as apres from lignes
+  )
+  insert into collecte_fenetre (portee, etage, etat, debut, fin, cause, preuve, source)
+  select '*', 'chaine', 'interrompue', s.avant, s.apres,
+         'base ou scheduler injoignable : aucun passage du scheduler',
+         format('uptime_result muet du %s au %s UTC ; reconstitué au démarrage du scheduler',
+                to_char(s.avant at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS'),
+                to_char(s.apres at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')),
+         'reconstitution'
+    from silences s
+   where s.apres - s.avant > make_interval(mins => 2 * p_cadence_min + 5)
+     and not exists (
+       select 1 from collecte_fenetre f
+        where f.portee = '*' and f.etage = 'chaine'
+          and f.debut < s.apres and coalesce(f.fin, 'infinity'::timestamptz) > s.avant)
+  on conflict (portee, etage, debut) where source <> 'sonde' do nothing;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+
+-- ── 12. T2 : la panne silencieuse du capteur de la console ──────────────────
+--
+-- Aucune sonde ne l'a vue, `uptime_result` non plus (le scheduler tournait) :
+-- du 29/08 18:00 au 08/09 12:00 UTC, le capteur de la console postait vers un
+-- hôte décommissionné, la route d'ingestion répondait 200 et rien n'arrivait
+-- (étude A3, T2). Posée par l'opérateur, une fois, et seulement là où
+-- l'application existe : une autre installation n'a pas cette histoire.
+insert into collecte_fenetre (portee, etage, etat, debut, fin, cause, preuve, source)
+select 'mip-rum-console', 'capteur', 'interrompue',
+       '2026-08-29 18:00:00+00'::timestamptz, '2026-09-08 12:00:00+00'::timestamptz,
+       'capteur de la console vers un hôte décommissionné',
+       'aucune ligne de l''app avant le 08/09 12:10 UTC ; la route d''ingestion répondait 200, sans erreur ; '
+       'correctif e0e7c561 (08/09 12:39) ; étude A3, T2',
+       'operateur'
+ where exists (select 1 from app_registry where app_id = 'mip-rum-console')
+on conflict (portee, etage, debut) where source <> 'sonde' do nothing;
+
 -- Écritures : exécutées par le scheduler (propriétaire) seulement.
 do $$
 declare fn text;
@@ -406,7 +488,8 @@ begin
     'purge_sondes(integer, integer)',
     'sonde_alerter(bigint, text, text, text, jsonb)',
     'sonde_ouvrir_silence(text, timestamp with time zone, integer, integer[])',
-    'sonde_fermer_silence(bigint)'
+    'sonde_fermer_silence(bigint)',
+    'sonde_reconstituer_uptime(integer, integer)'
   ] loop
     execute format('revoke execute on function %s from public', fn);
   end loop;
