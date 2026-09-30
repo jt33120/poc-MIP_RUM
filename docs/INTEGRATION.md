@@ -1,6 +1,6 @@
 # Intégrer MIP RUM
 
-Au 29/09/2026. Ce guide s'adresse à l'équipe technique d'un client : il dit comment
+Au 30/09/2026. Ce guide s'adresse à l'équipe technique d'un client : il dit comment
 faire marcher la mesure, du navigateur au serveur. Les détails (options, CSP,
 consentement, routes…) sont en annexe, à la fin.
 
@@ -21,11 +21,11 @@ Toute la collecte arrive sur la console, `https://mip-rum-console.vercel.app/api
 3. Les domaines se modifient à tout moment depuis la fiche du client ; c'est pris en
    compte en 60 s au plus, sans redéploiement.
 
-**La clé, honnêtement.** Au 29/09/2026, la production ne l'exige pas
-(`REQUIRE_API_KEY: "false"` dans `.railway/railway.ts`) : les preuves des agents serveur
-du 28 et du 29/09/2026 ont envoyé sans `mip.api_key`. Posez-la quand même, dans le
-snippet (`apiKey`) et côté serveur (`mip.api_key`) : quand la variable passera à `true`,
-un lot sans clé ou avec une clé fausse sera refusé en 403.
+**La clé, honnêtement.** Depuis le 29/09/2026, la collecte l'exige
+(`REQUIRE_API_KEY: "true"` pour le `collector`, dans `.railway/railway.ts`) : un lot sans
+clé ou avec une clé fausse est refusé en 403. Posez-la dans le snippet (`apiKey`) et côté
+serveur (`mip.api_key`). Seule exception, l'extension navigateur, qui n'a pas de clé : le
+domaine enregistré en tient lieu (§ 2, « L'extension »).
 
 La fiche du client ouvre ensuite un guide en cinq étapes : vérifier la configuration,
 poser le code de suivi, brancher le serveur, vérifier en direct, donner un accès au
@@ -77,6 +77,25 @@ Pour une mesure exhaustive, c'est le snippet. Les deux écrivent dans les mêmes
 la console les distingue (`collection_source` : `sdk` ou `extension`).
 Installation et déploiement : `apps/extension/README.md`, `docs/DEPLOY_EXTENSION.md`.
 
+**Sans clé : le domaine enregistré en tient lieu** (depuis le 30/09/2026). L'extension
+n'embarque aucune clé : son code est public, aucun secret n'y tient. Quand la collecte exige
+une clé, un lot **sans clé** est accepté si et seulement si :
+
+1. tous ses spans portent `mip.collection_source = "extension"` (ce que pose le SDK injecté) ;
+2. l'origine de la page (en-tête `Origin`) est un domaine **actif** de
+   `/admin/extension-scope` pour cet `app_id` (nom d'hôte exact, port ignoré) ;
+3. l'application est active et non suspendue.
+
+Relayée par la console, l'origine de la page est transmise au collector sous la signature du
+relais (`x-mip-edge-origin`, lue seulement si la signature est bonne). Un lot qui porte une
+clé est jugé sur sa clé ; le snippet sans clé reste refusé, comme le rejeu et les logs
+(l'extension n'en envoie pas) ; la limite de débit par application s'applique comme au
+snippet. Ce n'est pas un affaiblissement : la clé d'un snippet se lit dans le code source
+de la page, et un domaine enregistré, qu'un en-tête `Origin` forgé suffit à usurper hors
+d'un navigateur, ne protège ni plus ni moins. La règle vit à un seul endroit,
+`createPgAuth` (`packages/backend/lib/pg-ingest.mjs`), pour la console comme pour le
+collector.
+
 ## 3. Serveur : l'agent OpenTelemetry officiel
 
 MIP ne fournit aucun capteur serveur : le service tourne sous l'agent OpenTelemetry
@@ -106,6 +125,7 @@ serveur de chaque appel.
 | Erreur CORS dans la console du navigateur | domaine absent des domaines autorisés | l'ajouter sur la fiche du client (60 s) |
 | 403 `inactive app`, `ingestion suspended` | application désactivée ou suspendue | la réactiver (administration) |
 | 403 `invalid api key`, `app requires an API key` | la collecte exige une clé, absente ou fausse | poser la bonne clé (`apiKey`, ou `mip.api_key` côté serveur) |
+| 403 `extension origin not registered` | lot de l'extension, sans clé, dont la page n'est pas un domaine actif de l'application | enregistrer ou réactiver le nom d'hôte exact dans `/admin/extension-scope` (60 s) |
 | 429 | plus de 600 requêtes par minute pour l'application | attendre (`retry-after: 60`) ; le SDK rejoue ses lots plus tard. Si ça dure : une boucle d'émission, `flushIntervalMs` à allonger ; côté serveur, annexe J |
 | 413 | requête de plus de 2 Mo | réduire les lots (côté serveur : taille de lot de l'exportateur) |
 | 415 | ni JSON ni protobuf, ou gRPC | côté serveur : `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` |

@@ -113,6 +113,33 @@ insert into extension_scope (domain, app_id) values ('www.exemple.fr', 'mon-app'
 Désactiver = `update extension_scope set active=false where domain=...` : l'injection
 cesse sous ~60 s (TTL du cache de résolution).
 
+## Sans clé d'API : le domaine enregistré en tient lieu
+
+Depuis le 29/09/2026, la collecte exige une clé (`REQUIRE_API_KEY: "true"` pour le
+`collector`, `.railway/railway.ts`). L'extension n'en a pas et n'en aura pas : son bundle
+est lisible par quiconque l'installe. Depuis le 30/09/2026 (décision du responsable du
+produit), un lot **sans clé** est accepté si et seulement si tous ses spans portent
+`mip.collection_source = "extension"` (ce que pose le SDK injecté avec
+`collectionSource: "extension"`), si l'`Origin` de la page est un domaine **actif** du
+registre pour cet `app_id`, et si l'application est active et non suspendue. Rien à
+changer dans l'extension ni sur les postes déjà équipés : le contrôle est côté serveur
+(`createPgAuth`, `packages/backend/lib/pg-ingest.mjs`), et la console transmet l'origine
+de la page au collector sous la signature du relais (`x-mip-edge-origin`).
+
+Conséquences pratiques :
+
+- le domaine enregistré doit être le **nom d'hôte exact** de la page (`www.exemple.fr` et
+  `exemple.fr` sont deux domaines) ; désactiver un domaine coupe aussi sa collecte, en
+  60 s au plus (cache du registre, par instance) ;
+- un domaine hors registre prend 403 `extension origin not registered for app: <app_id>` ;
+- la limite de débit par application s'applique comme au snippet ;
+- l'extension n'envoie ni rejeu ni logs : ils resteraient soumis à la clé.
+
+Pourquoi ce n'est pas un affaiblissement : la clé d'un snippet se lit dans le code source
+de toute page qui le porte ; un domaine enregistré, qu'un en-tête `Origin` forgé suffit à
+usurper hors d'un navigateur, ne protège ni plus ni moins. Détails :
+`docs/INTEGRATION.md`, § 2.
+
 ## Publication (Chrome Web Store) — 🔑 compte externe requis
 
 Le déploiement large passe soit par le **Chrome Web Store** (compte développeur payant,
