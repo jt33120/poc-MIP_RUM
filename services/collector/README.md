@@ -28,7 +28,7 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `POST /v1/extension/heartbeat` | C11 — un poste de l'extension se déclare (inventaire) ; publique, 4 Kio, 12 / h / poste, `app_ids` filtrés par le registre | 200, 400, 413, 429 |
 | `POST /v1/deploys` | C11 — marqueur de déploiement d'une CI, **jeton de CI `deploys:write` seul** (migration-v92), une application ; 16 Kio, 60 / min / jeton | 201, 400, 401, 403, 413, 429 |
 | `GET /v1/traces`, `GET /v1/logs` | diagnostic d'intégration (parité avec les routes Vercel) | 200 |
-| `OPTIONS *` | préflight CORS (origines du registre d'apps) | 204 |
+| `OPTIONS *` | préflight CORS (origines du registre d'apps) ; toute réponse à une origine acceptée expose `retry-after` (`access-control-expose-headers`), que le SDK lit sur un 429 ou un 503 | 204 |
 | `GET /health`, `/live`, `/ready`, `/metrics` | sondes du kit, ci-dessous | |
 
 **Toute réponse du collector porte `x-mip-collector: 1`** — routes, 404 métier, erreurs 4xx/5xx, sondes, et jusqu'aux 400/408/431 que Node rend seul (option `responseHeaders` du kit). Le relais de la console (P3) s'en sert pour distinguer un 404 **du collector** (route inconnue : ne pas rejouer ailleurs) d'un 404 **du routeur Railway** (service absent ou mal routé : repli). L'en-tête ne dit rien d'autre que « c'est moi ».
