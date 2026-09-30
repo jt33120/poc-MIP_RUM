@@ -12,9 +12,12 @@ import { Methode } from "@/components/perf/Methode";
 import { ChargeErreursLcp, HeroCwv, type AnnotationsFigure, type ModeSeries } from "@/components/vue-ensemble/SeriesVueEnsemble";
 import { LIBELLE_ANGLE_MORT, TuileAngleMort, type EtatAngleMort } from "@/components/vue-ensemble/AngleMort";
 import { BandeauR0 } from "@/components/vue-ensemble/BandeauR0";
+import { ConstatsDetectes, type EtatConstatsDetectes } from "@/components/vue-ensemble/ConstatsDetectes";
+import { chargerDetectionsAccueil } from "@/lib/chargeurs/detections-accueil";
+import { anomaliesSansDoublon, cartesConstats, plageDuHero, type PlageHero } from "@/lib/detections-ecran";
 import { blocsDe } from "@/lib/chargeurs/commun";
 import { chargerOverview, DECOUPAGE_LUS, VITAUX_HERO } from "@/lib/chargeurs/overview";
-import { avecBlocs, chargerEcran } from "@/lib/ecran";
+import { avecBlocs, chargerComplementLocal, chargerEcran } from "@/lib/ecran";
 import { TousEteints } from "@/components/TousEteints";
 import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
@@ -102,7 +105,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // Le chargeur (`lib/chargeurs/overview.ts`) lit tout ; la composition de l'écran
   // (cookie des blocs) lui est passée en paramètre — un bloc éteint ne coûte rien.
   const sp = await avecBlocs(await searchParams, "/");
-  const ecran = await chargerEcran(ECRANS.overview, chargerOverview, sp);
+  // Les détections (plage habituelle, constats calculés) : un complément lu par la
+  // console seule tant que `mip_console` n'a pas de droits sur leurs tables (voir
+  // `chargeurs/detections-accueil.ts`), EN PARALLÈLE de l'écran.
+  const [ecran, detections] = await Promise.all([
+    chargerEcran(ECRANS.overview, chargerOverview, sp),
+    chargerComplementLocal(chargerDetectionsAccueil, sp),
+  ]);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Vue d'ensemble" problem={ecran.problem} />;
   const query = ecran.query;
   const period = { label: ecran.label, bucketLabel: ecran.bucketLabel };
@@ -403,6 +412,16 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     pays: "valeur" in paysLus ? { valeur: paysLus.valeur.map((l) => ({ valeur: l.valeur, volume: l.samples })) } : paysLus,
   });
 
+  // ─── Constats détectés par calcul (vague 3b, A2 § 7.6) ───
+  const constatsLus = detections.etat === "ok" ? detections.constats : null;
+  const constatsDetectes = constatsLus?.ok && constatsLus.data.etat === "ok" ? constatsLus.data.constats : [];
+  const etatDetectes: EtatConstatsDetectes =
+    !constatsLus || !constatsLus.ok
+      ? { kind: "echec" }
+      : constatsLus.data.etat === "absent"
+        ? { kind: "absent" }
+        : { kind: "ok", ...cartesConstats(constatsLus.data) };
+
   // ─── Constats (zone 4) ───
   const maintenant = Math.floor(Date.now() / 60_000) * 60_000;
   const versionPrecedente = (version: string | null) =>
@@ -413,7 +432,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         ? {
             ok: true,
             data: {
-              lignes: health.data.anomalies,
+              // Sans doublon : une anomalie que recouvre un épisode détecté n'est pas redite.
+              lignes: anomaliesSansDoublon(health.data.anomalies, constatsDetectes),
               filtrees: health.data.factors.some((x) => x.key === "anomalies" && x.raisonNull === "sous filtre"),
             },
           }
@@ -541,6 +561,18 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     plage: period.label,
   };
   const serieDe = (nom: VitalName) => seriesVitaux[VITAUX.indexOf(nom)];
+  // La plage habituelle du hero (A2 § 6.1), vital par vital, ou la raison de son absence.
+  const plagesHero: Partial<Record<string, PlageHero>> | undefined =
+    detections.etat !== "ok"
+      ? undefined
+      : Object.fromEntries(
+          VITAUX_HERO.map((nom, i): [string, PlageHero] => [
+            nom,
+            detections.sansPlage !== null
+              ? { etat: "non_tracee", raison: detections.sansPlage }
+              : plageDuHero(detections.plages?.[i] ?? null, grilleContrat, query.range.bucketSeconds, constatsDetectes, nom),
+          ]),
+        );
   /** Période précédente d'une série du hero : lue (ou en échec) en `cmp=prev`, sinon aucune. */
   const precedenteDe = (i: number): SectionLue<VitalSeriesPoint[]> | null => {
     if (modeSeries.kind !== "prev") return null;
@@ -702,9 +734,15 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           plus : tout vient des sections déjà lues ci-dessus. */}
       <BandeauR0
         sante={!health.ok ? "echec" : health.data.score == null || health.data.label == null ? null : { score: health.data.score, label: health.data.label }}
-        constat={constats.constats[0] ? { titre: constats.constats[0].titre, href: constats.constats[0].href } : null}
-        nbConstats={constats.constats.length}
-        constatsPartiels={constats.echecs.length > 0}
+        constat={
+          etatDetectes.kind === "ok" && etatDetectes.cartes[0]
+            ? { titre: etatDetectes.cartes[0].titre, href: `#constat-detecte-${etatDetectes.cartes[0].id}` }
+            : constats.constats[0]
+              ? { titre: constats.constats[0].titre, href: constats.constats[0].href }
+              : null
+        }
+        nbConstats={constats.constats.length + (etatDetectes.kind === "ok" ? etatDetectes.ouverts : 0)}
+        constatsPartiels={constats.echecs.length > 0 || etatDetectes.kind === "echec"}
         deploiement={!deploys.ok ? "echec" : deploys.data[0] ? { version: deploys.data[0].version, ts: deploys.data[0].ts } : null}
         hrefSante={blocs.sante ? "#sante" : undefined}
         hrefDeploiement={blocs.versions ? "#release-titre" : undefined}
@@ -800,6 +838,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               <HeroCwv
                 {...communSeries}
                 mode={modeSeries}
+                plages={plagesHero}
                 lecture={
                   <>
                     {noteHero && <p>{noteHero}</p>}
@@ -846,6 +885,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 />
               </div>
             )}
+            <ConstatsDetectes etat={etatDetectes} />
             <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut reglesEnInfobulle />
           </SectionErreur>
         </div>

@@ -24,6 +24,7 @@ import { bucketLabel } from "@/lib/query-contract";
 import { libelleSeauComplet, type Annotation, type PointSerie, type SerieDef } from "@/lib/series";
 import { pointsCharge, pointsRelease, pointsVital, serieVide, sommeLue, type SeauVital } from "@/lib/vue-ensemble";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { LIBELLE_PLAGE, phrasePlagesHero, type PlageHero } from "@/lib/detections-ecran";
 import { pluriel } from "@/lib/format";
 
 /** Ce que les séries comparent : rien, la période précédente, ou deux releases (§ 3.2). */
@@ -64,8 +65,12 @@ export interface LectureVital {
   explorer: string;
 }
 
+/** Clés de la plage habituelle dans les points du graphique. */
+const PLAGE_BAS = "plage_bas";
+const PLAGE_HAUT = "plage_haut";
+
 /** Un petit multiple : ses points, ses séries, son état et son alternative. */
-function petitMultiple(l: LectureVital, mode: ModeSeries, c: Commun) {
+function petitMultiple(l: LectureVital, mode: ModeSeries, c: Commun, plage?: PlageHero) {
   const format = formatDuVital(l.vital);
   const nom = `${l.vital} p75`;
   const seau = bucketLabel(c.seauSecondes);
@@ -86,12 +91,18 @@ function petitMultiple(l: LectureVital, mode: ModeSeries, c: Commun) {
       lignes: points.map((p) => [ligneSeau(p.t, c.seauSecondes), formater(format, p.b), p.nb, formater(format, p.a), p.na]),
     };
     const n = somme(points.map((p) => p.nb));
-    return { ok: true as const, points: points as PointSerie[], series, etat, alternative, n, meta: `release ${mode.relB} : ${formater("count", n)} mesures ; ${mode.relA} : ${formater("count", somme(points.map((p) => p.na)))}` };
+    return { ok: true as const, plage: null, points: points as PointSerie[], series, etat, alternative, n, meta: `release ${mode.relB} : ${formater("count", n)} mesures ; ${mode.relA} : ${formater("count", somme(points.map((p) => p.na)))}` };
   }
 
   if (!l.courant.ok) return { ok: false as const, etat: { kind: "erreur" as const, titre: nom } };
   const precedent = mode.kind === "prev" && l.precedent?.ok ? l.precedent.data : null;
-  const points = pointsVital(c.grille, l.courant.data, precedent);
+  // La plage habituelle, heure par heure : une heure sans plage calculée reste SANS
+  // bande (`null`), jamais comblée (A2 § 8.6).
+  const tracee = plage?.etat === "tracee" ? plage : null;
+  const points = pointsVital(c.grille, l.courant.data, precedent).map((p) => {
+    const h = tracee?.parInstant[p.t];
+    return tracee ? { ...p, [PLAGE_BAS]: h?.bas ?? null, [PLAGE_HAUT]: h?.haut ?? null } : p;
+  });
   const series: SerieDef[] = [{ cle: "p75", libelle: nom, role: "principale", effectifCle: "n" }];
   if (precedent) series.push({ cle: "precedent", libelle: "Période précédente", role: "reference" });
   const etat: Etat | undefined = serieVide(points, ["p75"])
@@ -99,13 +110,23 @@ function petitMultiple(l: LectureVital, mode: ModeSeries, c: Commun) {
     : undefined;
   const alternative: AlternativeTexte = {
     legende: `${nom} par tranche de ${seau}`,
-    colonnes: ["Période", "p75", "Mesures", ...(precedent ? ["Période précédente (même rang)"] : [])],
-    lignes: points.map((p) => [
-      ligneSeau(p.t, c.seauSecondes),
-      formater(format, p.p75),
-      p.n,
-      ...(precedent ? [formater(format, p.precedent ?? null)] : []),
-    ]),
+    colonnes: [
+      "Période",
+      "p75",
+      "Mesures",
+      ...(precedent ? ["Période précédente (même rang)"] : []),
+      ...(tracee ? ["Plage habituelle, bas", "Plage habituelle, haut", "Écarts robustes"] : []),
+    ],
+    lignes: points.map((p) => {
+      const h = tracee?.parInstant[p.t];
+      return [
+        ligneSeau(p.t, c.seauSecondes),
+        formater(format, p.p75),
+        p.n,
+        ...(precedent ? [formater(format, p.precedent ?? null)] : []),
+        ...(tracee ? [formater(format, h?.bas ?? null), formater(format, h?.haut ?? null), h?.z == null ? "—" : h.z.toLocaleString("fr-FR", { maximumFractionDigits: 1 })] : []),
+      ];
+    }),
   };
   const n = somme(points.map((p) => p.n));
   // Période précédente demandée mais illisible : la série grise manque, et la méta le dit.
@@ -118,6 +139,7 @@ function petitMultiple(l: LectureVital, mode: ModeSeries, c: Commun) {
     alternative,
     n,
     meta: `${formater("count", n)} mesures${precedentNonLu ? " · période précédente : non lue" : ""}`,
+    plage: tracee,
   };
 }
 
@@ -125,8 +147,16 @@ export function HeroCwv({
   vitaux,
   mode,
   lecture,
+  plages,
   ...commun
-}: Commun & { vitaux: LectureVital[]; mode: ModeSeries; lecture: ReactNode }) {
+}: Commun & {
+  vitaux: LectureVital[];
+  mode: ModeSeries;
+  lecture: ReactNode;
+  /** La plage habituelle de chaque vital (A2 § 6.1), ou la raison de son absence. */
+  plages?: Partial<Record<string, PlageHero>>;
+}) {
+  const phrasePlage = plages ? phrasePlagesHero(vitaux.map((l) => plages[l.vital])) : null;
   const seau = bucketLabel(commun.seauSecondes);
   return (
     <section className="mb-6 min-w-0" aria-labelledby="hero-cwv-titre" data-testid="hero-cwv">
@@ -134,10 +164,17 @@ export function HeroCwv({
         Core Web Vitals dans le temps
       </h2>
       {/* Un bloc, pas un paragraphe : la lecture peut porter un repli « Méthode ». */}
-      <div className="mb-3 space-y-1 text-xs text-ink-soft">{lecture}</div>
+      <div className="mb-3 space-y-1 text-xs text-ink-soft">
+        {lecture}
+        {phrasePlage && (
+          <p className="min-w-0 [overflow-wrap:anywhere]" data-testid="plage-habituelle-etat" data-etat={phrasePlage.etat}>
+            {phrasePlage.texte}
+          </p>
+        )}
+      </div>
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
         {vitaux.map((l, i) => {
-          const m = petitMultiple(l, mode, commun);
+          const m = petitMultiple(l, mode, commun, mode.kind === "release" ? undefined : plages?.[l.vital]);
           return (
             <Figure
               key={l.vital}
@@ -163,6 +200,8 @@ export function HeroCwv({
                   series={m.series}
                   format={formatDuVital(l.vital)}
                   vital={l.vital}
+                  bande={m.plage ? { basseCle: PLAGE_BAS, hauteCle: PLAGE_HAUT, libelle: LIBELLE_PLAGE } : undefined}
+                  episodes={m.plage?.episodes}
                   seauSecondes={commun.seauSecondes}
                   fuseau={FUSEAU_AFFICHAGE}
                   zoomHref={commun.zoomHref}

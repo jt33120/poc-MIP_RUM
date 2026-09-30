@@ -636,6 +636,7 @@ export function ThresholdSeries({
   vital,
   faibleSous = FAIBLE_SOUS_DEFAUT,
   bande,
+  episodes,
   annotations,
   annotationsIndisponibles,
   seauSecondes,
@@ -663,6 +664,12 @@ export function ThresholdSeries({
   faibleSous?: number;
   /** Bande d'incertitude (projection). */
   bande?: { basseCle: string; hauteCle: string; libelle: string };
+  /**
+   * Épisodes hors de la plage habituelle (A2 § 6.1), en bornes de la grille : une
+   * colonne `signal` à 10 % derrière la série — jamais du rouge, réservé au seuil
+   * web.dev franchi (A2 § 8.5). Ajout de la vague 3b.
+   */
+  episodes?: readonly { x1: string; x2: string; enCours: boolean }[];
   annotations?: Annotation[];
   /** Raison si les annotations ne peuvent pas être lues (B1). */
   annotationsIndisponibles?: string;
@@ -905,6 +912,20 @@ export function ThresholdSeries({
                 activeDot={false}
               />
             )}
+            {episodes?.map((e) => (
+              <ReferenceArea
+                key={`${e.x1}-${e.x2}`}
+                x1={e.x1}
+                x2={e.x2}
+                fill="rgb(var(--c-signal))"
+                fillOpacity={0.1}
+                stroke="rgb(var(--c-signal))"
+                strokeOpacity={0.35}
+                strokeDasharray={e.enCours ? "3 3" : undefined}
+                ifOverflow="hidden"
+                data-testid="episode-plage"
+              />
+            ))}
             {/* Aucune série en barres : une barre CACHÉE met l'axe x en bandes, comme
                 celui de StackedBars — deux panneaux empilés tombent alors sur les
                 mêmes x (sinon recharts pose les points aux bords, les barres au milieu). */}
@@ -965,9 +986,15 @@ export function ThresholdSeries({
           </li>
         ))}
         {bande && (
-          <li className="flex items-center gap-1.5">
+          <li className="flex items-center gap-1.5" data-testid="legende-bande">
             <PaveLegende couleur="rgb(var(--c-ink-faint))" />
             {bande.libelle}
+          </li>
+        )}
+        {episodes && episodes.length > 0 && (
+          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-episodes">
+            <PaveLegende couleur="rgb(var(--c-signal))" opacite={0.25} />
+            <span className="min-w-0 [overflow-wrap:anywhere]">hors plage habituelle (détecté par calcul)</span>
           </li>
         )}
         {bandes && (
