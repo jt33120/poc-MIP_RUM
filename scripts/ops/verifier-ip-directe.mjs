@@ -2,11 +2,13 @@
 // ÉCRASE-t-elle une adresse forgée par le client ? Sans elle, n'importe qui
 // choisirait le pays de ses propres mesures en écrivant `X-Real-IP` lui-même.
 //
-// CE QUE LE SCRIPT FAIT, ET RIEN D'AUTRE — trois lectures, aucune écriture :
+// CE QUE LE SCRIPT FAIT, ET RIEN D'AUTRE — quatre lectures, aucune écriture :
 //
 //   1. `GET /health` (publique) : le service, et l'état de son GeoIP ;
-//   2. `OPTIONS /v1/traces` avec l'origine de la console : le préflight CORS que
-//      ferait le navigateur. Aucune donnée ne part, rien n'est écrit ;
+//   2. `OPTIONS /v1/traces` puis `OPTIONS /v1/replay` avec l'origine de la
+//      console — ou celle d'un site client (`--origine`), avant de lui ouvrir la
+//      collecte directe : les préflights CORS que ferait le navigateur, le second
+//      avec les en-têtes `x-mip-*` du rejeu. Aucune donnée ne part, rien n'est écrit ;
 //   3. `GET /diagnostic/ip` (jeton METRICS_TOKEN) avec un `X-Real-IP` et un
 //      `X-Forwarded-For` FORGÉS, pris dans les plages de documentation (RFC 5737).
 //      Le collector répond D'OÙ vient l'adresse qu'il retiendrait — une forgée,
@@ -26,6 +28,9 @@
 // allumer) ; 2 rien de conclu (jeton, service, préflight, requête hors façade).
 import { pathToFileURL } from "node:url";
 import { SONDES_FORGEES } from "../../packages/backend/shared/client-ip.mjs";
+
+/** Les en-têtes que le SDK pose sur un morceau de rejeu (`packages/rum-sdk/src/replay.ts`). */
+export const ENTETES_REJEU = ["content-type", "x-mip-session", "x-mip-app", "x-mip-seq", "x-mip-key"];
 
 export const COLLECTOR_DEFAUT = "https://collector-production-d769.up.railway.app";
 export const ORIGINE_DEFAUT = "https://mip-rum-console.vercel.app";
@@ -61,7 +66,9 @@ export async function verifier({ collector, origine, jeton, fetch: f = fetch }) 
     code = 2;
   }
 
-  // 2 — préflight CORS : le navigateur de la console aura-t-il le droit d'écrire ici ?
+  // 2 — préflights CORS : le navigateur de ce site aura-t-il le droit d'écrire ici ?
+  // L'origine se déclare au registre de L'APPLICATION qui envoie depuis elle.
+  const registre = origine === ORIGINE_DEFAUT ? "de mip-rum-console" : "de l'application de ce site";
   try {
     const r = await f(`${base}/v1/traces`, {
       method: "OPTIONS",
@@ -71,7 +78,22 @@ export async function verifier({ collector, origine, jeton, fetch: f = fetch }) 
     if (permise === origine) {
       lignes.push(`✓ CORS : ${origine} est acceptée`);
     } else {
-      lignes.push(`✗ CORS : ${origine} n'est pas acceptée (app_registry.allowed_origins de mip-rum-console)`);
+      lignes.push(`✗ CORS : ${origine} n'est pas acceptée (app_registry.allowed_origins ${registre})`);
+      code = 2;
+    }
+    // Le rejeu : sans les `x-mip-*` annoncés, le navigateur bloque le POST et le
+    // morceau est perdu en silence (le SDK ne rejoue pas un rejeu).
+    const rejeu = await f(`${base}/v1/replay`, {
+      method: "OPTIONS",
+      headers: { origin: origine, "access-control-request-method": "POST", "access-control-request-headers": ENTETES_REJEU.join(",") },
+    });
+    const annonces = (rejeu.headers.get("access-control-allow-headers") ?? "").split(",").map((h) => h.trim().toLowerCase());
+    const manquants = ENTETES_REJEU.filter((h) => !annonces.includes(h));
+    if (rejeu.headers.get("access-control-allow-origin") === origine && manquants.length === 0) {
+      lignes.push("✓ CORS du rejeu : les en-têtes x-mip-* sont annoncés");
+    } else if (permise === origine) {
+      // Origine refusée partout : la ligne précédente l'a déjà dit.
+      lignes.push(`✗ CORS du rejeu : ${manquants.length ? `en-têtes non annoncés (${manquants.join(", ")})` : "origine refusée"}`);
       code = 2;
     }
   } catch (err) {

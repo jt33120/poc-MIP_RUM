@@ -12,7 +12,7 @@
 // compléter » de `LegalShell`. Les hébergeurs sont factuels. À faire relire par
 // un conseil juridique.
 
-export const LEGAL_UPDATED = "28 septembre 2026";
+export const LEGAL_UPDATED = "30 septembre 2026";
 
 /**
  * L'ÉDITEUR ET SES CONDITIONS — TOUT CE QUI RESTE À FOURNIR, EN UN SEUL OBJET.
@@ -101,15 +101,18 @@ export const ORG = {
  * en-tête d'adresse relayé, aucune écriture) ; ce que la plateforme Vercel garde
  * dans ses propres journaux de requêtes relève de son contrat, pas de ce fichier.
  *
- * COLLECTE DIRECTE DU DOGFOODING (P6b.G, 28/09/2026). Le capteur de la console
- * elle-même — et lui seul — peut envoyer ses mesures du navigateur au collector,
- * sans passer par Vercel (`NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL`,
- * `lib/ingest-endpoint.ts`). Le collector lit alors l'adresse posée par la façade
- * Railway pour en déduire le pays, en mémoire, le temps de la requête, et ne
- * l'écrit nulle part (`packages/backend/shared/geoip.mjs`). D'où « et,
- * directement du navigateur, celles de la console elle-même » ci-dessous, et la
- * note de Railway. Écrit AVANT que la variable soit posée : déclarer un
- * traitement qui n'a pas encore lieu est le moindre des deux défauts.
+ * COLLECTE DIRECTE (P6b.G). Un navigateur peut envoyer ses mesures au collector
+ * sans passer par Vercel, en deux paliers qui ont chacun leur variable
+ * (`lib/ingest-endpoint.ts`) : le capteur de la console elle-même depuis le
+ * 28/09/2026 (`NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL`), puis, depuis le 30/09/2026,
+ * les sites des clients dont le code de suivi — ou l'extension — vise le
+ * collector (`NEXT_PUBLIC_DIRECT_COLLECTOR_URL`). Le collector lit alors
+ * l'adresse posée par la façade Railway pour en déduire le pays, en mémoire, le
+ * temps de la requête, et ne l'écrit nulle part
+ * (`packages/backend/shared/geoip.mjs`). D'où « et celles que les navigateurs
+ * lui envoient directement » ci-dessous, et la note de Railway. Écrit AVANT que
+ * les variables soient posées : déclarer un traitement qui n'a pas encore lieu
+ * est le moindre des deux défauts.
  *
  * FORME IMPOSÉE. `lib/presentation-topologie.ts` DÉCOUPE ces phrases : la société
  * avant la première parenthèse, puis « région <id> — Ville, Pays) » ou
@@ -125,7 +128,7 @@ export const HOSTS = {
   // aux machines porteuses d'un jeton ; piste C : le backend de la console
   // (service `console-api`) — voir SUBPROCESSORS.
   backend:
-    "Railway Corp. (hébergement du collecteur, qui reçoit les mesures relayées par la console et, directement du navigateur, celles de la console elle-même, les pseudonymise et les écrit en base, des travaux planifiés, de l'API de lecture servie aux machines sur jeton, du backend de la console — comptes, sessions, écrans et écritures — et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
+    "Railway Corp. (hébergement du collecteur, qui reçoit les mesures relayées par la console et celles que les navigateurs lui envoient directement, les pseudonymise et les écrit en base, des travaux planifiés, de l'API de lecture servie aux machines sur jeton, du backend de la console — comptes, sessions, écrans et écritures — et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
 } as const;
 
 /** Un sous-traitant ultérieur, tel que le déclarent les politiques de confidentialité. */
@@ -231,9 +234,10 @@ export const SUBPROCESSORS: SousTraitant[] = [
   // une empreinte HMAC dans les compteurs de débit, effacée après 24 h
   // d'inactivité, migration-v90). Même donnée, même base : ce qui change est
   // l'hébergeur qui la TRAITE — les comptes de la console compris.
-  // COLLECTE DIRECTE DU DOGFOODING (P6b.G, 28/09/2026) : les mesures de la
-  // console ELLE-MÊME peuvent arriver du navigateur au collector sans passer par
-  // Vercel. Railway reçoit alors l'adresse IP du visiteur de la console : le
+  // COLLECTE DIRECTE (P6b.G) : les mesures de la console ELLE-MÊME (28/09/2026)
+  // et celles des sites des clients dont le code de suivi vise le collector
+  // (30/09/2026) peuvent arriver du navigateur au collector sans passer par
+  // Vercel. Railway reçoit alors l'adresse IP du visiteur de ces sites : le
   // collector en déduit le pays en mémoire, le temps de la requête, sans l'écrire
   // (`packages/backend/shared/geoip.mjs`, `appliquerGeo` : seuls le code pays, sa
   // provenance et la version de la base sont écrits). La phrase dit « peuvent » :
@@ -250,8 +254,9 @@ export const SUBPROCESSORS: SousTraitant[] = [
     garanties: CCT,
     note:
       "Le collecteur remplace l'identifiant d'utilisateur par une empreinte (HMAC) avant d'écrire en base. Les mesures " +
-      "de la console elle-même peuvent lui être envoyées directement par le navigateur : il en lit alors l'adresse IP " +
-      "pour en déduire le pays, le temps de la requête, sans la conserver. L'API de " +
+      "de la console elle-même, et celles des sites dont le code de suivi vise le collecteur, peuvent lui être envoyées " +
+      "directement par le navigateur : il en lit alors l'adresse IP pour en déduire le pays, le temps de la requête, " +
+      "sans la conserver. L'API de " +
       "lecture et le serveur MCP servent des agrégats aux machines porteuses d'un jeton, sans droit d'écriture. Le " +
       "backend de la console traite les comptes, les sessions, les écrans, les écritures et les demandes RGPD, pour le " +
       "seul serveur de la console ; l'adresse IP d'un utilisateur de la console n'y est gardée que sous forme " +
@@ -284,8 +289,9 @@ export const SUBPROCESSORS: SousTraitant[] = [
  * déduit de l'adresse à la réception (`x-vercel-ip-country`), et le relais ne
  * transmet que ce code (`packages/backend/shared/geoip.mjs`, `appliquerGeo`).
  * EN DIRECT au collecteur, avec la base DB-IP chargée, l'adresse passe DEVANT le
- * fuseau : c'est le chemin du seul capteur de la console elle-même depuis P6b.G
- * (SDK des clients, extension et CI visent toujours la console). D'où une phrase
+ * fuseau : c'est le chemin du capteur de la console elle-même depuis P6b.G, et
+ * celui des sites des clients dès que la collecte directe leur est ouverte (la
+ * CI et les agents serveur visent toujours la console). D'où une phrase
  * qui ne dit plus d'ordre : elle vaut pour les deux chemins, et pour la politique
  * de l'extension qui la reprend. L'adresse n'est écrite nulle part.
  */
