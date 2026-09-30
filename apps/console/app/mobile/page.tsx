@@ -40,6 +40,7 @@ import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
 import { InfoTip } from "@/components/InfoTip";
+import { SOURCE_MOBILE } from "@/components/perf/sources";
 import { PageHeader } from "@/components/PageHeader";
 import { PresetBar } from "@/components/PresetBar";
 import { EtenduePercentiles } from "@/components/charts/EtenduePercentiles";
@@ -314,7 +315,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
         <KpiTile
           label="Sessions React Native commencées"
           libelleCase="Sessions React Native"
-          source="SDK React Native (couche JavaScript) · sessions commencées sur la plage (runtime = react_native)"
+          source={SOURCE_MOBILE}
+          categorie="Mobile · React Native"
           valeur={sessionsLues.valeur}
           format="count"
           raisonNull={sessionsLues.raison ?? undefined}
@@ -329,7 +331,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
       <div className="grid min-w-0" data-testid="mobile-visiteurs">
         <KpiTile
           label="Visiteurs"
-          source="SDK React Native (couche JavaScript) · sessions commencées sur la plage (runtime = react_native)"
+          source={SOURCE_MOBILE}
+          categorie="Mobile · React Native"
           valeur={data?.sessions.visitors ?? null}
           format="count"
           raisonNull={
@@ -360,7 +363,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
         <KpiTile
           label="Occurrences d'erreurs JS"
           libelleCase="Erreurs JS"
-          source="SDK React Native (couche JavaScript) · sessions commencées sur la plage (runtime = react_native)"
+          source={SOURCE_MOBILE}
+          categorie="Mobile · React Native"
           valeur={occurrences}
           format="count"
           raisonNull={raisonOccurrences}
@@ -385,7 +389,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
       <div className="grid min-w-0" data-testid="mobile-taux-sans-erreur">
         <KpiTile
           label="Sessions sans erreur JS"
-          source="SDK React Native (couche JavaScript) · sessions commencées sur la plage (runtime = react_native)"
+          source={SOURCE_MOBILE}
+          categorie="Mobile · React Native"
           valeur={tuileTaux?.valeur ?? null}
           format="pct"
           raisonNull={tuileTaux ? tuileTaux.raison : "lecture du résumé mobile en échec"}

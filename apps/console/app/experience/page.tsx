@@ -24,6 +24,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
 import { InfoTip } from "@/components/InfoTip";
 import { BoutonFenetre } from "@/components/perf/BoutonFenetre";
+import { SOURCE_AVIS, SOURCE_FRUSTRATION } from "@/components/perf/sources";
 import { PageHeader } from "@/components/PageHeader";
 import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
@@ -442,6 +443,8 @@ function TuilesAvis({
     <>
       <KpiTile
         label="Satisfaction (CSAT)"
+        source={SOURCE_AVIS}
+        categorie="Module d'avis"
         valeur={partPositive(s.positives, s.count)}
         raisonNull={sansAvis}
         format="pct"
@@ -456,6 +459,8 @@ function TuilesAvis({
       />
       <KpiTile
         label="Avis reçus"
+        source={SOURCE_AVIS}
+        categorie="Module d'avis"
         valeur={s.count}
         format="count"
         sensMeilleur="neutre"
@@ -467,6 +472,8 @@ function TuilesAvis({
       />
       <KpiTile
         label="Part de détracteurs"
+        source={SOURCE_AVIS}
+        categorie="Module d'avis"
         valeur={partPositive(s.detractors, s.count)}
         raisonNull={sansAvis}
         format="pct"
@@ -511,7 +518,8 @@ function TuileFrustration({ lu, label, href }: { lu: FrustrationSessionsCommence
         // Les mots du détail de session : « clic de rage », « clic sans réaction »
         // (la recette relevait « clics morts » ici, « clic sans réaction » là-bas).
         methode={`Clics de rage et clics sans réaction des sessions commencées sur la plage, divisés par le nombre de ces sessions. Les clics suivis d'une erreur n'y entrent pas.${texteEtat ? `\n${texteEtat}.` : ""}`}
-        source="Capteur navigateur (SDK web, extension) · signaux frustration.rage et frustration.dead"
+        source={SOURCE_FRUSTRATION}
+        categorie="Navigateur · interactions"
         href={href}
       />
       {taux.etat && (
