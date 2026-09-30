@@ -1,7 +1,7 @@
 // « Installation » (/presentation/installation) : les trois façons de poser MIP RUM,
 // lisibles sans compte ; chacune a sa page (components/presentation/installation/).
 import type { Metadata } from "next";
-import { OngletsInstallation } from "@/components/presentation/installation/DocInstallation";
+import { OngletsInstallation } from "@/components/presentation/installation/OngletsInstallation";
 import { SchemaInstallation } from "@/components/presentation/installation/SchemaInstallation";
 import { PageVitrine } from "@/components/presentation/vitrine/PageVitrine";
 import { getUser } from "@/lib/auth";

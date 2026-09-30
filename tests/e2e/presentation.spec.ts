@@ -823,19 +823,32 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
     expect(fautes).toEqual([]);
   });
 
-  test("TP5 — une page d'installation : rien ne dépasse à 390, 768 et 1440 px, même tout déplié", async ({ page }) => {
+  test("TP5 — les pages des parcours : l'essentiel et le tutoriel, rien ne dépasse à 390, 768 et 1440 px, à chaque étape", async ({
+    page,
+  }) => {
     const fautes: string[] = [];
-    for (const largeur of LARGEURS_PSS8) {
-      await page.setViewportSize({ width: largeur, height: 900 });
-      await page.goto(`${consoleUrl}/presentation/installation/sdk-javascript`);
-      await expect(page.getByTestId("page-parcours-snippet")).toBeVisible();
-      for (const f of await debordementsPss8(page)) fautes.push(`${largeur} px, au chargement — ${f}`);
-      await page.evaluate(() =>
-        document.querySelectorAll("details").forEach((d) => {
-          d.open = true;
-        }),
-      );
-      for (const f of await debordementsPss8(page)) fautes.push(`${largeur} px, tout déplié — ${f}`);
+    for (const [id, segment] of [
+      ["snippet", "sdk-javascript"],
+      ["extension", "extension"],
+      ["serveur", "serveur"],
+    ] as const) {
+      for (const largeur of LARGEURS_PSS8) {
+        await page.setViewportSize({ width: largeur, height: 900 });
+        await page.goto(`${consoleUrl}/presentation/installation/${segment}`);
+        await expect(page.getByTestId(`page-parcours-${id}`)).toBeVisible();
+        await expect(page.getByTestId("faits-parcours").getByRole("listitem")).toHaveCount(4);
+        // La check-list détaillée vit dans la console : la page publique n'en a plus.
+        await expect(page.getByTestId("bandeau-ia")).toHaveCount(0);
+        for (const f of await debordementsPss8(page)) fautes.push(`${segment}, ${largeur} px, au chargement — ${f}`);
+        // Le tutoriel : chaque bouton d'étape y mène, et la scène suit.
+        const etapes = page.getByRole("navigation", { name: /^Étapes : / }).getByRole("button");
+        await expect(etapes).toHaveCount(5);
+        for (let k = 0; k < 5; k++) {
+          await etapes.nth(k).click();
+          await expect(etapes.nth(k)).toHaveAttribute("aria-current", "step");
+          for (const f of await debordementsPss8(page)) fautes.push(`${segment}, ${largeur} px, étape ${k + 1} — ${f}`);
+        }
+      }
     }
     expect(fautes).toEqual([]);
   });

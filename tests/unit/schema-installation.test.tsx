@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { OngletsInstallation } from "@/components/presentation/installation/DocInstallation";
+import { OngletsInstallation } from "@/components/presentation/installation/OngletsInstallation";
 import { LANGAGES, NAVIGATEURS_EXTENSION, SchemaInstallation } from "@/components/presentation/installation/SchemaInstallation";
 import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
 
