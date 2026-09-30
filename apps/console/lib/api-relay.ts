@@ -41,43 +41,16 @@
 // jeton. Les lectures à la session (les écrans) restent locales. Retour arrière :
 // retirer la variable (et reposer les jetons) puis redéployer.
 
+import { DELAIS, ENTETE_API, ENTETES_TRANSMIS, NON_RECOPIES, lireUrlRelaisApi } from "./api-relay-commun";
 import { pourcentageRelaisApi } from "./platform-flag";
 
-export const ENTETE_API = "x-mip-api";
-/** Ce qui est transmis, et rien d'autre : ni cookie, ni adresse du client. */
-export const ENTETES_TRANSMIS = Object.freeze([
-  "authorization",
-  "accept",
-  "content-type",
-  "if-none-match",
-  "origin",
-  "x-request-id",
-] as const);
+// Partagés avec la transmission des routes servies par le service seul
+// (`lib/api/service-seul.ts`), dans un module sans base : relus ici tels quels.
+export { DELAIS, ENTETE_API, ENTETES_TRANSMIS, lireUrlRelaisApi };
 /** Les POST qui lisent (miroir de `services/api/routeur.mjs`). */
 export const POST_DE_LECTURE = Object.freeze(["/api/v1/explorer/query"]);
-export const DELAIS = Object.freeze({ reponseMs: 8_000, fenetreEchecsMs: 30_000, echecsMax: 5, coupureMs: 60_000 });
 /** Au-delà, la lecture de l'Explorer reste locale : aucun AST ne pèse ça. */
 const CORPS_MAX_OCTETS = 256 * 1024;
-const HOTES_LOCAUX = new Set(["localhost", "127.0.0.1", "[::1]"]);
-/** En-têtes de la réponse qui ne se recopient pas : `fetch` a déjà décodé le corps. */
-const NON_RECOPIES = new Set(["content-encoding", "content-length", "transfer-encoding", "connection", "keep-alive"]);
-
-/** L'URL du service `api`, ou `null` (relais éteint). */
-export function lireUrlRelaisApi(env: Record<string, string | undefined>): string | null {
-  const brute = env.CONSOLE_API_RELAY_URL?.trim();
-  if (!brute) return null;
-  let url: URL;
-  try {
-    url = new URL(brute);
-  } catch {
-    return null;
-  }
-  // Le relais transmet le jeton du client : jamais en clair hors de la machine.
-  if (url.protocol === "https:" || (url.protocol === "http:" && HOTES_LOCAUX.has(url.hostname))) {
-    return url.origin;
-  }
-  return null;
-}
 
 /** La requête peut-elle partir au service `api` ? */
 export function eligible(req: Request): boolean {

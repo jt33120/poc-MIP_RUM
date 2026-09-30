@@ -7,7 +7,8 @@
 //   · `tests/unit/role-mip-api.test.ts` vérifie que migration-v89.sql accorde
 //     exactement cette liste.
 // La migration est figée une fois fusionnée : un ajout passe par une migration
-// NOUVELLE et une ligne ici, dans la même PR. La garde CI le rappelle.
+// NOUVELLE, une ligne dans `TABLES` et une dans `AJOUTEES` (qui cite cette
+// migration), dans la même PR. La garde CI le rappelle.
 //
 // D'OÙ VIENT LA LISTE. Des relations que nomme le bundle du service
 // (`services/api/dist/server.mjs`, construit depuis les routes v1 de la
@@ -19,6 +20,7 @@
 export const TABLES = Object.freeze([
   "analytics_rollup_invalidation",
   "app_registry",
+  "deploy_marker",
   "error_grouping_config",
   "error_issue",
   "error_issue_activity",
@@ -40,6 +42,7 @@ export const TABLES = Object.freeze([
   "rum_rollup_hourly",
   "rum_session",
   "rum_span",
+  "signal_detecte",
   "sourcemap",
   "syn_snapshot",
   "v_anomaly",
@@ -68,7 +71,6 @@ export const FONCTIONS = Object.freeze(["event_metric_baseline"]);
 export const HORS_LECTURE = Object.freeze({
   analytics_saved_view: "vues enregistrées : personnelles, refusées à tout jeton (403) avant toute lecture",
   audit_log: "écrit par le triage et les tickets des issues — routes d'écriture, 405 dans le service",
-  deploy_marker: "écrit par POST /api/v1/deploys — route d'écriture, 405 dans le service",
   slo: "nommé comme chemin d'écran (« /slo »), jamais lu : l'API v1 n'a pas de route SLO",
   sourcemap_upload_token:
     "jeton de CI « deploys:write » vérifié par POST /api/v1/deploys (C11) — route d'écriture, 405 dans le service",
@@ -85,6 +87,18 @@ export const RETIREES_A_PUBLIC = Object.freeze([
   "check_new_errors",
   "reconcile_alert_deliveries",
 ]);
+
+/**
+ * Ce qu'une migration ULTÉRIEURE à v89 a accordé : v89, figée, ne le nomme pas.
+ * `tests/unit/role-mip-api.test.ts` compare donc v89, PLUS ces tables, aux listes
+ * ci-dessus, et vérifie que la migration citée accorde bien chacune, avec sa policy
+ * de lecture. Chacune dit la migration et la lecture qui l'exige.
+ */
+export const AJOUTEES = Object.freeze({
+  signal_detecte: "v106 — GET /api/v1/detections : les épisodes écrits par le travail detections_horaires",
+  deploy_marker:
+    "v106 — GET /api/v1/trends : le déploiement à ± 1 jour d'une rupture datée (lecture seule ; l'écriture, POST /api/v1/deploys, reste refusée en 405)",
+});
 
 /**
  * Ce que v89 accordait (ou retirait à PUBLIC) et qu'une migration ULTÉRIEURE a

@@ -57,6 +57,8 @@ import {
 } from "@mip/stats/tendance";
 import { analyserSerieQuotidienne } from "@mip/stats/serie-quotidienne";
 import { annotationRupture } from "@/lib/annotations";
+// Les réserves d'interprétation, écrites ici ET par `GET /api/v1/trends` : une seule source.
+import { RESERVE_COINCIDENCE, RESERVE_TENDANCE_ETABLIE } from "@/lib/api/tendances";
 import { cleJour } from "@/lib/forecast";
 import { liensDesJours } from "@/lib/forecast-liens";
 import { bornesJourLocal, nomFuseau } from "@/lib/fuseau-local";
@@ -459,11 +461,11 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
                 d'interprétation est écrite ICI, jamais par le module (RM5). */}
             <div className="min-w-0 text-xs text-ink-soft" data-testid="datation-rupture">
               {phraseDatation}
-              {ruptureDeploiement && " Coïncidence de date, pas une cause établie."}
+              {ruptureDeploiement && ` ${RESERVE_COINCIDENCE}`}
               {datation.ok &&
                 datation.rupture &&
                 tLcp.etat === "significative" &&
-                " La tendance est par ailleurs établie sur la même fenêtre : une dérive régulière sépare la série aussi nettement qu'une marche, la date est donc un point de bascule et non la preuve d'un saut."}
+                ` ${RESERVE_TENDANCE_ETABLIE}`}
               {/* La règle reste à côté du résultat (RM4), mais repliée : elle passait
                   avant l'information (recette du 26/09/2026). */}
               <MethodeRepliee titre="Règle de la datation" className="mt-1">

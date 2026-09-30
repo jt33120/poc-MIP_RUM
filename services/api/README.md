@@ -36,6 +36,27 @@ Les chemins sont **ceux de la console**, calculés depuis l'arborescence (`route
 | `POST /api/v1/explorer/query` | oui | une **lecture** : sa requête porte un AST, qui ne tient pas dans une query string |
 | toute autre écriture (triage, commentaires, vues enregistrées, marqueurs de déploiement) | **405** | elles s'authentifient par session et restent à la console jusqu'à `console-api` |
 
+### Les routes servies par ce service seul
+
+Depuis le 30/09/2026, deux routes naissent directement dans l'état que les autres rejoindront à la
+décommission de la console (C12) : **`GET /api/v1/trends`** (tendances des cinq Core Web Vitals sur
+14 jours complets, rupture datée) et **`GET /api/v1/detections`** (épisodes hors de la plage
+habituelle). Elles servent le calcul partagé de la statistique (`packages/stats`, `@mip/stats`) — celui
+des écrans « Tendances » et Vue d'ensemble.
+
+- La table `ROUTES_SERVICE_SEUL` (`routeur.mjs`) nomme, pour chaque chemin, l'implémentation que le
+  build compile **à la place** du fichier de route de la console (`apps/console/lib/api/service/*.ts`).
+  Une entrée de plus est une décision relue.
+- Le fichier de route de la console ne fait que **transmettre** la lecture au jeton
+  (`apps/console/lib/api/service-seul.ts`) : sans pourcentage, sans drapeau, sans repli local — la
+  console n'y gagne aucune lecture de base (cliquet de la console sans base). Une session de la
+  console y reçoit `401` ; un service injoignable, `503` avec `Retry-After`.
+- La garde du build refuse la transmission dans le bundle : le service se la transmettrait.
+- Le rôle `mip_api` lit pour elles `signal_detecte` et `deploy_marker` (migration v106, `AJOUTEES` de
+  la liste blanche).
+- Le contrat de parité fait tourner l'implémentation en propriétaire et le service sous `mip_api`
+  (même corps, même ETag), puis vérifie que la transmission de la console rend la réponse du service.
+
 **Toute réponse est signée `x-mip-api: 1`** (en-tête posé par le kit, jusque sur les 404 et 405) : le relais de la console distinguera une réponse du service d'une réponse du routeur Railway, comme pour le collector.
 
 Réponses : l'enveloppe de la console (`{ meta, data }`, ETag faible, `Cache-Control: private, max-age=15`, en-têtes `RateLimit-*`), 401 sans jeton valide, 403 hors périmètre, 400 pour un filtre que la lecture ne sait pas appliquer. Sondes du kit : `/health` (processus + base, **la sonde Railway**), `/live`, `/ready` et `/metrics` sous `METRICS_TOKEN` (`api_requests_total{route,status}`).

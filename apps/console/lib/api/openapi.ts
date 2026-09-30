@@ -78,7 +78,13 @@ function get(
   summary: string,
   tag: string,
   dataSchema: unknown,
-  opts: { params?: unknown[]; extraResponses?: Record<string, unknown>; public?: boolean } = {},
+  opts: {
+    params?: unknown[];
+    extraResponses?: Record<string, unknown>;
+    public?: boolean;
+    /** Route servie par le service de lecture seul (`ROUTES_SERVICE_SEUL`) : au jeton, jamais à la session. */
+    jetonSeul?: boolean;
+  } = {},
 ) {
   const responses: Record<string, unknown> = {
     "200": {
@@ -101,7 +107,7 @@ function get(
   return {
     summary,
     tags: [tag],
-    ...(opts.public ? {} : { security: [{ bearerAuth: [] }, { sessionCookie: [] }] }),
+    ...(opts.public ? {} : { security: opts.jetonSeul ? [{ bearerAuth: [] }] : [{ bearerAuth: [] }, { sessionCookie: [] }] }),
     ...(opts.params ? { parameters: opts.params } : {}),
     responses,
   };
@@ -412,6 +418,48 @@ export function buildOpenApi(): Record<string, unknown> {
           { params: commonFilters },
         ),
       },
+      // Statistiques servies par l'API (`@mip/stats`) : le calcul des écrans, en données.
+      // Servies par le service de lecture seul : au jeton, jamais à la session.
+      "/trends": {
+        get: get(
+          "Tendances des Core Web Vitals sur 14 jours complets : pente et bruit, échéance contre la borne « Bon », rupture datée (test de Pettitt) ou refus chiffré",
+          "rum",
+          ref("Trends"),
+          {
+            jetonSeul: true,
+            extraResponses: { "503": ref0("ReadServiceUnavailable") },
+            // Fenêtre FIXE : period, from et to sont refusés (400 range_not_applicable).
+            params: commonFilters.filter(
+              (p) =>
+                ![
+                  "#/components/parameters/period",
+                  "#/components/parameters/from",
+                  "#/components/parameters/to",
+                ].includes(p.$ref),
+            ),
+          },
+        ),
+      },
+      "/detections": {
+        get: get(
+          "Épisodes détectés par calcul sur la période : p75 horaire hors de sa plage habituelle, avec la plage, l'heure qui fait preuve et la phrase",
+          "rum",
+          ref("Detections"),
+          {
+            jetonSeul: true,
+            extraResponses: { "503": ref0("ReadServiceUnavailable") },
+            // Un constat se lit par app, vital et route : appareil et dimensions refusés (400 unsupported_dimension).
+            params: [
+              { $ref: "#/components/parameters/app" },
+              { $ref: "#/components/parameters/period" },
+              { $ref: "#/components/parameters/from" },
+              { $ref: "#/components/parameters/to" },
+              { $ref: "#/components/parameters/internal" },
+              { $ref: "#/components/parameters/detectionLimit" },
+            ],
+          },
+        ),
+      },
       "/health-grid": {
         get: get(
           "Carte de santé (jour × heure) et trafic quotidien",
@@ -512,6 +560,7 @@ export function buildOpenApi(): Record<string, unknown> {
         issueSource: { name: "source", in: "query", schema: { ...errorSource, nullable: false, enum: errorSource.enum.filter((s) => s !== null) }, description: "source des occurrences comptées" },
         issueLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "entrées par page (borné 1..100)" },
         issueCursor: { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "curseur opaque renvoyé dans data.next_cursor, avec les mêmes filtres ; un curseur modifié reçoit 400" },
+        detectionLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "épisodes rendus, les plus prioritaires d'abord (borné 1..100) ; data.tronque dit si la limite est atteinte" },
         activityLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "activités par page (borné 1..100)" },
         platform: { name: "platform", in: "query", schema: { type: "string", enum: ["ios", "android"] }, description: "plateforme mobile ; traduite en condition `os` du contrat et INTERSECTÉE avec un `os=` déjà présent (jamais un remplacement). Absente = les deux" },
       },
@@ -526,6 +575,7 @@ export function buildOpenApi(): Record<string, unknown> {
         BudgetExceeded: { description: "Budget de lecture dépassé (code query_budget_exceeded) : la requête n'a pas abouti — ce n'est jamais un résultat à zéro", content: { "application/json": { schema: ref("Error") } } },
         // migration-v73 (workflow des issues), migration-v79 (vues enregistrées) : dits ici, pas au client.
         Unavailable: { description: "Fonction pas encore disponible : la base n'est pas à jour pour cette route (suivi des issues, vues enregistrées…)", content: { "application/json": { schema: ref("Error") } } },
+        ReadServiceUnavailable: { description: "Service de lecture momentanément injoignable (code service_indisponible, en-tête Retry-After) : réessayer ; ce n'est jamais un résultat vide", content: { "application/json": { schema: ref("Error") } } },
       },
       schemas: {
         Error: o(
@@ -540,6 +590,10 @@ export function buildOpenApi(): Record<string, unknown> {
                 // Explorer (P6.4) : validation de l'AST, curseur et budget de lecture.
                 "invalid_query", "unsupported_dataset", "unsupported_measure", "unsupported_visualization",
                 "invalid_cursor", "stale_cursor", "body_too_large", "query_budget_exceeded",
+                // /trends : fenêtre fixe, une plage passée est refusée plutôt qu'ignorée.
+                "range_not_applicable",
+                // Routes servies par le service de lecture seul : au jeton ; service injoignable.
+                "jeton_requis", "service_indisponible",
               ],
             },
             parameter: str,
@@ -579,7 +633,174 @@ export function buildOpenApi(): Record<string, unknown> {
         HealthFactor: o({ key: str, label: str, detail: str, earned: nul(num), max: num }),
         AnomalyRow: o({ app_id: str, route: nul(str), bucket: dateTime, p75: num, mean_7d: num, z_score: num }),
 
-        VitalAgg: o({ name: str, p75: num, n: num }, ["name", "p75", "n"]),
+        // L'intervalle à 95 % de la p75 (`@mip/stats/incertitude`) : rangs exacts sous 30
+        // mesures, normaux au-delà ; sous 13 mesures, `indisponible` dit pourquoi.
+        VitalAgg: o({ name: str, p75: num, n: num, intervalle: ref("IntervalleP75") }, ["name", "p75", "n"]),
+        IntervalleP75: o({
+          bas: num,
+          haut: num,
+          niveau: { type: "number", enum: [0.95] },
+          methode: { type: "string", enum: ["quantile_exact", "quantile_normal", "wilson", "newcombe", "fisher"] },
+          indisponible: {
+            type: "string",
+            description: "raison de l'absence d'intervalle (ex. « 7 mesures, 13 requises ») ; exclusif des bornes",
+          },
+        }),
+
+        // ─── Statistiques (`@mip/stats`) : /trends et /detections ───
+        // Les objets de calcul gardent le vocabulaire du paquet (camelCase, en français),
+        // comme `intervalle` ci-dessus : l'API rend ce que le paquet calcule, sans traduction.
+        Manque: o(
+          { requis: int, observe: int, unite: { type: "string", description: "« jours valides », « mesures »…" } },
+          ["requis", "observe", "unite"],
+        ),
+        Trends: o(
+          {
+            fenetre: o(
+              {
+                jours: int,
+                du: nul({ type: "string", format: "date", description: "premier jour local de la fenêtre" }),
+                au: nul({ type: "string", format: "date", description: "dernier jour COMPLET (la veille, dans le fuseau de l'app)" }),
+                fuseau: str,
+                journeeEnCours: { type: "string", enum: ["exclue"] },
+              },
+              ["jours", "du", "au", "fuseau", "journeeEnCours"],
+            ),
+            regles: o({ tendance: str, rupture: str }, ["tendance", "rupture"]),
+            vitals: arr(ref("TrendVital")),
+          },
+          ["fenetre", "regles", "vitals"],
+        ),
+        TrendVital: o(
+          {
+            nom: { type: "string", enum: ["LCP", "INP", "CLS", "FCP", "TTFB"] },
+            borneBon: { type: "number", description: "borne « Bon » INCLUSE (web.dev) : l'égalité est encore « Bon »" },
+            unite: { type: "string", enum: ["ms", "score"] },
+            serie: arr(o({ jour: { type: "string", format: "date" }, p75: nul(num), n: int }, ["jour", "p75", "n"])),
+            tendance: o(
+              {
+                etat: {
+                  type: "string",
+                  enum: ["insuffisante", "bruit", "significative"],
+                  description:
+                    "insuffisante : pas de droite (joursValides < joursRequis) ; bruit : droite tracée, pente non distinguable du bruit ; significative : pente établie",
+                },
+                jours: int,
+                joursValides: int,
+                joursRequis: int,
+                mesuresMinJour: { type: "integer", description: "un jour sous ce nombre de mesures est creux et n'entre pas dans la droite" },
+                pente: nul({ type: "number", description: "variation par jour de la droite des moindres carrés" }),
+                ordonnee: nul({ type: "number", description: "valeur de la droite au premier jour de la fenêtre (rang 0)" }),
+                dispersion: nul({ type: "number", description: "écart type des résidus autour de la droite" }),
+                courant: nul({ type: "number", description: "dernière valeur retenue par la droite" }),
+              },
+              ["etat", "jours", "joursValides", "joursRequis", "mesuresMinJour", "pente", "ordonnee", "dispersion", "courant"],
+            ),
+            echeance: o(
+              {
+                etat: {
+                  type: "string",
+                  enum: ["depasse", "prevu", "aucun", "non_ecrit"],
+                  description:
+                    "depasse : la dernière valeur retenue dépasse déjà la borne ; prevu : pente établie, franchissement dans l'horizon ; " +
+                    "aucun : pente établie, pas de franchissement dans l'horizon ; non_ecrit : pente dans le bruit ou tendance insuffisante — aucune projection",
+                },
+                dans: nul({ type: "integer", description: "jours après le dernier jour complet (J+k) ; 0 si déjà dépassée" }),
+                jour: nul({ type: "string", format: "date" }),
+                borne: num,
+                horizon: int,
+              },
+              ["etat", "dans", "jour", "borne", "horizon"],
+            ),
+            rupture: ref("Datation"),
+            deploiement: nul(o({ jour: { type: "string", format: "date" }, version: nul(str) }, ["jour", "version"])),
+            phrase: {
+              type: "string",
+              description: "la phrase de l'écran « Tendances » : rupture et réserves, absence de rupture, ou refus chiffré",
+            },
+          },
+          ["nom", "borneBon", "unite", "serie", "tendance", "echeance", "rupture", "deploiement", "phrase"],
+        ),
+        Datation: {
+          description:
+            "Test de Pettitt (une rupture, non paramétrique). ok = false : datation non tentée, `manque` dit ce qui manque en chiffres. " +
+            "ok = true et rupture = null : aucune rupture retenue (un constat, pas un refus).",
+          oneOf: [
+            o({ ok: { type: "boolean", enum: [false] }, raison: str, manque: ref("Manque") }, ["ok", "raison", "manque"]),
+            o(
+              {
+                ok: { type: "boolean", enum: [true] },
+                rupture: nul(
+                  o(
+                    {
+                      jour: { type: "string", format: "date", description: "premier jour du NOUVEAU niveau" },
+                      jourPrecedent: { type: "string", format: "date" },
+                      p: num,
+                      K: num,
+                      joursValides: int,
+                      medianeAvant: { type: "number", description: "médiane des p75 quotidiennes avant (jamais une p75 de période)" },
+                      medianeApres: num,
+                      joursAvant: int,
+                      joursApres: int,
+                      sens: { type: "string", enum: ["hausse", "baisse"] },
+                    },
+                    ["jour", "jourPrecedent", "p", "K", "joursValides", "medianeAvant", "medianeApres", "joursAvant", "joursApres", "sens"],
+                  ),
+                ),
+                p: nul(num),
+                joursValides: int,
+                regle: str,
+              },
+              ["ok", "rupture", "p", "joursValides", "regle"],
+            ),
+          ],
+        },
+        Detections: o(
+          {
+            etat: {
+              type: "string",
+              enum: ["ok", "absent"],
+              description: "absent : la table des constats n'existe pas encore sur cette base — ni une erreur, ni « aucun épisode »",
+            },
+            detections: arr(ref("Detection")),
+            limite: int,
+            tronque: { type: "boolean", description: "true : la limite est atteinte, d'autres épisodes moins prioritaires existent peut-être" },
+            population: str,
+            regle: str,
+          },
+          ["etat", "detections", "limite", "tronque", "population", "regle"],
+        ),
+        Detection: o(
+          {
+            id: int,
+            app: str,
+            detecteur: { type: "string", enum: ["plage", "rupture", "release", "surrep", "segment_lent", "prevision", "erreur", "trafic"] },
+            entite: { type: "string", description: "« vital:LCP » (toutes routes) ou « vital:LCP|route:/checkout »" },
+            vital: nul(str),
+            route: nul({ type: "string", description: "null = toutes routes" }),
+            debut: dateTime,
+            fin: nul({ ...dateTime, description: "null : épisode en cours" }),
+            statut: { type: "string", enum: ["ouvert", "clos"] },
+            priorite: { type: "number", minimum: 0, maximum: 1, description: "impact × ampleur × confiance" },
+            phrase: nul({ type: "string", description: "le fait chiffré, rédigé par règles (jamais par un modèle de langage)" }),
+            plageHabituelle: nul(
+              o({ mediane: num, bas: num, haut: num, niveau: nul(str), legende: nul(str) }, ["mediane", "bas", "haut", "niveau", "legende"]),
+            ),
+            observe: nul(
+              o(
+                { heure: nul(dateTime), p75: nul(num), p75Bas: nul(num), p75Haut: nul(num), n: nul(int), z: nul(num), ecartRelatif: nul(num) },
+                ["heure", "p75", "p75Bas", "p75Haut", "n", "z", "ecartRelatif"],
+              ),
+            ),
+            methode: o({}),
+            preuves: o({}),
+            impact: o({}),
+          },
+          [
+            "id", "app", "detecteur", "entite", "vital", "route", "debut", "fin", "statut", "priorite",
+            "phrase", "plageHabituelle", "observe", "methode", "preuves", "impact",
+          ],
+        ),
         OverviewStats: o({ sessions: int, errors: int, pageviews: int }, ["sessions", "errors", "pageviews"]),
         SeriesRow: o({ bucket: str, p75: num }, ["bucket", "p75"]),
         Overview: o(

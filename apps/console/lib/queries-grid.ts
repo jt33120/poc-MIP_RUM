@@ -230,25 +230,48 @@ export interface DailyLcp {
  * d'ensemble, dont l'axe est celui de `dailyTraffic(f)`.
  */
 export async function dailyLcpSeries(f: Filters, opts: OptionsJours = {}): Promise<DailyLcp[]> {
+  return (await dailyVitalsSeries(f, ["LCP"], opts)).LCP ?? [];
+}
+
+/**
+ * p75 par jour LOCAL de chaque vital demandé, en UN balayage de `rum_metric` : la
+ * lecture de `GET /api/v1/trends` (cinq vitals), et celle de `dailyLcpSeries` (un
+ * seul). Mêmes règles : chaque jour de la fenêtre a sa ligne, `p75: null` et
+ * `n: 0` s'il est vide, pour CHAQUE vital demandé — un vital sans aucune mesure
+ * rend quatorze jours vides, pas une série absente.
+ *
+ * @returns les séries par nom de vital, dans l'ordre des jours
+ */
+export async function dailyVitalsSeries(
+  f: Filters,
+  noms: readonly string[],
+  opts: OptionsJours = {},
+): Promise<Record<string, DailyLcp[]>> {
   const tz = await fuseauRequete(f);
   const sql = await sqlContext(f);
   const zone = sql.bind(tz);
+  const vitaux = sql.bind([...noms]);
   const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: null });
   const { jours, depuis } = fenetreJours(zone, opts.exclureAujourdhui === true);
-  const lignes = await q<{ jour: string; p75: number | null; n: number }>(
-    `select to_char(gs.day, 'YYYY-MM-DD') as jour, l.p75, coalesce(l.n, 0)::int as n
+  const lignes = await q<{ name: string; jour: string; p75: number | null; n: number }>(
+    `select v.name, to_char(gs.day, 'YYYY-MM-DD') as jour, l.p75, coalesce(l.n, 0)::int as n
      from ${jours}
+     cross join unnest(${vitaux}::text[]) as v(name)
      left join (
-       select date_trunc('day', m.ts at time zone ${zone}) as d,
+       select m.name, date_trunc('day', m.ts at time zone ${zone}) as d,
               percentile_cont(0.75) within group (order by m.value) as p75,
               count(*)::int as n
        from rum_metric m
        ${sessionJoin("m", "s")}
-       where m.name = 'LCP' and ${depuis("m.ts")}${where}
-       group by 1
-     ) l on l.d = gs.day
-     order by gs.day`,
+       where m.name = any(${vitaux}::text[]) and ${depuis("m.ts")}${where}
+       group by 1, 2
+     ) l on l.d = gs.day and l.name = v.name
+     order by v.name, gs.day`,
     sql.params,
   );
-  return lignes.map((l) => ({ jour: l.jour, p75: l.p75 == null ? null : Number(l.p75), n: Number(l.n) }));
+  const series: Record<string, DailyLcp[]> = Object.fromEntries(noms.map((nom) => [nom, []]));
+  for (const l of lignes) {
+    series[l.name]?.push({ jour: l.jour, p75: l.p75 == null ? null : Number(l.p75), n: Number(l.n) });
+  }
+  return series;
 }

@@ -11,10 +11,16 @@
 //   · un cookie de session ne vaut rien (401), là où la console l'accepterait ;
 //   · une écriture de l'API v1 répond 405, la console la sert.
 //
+// Les routes servies par le service SEUL (`ROUTES_SERVICE_SEUL`, les statistiques de
+// `@mip/stats`) : leur implémentation tourne ici en propriétaire et dans le service
+// sous `mip_api` — même corps, même ETag —, et le fichier de route de la console, qui
+// ne fait que transmettre, rend la réponse du service telle quelle.
+//
 //   CONTRACT_API_DATABASE_URL=<base vierge, migrée> pnpm test:contract
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
+import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -36,9 +42,9 @@ const ENV = vi.hoisted(() => {
 });
 
 // @ts-expect-error module ESM, sans déclarations
-import { construire, fichiersDeRoutes } from "../../services/api/build.mjs";
+import { construire, tableDesRoutes } from "../../services/api/build.mjs";
 // @ts-expect-error module ESM, sans déclarations
-import { cheminDuFichier, creerRouteur } from "../../services/api/routeur.mjs";
+import { ROUTES_SERVICE_SEUL, creerRouteur } from "../../services/api/routeur.mjs";
 // @ts-expect-error module ESM partagé, sans déclarations
 import { writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module ESM partagé, sans déclarations
@@ -99,6 +105,9 @@ function portLibre(): Promise<number> {
 }
 
 type Reponse = { statut: number; etag: string | null; corps: unknown };
+
+/** Le fichier de route de la console à un chemin (absolu : l'import dynamique de Vite l'exige). */
+const routeDeLaConsole = (chemin: string) => join(process.cwd(), "apps", "console", "app", ...chemin.split("/").filter(Boolean), "route.ts");
 
 /** Ce qui change d'un appel à l'autre sans rien dire de la donnée. */
 function normaliser(corps: unknown): unknown {
@@ -170,6 +179,27 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
     for (const [app, s, d] of [[A, "pa-1", 5], [A, "pa-2", 40], [B, "pb-1", 12], [C, "pc-1", 8]] as const) {
       await writeRows(pool, lot(app, s, d));
     }
+    // Des jours COMPLETS pour `/trends`, dont la fenêtre exclut aujourd'hui : sans
+    // eux, ses séries seraient vides des deux côtés et la parité ne prouverait rien.
+    for (let jour = 1; jour <= 12; jour++) await writeRows(pool, lot(A, `pa-j${jour}`, jour * 1440 + 30));
+    // Les statistiques (v106) : un épisode détecté et un marqueur de déploiement, que
+    // `mip_api` doit pouvoir lire — sans ces lignes, une table oubliée par la liste
+    // blanche rendrait une liste vide des deux côtés et le contrat ne verrait rien.
+    await pool.query(
+      `insert into signal_detecte (app_id, detecteur, entite, debut, fin, methode, preuves, impact, priorite, statut)
+       values ($1, 'plage', 'vital:LCP', date_trunc('hour', now()) - interval '3 hours', null,
+               '{"niveau": "quotidien", "legende": "même heure, 7 à 14 derniers jours"}',
+               '{"vital": "LCP", "route": "", "p75": 3100, "p75_bas": 2900, "p75_haut": 3300, "n": 40,
+                 "mediane_habituelle": 2200, "plage_bas": 1700, "plage_haut": 2800, "z": 3.4, "ecart_relatif": 0.409,
+                 "niveau": "quotidien", "phrase": "LCP p75 à 3,1 s depuis 09:00 (parité)."}',
+               '{"part_mesures": 1, "mesures": 40, "mesures_total": 40}', 0.5, 'ouvert')
+       on conflict (app_id, detecteur, entite, debut) do nothing`,
+      [A],
+    );
+    await pool.query(
+      `insert into deploy_marker (app_id, ts, version, env, source) values ($1, now() - interval '2 days', '1.2.0', 'prod', 'ci')`,
+      [A],
+    );
     // Un jeton de lecture EN BASE (écran « Jetons de lecture ») : celui de `/api/rum/summary`.
     await pool.query(
       `insert into read_tokens (token_hash, app_id, label)
@@ -207,12 +237,14 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
       await new Promise((r) => setTimeout(r, 100));
     }
 
-    // Côté console : les modules de route réels, par la même table.
+    // Côté console : les modules de route réels, par la même table que le service.
+    // Pour une route servie par le service SEUL, la console ne fait que transmettre :
+    // c'est son implémentation (le module que le service compile) qui tourne ici, en
+    // propriétaire de la base — le service, lui, la sert sous `mip_api`. La
+    // transmission elle-même a son cas, plus bas.
     vi.resetModules();
     const table = [];
-    for (const f of fichiersDeRoutes()) {
-      table.push({ chemin: cheminDuFichier(f.split("/app/").pop()), module: await import(f) });
-    }
+    for (const { chemin, fichier } of tableDesRoutes()) table.push({ chemin, module: await import(fichier) });
     routeurConsole = creerRouteur(table);
   }, 180_000);
 
@@ -247,6 +279,11 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
     `/api/v1/overview?app=${A}&device=mobile`,
     `/api/v1/errors?app=${A}&release=1.2.0`,
     `/api/v1/overview?app=${A}&period=24h&browser=Firefox`,
+    // Les statistiques servies par l'API (`@mip/stats`) : même calcul des deux côtés.
+    `/api/v1/trends?app=${A}`,
+    `/api/v1/trends?app=all&device=desktop`,
+    `/api/v1/detections?app=${A}&period=7d`,
+    `/api/v1/detections?app=all`,
   ];
 
   it.each(LECTURES)("GET %s : même statut, même corps, même ETag", async (chemin) => {
@@ -288,6 +325,9 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
       [`/api/v1/overview?app=${C}`, auth()],
       [`/api/v1/overview?app=${A}&period=24h&from=2026-01-01T00:00:00Z`, auth()],
       [`/api/v1/overview?app=${A}&bogus_dimension=x`, auth()],
+      // Fenêtre fixe des tendances ; dimension qui ne découpe pas un constat.
+      [`/api/v1/trends?app=${A}&period=7d`, auth()],
+      [`/api/v1/detections?app=${A}&device=mobile`, auth()],
     ] as const) {
       const [console_, api] = await Promise.all([appelerConsole(chemin, init), appelerService(chemin, init)]);
       expect(api.statut, chemin).toBe(console_.statut);
@@ -300,6 +340,35 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
     const [console_, api] = await Promise.all([appelerConsole(chemin, auth(ENV.jetonTout)), appelerService(chemin, auth(ENV.jetonTout))]);
     expect(api.statut).toBe(200);
     expect(normaliser(api.corps)).toEqual(normaliser(console_.corps));
+  });
+
+  // Les routes servies par le service SEUL : le fichier de route de la console
+  // TRANSMET la lecture au service (aucun chemin local). Au jeton, la console rend
+  // la réponse du service à l'octet près ; à la session, 401 — le service ne
+  // vérifie pas les sessions ; sans service joignable, 503, jamais une lecture locale.
+  it("routes servies par le service seul : la console transmet, et rend ce que le service rend", async () => {
+    const precedente = process.env.CONSOLE_API_RELAY_URL;
+    process.env.CONSOLE_API_RELAY_URL = base;
+    try {
+      for (const { chemin } of ROUTES_SERVICE_SEUL) {
+        const route = await import(routeDeLaConsole(chemin));
+        const url = `https://mip-rum-console.vercel.app${chemin}?app=${A}`;
+        const transmise = await route.GET(new Request(url, auth()));
+        const directe = await appelerService(`${chemin}?app=${A}`, auth());
+        expect(transmise.status, chemin).toBe(directe.statut);
+        expect(transmise.headers.get("etag"), chemin).toBe(directe.etag);
+        expect(normaliser(await transmise.json()), chemin).toEqual(normaliser(directe.corps));
+        const session = await route.GET(new Request(url, { headers: { cookie: "mip_session=nimporte-quoi" } }));
+        expect(session.status, chemin).toBe(401);
+      }
+      delete process.env.CONSOLE_API_RELAY_URL;
+      const route = await import(routeDeLaConsole(ROUTES_SERVICE_SEUL[0].chemin));
+      const sansService = await route.GET(new Request(`https://mip-rum-console.vercel.app${ROUTES_SERVICE_SEUL[0].chemin}`, auth()));
+      expect(sansService.status).toBe(503);
+    } finally {
+      if (precedente === undefined) delete process.env.CONSOLE_API_RELAY_URL;
+      else process.env.CONSOLE_API_RELAY_URL = precedente;
+    }
   });
 
   it("OPTIONS : le même préflight CORS", async () => {
