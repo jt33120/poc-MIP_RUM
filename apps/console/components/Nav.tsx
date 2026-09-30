@@ -16,8 +16,6 @@ export const NAV_ELEMENT =
 /** Barre de 3 px à gauche de l'élément actif (charte § 3.10). */
 export const NAV_BARRE_ACTIVE = "absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-accent transition-opacity";
 
-const BASE = NAV_ELEMENT;
-
 /** Icône de la catégorie, coiffée d'un cadenas quand la capacité est fermée. */
 function Pastille({ c, isActive }: { c: NavCategory; isActive: boolean }) {
   return (
@@ -77,7 +75,7 @@ export function Nav({ reglages }: { reglages?: Record<string, React.ReactNode> }
               aria-disabled
               aria-current={isActive ? "page" : undefined}
               title="Bientôt disponible — accès fermé"
-              className={`${BASE} cursor-not-allowed ${isActive ? "bg-panel2 text-ink-soft" : "text-ink-faint"}`}
+              className={`${NAV_ELEMENT} cursor-not-allowed ${isActive ? "bg-panel2 text-ink-soft" : "text-ink-faint"}`}
             >
               <Pastille c={c} isActive={false} />
               {c.label}
@@ -88,7 +86,7 @@ export function Nav({ reglages }: { reglages?: Record<string, React.ReactNode> }
         const lien = (
           <Link
             href={contextHref(c.href, sp)}
-            className={`${BASE} min-w-0 flex-1 ${
+            className={`${NAV_ELEMENT} min-w-0 flex-1 ${
               isActive ? "bg-perf/10 text-ink" : "text-ink-soft hover:bg-panel2 hover:text-ink"
             }`}
           >

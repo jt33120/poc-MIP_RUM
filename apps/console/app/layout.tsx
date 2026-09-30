@@ -253,9 +253,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               trop bas, il n'est pas fixé en bas de l'écran »). Elle s'étirait sur toute
               la hauteur de la PAGE — 5 256 px sur la Vue d'ensemble — et la déconnexion
               suivait, tout en bas. Désormais : hauteur de l'écran, en trois étages ;
-              seule la navigation défile, le compte reste visible en bas (charte § 3.10). */}
+              seule la navigation défile, le compte reste visible en bas (charte § 3.10).
+              `z-20` : une barre collante forme son propre empilement ; sans rang, la
+              fenêtre de la roue (fixe, montée ici) passerait sous l'en-tête collant
+              (z-10). Le volet de détail (z-40) reste au-dessus d'elle. */}
           <aside
-            className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-line bg-panel lg:flex"
+            className="sticky top-0 z-20 hidden h-screen w-64 shrink-0 flex-col border-r border-line bg-panel lg:flex"
             data-testid="barre-laterale"
           >
             <div className="shrink-0 px-4 pt-4">
