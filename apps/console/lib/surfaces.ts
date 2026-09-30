@@ -182,10 +182,13 @@ export function surfaceFor(pathname: string): Surface | null {
  * relisait ses cartes au-delà de leur cache : le résultat changeait sous le curseur,
  * et la promesse « exécution explicite » n'était tenue qu'au premier rendu. Ces
  * écrans affichent l'heure de lecture et un bouton « Relire ».
+ * `/installer` relit lui-même son test « ça arrive », en le BORNANT (arrêt au vert,
+ * 10 minutes au plus, `lib/installer.ts`) : relu ici toutes les 5 s sans fin, il
+ * interrogerait la base aussi longtemps que l'onglet reste ouvert.
  * `exacts` : égalité stricte ; `prefixes` : tout chemin qui commence ainsi.
  */
 export const SANS_RAFRAICHISSEMENT = {
-  exacts: ["/explorer", "/explorer/views", "/dashboards"],
+  exacts: ["/explorer", "/explorer/views", "/dashboards", "/installer"],
   prefixes: ["/dashboards/"],
 } as const satisfies { exacts: readonly string[]; prefixes: readonly string[] };
 

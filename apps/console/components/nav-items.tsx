@@ -134,6 +134,10 @@ export const CATEGORIES: NavCategory[] = [
   // distincte du RUM MIP (cf. ADR-0001). Fermée pour l'instant : l'entrée reste
   // visible pour annoncer la capacité, mais ne mène nulle part.
   { href: "/ai", label: "Supervision IA", icon: "ai", domain: "neutral", verrouille: estFermee("/ai") },
+  // « Installer » : poser MIP RUM sur l'application sélectionnée (code de suivi,
+  // extension, serveur), pas à pas, avec le test « ça arrive » en direct. Pour
+  // l'équipe du client : la fiche d'un client est réservée aux administrateurs.
+  { href: "/installer", label: "Installer", icon: "download", domain: "neutral" },
   // « API et MCP » : les deux manières de sortir la donnée du portail. L'API REST
   // pour un front ou un partenaire, le serveur MCP pour un agent IA. Même socle
   // — le MCP n'est qu'un client de l'API v1 — donc une seule page.
@@ -201,6 +205,7 @@ export type DomaineHorsRum = "admin" | "integrations" | "logs" | "ai";
 
 const DOMAINES_HORS_RUM: readonly (readonly [string, DomaineHorsRum])[] = [
   ["/admin", "admin"],
+  ["/installer", "integrations"],
   ["/api-docs", "integrations"],
   ["/logs", "logs"],
   ["/ai", "ai"],
