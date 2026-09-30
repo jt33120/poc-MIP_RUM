@@ -4,6 +4,7 @@
 // Chunks : events rrweb -> JSON -> gzip (CompressionStream) -> POST binaire
 // /v1/replay (headers x-mip-session / x-mip-app / x-mip-seq).
 import { MIP_UI_ATTR } from "./breadcrumbs";
+import { classerReponse, lireRetryAfter } from "./retry";
 import type { MIPRumConfig } from "./types";
 
 export const REPLAY_MAX_MS = 120_000; // stop après 2 min d'enregistrement
@@ -186,6 +187,42 @@ async function gzip(text: string): Promise<Uint8Array<ArrayBuffer>> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+/** Tentatives d'un chunk refusé « plus tard », la première comprise. */
+export const REPLAY_TENTATIVES = 4;
+const REPLAY_ATTENTE_MAX_MS = 10_000;
+
+const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Envoie un chunk et le REPREND tant que le collector dit « plus tard ».
+ *
+ * Sous la barrière RGPD, un chunk arrivé avant l'ancre de sa session (le premier
+ * lot de traces, envoyé toutes les 3 s) reçoit 425 + `retry-after: 5`. Ignorer la
+ * réponse perdait le chunk 0 — l'instantané complet de la page, sans lequel le
+ * rejeu est illisible (relevé en production le 30/09/2026). Même classement que
+ * la file des traces (`classerReponse`) : 425, 429, 5xx et panne réseau se
+ * reprennent, un 4xx (clé refusée, session effacée) jamais. Borné en tentatives
+ * et en attente : la chaîne `posting` qui garde l'ordre des seq ne reste jamais
+ * bloquée longtemps.
+ */
+export async function posterAvecReprise(
+  envoyer: () => Promise<Response>,
+  attendre: (ms: number) => Promise<void> = dormir,
+): Promise<boolean> {
+  for (let tentative = 1; ; tentative++) {
+    let res: Response | null = null;
+    try {
+      res = await envoyer();
+    } catch {
+      res = null; // panne réseau : même traitement qu'un « plus tard »
+    }
+    if (res?.ok) return true;
+    if (!classerReponse(res ? res.status : null).retryable || tentative >= REPLAY_TENTATIVES) return false;
+    const demande = res ? lireRetryAfter(res.headers.get("retry-after")) : null;
+    await attendre(Math.min(demande ?? 2_000 * tentative, REPLAY_ATTENTE_MAX_MS));
+  }
+}
+
 let started = false;
 let boundaryFlush: (() => void) | null = null;
 
@@ -232,7 +269,7 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string
     posting = posting.then(async () => {
       try {
         const bytes = await gzip(JSON.stringify(chunk.events));
-        await fetch(endpoint, {
+        const envoye = await posterAvecReprise(() => fetch(endpoint, {
           method: "POST",
           headers: {
             "content-type": "application/octet-stream",
@@ -247,10 +284,11 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string
           body: bytes,
           // keepalive (limite ~64 Ko) : le dernier chunk survit au pagehide
           keepalive: bytes.length < 60_000,
-        });
-        if (buffer.addCompressed(bytes.length)) stop(); // cap 1 Mo gzip cumulé
+        }));
+        // Seul un chunk accepté compte dans le plafond : un refus n'a rien stocké.
+        if (envoye && buffer.addCompressed(bytes.length)) stop(); // cap 1 Mo gzip cumulé
       } catch {
-        /* best effort : chunk perdu, le suivant repart */
+        /* best effort : compression impossible, chunk perdu, le suivant repart */
       }
     });
   };
