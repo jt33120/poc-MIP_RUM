@@ -92,9 +92,13 @@ export function SourcemapUploadForm({
 
   return (
     <div>
+      {/* Formulaire rendu dans une fenêtre (refonte du 01/10/2026) : libellés courts,
+          la précision de chaque champ au survol (`title`) et pour le lecteur d'écran. */}
       <form onSubmit={envoyer} className="flex flex-col gap-3" data-testid="upload-sourcemaps">
-        <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-          Release (la valeur exacte déclarée par le code de suivi)
+        <label className="flex flex-col gap-1 text-[11px] font-medium text-ink-soft">
+          <span>
+            Release <span className="font-normal text-ink-faint">— la valeur exacte déclarée par le code de suivi</span>
+          </span>
           <input
             name="release"
             required
@@ -112,8 +116,13 @@ export function SourcemapUploadForm({
             </datalist>
           )}
           {suggestions.length > 0 && (
-            <span className="font-normal text-ink-soft">
-              Versions déployées récemment : {suggestions.slice(0, 3).join(", ")}
+            <span className="flex min-w-0 flex-wrap items-center gap-1 font-normal text-ink-faint">
+              Déployées récemment :
+              {suggestions.slice(0, 3).map((v) => (
+                <code key={v} className="chip-mono">
+                  {v}
+                </code>
+              ))}
               {suggestions.length > 3 ? "…" : ""}
             </span>
           )}
@@ -122,7 +131,7 @@ export function SourcemapUploadForm({
             No file chosen », même en fr-FR : recette du 26/09/2026). Le champ reste
             natif — clavier, lecteur d'écran — mais visuellement caché derrière son
             libellé, qui sert de bouton ; l'état est écrit en français à côté. */}
-        <div className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+        <div className="flex flex-col gap-1 text-[11px] font-medium text-ink-soft">
           <span id={`${ids}-maps-titre`}>Fichiers .map</span>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {/* `peer` : le champ caché garde le focus clavier, son libellé en montre l'anneau. */}
@@ -152,11 +161,11 @@ export function SourcemapUploadForm({
             </span>
           </div>
         </div>
-        <label className="flex items-center gap-2 text-xs text-ink-soft">
-          <input name="replace" type="checkbox" />
-          Remplacer un fichier déjà présent par un autre contenu (inscrit au journal d&apos;audit)
-        </label>
-        <div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="flex items-center gap-2 text-xs text-ink-soft">
+            <input name="replace" type="checkbox" />
+            Remplacer un contenu déjà présent <span className="text-ink-faint">(inscrit au journal d&apos;audit)</span>
+          </label>
           <button type="submit" className="btn-accent" disabled={envoi}>
             {envoi ? "Envoi…" : "Envoyer les maps"}
           </button>
