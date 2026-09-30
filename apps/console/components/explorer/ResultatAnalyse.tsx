@@ -696,13 +696,29 @@ export function ResultatAnalyse({
   if (plan.visualization === "toplist" && !additive && !vide && data.groups.length > 0) {
     const lignes = lignesImpact(plan, data, hrefs, format, tri, approchee);
     const totalTexte = `${valeurApprochee(formater(format, data.total), approchee)}${uniteApres(format, meta.unit)}`;
+    // La méta en une ligne (recette du 30/09/2026) : la précision sur la troncature
+    // (« seuls les N de valeur la plus haute… ») rejoint le pied de page, la méta dit
+    // déjà combien de groupes sont affichés.
+    // « le total porte sur toute la population » : le début de la ligne le dit déjà.
     const notice = [
       `Total sur toute la population : ${totalTexte}`,
-      ...metaResultat(plan, meta, data),
-      ...(meta.truncated_groups
-        ? [`au moins ${nombre(data.groups.length + 1)} groupes existent : seuls les ${nombre(data.groups.length)} de valeur la plus haute sont lus et classés ici`]
-        : []),
+      ...metaResultat(plan, meta, data).map((m) => m.replace(" ; le total porte sur toute la population", "")),
     ].join(" · ");
+    const aProposImpact = (
+      <APropos
+        lignes={[
+          ...referenceCarte,
+          ...(carte ? metaResultat(plan, meta, data).map((m) => `${m.charAt(0).toUpperCase()}${m.slice(1)}.`) : []),
+          ...(carte ? lectures : []),
+          ...(meta.truncated_groups
+            ? [`Au moins ${nombre(data.groups.length + 1)} groupes existent : seuls les ${nombre(data.groups.length)} de valeur la plus haute sont lus et classés ici.`]
+            : []),
+          ...lignesAPropos(plan, meta, methode),
+          ...notes,
+        ]}
+        className={carte ? "mt-2" : "mt-2 mb-6"}
+      />
+    );
     return (
       <div id={idFigure} data-testid="resultat-analyse" data-forme="impact" data-vital={vital ?? undefined} className="min-w-0">
         <ImpactTable
@@ -731,7 +747,7 @@ export function ResultatAnalyse({
           approchee={approchee}
         />
         {!carte && lectures.length > 0 && <p className="-mt-3 mb-2 text-xs leading-relaxed text-ink-soft">{lectures.join(" ")}</p>}
-        {aPropos}
+        {aProposImpact}
       </div>
     );
   }

@@ -45,6 +45,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { ModelesDepart } from "@/components/explorer/ModelesDepart";
 import { QueryPills } from "@/components/explorer/QueryPills";
 import { OngletsRepresentation } from "@/components/explorer/OngletsRepresentation";
+import { PictoRepresentation } from "@/components/explorer/PictoRepresentation";
 import { ResultatAnalyse, type HrefsResultat, type PrecedentResultat } from "@/components/explorer/ResultatAnalyse";
 // F33 — contexte du résultat (W-E2, W-E7).
 import { RepartitionResultat, VolumeResultat, type OngletRepartition } from "@/components/explorer/ContexteResultat";
@@ -123,6 +124,13 @@ const ONGLETS: Record<Visualization, string> = LIBELLES_REPRESENTATION;
  * code de lot interne (recette du 26/09/2026).
  */
 const RAISON_DISTRIBUTION = "la distribution d'une mesure ne se lit pas encore dans l'Explorer";
+
+/**
+ * Libellé flottant d'un champ de la barre de requête (charte § 3.2 : libellé au-dessus,
+ * en petites capitales). Dans son propre `span` : le texte d'une liste déroulante ne se
+ * mêle pas à celui du libellé.
+ */
+const LIBELLE_CHAMP = "text-[10px] font-semibold uppercase tracking-wider text-ink-faint";
 
 /** `tri` de l'écran (P3) : gravité par défaut, volume sur demande. */
 function lienTri(query: AnalyticsQuery, plan: ExplorerPlan, vue: Record<string, string | null>): HrefsResultat["tri"] {
@@ -274,7 +282,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
   // navigation par query — écart F02 validé, documenté dans `SectionErreur`.)
   const contexteResultat =
     plan.ok && resultat && (planVolume || planRepartition) ? (
-      <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-3" data-testid="explorer-contexte">
+      <div className="mb-4 grid min-w-0 gap-2 lg:grid-cols-3" data-testid="explorer-contexte">
         {planVolume && contexteVolume && (
           <div className="min-w-0">
             <SectionErreur titre="Volume du résultat">
@@ -317,141 +325,149 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
 
   return (
     <div data-testid="explorer-racine" className="animate-fade-up">
-      <PageHeader
-        title="Explorer"
-        sub={`Composez une analyse sur ${ecran.label}, puis exécutez-la : rien n’est lu avant.`}
-      />
+      <PageHeader title="Explorer">
+        <Link href="/explorer/views" className="btn-ghost">
+          Vues enregistrées
+        </Link>
+      </PageHeader>
+      <p className="sr-only">Composez une analyse sur {ecran.label}, puis exécutez-la : rien n’est lu avant.</p>
 
-      <nav aria-label="Jeu de données" className="mb-4 flex flex-wrap gap-2">
-        {EXPLORER_DATASET_IDS.map((id) => {
-          const actif = id === dataset;
-          return (
-            <Link
-              key={id}
-              href={explorerDatasetHref(ecran.query, id)}
-              aria-current={actif ? "page" : undefined}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
-                actif ? "border-perf bg-perf/10 text-perf" : "border-line text-ink-soft hover:border-perf/50 hover:text-ink"
-              }`}
-            >
-              {datasetDefinition(id).label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Zone 3 : ce qui a été APPLIQUÉ. Sans exécution, rien ne l'a été. */}
-      {demande && plan.ok && (
-        <QueryPills
-          pastilles={pastillesRequete(ecran.query, plan.value, vue)}
-          resume={explorerResume(ecran.query, plan.value, ecran.label)}
-        />
-      )}
-
-      <details key={cleFormulaire} open={formulaireOuvert} data-testid="explorer-composer" className="card mb-4">
-        <summary className="cursor-pointer rounded-lg px-4 py-3 text-sm font-semibold text-ink-soft transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-          Modifier la requête
-        </summary>
-        <form
-          method="get"
-          aria-label="Constructeur de requête"
-          className="grid gap-3 border-t border-line p-4 sm:grid-cols-2 lg:grid-cols-4"
-        >
-          {/* Le contexte global suit la requête : app, plage, appareil, dimensions, segment. */}
-          {[...queryToSearchParams(ecran.query)].map(([nom, valeur]) => (
-            <input key={nom} type="hidden" name={nom} value={valeur} />
-          ))}
-          {Object.entries(vue).map(([nom, valeur]) =>
-            valeur === null ? null : <input key={nom} type="hidden" name={nom} value={valeur} />,
-          )}
-          <input type="hidden" name="dataset" value={dataset} />
-          {/* La représentation se choisit par les onglets (zone 5) : le formulaire
-              la transporte telle quelle, pour que « Exécuter » ne la change pas. */}
-          <input type="hidden" name="viz" value={vizCourante} />
-
-          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft lg:col-span-2">
-            Mesure
-            <select name="measure" defaultValue={mesureCourante} className={`${INPUT_CLASS} w-full`}>
-              {mesures.map((mesure) => (
-                <option key={mesure.valeur} value={mesure.valeur}>
-                  {mesure.libelle}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {mesures.some((mesure) => mesure.property) && (
-            <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-              Propriété numérique
-              <input
-                name="prop"
-                defaultValue={plan.ok ? (plan.value.measure.property ?? "") : ""}
-                placeholder="amount"
-                className={`${INPUT_CLASS} w-full`}
-              />
-            </label>
-          )}
-
-          {definition.variant && (
-            <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-              {definition.variant.label}
-              <select
-                name="variant"
-                defaultValue={plan.ok ? (plan.value.variant ?? "") : ""}
-                className={`${INPUT_CLASS} w-full`}
+      {/* Zones 2 à 4 : la BARRE DE REQUÊTE, compacte, en tête (recette du 30/09/2026) — le
+          jeu de données, ce qui a été appliqué, puis le constructeur replié dès qu'un
+          résultat occupe l'écran. Le résultat, lui, prend toute la place dessous. */}
+      <section aria-label="Requête" className="card mb-3 min-w-0 p-3">
+        <nav aria-label="Jeu de données" className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span aria-hidden className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+            Jeu
+          </span>
+          {EXPLORER_DATASET_IDS.map((id) => {
+            const actif = id === dataset;
+            return (
+              <Link
+                key={id}
+                href={explorerDatasetHref(ecran.query, id)}
+                aria-current={actif ? "page" : undefined}
+                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
+                  actif ? "border-perf bg-perf/10 text-perf" : "border-line text-ink-soft hover:border-perf/50 hover:text-ink"
+                }`}
               >
-                {!definition.variant.required && <option value="">Toutes</option>}
-                {definition.variant.values.map((valeur) => (
-                  <option key={valeur} value={valeur}>
-                    {valeur}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+                {datasetDefinition(id).label}
+              </Link>
+            );
+          })}
+        </nav>
 
-          {([0, 1] as const).map((rang) => (
-            <label key={rang} className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-              {rang === 0 ? "Grouper par" : "Puis par"}
-              <select
-                name={`g${rang}`}
-                defaultValue={plan.ok ? (plan.value.groupBy[rang] ?? "") : ""}
-                className={`${INPUT_CLASS} w-full`}
-              >
-                <option value="">Aucun regroupement</option>
-                {dimensions.map((dimension) => (
-                  <option key={dimension.id} value={dimension.id} disabled={!dimension.disponible} title={dimension.raison ?? undefined}>
-                    {dimension.label}
-                    {dimension.disponible ? "" : " — indisponible"}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
-
-          {vizCourante !== "value" && (
-            <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
-              Nombre maximum
-              <select name="limit" defaultValue={String(limiteCourante)} className={`${INPUT_CLASS} w-full`}>
-                {LIMITES[vizCourante].map((valeur) => (
-                  <option key={valeur} value={valeur}>
-                    {valeur}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-4">
-            <button className="btn-accent" type="submit" name="run" value="1">
-              Exécuter
-            </button>
-            <Link href={explorerResetHref(ecran.query)} className="btn-ghost">
-              Réinitialiser
-            </Link>
+        {/* Zone 3 : ce qui a été APPLIQUÉ. Sans exécution, rien ne l'a été. */}
+        {demande && plan.ok && (
+          <div className="mt-2 border-t border-line/60 pt-2">
+            <QueryPills
+              pastilles={pastillesRequete(ecran.query, plan.value, vue)}
+              resume={explorerResume(ecran.query, plan.value, ecran.label)}
+            />
           </div>
-        </form>
-      </details>
+        )}
+
+        <details key={cleFormulaire} open={formulaireOuvert} data-testid="explorer-composer" className="mt-2 border-t border-line/60 pt-2">
+          <summary className="cursor-pointer rounded text-xs font-semibold text-ink-soft transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
+            Modifier la requête
+          </summary>
+          <form method="get" aria-label="Constructeur de requête" className="mt-2 flex min-w-0 flex-wrap items-end gap-2">
+            {/* Le contexte global suit la requête : app, plage, appareil, dimensions, segment. */}
+            {[...queryToSearchParams(ecran.query)].map(([nom, valeur]) => (
+              <input key={nom} type="hidden" name={nom} value={valeur} />
+            ))}
+            {Object.entries(vue).map(([nom, valeur]) =>
+              valeur === null ? null : <input key={nom} type="hidden" name={nom} value={valeur} />,
+            )}
+            <input type="hidden" name="dataset" value={dataset} />
+            {/* La représentation se choisit par les onglets (zone 5) : le formulaire
+                la transporte telle quelle, pour que « Exécuter » ne la change pas. */}
+            <input type="hidden" name="viz" value={vizCourante} />
+
+            <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+              <span className={LIBELLE_CHAMP}>Mesure</span>
+              <select name="measure" defaultValue={mesureCourante} className={`${INPUT_CLASS} w-80 max-w-full`}>
+                {mesures.map((mesure) => (
+                  <option key={mesure.valeur} value={mesure.valeur}>
+                    {mesure.libelle}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {mesures.some((mesure) => mesure.property) && (
+              <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+                <span className={LIBELLE_CHAMP}>Propriété numérique</span>
+                <input
+                  name="prop"
+                  defaultValue={plan.ok ? (plan.value.measure.property ?? "") : ""}
+                  placeholder="amount"
+                  className={`${INPUT_CLASS} w-32 max-w-full`}
+                />
+              </label>
+            )}
+
+            {definition.variant && (
+              <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+                <span className={LIBELLE_CHAMP}>{definition.variant.label}</span>
+                <select
+                  name="variant"
+                  defaultValue={plan.ok ? (plan.value.variant ?? "") : ""}
+                  className={`${INPUT_CLASS} w-36 max-w-full`}
+                >
+                  {!definition.variant.required && <option value="">Toutes</option>}
+                  {definition.variant.values.map((valeur) => (
+                    <option key={valeur} value={valeur}>
+                      {valeur}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {([0, 1] as const).map((rang) => (
+              <label key={rang} className="flex min-w-0 max-w-full flex-col gap-0.5">
+                <span className={LIBELLE_CHAMP}>{rang === 0 ? "Grouper par" : "Puis par"}</span>
+                <select
+                  name={`g${rang}`}
+                  defaultValue={plan.ok ? (plan.value.groupBy[rang] ?? "") : ""}
+                  className={`${INPUT_CLASS} w-44 max-w-full`}
+                >
+                  <option value="">Aucun regroupement</option>
+                  {dimensions.map((dimension) => (
+                    <option key={dimension.id} value={dimension.id} disabled={!dimension.disponible} title={dimension.raison ?? undefined}>
+                      {dimension.label}
+                      {dimension.disponible ? "" : " — indisponible"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+
+            {vizCourante !== "value" && (
+              <label className="flex min-w-0 flex-col gap-0.5">
+                <span className={LIBELLE_CHAMP}>Nombre maximum</span>
+                <select name="limit" defaultValue={String(limiteCourante)} className={`${INPUT_CLASS} w-24`}>
+                  {LIMITES[vizCourante].map((valeur) => (
+                    <option key={valeur} value={valeur}>
+                      {valeur}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <div className="flex items-end gap-2">
+              <button className="btn-accent" type="submit" name="run" value="1">
+                Exécuter
+              </button>
+              <Link href={explorerResetHref(ecran.query)} className="btn-ghost">
+                Réinitialiser
+              </Link>
+            </div>
+          </form>
+        </details>
+      </section>
 
       {/* Zone 5 : la forme du résultat. Un onglet relit la MÊME requête (population,
           mesure, regroupements) sous une autre forme ; il ne la recompose pas.
@@ -464,13 +480,15 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
               aria-disabled="true"
               title={serieIndisponible}
               data-testid="onglet-indisponible"
-              className="-mb-px shrink-0 cursor-not-allowed whitespace-nowrap border-b-2 border-transparent px-4 py-2 text-sm font-medium text-ink-faint opacity-60"
+              className="-mb-px inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-4 py-2 text-sm font-medium text-ink-faint opacity-60"
             >
+              <PictoRepresentation representation={viz} />
               {ONGLETS[viz]}
               <span className="sr-only"> — indisponible : {serieIndisponible}</span>
             </span>
           ) : (
-            <TabLink key={viz} href={explorerOngletHref(ecran.query, reader, viz, vue)} active={viz === vizCourante}>
+            <TabLink key={viz} href={explorerOngletHref(ecran.query, reader, viz, vue)} active={viz === vizCourante} className="inline-flex items-center gap-1.5">
+              <PictoRepresentation representation={viz} />
               {ONGLETS[viz]}
             </TabLink>
           ),
@@ -480,8 +498,9 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
           aria-disabled="true"
           title={`Indisponible : ${RAISON_DISTRIBUTION}.`}
           data-testid="onglet-distribution"
-          className="-mb-px shrink-0 cursor-not-allowed whitespace-nowrap border-b-2 border-transparent px-4 py-2 text-sm font-medium text-ink-faint opacity-60"
+          className="-mb-px inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-4 py-2 text-sm font-medium text-ink-faint opacity-60"
         >
+          <PictoRepresentation representation="distribution" />
           Distribution
           <span className="sr-only"> — indisponible : {RAISON_DISTRIBUTION}</span>
         </span>
@@ -489,7 +508,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
       {/* La distribution d'un Web Vital existe ailleurs : on y mène, sans répéter la
           raison de l'onglet grisé. */}
       {dataset === "vitals" && plan.ok && plan.value.variant !== null && (
-        <p data-testid="distribution-indisponible" className="-mt-4 mb-6 text-xs text-ink-soft">
+        <p data-testid="distribution-indisponible" className="-mt-4 mb-4 text-xs text-ink-soft">
           <Link
             href={hrefWithQuery("/pages", ecran.query, { ...vue, vital: plan.value.variant })}
             className="font-medium text-brand hover:underline"
@@ -501,12 +520,12 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
 
       {/* Zone 6 : constats de lecture — ce qui borne ce que la figure peut affirmer. */}
       {reglagesIgnores.map((ligne) => (
-        <p key={ligne} role="note" className="mb-4 text-xs text-ink-soft">
+        <p key={ligne} role="note" className="mb-3 text-xs text-ink-soft">
           {ligne}
         </p>
       ))}
       {resultat && comparaison.valeur.mode === "release" && (
-        <p role="note" data-testid="explorer-cmp-release" className="mb-4 text-xs text-ink-soft">
+        <p role="note" data-testid="explorer-cmp-release" className="mb-3 text-xs text-ink-soft">
           Comparaison release contre release : l’Explorer ne la calcule pas. Ajouter une condition de release à la
           requête, ou{" "}
           <Link href={contextHref("/", reader)} className="font-medium text-brand hover:underline">
@@ -516,17 +535,18 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
         </p>
       )}
       {resultat && resultat.meta.coverage.status !== "complete" && (
-        <div className="mb-4">
-          <EtatSurface etat={{ kind: "partiel", raison: resultat.meta.coverage.reason ?? "couverture de la fenêtre non lue" }} />
+        <div className="mb-3">
+          <EtatSurface etat={{ kind: "partiel", raison: resultat.meta.coverage.reason ?? "couverture de la fenêtre non lue" }} compact />
         </div>
       )}
       {resultat && resultat.meta.truncated_groups && (
-        <div className="mb-4" data-testid="explorer-tronque">
+        <div className="mb-3" data-testid="explorer-tronque">
           <EtatSurface
             etat={{
               kind: "partiel",
-              raison: `d’autres combinaisons existent au-delà des ${plan.ok ? plan.value.limit : ""} affichées. Le total, lui, porte sur toute la population.`,
+              raison: `d’autres combinaisons existent au-delà des ${plan.ok ? plan.value.limit : ""} affichées ; le total porte sur toute la population.`,
             }}
+            compact
           />
         </div>
       )}
@@ -537,7 +557,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
       {!plan.ok && (
         // Le code du refus reste dans le DOM (`data-code`, pour le support et les tests),
         // plus à l'écran : « unsupported_measure » n'est pas un mot de l'utilisateur.
-        <div role="alert" data-testid="explorer-invalide" data-code={plan.error.code} className="card mb-6 border-bad/30 p-6 text-sm">
+        <div role="alert" data-testid="explorer-invalide" data-code={plan.error.code} className="card mb-4 border-bad/30 px-4 py-3 text-sm">
           <p className="font-semibold text-bad-ink">Requête refusée</p>
           <p className="mt-1 text-ink-soft">{plan.error.message}</p>
         </div>
@@ -547,10 +567,15 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
           Des liens seulement — aucune ne lit quoi que ce soit avant d'être ouverte. */}
       {!demande && (
         <section aria-labelledby="modeles-depart-titre" data-testid="explorer-invite">
-          <h2 id="modeles-depart-titre" className="text-sm font-semibold text-ink">
-            Analyses de départ
-          </h2>
-          <p className="mb-3 mt-1 text-xs text-ink-soft">
+          <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2 id="modeles-depart-titre" className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+              Analyses de départ
+            </h2>
+            <span className="text-[11px] text-ink-faint" aria-hidden>
+              rien n’est lu avant « Exécuter » · sur les filtres actuels
+            </span>
+          </div>
+          <p className="sr-only">
             Rien n’a encore été lu. Composer la requête ci-dessus puis choisir « Exécuter », ou ouvrir l’une de ces
             analyses : elle s’exécute sur les filtres actuels ({ecran.label}).
           </p>
@@ -559,7 +584,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
       )}
 
       {echec && (
-        <div role="alert" data-testid="explorer-echec" className="card mb-6 border-bad/30 p-6 text-sm">
+        <div role="alert" data-testid="explorer-echec" className="card mb-4 border-bad/30 px-4 py-3 text-sm">
           <p className="font-semibold text-bad-ink">{echec.titre}</p>
           <p className="mt-1 text-ink-soft">{echec.message}</p>
         </div>
@@ -594,7 +619,6 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
     </div>
   );
 }
-
 function Resultat({
   plan,
   resultat,
@@ -656,26 +680,36 @@ function Resultat({
       {/* Zone 8 : sur quoi ce résultat porte — volume de la population et répartition. */}
       {contexteResultat}
 
-      <section className="card mt-6 p-4">
-        <h2 className="text-sm font-semibold text-ink">Enregistrer cette analyse</h2>
-        <p className="mt-1 text-sm text-ink-soft">
+      {/* Enregistrer : un bandeau compact sous le résultat (recette du 30/09/2026) — deux
+          formulaires côte à côte, la règle (« seule la question est enregistrée ») en une
+          ligne ; la phrase entière reste lue par un lecteur d'écran. */}
+      <section className="card mt-4 min-w-0 p-3" aria-labelledby="enregistrer-titre">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h2 id="enregistrer-titre" className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+            Enregistrer cette analyse
+          </h2>
+          <span className="text-[11px] text-ink-faint" aria-hidden>
+            la question, pas le résultat : relancée à chaque lecture
+          </span>
+        </div>
+        <p className="sr-only">
           Seule la question est enregistrée, pas le résultat : elle sera relancée à chaque lecture, avec les droits
           du lecteur et sur la fenêtre de l’écran qui l’affiche.
         </p>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="mt-3 grid gap-4 lg:grid-cols-2">
           {/* ----- Carte de tableau de bord ----- */}
           <div className="min-w-0">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
               Comme carte d’un tableau de bord
             </h3>
             {cibles.length ? (
-              <form action={saveAnalysisAction} className="mt-2 flex flex-col gap-2" data-testid="save-widget">
+              <form action={saveAnalysisAction} className="mt-2 flex min-w-0 flex-wrap items-end gap-2" data-testid="save-widget">
                 <input type="hidden" name="ctx" value={contexte} />
                 <input type="hidden" name="widget" value={JSON.stringify(widgetConfigJson(carte))} />
-                <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-                  Tableau de bord
-                  <select name="id" className={`${INPUT_CLASS} w-full`}>
+                <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+                  <span className={LIBELLE_CHAMP}>Tableau de bord</span>
+                  <select name="id" className={`${INPUT_CLASS} w-60 max-w-full`}>
                     {cibles.map((cible) => (
                       <option key={cible.id} value={cible.id}>
                         {libelleCibleTableau(cible.name, cible.app_id)}
@@ -688,18 +722,13 @@ function Resultat({
                 {cibles.map((cible) => (
                   <input key={cible.id} type="hidden" name={`revision_${cible.id}`} value={cible.revision} />
                 ))}
-                <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-                  Titre de la carte
-                  <input
-                    name="title"
-                    maxLength={60}
-                    placeholder={carte.title}
-                    className={`${INPUT_CLASS} w-full`}
-                  />
+                <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+                  <span className={LIBELLE_CHAMP}>Titre de la carte</span>
+                  <input name="title" maxLength={60} placeholder={carte.title} className={`${INPUT_CLASS} w-56 max-w-full`} />
                 </label>
-                <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-                  Période de la carte
-                  <select name="fenetre" className={`${INPUT_CLASS} w-full`}>
+                <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+                  <span className={LIBELLE_CHAMP}>Période de la carte</span>
+                  <select name="fenetre" className={`${INPUT_CLASS} w-60 max-w-full`}>
                     <option value="">Suivre la période du tableau de bord</option>
                     {/* Figer n'a de sens que pour une fenêtre PERSONNALISÉE : un
                         preset doit rester glissant, sinon la carte vieillit seule. */}
@@ -715,12 +744,12 @@ function Resultat({
                   name="range_override"
                   value={JSON.stringify({ from: query.range.from, to: query.range.to })}
                 />
-                <button type="submit" className="btn-accent self-start">
+                <button type="submit" className="btn-accent">
                   Ajouter au tableau de bord
                 </button>
               </form>
             ) : (
-              <p className="mt-2 text-sm text-ink-soft">
+              <p className="mt-2 text-xs text-ink-soft">
                 Aucun tableau de bord modifiable dans ce périmètre. En créer un depuis{" "}
                 <Link href="/dashboards" className="text-accent hover:underline">
                   Tableaux de bord
@@ -732,32 +761,32 @@ function Resultat({
 
           {/* ----- Vue enregistrée ----- */}
           <div className="min-w-0">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
               Comme vue enregistrée (personnelle)
             </h3>
             {peutEnregistrerVue ? (
-              <form action={saveViewAction} className="mt-2 flex flex-col gap-2" data-testid="save-view">
+              <form action={saveViewAction} className="mt-2 flex min-w-0 flex-wrap items-end gap-2" data-testid="save-view">
                 <input type="hidden" name="ctx" value={contexte} />
                 <input type="hidden" name="query" value={JSON.stringify(meta.query)} />
-                <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-                  Nom de la vue
+                <label className="flex min-w-0 max-w-full flex-col gap-0.5">
+                  <span className={LIBELLE_CHAMP}>Nom de la vue</span>
                   <input
                     name="name"
                     required
                     maxLength={SAVED_VIEW_NAME_MAX}
                     placeholder="Erreurs Firefox par release"
-                    className={`${INPUT_CLASS} w-full`}
+                    className={`${INPUT_CLASS} w-60 max-w-full`}
                   />
                 </label>
-                <button type="submit" className="btn-ghost self-start">
+                <button type="submit" className="btn-ghost">
                   Enregistrer la vue
                 </button>
-                <p className="text-xs text-ink-faint">
+                <p className="basis-full text-[11px] text-ink-faint">
                   Une vue reste privée : elle n’est lisible que par vous et par un administrateur de son application.
                 </p>
               </form>
             ) : (
-              <p className="mt-2 text-sm text-ink-soft">
+              <p className="mt-2 text-xs text-ink-soft">
                 {appDemandee === null
                   ? "Une vue enregistrée nomme son application : choisir un projet dans les filtres avant d’enregistrer."
                   : "Enregistrer une vue demande une session de la console rattachée à un compte actif, sur une application de votre périmètre."}
@@ -771,7 +800,7 @@ function Resultat({
           </div>
         </div>
 
-        <details className="mt-4 text-xs text-ink-soft">
+        <details className="mt-3 text-xs text-ink-soft">
           <summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
             Requête au format JSON
           </summary>
@@ -781,7 +810,7 @@ function Resultat({
         </details>
       </section>
 
-      <details className="mt-4 text-xs text-ink-soft">
+      <details className="mt-3 text-xs text-ink-soft">
         <summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
           Colonnes disponibles pour {definition.label.toLowerCase()}
         </summary>
