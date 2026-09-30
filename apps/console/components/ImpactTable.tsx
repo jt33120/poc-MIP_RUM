@@ -752,13 +752,20 @@ export function ImpactTable({
             </span>
             {/* La référence n'a pas de barre : elle se lit à côté, elle ne se classe pas. */}
             <span aria-hidden="true" />
-            <span className="whitespace-nowrap text-right font-semibold tabular-nums text-ink">{reference.valeurs.pilote ?? "—"}</span>
+            {/* Chaque cellule dit sa colonne au lecteur d'écran (l'en-tête visuel est
+                décoratif) : « Vues 4 », « LCP p75 2,5 s ». */}
+            <span className="whitespace-nowrap text-right font-semibold tabular-nums text-ink">
+              <span className="sr-only">{libelleValeur} </span>
+              {reference.valeurs.pilote ?? "—"}
+            </span>
             {autres.map(({ c, i }) => (
               <span key={c} className={`${celluleLarge} justify-end truncate whitespace-nowrap tabular-nums`} title={cleMesures[i] ? reference.valeurs[cleMesures[i]] : undefined}>
+                <span className="sr-only">{c} </span>
                 {(cleMesures[i] && reference.valeurs[cleMesures[i]]) || "—"}
               </span>
             ))}
             <span className={`${celluleMoyenne} justify-end truncate whitespace-nowrap tabular-nums`} title={reference.valeurs.volume}>
+              <span className="sr-only">{volumeLibelle} </span>
               {reference.valeurs.volume ?? "—"}
             </span>
             {avecEcart && <span className={`${celluleMoyenne} justify-end text-[11px] text-ink-faint`}>réf.</span>}
