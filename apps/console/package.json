@@ -15,6 +15,7 @@
     "@mip/mcp-tools": "workspace:*",
     "@mip/stats": "workspace:*",
     "@rrweb/replay": "2.0.1",
+    "@xyflow/react": "12.12.0",
     "bcryptjs": "3.0.3",
     "jose": "6.2.3",
     "next": "15.5.19",

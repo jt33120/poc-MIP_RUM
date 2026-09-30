@@ -940,3 +940,71 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
       .toBe(0);
   });
 });
+
+// ─── Cartographie du graphe technique (30/09/2026) ─────────────────────────────
+//
+// Tout MIP RUM sur une carte qu'on explore (components/presentation/cartographie).
+// Ce que la carte DIT est confronté au dépôt par tests/unit/cartographie.test.ts ;
+// ici, qu'on puisse s'en servir : une fiche au clic, la recherche, un parcours, les
+// familles, le plein écran, et une version texte qui compte les mêmes éléments.
+
+test.describe("cartographie du graphe technique", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("la carte s'explore : fiche, voisins, recherche, parcours, familles, plein écran", async ({ page }) => {
+    await page.goto(grapheUrl);
+    const carte = page.getByTestId("cartographie");
+    const noeuds = carte.locator(".react-flow__node-element");
+    await expect(noeuds.first()).toBeVisible({ timeout: 60_000 });
+    const total = await noeuds.count();
+    expect(total, "des éléments sur la carte").toBeGreaterThan(60);
+    // La version texte, rendue côté serveur, compte les mêmes éléments.
+    await expect(page.getByTestId("carte-texte")).toContainText(`${total} éléments`);
+
+    // Un clic : la fiche, ses sources sur le dépôt public, et le reste estompé.
+    await carte.getByTestId("carte-element-collector").click();
+    const fiche = page.getByTestId("carte-panneau");
+    await expect(fiche.getByRole("heading", { name: "collector", exact: true })).toBeVisible();
+    await expect(fiche.locator('a[href^="https://github.com/jt33120/poc-MIP_RUM/blob/master/"]').first()).toBeVisible();
+    await expect(carte.locator('[data-eclairage="estompe"]').first()).toBeAttached();
+    // Un voisin de la fiche y mène.
+    await fiche.getByRole("button", { name: /Mesures brutes/ }).click();
+    await expect(fiche.getByRole("heading", { name: "Mesures brutes", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(fiche).toHaveCount(0);
+
+    // La recherche trouve une table dans son domaine.
+    await page.getByTestId("carte-recherche").fill("replay_chunk");
+    await expect(page.getByTestId("carte-resultats")).toContainText("Rejeu");
+    await page.keyboard.press("Enter");
+    await expect(fiche.getByRole("heading", { name: "Rejeu", exact: true })).toBeVisible();
+    await expect(fiche).toContainText("replay_chunk");
+    await page.keyboard.press("Escape");
+
+    // Un parcours guidé, étape par étape ; Échap le quitte.
+    await page.getByTestId("carte-parcours-mesure").click();
+    const etape = page.getByTestId("carte-etape");
+    await expect(etape).toContainText("étape 1 sur");
+    await page.getByTestId("carte-etape-suivante").click();
+    await expect(etape).toContainText("étape 2 sur");
+    await expect(carte.locator('[data-eclairage="avant"]').first()).toBeAttached();
+    await page.keyboard.press("Escape");
+    await expect(etape).toHaveCount(0);
+
+    // Masquer une famille retire ses éléments ; la remontrer les rend.
+    await page.getByTestId("carte-famille-securite").click();
+    await expect(page.getByTestId("carte-famille-securite")).toHaveAttribute("aria-pressed", "false");
+    await expect.poll(() => noeuds.count()).toBeLessThan(total);
+    await page.getByTestId("carte-famille-securite").click();
+    await expect.poll(() => noeuds.count()).toBe(total);
+
+    // Le plein écran couvre la fenêtre ; Échap en sort.
+    await page.getByTestId("carte-plein-ecran").click();
+    await expect(carte).toHaveAttribute("data-plein-ecran", "true");
+    const boite = await carte.boundingBox();
+    expect(boite?.width).toBe(1440);
+    expect(boite?.height).toBe(900);
+    await page.keyboard.press("Escape");
+    await expect(carte).not.toHaveAttribute("data-plein-ecran", "true");
+  });
+});

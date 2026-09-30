@@ -60,6 +60,15 @@ const PERMIS: Readonly<Record<string, string>> = {
 const DOSSIER = /^(?:components\/presentation\/(?:Annexe|Reste|SaitFaire|Contient|Capteurs|Specs|Positionnement|Releve|GrapheTechnique|CouvertureBarre|Ancres|Partie)\.tsx|lib\/(?:presentation-(?:reste|sait-faire|contient)|specs|couverture)\.ts|app\/presentation\/graphe-technique\/.*)$/;
 const IDENTIFIANT_REGISTRE = /^[A-FR]\d{1,2}$/;
 
+/**
+ * La cartographie du graphe technique (30/09/2026) est une carte du CODE, pour qui
+ * veut le lire : elle montre, par choix, les noms des tables, des chemins et des
+ * migrations. Ces trois motifs-là, et eux seuls, y sont admis ; un code de lot ou
+ * « seau » y reste une faute.
+ */
+const CARTOGRAPHIE = /^(?:components\/presentation\/cartographie|lib\/cartographie)\//;
+const MOTIFS_DE_LA_CARTE = new Set(["table", "chemin du dépôt", "migration"]);
+
 /** Hors garde : développement, API, et modules de `lib/` qui lisent la base. */
 const HORS_GARDE = [
   /^app\/admin\/composants\//,
@@ -218,6 +227,7 @@ export function releverJargon(): string[] {
           for (const m of texte.matchAll(re)) {
             if (PERMIS[m[0]]) continue;
             if (dossier && nom === "code de lot" && IDENTIFIANT_REGISTRE.test(m[0])) continue;
+            if (CARTOGRAPHIE.test(rel) && MOTIFS_DE_LA_CARTE.has(nom)) continue;
             fautes.push(`${rel}:${ligne} — ${nom} « ${m[0]} » : ${texte.slice(0, 120)}`);
           }
         }

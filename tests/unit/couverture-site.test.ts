@@ -346,6 +346,13 @@ function fichiersVitrine(): string[] {
     "apps/console/components/presentation/vitrine/NavVitrine.tsx",
     "apps/console/components/presentation/vitrine/PageVitrine.tsx",
     "apps/console/lib/specs.ts",
+    // La cartographie du graphe technique (30/09/2026) : ses textes et ses données.
+    ...["base", "capteurs", "donnees", "lecture", "neon", "parcours", "qualite", "traitement", "types"].map(
+      (f) => `apps/console/lib/cartographie/${f}.ts`,
+    ),
+    ...["Cartographie", "CartographieChargee", "InventaireCarte", "PanneauElement", "noeuds"].map(
+      (f) => `apps/console/components/presentation/cartographie/${f}.tsx`,
+    ),
   ];
 }
 

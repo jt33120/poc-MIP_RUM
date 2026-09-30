@@ -7,7 +7,7 @@
 | | Nombre | Atteignent la base |
 |---|---|---|
 | Écrans (`page.tsx`) | 60 | **47** |
-| Fichiers d'actions serveur (`"use server"`) | 19 (55 actions) | **18** |
+| Fichiers d'actions serveur (`"use server"`) | 20 (56 actions) | **18** |
 | Actions déclarées dans un écran | 0 | — |
 | Routes (`route.ts`) | 45 | **37** |
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
@@ -59,7 +59,7 @@
 | `/forecast` | C4 | **oui** | forecast | collecte, deploys, explorer, grid | 3 | — | oui |
 | `/forms` | C5 | **oui** | forms | collecte, deploys, explorer, form-analytics, mobile, sessions, tracing | 3 | — | oui |
 | `/goals` | C5 | **oui** | goals | queries, accounts, alerting, collecte, dashboards, deploys, dsar, errors, events, explorer, extension-installs, extension-scope, frustration, goals, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, tracing, uptime, v2 | 4 | — | oui |
-| `/inscription` | à classer | non | — | — | — | — | oui |
+| `/inscription` | C1–C2 identité, sélection | non | — | — | — | — | oui |
 | `/installer` | C5 | **oui** | installer | collecte, customers, deploys, explorer, extension-scope | 3 | — | non |
 | `/legal/cgu` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/cgv` | statique ou vitrine | non | — | — | — | — | oui |
@@ -109,6 +109,7 @@
 | `app/errors/issues/actions.ts` | muterIssue | **oui** | — | oui |
 | `app/explorer/actions.ts` | saveViewAction, renameViewAction, deleteViewAction | **oui** | creerVue, modifierVue, supprimerVue | par règle |
 | `app/goals/actions.ts` | createGoalAction, toggleGoalAction, deleteGoalAction | **oui** | activerObjectif, creerObjectif, supprimerObjectif | par règle |
+| `app/inscription/actions.ts` | inscrireAction | non | — | oui |
 | `app/login/actions.ts` | loginAction | **oui** | — | oui |
 | `app/mobile/actions.ts` | validerCapaciteAction | **oui** | validerCapaciteMobile | par règle |
 | `app/select/actions.ts` | selectProjectAction | **oui** | — | oui |
