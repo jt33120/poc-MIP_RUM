@@ -22,6 +22,8 @@ import { ECRANS } from "@mip/console-contract";
 import { ExperienceUnavailable } from "@/components/ExperienceUnavailable";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
+import { InfoTip } from "@/components/InfoTip";
+import { BoutonFenetre } from "@/components/perf/BoutonFenetre";
 import { PageHeader } from "@/components/PageHeader";
 import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
@@ -151,20 +153,25 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
         sub={"Les visiteurs se disent-ils satisfaits, et le ressenti suit-il la performance\u00a0?"}
       />
 
-      {/* Pourquoi les tuiles n'ont pas d'écart : dit en clair. */}
+      {/* Pourquoi les tuiles n'ont pas d'écart : une pastille, la raison au survol et
+          pour les lecteurs d'écran (recette du 30/09/2026 : plus de phrase à plat). */}
       {(comparaison.mode === "release" || (prev && statsPrev && !statsPrev.ok)) && (
-        <div role="note" data-testid="note-comparaison" className="mb-4 text-xs text-ink-soft">
-          {comparaison.mode === "release"
-            ? "Comparaison de releases : les tuiles de cet écran n'ont pas d'écart par release."
-            : "La période précédente n'a pas pu être lue : aucune variation n'est affichée."}
-        </div>
+        <PastilleNote
+          testId="note-comparaison"
+          libelle="Écarts non affichés"
+          texte={
+            comparaison.mode === "release"
+              ? "Comparaison de releases : les tuiles de cet écran n'ont pas d'écart par release."
+              : "La période précédente n'a pas pu être lue : aucune variation n'est affichée."
+          }
+        />
       )}
 
       {/* La période précédente incomplète est dite UNE fois, au-dessus des tuiles. */}
       <BandeauComparaison couvertures={p ? [pire(couvPart), pire(couvCompte)] : []} />
       <section
         aria-label="Chiffres clés de la satisfaction"
-        className={`mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 ${MASQUE_SILENCE_REPETE}`}
+        className={`mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4 ${MASQUE_SILENCE_REPETE}`}
         data-testid="satisfaction-kpi"
       >
         {!s ? (
@@ -183,25 +190,61 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
         )}
       </section>
 
-      {s && s.count === 0 && <CarteInstallation />}
+      {s && s.count === 0 && <LigneInstallation />}
 
-      <SectionErreur titre="Satisfaction dans le temps">
-        <HeroSatisfaction
-          tendance={tendance}
-          label={label}
-          bucketLabel={ecran.bucketLabel}
-          seauSecondes={q.range.bucketSeconds}
-          annotations={annotations}
-          zoom={zoom}
-          fenetresCollecte={fenetresLues(fenetresCollecte)}
-        />
-      </SectionErreur>
+      {/* Le temps (8/12) et la répartition (4/12) côte à côte : la répartition tient en
+          une barre et sa légende, elle n'a pas besoin de toute la largeur. */}
+      <div className="grid min-w-0 gap-2 lg:grid-cols-12">
+        <div className="min-w-0 lg:col-span-8 [&>section]:h-full">
+          <SectionErreur titre="Satisfaction dans le temps">
+            <HeroSatisfaction
+              tendance={tendance}
+              label={label}
+              bucketLabel={ecran.bucketLabel}
+              seauSecondes={q.range.bucketSeconds}
+              annotations={annotations}
+              zoom={zoom}
+              fenetresCollecte={fenetresLues(fenetresCollecte)}
+            />
+          </SectionErreur>
+        </div>
+        <div className="min-w-0 lg:col-span-4 [&>section]:h-full">
+          <SectionErreur titre="Répartition des notes">
+            <RepartitionNotes s={s} label={label} />
+          </SectionErreur>
+        </div>
+      </div>
 
-      <div className="mt-6 grid min-w-0 gap-4 lg:grid-cols-2">
-        <SectionErreur titre="Répartition des notes">
-          <RepartitionNotes s={s} label={label} />
-        </SectionErreur>
+      <div className="mt-2 grid min-w-0 gap-2 lg:grid-cols-2">
         <SectionErreur titre="Ressenti face au LCP, par page">
+          {parPage.ok && lcpPages.ok && !nuage.suffisant ? (
+            // Trop peu de pages : ce n'est pas une donnée PARTIELLE (le bandeau « Partiel »
+            // est réservé à une lecture incomplète), c'est un effectif trop faible pour un
+            // nuage. Le dire en clair, sans état d'alerte (recette du 26/09/2026) — et sur
+            // UNE ligne : le compte à l'écran, la règle entière pour les lecteurs d'écran
+            // (recette du 30/09/2026 : plus de phrase centrée dans une grande carte).
+            <FigureUneLigne
+              id="ressenti-face-au-lcp"
+              titre="Ressenti face au LCP, par page"
+              meta={`${pluriel(nuage.eligibles, "page éligible", "pages éligibles")} : au moins ${AVIS_MIN_NUAGE} avis notés et un LCP p75 mesuré · ${label} · 20 pages au plus, les plus commentées`}
+            >
+              <p className="flex items-center gap-1.5 text-xs text-ink-soft" data-testid="nuage-insuffisant">
+                <span aria-hidden className="text-sm leading-none text-ink-faint">
+                  ⊘
+                </span>
+                <span aria-hidden>Pas de nuage · {nuage.eligibles}/3 pages éligibles</span>
+                <span className="sr-only">
+                  Pas de nuage : il faut au moins trois pages ayant chacune {AVIS_MIN_NUAGE} avis notés et un LCP mesuré
+                  {nuage.eligibles === 0
+                    ? " ; aucune ne l'est"
+                    : nuage.eligibles === 1
+                      ? " ; une seule l'est"
+                      : ` ; seules ${nuage.eligibles} le sont`}{" "}
+                  sur {label}.
+                </span>
+              </p>
+            </FigureUneLigne>
+          ) : (
           <Figure
             titre="Ressenti face au LCP, par page"
             id="ressenti-face-au-lcp"
@@ -222,31 +265,13 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
                   ? { kind: "erreur", titre: "LCP p75 par page" }
                   : undefined
             }
-            lecture={
-              nuage.suffisant
-                ? `Corrélation observée sur ${pluriel(nuage.eligibles, "page")}, pas une cause : une page lente peut aussi être une page dont on se plaint pour autre chose. Horizontal : LCP p75 de la page ; vertical : CSAT ; taille : avis notés. La bande grise marque la zone « Bon » du LCP. Un point ouvre le panneau de la page.`
-                : undefined
-            }
+            lecture={`Corrélation observée sur ${pluriel(nuage.eligibles, "page")}, pas une cause : une page lente peut aussi être une page dont on se plaint pour autre chose. Horizontal : LCP p75 de la page ; vertical : CSAT ; taille : avis notés. La bande grise marque la zone « Bon » du LCP. Un point ouvre le panneau de la page.`}
             alternative={{
               legende: "CSAT et LCP p75 des pages éligibles",
               colonnes: ["Page", "LCP p75", "CSAT", "Avis notés"],
               lignes: nuage.points.map((pt) => [pt.route, formater("ms", pt.lcp), formater("pct", pt.csat), pt.avis]),
             }}
           >
-            {/* Trop peu de pages : ce n'est pas une donnée PARTIELLE (le bandeau « Partiel »
-                est réservé à une lecture incomplète), c'est un effectif trop faible pour un
-                nuage. Le dire en clair, sans état d'alerte (recette du 26/09/2026). */}
-            {!nuage.suffisant ? (
-              <p className="py-6 text-center text-sm text-ink-soft" data-testid="nuage-insuffisant">
-                Pas de nuage : il faut au moins trois pages ayant chacune {AVIS_MIN_NUAGE} avis notés et un LCP mesuré
-                {nuage.eligibles === 0
-                  ? " ; aucune ne l'est"
-                  : nuage.eligibles === 1
-                    ? " ; une seule l'est"
-                    : ` ; seules ${nuage.eligibles} le sont`}{" "}
-                sur {label}.
-              </p>
-            ) : (
               <ScatterPlot
                 points={nuage.points.map((pt) => ({
                   x: Math.round(pt.lcp),
@@ -265,17 +290,27 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
                 height={260}
                 ariaLabel={`CSAT et LCP p75 de ${pluriel(nuage.eligibles, "page")}, ${label}`}
               />
-            )}
           </Figure>
+          )}
+        </SectionErreur>
+        <SectionErreur titre="Derniers verbatims">
+          <Verbatims recents={recents} q={q} label={label} />
         </SectionErreur>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-2">
         <SectionErreur titre="Satisfaction par page">
           {!parPage.ok ? (
             <div className="card p-4">
               <EchecLecture titre="Satisfaction par page" />
             </div>
+          ) : parPage.data.length === 0 ? (
+            // Aucune page n'a reçu d'avis : une ligne, pas une table vide sous une notice.
+            <Figure
+              titre="Satisfaction par page"
+              id="satisfaction-par-page"
+              etat={{ kind: "vide", population: "page avec avis", plage: label }}
+            />
           ) : (
             <>
               {triLu.ignore && (
@@ -283,26 +318,34 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
                   {triLu.ignore}
                 </p>
               )}
-              {/* La bascule est rendue ICI, sans « Impact » : ce classement (par mesures
-                  « Mauvais ») n'a pas de sens pour des avis, et une option grisée se lisait
-                  comme une fonction présente mais en panne (recette du 26/09/2026). La
-                  table reçoit donc l'ordre déjà appliqué (« fourni »), comme sur /mobile. */}
-              <div className="mb-2 flex justify-end">
-                <BasculeTri
-                  courant={triLu.tri === "volume" ? "volume" : "gravite"}
-                  options={[
-                    { id: "gravite", libelle: "Gravité", href: lienEcran(sp, { tri: null }) },
-                    { id: "volume", libelle: "Volume", href: lienEcran(sp, { tri: "volume" }) },
-                  ]}
-                />
-              </div>
+              {/* La bascule est rendue dans la rangée du titre, sans « Impact » : ce
+                  classement (par mesures « Mauvais ») n'a pas de sens pour des avis, et une
+                  option grisée se lisait comme une fonction présente mais en panne (recette
+                  du 26/09/2026). La table reçoit donc l'ordre déjà appliqué (« fourni »),
+                  comme sur /mobile. La méthode passe dans une bulle à côté (30/09/2026). */}
               <ImpactTable
                 titre="Satisfaction par page"
                 tri="fourni"
+                commandes={
+                  <>
+                    <InfoTip label="Méthode : satisfaction par page" align="end">
+                      CSAT de chaque page (part des avis notés 4 ou 5 sur 5, comme la tuile) : une barre plus longue veut
+                      dire plus satisfaisante. Les 20 pages les plus commentées ; sous {AVIS_FAIBLE_SOUS} avis notés,
+                      « échantillon faible ».{lcpPages.ok ? "" : " LCP p75 par page non lu (lecture en échec)."}
+                    </InfoTip>
+                    <BasculeTri
+                      courant={triLu.tri === "volume" ? "volume" : "gravite"}
+                      options={[
+                        { id: "gravite", libelle: "Gravité", href: lienEcran(sp, { tri: null }) },
+                        { id: "volume", libelle: "Volume", href: lienEcran(sp, { tri: "volume" }) },
+                      ]}
+                    />
+                  </>
+                }
                 ordreLibelle={
                   triLu.tri === "volume"
-                    ? "Ordre : par nombre d'avis notés, le plus grand en tête."
-                    : `Ordre : de la page la moins satisfaisante à la plus satisfaisante ; sous ${AVIS_FAIBLE_SOUS} avis notés, en fin de liste.`
+                    ? "Ordre : avis notés, du plus grand nombre au plus petit."
+                    : `Ordre : de la moins satisfaisante à la plus satisfaisante ; sous ${AVIS_FAIBLE_SOUS} avis, en fin.`
                 }
                 triHref={{ gravite: null, volume: null, impact: null, fourni: null }}
                 reference={
@@ -325,19 +368,53 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
                 volumeLibelle="Avis notés"
                 groupes={parPage.data[0]?.pages ?? 0}
                 tronque={(parPage.data[0]?.pages ?? 0) > parPage.data.length}
-                notice={`CSAT de chaque page (part des avis notés 4 ou 5 sur 5, comme la tuile) : une barre plus longue veut dire plus satisfaisante. Les 20 pages les plus commentées ; sous ${AVIS_FAIBLE_SOUS} avis notés, « échantillon faible ».${lcpPages.ok ? "" : " LCP p75 par page non lu (lecture en échec)."}`}
               />
             </>
           )}
         </SectionErreur>
       </div>
-
-      <div className="mt-6">
-        <SectionErreur titre="Derniers verbatims">
-          <Verbatims recents={recents} q={q} label={label} />
-        </SectionErreur>
-      </div>
     </div>
+  );
+}
+
+/**
+ * Une figure SANS DESSIN sur une ligne (la forme de `Figure` pour un état vide) : son
+ * titre à gauche, ce qui manque à droite, le contexte (effectif, plage) lu mais pas
+ * affiché. Pour les deux états propres à cet écran que `EtatSurface` ne dit pas —
+ * « Données insuffisantes » et « Pas de nuage » —, avec l'ancre de la figure.
+ */
+function FigureUneLigne({ id, titre, meta, children }: { id: string; titre: string; meta: string; children: ReactNode }) {
+  return (
+    <section id={id} className="card min-w-0 px-4 py-3" data-testid="figure" data-etat="vide">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">{titre}</h2>
+        <div className="min-w-0 sm:ml-auto">{children}</div>
+      </div>
+      <p className="sr-only" data-testid="figure-meta">
+        {meta}
+      </p>
+    </section>
+  );
+}
+
+/**
+ * Une note d'une ligne en pastille (« Écarts non affichés ») : la raison au survol et
+ * pour les lecteurs d'écran. Même allure que le bandeau de `RangeeKpi`.
+ */
+function PastilleNote({ testId, libelle, texte }: { testId: string; libelle: string; texte: string }) {
+  return (
+    <p
+      role="note"
+      data-testid={testId}
+      title={texte}
+      className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-panel2 px-2.5 py-0.5 text-[11px] text-ink-soft"
+    >
+      <span aria-hidden className="text-ink-faint">
+        ⊘
+      </span>
+      <span className="font-medium text-ink">{libelle}</span>
+      <span className="sr-only"> — {texte}</span>
+    </p>
   );
 }
 
@@ -413,41 +490,70 @@ function TuilesAvis({
  */
 function TuileFrustration({ lu, label, href }: { lu: FrustrationSessionsCommencees; label: string; href: string }) {
   const taux = frustrationParSession(lu, label);
+  // L'état du capteur (base mixte, capteur mobile muet) qualifie le chiffre : il passe
+  // dans la fenêtre de la case, et reste lu à sa place par les lecteurs d'écran — une
+  // ligne sous la case la désalignait de ses voisines (recette du 30/09/2026).
+  const texteEtat =
+    taux.etat?.kind === "non_collecte"
+      ? `Non collecté : ${taux.etat.manque}`
+      : taux.etat?.kind === "partiel"
+        ? `Partiel : ${taux.etat.raison}`
+        : null;
   return (
-    <div className="flex min-w-0 flex-col gap-2" data-testid="tuile-frustration">
+    <div className="grid min-w-0" data-testid="tuile-frustration">
       <KpiTile
         label="Signaux de frustration par session"
+        libelleCase="Frustration par session"
         valeur={taux.valeur}
         raisonNull={taux.raisonNull ?? undefined}
         format="ratio"
         couverture={taux.n > 0 ? { n: taux.n, unite: "sessions commencées", faibleSous: 30 } : undefined}
         // Les mots du détail de session : « clic de rage », « clic sans réaction »
         // (la recette relevait « clics morts » ici, « clic sans réaction » là-bas).
-        methode="Clics de rage et clics sans réaction des sessions commencées sur la plage, divisés par le nombre de ces sessions. Les clics suivis d'une erreur n'y entrent pas."
+        methode={`Clics de rage et clics sans réaction des sessions commencées sur la plage, divisés par le nombre de ces sessions. Les clics suivis d'une erreur n'y entrent pas.${texteEtat ? `\n${texteEtat}.` : ""}`}
+        source="Capteur navigateur (SDK web, extension) · signaux frustration.rage et frustration.dead"
         href={href}
       />
-      {taux.etat && <EtatSurface compact etat={taux.etat} />}
+      {taux.etat && (
+        <div className="sr-only">
+          <EtatSurface compact etat={taux.etat} />
+        </div>
+      )}
     </div>
   );
 }
 
-/** État vide conservé (§ 5.5.2) : le geste d'installation et la règle de silence de 60 jours. */
-function CarteInstallation() {
+/**
+ * Aucun avis (§ 5.5.2) : UNE ligne et un bouton « Installer le module d'avis ». Le
+ * geste d'installation (le script, la règle de silence de 60 jours) s'ouvre dans une
+ * fenêtre — le responsable voyait une grande boîte, un paragraphe et un bloc de code
+ * à la place du tableau de bord (recette du 30/09/2026).
+ */
+function LigneInstallation() {
   return (
-    <div className="card mb-6 p-6 text-sm text-ink-soft" data-testid="carte-installation">
-      <p className="font-medium text-ink">Aucun avis sur la période.</p>
-      <p className="mt-1">
-        La satisfaction ne se calcule donc pas ; la frustration reste mesurée. Pour recueillir l&apos;avis des
-        visiteurs, ajoutez le module d&apos;avis après le script MIP RUM :
-      </p>
-      <pre className="mt-3 overflow-x-auto rounded-lg bg-panel2 p-3 font-mono text-xs text-ink-soft">
-        {`<script src="/mip-rum-feedback.js"></script>`}
-      </pre>
-      <p className="mt-2 text-xs text-ink-soft">
-        Il envoie <code>MIPRum.track(&quot;feedback&quot;, …)</code> — aucune autre configuration. Après un avis envoyé,
-        le module ne se remontre pas avant <strong>60 jours</strong> à ce visiteur sur cette application ; ajustez avec{" "}
-        <code>window.MIPRumFeedback = {"{ cooldownDays: 30 }"}</code>.
-      </p>
+    <div
+      className="card mb-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-xs"
+      data-testid="carte-installation"
+    >
+      <span aria-hidden className="text-sm leading-none text-ink-faint">
+        ⊘
+      </span>
+      <span className="font-medium text-ink">Aucun avis sur la période.</span>
+      <span className="text-ink-soft">Satisfaction non calculée ; la frustration reste mesurée.</span>
+      <BoutonFenetre libelle="Installer le module d'avis →" titre="Installer le module d'avis" className="sm:ml-auto">
+        <p>
+          La satisfaction ne se calcule donc pas ; la frustration reste mesurée. Pour recueillir l&apos;avis des
+          visiteurs, ajoutez le module d&apos;avis après le script MIP RUM :
+        </p>
+        <pre className="mt-3 overflow-x-auto rounded-lg bg-panel2 p-3 font-mono text-xs text-ink">
+          {`<script src="/mip-rum-feedback.js"></script>`}
+        </pre>
+        <p className="mt-3 text-xs">
+          Il envoie <code>MIPRum.track(&quot;feedback&quot;, …)</code> — aucune autre configuration. Après un avis
+          envoyé, le module ne se remontre pas avant <strong>60 jours</strong> à ce visiteur sur cette application ;
+          ajustez avec <code>window.MIPRumFeedback = {"{ cooldownDays: 30 }"}</code>.
+        </p>
+      </BoutonFenetre>
     </div>
   );
 }
@@ -477,6 +583,16 @@ function HeroSatisfaction({
   // Un compte d'avis (additif) : la somme des seaux est le total de la fenêtre.
   let avis = 0;
   for (const pt of points) avis += pt.avis;
+  if (tendance.ok && avis === 0) {
+    // Sans avis, la figure tient sur UNE ligne, comme toute figure vide (`Figure`) :
+    // son titre, et « Données insuffisantes » à sa droite. L'ancre reste celle du
+    // graphique, que les liens de l'écran visent.
+    return (
+      <FigureUneLigne id="satisfaction-dans-le-temps" titre="Satisfaction dans le temps" meta={`0 avis notés · ${label} · tranches de ${bucketLabel}`}>
+        <ExperienceUnavailable />
+      </FigureUneLigne>
+    );
+  }
   return (
     <Figure
       titre="Satisfaction dans le temps"
@@ -502,9 +618,7 @@ function HeroSatisfaction({
           : undefined
       }
     >
-      {avis === 0 ? (
-        <ExperienceUnavailable />
-      ) : (
+      {avis === 0 ? null : (
         <div className="space-y-1">
           <ThresholdSeries
             grille={grille}
@@ -562,7 +676,8 @@ function RepartitionNotes({ s, label }: { s: FeedbackStats | null; label: string
             ? { kind: "vide", population: "note d'avis", plage: label }
             : undefined
       }
-      lecture="Les notes 4-5 forment le CSAT de la première tuile, les notes 1-2 la part de détracteurs."
+      // Sans avis, pas de repli « Méthode » sous une ligne vide.
+      lecture={s && s.count > 0 ? "Les notes 4-5 forment le CSAT de la première tuile, les notes 1-2 la part de détracteurs." : undefined}
       alternative={{
         legende: "Répartition des avis notés",
         colonnes: ["Notes", "Avis", "Part"],
@@ -701,7 +816,8 @@ function Verbatims({
       }
     >
       {recents.ok && (
-        <ul className="divide-y divide-line/60" data-testid="verbatims-liste">
+        // 30 avis au plus : la liste défile dans sa carte au lieu d'allonger la page.
+        <ul className="max-h-[22rem] divide-y divide-line/60 overflow-y-auto" data-testid="verbatims-liste">
           {recents.data.map((r) => {
             const ms = new Date(r.ts).getTime();
             return (
