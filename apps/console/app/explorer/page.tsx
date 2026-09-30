@@ -544,7 +544,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
           <EtatSurface
             etat={{
               kind: "partiel",
-              raison: `d’autres combinaisons existent au-delà des ${plan.ok ? plan.value.limit : ""} affichées ; le total porte sur toute la population.`,
+              raison: `d’autres combinaisons existent au-delà des ${plan.ok ? plan.value.limit : ""} affichées. Le total, lui, porte sur toute la population.`,
             }}
             compact
           />
