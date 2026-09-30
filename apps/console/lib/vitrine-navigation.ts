@@ -19,7 +19,7 @@ export const DEPOT_GITHUB = "https://github.com/jt33120/poc-MIP_RUM";
 
 /** Le segment d'URL d'un parcours : des mots lisibles, pas l'identifiant interne. */
 export const SEGMENT_PARCOURS: Record<Parcours, string> = {
-  snippet: "code-de-suivi",
+  snippet: "sdk-javascript",
   extension: "extension",
   serveur: "serveur",
 };

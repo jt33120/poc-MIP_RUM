@@ -25,6 +25,7 @@ import { SecretFourni } from "@/components/secret/SecretUnique";
 import { CadreEtat, EtatSurface } from "@/components/states/EtatSurface";
 import { chargerInstaller } from "@/lib/chargeurs/installer";
 import { chargerEcran } from "@/lib/ecran";
+import { ZIP_EXTENSION, strategieExtension, strategieNommage } from "@/lib/extension-deploiement";
 import type { SearchParams } from "@/lib/filters";
 import { ingestEndpoint, voieRecommandee } from "@/lib/ingest-endpoint";
 import {
@@ -41,6 +42,7 @@ import {
   type SondeInstallation,
 } from "@/lib/installer";
 import { buildInjectionArtifacts, buildSnippet } from "@/lib/onboarding";
+import { promptExtension, promptSdk, promptServeur } from "@/lib/prompts-ia";
 import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
 import { cleDe } from "@/lib/secret-remis";
 
@@ -128,6 +130,25 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
       domaines: domainesExt ?? [],
     }),
   );
+  // « Copier pour mon IA de code » : les mêmes codes que les blocs de la page, avec
+  // les vraies valeurs de l'application, jamais la clé (lib/prompts-ia.ts).
+  const csp = directivesCsp({ sdkUrl, endpoint, appId: app });
+  const codeAppRouter = codeNextAppRouter(sdkUrl, init);
+  const codePagesRouter = codeNextPagesRouter(sdkUrl, init);
+  // Comme la stratégie du parcours : les domaines actifs, à défaut ceux à enregistrer.
+  const actifsExt = (domainesExt ?? []).filter((d) => d.etat === "actif");
+  const hotesExtension = (actifsExt.length ? actifsExt : (domainesExt ?? [])).map((d) => d.domaine);
+  const prompts = {
+    snippet: promptSdk({ app, nom: c.name, origines: c.allowed_origins, snippet, snippetConsent, codeAppRouter, codePagesRouter, csp }),
+    extension: promptExtension({
+      nom: c.name,
+      zip: `${proto}://${host}${ZIP_EXTENSION}`,
+      strategie: strategieExtension(hotesExtension, process.env.EXTENSION_UPDATE_URL ?? null),
+      nommage: strategieNommage(),
+      hotes: hotesExtension,
+    }),
+    serveur: recettes.agents.map((r) => ({ id: r.id, langage: r.titre.replace(/ \(.*\)$/, ""), prompt: promptServeur(r, c.name) })),
+  };
   const contexte = (p: Parcours): ContexteParcours => ({
     app,
     nomSecret: cleDe(app),
@@ -193,11 +214,12 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
                   ctx={contexte("snippet")}
                   snippet={snippet}
                   snippetConsent={snippetConsent}
-                  codeAppRouter={codeNextAppRouter(sdkUrl, init)}
-                  codePagesRouter={codeNextPagesRouter(sdkUrl, init)}
+                  codeAppRouter={codeAppRouter}
+                  codePagesRouter={codePagesRouter}
                   injection={injection}
-                  csp={directivesCsp({ sdkUrl, endpoint, appId: app })}
+                  csp={csp}
                   parLaConsole={parLaConsole}
+                  promptIA={prompts.snippet}
                 />
               ),
               extension: (
@@ -205,9 +227,10 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
                   ctx={contexte("extension")}
                   storeUrl={process.env.CHROME_STORE_URL ?? null}
                   updateUrl={process.env.EXTENSION_UPDATE_URL ?? null}
+                  promptIA={prompts.extension}
                 />
               ),
-              serveur: <ParcoursServeur ctx={contexte("serveur")} recettes={recettes} />,
+              serveur: <ParcoursServeur ctx={contexte("serveur")} recettes={recettes} promptsIA={prompts.serveur} />,
             }}
           />
         </section>

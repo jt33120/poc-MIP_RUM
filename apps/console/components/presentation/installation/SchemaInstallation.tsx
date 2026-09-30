@@ -248,7 +248,7 @@ export function SchemaInstallation() {
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#fbbc64]">Deux façons de le poser</p>
             <ul className="mt-3 grid gap-3">
               <Choix
-                titre="Code de suivi"
+                titre="SDK JavaScript"
                 badge="Recommandé"
                 phrase="Deux balises dans vos pages : chaque visiteur est mesuré, quel que soit son navigateur."
                 href={cheminParcours("snippet")}

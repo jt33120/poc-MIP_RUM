@@ -18,7 +18,7 @@ export type Parcours = (typeof PARCOURS)[number];
 
 /** Libellé court d'un parcours (onglet, carte). */
 export const LIBELLE_PARCOURS: Record<Parcours, string> = {
-  snippet: "Code de suivi",
+  snippet: "SDK JavaScript",
   extension: "Extension navigateur",
   serveur: "Serveur",
 };

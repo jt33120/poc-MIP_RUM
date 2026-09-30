@@ -10,7 +10,7 @@ describe("estCheminPublic", () => {
     expect(estCheminPublic("/presentation")).toBe(true);
     for (const p of [
       "/presentation/installation",
-      "/presentation/installation/code-de-suivi",
+      "/presentation/installation/sdk-javascript",
       "/presentation/installation/extension",
       "/presentation/installation/serveur",
       "/presentation/a-faire",

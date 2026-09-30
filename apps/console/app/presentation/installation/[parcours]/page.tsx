@@ -1,5 +1,5 @@
 // Un parcours d'installation, en documentation publique
-// (/presentation/installation/code-de-suivi | extension | serveur) : les étapes de
+// (/presentation/installation/sdk-javascript | extension | serveur) : les étapes de
 // /installer, sur l'application d'exemple (DocInstallation.tsx).
 import type { Metadata } from "next";
 import { headers } from "next/headers";

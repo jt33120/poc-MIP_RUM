@@ -35,7 +35,7 @@ describe("le schéma d'installation", () => {
   it("fermé au rendu, chaque côté mène à son parcours, et un cadenas se dit aux lecteurs d'écran", () => {
     const html = renderToStaticMarkup(<SchemaInstallation />);
     expect(html.match(/data-ouvert="false"[^>]*data-testid|data-testid="schema-(navigateur|serveur)"[^>]*data-ouvert="false"/g)?.length).toBe(2);
-    for (const s of ["code-de-suivi", "extension", "serveur"]) expect(html).toContain(`href="/presentation/installation/${s}"`);
+    for (const s of ["sdk-javascript", "extension", "serveur"]) expect(html).toContain(`href="/presentation/installation/${s}"`);
     expect(html.split("(pas encore disponible)").length - 1).toBe(
       LANGAGES.filter((l) => !l.ouvert).length + NAVIGATEURS_EXTENSION.filter((n) => !n.ouvert).length,
     );

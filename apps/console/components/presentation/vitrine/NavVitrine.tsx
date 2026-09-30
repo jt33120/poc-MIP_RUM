@@ -21,7 +21,7 @@ import { LIBELLE_PARCOURS, PARCOURS } from "@/lib/installer";
 import { CHEMIN_A_FAIRE, CHEMIN_GRAPHE, CHEMIN_INSTALLATION, DEPOT_GITHUB, cheminParcours } from "@/lib/vitrine-navigation";
 
 const SOUS_TITRE: Record<(typeof PARCOURS)[number], string> = {
-  snippet: "Deux balises dans les pages : tous les visiteurs",
+  snippet: "Une balise script dans vos pages : tous les visiteurs",
   extension: "Sur les postes équipés, sans toucher au site",
   serveur: "L'agent OpenTelemetry officiel, côté serveur",
 };

@@ -186,7 +186,7 @@ test.describe("menu des pages publiques", () => {
     page,
   }) => {
     const parcours = [
-      ["snippet", "code-de-suivi"],
+      ["snippet", "sdk-javascript"],
       ["extension", "extension"],
       ["serveur", "serveur"],
     ] as const;
@@ -825,7 +825,7 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
     const fautes: string[] = [];
     for (const largeur of LARGEURS_PSS8) {
       await page.setViewportSize({ width: largeur, height: 900 });
-      await page.goto(`${consoleUrl}/presentation/installation/code-de-suivi`);
+      await page.goto(`${consoleUrl}/presentation/installation/sdk-javascript`);
       await expect(page.getByTestId("page-parcours-snippet")).toBeVisible();
       for (const f of await debordementsPss8(page)) fautes.push(`${largeur} px, au chargement — ${f}`);
       await page.evaluate(() =>
