@@ -47,6 +47,8 @@ La table des opérations, leurs politiques et les codes d'erreur sont dans **[do
 | `CONSOLE_API_RATE_LIMIT` | non | appels par minute et par principal, par réplique (défaut 600 ; la console rejoue ses écrans toutes les 5 s) |
 | `DEMO_USER_APPS` | non | applications visibles en démo, séparées par des virgules. Vide : **pas de démo** (`POST /v1/auth/demo-sessions` → 404). Le rôle n'est pas réglable : une démo est `viewer` |
 | `DEMO_USER_EMAIL` | non | étiquette de la session de démo dans le journal (défaut `demo@mip-rum.local`) |
+| `INSCRIPTIONS_PAR_JOUR` | non | inscriptions en libre-service admises par 24 h, pour toute la plateforme. `0` (défaut) : **inscription fermée** (`POST /v1/auth/accounts` → 404) |
+| `INSCRIPTION_DEBIT_MAX_MIN` | non | débit de collecte du site d'un compte inscrit, en événements par minute (défaut 120) |
 | `IDENTITY_HASH_SECRET` | requise pour la recherche, l'export et l'effacement par identité métier (secret) | clé HMAC des identités, **la même** que le collector : les commandes RGPD de C10 (`apps/console/lib/commandes/vie-privee.ts`) hachent la saisie avec elle ; absente, le hachage ne rend rien. Lue hors du schéma de démarrage, et pas encore déclarée pour ce service dans `.railway/railway.ts` (26/09/2026) |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (secret), `OIDC_REDIRECT_URI`, `OIDC_TX_KEY` (secret, 32 octets base64url) | non, **tous ou aucun** | le SSO (C1c) ; une configuration partielle refuse le démarrage. Options : `OIDC_SCOPES`, `OIDC_ROLE_CLAIM`, `OIDC_ADMIN_VALUES`, `OIDC_APPS_CLAIM`, `OIDC_ALLOWED_DOMAINS`. Modèle et règles de lien : [docs/SSO.md](../../docs/SSO.md) |
 | `PGPOOL_MAX`, `PORT`, `LOG_LEVEL`, `METRICS_TOKEN`, `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non | voir le kit |
@@ -66,6 +68,7 @@ Côté Vercel (C0b) : `CONSOLE_API_URL` (le domaine généré, en https), `CONSO
 |---|---|
 | `POST /v1/auth/sessions` | connexion par mot de passe : une **ligne** `console_session` et un jeton ES256 qui ne porte que son identifiant. Refus générique `identifiants_refuses` (un compte inconnu coûte le même bcrypt, contre un hachage factice) |
 | `POST /v1/auth/demo-sessions` | session de démonstration : `viewer`, périmètre `DEMO_USER_APPS`, **5 par heure et par IP** ; jamais l'IP au journal |
+| `POST /v1/auth/accounts` | inscription en libre-service : le compte (`viewer` de son seul site : la clé, les origines et les domaines restent à la plateforme) et son site (débit `INSCRIPTION_DEBIT_MAX_MIN`) en une transaction, la session ouverte et la clé d'ingestion rendue une fois ; **3 tentatives par heure et par IP**, `INSCRIPTIONS_PAR_JOUR` par 24 h |
 | `DELETE /v1/auth/sessions/current` | déconnexion : la session est **révoquée** en base, le jeton ne vaut plus rien, tout de suite sur cette réplique, en 30 s sur l'autre |
 | `GET /v1/me` | le principal, relu en base : rôle et périmètre du compte, jamais du jeton |
 | `GET /v1/auth/methods` | les moyens de connexion offerts (SSO, démo) : la console montre ses boutons sans détenir la configuration |

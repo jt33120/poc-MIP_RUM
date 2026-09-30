@@ -10,11 +10,15 @@
 //   · la déconnexion révoque : le même jeton ne vaut plus rien, tout de suite ;
 //   · la démo : fermée → 404 ; ouverte → viewer à périmètre fixe, 5 par heure et
 //     par IP, et jamais l'adresse IP dans le journal ;
-//   · chaque écriture laisse sa ligne d'audit, avec le `request_id` de l'appel.
+//   · chaque écriture laisse sa ligne d'audit, avec le `request_id` de l'appel ;
+//   · l'inscription en libre-service (v107), SOUS `mip_identity` quand la base a
+//     les rôles : le compte (LECTEUR de son seul site) et le site (débit plafonné)
+//     ensemble ou rien ; adresse déjà prise → 409 sans rien créer ; plafond du
+//     jour, 4ᵉ tentative d'une même IP — d'un même /64 en IPv6 — → 429 ; fermée → 404.
 //
 //   SQL_TEST_DATABASE_URL=<base jetable> pnpm test:sql
 import { createRequire } from "node:module";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
@@ -44,6 +48,9 @@ const EMAIL = "c1-identite@test.local";
 const INACTIF = "c1-inactif@test.local";
 const MDP = "c1-mot-de-passe-local";
 const DEMO_EMAIL = "c1-demo@test.local";
+/** Les comptes de l'inscription : un préfixe à eux, que `nettoyer()` efface avec leurs sites. */
+const INSCRIT = "c1-inscription";
+const DEBIT_INSCRIT = 90;
 const journal = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
 function migrations(): string[] {
@@ -74,12 +81,14 @@ function migrations(): string[] {
       }
     },
   };
-  /** Deux services : démo fermée, démo ouverte — même base, mêmes clés. */
+  /** Deux services : démo fermée, démo ouverte — même base, mêmes clés. Le premier a
+   *  aussi l'inscription fermée ; `inscrit`, elle ouverte (20 par jour). */
   let ferme: (r: Request) => Promise<Response>;
   let ouvert: (r: Request) => Promise<Response>;
+  let inscrit: (r: Request) => Promise<Response>;
   let n = 0;
 
-  async function service(demo: { email: string; apps: string[] } | null) {
+  async function service(demo: { email: string; apps: string[] } | null, inscription: { parJour: number } | null = null) {
     const paire = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
     const jwk = await crypto.subtle.exportKey("jwk", paire.privateKey);
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [{ kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, d: jwk.d, kid: "session-c1-a", alg: "ES256", use: "sig" }] }), { production: false });
@@ -100,6 +109,7 @@ function migrations(): string[] {
         hachageFactice: bcrypt.hashSync("factice", 4),
         demo,
         oublierSession: (sid) => sessions.oublier(sid),
+        inscription: inscription && { parJour: inscription.parJour, debitMaxMin: DEBIT_INSCRIT, hacherMotDePasse: async (clair) => bcrypt.hashSync(clair, 4) },
       },
       ecrans: ECRANS_FACTICES,
       commandes: COMMANDES_FACTICES,
@@ -118,10 +128,16 @@ function migrations(): string[] {
     api(appel("/v1/auth/sessions", { methode: "POST", corps: { email, mot_de_passe: mdp }, ip }));
 
   async function nettoyer() {
-    await pool.query("delete from console_session where demo_email = $1 or user_id in (select id from console_user where email = any($2))", [DEMO_EMAIL, [EMAIL, INACTIF]]);
-    await pool.query("delete from console_user where email = any($1)", [[EMAIL, INACTIF]]);
+    await pool.query("delete from console_session where demo_email = $1 or user_id in (select id from console_user where email = any($2) or email like $3)", [DEMO_EMAIL, [EMAIL, INACTIF], `${INSCRIT}%`]);
+    await pool.query("delete from console_user where email = any($1) or email like $2", [[EMAIL, INACTIF], `${INSCRIT}%`]);
+    await pool.query("delete from app_registry where created_by like $1", [`${INSCRIT}%`]);
     await pool.query("delete from auth_throttle");
   }
+  /** Une adresse d'inscription neuve, propre à ce passage. */
+  const adresse = (nom: string) => `${INSCRIT}-${nom}-${randomBytes(3).toString("hex")}@test.local`;
+  const inscrire = (api: typeof ferme, corps: Record<string, string>, ip: string) =>
+    api(appel("/v1/auth/accounts", { methode: "POST", corps: { mot_de_passe: "c1-inscription-mdp", nom_site: "Ma Boutique", url_site: "https://ma-boutique.test/panier", ...corps }, ip }));
+  const compter = async (sql: string, p: unknown[]) => (await pool.query<{ n: number }>(sql, p)).rows[0].n;
 
   beforeAll(async () => {
     for (const f of migrations()) await pool.query(readFileSync(f, "utf8"));
@@ -132,6 +148,7 @@ function migrations(): string[] {
     );
     ferme = await service(null);
     ouvert = await service({ email: DEMO_EMAIL, apps: ["app-demo-c1"] });
+    inscrit = await service(null, { parJour: 20 });
   });
 
   afterAll(async () => {
@@ -234,5 +251,106 @@ function migrations(): string[] {
     expect(rows[0].detail).not.toContain(ip);
     // Une démo peut fermer SA session — la seule écriture qui lui soit permise.
     expect((await ouvert(appel("/v1/auth/sessions/current", { methode: "DELETE", jeton: data.jeton }))).status).toBe(200);
+  });
+
+  it("inscription : le compte, lecteur de SON site, et le site plafonné, en une fois ; session ouverte, audit", async () => {
+    await pool.query("delete from auth_throttle");
+    const email = adresse("ok");
+    const res = await inscrire(inscrit, { email: `  ${email.toUpperCase()} ` }, "198.51.100.20");
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(data.app).toMatch(/^ma-boutique-[0-9a-f]{4}$/);
+    expect(data.cle).toMatch(/^mip_[0-9a-f]{32}$/);
+    expect(data.session.connexion_precedente).toBeNull();
+
+    // Le compte : LECTEUR de ce seul site — ni la portée plateforme, ni l'administration.
+    const compte = (await pool.query("select role, apps, active, inscrit_le, password_hash from console_user where email = $1", [email])).rows[0];
+    expect(compte).toMatchObject({ role: "viewer", apps: [data.app], active: true });
+    expect(compte.inscrit_le).toBeInstanceOf(Date);
+    expect(await bcrypt.compare("c1-inscription-mdp", compte.password_hash)).toBe(true);
+
+    // Le site : l'origine seule, la clé en empreinte, le débit plafonné, qui l'a créé.
+    const site = (await pool.query("select name, api_key_hash, active, allowed_origins, created_by, debit_max_min from app_registry where app_id = $1", [data.app])).rows[0];
+    expect(site).toEqual({
+      name: "Ma Boutique",
+      api_key_hash: createHash("sha256").update(data.cle).digest("hex"),
+      active: true,
+      allowed_origins: ["https://ma-boutique.test"],
+      created_by: email,
+      debit_max_min: DEBIT_INSCRIT,
+    });
+
+    // La session est celle du compte, relue en base.
+    const moi = await inscrit(appel("/v1/me", { jeton: data.session.jeton }));
+    expect((await moi.json()).data).toEqual({ email, role: "viewer", apps: [data.app], demo: false });
+
+    // L'audit : l'action, le site, l'appel — jamais l'adresse IP.
+    const audit = (await pool.query("select detail, app_id, actor_kind, request_id from audit_log where action = 'auth.signup' and user_email = $1", [email])).rows;
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ app_id: data.app, actor_kind: "user" });
+    expect(JSON.parse(audit[0].detail)).toEqual({ origine: "https://ma-boutique.test" });
+    expect(audit[0].request_id).toMatch(/^c1-requete-/);
+    expect(audit[0].detail).not.toContain("198.51.100.20");
+    // La tentative est comptée, sous une empreinte.
+    expect((await pool.query("select key from auth_throttle")).rows.map((r) => r.key.split(":")[0])).toEqual(["inscription_ip"]);
+  });
+
+  it("inscription : une adresse déjà inscrite → 409, et rien n'est créé", async () => {
+    await pool.query("delete from auth_throttle");
+    const sites = () => compter("select count(*)::int as n from app_registry where created_by = $1", [EMAIL]);
+    const avant = await sites();
+    const res = await inscrire(inscrit, { email: EMAIL }, "198.51.100.21");
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("conflit");
+    expect(await sites()).toBe(avant);
+    // Le compte existant n'est pas touché : ni son rôle, ni son périmètre.
+    expect((await pool.query("select role, apps, inscrit_le from console_user where email = $1", [EMAIL])).rows[0]).toEqual({ role: "admin", apps: ["app-c1"], inscrit_le: null });
+  });
+
+  it("inscription : la 4ᵉ tentative d'une même IP dans l'heure → 429, même pour une adresse neuve", async () => {
+    await pool.query("delete from auth_throttle");
+    const ip = "198.51.100.22";
+    // Trois refus comptent comme trois tentatives : sonder les adresses inscrites n'est pas gratuit.
+    for (let i = 0; i < 3; i++) expect((await inscrire(inscrit, { email: EMAIL }, ip)).status).toBe(409);
+    const email = adresse("quatrieme");
+    const bloque = await inscrire(inscrit, { email }, ip);
+    expect(bloque.status).toBe(429);
+    expect((await bloque.json()).error.code).toBe("debit_depasse");
+    expect(await compter("select count(*)::int as n from console_user where email = $1", [email])).toBe(0);
+    // Ailleurs, l'inscription passe.
+    expect((await inscrire(inscrit, { email }, "198.51.100.23")).status).toBe(200);
+  });
+
+  it("inscription : en IPv6, le /64 compte comme UNE adresse — changer les 64 derniers bits ne rouvre rien", async () => {
+    await pool.query("delete from auth_throttle");
+    for (const ip of ["2001:db8:c1:1::1", "2001:db8:c1:1::2", "2001:db8:c1:1:ffff:ffff:ffff:ffff"])
+      expect((await inscrire(inscrit, { email: EMAIL }, ip)).status, ip).toBe(409);
+    const email = adresse("ipv6");
+    const bloque = await inscrire(inscrit, { email }, "2001:db8:c1:1:abcd::9");
+    expect(bloque.status).toBe(429);
+    // Le /64 voisin est un autre abonné.
+    expect((await inscrire(inscrit, { email }, "2001:db8:c1:2::1")).status).toBe(200);
+  });
+
+  it("inscription : le plafond du jour, compté sur `inscrit_le`, pour toute la plateforme → 429", async () => {
+    await pool.query("delete from auth_throttle");
+    const dejaInscrits = await compter("select count(*)::int as n from console_user where inscrit_le > now() - interval '24 hours'", []);
+    expect(dejaInscrits).toBeGreaterThan(0);
+    const plein = await service(null, { parJour: dejaInscrits });
+    const email = adresse("plafond");
+    const res = await inscrire(plein, { email }, "198.51.100.24");
+    expect(res.status).toBe(429);
+    expect((await res.json()).error.code).toBe("debit_depasse");
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(await compter("select count(*)::int as n from console_user where email = $1", [email])).toBe(0);
+    expect(await compter("select count(*)::int as n from app_registry where created_by = $1", [email])).toBe(0);
+  });
+
+  it("inscription fermée : 404, le même qu'un chemin inconnu, et `methods` la dit fermée", async () => {
+    const res = await inscrire(ferme, { email: adresse("fermee") }, "198.51.100.25");
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("route_inconnue");
+    expect((await (await ferme(appel("/v1/auth/methods"))).json()).data.inscription).toBe(false);
+    expect((await (await inscrit(appel("/v1/auth/methods"))).json()).data.inscription).toBe(true);
   });
 });

@@ -81,6 +81,9 @@ export default defineConfig({
         CONSOLE_API_RATE_LIMIT: "0",
         // La bascule : il sert désormais chaque écran de l'E2E — le pool de la console (10).
         PGPOOL_MAX: "10",
+        // L'inscription en libre-service, ouverte pour `inscription.spec.ts` : le
+        // spec efface ses comptes, le plafond du jour ne se remplit pas d'un passage à l'autre.
+        INSCRIPTIONS_PAR_JOUR: "50",
       },
     },
     {

@@ -320,6 +320,12 @@ export default defineRailway((ctx) => {
       // `POST /v1/auth/demo-sessions`). Les applications que la vitrine montre
       // (relevé du 23/09 sur Vercel) : pas un secret, un périmètre. Vide : fermée.
       DEMO_USER_APPS: "mip-rum-console,insight-performance",
+      // L'INSCRIPTION EN LIBRE-SERVICE (30/09/2026, migration-v107) : ouverte, mais
+      // 20 comptes par 24 h pour toute la plateforme — de quoi accueillir la vitrine
+      // sans qu'un robot puisse remplir la base (3 tentatives par heure et par IP en
+      // plus, dans le service). 0 la ferme (404). Le débit de collecte de chaque site
+      // créé reste au défaut du service (INSCRIPTION_DEBIT_MAX_MIN, 120/min).
+      INSCRIPTIONS_PAR_JOUR: "20",
       PGPOOL_MAX: "6",
       NODE_ENV: "production",
       RAILWAY_DEPLOYMENT_DRAINING_SECONDS: "15",

@@ -112,10 +112,32 @@ export async function middleware(req: NextRequest) {
     // /presentation = vitrine ; /extension-privacy = politique de confidentialité
     // PUBLIQUE de l'extension (URL exigée par le Chrome Web Store) ; /legal/* =
     // documents légaux publics (CGU, CGV, confidentialité).
-    if (estCheminPublic(p)) return NextResponse.next({ request: { headers: avecIdentifiantDeRequete(req) } });
+    if (estCheminPublic(p)) {
+      // Le chemin, pour le layout, même sans session : une action qui OUVRE une
+      // session (l'inscription) re-rend le layout dans sa réponse, cookie neuf
+      // compris. Sans le chemin, il y mettrait la coquille de la console, et le
+      // formulaire remonté perdrait la clé d'ingestion qu'il venait de recevoir.
+      const h = avecIdentifiantDeRequete(req);
+      h.set("x-pathname", p);
+      return NextResponse.next({ request: { headers: h } });
+    }
     if (p === "/") return NextResponse.redirect(new URL("/presentation", req.url), 302);
     return NextResponse.redirect(new URL("/login", req.url), 302);
   }
+
+  // L'INSCRIPTION EN LIBRE-SERVICE (30/09/2026). Un compte connecté qui la demande
+  // est renvoyé à la console — ICI, et pas dans la page : l'action d'inscription pose
+  // le cookie de session, et Next re-rend alors la page DANS la réponse de l'action ;
+  // une page qui redirigerait un compte connecté jetterait son formulaire, et avec lui
+  // la clé d'ingestion rendue une seule fois. Le middleware, lui, ne voit que la
+  // requête d'avant le cookie.
+  //
+  // Une session de DÉMO, elle, peut s'inscrire : la démo est ouverte à l'internet
+  // entier, comme l'inscription, et l'action n'écrit rien en son nom (son appel à
+  // console-api est anonyme, et son cookie remplace celui de la démo). La borne
+  // « lecture seule » ci-dessous l'excepte donc, pour ce seul chemin.
+  const inscription = req.nextUrl.pathname === "/inscription";
+  if (inscription && !user.demo && req.method === "GET") return NextResponse.redirect(new URL("/", req.url), 302);
 
   // Session démo (ouverte par /demo sans mot de passe, accessible à l'internet
   // entier) : LECTURE SEULE. On refuse toute requête qui n'est pas une lecture,
@@ -123,20 +145,23 @@ export async function middleware(req: NextRequest) {
   // en un seul point, plutôt que répétée dans chaque action : une action ajoutée
   // demain est couverte sans que personne ait à y penser.
   //
-  // Deux exceptions, et deux seulement, parce qu'elles n'écrivent qu'un cookie
-  // et qu'un visiteur bloqué dessus n'a plus de démo du tout :
+  // Deux exceptions parce qu'elles n'écrivent qu'un cookie et qu'un visiteur
+  // bloqué dessus n'a plus de démo du tout, et une troisième parce qu'elle en sort :
   //   /logout — sortir de la démo ;
   //   /select — choisir le projet courant. Chaque carte du sélecteur est un
   //     formulaire (POST), et un compte démo scopé sur PLUSIEURS apps atterrit
   //     précisément là : sans cette exception il ne pourrait entrer dans aucune.
   //     L'action vérifie déjà que le projet demandé est dans le scope de
-  //     l'utilisateur (select/actions.ts, garde anti-forgery).
+  //     l'utilisateur (select/actions.ts, garde anti-forgery) ;
+  //   /inscription — créer son propre compte (voir plus haut) : rien n'y est écrit
+  //     au nom de la démo, que l'internet entier ne puisse faire sans elle.
   if (
     user.demo &&
     req.method !== "GET" &&
     req.method !== "HEAD" &&
     req.nextUrl.pathname !== "/logout" &&
-    req.nextUrl.pathname !== "/select"
+    req.nextUrl.pathname !== "/select" &&
+    !inscription
   ) {
     return new NextResponse("Compte de démonstration : lecture seule.", { status: 403 });
   }

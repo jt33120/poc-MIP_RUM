@@ -32,6 +32,15 @@ const APRES_V93: Record<string, { version: number; privileges: string[] }> = {
   vital_horaire: { version: 104, privileges: ["SELECT"] },
 };
 const sansApresV93 = <T>(o: Record<string, T>) => Object.fromEntries(Object.entries(o).filter(([t]) => !(t in APRES_V93)));
+/**
+ * Les privilèges par colonnes accordés APRÈS v93, par rôle et par table : la
+ * migration qui les accorde. Retirés de la comparaison avec v93, vérifiés dans la leur.
+ */
+const COLONNES_APRES_V93: Record<string, Record<string, number>> = {
+  mip_identity: { app_registry: 107 },
+};
+const colonnesDeV93 = (spec: Spec) =>
+  Object.fromEntries(Object.entries(spec.colonnes).filter(([t]) => !(t in (COLONNES_APRES_V93[spec.nom] ?? {}))));
 
 type Spec = { nom: string; tables: Record<string, string[]>; colonnes: Record<string, Record<string, string[]>>; fonctions: string[]; reglages: Record<string, string>; limiteConnexions: number };
 
@@ -55,7 +64,7 @@ describe("C13 — migration-v93 ↔ packages/db/roles/console-api.mjs", () => {
         (accordes[table] ??= {})[priv.toUpperCase()] = trie(liste(cols));
       }
       expect(accordes).toEqual(
-        Object.fromEntries(Object.entries(spec.colonnes).map(([t, parPriv]) => [t, Object.fromEntries(Object.entries(parPriv).map(([p, c]) => [p, trie(c)]))])),
+        Object.fromEntries(Object.entries(colonnesDeV93(spec)).map(([t, parPriv]) => [t, Object.fromEntries(Object.entries(parPriv).map(([p, c]) => [p, trie(c)]))])),
       );
     });
 
@@ -67,6 +76,21 @@ describe("C13 — migration-v93 ↔ packages/db/roles/console-api.mjs", () => {
       expect(SQL).toContain(`alter role ${spec.nom} connection limit ${spec.limiteConnexions};`);
     });
   }
+
+  it("des colonnes accordées après v93 le sont par leur migration, avec une policy, et figurent dans la liste", () => {
+    for (const [role, tables] of Object.entries(COLONNES_APRES_V93)) {
+      const spec = (ROLES as Spec[]).find((r) => r.nom === role)!;
+      for (const [table, version] of Object.entries(tables)) {
+        const sql = readFileSync(join(SQL_DIR, `migration-v${version}.sql`), "utf8");
+        for (const [priv, cols] of Object.entries(spec.colonnes[table])) {
+          const m = new RegExp(`grant ${priv.toLowerCase()} \\(([^)]+)\\) on ${table} to ${role};`).exec(sql);
+          expect(m, `${role}.${table} ${priv}`).not.toBeNull();
+          expect(trie(liste(m![1]))).toEqual(trie(cols));
+        }
+        expect(sql).toMatch(new RegExp(`create policy \\w+ on ${table} as permissive for insert to ${role}\\b`));
+      }
+    }
+  });
 
   it("une policy est prévue pour chaque table accordée de chaque rôle, et aucune autre", () => {
     const [consoleRls, identiteRls] = [...SQL.matchAll(/c\.relname in \(([\s\S]+?)\)\s+loop/g)].map((m) => trie(liste(m[1])));

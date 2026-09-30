@@ -199,8 +199,8 @@ async function fauxIdp(opts: { emetteurAnnonce?: string } = {}) {
     await pool.end();
   });
 
-  it("les moyens de connexion le disent : SSO offert, démo fermée", async () => {
-    expect((await (await appel(api, "/v1/auth/methods")).json()).data).toEqual({ mot_de_passe: true, sso: true, demo: false });
+  it("les moyens de connexion le disent : SSO offert, démo et inscription fermées", async () => {
+    expect((await (await appel(api, "/v1/auth/methods")).json()).data).toEqual({ mot_de_passe: true, sso: true, demo: false, inscription: false });
   });
 
   it("le début : l'adresse de l'IdP avec PKCE (S256), et une transaction SCELLÉE qui ne se lit pas", async () => {

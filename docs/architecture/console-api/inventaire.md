@@ -6,16 +6,16 @@
 
 | | Nombre | Atteignent la base |
 |---|---|---|
-| Écrans (`page.tsx`) | 56 | **47** |
-| Fichiers d'actions serveur (`"use server"`) | 19 (55 actions) | **18** |
+| Écrans (`page.tsx`) | 57 | **47** |
+| Fichiers d'actions serveur (`"use server"`) | 20 (56 actions) | **18** |
 | Actions déclarées dans un écran | 0 | — |
-| Routes (`route.ts`) | 42 | **37** |
+| Routes (`route.ts`) | 45 | **37** |
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
-| Modules `lib/queries*.ts` | 47 (208 fonctions exportées) | — |
+| Modules `lib/queries*.ts` | 48 (210 fonctions exportées) | — |
 | Sections `lire()` (appels) | 300 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 5 / 0 | — |
-| Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 51 | — |
+| Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 52 | — |
 | Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 45 | **45** / 47 |
 | Fichiers d'actions passés par une commande (`lib/commandes/`, C6 → C9) | 15 (51 commandes) | **15** / 18 |
 
@@ -59,6 +59,7 @@
 | `/forecast` | C4 | **oui** | forecast | collecte, deploys, explorer, grid | 3 | — | oui |
 | `/forms` | C5 | **oui** | forms | collecte, deploys, explorer, form-analytics, mobile, sessions, tracing | 3 | — | oui |
 | `/goals` | C5 | **oui** | goals | queries, accounts, alerting, collecte, dashboards, deploys, dsar, errors, events, explorer, extension-installs, extension-scope, frustration, goals, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, tracing, uptime, v2 | 4 | — | oui |
+| `/inscription` | C1–C2 identité, sélection | non | — | — | — | — | oui |
 | `/installer` | C5 | **oui** | installer | collecte, customers, deploys, explorer, extension-scope | 3 | — | non |
 | `/legal/cgu` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/cgv` | statique ou vitrine | non | — | — | — | — | oui |
@@ -105,6 +106,7 @@
 | `app/errors/issues/actions.ts` | muterIssue | **oui** | — | oui |
 | `app/explorer/actions.ts` | saveViewAction, renameViewAction, deleteViewAction | **oui** | creerVue, modifierVue, supprimerVue | par règle |
 | `app/goals/actions.ts` | createGoalAction, toggleGoalAction, deleteGoalAction | **oui** | activerObjectif, creerObjectif, supprimerObjectif | par règle |
+| `app/inscription/actions.ts` | inscrireAction | non | — | oui |
 | `app/login/actions.ts` | loginAction | **oui** | — | oui |
 | `app/mobile/actions.ts` | validerCapaciteAction | **oui** | validerCapaciteMobile | par règle |
 | `app/select/actions.ts` | selectProjectAction | **oui** | — | oui |
@@ -135,7 +137,9 @@
 | `/api/v1/apps` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/correlation` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/deploys` | POST | jeton ou session | **oui** | collector, jetons de CI (C11) |
+| `/api/v1/detections` | GET, OPTIONS | — | non | api (P4, relais #292) |
 | `/api/v1/docs` | GET | — | non | api (P4, relais #292) |
+| `/api/v1/errors/[fingerprint]/overrepresentation` | GET, OPTIONS | — | non | api (P4, relais #292) |
 | `/api/v1/errors/[fingerprint]` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/errors` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/events` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
@@ -155,6 +159,7 @@
 | `/api/v1/sessions/[id]` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/sessions` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/tracing` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
+| `/api/v1/trends` | GET, OPTIONS | — | non | api (P4, relais #292) |
 | `/api/v1/vitals` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/demo` | GET | émet la session | **oui** | console-api (C1 identité) |
 | `/logout` | GET, POST | session | **oui** | console-api (C1 identité) |
@@ -204,7 +209,7 @@
 | `lib/queries-frustration.ts` | 5 | 19 |
 | `lib/queries-funnel.ts` | 2 | 1 |
 | `lib/queries-goals.ts` | 3 | 1 |
-| `lib/queries-grid.ts` | 3 | 20 |
+| `lib/queries-grid.ts` | 4 | 20 |
 | `lib/queries-health.ts` | 1 | 10 |
 | `lib/queries-heatmap.ts` | 1 | 1 |
 | `lib/queries-histogramme.ts` | 1 | 0 |
@@ -222,6 +227,7 @@
 | `lib/queries-sourcemap-tokens.ts` | 3 | 22 |
 | `lib/queries-sourcemap.ts` | 3 | 10 |
 | `lib/queries-summary.ts` | 1 | 0 |
+| `lib/queries-surrepresentation.ts` | 1 | 0 |
 | `lib/queries-tracing.ts` | 8 | 39 |
 | `lib/queries-uptime.ts` | 4 | 18 |
 | `lib/queries-usage.ts` | 1 | 10 |

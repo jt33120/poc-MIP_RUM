@@ -30,9 +30,11 @@
  *                       compte. Chemin EXACT lui aussi
  *   /presentation/archive  la vitrine d'avant la refonte du 30/09/2026, gardée
  *                       lisible le temps que son texte trouve sa place. Chemin EXACT
- *   /inscription        l'entrée « S'inscrire » de la vitrine : forcément avant tout compte
  *   /extension-privacy  politique de confidentialité de l'extension : URL PUBLIQUE
  *                       exigée par le Chrome Web Store, donc jamais derrière un login
+ *   /inscription        l'inscription en libre-service (30/09/2026) : elle s'adresse
+ *                       par définition à qui n'a pas encore de compte. Chemin EXACT :
+ *                       une page rangée dessous resterait privée
  *   /legal/*            CGU, CGV, confidentialité — des documents
  *                       opposables, qui doivent être lisibles par quiconque, y
  *                       compris par un utilisateur connecté qui n'a pas encore

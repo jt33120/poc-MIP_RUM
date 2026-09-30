@@ -234,6 +234,9 @@ export const SUBPROCESSORS: SousTraitant[] = [
   // une empreinte HMAC dans les compteurs de débit, effacée après 24 h
   // d'inactivité, migration-v90). Même donnée, même base : ce qui change est
   // l'hébergeur qui la TRAITE — les comptes de la console compris.
+  // L'INSCRIPTION EN LIBRE-SERVICE (30/09/2026, migration-v107) ne sort vers aucun
+  // tiers : pas d'e-mail de confirmation. Elle ajoute un compteur à la même table
+  // (tentatives d'inscription par adresse, en empreinte) : la note le nomme.
   // COLLECTE DIRECTE (P6b.G) : les mesures de la console ELLE-MÊME (28/09/2026)
   // et celles des sites des clients dont le code de suivi vise le collector
   // (30/09/2026) peuvent arriver du navigateur au collector sans passer par
@@ -259,8 +262,9 @@ export const SUBPROCESSORS: SousTraitant[] = [
       "sans la conserver. L'API de " +
       "lecture et le serveur MCP servent des agrégats aux machines porteuses d'un jeton, sans droit d'écriture. Le " +
       "backend de la console traite les comptes, les sessions, les écrans, les écritures et les demandes RGPD, pour le " +
-      "seul serveur de la console ; l'adresse IP d'un utilisateur de la console n'y est gardée que sous forme " +
-      "d'empreinte, dans les compteurs de tentatives de connexion, effacée après 24 h d'inactivité.",
+      "seul serveur de la console ; l'adresse IP d'un utilisateur de la console, ou d'un visiteur qui s'inscrit, n'y " +
+      "est gardée que sous forme d'empreinte, dans les compteurs de tentatives de connexion et d'inscription, effacée " +
+      "après 24 h d'inactivité.",
   },
   // RESEND (P5), ajouté dans la MÊME modification que la clé posée sur le service
   // `notifier` : c'est lui, sur Railway, qui appelle Resend — ni la console, ni la

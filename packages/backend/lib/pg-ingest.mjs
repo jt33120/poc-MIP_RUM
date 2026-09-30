@@ -1030,8 +1030,12 @@ export function createPgAuth(pool, opts = {}) {
         // réveillerait la base (payée à l'usage) à chaque beacon. Une ligne du
         // registre n'a que deux états, `active` vrai ou faux ; seule la vraie
         // autorise (c'est aussi ce que sert `resolve`, `extension-parc.mjs`).
+        //
+        // `debit_max_min` (v107) : le débit propre d'une application, celui des
+        // sites créés par l'inscription en libre-service ; même lecture tolérante.
         `select app_id, api_key_hash, active, allowed_origins,
                 (to_jsonb(app_registry.*) ->> 'ingestion_suspended_at') as ingestion_suspended_at,
+                (to_jsonb(app_registry.*) ->> 'debit_max_min')::int as debit_max_min,
                 array(select lower(s.domain) from extension_scope s
                        where s.app_id = app_registry.app_id and s.active) as extension_domains
            from app_registry`,
@@ -1139,22 +1143,34 @@ export function createPgAuth(pool, opts = {}) {
    * Refuser un peu trop pendant un incident est réparable ; accepter tout ne
    * l'est pas.
    */
+  /**
+   * Le plafond d'une application : celui de la plateforme, ou le sien s'il est plus
+   * bas (`debit_max_min`, v107 — les sites de l'inscription en libre-service). Lu
+   * dans le registre en cache, déjà chargé par `checkApiKey` : pas de requête de plus.
+   */
+  function limiteDe(appId) {
+    const propre = Number(appRegistry.get(appId)?.debit_max_min);
+    return propre > 0 ? Math.min(rateLimitPerMin, propre) : rateLimitPerMin;
+  }
+
   async function rateLimitedDurable(appId) {
+    const limite = limiteDe(appId);
     const local = compterLocal(appId);
-    if (local > rateLimitPerMin) return true;
+    if (local > limite) return true;
     try {
       const { rows } = await pool.query("select rate_check($1, $2) as ok", [
         appId,
-        rateLimitPerMin,
+        limite,
       ]);
       return rows[0].ok === false;
     } catch (err) {
-      const refuse = local > plafondRepli;
+      const repli = limite < rateLimitPerMin ? Math.max(1, Math.ceil(limite * (opts.fractionRepli ?? 0.25))) : plafondRepli;
+      const refuse = local > repli;
       log.warn?.("rate_check sql failed (repli mémoire, fermé)", {
         err: String(err),
         app_id: appId,
         coups_locaux: local,
-        plafond_repli: plafondRepli,
+        plafond_repli: repli,
         refuse,
       });
       return refuse;

@@ -87,6 +87,24 @@ const config = defineConfig(
       description: "Applications visibles en démo, séparées par des virgules. Vide : pas de démo.",
     },
     DEMO_USER_EMAIL: { type: "string", default: "demo@mip-rum.local", description: "Étiquette de la session de démo dans le journal d'audit." },
+    // L'INSCRIPTION EN LIBRE-SERVICE (30/09/2026). Fermée par défaut, comme la démo :
+    // à 0, `POST /v1/auth/accounts` répond 404. Ouverte, elle est plafonnée — par
+    // jour ici, par IP (3 par heure, `debit-auth.ts`), et chaque site créé collecte
+    // sous INSCRIPTION_DEBIT_MAX_MIN.
+    INSCRIPTIONS_PAR_JOUR: {
+      type: "int",
+      default: 0,
+      min: 0,
+      max: 1000,
+      description: "Inscriptions en libre-service admises par 24 h, pour toute la plateforme. 0 : inscription fermée.",
+    },
+    INSCRIPTION_DEBIT_MAX_MIN: {
+      type: "int",
+      default: 120,
+      min: 1,
+      max: 100_000,
+      description: "Débit de collecte du site d'un compte inscrit, en événements par minute (celui de la plateforme s'applique au-delà).",
+    },
     // C1c — LE SSO (OIDC). Tout ou rien : l'émetteur, le client, l'adresse de
     // retour (la route de la console) et la clé de transaction ensemble, ou aucun.
     OIDC_ISSUER: { type: "string", description: "Émetteur OIDC, ÉPINGLÉ : vérifié dans la découverte et dans chaque ID token." },
@@ -221,6 +239,15 @@ const { table, contrat } = await creerTable({
     demo: demoApps.length ? { email: config.DEMO_USER_EMAIL.trim().toLowerCase(), apps: demoApps } : null,
     oublierSession: (sid) => sessions.oublier(sid),
     oidc,
+    inscription:
+      config.INSCRIPTIONS_PAR_JOUR > 0
+        ? {
+            parJour: config.INSCRIPTIONS_PAR_JOUR,
+            debitMaxMin: config.INSCRIPTION_DEBIT_MAX_MIN,
+            // Coût 10, celui de tous les comptes de la console.
+            hacherMotDePasse: (clair) => bcrypt.hash(clair, 10),
+          }
+        : null,
   },
   ecrans,
   commandes,
@@ -262,5 +289,6 @@ log.info("console-api démarré", {
   cles: trousseau.toutes.length,
   secrets_client: config.CONSOLE_API_CLIENT_SECRETS.length,
   demo: demoApps.length ? demoApps.length : "fermée",
+  inscription: config.INSCRIPTIONS_PAR_JOUR > 0 ? `${config.INSCRIPTIONS_PAR_JOUR} par jour` : "fermée",
   sso: oidc ? oidc.config.issuer : "non configuré",
 });

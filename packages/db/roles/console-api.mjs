@@ -168,7 +168,16 @@ export const MIP_IDENTITY = Object.freeze({
     auth_throttle: TOUT,
     audit_log: ["INSERT"],
   }),
-  colonnes: Object.freeze({}),
+  /**
+   * L'inscription en libre-service (migration-v107) crée le site du compte dans la
+   * transaction du compte : des colonnes nommées, en INSERT seul — ni lecture, ni
+   * modification d'une application —, sous une policy qui n'admet qu'un site plafonné.
+   */
+  colonnes: Object.freeze({
+    app_registry: Object.freeze({
+      INSERT: ["active", "allowed_origins", "api_key_hash", "app_id", "created_by", "debit_max_min", "name"],
+    }),
+  }),
   fonctions: Object.freeze([]),
 });
 

@@ -378,3 +378,40 @@ describe("quand la base ne répond plus, le limiteur REFUSE", () => {
     expect(await auth.rateLimitedDurable("a")).toBe(false);
   });
 });
+
+describe("le débit propre d'une application (v107 : les sites de l'inscription en libre-service)", () => {
+  /** Un registre d'une application (le chargement), puis `rate_check` accepté ; les appels à `rate_check` sont gardés. */
+  function poolAvec(debit: number | null) {
+    const limites: number[] = [];
+    const pool = {
+      query: vi.fn(async (sql: string, params?: unknown[]) => {
+        if (sql.includes("from app_registry")) {
+          return { rows: [{ app_id: "essai-ab12", api_key_hash: null, active: true, allowed_origins: [], ingestion_suspended_at: null, debit_max_min: debit, extension_domains: [] }] };
+        }
+        limites.push(Number(params?.[1]));
+        return { rows: [{ ok: true }] };
+      }),
+    };
+    return { pool, limites };
+  }
+
+  it("plus bas que celui de la plateforme : c'est lui qui s'applique, en mémoire comme en base", async () => {
+    const t = 0;
+    const { pool, limites } = poolAvec(3);
+    const auth = createPgAuth(pool, { rateLimitPerMin: 600, now: () => t, log: {} });
+    await auth.checkApiKey("essai-ab12", null);
+    for (let i = 0; i < 3; i++) expect(await auth.rateLimitedDurable("essai-ab12")).toBe(false);
+    expect(await auth.rateLimitedDurable("essai-ab12")).toBe(true);
+    expect(new Set(limites)).toEqual(new Set([3]));
+  });
+
+  it("absent, ou plus haut que celui de la plateforme : celui de la plateforme", async () => {
+    for (const debit of [null, 10_000]) {
+      const { pool, limites } = poolAvec(debit);
+      const auth = createPgAuth(pool, { rateLimitPerMin: 600, log: {} });
+      await auth.checkApiKey("essai-ab12", null);
+      await auth.rateLimitedDurable("essai-ab12");
+      expect(limites, String(debit)).toEqual([600]);
+    }
+  });
+});

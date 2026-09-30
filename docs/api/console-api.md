@@ -38,6 +38,7 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `apps.rotateKey` | `POST /v1/app/key-rotations` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `app.rotate_key` |
 | `apps.updateOrigins` | `PUT /v1/app/origins` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `app.update_origins` |
 | `apps.create` | `POST /v1/apps` | administrateur de la plateforme | — | **refusée** | exigé | `app.create` |
+| `auth.signup` | `POST /v1/auth/accounts` | aucune session | — | **refusée** | exigé | `auth.signup` |
 | `auth.demo` | `POST /v1/auth/demo-sessions` | aucune session | — | **refusée** | exigé | `auth.demo` |
 | `auth.methods` | `GET /v1/auth/methods` | aucune session | — | lecture | exigé | — |
 | `auth.oidc` | `POST /v1/auth/oidc-sessions` | aucune session | — | **refusée** | exigé | `auth.oidc` |
@@ -91,7 +92,7 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `screens.adminExtensionInstalls` | `GET /v1/screens/admin/extension-installs` | session administrateur | — | lecture | exigé | — |
 | `screens.adminExtensionScopes` | `GET /v1/screens/admin/extension-scopes` | session administrateur | — | lecture | exigé | — |
 | `screens.adminHealth` | `GET /v1/screens/admin/health` | session administrateur | — | lecture | exigé | — |
-| `screens.adminNewSite` | `GET /v1/screens/admin/new-site` | session administrateur | — | lecture | exigé | — |
+| `screens.adminNewSite` | `GET /v1/screens/admin/new-site` | session | — | lecture | exigé | — |
 | `screens.adminPrivacy` | `GET /v1/screens/admin/privacy` | session administrateur | — | lecture | exigé | — |
 | `screens.adminReadTokens` | `GET /v1/screens/admin/read-tokens` | session administrateur | — | lecture | exigé | — |
 | `screens.adminSourcemaps` | `GET /v1/screens/admin/sourcemaps` | session administrateur | — | lecture | exigé | — |

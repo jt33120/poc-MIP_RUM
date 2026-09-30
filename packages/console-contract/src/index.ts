@@ -6,3 +6,4 @@ export * from "./valider";
 export * from "./planifie";
 export * from "./commande";
 export * from "./operations";
+export * from "./inscription";

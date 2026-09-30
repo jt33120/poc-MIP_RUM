@@ -211,6 +211,16 @@ modification ni redistribution.
 - **Ingestion durcie** : 400/500 distincts, limites de taille (413), retries transitoires,
   rate limiting durable, logs structurés avec **redaction des secrets**.
 - **Cloisonnement multi-tenant** : scoping `app_id` + RBAC (renforcement P0 #5 à venir).
+- **Inscription en libre-service** (30/09/2026, migration-v107 ; fermée tant que
+  `INSCRIPTIONS_PAR_JOUR` vaut 0 sur `console-api`) : un visiteur crée un compte **lecteur d'un
+  seul site**, créé avec lui — ni la portée plateforme, ni l'administration du site : la clé, les
+  origines et les domaines de l'extension restent à la plateforme. Plafonnée : 3 tentatives par heure
+  et par adresse IP (une IPv6 comptée par son /64 ; réduite à une empreinte HMAC, compteur
+  `inscription_ip`, comme la connexion), `INSCRIPTIONS_PAR_JOUR` sur 24 h pour toute la
+  plateforme, et une collecte limitée pour le site
+  (`app_registry.debit_max_min`, 120 événements par minute par défaut). Ce qui est gardé : l'adresse
+  e-mail, le haché bcrypt du mot de passe, la **date d'inscription** (`console_user.inscrit_le`), la
+  ligne d'audit `auth.signup` ; aucun tiers nouveau (pas d'e-mail de confirmation).
 
 ## 7. Sous-traitants (registre)
 > Registre tenu dans `apps/console/lib/legal.ts` (`SUBPROCESSORS`) — ce tableau en est le reflet,
@@ -223,7 +233,7 @@ modification ni redistribution.
 |---|---|---|---|
 | Neon | base PostgreSQL managée | UE (Francfort, `aws-eu-central-1`) — société de droit américain | télémétrie, comptes |
 | Vercel Inc. | hébergement de la console ; réception des mesures et relais vers le collecteur | fonctions serveur en UE (Francfort, `fra1`) — société de droit américain | **télémétrie RUM en transit**, relayée telle quelle avec le **code pays seul** : la console ne conserve ni ne transmet l'adresse IP ; **en traitement** (scrub, identité retirée, écriture en base) pour la part non relayée et en repli si le collecteur est indisponible ; pas de stockage RUM |
-| Railway Corp. | collecteur (`collector`) : réception des mesures relayées et de celles que les navigateurs lui envoient directement (collecte directe : la console elle-même, et les sites dont le code de suivi vise le collecteur) ; pseudonymisation, écriture en base ; travaux planifiés, API de lecture v1 (machines, sur jeton), backend de la console (`console-api`), serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | **télémétrie RUM en traitement** : code pays seul pour les mesures relayées ; pour celles reçues directement du navigateur, **adresse IP lue le temps de la requête** pour en déduire le pays, jamais conservée (§3.2) ; scrub, identité hachée (HMAC, secret posé sur Railway seul), écriture en base ; lecture des agrégats (travaux planifiés), réponses de l'API v1 et du MCP aux porteurs de jeton, sans écriture (rôle `mip_api`) ; comptes et sessions de la console, écrans, écritures et demandes RGPD (`console-api`, rôles `mip_identity` et `mip_console`), l'adresse d'un utilisateur de la console réduite à une empreinte HMAC dans les compteurs de débit de connexion, effacée après 24 h d'inactivité ; pas de stockage RUM |
+| Railway Corp. | collecteur (`collector`) : réception des mesures relayées et de celles que les navigateurs lui envoient directement (collecte directe : la console elle-même, et les sites dont le code de suivi vise le collecteur) ; pseudonymisation, écriture en base ; travaux planifiés, API de lecture v1 (machines, sur jeton), backend de la console (`console-api`), serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | **télémétrie RUM en traitement** : code pays seul pour les mesures relayées ; pour celles reçues directement du navigateur, **adresse IP lue le temps de la requête** pour en déduire le pays, jamais conservée (§3.2) ; scrub, identité hachée (HMAC, secret posé sur Railway seul), écriture en base ; lecture des agrégats (travaux planifiés), réponses de l'API v1 et du MCP aux porteurs de jeton, sans écriture (rôle `mip_api`) ; comptes et sessions de la console, écrans, écritures et demandes RGPD (`console-api`, rôles `mip_identity` et `mip_console`), l'adresse d'un utilisateur de la console, ou d'un visiteur qui s'inscrit, réduite à une empreinte HMAC dans les compteurs de débit de connexion et d'inscription, effacée après 24 h d'inactivité ; pas de stockage RUM |
 | Resend, Inc. | envoi des alertes e-mail, appelé par le service `notifier` (Railway) | États-Unis — société de droit américain ; région d'envoi non choisie tant que l'expéditeur est le domaine de test `resend.dev`, `eu-west-1` (Irlande) à retenir en vérifiant le domaine | adresse du destinataire (un opérateur) et texte de l'alerte (application, mesure, valeur) ; aucune donnée d'utilisateur final |
 
 ## 8. Trajectoire de certification (gap analysis)

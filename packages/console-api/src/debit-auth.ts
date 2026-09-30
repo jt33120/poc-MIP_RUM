@@ -13,7 +13,7 @@
 // compteurs à zéro — ils ne vivent qu'une heure.
 import type { Lecteur } from "./contexte";
 
-export type Compteur = "ip_email" | "ip" | "email" | "demo_ip";
+export type Compteur = "ip_email" | "ip" | "email" | "demo_ip" | "inscription_ip";
 
 export interface Regle {
   /** Au-delà de ce nombre d'événements dans la fenêtre, le compteur bloque. */
@@ -30,13 +30,17 @@ export interface Regle {
  *   · IP seule : 30 échecs par 10 min — un poste qui essaie beaucoup de comptes ;
  *   · e-mail : 20 échecs par heure, puis un délai qui double (1 min → 1 h) — un
  *     compte visé depuis beaucoup d'adresses ;
- *   · démo : 5 sessions par heure et par IP (chaque ouverture compte, pas les échecs).
+ *   · démo : 5 sessions par heure et par IP (chaque ouverture compte, pas les échecs) ;
+ *   · inscription : 3 tentatives par heure et par IP (migration-v107) — chaque
+ *     tentative qui atteint la base compte, réussie ou non : elle borne aussi qui
+ *     sonderait les adresses déjà inscrites.
  */
 export const REGLES: Readonly<Record<Compteur, Regle>> = Object.freeze({
   ip_email: { max: 8, fenetreS: 600, blocageS: 600, plafondS: 600 },
   ip: { max: 30, fenetreS: 600, blocageS: 600, plafondS: 600 },
   email: { max: 20, fenetreS: 3600, blocageS: 60, plafondS: 3600 },
   demo_ip: { max: 5, fenetreS: 3600, blocageS: 3600, plafondS: 3600 },
+  inscription_ip: { max: 3, fenetreS: 3600, blocageS: 3600, plafondS: 3600 },
 });
 
 export interface DebitAuth {
@@ -51,6 +55,48 @@ export interface DebitAuth {
 }
 
 const texte = (s: string) => new TextEncoder().encode(s);
+
+/**
+ * L'adresse qui porte un compteur par IP de l'inscription (30/09/2026) : une IPv4
+ * seule ; une IPv6 par son /64, le préfixe qu'un fournisseur attribue à UN abonné.
+ * Sans ce regroupement, un seul poste IPv6 dispose de 2^64 adresses, et chaque
+ * tentative aurait un compteur neuf. Une IPv4 mappée (`::ffff:1.2.3.4`, ou sa forme
+ * hexadécimale) redevient l'IPv4 qu'elle porte : la même personne, le même compteur.
+ * Une forme que la fonction ne sait pas lire est rendue telle quelle — elle a passé
+ * le contrôle de forme du pipeline, et reste une clé, simplement non regroupée.
+ */
+export function adresseDeDebit(ip: string): string {
+  const a = ip.trim().toLowerCase();
+  if (!a.includes(":")) return a;
+  const g = groupesIpv6(a);
+  if (!g) return a;
+  if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) {
+    return [g[6] >> 8, g[6] & 0xff, g[7] >> 8, g[7] & 0xff].join(".");
+  }
+  return `${g.slice(0, 4).map((x) => x.toString(16)).join(":")}::/64`;
+}
+
+/** Les huit groupes de 16 bits d'une IPv6 (forme complète, compressée, ou à IPv4 finale) ; `null` si illisible. */
+function groupesIpv6(a: string): number[] | null {
+  let s = a;
+  const v4 = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+  if (v4) {
+    const o = v4.slice(1).map(Number);
+    if (o.some((x) => x > 255)) return null;
+    s = `${s.slice(0, v4.index)}${((o[0] << 8) | o[1]).toString(16)}:${((o[2] << 8) | o[3]).toString(16)}`;
+  }
+  const moities = s.split("::");
+  if (moities.length > 2) return null;
+  const lire = (m: string) => (m ? m.split(":") : []);
+  const tete = lire(moities[0]);
+  const queue = moities.length === 2 ? lire(moities[1]) : [];
+  const manquants = 8 - tete.length - queue.length;
+  // Sans « :: », huit groupes exactement ; avec, il en remplace au moins un.
+  if (moities.length === 1 ? manquants !== 0 : manquants < 1) return null;
+  const tous = [...tete, ...Array<string>(moities.length === 2 ? manquants : 0).fill("0"), ...queue];
+  if (tous.some((x) => !/^[0-9a-f]{1,4}$/.test(x))) return null;
+  return tous.map((x) => parseInt(x, 16));
+}
 
 export async function creerDebitAuth(secretClient: string): Promise<DebitAuth> {
   const materiau = await crypto.subtle.importKey("raw", texte(secretClient) as BufferSource, "HKDF", false, ["deriveKey"]);

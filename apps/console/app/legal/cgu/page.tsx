@@ -47,9 +47,17 @@ export default function CGU() {
 
       <LegalSection n="4" title="Accès et compte">
         <p>
-          L&apos;accès requiert un compte nominatif. L&apos;Utilisateur est responsable de la confidentialité de ses
-          identifiants et de toute action réalisée depuis son compte. Le service distingue deux rôles
-          (administrateur et lecteur) et journalise les actions sensibles.
+          L&apos;accès requiert un compte nominatif, créé par un administrateur du service ou, lorsque l&apos;Éditeur
+          l&apos;ouvre, par l&apos;inscription en libre-service. L&apos;Utilisateur est responsable de la
+          confidentialité de ses identifiants et de toute action réalisée depuis son compte. Le service distingue deux
+          rôles (administrateur et lecteur) et journalise les actions sensibles.
+        </p>
+        <p>
+          Un compte créé par l&apos;inscription en libre-service est un compte d&apos;essai&nbsp;: il est lecteur
+          d&apos;un seul site, créé en même temps que lui, dont la collecte est plafonnée&nbsp;; la clé
+          d&apos;ingestion, les origines autorisées et les domaines de ce site restent gérés par l&apos;Éditeur. L&apos;Éditeur peut limiter ou
+          fermer l&apos;inscription à tout moment, et désactiver un compte d&apos;essai dont l&apos;usage contrevient
+          aux présentes conditions.
         </p>
       </LegalSection>
 
