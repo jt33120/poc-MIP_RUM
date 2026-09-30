@@ -77,6 +77,14 @@
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(5px); }
 }
+/* Les entrées montent au défilement : `--p` vient de SectionDefilee, `--i` décale
+   chaque pièce d'un cran. Pas de transition : c'est le défilement qui anime. */
+.entrees-piece {
+  --q: clamp(0, (var(--p, 1) - 0.2 - var(--i, 0) * 0.1) / 0.6, 1);
+  opacity: var(--q);
+  transform: translateY(calc((1 - var(--q)) * 110px)) scale(calc(0.93 + var(--q) * 0.07));
+  will-change: transform, opacity;
+}
 .apercu-halo {
   background:
     radial-gradient(46% 38% at 50% 78%, rgba(248, 145, 1, 0.14), transparent 70%),
