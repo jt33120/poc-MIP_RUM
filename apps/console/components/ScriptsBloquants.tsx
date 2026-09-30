@@ -18,6 +18,7 @@
 //
 // Composant de présentation pur (aucun hook, aucune lecture) : rendu serveur.
 import { Figure } from "@/components/charts/Figure";
+import { InfoTip } from "@/components/InfoTip";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { RegleMip, ValeurNoteeMip } from "@/components/NoteMip";
 import { formater } from "@/lib/fmt-ids";
@@ -64,6 +65,10 @@ export function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<Scrip
     const trames = `${pluriel(s.n, "trame")} · pire ${formater("ms", s.worstMs)}`;
     if (s.url === null) {
       const routes = routesDe(s);
+      // Sous la barre, le NOMBRE de routes ; leur liste passe dans l'infobulle et dans
+      // l'alternative (recette du 30/09/2026 : la liste faisait de chaque sous-texte
+      // une phrase de deux lignes).
+      const routesCourt = s.nbRoutes === 0 ? null : s.nbRoutes === 1 ? `route ${s.routes[0]}` : pluriel(s.nbRoutes, "route");
       return {
         label: s.quoi ?? "Script de la page, au chargement",
         value: s.totalMs,
@@ -71,7 +76,7 @@ export function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<Scrip
         title: `Script intégré à la page — ${fonction(s)}${routes ? ` — ${routes}` : ""}`,
         sub: (
           <>
-            script intégré à la page{routes ? ` · ${routes}` : ""} · {trames} · {duree(s)}
+            intégré à la page{routesCourt ? ` · ${routesCourt}` : ""} · {trames} · {duree(s)}
           </>
         ),
       };
@@ -137,19 +142,29 @@ export function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<Scrip
           : undefined
       }
     >
-      <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-2">
         {/* `relative` : les libellés `sr-only` des notes (position absolue) restent dans
-            la figure, jamais placés par rapport à la page (piège 16). */}
-        <div className="relative min-w-0 text-[11px] text-ink-soft [overflow-wrap:anywhere]" data-testid="scripts-regle">
+            la figure, jamais placés par rapport à la page (piège 16). La règle tient sur
+            une ligne ; la neutralité du blocage passe dans une bulle (30/09/2026). */}
+        <div
+          className="relative min-w-0 text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1 text-ink-soft [overflow-wrap:anywhere]"
+          data-testid="scripts-regle"
+        >
           <p className="min-w-0">
-            Durée p75 des trames de chaque script, notée : <RegleMip mesure={MESURE_DUREE} />.
+            Durée p75 notée : <RegleMip mesure={MESURE_DUREE} />
           </p>
-          <p className="min-w-0 text-ink-faint" data-testid="blocage-neutre">
-            {PHRASE_BLOCAGE_NEUTRE_SCRIPTS} Les barres, le cumul et le pire cas n&apos;ont pas de couleur de verdict.
+          <p className="inline-flex min-w-0 items-center gap-1 text-ink-faint" data-testid="blocage-neutre">
+            Blocage sans couleur
+            <InfoTip label="Pourquoi le blocage n'a pas de couleur" align="end">
+              {PHRASE_BLOCAGE_NEUTRE_SCRIPTS} Les barres, le cumul et le pire cas n&apos;ont pas de couleur de verdict.
+            </InfoTip>
           </p>
         </div>
-        <div className="relative min-w-0">
-          <RankBar data={lignes} alternative={false} legende="Blocage cumulé par script et par fonction" />
+        {/* 20 scripts au plus : la liste défile dans la figure au lieu d'allonger la page. */}
+        <div className="max-h-[26rem] min-w-0 overflow-y-auto">
+          <div className="relative min-w-0">
+            <RankBar data={lignes} alternative={false} legende="Blocage cumulé par script et par fonction" />
+          </div>
         </div>
       </div>
     </Figure>
