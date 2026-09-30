@@ -40,10 +40,16 @@ const SondageCtx = createContext<Sondage | null>(null);
 export function ParcoursInstallation({
   vert,
   panneaux,
+  cotes,
 }: {
   /** Le test « ça arrive » de chaque parcours est-il tout vert ? (lu par la page, à chaque relecture) */
   vert: Record<Parcours, boolean>;
   panneaux: Record<Parcours, ReactNode>;
+  /**
+   * La colonne de droite de chaque parcours (refonte du 01/10/2026 : ses valeurs), qui
+   * reste en vue pendant qu'on déroule la check-list ; sous elle, à 390 px.
+   */
+  cotes?: Record<Parcours, ReactNode>;
 }) {
   const [actif, setActif] = useState<Parcours>("snippet");
   const ongletsRef = useRef<HTMLDivElement>(null);
@@ -164,7 +170,14 @@ export function ParcoursInstallation({
             hidden={p !== actif}
             data-testid={`parcours-${p}`}
           >
-            {panneaux[p]}
+            {cotes ? (
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+                <div className="min-w-0">{panneaux[p]}</div>
+                <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">{cotes[p]}</aside>
+              </div>
+            ) : (
+              panneaux[p]
+            )}
           </div>
         ))}
       </SondageCtx.Provider>
