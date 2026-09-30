@@ -2,9 +2,8 @@
 -- lit les constats détectés et les marqueurs de déploiement.
 --
 -- Additive et rejouable, PostgreSQL 15 à 17. Aucune donnée ne bouge : deux droits
--- de LECTURE et leurs policies, pour le rôle du service `api` seul. Numérotée
--- v106 : v104 est fusionnée, v105 est prise par une PR ouverte (alertes « hors
--- collecte ») ; elle ne touche aucun objet de l'une ni de l'autre.
+-- de LECTURE et leurs policies, pour le rôle du service `api` seul. Elle suit
+-- v105 (alertes « hors collecte ») et ne touche aucun de ses objets.
 --
 -- v104 accorde `signal_detecte` à `mip_console` et le refusait à `mip_api` parce
 -- que le bundle du service `api` ne nommait pas la table. Il la nomme désormais :
