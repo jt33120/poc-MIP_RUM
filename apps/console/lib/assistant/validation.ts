@@ -15,8 +15,14 @@ export const MAX_QUESTION = 500;
 const LIMITES = { categorie: 40, libelle: 200, valeur: 200, detail: 400, variation: 200, cible: 200, cle: 80, ecran: 60, app: 100, periode: 100, genereLe: 40 } as const;
 const ID = /^F\d{1,3}$/;
 const CLE = /^[a-z0-9:_-]+$/i;
-/** Un sélecteur de repère : attributs, identifiants, `:nth-child()` — rien d'exécutable, et il ne sert qu'au navigateur. */
-const SELECTEUR = /^[#.\w\s[\]="'():>,-]+$/;
+/**
+ * Un sélecteur de repère, tel que le condensé les écrit et rien d'autre : un `#id` ou
+ * un `[data-testid="…"]`, éventuellement suivi d'un `:nth-child(n)`, au plus trois
+ * niveaux. Il ne sert qu'au navigateur, mais un condensé revenu du navigateur n'est
+ * pas une source de confiance.
+ */
+const PARTIE_SELECTEUR = String.raw`(?:#[\w-]+|\[data-testid="[\w-]+"\])(?::nth-child\(\d{1,3}\))?`;
+const SELECTEUR = new RegExp(`^${PARTIE_SELECTEUR}(?: ${PARTIE_SELECTEUR}){0,2}$`);
 const TONS: readonly TonFait[] = ["bon", "moyen", "mauvais", "neutre"];
 
 export type Verdict<T> = { ok: true; valeur: T } | { ok: false; raison: string };

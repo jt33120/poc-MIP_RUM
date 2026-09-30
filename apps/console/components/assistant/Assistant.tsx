@@ -289,7 +289,14 @@ export function VoletAssistant({
             ))}
           </ul>
         ) : (
-          <ol className="flex flex-col gap-3" aria-live="polite" aria-busy={enCours} data-testid="assistant-fil">
+          <ol
+            className="flex flex-col gap-3 rounded-sm focus:outline-none"
+            aria-live="polite"
+            aria-busy={enCours}
+            aria-label="Conversation"
+            tabIndex={-1}
+            data-testid="assistant-fil"
+          >
             {messages.map((m) =>
               m.role === "question" ? (
                 <li key={m.id} className="ml-8 self-end rounded-xl bg-panel2 px-3 py-2 text-sm text-ink [overflow-wrap:anywhere]" data-testid="assistant-question">
@@ -382,6 +389,7 @@ export function Assistant({ digest }: { digest: Digest }) {
   const volet = useRef<HTMLElement>(null);
   const refSaisie = useRef<HTMLInputElement>(null);
   const suivant = useRef(1);
+  const enVol = useRef(false);
   const base = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const idVolet = `assistant-volet-${base}`;
   const idTitre = `assistant-titre-${base}`;
@@ -421,7 +429,9 @@ export function Assistant({ digest }: { digest: Digest }) {
 
   async function demander(question: string) {
     const q = question.replace(/\s+/g, " ").trim().slice(0, MAX_QUESTION);
-    if (!q || enCours) return;
+    // Une question à la fois : un double clic ne pose pas deux fois la même.
+    if (!q || enVol.current) return;
+    enVol.current = true;
     const id = suivant.current;
     suivant.current += 2;
     // Le condensé de CET instant : la page se relit, et les numéros de faits avec elle.
@@ -430,10 +440,19 @@ export function Assistant({ digest }: { digest: Digest }) {
     setSaisie("");
     setAlerte(null);
     setEnCours(true);
-    const reponse = await obtenirReponse(q, instantane);
-    const cites = new Set(reponse.citations);
-    setMessages((m) => [...m, { id: id + 1, role: "reponse", reponse, faits: instantane.faits.filter((f) => cites.has(f.id)) }]);
-    setEnCours(false);
+    // La question suggérée cliquée disparaît avec la liste : le focus passe au fil,
+    // plutôt que de retomber au début de la page.
+    requestAnimationFrame(() => {
+      if (!volet.current?.contains(document.activeElement)) volet.current?.querySelector<HTMLElement>('[data-testid="assistant-fil"]')?.focus();
+    });
+    try {
+      const reponse = await obtenirReponse(q, instantane);
+      const cites = new Set(reponse.citations);
+      setMessages((m) => [...m, { id: id + 1, role: "reponse", reponse, faits: instantane.faits.filter((f) => cites.has(f.id)) }]);
+    } finally {
+      enVol.current = false;
+      setEnCours(false);
+    }
   }
 
   function montrer(fait: FaitDigest) {
@@ -454,19 +473,26 @@ export function Assistant({ digest }: { digest: Digest }) {
     });
   }
 
+  // LE BOUTON, EN HAUT À DROITE, SANS PRENDRE DE PLACE. Flottant à droite de la
+  // première rangée de l'écran ; son libellé ne s'écrit qu'à partir de 1 280 px, sinon
+  // il reprendrait sa largeur à la rangée voisine (mesuré : +31 px de hauteur à 1 024 px).
+  // Sous 640 px, il quitte le haut de l'écran : un rond fixé en bas à droite, au-dessus
+  // du bouton « Votre avis ? » — en haut, il aurait écrasé la barre des vues (+207 px).
   return (
-    <div className="float-right mb-2 ml-3" data-testid="assistant">
+    <div className="sm:float-right sm:mb-2 sm:ml-3" data-testid="assistant">
       <button
         ref={bouton}
         type="button"
         onClick={() => (ouvert ? fermer() : setOuvert(true))}
         aria-expanded={ouvert}
         aria-controls={idVolet}
+        aria-label="Assistant : poser une question sur ce tableau de bord"
+        title="Assistant"
         data-testid="assistant-ouvrir"
-        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 text-xs font-semibold text-ink shadow-sm transition hover:border-ai/40 hover:bg-panel2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+        className="fixed bottom-[4.5rem] right-5 z-30 inline-flex h-10 w-10 items-center justify-center gap-1.5 rounded-full border border-line bg-panel text-xs font-semibold text-ink shadow-pop transition hover:border-ai/40 hover:bg-panel2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:static sm:h-8 sm:w-8 sm:rounded-lg sm:shadow-sm xl:w-auto xl:px-2.5"
       >
-        <Etincelle className="h-4 w-4 text-ai dark:text-ai-soft" />
-        Assistant
+        <Etincelle className="h-4 w-4 shrink-0 text-ai dark:text-ai-soft" />
+        <span className="hidden xl:inline">Assistant</span>
       </button>
       <p className="sr-only" aria-live="polite">
         {annonce}
