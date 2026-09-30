@@ -192,7 +192,7 @@ export function ApercuFond({ valeurs }: { valeurs: (number | null)[] }) {
   const premier = points[0].split(",")[0];
   const dernier = points[points.length - 1].split(",")[0];
   return (
-    <svg aria-hidden viewBox="0 0 100 30" preserveAspectRatio="none" className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 w-full">
+    <svg aria-hidden viewBox="0 0 100 30" preserveAspectRatio="none" className="pointer-events-none absolute bottom-0 right-0 h-3/5 w-1/2">
       <path d={`${ligne} L${dernier},30 L${premier},30 Z`} className="fill-perf/[0.07]" />
       <path d={ligne} fill="none" className="stroke-perf/35" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
     </svg>

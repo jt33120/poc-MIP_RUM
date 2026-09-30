@@ -7,7 +7,6 @@ import { FicheMesure } from "@/components/charts/FicheMesure";
 import { HEALTH_CLASS } from "@/lib/health-libelles";
 import { ImpactTable } from "@/components/ImpactTable";
 import { InsightStrip } from "@/components/InsightStrip";
-import { PageHeader } from "@/components/PageHeader";
 import { PresetBar } from "@/components/PresetBar";
 import { ReleaseCompare, statsDeVersion, type ReleaseStats } from "@/components/ReleaseCompare";
 import { Methode } from "@/components/perf/Methode";
@@ -21,7 +20,7 @@ import {
 } from "@/components/vue-ensemble/SeriesVueEnsemble";
 import { OngletsHero } from "@/components/vue-ensemble/OngletsHero";
 import { LIBELLE_ANGLE_MORT, TuileAngleMort, type EtatAngleMort } from "@/components/vue-ensemble/AngleMort";
-import { BandeauR0 } from "@/components/vue-ensemble/BandeauR0";
+import { BandeauR0, type ProprietesBandeauR0 } from "@/components/vue-ensemble/BandeauR0";
 import { ConstatsDetectes, type EtatConstatsDetectes } from "@/components/vue-ensemble/ConstatsDetectes";
 import { HeatmapLatence } from "@/components/vue-ensemble/HeatmapLatence";
 import { construireHeatmap } from "@/lib/heatmap-latence";
@@ -88,7 +87,6 @@ import {
 } from "@/lib/vue-ensemble";
 
 /** La question de l'écran (P1) : le sous-titre de l'en-tête. */
-const QUESTION = "Les vrais visiteurs vont-ils bien sur cette période, et sinon, où et depuis quand ?";
 
 /** Sous ce nombre de mesures, un vital est « échantillon faible » (§ 3.12). */
 const VITAL_FAIBLE_SOUS = 100;
@@ -702,6 +700,19 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const [vitauxB, vitauxA] = vitauxReleasesLus ?? [null, null];
   const lienRelease = (v: string) => lien("/", { release: v, cmp: null, rel_a: null, rel_b: null });
 
+  const constatBandeau =
+    etatDetectes.kind === "ok" && etatDetectes.cartes[0]
+      ? { titre: etatDetectes.cartes[0].titre, href: `#constat-detecte-${etatDetectes.cartes[0].id}` }
+      : constats.constats[0]
+        ? { titre: constats.constats[0].titre, href: constats.constats[0].href }
+        : null;
+  const nbConstatsBandeau = constats.constats.length + (etatDetectes.kind === "ok" ? etatDetectes.ouverts : 0);
+  const constatsPartielsBandeau = constats.echecs.length > 0 || etatDetectes.kind === "echec";
+  const deploiementBandeau: ProprietesBandeauR0["deploiement"] = !deploys.ok
+    ? "echec"
+    : deploys.data[0]
+      ? { version: deploys.data[0].version, ts: deploys.data[0].ts }
+      : null;
   // Rien à signaler : aucun constat, aucune lecture en échec, aucun épisode détecté.
   const constatsVides =
     constats.constats.length === 0 &&
@@ -710,7 +721,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title="Vue d'ensemble" sub={QUESTION} help="rum" />
+      {/* L'onglet actif dit déjà « Vue d'ensemble » : le titre reste pour la structure. */}
+      <h1 className="sr-only">Vue d&apos;ensemble</h1>
       {/* Plage personnalisée (case de la heatmap, zoom) : dite dans les DEUX fuseaux
           (R-T) — « 15/07 09:00-10:00 Europe/Paris (07:00-08:00 UTC) ». */}
       {query.range.preset === null && (
@@ -753,22 +765,19 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {/* R0 (spec A2 § 5.2) — « ça va ? » en une ligne : score, le constat le plus
           prioritaire, le nombre de constats, le dernier déploiement. Aucune lecture de
           plus : tout vient des sections déjà lues ci-dessus. */}
+      {/* Rien à dire (aucun constat, aucun déploiement) : pas de bandeau (30/09/2026). */}
+      {(constatBandeau || nbConstatsBandeau > 0 || constatsPartielsBandeau || deploiementBandeau !== null) && (
       <BandeauR0
         sante={!health.ok ? "echec" : health.data.score == null || health.data.label == null ? null : { score: health.data.score, label: health.data.label }}
-        constat={
-          etatDetectes.kind === "ok" && etatDetectes.cartes[0]
-            ? { titre: etatDetectes.cartes[0].titre, href: `#constat-detecte-${etatDetectes.cartes[0].id}` }
-            : constats.constats[0]
-              ? { titre: constats.constats[0].titre, href: constats.constats[0].href }
-              : null
-        }
-        nbConstats={constats.constats.length + (etatDetectes.kind === "ok" ? etatDetectes.ouverts : 0)}
-        constatsPartiels={constats.echecs.length > 0 || etatDetectes.kind === "echec"}
-        deploiement={!deploys.ok ? "echec" : deploys.data[0] ? { version: deploys.data[0].version, ts: deploys.data[0].ts } : null}
+        constat={constatBandeau}
+        nbConstats={nbConstatsBandeau}
+        constatsPartiels={constatsPartielsBandeau}
+        deploiement={deploiementBandeau}
         hrefSante={blocs.sante ? "#sante" : undefined}
         masquerSante={blocs.sante}
         hrefDeploiement={blocs.versions ? "#release-titre" : undefined}
       />
+      )}
 
       {/* Pourquoi les tuiles n'ont pas d'écart : dit en clair, UNE fois par raison,
           jamais un delta calculé sur une période à moitié mesurée (§ 3.2). */}
@@ -830,7 +839,23 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                             <span className="text-5xl font-semibold leading-none text-ink">{health.data.score ?? "—"}</span>
                             <span className="text-sm font-medium text-ink-soft">/ 100</span>
                           </span>
-                          <span className="truncate text-[10px] text-ink-faint">Score composite MIP</span>
+                          {/* Les quatre composantes, en barres : points obtenus sur le maximum. */}
+                          <span className="grid gap-1.5">
+                            {health.data.factors.map((f) => (
+                              <span key={f.key} className="grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-0.5 text-[10px] text-ink-soft">
+                                <span className="truncate">{f.label}</span>
+                                <span className="tabular-nums text-ink-faint">
+                                  {f.earned == null ? "—" : `${f.earned.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} / ${f.max}`}
+                                </span>
+                                <span className="col-span-2 h-1 overflow-hidden rounded-full bg-line/70">
+                                  <span
+                                    className="block h-full rounded-full bg-perf"
+                                    style={{ width: `${f.earned == null ? 0 : Math.round((f.earned / f.max) * 100)}%` }}
+                                  />
+                                </span>
+                              </span>
+                            ))}
+                          </span>
                         </>
                       }
                     >
