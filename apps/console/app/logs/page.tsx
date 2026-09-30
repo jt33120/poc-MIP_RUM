@@ -7,13 +7,15 @@ import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { PageHeader } from "@/components/PageHeader";
 import { TableDefilante } from "@/components/TableDefilante";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
-import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
+import { StackedBars, type SerieEmpilee } from "@/components/charts/StackedBars";
 import { fmtDate, fmtHeure, pluriel } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { chargerLogs } from "@/lib/chargeurs/logs";
 import { chargerEcran } from "@/lib/ecran";
 import { hrefWithQuery } from "@/lib/query-contract";
+import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { fenetresLues } from "@/lib/series";
 import { severityBucket, type LevelKey } from "@/lib/queries-logs";
 
 export const dynamic = "force-dynamic";
@@ -54,25 +56,22 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
     return <CapaciteFermee titre="Logs" sujet="Les journaux envoyés par vos serveurs, et non par le navigateur des visiteurs." />;
   }
   if (ecran.etat === "refus") return <FilterProblemNotice title="Logs" problem={ecran.problem} />;
-  const { level, rows, counts, volume, anomalies, byRoute, periode } = ecran;
+  const { level, rows, counts, volume, heures, anomalies, byRoute, periode } = ecran;
   const f = { app: ecran.app };
 
   const total = counts.error + counts.warn + counts.info + counts.debug;
-  const now = Date.now();
-  const stackData = Array.from({ length: 24 }, (_v, i) => {
-    const t = new Date(now - (23 - i) * 3_600_000);
-    return {
-      // Heure de Paris : `toLocaleTimeString` sans fuseau prenait celui du serveur (UTC).
-      h: `${fmtHeure(t).slice(0, 2)} h`,
-      error: volume.error[i] ?? 0,
-      warn: volume.warn[i] ?? 0,
-      autres: volume.other[i] ?? 0,
-    };
-  });
-  const series: StackSeries[] = [
-    { key: "error", name: "Erreurs", color: "#ef4444" },
-    { key: "warn", name: "Avertissements", color: "#f59e0b" },
-    { key: "autres", name: "Autres", color: "#94a3b8" },
+  // Les 24 heures du volume, sur la grille que le chargeur a datée : la figure
+  // commune peut alors hachurer une heure hors collecte au lieu d'une colonne à 0.
+  const stackData = heures.map((t, i) => ({
+    t,
+    error: volume.error[i] ?? 0,
+    warn: volume.warn[i] ?? 0,
+    autres: volume.other[i] ?? 0,
+  }));
+  const series: SerieEmpilee[] = [
+    { cle: "error", libelle: "Erreurs", ton: "bad" },
+    { cle: "warn", libelle: "Avertissements", ton: "warn" },
+    { cle: "autres", libelle: "Autres", ton: "neutre" },
   ];
   const peak = stackData.reduce((mx, r) => Math.max(mx, r.error + r.warn + r.autres), 0);
 
@@ -87,7 +86,16 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
         chartTitle="Journaux par heure sur 24 h, par gravité"
         chart={
           total ? (
-            <StackedBars data={stackData} xKey="h" series={series} yUnit="" />
+            <StackedBars
+              grille={heures}
+              points={stackData}
+              series={series}
+              format="count"
+              seauSecondes={3600}
+              fuseau={FUSEAU_AFFICHAGE}
+              fenetresCollecte={fenetresLues(ecran.fenetresCollecte)}
+              ariaLabel="Journaux par heure sur 24 h, empilés par gravité"
+            />
           ) : (
             <p className="py-12 text-center text-sm text-ink-faint">Aucun journal sur la période.</p>
           )

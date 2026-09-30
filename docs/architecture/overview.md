@@ -17,8 +17,9 @@
 
 **En service, éteint par un drapeau.**
 - Bascule des écrans et des écritures vers `console-api` (`console_api_ecrans_pct`, `console_api_commandes_pct`) : drapeaux absents de `platform_flag` au 29/09, donc à 0. GeoIP du `collector` : `GEOIP_IP_SOURCE=railway` dans l'IaC depuis le 28/09/2026 (effectif après l'apply), pour le seul trafic direct — le capteur de la console, une fois `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL` posée sur Vercel ; le relais ne porte jamais d'adresse.
+- **Collecte directe des sites clients** (P6b.G, code prêt et inerte le 30/09/2026) : sans `NEXT_PUBLIC_DIRECT_COLLECTOR_URL` sur Vercel, rien ne change ; posée, le code de suivi proposé et la résolution de l'extension visent le `collector` (le pays vient alors de l'adresse IP), le code par la console restant proposé pour une CSP figée. Mise en service pas avant le 05/10/2026 (7 jours de relais à 100 % sans repli) : [relais-ingestion.md](../operations/relais-ingestion.md), « Collecte directe des clients ».
 
-**Reste à faire.** Choisir la base d'un vrai produit avec la DSI de MIP, puis remettre les cadences à 5 minutes ; la montée des drapeaux, puis les modes stricts ; les textes de conformité de la PR #296 ; C12 (retirer la base de la console), C12b (image de la console, pile auto-hébergée), P6b.G (collecte directe, pour le GeoIP) ; les exercices sur staging ([présentation](../operations/presentation-dsi.md), § 2).
+**Reste à faire.** Choisir la base d'un vrai produit avec la DSI de MIP, puis remettre les cadences à 5 minutes ; la montée des drapeaux, puis les modes stricts ; les textes de conformité de la PR #296 ; C12 (retirer la base de la console), C12b (image de la console, pile auto-hébergée), P6b.G (mettre en service la collecte directe des clients, pour le GeoIP) ; les exercices sur staging ([présentation](../operations/presentation-dsi.md), § 2).
 
 ## Contexte (C4, niveau 1)
 

@@ -4,12 +4,19 @@
 // la fenêtre ouverte de la plateforme décide.
 import { describe, expect, it } from "vitest";
 import {
+  ETATS_FRISE_CHAINE,
+  HEURES_FRISE,
+  casesFrise,
+  debutsFrise,
   depuis,
   duree,
   fenetreOuvertePlateforme,
+  libelleBadgeMesure,
+  libelleLatences,
   niveauResultat,
   tauxAboutis,
   verdictChaine,
+  verdictMesure,
 } from "../../apps/console/lib/chaine-mesure";
 import type { FenetreRegistre, SanteChaineBrute } from "../../apps/console/lib/queries-chaine";
 
@@ -23,6 +30,8 @@ function brute(dernierMin: number | null, fenetres: FenetreRegistre[] = []): San
     fenetres,
     taux7j: { total: 0, aboutis: 0 },
     battements: [],
+    heures: [],
+    latences7j: [],
   };
 }
 
@@ -101,5 +110,81 @@ describe("les détails", () => {
     expect(tauxAboutis({ total: 0, aboutis: 0 })).toBeNull();
     expect(tauxAboutis({ total: 672, aboutis: 670 })).toBe(99.7);
     expect(tauxAboutis({ total: 3, aboutis: 3 })).toBe(100);
+  });
+});
+
+describe("le badge de l'en-tête : le même verdict, depuis la petite lecture de la coquille", () => {
+  it("verdictMesure rend ce que rend la carte, pour chaque cas", () => {
+    const f = fenetre({ etat: "degradee", debut: ilYa(20), cause: "c" });
+    const cas: Array<[number | null, FenetreRegistre[], number | null]> = [
+      [null, [], 15],
+      [6, [], 15],
+      [36, [], 15],
+      [16, [], 5],
+      [5, [fenetre({})], 15],
+      [5, [f], null],
+    ];
+    for (const [min, fenetres, cadence] of cas) {
+      const b = brute(min, fenetres);
+      const ouverte = fenetreOuvertePlateforme(fenetres);
+      expect(
+        verdictMesure(
+          { dernier: b.dernier?.emis_at ?? null, ouverte: ouverte && { etat: ouverte.etat, debut: ouverte.debut, cause: ouverte.cause }, cadenceMin: cadence },
+          MAINTENANT,
+        ),
+      ).toEqual(verdictChaine(b, MAINTENANT, cadence));
+    }
+    expect(verdictMesure(null, MAINTENANT)).toEqual(verdictChaine(null, MAINTENANT, 15));
+  });
+
+  it("vert, ambre, rouge : trois libellés courts, et « non sondée » faute de canari", () => {
+    const etat = (dernierMin: number, ouverte: "degradee" | "interrompue" | null) => ({
+      dernier: ilYa(dernierMin),
+      ouverte: ouverte && { etat: ouverte, debut: ilYa(30), cause: null },
+      cadenceMin: 15,
+    });
+    expect(libelleBadgeMesure(verdictMesure(etat(3, null), MAINTENANT).niveau)).toBe("Mesure OK");
+    expect(libelleBadgeMesure(verdictMesure(etat(3, "degradee"), MAINTENANT).niveau)).toBe("Mesure dégradée");
+    expect(libelleBadgeMesure(verdictMesure(etat(3, "interrompue"), MAINTENANT).niveau)).toBe("Mesure interrompue");
+    // Le cache de 60 s ne fige pas le verdict : l'âge se lit au rendu.
+    expect(libelleBadgeMesure(verdictMesure(etat(40, null), MAINTENANT).niveau)).toBe("Mesure interrompue");
+    expect(libelleBadgeMesure(verdictMesure({ dernier: null, ouverte: null, cadenceMin: 15 }, MAINTENANT).niveau)).toBe("Mesure non sondée");
+  });
+});
+
+describe("la frise de 7 jours", () => {
+  it("168 heures, la dernière est l'heure en cours", () => {
+    const debuts = debutsFrise(MAINTENANT + 25 * 60_000);
+    expect(debuts).toHaveLength(HEURES_FRISE);
+    expect(new Date(debuts.at(-1)!).toISOString()).toBe("2026-09-30T10:00:00.000Z");
+    expect(new Date(debuts[0]).toISOString()).toBe("2026-09-23T11:00:00.000Z");
+  });
+
+  it("une case par heure lue : le pire passage, le compte de chacun ; `absent` (lignes) ne se confond pas avec « aucun passage »", () => {
+    const cases = casesFrise(
+      [
+        { etage: "ingest_console", heure: "2026-09-30T08:00:00Z", resultats: { ok: 3, lent: 1 } },
+        { etage: "ingest_console", heure: "2026-09-30T09:00:00Z", resultats: { ok: 2, echec: 1, repli: 1 } },
+        { etage: "ecriture", heure: "2026-09-30T09:00:00Z", resultats: { absent: 1, ok: 3 } },
+        { etage: "ingest_console", heure: "2026-09-30T10:00:00Z", resultats: { ok: 1 } },
+      ],
+      "ingest_console",
+    );
+    expect(cases).toEqual([
+      { t: "2026-09-30T08:00:00Z", etat: "lent", detail: "4 passages : 3 réussi, 1 lent" },
+      { t: "2026-09-30T09:00:00Z", etat: "echec", detail: "4 passages : 2 réussi, 1 repli local, 1 échec" },
+      { t: "2026-09-30T10:00:00Z", etat: "ok", detail: "1 passage : 1 réussi" },
+    ]);
+    expect(casesFrise([{ etage: "ecriture", heure: "2026-09-30T09:00:00Z", resultats: { absent: 1, ok: 3 } }], "ecriture")[0].etat).toBe("lignes_absentes");
+    // Chaque état rendu a sa définition, et « absent » reste la hachure d'une heure sans passage.
+    const cles = ETATS_FRISE_CHAINE.map((e) => e.cle);
+    for (const etat of ["ok", "lent", "repli", "echec", "lignes_absentes", "saute"]) expect(cles).toContain(etat);
+    expect(ETATS_FRISE_CHAINE.find((e) => e.cle === "absent")?.forme).toBe("hachure");
+  });
+
+  it("les latences p50/p95, et rien sans mesure", () => {
+    expect(libelleLatences({ etage: "ingest_console", p50: 420, p95: 1800, n: 672 })).toBe("p50 420 ms · p95 1 800 ms, sur 672 passages");
+    expect(libelleLatences({ etage: "ingest_console", p50: null, p95: null, n: 0 })).toBeNull();
+    expect(libelleLatences(undefined)).toBeNull();
   });
 });

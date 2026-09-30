@@ -33,9 +33,19 @@ import { formater } from "@/lib/fmt-ids";
 import { accord } from "@/lib/format";
 import { classerParGravite, ecartALaReference, estFaible } from "@/lib/impact";
 import { hrefWithQuery, type AnalyticsQuery } from "@/lib/query-contract";
+import type { FenetreCollecte } from "@/lib/series";
 import type { WidgetData, WidgetErreur, WidgetRoutes } from "@/lib/widget-data";
 
-export function WidgetBody({ data, query }: { data: WidgetData; query: AnalyticsQuery }) {
+export function WidgetBody({
+  data,
+  query,
+  fenetresCollecte,
+}: {
+  data: WidgetData;
+  query: AnalyticsQuery;
+  /** Fenêtres hors collecte lues par le chargeur du tableau : hachures « non mesuré » des séries de la carte. */
+  fenetresCollecte?: readonly FenetreCollecte[];
+}) {
   if (data.kind === "invalid" || data.kind === "error") {
     return (
       <div role="note" className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-3 text-sm text-ink-soft">
@@ -62,6 +72,7 @@ export function WidgetBody({ data, query }: { data: WidgetData; query: Analytics
           hrefs={{ groupe: (key) => groupeHref(query, plan, key, {}) }}
           taille="carte"
           notes={data.notes}
+          fenetresCollecte={fenetresCollecte}
         />
       </div>
     );
@@ -93,7 +104,7 @@ export function WidgetBody({ data, query }: { data: WidgetData; query: Analytics
         />
       )}
 
-      {data.trafic && <PanneauxTrafic trafic={data.trafic} />}
+      {data.trafic && <PanneauxTrafic trafic={data.trafic} fenetresCollecte={fenetresCollecte} />}
       {data.routes && <ClassementRoutes routes={data.routes} query={query} />}
       {data.erreurs && <ListeErreurs lignes={data.erreurs} query={query} />}
 
@@ -140,7 +151,13 @@ export function WidgetBody({ data, query }: { data: WidgetData; query: Analytics
  * creuse et la nomme en légende dès que le dernier jour est aujourd'hui dans le
  * fuseau de l'app.
  */
-function PanneauxTrafic({ trafic }: { trafic: NonNullable<WidgetData["trafic"]> }) {
+function PanneauxTrafic({
+  trafic,
+  fenetresCollecte,
+}: {
+  trafic: NonNullable<WidgetData["trafic"]>;
+  fenetresCollecte?: readonly FenetreCollecte[];
+}) {
   const JOUR = 86_400;
   return (
     <div className="flex min-w-0 flex-col gap-3" data-testid="widget-trafic">
@@ -160,6 +177,8 @@ function PanneauxTrafic({ trafic }: { trafic: NonNullable<WidgetData["trafic"]> 
           hauteur={120}
           legendeAnnotations={false}
           synchro="widget-trafic"
+          fenetresCollecte={fenetresCollecte}
+          noteCollecte={false}
           ariaLabel={`Pages vues par jour, ${trafic.grille.length} jours`}
         />
       </div>
@@ -174,6 +193,7 @@ function PanneauxTrafic({ trafic }: { trafic: NonNullable<WidgetData["trafic"]> 
           fuseau={trafic.fuseau}
           hauteur={120}
           synchro="widget-trafic"
+          fenetresCollecte={fenetresCollecte}
           ariaLabel={`Occurrences d’erreurs par jour, ${trafic.grille.length} jours`}
         />
       </div>

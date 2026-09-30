@@ -37,7 +37,7 @@ import type { SlowResource, VitalAgg, VitalPercentiles, VitalSeriesPoint } from 
 import type { ErrorGroupRow } from "@/lib/queries-errors";
 import type { Concordance, CorrCardRow } from "@/lib/queries-v2";
 import { lireVital, texteVerdict } from "@/lib/vital-lecture";
-import { grilleIso, libelleSeauComplet } from "@/lib/series";
+import { grilleIso, libelleSeauComplet, type FenetreCollecte } from "@/lib/series";
 import { pointsRelease } from "@/lib/vue-ensemble";
 import type { Fil } from "@mip/console-contract";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
@@ -87,6 +87,7 @@ export function RoutePanel({
   vital,
   lecture,
   reglages = {},
+  fenetresCollecte,
 }: {
   /** Valeur décodée de `panel=route:<r>`. */
   route: string;
@@ -103,6 +104,8 @@ export function RoutePanel({
    * perdue. La page les passe ici ; `null` retire le paramètre.
    */
   reglages?: Record<string, string | null>;
+  /** Fenêtres hors collecte lues par le chargeur de l'écran (même plage) : hachures « non mesuré » de la série. */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const { plage, serieRoute, serieEnsemble, pctsLus, pctsDuVital, ensemble, reel, cartes, concordance, ressources, erreurs, vues, plafond, plafondLibelle, histo } =
     lecture;
@@ -151,6 +154,7 @@ export function RoutePanel({
             plage={plage}
             serieRoute={serieRoute}
             serieEnsemble={serieEnsemble}
+            fenetresCollecte={fenetresCollecte}
           />
         </Bloc>
 
@@ -219,6 +223,7 @@ function SerieRoute({
   plage,
   serieRoute,
   serieEnsemble,
+  fenetresCollecte,
 }: {
   vital: VitalName;
   route: string;
@@ -227,6 +232,7 @@ function SerieRoute({
   plage: string;
   serieRoute: SectionLue<VitalSeriesPoint[]>;
   serieEnsemble: SectionLue<VitalSeriesPoint[]>;
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const titre = `${vital} sur cette route`;
   const fmt = formatDuVital(vital);
@@ -281,6 +287,7 @@ function SerieRoute({
         seauSecondes={seau}
         fuseau={FUSEAU_AFFICHAGE}
         hauteur={180}
+        fenetresCollecte={fenetresCollecte}
         ariaLabel={`${vital} p75 de ${route} par tranche de ${largeur}, ${grille.length} tranches, 3 zones de seuil (Bon, À améliorer, Mauvais), comparé au p75 de l'ensemble des routes`}
       />
     </Figure>

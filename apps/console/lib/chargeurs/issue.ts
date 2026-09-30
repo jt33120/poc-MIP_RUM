@@ -16,6 +16,7 @@ import { analyserFiltres } from "../filtres-ecran";
 import { listDeploys } from "../queries-deploys";
 import { errorScopeFor, parseErrorCursor, parseOccurrencesPage, partSessionsTouchees, releasesDeLIssue, scopeApps } from "../queries-errors";
 import { UnsupportedFilterError } from "../query-compiler";
+import { sectionFenetresCollecte } from "./collecte";
 import { section, type Chargeur } from "./commun";
 import { lirePileErreur } from "./pile-erreur";
 
@@ -38,7 +39,7 @@ export const chargerIssue = (async (principal, sp, { id = "" }) => {
   const admin = principal?.role === "admin" && !principal.demo;
   // La part divise par des sessions avec VUE : un filtre que les pages vues ne
   // portent pas (`service`) la refuse — un refus de contrat pour CETTE phrase (V10).
-  const [detail, part, deploys, versions] = await Promise.all([
+  const [detail, part, deploys, versions, fenetresCollecte] = await Promise.all([
     issueDetail(issue, f, { limit: parseOccurrencesPage(url).limit, cursor }),
     section<PartGroupe>(async () => {
       try {
@@ -55,6 +56,8 @@ export const chargerIssue = (async (principal, sp, { id = "" }) => {
     section(() =>
       releasesDeLIssue({ app_id: issue.app_id, issue_id: issue.id, first_release: issue.first_release, first_seen: issue.first_seen }),
     ),
+    // Les hachures « non mesuré » des occurrences dans le temps : une section à part.
+    sectionFenetresCollecte(query),
   ]);
   // Workflow P5.6 : null avant migration-v73. Un curseur d'historique illisible rend la page la plus récente.
   // Les adresses des comptes (acteurs, assignés) ne sont lues que pour un admin.
@@ -84,5 +87,6 @@ export const chargerIssue = (async (principal, sp, { id = "" }) => {
     activite,
     activiteCurseur,
     pile,
+    fenetresCollecte,
   } as const;
 }) satisfies Chargeur<unknown>;

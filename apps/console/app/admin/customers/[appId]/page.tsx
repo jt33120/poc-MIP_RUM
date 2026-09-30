@@ -12,7 +12,7 @@ import { WizardBadge, WizardStep } from "@/components/wizard/WizardStep";
 import { chargerClient } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
-import { ingestEndpoint } from "@/lib/ingest-endpoint";
+import { ingestEndpoint, voieRecommandee } from "@/lib/ingest-endpoint";
 import { buildInjectionArtifacts, buildSnippet, deriveStatus } from "@/lib/onboarding";
 import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
 import { fmtDate } from "@/lib/format";
@@ -43,7 +43,13 @@ export default async function CustomerWizard({
   const host = (await headers()).get("host") ?? "localhost:3000";
   const proto = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
   const sdkUrl = `${proto}://${host}/mip-rum.js`;
-  const endpoint = ingestEndpoint("traces", host);
+  // Collecte directe (P6b.G) : dès que sa variable est posée, le code proposé PAR
+  // DÉFAUT vise le collecteur (le pays vient de l'adresse IP), et celui par la
+  // console reste à côté pour un site dont la CSP fige `connect-src`. Sans elle,
+  // `voie` vaut « console » et rien ne change.
+  const voie = voieRecommandee();
+  const endpoint = ingestEndpoint("traces", host, voie);
+  const endpointConsole = ingestEndpoint("traces", host);
 
   const snippet = buildSnippet({
     sdkUrl,
@@ -51,6 +57,7 @@ export default async function CustomerWizard({
     appId,
     clientId: customer.client_id,
     withConsent: false,
+    voie,
   });
   const snippetConsent = buildSnippet({
     sdkUrl,
@@ -58,7 +65,15 @@ export default async function CustomerWizard({
     appId,
     clientId: customer.client_id,
     withConsent: true,
+    voie,
   });
+  const parLaConsole =
+    voie === "directe"
+      ? {
+          endpoint: endpointConsole,
+          snippet: buildSnippet({ sdkUrl, endpoint: endpointConsole, appId, clientId: customer.client_id, withConsent: false }),
+        }
+      : null;
   // v0.6 : configs d'injection zéro-touch (le client ne modifie pas son code)
   const injection = buildInjectionArtifacts({
     sdkUrl,
@@ -69,9 +84,11 @@ export default async function CustomerWizard({
 
   // Recettes serveur (tracing navigateur → serveur) : les agents OpenTelemetry
   // officiels, préremplis avec l'app_id et les adresses complètes de collecte.
+  // TOUJOURS par la console : l'adresse d'un serveur ne dit rien du pays d'un
+  // visiteur, et la collecte directe n'a d'objet que pour un navigateur.
   const recettesServeur = recettesAgentsOtel({
     appId,
-    adresses: { traces: endpoint, logs: ingestEndpoint("logs", host) },
+    adresses: { traces: endpointConsole, logs: ingestEndpoint("logs", host) },
   });
 
   const etape = "flex items-center justify-between gap-3 rounded-lg border border-line bg-panel2/60 px-3 py-2";
@@ -186,6 +203,7 @@ export default async function CustomerWizard({
               sdkUrl={sdkUrl}
               endpoint={endpoint}
               injection={injection}
+              parLaConsole={parLaConsole}
             />
           </WizardStep>
 

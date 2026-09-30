@@ -140,8 +140,8 @@ update platform_flag set value = '0', updated_by = '<prénom>' where key = 'inge
   (413), sans appel réseau.
 - **En-têtes transmis, liste exacte :** `content-type`, `content-encoding`,
   `x-mip-session`, `x-mip-app`, `x-mip-seq`, `x-mip-key`, plus `authorization` pour les
-  source maps par jeton. S'y ajoutent `x-mip-edge-auth` (le secret) et `x-mip-edge-country`
-  (le pays résolu par Vercel, s'il vaut `^[A-Z]{2}$`).
+  source maps par jeton. S'y ajoutent `x-mip-edge-auth` (le secret), `x-mip-edge-country` (le pays
+  de Vercel, s'il vaut `^[A-Z]{2}$`) et, pour traces et logs, `x-mip-edge-origin` (l'`Origin` de la page, 30/09/2026).
 - **Jamais d'adresse IP** : ni `x-forwarded-for`, ni `x-real-ip`, ni
   `x-vercel-forwarded-for`, ni `forwarded`. La phrase « aucune adresse IP n'est transmise
   ni stockée » reste vraie.
@@ -301,14 +301,9 @@ recouvrement de `user_id_hash` d'un jour sur l'autre se vérifie une fois à 100
 - **Soak** : au moins 3 jours à 100 %, environ 0 `relay fallback`.
 - **P6b.G — collecte directe pour le GeoIP.** Le relais transmet le pays, jamais l'IP, et
   saute donc la résolution. Premier périmètre, le 28/09/2026 : le capteur de la console
-  elle-même (« Collecte directe du dogfooding », plus bas). Pour les clients, après 7 jours à 100 % sans repli :
-  - poser l'endpoint du collector pour les apps **sans `connect-src` figée** dans leur CSP ;
-  - dater le changement par un `deploy_marker` ;
-  - vérifier que `geo_source = 'geoip'` devient non nul.
-
-  Les apps à CSP figée restent en relais.
-- **Canari extension** : `update extension_scope set endpoint = …`, seulement sur un domaine
-  sans `connect-src` CSP.
+  elle-même (« Collecte directe du dogfooding », plus bas). Pour les clients, le code est
+  prêt et inerte depuis le 30/09/2026 ; sa mise en service, pas avant le 05/10/2026, suit
+  « Collecte directe des clients », plus bas. Les apps à CSP figée restent en relais.
 - **P6b — exercices sur staging** : retour arrière par le drapeau, sous charge, chronométré.
   Il sert à prouver le « < 30 s ».
 - **Relais pur (C11)** : après ≥ 7 jours à 100 % sans repli, `CONSOLE_INGEST_RELAY_STRICT=1`
@@ -324,8 +319,9 @@ Le capteur de la console elle-même (application `mip-rum-console`), **et lui se
 ses traces et ses rejeux du navigateur au collector, sans passer par Vercel :
 `https://collector-production-d769.up.railway.app/v1/traces` et `/v1/replay`. Le collector lit
 alors l'en-tête `X-Real-IP` que pose la façade Railway et en déduit le pays
-(`rum_session.geo_source = 'geoip'`), sans écrire l'adresse. Rien d'autre ne bouge : les snippets
-des clients, l'extension, la CI et `NEXT_PUBLIC_RUM_ENDPOINT` visent toujours la console et son relais.
+(`rum_session.geo_source = 'geoip'`), sans écrire l'adresse. Cette variable ne déplace rien
+d'autre : les snippets des clients, l'extension, la CI et `NEXT_PUBLIC_RUM_ENDPOINT` n'en dépendent
+pas (la collecte directe des clients a sa propre variable, section suivante).
 
 Code : `apps/console/lib/ingest-endpoint.ts` (`origineCollecteurDogfooding`),
 `packages/backend/shared/client-ip.mjs` (`diagnostiquerFacade`), `services/collector/server.mjs`
@@ -418,5 +414,141 @@ porter l'origine du collector.
 
 **Conformité.** Railway reçoit désormais l'adresse IP des visiteurs de la console ; ses journaux
 HTTP consignent l'adresse source (`srcIp`), comme ceux de Vercel. `apps/console/lib/legal.ts` et
-`docs/CONFORMITE.md` (§ 1, § 3.2, § 7) le disent depuis le 28/09/2026 ; les deux sont à relire si
-le périmètre s'élargit aux sites des clients.
+`docs/CONFORMITE.md` (§ 1, § 3.2, § 7) le disent depuis le 28/09/2026, et depuis le 30/09/2026 pour
+les sites des clients (section suivante).
+
+## Collecte directe des clients (P6b.G, second palier — prête et inerte le 30/09/2026)
+
+Le même geste que le dogfooding, pour les **sites des clients** : leur navigateur écrit au collector
+(`/v1/traces`, `/v1/replay`) au lieu de la console, et le collector déduit le pays de l'adresse IP. Le
+code est fusionné **inerte** : rien ne change tant que `NEXT_PUBLIC_DIRECT_COLLECTOR_URL` n'est pas
+posée sur Vercel. Posée, elle change trois choses, et rien d'autre :
+
+| Où | Variable absente (aujourd'hui) | Variable posée |
+|---|---|---|
+| Fiche d'une application (`/admin/customers/<app>`), nouveau projet (`/select/new`) | code de suivi vers `/api/ingest/v1/traces` de la console | code vers `<collector>/v1/traces` **par défaut** (« recommandé : pays par l'adresse IP »), CSP qui cite le collector ; le code **par la console** reste proposé à côté, pour un site dont la CSP fige `connect-src` |
+| `GET /api/extension/resolve` | `endpoint: null` (l'extension prend son défaut, la console) | `endpoint: "<collector>/v1/traces"` pour tout domaine sans `extension_scope.endpoint` déclaré, réponse relayée comprise ; effet sous 60 s (cache de l'extension), sans mise à jour de l'extension |
+| `/admin/health`, « Où partent les données » | « Collecte directe des navigateurs des clients : fermée » | « ouverte », et l'adresse |
+
+**Ce qui ne bouge jamais par cette variable** : un code de suivi **déjà posé** chez un client (le
+basculer, c'est le remplacer sur son site), les recettes des agents serveur (l'adresse d'un serveur ne
+dit rien d'un visiteur), la CI (source maps, marqueurs), le capteur de la console (sa variable à lui).
+L'écran des sessions dit, sous l'onglet « Pays estimé », la part des sessions dont le pays vient de
+l'adresse IP, et pourquoi elle est nulle pour une application restée en relais.
+
+Code : `apps/console/lib/ingest-endpoint.ts` (`origineCollecteDirecte`, `ingestEndpointDirect`,
+`voieRecommandee`), `lib/onboarding.ts` (`buildSnippet`, paramètre `voie`), `lib/extension-resolution.ts`,
+`components/wizard/SnippetStep.tsx`, `lib/sessions-kpi.ts` (`phraseProvenancePays`). Tests :
+`tests/unit/collecte-directe.test.ts` (le parcours d'un navigateur contre le receveur : préflights,
+clé, rejeu, `geo_source = 'geoip'`), `tests/unit/ingest-endpoint.test.ts`,
+`tests/unit/extension-resolution.test.ts`, `tests/unit/sessions-kpi.test.ts`,
+`tests/integration/queries-sessions-sql.test.ts`.
+
+### Ce que la voie directe change pour un client, et ce qu'elle ne change pas
+
+- **Pas de repli** : par la console, un collector injoignable laisse la console écrire elle-même ; en
+  direct, le SDK garde ses lots dans le stockage local et les rejoue au chargement suivant, et un
+  morceau de rejeu est perdu (le SDK ne rejoue pas un rejeu). D'où le critère des 7 jours.
+- **Même clé, même CORS** : le collector exige la clé (`REQUIRE_API_KEY: "true"`) — c'est déjà lui
+  qui la vérifie pour les lots relayés — et lit les mêmes `app_registry.allowed_origins`. Le préflight annonce les en-têtes
+  `x-mip-*` du rejeu et, depuis le 30/09/2026, `access-control-expose-headers: retry-after` (le SDK lit
+  enfin le délai d'un 429 ou d'un 503 venu d'une autre origine — par la console aussi).
+- **Même nature de requête** : pour le navigateur d'un client, la console est déjà une autre origine ;
+  le préflight et le `fetch` `keepalive` du SDK ne changent pas, seule l'origine visée change. La CSP
+  du site, elle, doit autoriser la nouvelle origine en `connect-src`.
+
+### Mettre en service, pas à pas
+
+**0. Le critère : 7 jours pleins à 100 % sans repli.** Le relais est à 100 % depuis le 28/09/2026,
+07:10 UTC : **pas avant le 05/10/2026, 07:10 UTC**. « Sans repli » : aucune ligne `relay fallback`
+ni `relay circuit open` dans les journaux Vercel de la console (service `ingest`) sur ces 7 jours.
+Si l'offre Vercel ne garde pas 7 jours de journaux, les relever chaque jour ; un repli remet le
+compteur à zéro. Le dogfooding direct doit avoir prouvé `geo_source = 'geoip'` (fait le 28/09/2026,
+`docs/RUM_PARITY_STATUS.md`, D14).
+
+**1. Prouver la façade et le CORS du premier client**, le jour même (lectures seules, rien n'est écrit) :
+
+```sh
+railway variables --service collector --json | jq -r .METRICS_TOKEN \
+  | node scripts/ops/verifier-ip-directe.mjs --origine https://<site du client>
+```
+
+Attendu : code **0**, avec `✓ CORS : https://<site du client> est acceptée`, `✓ CORS du rejeu`,
+`✓ la façade écrase l'adresse forgée`, et `source railway, base actif (dbip-country-lite-AAAA-MM)`.
+Code **1** : ne rien allumer. Origine refusée : l'ajouter aux domaines de l'application (fiche du
+client), 60 s.
+
+**2. Vérifier la CSP du site** : `curl -sI https://<site du client> | grep -i content-security-policy`.
+Pas de CSP, ou un `connect-src` (à défaut `default-src`) qui admet `https:` ou `*` : collecte directe
+possible. Un `connect-src` qui n'admet que la console : ajouter l'origine du collector, ou garder ce
+client en relais (code « par la console »). Même contrôle pour chaque domaine de l'extension
+(`/admin/extension-scope`) ; un domaine à garder sur la console se déclare **avant** l'étape 3 :
+
+```sql
+update extension_scope set endpoint = 'https://mip-rum-console.vercel.app/api/ingest/v1/traces'
+ where domain = '<domaine>' and endpoint is null;
+```
+
+**3. Vercel** → Settings → Environment Variables : `NEXT_PUBLIC_DIRECT_COLLECTOR_URL` =
+`https://collector-production-d769.up.railway.app` (l'origine, sans chemin ; la même valeur que
+`NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL`), environnement **Production** seulement. **Redéployer** : la
+variable est inscrite au build.
+
+**4. Contrôler la console** : `/admin/health`, « Collecte directe des navigateurs des clients :
+ouverte » et l'adresse du collector ; la fiche du client montre « Recommandé : collecte directe »,
+un code qui commence par `<!-- MIP RUM — collecte directe (pays par l'adresse IP) -->`, et le code
+« par la console » dans « La CSP du site fige connect-src… ».
+
+**5. Basculer un client** : remettre au client le code de suivi de sa fiche (clé comprise) ; il
+remplace l'ancien sur son site (et sa CSP, étape 2). Sur le site, dans l'onglet Réseau : `OPTIONS`
+puis `POST …/v1/traces` vers le collector, en 204 puis 200 ; journaux du collector : `ingested`,
+aucun `rejected: api key`.
+
+**6. Dater la bascule** par un marqueur de déploiement de l'application — il s'affiche sur les
+courbes, et la requête de contrôle s'y ancre :
+
+```sql
+insert into deploy_marker (app_id, version, env, source)
+values ('<app>', 'collecte-directe', 'prod', 'manual');
+```
+
+**7. Contrôler en base**, après quelques visites (les **nouvelles** sessions ; une session déjà
+écrite garde sa première provenance, `on conflict`) :
+
+```sql
+with bascule as (
+  select max(ts) as depuis from deploy_marker where app_id = '<app>' and version = 'collecte-directe'
+)
+select count(*)                                              as sessions,
+       count(*) filter (where s.geo_source = 'geoip')           as par_adresse_ip,
+       count(*) filter (where s.geo_source in ('timezone', 'cdn')) as estime,
+       count(*) filter (where s.geo_source is null)             as inconnu
+  from rum_session s, bascule
+ where s.app_id = '<app>' and s.started_at > bascule.depuis;
+-- Et pas de pic de pays d'hébergeurs (US, DE, NL) : ce serait l'adresse d'un relais.
+select geo_country, count(*) from rum_session
+ where app_id = '<app>' and geo_source = 'geoip' and started_at > now() - interval '24 hours'
+ group by 1 order by 2 desc;
+```
+
+`par_adresse_ip` devient non nul : c'est le critère de P6b.G. Il reste nul : relancer l'étape 1, lire
+`/health` (`geoip.etat`), et l'onglet Réseau du site (le code est-il bien le nouveau ?). L'écran des
+sessions de l'application, onglet « Pays estimé », donne la même part.
+
+### Retour arrière
+
+| Geste | Effet | Délai |
+|---|---|---|
+| Rendre à un client le code « par la console » de sa fiche | ce site repasse par le relais ; pays de nouveau estimé | le déploiement du client |
+| Retirer `NEXT_PUBLIC_DIRECT_COLLECTOR_URL` sur Vercel et redéployer (ou Instant Rollback vers un déploiement antérieur à la variable) | les fiches reproposent la console ; l'extension revient à son défaut | le redéploiement, puis 60 s de cache pour l'extension |
+| `GEOIP_IP_SOURCE: "none"` dans `.railway/railway.ts`, **en PR**, puis approbation de l'apply | plus aucune adresse lue, quel que soit le code posé chez les clients ; les envois directs continuent d'être écrits, pays estimé | l'apply |
+
+Un code de suivi direct déjà posé chez un client **continue d'écrire au collector** après le retrait de
+la variable : la variable choisit ce que la console propose, pas ce que les sites envoient. Pour
+arrêter la lecture d'adresse partout, c'est la troisième ligne.
+
+| Symptôme | Cause probable | Geste |
+|---|---|---|
+| plus aucune session récente pour ce client | préflight refusé (origine absente), CSP qui bloque, clé fausse (403) | onglet Réseau du site ; `verifier-ip-directe.mjs --origine` ; rendre le code par la console |
+| `par_adresse_ip` reste à 0 | ancien code encore servi, apply GeoIP absent, base DB-IP `eteint` | étapes 1 et 5 ; `/health` |
+| pic de pays d'hébergeurs en `geoip` | adresse d'un relais retenue | `GEOIP_IP_SOURCE: "none"` (PR), relancer l'étape 1 |

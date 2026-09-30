@@ -1,6 +1,6 @@
 # Intégrer MIP RUM
 
-Au 29/09/2026. Ce guide s'adresse à l'équipe technique d'un client : il dit comment
+Au 30/09/2026. Ce guide s'adresse à l'équipe technique d'un client : il dit comment
 faire marcher la mesure, du navigateur au serveur. Les détails (options, CSP,
 consentement, routes…) sont en annexe, à la fin.
 
@@ -14,6 +14,14 @@ Toute la collecte arrive sur la console, `https://mip-rum-console.vercel.app/api
 `ingest_relay_pct` à 100 % depuis le 28/09/2026) et l'écrit elle-même si le relais
 échoue. Pour le client, une seule adresse.
 
+**La collecte directe, quand elle sera ouverte** (P6b.G : code prêt le 30/09/2026,
+mise en service pas avant le 05/10/2026). Le navigateur du site écrit alors
+directement au collecteur (`https://<collecteur>/v1/traces`, le rejeu sur `/v1/replay`),
+qui déduit le **pays de l'adresse IP** du visiteur — le relais de la console ne la
+transmet pas, et le pays n'y est qu'estimé d'après le fuseau horaire. La fiche du client
+propose alors ce code par défaut, et garde le code par la console pour un site dont la
+CSP fige `connect-src` (annexe C). Les agents serveur restent sur la console.
+
 ## 1. Créer l'application dans la console
 
 1. **Administration → Clients → « Ajouter un client »** : un nom, un identifiant
@@ -26,11 +34,12 @@ Toute la collecte arrive sur la console, `https://mip-rum-console.vercel.app/api
 3. Les domaines se modifient à tout moment depuis la fiche du client ; c'est pris en
    compte en 60 s au plus, sans redéploiement.
 
-**La clé, honnêtement.** Au 29/09/2026, la production ne l'exige pas
-(`REQUIRE_API_KEY: "false"` dans `.railway/railway.ts`) : les preuves des agents serveur
-du 28 et du 29/09/2026 ont envoyé sans `mip.api_key`. Posez-la quand même, dans le
-snippet (`apiKey`) et côté serveur (`mip.api_key`) : quand la variable passera à `true`,
-un lot sans clé ou avec une clé fausse sera refusé en 403.
+**La clé, honnêtement.** Depuis le 29/09/2026, la collecte l'exige
+(`REQUIRE_API_KEY: "true"` pour le `collector`, dans `.railway/railway.ts`) : un lot sans
+clé ou avec une clé fausse est refusé en 403, que le navigateur écrive par la console (le
+relais rend le 403 tel quel) ou directement au collecteur. Posez-la dans le snippet
+(`apiKey`) et côté serveur (`mip.api_key`). Seule exception, l'extension navigateur, qui
+n'a pas de clé : le domaine enregistré en tient lieu (§ 2, « L'extension »).
 
 La fiche du client ouvre ensuite un guide en cinq étapes : vérifier la configuration,
 poser le code de suivi, brancher le serveur, vérifier en direct, donner un accès au
@@ -56,6 +65,14 @@ pré-remplies :
 
 Ajouter l'option `apiKey` avec la clé du projet (§ 1).
 
+**Collecte directe** (quand elle est ouverte, voir en tête) : la fiche donne le même code,
+précédé de `<!-- MIP RUM — collecte directe (pays par l'adresse IP) -->`, avec
+`endpoint: "https://<collecteur>/v1/traces"`. Le script reste servi par la console ; seul
+l'envoi change d'adresse, et le rejeu suit (`/v1/replay`, dérivé par le SDK). Le site doit
+alors autoriser l'origine du collecteur en `connect-src` s'il a une CSP (annexe C) ; si sa
+CSP n'autorise que la console et ne peut pas changer, prendre le code « par la console »
+de la même fiche : le pays y reste estimé.
+
 - **HTML statique, Vite, CRA** : dans le `<head>` de `index.html`.
 - **Next.js** : deux `<Script strategy="beforeInteractive">` dans `app/layout.tsx`
   (App Router), ou les balises dans `pages/_document.tsx` (Pages Router).
@@ -80,7 +97,31 @@ menu. Elle n'injecte rien si la page porte déjà le SDK (`window.MIPRum`).
 parc de postes gérés, un site dont on n'a pas le code), jamais l'ensemble des visiteurs.
 Pour une mesure exhaustive, c'est le snippet. Les deux écrivent dans les mêmes tables ;
 la console les distingue (`collection_source` : `sdk` ou `extension`).
+
+Collecte directe ouverte, l'extension vise elle aussi le collecteur : la résolution de
+son domaine lui rend cette adresse, sans mise à jour de l'extension. Un domaine dont la
+CSP n'autorise que la console garde la console si son point de collecte est déclaré
+(`extension_scope.endpoint`, posé par l'équipe MIP).
 Installation et déploiement : `apps/extension/README.md`, `docs/DEPLOY_EXTENSION.md`.
+
+**Sans clé : le domaine enregistré en tient lieu** (depuis le 30/09/2026). L'extension
+n'embarque aucune clé : son code est public, aucun secret n'y tient. Quand la collecte exige
+une clé, un lot **sans clé** est accepté si et seulement si :
+
+1. tous ses spans portent `mip.collection_source = "extension"` (ce que pose le SDK injecté) ;
+2. l'origine de la page (en-tête `Origin`) est un domaine **actif** de
+   `/admin/extension-scope` pour cet `app_id` (nom d'hôte exact, port ignoré) ;
+3. l'application est active et non suspendue.
+
+Relayée par la console, l'origine de la page est transmise au collector sous la signature du
+relais (`x-mip-edge-origin`, lue seulement si la signature est bonne). Un lot qui porte une
+clé est jugé sur sa clé ; le snippet sans clé reste refusé, comme le rejeu et les logs
+(l'extension n'en envoie pas) ; la limite de débit par application s'applique comme au
+snippet. Ce n'est pas un affaiblissement : la clé d'un snippet se lit dans le code source
+de la page, et un domaine enregistré, qu'un en-tête `Origin` forgé suffit à usurper hors
+d'un navigateur, ne protège ni plus ni moins. La règle vit à un seul endroit,
+`createPgAuth` (`packages/backend/lib/pg-ingest.mjs`), pour la console comme pour le
+collector.
 
 ## 3. Serveur : l'agent OpenTelemetry officiel
 
@@ -101,7 +142,8 @@ serveur de chaque appel.
    navigateur, temps serveur). Ouvrir le site dans un autre onglet et la regarder
    passer au vert.
 2. **Le navigateur du site** : `window.MIPRum` existe ; dans l'onglet Réseau, les
-   `POST …/api/ingest/v1/traces` répondent 200.
+   `POST …/api/ingest/v1/traces` répondent 200 (en collecte directe : un `OPTIONS` puis
+   des `POST …/v1/traces` vers le collecteur, en 204 puis 200).
 3. **La console**, application sélectionnée : Vue d'ensemble, Sessions, Tracing, Erreurs.
 
 ## 5. Dépannage
@@ -109,8 +151,10 @@ serveur de chaque appel.
 | Symptôme | Cause probable | Que faire |
 |---|---|---|
 | Erreur CORS dans la console du navigateur | domaine absent des domaines autorisés | l'ajouter sur la fiche du client (60 s) |
+| Collecte directe : « Refused to connect », violation CSP | la CSP du site n'autorise pas le collecteur en `connect-src` | l'y ajouter (annexe C), ou prendre le code « par la console » de la fiche |
 | 403 `inactive app`, `ingestion suspended` | application désactivée ou suspendue | la réactiver (administration) |
 | 403 `invalid api key`, `app requires an API key` | la collecte exige une clé, absente ou fausse | poser la bonne clé (`apiKey`, ou `mip.api_key` côté serveur) |
+| 403 `extension origin not registered` | lot de l'extension, sans clé, dont la page n'est pas un domaine actif de l'application | enregistrer ou réactiver le nom d'hôte exact dans `/admin/extension-scope` (60 s) |
 | 429 | plus de 600 requêtes par minute pour l'application | attendre (`retry-after: 60`) ; le SDK rejoue ses lots plus tard. Si ça dure : une boucle d'émission, `flushIntervalMs` à allonger ; côté serveur, annexe J |
 | 413 | requête de plus de 2 Mo | réduire les lots (côté serveur : taille de lot de l'exportateur) |
 | 415 | ni JSON ni protobuf, ou gRPC | côté serveur : `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` |
@@ -232,6 +276,19 @@ Le bloc d'initialisation est un script en ligne : la CSP doit l'autoriser (un no
 ```
 Content-Security-Policy: script-src 'self' https://mip-rum-console.vercel.app; connect-src 'self' https://mip-rum-console.vercel.app;
 ```
+
+**En collecte directe**, `connect-src` porte l'origine du **collecteur**, que la fiche du
+client cite (au 30/09/2026 : `https://collector-production-d769.up.railway.app`) ; le
+script, lui, reste servi par la console :
+
+```
+Content-Security-Policy: script-src 'self' https://mip-rum-console.vercel.app; connect-src 'self' https://collector-production-d769.up.railway.app;
+```
+
+Une CSP qui n'autorise que la console en `connect-src` et ne peut pas changer (politique
+figée par un tiers, validation longue) : le code « par la console » de la fiche, qui
+marche sans rien toucher ; le pays y reste estimé (fuseau horaire) ou « Inconnue », et
+l'écran des sessions le dit (onglet « Pays estimé »).
 
 ## Annexe D — Collecte d'erreurs du navigateur
 

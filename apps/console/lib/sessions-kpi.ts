@@ -198,6 +198,61 @@ export function partDuTout(sessions: number, total: number): string {
   return formater("pct", total > 0 ? sessions / total : null);
 }
 
+// ─────────────────────── Provenance du pays (collecte directe) ───────────────────────
+//
+// « L'ÉCRAN DOIT LE DIRE. » Une application dont le code de suivi passe par la
+// console n'a JAMAIS de pays tiré de l'adresse IP : le relais ne la transmet pas
+// (ADR 0005). Seule la collecte directe au collecteur en donne — et une
+// application dont la CSP fige `connect-src` sur la console reste en relais.
+// Sans cette ligne, l'onglet « Pays estimé » d'une telle application se lirait
+// comme une géolocalisation manquée, ou pire, comme une géolocalisation.
+
+/** Sessions commencées selon d'où vient leur pays. */
+export interface PartsProvenancePays {
+  total: number;
+  /** Base IP→pays du collecteur, sur l'adresse d'une requête reçue en direct. */
+  adresseIp: number;
+  /** Fuseau horaire du terminal, ou pays transmis par le relais de la console. */
+  estime: number;
+  /** Pas de pays, ou un pays écrit avant que sa provenance ne soit collectée. */
+  inconnu: number;
+}
+
+/**
+ * Les trois parts, depuis la répartition par provenance (`country_source`).
+ * « Inconnu » est le RESTE du tout, pas le seul groupe sans valeur : un groupe
+ * hors registre ou une troncature ne gonfle jamais une part connue.
+ */
+export function partsProvenancePays(
+  groupes: readonly { valeur: string | null; sessions: number }[],
+  total: number,
+): PartsProvenancePays {
+  let adresseIp = 0;
+  let estime = 0;
+  for (const g of groupes) {
+    if (g.valeur === "geoip") adresseIp += g.sessions;
+    else if (g.valeur === "timezone" || g.valeur === "cdn") estime += g.sessions;
+  }
+  return { total, adresseIp, estime, inconnu: Math.max(0, total - adresseIp - estime) };
+}
+
+/** La phrase affichée sous l'onglet « Pays estimé » ; `null` sans session commencée. */
+export function phraseProvenancePays(p: PartsProvenancePays): string | null {
+  if (p.total <= 0) return null;
+  const parts =
+    `Pays tiré de l'adresse IP : ${partDuTout(p.adresseIp, p.total)} des sessions ; ` +
+    `estimé (fuseau horaire du terminal, ou pays transmis par la console) : ${partDuTout(p.estime, p.total)} ; ` +
+    `inconnu : ${partDuTout(p.inconnu, p.total)}.`;
+  if (p.adresseIp > 0) {
+    return `${parts} Seules les mesures envoyées directement au collecteur donnent un pays par l'adresse IP.`;
+  }
+  return (
+    `${parts} Aucune de ces sessions n'a de pays tiré de l'adresse IP : leurs mesures passent par la console, ` +
+    `qui ne transmet pas l'adresse. La collecte directe au collecteur le permet, sauf pour un site dont la ` +
+    `politique de sécurité (CSP) n'autorise que la console.`
+  );
+}
+
 /**
  * Ce que la troncature laisse hors de l'écran, en sessions : un COMPTE s'additionne,
  * donc le reste est exact (total − groupes affichés). Rien à dire sans troncature.

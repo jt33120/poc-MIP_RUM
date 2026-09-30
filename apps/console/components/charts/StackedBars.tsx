@@ -44,6 +44,7 @@ import {
   graduationsTemps,
   hrefZoom,
   libellePeriodeEnCours,
+  libellePremiereTranchePartielle,
   libelleSeau,
   libelleSeauComplet,
   nombreOuNull,
@@ -68,8 +69,10 @@ import {
   PaveHorsCollecte,
   PointsIgnores,
   SeriesEcartees,
+  formeBarreAuxBords,
   formateurGraduations,
   margeHauteAnnotations,
+  useBordsDeGrille,
   useCollecteDesSeaux,
   useIdSvg,
   useSeauEnCours,
@@ -161,6 +164,8 @@ interface FormeGrille {
    * interrompu n'a pas de barre à 0 mais une zone hachurée « non mesuré ».
    */
   fenetresCollecte?: readonly FenetreCollecte[];
+  /** Début de la plage (voir `ThresholdSeries`) : le premier seau partiel est marqué et réduit à sa part. */
+  debutPlage?: string;
 }
 
 export type StackedBarsProps = FormeAncienne | FormeGrille;
@@ -240,6 +245,7 @@ function InfobulleEmpilee({
   fuseau,
   enCours,
   dernier,
+  premierPartiel,
   collecte,
   survole = true,
 }: {
@@ -254,6 +260,7 @@ function InfobulleEmpilee({
   fuseau: string;
   enCours: boolean;
   dernier: string | undefined;
+  premierPartiel?: { t: string; libelle: string } | null;
   collecte?: ReadonlyMap<string, CollecteSeau>;
 }) {
   const ligne = payload?.[0]?.payload;
@@ -283,6 +290,7 @@ function InfobulleEmpilee({
       {enCours && label === dernier && (
         <p className="text-ink-soft">{libellePeriodeEnCours(seauSecondes, estJour(label))}</p>
       )}
+      {premierPartiel && label === premierPartiel.t && <p className="text-ink-soft">{premierPartiel.libelle}</p>}
     </div>
   );
 }
@@ -303,12 +311,19 @@ function BarresSurGrille({
   debutCollecte,
   noteCollecte = true,
   fenetresCollecte,
+  debutPlage,
 }: FormeGrille) {
   const router = useRouter();
   const prefixe = useIdSvg("motif");
   const prefixeEnCours = useIdSvg("en-cours");
   const motifHorsCollecte = useIdSvg("hors-collecte");
   const { enCours, maintenant } = useSeauEnCours(grille, seauSecondes, fuseau);
+  const bords = useBordsDeGrille(grille, seauSecondes, fuseau, debutPlage, maintenant);
+  const formeBarre = useMemo(() => formeBarreAuxBords(bords, grille.length), [bords, grille.length]);
+  const premierPartiel =
+    bords.premierPartiel !== null && debutPlage && grille[0] !== undefined
+      ? { t: grille[0], libelle: libellePremiereTranchePartielle(debutPlage, seauSecondes, fuseau) }
+      : null;
   const { collecte, fenetres: fenetresVisibles } = useCollecteDesSeaux(grille, seauSecondes, fuseau, fenetresCollecte, maintenant);
   const collecteParSeau = useMemo(() => new Map(grille.map((t, i) => [t, collecte[i] ?? null])), [grille, collecte]);
   const { dessinees, ecartees } = useMemo(() => dessinerSeries(series, prefixe), [series, prefixe]);
@@ -456,6 +471,7 @@ function BarresSurGrille({
                   fuseau={fuseau}
                   enCours={enCours}
                   dernier={dernier}
+                  premierPartiel={premierPartiel}
                   collecte={collecteParSeau}
                 />
               }
@@ -470,6 +486,8 @@ function BarresSurGrille({
                 stroke={s.motifEffectif === "plein" ? undefined : s.couleur}
                 strokeWidth={s.motifEffectif === "plein" ? 0 : 1}
                 maxBarSize={48}
+                shape={formeBarre}
+                activeBar={formeBarre}
                 radius={i === dessinees.length - 1 ? [3, 3, 0, 0] : undefined}
                 isAnimationActive={false}
                 hide={legende.aspect(s.cle) === "masquee"}
@@ -491,6 +509,10 @@ function BarresSurGrille({
                 {prep.lignes.map((_l, k) =>
                   k === indexEnCours ? (
                     <Cell key={k} fill={`url(#${idEnCours(i)})`} stroke={s.couleur} strokeWidth={1} data-en-cours="" />
+                  ) : k === 0 && premierPartiel ? (
+                    // Premier seau partiel : réduit à sa part (`formeBarre`) et voilé, cerné
+                    // en tirets — le même langage que le point creux d'une ligne.
+                    <Cell key={k} fillOpacity={0.45} stroke={s.couleur} strokeDasharray="3 2" data-premier-partiel="" />
                   ) : (
                     <Cell key={k} />
                   ),
@@ -548,6 +570,14 @@ function BarresSurGrille({
           <li className="flex items-center gap-1.5" data-testid="legende-seau-en-cours">
             <PaveEnCours id={idEnCours(0)} />
             {libellePeriodeEnCours(seauSecondes, estJour(dernier ?? ""))}
+          </li>
+        )}
+        {premierPartiel && dessinees.length > 0 && (
+          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-premier-partiel">
+            <svg width={12} height={10} aria-hidden="true" className="shrink-0">
+              <rect x={0.5} y={0.5} width={11} height={9} rx={2} fill={dessinees[0].couleur} fillOpacity={0.45} stroke={dessinees[0].couleur} strokeDasharray="3 2" />
+            </svg>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{premierPartiel.libelle}</span>
           </li>
         )}
         {prep.horsCollecte.length > 0 && (

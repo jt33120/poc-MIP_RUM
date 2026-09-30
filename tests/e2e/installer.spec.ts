@@ -104,13 +104,13 @@ test("le client lit la page : trois cartes, ses valeurs, et le test du code de s
   expect(await debordements(page)).toEqual([]);
 });
 
-test("extension et serveur : l'onglet suit l'ancre, l'avertissement de la clé est en tête", async ({ page }) => {
+test("extension et serveur : l'onglet suit l'ancre, la règle sans clé est en tête", async ({ page }) => {
   await ouvrir(page, 1440);
   await page.getByTestId("onglet-extension").click();
   await expect(page).toHaveURL(/#extension$/);
   const extension = page.getByTestId("parcours-extension");
   await expect(extension).toBeVisible();
-  await expect(extension.getByTestId("avertissement-extension")).toContainText("clé d'API");
+  await expect(extension.getByTestId("regle-extension")).toContainText("domaine enregistré");
   await expect(extension.getByTestId("domaines-extension")).toContainText(DOMAINE);
   await expect(extension.getByTestId("domaines-extension").locator('[data-etat="actif"]')).toHaveCount(1);
   // Aucun battement, aucune mesure : le sondage tourne (onglet visible).

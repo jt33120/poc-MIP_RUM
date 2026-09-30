@@ -56,7 +56,7 @@ import {
 } from "@/lib/queries-experience";
 import { hrefWithQuery, paramReader, previousRange, rangeLabel, type AnalyticsQuery } from "@/lib/query-contract";
 import { THRESHOLDS } from "@/lib/rating";
-import { libelleSeauComplet } from "@/lib/series";
+import { fenetresLues, libelleSeauComplet, type FenetreCollecte } from "@/lib/series";
 import { ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
 import { ecrirePanel, gabaritZoom, lireComparaison, lireTri } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
@@ -122,7 +122,7 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
 
   // CHAQUE LECTURE EST INDÉPENDANTE (§ 3.8 règle 1) : une lecture en échec ne dit que
   // son propre échec, les autres sections s'affichent.
-  const { stats, statsPrev, contexte, frustration, tendance, recents, parPage, lcpPages, deploys, couvPart, couvCompte } = ecran;
+  const { stats, statsPrev, contexte, frustration, tendance, recents, parPage, lcpPages, deploys, couvPart, couvCompte, fenetresCollecte } = ecran;
 
   const s = stats.ok ? stats.data : null;
   const p = statsPrev?.ok ? statsPrev.data : null;
@@ -193,6 +193,7 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
           seauSecondes={q.range.bucketSeconds}
           annotations={annotations}
           zoom={zoom}
+          fenetresCollecte={fenetresLues(fenetresCollecte)}
         />
       </SectionErreur>
 
@@ -460,6 +461,7 @@ function HeroSatisfaction({
   seauSecondes,
   annotations,
   zoom,
+  fenetresCollecte,
 }: {
   tendance: SectionLue<FeedbackTrendContratPoint[]>;
   label: string;
@@ -467,6 +469,8 @@ function HeroSatisfaction({
   seauSecondes: number;
   annotations: ReturnType<typeof annotationsDeploiements>;
   zoom: string;
+  /** Fenêtres hors collecte (`sectionFenetresCollecte`) : hachures « non mesuré » des deux panneaux, datées sous le second. */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const points = tendance.ok ? tendance.data.map((pt) => ({ t: pt.bucket, csat: pt.csat, avis: pt.avis })) : [];
   const grille = points.map((pt) => pt.t);
@@ -516,6 +520,8 @@ function HeroSatisfaction({
             hauteur={190}
             synchro="satisfaction"
             legendeAnnotations={false}
+            fenetresCollecte={fenetresCollecte}
+            noteCollecte={false}
             ariaLabel={`CSAT par tranche de ${bucketLabel}, ${label}`}
           />
           <ThresholdSeries
@@ -531,6 +537,7 @@ function HeroSatisfaction({
             zoomHref={zoom}
             hauteur={110}
             synchro="satisfaction"
+            fenetresCollecte={fenetresCollecte}
             ariaLabel={`Avis notés par tranche de ${bucketLabel}, ${label}`}
           />
         </div>

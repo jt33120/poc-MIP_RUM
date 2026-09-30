@@ -11,7 +11,7 @@
 //     remplacerait la politique du site au lieu de s'y ajouter.
 import { describe, expect, it } from "vitest";
 import {
-  AVERTISSEMENT_EXTENSION_SANS_CLE,
+  REGLE_EXTENSION_SANS_CLE,
   DUREE_MAX_SONDAGE_MS,
   INTERVALLE_SONDAGE_MS,
   PLAFOND_COMPTE,
@@ -116,8 +116,8 @@ describe("les états du test « ça arrive »", () => {
     expect(b.detail).toContain("1 poste");
     expect(m.ok).toBe(false);
     expect(toutVert("extension", battement)).toBe(false);
-    // L'avertissement de la clé : tant qu'il est posé, la case des mesures le rappelle.
-    expect(Boolean(m.aide)).toBe(Boolean(AVERTISSEMENT_EXTENSION_SANS_CLE));
+    // Sans mesure, la case dit ce qui les refuse : un domaine non enregistré.
+    expect(m.aide).toContain("domaine");
     expect(toutVert("extension", { ...battement, derniere_mesure_extension: INSTANT })).toBe(true);
   });
 
@@ -134,13 +134,10 @@ describe("les états du test « ça arrive »", () => {
     expect(compteLisible(PLAFOND_COMPTE, "session", "sessions")).toBe("1 000 sessions et plus");
   });
 
-  it("l'avertissement de l'extension est UNE constante, qui dit la clé et le refus", () => {
-    // `null` le retire partout ; tant qu'il est posé, il dit la date, la clé et le 403.
-    if (AVERTISSEMENT_EXTENSION_SANS_CLE !== null) {
-      expect(AVERTISSEMENT_EXTENSION_SANS_CLE).toContain("29/09/2026");
-      expect(AVERTISSEMENT_EXTENSION_SANS_CLE).toContain("clé d'API");
-      expect(AVERTISSEMENT_EXTENSION_SANS_CLE).toContain("403");
-    }
+  it("la règle de l'extension dit ce qui remplace la clé, et le refus", () => {
+    expect(REGLE_EXTENSION_SANS_CLE).toContain("clé d'API");
+    expect(REGLE_EXTENSION_SANS_CLE).toContain("domaine enregistré");
+    expect(REGLE_EXTENSION_SANS_CLE).toContain("403");
   });
 });
 

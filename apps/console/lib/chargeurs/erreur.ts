@@ -31,6 +31,7 @@ import {
 } from "../queries-errors";
 import { UnsupportedFilterError } from "../query-compiler";
 import { authorizedScope } from "../query-contract";
+import { sectionFenetresCollecte } from "./collecte";
 import { section, type Chargeur } from "./commun";
 import { lirePileErreur } from "./pile-erreur";
 
@@ -103,7 +104,7 @@ export const chargerErreur = (async (principal, sp, { fingerprint = "" }) => {
   // déploiements sont trois sections. La part divise par des sessions avec VUE : un
   // filtre que les pages vues ne portent pas (`service`) la refuse — un refus de
   // contrat pour CETTE phrase, pas une panne de l'écran (V10).
-  const [part, releases, deploys, pile] = await Promise.all([
+  const [part, releases, deploys, pile, fenetresCollecte] = await Promise.all([
     section<PartGroupe>(async () => {
       try {
         return { lu: await partSessionsTouchees(fGroupe, ref) };
@@ -116,7 +117,9 @@ export const chargerErreur = (async (principal, sp, { fingerprint = "" }) => {
     section(() => listDeploys({ ...ecran.filters, app: ref.app_id }, 20)),
     // La pile du dernier exemplaire ; le contexte de code, à l'administrateur hors démo.
     lirePileErreur(detail.group.app_id, detail.last, admin),
+    // Les hachures « non mesuré » des occurrences dans le temps : une section à part.
+    sectionFenetresCollecte(query),
   ]);
 
-  return { etat: "ok", f, ref, label, bucketLabel, query, cursor, historique, detail, part, releases, deploys, pile, lectureSeule: !admin } as const;
+  return { etat: "ok", f, ref, label, bucketLabel, query, cursor, historique, detail, part, releases, deploys, pile, fenetresCollecte, lectureSeule: !admin } as const;
 }) satisfies Chargeur<unknown>;

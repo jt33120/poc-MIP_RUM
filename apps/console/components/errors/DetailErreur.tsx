@@ -43,7 +43,7 @@ import type {
   ReleaseTouchee,
   ReleaseVue,
 } from "@/lib/queries-errors";
-import type { Annotation, PointSerie, SerieDef } from "@/lib/series";
+import type { Annotation, FenetreCollecte, PointSerie, SerieDef } from "@/lib/series";
 import { libelleSeauComplet } from "@/lib/series";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
@@ -403,6 +403,7 @@ export function OccurrencesDansLeTemps({
   annotations,
   annotationsIndisponibles,
   zoomHref,
+  fenetresCollecte,
 }: {
   trend: readonly ErrorTrendPoint[];
   /** Débuts de seau du contrat, ISO UTC (`bucketStarts`). */
@@ -413,6 +414,8 @@ export function OccurrencesDansLeTemps({
   annotations: Annotation[];
   annotationsIndisponibles?: string;
   zoomHref?: string;
+  /** Fenêtres hors collecte (`sectionFenetresCollecte`) : une tranche interrompue est hachurée « non mesuré », pas une barre à 0. */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const titre = "Occurrences dans le temps";
   const parSeau = new Map(trend.map((p) => [new Date(p.bucket).getTime(), p.occurrences]));
@@ -452,6 +455,7 @@ export function OccurrencesDansLeTemps({
         annotations={annotations}
         annotationsIndisponibles={annotationsIndisponibles}
         zoomHref={zoomHref}
+        fenetresCollecte={fenetresCollecte}
         ariaLabel={`Occurrences de ce groupe par tranche de ${bucketLabel} sur ${plage}`}
       />
     </Figure>

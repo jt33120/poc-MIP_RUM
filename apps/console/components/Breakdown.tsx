@@ -187,6 +187,7 @@ export function Breakdown({
   avertissement,
   reference,
   ecartLibelle = "Écart à l'ensemble",
+  precision,
 }: {
   title: string;
   /** Onglets par défaut (`breakdownTabs`). */
@@ -214,6 +215,12 @@ export function Breakdown({
   reference?: string | null;
   /** En-tête de la colonne d'écart. */
   ecartLibelle?: string;
+  /**
+   * Ce que l'écran doit dire de la dimension EN PLUS de sa notice, chiffré pour
+   * la population affichée (la part des pays tirés de l'adresse IP sous « Pays
+   * estimé »). Sous la notice, dans la même carte.
+   */
+  precision?: string | null;
 }) {
   // Base 100 % : la plus grande valeur (plus « au moins 1 », qui écrasait les parts et les CLS).
   const max = Math.max(0, ...items.map((item) => item.value ?? 0)) || 1;
@@ -245,6 +252,11 @@ export function Breakdown({
       <OngletsDecoupage titre={title} onglets={liste} />
 
       <p className="mb-4 text-xs leading-relaxed text-ink-soft">{notice}</p>
+      {precision && (
+        <p className="-mt-2 mb-4 text-xs leading-relaxed text-ink" data-testid="breakdown-precision">
+          {precision}
+        </p>
+      )}
       {tri === "gravite" && (
         <p className="-mt-2 mb-4 text-xs leading-relaxed text-ink-soft" data-testid="breakdown-regle-tri">
           Du plus dégradé au moins dégradé ; un groupe de moins de {SEUIL_ECHANTILLON_FAIBLE} mesures est rangé en fin,

@@ -20,6 +20,7 @@ import {
   grilleDesJours,
   hrefDeSource,
   hrefEvenement,
+  lectureSansDonnees,
   libelleDeRegle,
   pistesDeDeclenchements,
   pointsParJour,
@@ -88,11 +89,25 @@ describe("F64 — comptesRegles (A3, A4)", () => {
       // Désactivée : son dernier état est une photo périmée, elle ne compte nulle part.
       regle({ id: 5, last_state: "breached", active: false }),
     ]);
-    expect(c).toEqual({ actives: 4, franchies: 1, sansDonnees: 2, jamaisEvaluees: 1 });
+    expect(c).toEqual({ actives: 4, franchies: 1, sansDonnees: 2, jamaisEvaluees: 1, horsCollecte: 0 });
   });
 
   it("aucune règle : des zéros réels, pas un inconnu", () => {
-    expect(comptesRegles([])).toEqual({ actives: 0, franchies: 0, sansDonnees: 0, jamaisEvaluees: 0 });
+    expect(comptesRegles([])).toEqual({ actives: 0, franchies: 0, sansDonnees: 0, jamaisEvaluees: 0, horsCollecte: 0 });
+  });
+
+  it("hors collecte (v105) : compté sans données, jamais « franchie » ni « normale », et la tuile dit pourquoi", () => {
+    const c = comptesRegles([
+      regle({ id: 1, last_state: "hors_collecte" }),
+      regle({ id: 2, last_state: "no_data" }),
+      regle({ id: 3, last_state: null }),
+    ]);
+    expect(c).toEqual({ actives: 3, franchies: 0, sansDonnees: 3, jamaisEvaluees: 1, horsCollecte: 1 });
+    // `pluriel` lie le nombre à son nom par une espace insécable.
+    expect(lectureSansDonnees(c).replace(/[  ]/g, " ")).toBe("pas assez d'historique pour conclure, dont 1 règle jamais évaluée et 1 hors collecte (collecte interrompue)");
+    const toutes = comptesRegles([regle({ id: 1, last_state: "hors_collecte" }), regle({ id: 2, last_state: "hors_collecte" })]);
+    expect(lectureSansDonnees(toutes)).toBe("collecte interrompue sur leur fenêtre : rien n'a pu être mesuré, aucune alerte ne part");
+    expect(lectureSansDonnees(comptesRegles([regle({ last_state: "ok" })]))).toBe("toutes les règles actives ont assez d'historique");
   });
 });
 
@@ -141,6 +156,11 @@ describe("F64 — état d'une règle (A7, frise)", () => {
     expect(etatDeRegle(regle({ last_state: null })).libelle).toBe("Données insuffisantes");
     expect(etatDeRegle(regle({ last_state: "breached" }))).toMatchObject({ libelle: "Franchie", ton: "bad" });
     expect(etatDeRegle(regle({ last_state: "ok" }))).toMatchObject({ libelle: "Normale", ton: "good" });
+    expect(etatDeRegle(regle({ last_state: "hors_collecte", last_reason: "collecte interrompue sur la plateforme" }))).toEqual({
+      libelle: "Hors collecte",
+      ton: "neutre",
+      raison: "collecte interrompue sur la plateforme",
+    });
     expect(etatDeRegle(regle({ active: false })).libelle).toBe("Désactivée");
   });
 

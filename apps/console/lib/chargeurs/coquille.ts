@@ -17,6 +17,7 @@ import { fuseauDe } from "../fuseau";
 import { lire, type Lecture } from "../lecture";
 import { projectsForUser } from "../project-liste";
 import type { AppItem } from "../queries";
+import { lireEtatMesure, type EtatMesure } from "../queries-chaine";
 import { dimensionSchema } from "../query-schema";
 
 export interface CoquilleChargee {
@@ -25,15 +26,22 @@ export interface CoquilleChargee {
   readonly schema: Lecture<string[]>;
   /** Le fuseau de chaque projet du principal. */
   readonly fuseaux: Record<string, string>;
+  /**
+   * L'état de la chaîne de mesure, pour le badge de l'en-tête : lu ICI parce que
+   * la coquille lit déjà la base à chaque écran, et gardé 60 s (`lireEtatMesure`) —
+   * l'actualisation de 5 s ne réveille rien de plus. `null` : schéma absent.
+   */
+  readonly mesure: Lecture<EtatMesure | null>;
 }
 
 export async function chargerCoquille(user: Pick<SessionUser, "role" | "apps">): Promise<CoquilleChargee> {
   // RBAC : seulement les projets autorisés (viewer scopé ; liste vide = aucun).
   const projets = await lire(() => projectsForUser(user));
   const apps = projets.ok ? projets.data : [];
-  const [schema, fuseaux] = await Promise.all([
+  const [schema, fuseaux, mesure] = await Promise.all([
     lire(() => dimensionSchema().then((colonnes) => [...colonnes].sort())),
     Promise.all(apps.map(async (a) => [a.app_id, await fuseauDe(a.app_id)] as const)).then(Object.fromEntries),
+    lire(() => lireEtatMesure()),
   ]);
-  return { projets, schema, fuseaux };
+  return { projets, schema, fuseaux, mesure };
 }

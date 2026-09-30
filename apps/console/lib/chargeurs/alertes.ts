@@ -21,6 +21,7 @@ import {
   unackedAlertCount,
 } from "../queries-v2";
 import { JOURS_DECLENCHEMENTS, PLAFOND_DECLENCHEMENTS } from "../alerting";
+import { sectionFenetresCollecteRecentes } from "./collecte";
 import { section, sansSection, type Chargeur, type PrincipalEcran } from "./commun";
 
 /** Les applications où le principal peut écrire (règle, SLO, canal, sonde) : toutes, ou sa liste. */
@@ -40,7 +41,7 @@ export const chargerAlertes = (async (principal, sp) => {
   if (!ecran.ok) return { etat: "refus", problem: ecran.problem } as const;
   const f = ecran.filters;
   const { admin, plateforme } = droitsDEcriture(principal);
-  const [regles, evenements, nonAcquittees, apps, canaux, parJour, declenchements, releaseDetectee] = await Promise.all([
+  const [regles, evenements, nonAcquittees, apps, canaux, parJour, declenchements, releaseDetectee, fenetresCollecte] = await Promise.all([
     section(() => alertRules(f)),
     section(() => alertEvents(f)),
     section(() => unackedAlertCount(f)),
@@ -51,6 +52,9 @@ export const chargerAlertes = (async (principal, sp) => {
     // F68 : le formulaire n'existe que pour un administrateur ; lui seul a besoin de
     // savoir si l'évaluateur connaît le mode release (B52, migration-v86).
     admin ? section(() => releaseRegressionDisponible()) : sansSection(false),
+    // Les hachures « non mesuré » des déclenchements par jour : les trente jours de
+    // l'axe, pas la plage de l'écran (qui ne s'y applique pas).
+    sectionFenetresCollecteRecentes(ecran.query, JOURS_DECLENCHEMENTS * 86_400_000),
   ]);
   return {
     etat: "ok",
@@ -67,5 +71,6 @@ export const chargerAlertes = (async (principal, sp) => {
     parJour,
     declenchements,
     releaseDetectee,
+    fenetresCollecte,
   } as const;
 }) satisfies Chargeur<unknown>;

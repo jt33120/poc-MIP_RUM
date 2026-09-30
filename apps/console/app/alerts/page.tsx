@@ -64,6 +64,7 @@ import {
   PLAFOND_DECLENCHEMENTS,
   PLAFOND_FLUX,
   comptesRegles,
+  lectureSansDonnees,
   pistesDeDeclenchements,
   pointsParJour,
   SEVERITES_AFFICHEES,
@@ -72,6 +73,7 @@ import {
 } from "@/lib/alertes-ecran";
 import { ackEventAction, createRuleAction, evaluateNowAction } from "./actions";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { fenetresLues } from "@/lib/series";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +93,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
   // ne touche aucun chiffre, donc elle ne justifie pas un refus.
   const { etat: vue, ignores } = lireEtatDeVue("/alerts", lecteur, { estMetriqueAlerte: isAlertMetric });
 
-  const { admin, plateforme, regles, evenements, nonAcquittees, apps, canaux, parJour, declenchements, releaseDetectee } = ecran;
+  const { admin, plateforme, regles, evenements, nonAcquittees, apps, canaux, parJour, declenchements, releaseDetectee, fenetresCollecte } = ecran;
   const modeRelease: ModeRelease = !releaseDetectee.ok
     ? { disponible: false, raison: RAISON_DETECTION_RELEASE }
     : releaseDetectee.data
@@ -243,18 +245,9 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
             valeur={comptes ? comptes.sansDonnees : null}
             format="count"
             raisonNull="lecture en échec"
-            // Une règle sans données n'est pas « normale » : elle ne surveille rien encore.
-            lecture={
-              comptes
-                ? comptes.sansDonnees === 0
-                  ? "toutes les règles actives ont assez d'historique"
-                  : `pas assez d'historique pour conclure${
-                      comptes.jamaisEvaluees > 0
-                        ? `, dont ${pluriel(comptes.jamaisEvaluees, "règle jamais évaluée", "règles jamais évaluées")}`
-                        : ""
-                    }`
-                : undefined
-            }
+            // Une règle sans données n'est pas « normale » : elle ne surveille rien encore,
+            // ou la collecte était coupée sur sa fenêtre (v105).
+            lecture={comptes ? lectureSansDonnees(comptes) : undefined}
             href="#regles"
           />
           <KpiTile
@@ -308,6 +301,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                 seauSecondes={JOUR_SECONDES}
                 fuseau={FUSEAU_AFFICHAGE}
                 hauteur={80}
+                fenetresCollecte={fenetresLues(fenetresCollecte)}
                 ariaLabel={`Déclenchements par jour sur ${JOURS_DECLENCHEMENTS} jours, empilés par sévérité`}
               />
               {!declenchements.ok ? (

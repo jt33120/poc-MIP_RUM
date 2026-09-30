@@ -25,7 +25,7 @@ import {
   strategieNommage,
 } from "@/lib/extension-deploiement";
 import {
-  AVERTISSEMENT_EXTENSION_SANS_CLE,
+  REGLE_EXTENSION_SANS_CLE,
   type DomaineExtension,
   type Verification,
 } from "@/lib/installer";
@@ -127,6 +127,7 @@ export function ParcoursSnippet({
   codePagesRouter,
   injection,
   csp,
+  parLaConsole = null,
 }: {
   ctx: ContexteParcours;
   snippet: string;
@@ -135,6 +136,12 @@ export function ParcoursSnippet({
   codePagesRouter: string;
   injection: InjectionArtifacts;
   csp: { scriptSrc: string; connectSrc: string };
+  /**
+   * Collecte directe ouverte (P6b.G) : le code principal vise le collecteur, et
+   * celui-ci, par la console, reste pour un site dont la CSP fige `connect-src`.
+   * `null` : la collecte passe par la console, un seul code.
+   */
+  parLaConsole?: { snippet: string; connectSrc: string } | null;
 }) {
   const fiche = `/admin/customers/${encodeURIComponent(ctx.app)}`;
   const etapes: EtapeChecklist[] = [
@@ -192,6 +199,26 @@ export function ParcoursSnippet({
             identifiant. Web Vitals, erreurs, sessions et appels réseau sont ensuite mesurés sans autre code.
           </p>
           <Code ctx={ctx} code={snippet} />
+          {parLaConsole && (
+            <>
+              <p data-testid="voie-directe">
+                Ce code envoie directement au collecteur de MIP : le pays des visiteurs vient de leur adresse IP, qui
+                n&apos;est jamais gardée.
+              </p>
+              <details className="rounded-lg border border-line bg-panel2/60 px-3 py-2" data-testid="voie-console">
+                <summary className="cursor-pointer text-ink">
+                  Votre CSP ne peut pas autoriser le collecteur ? Le code par la console
+                </summary>
+                <div className="mt-2 grid gap-2">
+                  <p>
+                    Il envoie à la console, qui relaie au collecteur sans l&apos;adresse IP : le pays est alors estimé
+                    (fuseau horaire), ou inconnu.
+                  </p>
+                  <Code ctx={ctx} code={parLaConsole.snippet} />
+                </div>
+              </details>
+            </>
+          )}
         </div>
       ),
     },
@@ -274,6 +301,11 @@ export function ParcoursSnippet({
         <div className="grid gap-2" data-testid="csp">
           <p>Ajoutez ces deux origines aux directives existantes, sans remplacer la politique du site :</p>
           <CopyBlock code={`${csp.scriptSrc}\n${csp.connectSrc}`} />
+          {parLaConsole && (
+            <p>
+              Avec le code par la console, la collecte vise la console : <code>{parLaConsole.connectSrc}</code>.
+            </p>
+          )}
           <p>
             Le bloc d&apos;initialisation est un script en ligne : la CSP doit l&apos;autoriser (un nonce, ou
             &apos;unsafe-inline&apos;), sinon placez <code>MIPRum.init(…)</code> dans un fichier JavaScript du site.
@@ -500,13 +532,11 @@ export function ParcoursExtension({
       etapes={etapes}
       entete={
         <div className="mb-4 grid gap-2">
-          {/* L'avertissement de la clé : une seule constante, qu'il suffit de passer à `null`. */}
-          {AVERTISSEMENT_EXTENSION_SANS_CLE && (
-            <CadreEtat ton="attention" role="alert" testId="avertissement-extension" etat="avertissement">
-              <strong className="font-semibold text-warn-ink">Attention : </strong>
-              {AVERTISSEMENT_EXTENSION_SANS_CLE}
-            </CadreEtat>
-          )}
+          {/* Sans clé, c'est le domaine enregistré qui ouvre la collecte : le client doit le lire avant l'étape 1. */}
+          <CadreEtat ton="neutre" role="note" testId="regle-extension" etat="information">
+            <strong className="font-semibold text-ink">À savoir : </strong>
+            {REGLE_EXTENSION_SANS_CLE}
+          </CadreEtat>
           <p className="text-xs leading-relaxed text-ink-soft">
             L&apos;extension injecte le même code de suivi, sans toucher au site, mais seulement dans les navigateurs où
             elle est installée : jamais l&apos;ensemble des visiteurs.

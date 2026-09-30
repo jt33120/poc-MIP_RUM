@@ -33,18 +33,15 @@ export function parcoursDuFragment(fragment: string | null | undefined): Parcour
 }
 
 /**
- * L'AVERTISSEMENT DE L'EXTENSION — À RETIRER quand l'extension enverra une clé :
- * passer cette constante à `null` suffit (la page et le test « ça arrive » ne
- * l'affichent que si elle vaut un texte).
- *
- * Depuis le 29/09/2026, le collector exige une clé d'API (`REQUIRE_API_KEY: "true"`,
- * `.railway/railway.ts`) et la console lui relaie toute la collecte, sans repli sur
- * un 403 ; or l'extension injecte le SDK sans clé (`apps/extension/src/background.ts`,
- * `inject` : `endpoint`, `appId`, `collectionSource`). Ses mesures sont donc
- * refusées. Le battement des postes, lui, passe : sa route ne demande pas de clé.
+ * LA RÈGLE DE L'EXTENSION, SANS CLÉ (#369, 30/09/2026). La collecte exige une clé
+ * depuis le 29/09/2026 ; l'extension n'en embarque aucune (son code est public). Un
+ * lot sans clé est accepté s'il vient de l'extension ET si la page est un domaine
+ * ACTIF de l'application dans `extension_scope` (`createPgAuth`,
+ * `packages/backend/lib/pg-ingest.mjs`). Le client doit donc le savoir : c'est
+ * l'enregistrement du domaine, pas une clé, qui ouvre la collecte.
  */
-export const AVERTISSEMENT_EXTENSION_SANS_CLE: string | null =
-  "Depuis le 29/09/2026, la collecte exige une clé d'API, et l'extension n'en envoie pas encore : ses mesures sont refusées (erreur 403) tant qu'un correctif n'est pas livré. Le battement des postes, lui, arrive. En attendant, préférez le code de suivi.";
+export const REGLE_EXTENSION_SANS_CLE =
+  "L'extension n'embarque pas de clé d'API : c'est le domaine enregistré auprès de MIP qui en tient lieu. Sur un domaine absent ou coupé dans la liste, ses mesures sont refusées (erreur 403) ; le battement des postes, lui, arrive toujours.";
 
 // ─── Le sondage en direct ────────────────────────────────────────────────────
 
@@ -175,7 +172,7 @@ export function verificationsDe(parcours: Parcours, sonde: SondeInstallation | n
             s?.derniere_mesure_extension ?? null,
             s ? compteLisible(s.sessions_extension_24h, "session sur 24 h", "sessions sur 24 h") : undefined,
           ),
-          aide: AVERTISSEMENT_EXTENSION_SANS_CLE ? "Refusées tant que l'extension n'envoie pas de clé : voir l'avertissement en tête du parcours." : undefined,
+          aide: "Refusées (403) si le domaine de la page n'est pas enregistré et actif pour l'application : voir l'étape 1.",
         },
       ];
     case "serveur":

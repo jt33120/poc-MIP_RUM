@@ -9,7 +9,15 @@ import { PageHeader } from "@/components/PageHeader";
 import { PresetBar } from "@/components/PresetBar";
 import { ReleaseCompare, statsDeVersion, type ReleaseStats } from "@/components/ReleaseCompare";
 import { Methode } from "@/components/perf/Methode";
-import { ChargeErreursLcp, HeroCwv, type AnnotationsFigure, type ModeSeries } from "@/components/vue-ensemble/SeriesVueEnsemble";
+import {
+  ChargeErreursLcp,
+  HeroCwv,
+  HeroErreurs,
+  HeroTrafic,
+  type AnnotationsFigure,
+  type ModeSeries,
+} from "@/components/vue-ensemble/SeriesVueEnsemble";
+import { OngletsHero } from "@/components/vue-ensemble/OngletsHero";
 import { LIBELLE_ANGLE_MORT, TuileAngleMort, type EtatAngleMort } from "@/components/vue-ensemble/AngleMort";
 import { BandeauR0 } from "@/components/vue-ensemble/BandeauR0";
 import { ConstatsDetectes, type EtatConstatsDetectes } from "@/components/vue-ensemble/ConstatsDetectes";
@@ -80,6 +88,7 @@ import {
   referenceRelease,
   regleAngleMort,
   VITAUX_DECOUPES,
+  ongletHeroDe,
   type VitalDecoupe,
 } from "@/lib/vue-ensemble";
 
@@ -558,6 +567,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     zoomHref: gabaritZoomEcran,
     annotations,
     plage: period.label,
+    debutPlage: query.range.from,
   };
   const serieDe = (nom: VitalName) => seriesVitaux[VITAUX.indexOf(nom)];
   // Heatmap de latence (A2 § 6.2) : lue sous les mêmes conditions que la plage (grille
@@ -835,39 +845,70 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-12">
         {blocs.hero && (
           <div className="min-w-0 xl:col-span-8">
-            <SectionErreur titre="Core Web Vitals dans le temps">
-              <HeroCwv
-                {...communSeries}
-                mode={modeSeries}
-                plages={plagesHero}
-                lecture={
-                  <>
-                    {noteHero && <p>{noteHero}</p>}
-                    <div data-testid="datation-rupture">
-                      <p>{phraseDatationP7}</p>
-                      <Methode className="mt-1" testId="methode-hero">
-                        {guideHero} {methodeHeroP7}
-                      </Methode>
-                    </div>
-                  </>
-                }
-                vitaux={VITAUX_HERO.map((nom, i) => ({
-                  vital: nom,
-                  courant: serieDe(nom),
-                  precedent: precedenteDe(i),
-                  releaseB: seriesRelease?.[i].b ?? null,
-                  releaseA: seriesRelease?.[i].a ?? null,
-                  explorer: explorerHref(query, {
-                    version: 1,
-                    dataset: "vitals",
-                    measure: { field: "value", aggregation: "p75" },
-                    variant: nom,
-                    groupBy: [],
-                    visualization: "timeseries",
-                    limit: 5,
-                    cursor: null,
-                  }),
-                }))}
+            <SectionErreur titre="Graphique principal">
+              {/* Onglets du graphique principal (A2 § 6.1) : Web Vitals par défaut ;
+                  Erreurs et Trafic tracent des comptes déjà lus pour la rangée Trafic
+                  et « Charge, erreurs et LCP ». `?serie=` choisit l'onglet ouvert. */}
+              <OngletsHero
+                initial={ongletHeroDe(sp.serie)}
+                onglets={[
+                  {
+                    cle: "vitaux",
+                    libelle: "Web Vitals",
+                    contenu: (
+                      <HeroCwv
+                        {...communSeries}
+                        mode={modeSeries}
+                        plages={plagesHero}
+                        lecture={
+                          <>
+                            {noteHero && <p>{noteHero}</p>}
+                            <div data-testid="datation-rupture">
+                              <p>{phraseDatationP7}</p>
+                              <Methode className="mt-1" testId="methode-hero">
+                                {guideHero} {methodeHeroP7}
+                              </Methode>
+                            </div>
+                          </>
+                        }
+                        vitaux={VITAUX_HERO.map((nom, i) => ({
+                          vital: nom,
+                          courant: serieDe(nom),
+                          precedent: precedenteDe(i),
+                          releaseB: seriesRelease?.[i].b ?? null,
+                          releaseA: seriesRelease?.[i].a ?? null,
+                          explorer: explorerHref(query, {
+                            version: 1,
+                            dataset: "vitals",
+                            measure: { field: "value", aggregation: "p75" },
+                            variant: nom,
+                            groupBy: [],
+                            visualization: "timeseries",
+                            limit: 5,
+                            cursor: null,
+                          }),
+                        }))}
+                      />
+                    ),
+                  },
+                  {
+                    cle: "erreurs",
+                    libelle: "Erreurs",
+                    contenu: (
+                      <HeroErreurs
+                        {...communSeries}
+                        mode={modeSeries}
+                        vues={vues}
+                        erreurs={serieErreurs.ok && serieErreurs.data ? { ok: true, data: serieErreurs.data } : { ok: false }}
+                      />
+                    ),
+                  },
+                  {
+                    cle: "trafic",
+                    libelle: "Trafic",
+                    contenu: <HeroTrafic {...communSeries} mode={modeSeries} vues={vues} sessions={tendanceSessions} />,
+                  },
+                ]}
               />
             </SectionErreur>
           </div>

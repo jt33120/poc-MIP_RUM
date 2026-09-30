@@ -13,7 +13,7 @@ import { createLogger } from "../../packages/service-kit/log.mjs";
 // @ts-expect-error modules ESM partagés, sans déclarations
 import { diagnostiquerFacade } from "../../packages/backend/shared/client-ip.mjs";
 // @ts-expect-error idem
-import { corsHeaders } from "../../packages/backend/shared/cors.mjs";
+import { corsHeaders, REPLAY_ALLOW_HEADERS } from "../../packages/backend/shared/cors.mjs";
 // @ts-expect-error idem
 import { verifier } from "../../scripts/ops/verifier-ip-directe.mjs";
 
@@ -24,7 +24,11 @@ afterEach(async () => {
   await Promise.all(aFermer.splice(0).map((f) => f()));
 });
 
-async function collector({ origines = [ORIGINE], geoip = { source_ip: "none", etat: "eteint" } } = {}) {
+async function collector({
+  origines = [ORIGINE],
+  geoip = { source_ip: "none", etat: "eteint" },
+  enTetesRejeu = REPLAY_ALLOW_HEADERS as string,
+} = {}) {
   const log = createLogger("test-verif", { version: "", replica: "", level: "error", sink: { out: () => {}, err: () => {} } });
   const svc = startService({
     name: "collector",
@@ -35,8 +39,13 @@ async function collector({ origines = [ORIGINE], geoip = { source_ip: "none", et
     details: () => ({ service: "collector", geoip }),
     diagnostics: { "/diagnostic/ip": (req: any) => ({ source_ip: geoip.source_ip, ...diagnostiquerFacade(req) }) },
     handler: (req: any, res: any) => {
-      // Le préflight du receveur : même module CORS que le collector.
-      res.writeHead(req.method === "OPTIONS" ? 204 : 404, corsHeaders(req.headers.origin ?? "", origines));
+      // Le préflight du receveur : même module CORS que le collector, en-têtes
+      // `x-mip-*` annoncés sur le rejeu seulement (`receiver.mjs`).
+      const rejeu = String(req.url).startsWith("/v1/replay");
+      res.writeHead(
+        req.method === "OPTIONS" ? 204 : 404,
+        corsHeaders(req.headers.origin ?? "", origines, rejeu ? { allowHeaders: enTetesRejeu } : undefined),
+      );
       res.end();
     },
   } as any);
@@ -95,6 +104,27 @@ describe("verifier-ip-directe — trois lectures, et un verdict", () => {
     const { lignes, code } = await verifier({ collector: collecteur, origine: ORIGINE, jeton: JETON, fetch: ECRASE });
     expect(code).toBe(2);
     expect(lignes.join("\n")).toContain("app_registry.allowed_origins");
+  });
+
+  it("origine d'un site client (`--origine`) : ses deux préflights, et le registre de SON application en cas de refus", async () => {
+    const CLIENT = "https://app.client.test";
+    const accepte = await collector({ origines: [CLIENT] });
+    const ok = await verifier({ collector: accepte, origine: CLIENT, jeton: JETON, fetch: ECRASE });
+    expect(ok.code).toBe(0);
+    expect(ok.lignes.join("\n")).toContain(`✓ CORS : ${CLIENT} est acceptée`);
+    expect(ok.lignes.join("\n")).toContain("✓ CORS du rejeu");
+
+    const refuse = await collector({ origines: [] });
+    const ko = await verifier({ collector: refuse, origine: CLIENT, jeton: JETON, fetch: ECRASE });
+    expect(ko.code).toBe(2);
+    expect(ko.lignes.join("\n")).toContain("de l'application de ce site");
+  });
+
+  it("rejeu sans les en-têtes x-mip-* annoncés : code 2, et lesquels manquent", async () => {
+    const collecteur = await collector({ enTetesRejeu: "content-type" });
+    const { lignes, code } = await verifier({ collector: collecteur, origine: ORIGINE, jeton: JETON, fetch: ECRASE });
+    expect(code).toBe(2);
+    expect(lignes.join("\n")).toContain("x-mip-session");
   });
 
   it("jeton faux (ou collector sans le diagnostic) : 404, code 2", async () => {

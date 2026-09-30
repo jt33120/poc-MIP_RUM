@@ -33,6 +33,7 @@ import { chargerTableau } from "@/lib/chargeurs/tableau";
 import { chargerEcran } from "@/lib/ecran";
 import { hrefWithQuery, queryToSearchParams } from "@/lib/query-contract";
 import type { WidgetData } from "@/lib/widget-data";
+import { fenetresLues, type FenetreCollecte } from "@/lib/series";
 import {
   addWidgetAction,
   cloneDashboardAction,
@@ -77,6 +78,8 @@ interface ContexteCartes {
   edition: boolean;
   /** Donnée résolue, rangée dans l'ordre du layout (une entrée par élément), telle que le fil la porte. */
   data: Fil<WidgetData>[];
+  /** Fenêtres hors collecte lues par le chargeur (`undefined` : lecture en échec, rien n'est hachuré). */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }
 
 /**
@@ -113,6 +116,7 @@ function GrilleDeCartes({ cartes, c }: { cartes: GroupeDeCartes["cartes"]; c: Co
             query={c.query}
             editable={c.editable}
             edition={c.edition}
+            fenetresCollecte={c.fenetresCollecte}
           />
         </div>
       ))}
@@ -236,6 +240,7 @@ export default async function D({
     editable,
     edition,
     data,
+    fenetresCollecte: fenetresLues(ecran.fenetresCollecte),
   };
 
   return (

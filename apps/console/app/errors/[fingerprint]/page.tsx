@@ -21,7 +21,7 @@ import { GroupingBasisBadge, IssueStatusBadge } from "@/components/errors/IssueB
 import { errorGroupHref, errorSearchParams, errorsHref, issueHref } from "@/lib/error-view";
 import { annotationsDeploiements } from "@/lib/annotations";
 import { bucketStarts } from "@/lib/query-contract";
-import { grilleIso } from "@/lib/series";
+import { fenetresLues, grilleIso } from "@/lib/series";
 import { gabaritZoom } from "@/lib/view-state";
 import { type LegacyIssueTarget } from "@/lib/error-issues";
 import type { SearchParams } from "@/lib/filters";
@@ -162,6 +162,7 @@ export default async function ErrorGroup({
               deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement indisponibles"
             }
             zoomHref={zoomHref}
+            fenetresCollecte={fenetresLues(d.fenetresCollecte)}
           />
         </SectionErreur>
       </div>

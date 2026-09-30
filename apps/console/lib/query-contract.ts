@@ -370,6 +370,44 @@ export function resolveRange(input: RangeInput, nowMs: number): Parsed<ResolvedR
   });
 }
 
+/**
+ * Alias d'URL de la plage : `?range=7d`. Le paramètre du contrat est `period`, mais
+ * `range` est le nom qu'on tape par réflexe (Datadog, Grafana) : un lien écrit
+ * `?range=7d` ouvrait la vue sur 24 h, sans rien dire (recette du 30/09/2026).
+ */
+export const RANGE_ALIAS_PARAM = "range";
+
+/**
+ * Paramètres canoniques d'une URL qui porte l'alias `range`, `null` sinon (rien à
+ * réécrire). Le middleware redirige vers le résultat : les écrans, la barre de
+ * filtres et les liens internes ne connaissent que `period`, `from` et `to`.
+ *
+ * - `1h`, `24h` (ou `1d`, `1j`), `7d` (ou `7j`) : le preset du même nom, `24h`
+ *   n'étant pas écrit (défaut) ;
+ * - `30d` (ou `30j`) : n'est pas un preset ; devient la plage personnalisée des 30
+ *   derniers jours arrêtée à la minute, la plus longue que le contrat accepte ;
+ * - `period`, `from` ou `to` déjà présents : ils priment, l'alias est seulement
+ *   retiré (un lien existant ne change pas de sens) ;
+ * - valeur inconnue : retirée, la plage retombe sur le défaut, comme un `period`
+ *   inconnu.
+ */
+export function canoniserAliasPlage(sp: URLSearchParams, nowMs: number): URLSearchParams | null {
+  if (!sp.has(RANGE_ALIAS_PARAM)) return null;
+  const brut = (sp.get(RANGE_ALIAS_PARAM) ?? "").trim().toLowerCase().replace(/\s+/g, "");
+  const out = new URLSearchParams(sp);
+  out.delete(RANGE_ALIAS_PARAM);
+  if (out.has("period") || out.has("from") || out.has("to")) return out;
+  const valeur = ({ "1d": "24h", "1j": "24h", "7j": "7d", "30j": "30d" } as Record<string, string>)[brut] ?? brut;
+  if (valeur === "30d") {
+    const to = Math.floor(nowMs / 60_000) * 60_000;
+    out.set("from", new Date(to - RANGE_MAX_MS).toISOString());
+    out.set("to", new Date(to).toISOString());
+  } else if (valeur !== "24h" && (RANGE_PRESETS as readonly string[]).includes(valeur)) {
+    out.set("period", valeur);
+  }
+  return out;
+}
+
 /** Période précédente contiguë, de même durée (comparaison N-1). */
 export function previousRange(range: ResolvedRange): ResolvedRange {
   const from = Date.parse(range.from);

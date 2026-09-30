@@ -28,7 +28,7 @@
 // build refuse `lib/auth.ts`).
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { COQUILLE, type Fil, type Operation, type Section } from "@mip/console-contract";
+import { COQUILLE, type EtatMesureCoquille, type Fil, type Operation, type Section } from "@mip/console-contract";
 import { creerAiguillage, type Aiguillage } from "./aiguillage-console-api";
 import { getUser, SESSION_COOKIE } from "./auth";
 import { backend, type Resultat } from "./backend";
@@ -86,6 +86,8 @@ export interface CoquilleEcran {
   readonly projets: Section<AppItem[]>;
   readonly schema: Section<string[]>;
   readonly fuseaux: Record<string, string>;
+  /** Le badge de l'en-tête ; absent (service plus ancien, coquille dégradée) : pas de badge. */
+  readonly mesure?: Section<EtatMesureCoquille | null>;
 }
 
 /** La coquille quand ni le service ni la base ne répondent : elle s'affiche et dit « Partiel » (F02). */
@@ -101,7 +103,7 @@ function versSection<T>(l: Lecture<T>): Section<T> {
 
 /** La coquille chargée par la console, sous la forme du fil. */
 export function coquilleDuFil(c: CoquilleChargee): CoquilleEcran {
-  return { projets: versSection(c.projets), schema: versSection(c.schema), fuseaux: c.fuseaux };
+  return { projets: versSection(c.projets), schema: versSection(c.schema), fuseaux: c.fuseaux, mesure: versSection(c.mesure) };
 }
 
 type Journal = { warn: (m: string, c?: Record<string, unknown>) => void; error: (m: string, c?: Record<string, unknown>) => void };

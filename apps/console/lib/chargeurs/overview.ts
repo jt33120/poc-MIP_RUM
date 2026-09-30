@@ -155,11 +155,13 @@ export const chargerOverview = (async (principal, sp) => {
     blocs.trafic && prev ? section(() => overviewStats(f, true)) : sansSection(null),
     blocs.trafic ? section(() => engagementStats(f)) : sansSection(null),
     blocs.trafic && prev ? section(() => engagementStats(f, true)) : sansSection(null),
-    blocs.trafic ? section(() => observedVisitorsTrend(f)) : sansSection([]),
-    blocs.trafic || blocs.charge ? section(() => pageviewSeries(f)) : sansSection([]),
+    // Les comptes par seau servent aussi aux onglets Erreurs et Trafic du graphique
+    // principal (A2 § 6.1) : lus une fois, pour la rangée, la charge et le hero.
+    blocs.trafic || blocs.hero ? section(() => observedVisitorsTrend(f)) : sansSection([]),
+    blocs.trafic || blocs.charge || blocs.hero ? section(() => pageviewSeries(f)) : sansSection([]),
     blocs.trafic ? section(() => erreursNavigateur(f)) : sansSection(null),
     blocs.trafic && prev ? section(() => erreursNavigateur(f, true)) : sansSection(null),
-    blocs.trafic || blocs.charge ? section(() => errorSeries(f)) : sansSection(null),
+    blocs.trafic || blocs.charge || blocs.hero ? section(() => errorSeries(f)) : sansSection(null),
     // p75 par seau du contrat, sur les mesures brutes (V5) : UNE lecture par vital,
     // mutualisée entre tuiles, hero et panneau LCP de la charge.
     Promise.all(VITAUX.map((nom) => (serieUtile(nom) ? section(() => vitalSeriesN(f, nom)) : sansSection<VitalSeriesPoint[]>([])))),

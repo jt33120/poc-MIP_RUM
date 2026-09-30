@@ -16,6 +16,7 @@ import { SOURCES_TENDANCES, couvertureJour } from "../forecast-comparaison";
 import { fuseauDe } from "../fuseau";
 import { listDeploys } from "../queries-deploys";
 import { GRID_DAYS, dailyLcpSeries, dailyTraffic } from "../queries-grid";
+import { sectionFenetresCollecteRecentes } from "./collecte";
 import { section, type Chargeur } from "./commun";
 
 export const chargerForecast = (async (principal, sp) => {
@@ -23,13 +24,16 @@ export const chargerForecast = (async (principal, sp) => {
   if (!ecran.ok) return { etat: "refus", problem: ecran.problem } as const;
   const f = ecran.filters;
   const query = ecran.query;
-  const [fuseau, traficLu, lcpLu, deploysLu] = await Promise.all([
+  const maintenant = Date.now();
+  const [fuseau, traficLu, lcpLu, deploysLu, fenetresCollecte] = await Promise.all([
     fuseauDe(query.scope.requestedApp),
     section(async () => (await dailyTraffic(f, { exclureAujourdhui: true })).map((t) => ({ ...t, day: cleJour(t.day) }))),
     section(() => dailyLcpSeries(f, { exclureAujourdhui: true })),
     // P*.7 : les marqueurs servent UNIQUEMENT à dire qu'un déploiement tombe le
     // même jour qu'une rupture ; leur absence n'empêche pas la datation.
     section(() => listDeploys(f, 20)),
+    // Les hachures « non mesuré » couvrent les quatorze jours tracés, pas la période du filtre.
+    sectionFenetresCollecteRecentes(query, GRID_DAYS * 86_400_000, maintenant),
   ]);
 
   // L'AXE : les 14 jours complets rendus par la lecture (même expression SQL pour
@@ -38,7 +42,7 @@ export const chargerForecast = (async (principal, sp) => {
     ? lcpLu.data.map((r) => r.jour)
     : traficLu.ok
       ? traficLu.data.map((t) => t.day)
-      : joursComplets(fuseau, Date.now(), GRID_DAYS);
+      : joursComplets(fuseau, maintenant, GRID_DAYS);
   const semainePrecedente = jours.length - 1 - 7;
   const jourRef = jours[semainePrecedente];
   const mesureRef = (lcpLu.ok ? lcpLu.data.find((r) => r.jour === jourRef)?.n : 0) ?? 0;
@@ -64,6 +68,7 @@ export const chargerForecast = (async (principal, sp) => {
     couvLcp,
     couvRatio,
     couvVues,
+    fenetresCollecte,
     // Créer une alerte depuis la rupture : administrateur, hors démo.
     peutEcrire: principal?.role === "admin" && !principal.demo,
   } as const;

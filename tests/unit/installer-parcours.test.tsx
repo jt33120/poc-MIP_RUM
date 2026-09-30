@@ -14,7 +14,6 @@ import { ParcoursExtension, ParcoursServeur, ParcoursSnippet, type ContexteParco
 import { TableauxPersonnalisation } from "@/components/installer/TableauPersonnalisation";
 import { EXTENSION_ID } from "@/lib/extension-deploiement";
 import {
-  AVERTISSEMENT_EXTENSION_SANS_CLE,
   appelInit,
   codeNextAppRouter,
   codeNextPagesRouter,
@@ -45,7 +44,7 @@ const contexte = (p: "snippet" | "extension" | "serveur", reste: Partial<Context
 });
 
 const base = { sdkUrl: SDK, endpoint: ENDPOINT, appId: APP, clientId: null };
-const snippet = (ctx: ContexteParcours) =>
+const snippet = (ctx: ContexteParcours, parLaConsole: { snippet: string; connectSrc: string } | null = null) =>
   renderToStaticMarkup(
     <ParcoursSnippet
       ctx={ctx}
@@ -55,6 +54,7 @@ const snippet = (ctx: ContexteParcours) =>
       codePagesRouter={codeNextPagesRouter(SDK, appelInit(base))}
       injection={buildInjectionArtifacts(base)}
       csp={directivesCsp(base)}
+      parLaConsole={parLaConsole}
     />,
   );
 const extension = (ctx: ContexteParcours, updateUrl: string | null = null) =>
@@ -63,6 +63,17 @@ const serveur = (ctx: ContexteParcours) =>
   renderToStaticMarkup(<ParcoursServeur ctx={ctx} recettes={recettesAgentsOtel({ appId: APP, adresses: { traces: ENDPOINT, logs: LOGS } })} />);
 
 describe("parcours « code de suivi »", () => {
+  it("collecte directe (P6b.G) : le code par la console reste à côté, et sa CSP ; sinon un seul code", () => {
+    const direct = snippet(contexte("snippet"), { snippet: "CODE-PAR-LA-CONSOLE", connectSrc: "connect-src https://console.test" });
+    expect(direct).toContain('data-testid="voie-directe"');
+    expect(direct).toContain('data-testid="voie-console"');
+    expect(direct).toContain("CODE-PAR-LA-CONSOLE");
+    expect(direct).toContain("connect-src https://console.test");
+    const seul = snippet(contexte("snippet"));
+    expect(seul).not.toContain('data-testid="voie-directe"');
+    expect(seul).not.toContain('data-testid="voie-console"');
+  });
+
   it("les domaines déclarés, le code prérempli avec le repère de la clé, la CSP à ajouter", () => {
     const html = snippet(contexte("snippet"));
     expect(html).toContain("https://app.client.fr");
@@ -99,14 +110,13 @@ describe("parcours « code de suivi »", () => {
 });
 
 describe("parcours « extension »", () => {
-  it("l'avertissement de la clé en tête, avant la première étape", () => {
+  it("la règle sans clé en tête, avant la première étape, sans alerte", () => {
     const html = extension(contexte("extension"));
-    if (AVERTISSEMENT_EXTENSION_SANS_CLE) {
-      const avertissement = html.indexOf('data-testid="avertissement-extension"');
-      expect(avertissement).toBeGreaterThan(-1);
-      expect(avertissement).toBeLessThan(html.indexOf('data-testid="etape-extension-domaine"'));
-      expect(html).toContain('role="alert"');
-    }
+    const regle = html.indexOf('data-testid="regle-extension"');
+    expect(regle).toBeGreaterThan(-1);
+    expect(regle).toBeLessThan(html.indexOf('data-testid="etape-extension-domaine"'));
+    expect(html).toContain("domaine enregistré");
+    expect(html).not.toContain('data-testid="avertissement-extension"');
   });
 
   it("le domaine enregistré et son état, le zip, la stratégie préremplie avec l'identifiant", () => {

@@ -34,7 +34,7 @@ import { chargerEcran } from "@/lib/ecran";
 import { accord, fmtVital, pluriel } from "@/lib/format";
 import { formater } from "@/lib/fmt-ids";
 import { MESURE_DU_SIGNAL, partSessionsTouchees } from "@/lib/notes-mip";
-import { libelleSeauComplet } from "@/lib/series";
+import { fenetresLues, libelleSeauComplet, type FenetreCollecte } from "@/lib/series";
 import { pointsVital } from "@/lib/vue-ensemble";
 import { type CouverturePrecedente } from "@/lib/comparaison";
 import { LIMITES_FRUSTRATION, reglesFrustration, sousTexteSignaux } from "@/lib/frustration-regles";
@@ -112,7 +112,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
 
   // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8) : une section en échec le dit sans
   // emporter les autres — et jamais par un « 0 ».
-  const { totaux, totauxPrec, routes, vitaux, vitauxPrec, serieInp, inp, scripts, deploys } = ecran;
+  const { totaux, totauxPrec, routes, vitaux, vitauxPrec, serieInp, inp, scripts, deploys, fenetresCollecte } = ecran;
   const couvSignaux = ecran.couvSignaux ?? undefined;
   const couvInp = ecran.couvInp ?? undefined;
   const reference = prev ? referencePeriodePrecedente(query.range) : undefined;
@@ -277,6 +277,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
               seauSecondes={query.range.bucketSeconds}
               annotations={annotations}
               zoom={zoomInp}
+              fenetresCollecte={fenetresLues(fenetresCollecte)}
             />
           </div>
         </SectionErreur>
@@ -506,6 +507,7 @@ function SerieInp({
   seauSecondes,
   annotations,
   zoom,
+  fenetresCollecte,
 }: {
   serie: SectionLue<VitalSeriesPoint[]>;
   label: string;
@@ -513,6 +515,8 @@ function SerieInp({
   seauSecondes: number;
   annotations: ReturnType<typeof annotationsDeploiements>;
   zoom: string;
+  /** Fenêtres hors collecte (`sectionFenetresCollecte`) : une tranche interrompue est hachurée « non mesuré ». */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const titre = "INP p75 dans le temps";
   if (!serie.ok) return <Figure titre={titre} id="figure-inp-dans-le-temps" etat={{ kind: "erreur", titre }} />;
@@ -557,6 +561,7 @@ function SerieInp({
         fuseau={FUSEAU_AFFICHAGE}
         zoomHref={zoom}
         hauteur={240}
+        fenetresCollecte={fenetresCollecte}
         ariaLabel={`INP p75 par tranche de ${seau}, ${label}`}
       />
     </Figure>

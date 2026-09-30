@@ -26,7 +26,7 @@ import { CadreEtat, EtatSurface } from "@/components/states/EtatSurface";
 import { chargerInstaller } from "@/lib/chargeurs/installer";
 import { chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
-import { ingestEndpoint } from "@/lib/ingest-endpoint";
+import { ingestEndpoint, voieRecommandee } from "@/lib/ingest-endpoint";
 import {
   PARCOURS,
   appelInit,
@@ -89,15 +89,28 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
   const host = (await headers()).get("host") ?? "localhost:3000";
   const proto = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
   const sdkUrl = `${proto}://${host}/mip-rum.js`;
-  const endpoint = ingestEndpoint("traces", host);
+  // Collecte directe (P6b.G), comme la fiche d'un client : dès que sa variable est
+  // posée, le code du navigateur vise le collecteur (le pays vient de l'adresse IP),
+  // et celui par la console reste à côté pour une CSP qui fige `connect-src`. Le
+  // serveur passe TOUJOURS par la console : son adresse ne dit rien d'un visiteur.
+  const voie = voieRecommandee();
+  const endpoint = ingestEndpoint("traces", host, voie);
+  const endpointConsole = ingestEndpoint("traces", host);
   const endpointLogs = ingestEndpoint("logs", host);
 
   const base = { sdkUrl, endpoint, appId: app, clientId: c.client_id };
-  const snippet = buildSnippet({ ...base, withConsent: false });
-  const snippetConsent = buildSnippet({ ...base, withConsent: true });
+  const snippet = buildSnippet({ ...base, withConsent: false, voie });
+  const snippetConsent = buildSnippet({ ...base, withConsent: true, voie });
   const injection = buildInjectionArtifacts(base);
   const init = appelInit(base);
-  const recettes = recettesAgentsOtel({ appId: app, adresses: { traces: endpoint, logs: endpointLogs } });
+  const recettes = recettesAgentsOtel({ appId: app, adresses: { traces: endpointConsole, logs: endpointLogs } });
+  const parLaConsole =
+    voie === "directe"
+      ? {
+          snippet: buildSnippet({ ...base, endpoint: endpointConsole, withConsent: false }),
+          connectSrc: directivesCsp({ sdkUrl, endpoint: endpointConsole, appId: app }).connectSrc,
+        }
+      : null;
 
   const domainesExt = domaines.ok ? domainesExtension(domaines.data, c.allowed_origins) : null;
   const lueSonde: SondeInstallation | null = sonde.ok ? (sonde.data as SondeInstallation) : null;
@@ -109,7 +122,8 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
       aUneCle: c.has_key,
       origines: c.allowed_origins,
       sdkUrl,
-      endpoint,
+      // Le serveur écrit toujours par la console (voir plus haut).
+      endpoint: p === "serveur" ? endpointConsole : endpoint,
       endpointLogs,
       domaines: domainesExt ?? [],
     }),
@@ -183,6 +197,7 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
                   codePagesRouter={codeNextPagesRouter(sdkUrl, init)}
                   injection={injection}
                   csp={directivesCsp({ sdkUrl, endpoint, appId: app })}
+                  parLaConsole={parLaConsole}
                 />
               ),
               extension: (

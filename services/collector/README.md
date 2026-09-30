@@ -28,7 +28,7 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `POST /v1/extension/heartbeat` | C11 — un poste de l'extension se déclare (inventaire) ; publique, 4 Kio, 12 / h / poste, `app_ids` filtrés par le registre | 200, 400, 413, 429 |
 | `POST /v1/deploys` | C11 — marqueur de déploiement d'une CI, **jeton de CI `deploys:write` seul** (migration-v92), une application ; 16 Kio, 60 / min / jeton | 201, 400, 401, 403, 413, 429 |
 | `GET /v1/traces`, `GET /v1/logs` | diagnostic d'intégration (parité avec les routes Vercel) | 200 |
-| `OPTIONS *` | préflight CORS (origines du registre d'apps) | 204 |
+| `OPTIONS *` | préflight CORS (origines du registre d'apps) ; toute réponse à une origine acceptée expose `retry-after` (`access-control-expose-headers`), que le SDK lit sur un 429 ou un 503 | 204 |
 | `GET /health`, `/live`, `/ready`, `/metrics` | sondes du kit, ci-dessous | |
 
 **Toute réponse du collector porte `x-mip-collector: 1`** — routes, 404 métier, erreurs 4xx/5xx, sondes, et jusqu'aux 400/408/431 que Node rend seul (option `responseHeaders` du kit). Le relais de la console (P3) s'en sert pour distinguer un 404 **du collector** (route inconnue : ne pas rejouer ailleurs) d'un 404 **du routeur Railway** (service absent ou mal routé : repli). L'en-tête ne dit rien d'autre que « c'est moi ».
@@ -57,7 +57,7 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `LOG_LEVEL` | non | `info` | |
 | `METRICS_TOKEN` | non (secret, ≥ 32 car.) | — | jeton de `/ready` et `/metrics` ; absent : 404 |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non, **à poser** | 10 pour le kit (qui avertit sur Railway) ; Railway, lui, draine 0 s par défaut | délai SIGTERM → SIGKILL ; 15 visé, posé par l'IaC |
-| `REQUIRE_API_KEY` | non | `false` | `true` : toute app inconnue ou **sans clé** prend 403. Une app **inactive** prend 403 quel que soit ce réglage. **Provisionner d'abord** (ci-dessous). Booléen strict : `ture` refuse le démarrage. |
+| `REQUIRE_API_KEY` | non | `false` | `true` : toute app inconnue ou **sans clé** prend 403 — sauf le lot de l'extension, sans clé, dont la page est un domaine actif de l'app (30/09/2026, `docs/INTEGRATION.md` § 2). Une app **inactive** prend 403 quel que soit ce réglage. **Provisionner d'abord** (ci-dessous). Booléen strict : `ture` refuse le démarrage. |
 | `RATE_LIMIT_PER_MIN` | non | 600 | plafond par app et par minute (compteur durable en base) |
 | `IDENTITY_HASH_SECRET` | non (secret, ≥ 32 car.) | — | clé HMAC de `mip.identity.*`. Absente : l'identité est **retirée**, jamais stockée brute (`identity: "absente"`). |
 | `IDENTITY_HASH_FINGERPRINT` | **oui dès que le secret est posé** | — | empreinte du secret (12 hex). Absente avec le secret : refus de démarrer. Discordante : l'identité est retirée, `/ready` refusé, erreur au journal. |
@@ -77,7 +77,7 @@ C'est `sha256("mip-identity-fp/v1\0" + secret)` tronqué : séparé de tout autr
 
 ## Le bord de confiance (`mip-edge/1`)
 
-En P3, la console relaie les beacons : vu d'ici, l'adresse est celle d'une fonction Vercel, jamais celle du visiteur. Le relais signe sa requête et ne transmet **que le pays** :
+En P3, la console relaie les beacons : vu d'ici, l'adresse est celle d'une fonction Vercel, jamais celle du visiteur. Le relais signe sa requête et ne transmet **que le pays**, jamais l'adresse. Depuis le 30/09/2026, il y joint l'origine de la page (`x-mip-edge-origin`, traces et logs), lue seulement sous une signature valide : c'est elle qui autorise un lot de l'extension sans clé (en direct, c'est l'`Origin` de la requête). Le pays :
 
 | Requête | Reconnue par | Pays retenu | GeoIP |
 |---|---|---|---|
@@ -141,6 +141,7 @@ Deux réplicas écrivent en même temps sans se coordonner, et c'est sûr :
 | secret de relais désaccordé | trafic relayé sans pays ni GeoIP ; aucun rejet | `en-têtes de bord non authentifiés retirés` (`mode: "refuse"`) |
 | client qui forge `x-mip-edge-*` ou un pays de CDN | ignoré et retiré | même ligne, `mode: "direct"` |
 | `REQUIRE_API_KEY=true` sur une app sans clé | 403 | `rejected: api key` |
+| lot de l'extension sans clé, page hors des domaines actifs de l'app | 403 `extension origin not registered for app: <id>` | `rejected: api key` |
 | SIGTERM | `/ready` 503, `Connection: close` ; requêtes en vol finies ; boucle de drain finie ; `pool.end()` ; sortie 0 | `arrêt demandé`, `ressource fermée`, `arrêt terminé` |
 | `tampon: true` recopié dans un point d'entrée déployé | **refus de démarrer** si `NODE_ENV=production` ou si l'une de `RAILWAY_ENVIRONMENT`, `RAILWAY_ENVIRONMENT_NAME`, `RAILWAY_PROJECT_ID` est définie (`/__recent` rend des payloads en clair) ; hors déploiement, tampon **éteint** sans l'opt-in `MIP_E2E_TAMPON=1` | exception au démarrage ; sinon `tampon /__recent demandé mais éteint` |
 

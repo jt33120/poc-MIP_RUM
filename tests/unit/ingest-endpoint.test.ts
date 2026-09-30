@@ -8,11 +8,20 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { dogfoodingEndpoint, ingestEndpoint, origineCollecteurDogfooding } from "../../apps/console/lib/ingest-endpoint";
+import {
+  dogfoodingEndpoint,
+  ingestEndpoint,
+  ingestEndpointDirect,
+  origineCollecteDirecte,
+  origineCollecteurDogfooding,
+  voieRecommandee,
+} from "../../apps/console/lib/ingest-endpoint";
+import { deriveReplayEndpoint } from "../../packages/rum-sdk/src/replay";
 
 const ENV_KEYS = [
   "NEXT_PUBLIC_RUM_ENDPOINT",
   "NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL",
+  "NEXT_PUBLIC_DIRECT_COLLECTOR_URL",
   "VERCEL_PROJECT_PRODUCTION_URL",
   "VERCEL_URL",
 ] as const;
@@ -205,6 +214,75 @@ describe("dogfoodingEndpoint — collecte directe au collector", () => {
     }
     // Hors requête, l'hôte de production est le repli : la collecte directe vaut.
     expect(dogfoodingEndpoint(null)).toBe(`${COLLECTOR}/v1/traces`);
+  });
+});
+
+// P6b.G, second palier — la collecte directe des navigateurs des CLIENTS. Une
+// variable à part (`NEXT_PUBLIC_DIRECT_COLLECTOR_URL`) : le dogfooding se prouve
+// d'abord, les clients suivent, et chacun se coupe sans toucher à l'autre.
+describe("collecte directe des clients — inerte sans sa variable", () => {
+  const COLLECTOR = "https://collector-production-d769.up.railway.app";
+  const PROD = "mip-rum-console.vercel.app";
+
+  it("sans la variable : rien ne change, voie `directe` comprise", () => {
+    expect(origineCollecteDirecte()).toBeNull();
+    expect(ingestEndpointDirect("traces")).toBeNull();
+    expect(voieRecommandee()).toBe("console");
+    for (const signal of ["traces", "logs", "replay"] as const) {
+      expect(ingestEndpoint(signal, PROD, "directe")).toBe(ingestEndpoint(signal, PROD));
+      expect(ingestEndpoint(signal, PROD, "directe")).toBe(`https://${PROD}/api/ingest/v1/${signal}`);
+    }
+  });
+
+  it("avec la variable : les chemins du collector, et `directe` devient la voie recommandée", () => {
+    process.env.NEXT_PUBLIC_DIRECT_COLLECTOR_URL = COLLECTOR;
+    expect(voieRecommandee()).toBe("directe");
+    expect(ingestEndpoint("traces", PROD, "directe")).toBe(`${COLLECTOR}/v1/traces`);
+    expect(ingestEndpoint("logs", PROD, "directe")).toBe(`${COLLECTOR}/v1/logs`);
+    expect(ingestEndpointDirect("replay")).toBe(`${COLLECTOR}/v1/replay`);
+    // Le SDK dérive le rejeu du canal traces : il doit tomber sur celui du collector.
+    expect(deriveReplayEndpoint(ingestEndpoint("traces", PROD, "directe"))).toBe(`${COLLECTOR}/v1/replay`);
+  });
+
+  it("la voie `console` reste la console, variable posée ou non", () => {
+    process.env.NEXT_PUBLIC_DIRECT_COLLECTOR_URL = COLLECTOR;
+    expect(ingestEndpoint("traces", PROD)).toBe(`https://${PROD}/api/ingest/v1/traces`);
+    expect(ingestEndpoint("traces", PROD, "console")).toBe(`https://${PROD}/api/ingest/v1/traces`);
+  });
+
+  it("indépendante du dogfooding, dans les deux sens", () => {
+    process.env.NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL = COLLECTOR;
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = PROD;
+    expect(ingestEndpointDirect("traces")).toBeNull();
+    delete process.env.NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL;
+    process.env.NEXT_PUBLIC_DIRECT_COLLECTOR_URL = COLLECTOR;
+    expect(dogfoodingEndpoint(PROD)).toBe(`https://${PROD}/api/ingest/v1/traces`);
+  });
+
+  it("aucun refus d'hôte : le code de suivi part d'une preview comme de la production", () => {
+    // La page qui envoie est le site du client, pas la console : son origine est
+    // au registre de SON application, quelle que soit la console qui a produit le code.
+    process.env.NEXT_PUBLIC_DIRECT_COLLECTOR_URL = COLLECTOR;
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = PROD;
+    expect(ingestEndpoint("traces", "mip-rum-console-git-branche.vercel.app", "directe")).toBe(`${COLLECTOR}/v1/traces`);
+  });
+
+  it("valeur inexploitable ou http: hors poste local : la console, jamais une URL cassée", () => {
+    for (const brut of ["pas-une-url", "http://collector-production-d769.up.railway.app", "ftp://collector.example", "  "]) {
+      process.env.NEXT_PUBLIC_DIRECT_COLLECTOR_URL = brut;
+      expect(ingestEndpointDirect("traces"), brut).toBeNull();
+      expect(ingestEndpoint("traces", PROD, "directe"), brut).toBe(`https://${PROD}/api/ingest/v1/traces`);
+    }
+    process.env.NEXT_PUBLIC_DIRECT_COLLECTOR_URL = `${COLLECTOR}/api/ingest/v1/traces`;
+    expect(ingestEndpointDirect("traces")).toBe(`${COLLECTOR}/v1/traces`);
+    process.env.NEXT_PUBLIC_DIRECT_COLLECTOR_URL = "http://localhost:4318";
+    expect(ingestEndpointDirect("traces")).toBe("http://localhost:4318/v1/traces");
+  });
+
+  it("NEXT_PUBLIC_RUM_ENDPOINT ne la détourne pas", () => {
+    process.env.NEXT_PUBLIC_DIRECT_COLLECTOR_URL = COLLECTOR;
+    process.env.NEXT_PUBLIC_RUM_ENDPOINT = "https://ailleurs.example/api/ingest/v1/traces";
+    expect(ingestEndpoint("traces", PROD, "directe")).toBe(`${COLLECTOR}/v1/traces`);
   });
 });
 

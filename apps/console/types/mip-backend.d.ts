@@ -121,8 +121,15 @@ declare module "@mip/backend/lib/pg-ingest.mjs" {
     getAppRegistry(): Promise<
       Map<string, { api_key_hash: string | null; active: boolean; allowed_origins: string[] | null }>
     >;
-    /** null si accepté, sinon la raison du 403. */
-    checkApiKey(appId: string, apiKey: string | null): Promise<string | null>;
+    /**
+     * null si accepté, sinon la raison du 403. `contexte` : le lot se dit-il de
+     * l'extension, et l'`Origin` de la page (règle du domaine enregistré).
+     */
+    checkApiKey(
+      appId: string,
+      apiKey: string | null,
+      contexte?: { extension?: boolean; origine?: string | null },
+    ): Promise<string | null>;
     rateLimitedDurable(appId: string): Promise<boolean>;
     /** Le registre a-t-il été chargé au moins une fois ? (sinon checkApiKey est en fail-open) */
     registryLoaded(): boolean;
@@ -252,6 +259,8 @@ declare module "@mip/backend/shared/otlp.mjs" {
   export interface ApiKeyRef {
     app_id: string;
     api_key: string | null;
+    /** Posé (vrai) quand tous les spans de la resource portent le marqueur de l'extension. */
+    extension?: true;
   }
 
   export function flattenOtlp(

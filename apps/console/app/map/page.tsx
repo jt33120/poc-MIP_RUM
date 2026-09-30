@@ -61,7 +61,7 @@ import {
 import { bucketStarts, hrefWithQuery, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
 import { type MapNodeRow } from "@/lib/queries-map";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
-import { grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
+import { fenetresLues, grilleIso, libelleSeauComplet, type FenetreCollecte, type PointSerie } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, lireEtatDeVue, ligneIgnoree } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { pluriel } from "@/lib/format";
@@ -115,7 +115,7 @@ export default async function ExperienceMapPage({
   ];
 
   // Chaque section a son sort : une lecture en échec n'efface pas les autres (§ 3.8).
-  const { noeuds, aretes, pages, couverture, echantillonnage, serieNoeud } = ecran;
+  const { noeuds, aretes, pages, couverture, echantillonnage, serieNoeud, fenetresCollecte } = ecran;
 
   const lignes = noeuds.ok ? noeuds.data : [];
   const parId = new Map(lignes.map((r) => [`${r.tier}:${r.route}`, r] as const));
@@ -407,6 +407,7 @@ export default async function ExperienceMapPage({
           bucketLabel={ecran.bucketLabel}
           zoom={zoom}
           hrefNoeud={hrefNoeud}
+          fenetresCollecte={fenetresLues(fenetresCollecte)}
         />
       )}
     </div>
@@ -606,6 +607,7 @@ function PanneauNoeud({
   bucketLabel,
   zoom,
   hrefNoeud,
+  fenetresCollecte,
 }: {
   panneau: { cote: "front" | "back"; route: string };
   ligne: MapNodeRow | null;
@@ -617,6 +619,8 @@ function PanneauNoeud({
   bucketLabel: string;
   zoom?: string;
   hrefNoeud: (r: { tier: "front" | "back"; route: string }) => string;
+  /** Fenêtres hors collecte (`sectionFenetresCollecte`), lues avec la série : hachures « non mesuré ». */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const fermer = hrefWithQuery("/map", query, { panel: null });
   const index = classes.findIndex((n) => n.tier === panneau.cote && n.route === panneau.route);
@@ -704,6 +708,7 @@ function PanneauNoeud({
                 fuseau={FUSEAU_AFFICHAGE}
                 zoomHref={zoom}
                 hauteur={180}
+                fenetresCollecte={fenetresCollecte}
                 ariaLabel={`Latence p75 et volume d'appels de ${panneau.route} par tranche de ${bucketLabel}, ${plage}`}
               />
               <TableAlternative

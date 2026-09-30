@@ -923,6 +923,71 @@ export function writeReplayChunk(pool, chunk, { client: fourni = null, verrou = 
 
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 
+// ═══════════════ L'EXTENSION : LE DOMAINE ENREGISTRÉ TIENT LIEU DE CLÉ ══════════
+//
+// Décision du responsable du produit, 30/09/2026. Depuis le 29/09, la collecte
+// exige une clé (REQUIRE_API_KEY) ; l'extension navigateur n'en a pas — son
+// bundle est public, aucun secret n'y tient — et tous ses lots prenaient 403.
+//
+// LA RÈGLE, sous REQUIRE_API_KEY. Un lot est accepté sans clé SI ET SEULEMENT SI :
+//   (a) il se dit de l'extension : tous les spans de sa resource portent
+//       `mip.collection_source = "extension"` (`flattenOtlp`, `extension: true`) ;
+//   (b) l'origine de la page — l'en-tête `Origin` du navigateur, ou, relayé par
+//       la console, `x-mip-edge-origin` du bord authentifié — a pour hôte un
+//       domaine ENREGISTRÉ et ACTIF dans `extension_scope` pour CET `app_id` ;
+//   (c) l'application est active et non suspendue : ces deux contrôles passent
+//       AVANT, dans `checkApiKey`, et rien ici ne les contourne.
+// Tout le reste est inchangé : le lot du snippet sans clé reste refusé, comme
+// le rejeu et les logs (ils ne portent pas le marqueur de l'extension, et
+// l'extension n'en envoie pas : elle injecte le SDK sans `replay`, et le SDK web
+// n'émet pas de logs OTLP).
+//
+// SANS CLÉ SEULEMENT. Un lot qui porte une clé est jugé sur sa clé : une clé
+// fausse reste un 403 `invalid api key`, même depuis un domaine enregistré.
+// L'extension n'envoie jamais de clé ; une clé fausse vient d'une intégration
+// mal réglée (ou d'une clé tournée), et la laisser passer par le domaine
+// masquerait l'erreur que ce 403 est là pour montrer.
+//
+// POURQUOI CE N'EST PAS UN AFFAIBLISSEMENT. La clé d'un snippet se lit dans le
+// code source de toute page qui le porte : elle identifie le projet, elle ne
+// protège rien. Un domaine enregistré, qu'un en-tête `Origin` forgé suffit à
+// usurper hors d'un navigateur, ne protège ni plus ni moins. Ce qui borne un
+// abus reste ce qui le bornait : la limite de débit par application
+// (`rateLimitedDurable`, appliquée après ce contrôle) et la coupure de
+// l'application ou du domaine depuis l'administration (60 s de cache au plus).
+
+/**
+ * Hôte d'une origine de page (`https://app.client.fr[:port]`), en minuscules,
+ * ou `null` si la valeur n'a pas la forme d'une origine web (`null`, absente,
+ * schéma autre que http(s)). Le port n'entre pas en compte : le registre de
+ * l'extension range des noms d'hôte exacts, sans port.
+ * @param {unknown} origine
+ * @returns {string|null}
+ */
+export function hoteDOrigine(origine) {
+  if (typeof origine !== "string" || origine.length === 0 || origine.length > 2048) return null;
+  let url;
+  try {
+    url = new URL(origine);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  return url.hostname.toLowerCase() || null;
+}
+
+/**
+ * Le lot, marqué extension, vient-il d'un domaine actif de l'application ? Les
+ * conditions (a) et (b) de la règle ci-dessus ; (c) est à la charge de l'appelant.
+ * @param {{ extension_domains?: string[]|null }} app ligne du registre (cache)
+ * @param {{ extension?: boolean, origine?: string|null }} contexte
+ */
+export function autoriseParDomaine(app, contexte) {
+  if (contexte?.extension !== true) return false;
+  const hote = hoteDOrigine(contexte.origine);
+  return hote !== null && Array.isArray(app?.extension_domains) && app.extension_domains.includes(hote);
+}
+
 /**
  * Helpers d'auth adossés à un pool `pg`. Même modèle de décision que
  * shared/auth.mjs (qui parlait supabase-js) : cache de registre 60 s,
@@ -959,8 +1024,16 @@ export function createPgAuth(pool, opts = {}) {
         // colonne absente ferait échouer TOUT le chargement du registre — donc
         // basculer l'ingestion entière en repli fail-open. L'opérateur de jsonb
         // rend NULL quand la clé n'existe pas.
+        //
+        // Les domaines ACTIFS de l'extension (`extension_scope`) viennent dans la
+        // MÊME requête, et donc sous le même cache de 60 s : les lire par lot
+        // réveillerait la base (payée à l'usage) à chaque beacon. Une ligne du
+        // registre n'a que deux états, `active` vrai ou faux ; seule la vraie
+        // autorise (c'est aussi ce que sert `resolve`, `extension-parc.mjs`).
         `select app_id, api_key_hash, active, allowed_origins,
-                (to_jsonb(app_registry.*) ->> 'ingestion_suspended_at') as ingestion_suspended_at
+                (to_jsonb(app_registry.*) ->> 'ingestion_suspended_at') as ingestion_suspended_at,
+                array(select lower(s.domain) from extension_scope s
+                       where s.app_id = app_registry.app_id and s.active) as extension_domains
            from app_registry`,
       );
       appRegistry = new Map(rows.map((r) => [r.app_id, r]));
@@ -972,8 +1045,16 @@ export function createPgAuth(pool, opts = {}) {
     return appRegistry;
   }
 
-  /** null si accepté, sinon la raison du 403. */
-  async function checkApiKey(appId, apiKey) {
+  /**
+   * null si accepté, sinon la raison du 403.
+   * @param {string} appId
+   * @param {string|null} apiKey
+   * @param {{ extension?: boolean, origine?: string|null }} [contexte] le lot
+   *   se dit-il de l'extension (`flattenOtlp`), et l'`Origin` de la page — lu par
+   *   la porte : en direct, l'en-tête du navigateur ; relayé, `x-mip-edge-origin`
+   *   du bord authentifié (`client-ip.mjs`). Voir `autoriseParDomaine`.
+   */
+  async function checkApiKey(appId, apiKey, contexte = {}) {
     const registry = await getAppRegistry();
     if (!registryEverLoaded) {
       if (requireApiKey) log.warn?.("api key check fail-open (registry never loaded)", { app_id: appId });
@@ -999,6 +1080,14 @@ export function createPgAuth(pool, opts = {}) {
     if (app && app.active !== true) return `inactive app: ${appId}`;
     if (!requireApiKey) return null;
     if (!app) return `unknown or inactive app: ${appId}`;
+    // L'EXTENSION, SANS CLÉ (décision du 30/09/2026) : le domaine enregistré
+    // tient lieu de clé. Placé APRÈS la suspension et la désactivation — une
+    // application coupée le reste — et AVANT l'exigence d'une clé, que
+    // l'extension n'a pas (son bundle est public, aucun secret n'y tient). Un
+    // refus le dit, pour qu'on cherche le domaine et pas une clé qui n'existe pas.
+    if (!apiKey && contexte?.extension === true) {
+      return autoriseParDomaine(app, contexte) ? null : `extension origin not registered for app: ${appId}`;
+    }
     // Durcissement E1-S1 : sous REQUIRE_API_KEY, une app SANS clé est rejetée.
     if (app.api_key_hash == null) return `app requires an API key: ${appId}`;
     if (!apiKey || sha256(apiKey) !== app.api_key_hash)

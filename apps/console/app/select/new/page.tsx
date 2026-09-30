@@ -26,7 +26,7 @@ import {
   strategieExtension,
   strategieNommage,
 } from "@/lib/extension-deploiement";
-import { ingestEndpoint } from "@/lib/ingest-endpoint";
+import { ingestEndpoint, voieRecommandee } from "@/lib/ingest-endpoint";
 import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
 import { chargerNouveauSite } from "@/lib/chargeurs/projets";
 import { chargerEcran } from "@/lib/ecran";
@@ -236,9 +236,13 @@ async function Integration({
   const host = (await headers()).get("host") ?? "localhost:3000";
   const proto = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
   const sdkUrl = `${proto}://${host}/mip-rum.js`;
-  const endpoint = ingestEndpoint("traces", host);
+  // Collecte directe (P6b.G) : le collecteur par défaut dès que sa variable est
+  // posée, comme la fiche du projet, qui garde aussi le code par la console pour
+  // une CSP figée. Sans elle, `voie` vaut « console » et rien ne change.
+  const voie = voieRecommandee();
+  const endpoint = ingestEndpoint("traces", host, voie);
 
-  const snippet = buildSnippet({ sdkUrl, endpoint, appId, clientId: null, withConsent: false });
+  const snippet = buildSnippet({ sdkUrl, endpoint, appId, clientId: null, withConsent: false, voie });
   // Bookmarklet : injecte le SDK sur la page courante puis démarre la mesure —
   // pour monitorer/simuler un parcours sur un site qu'on ne contrôle pas. La clé
   // est embarquée (l'enforcement l'exige) : la vraie si elle vient d'être remise
@@ -252,9 +256,10 @@ async function Integration({
   // Serveur (facultatif) : l'agent OpenTelemetry officiel du langage, sans
   // changement de code — ses spans serveur se rattachent à l'appel du navigateur.
   // Plus de capteur maison depuis le 29/09/2026 (lib/recettes-agents-otel.ts).
+  // Toujours par la console : l'adresse d'un serveur ne dit rien d'un visiteur.
   const recettesServeur = recettesAgentsOtel({
     appId,
-    adresses: { traces: endpoint, logs: ingestEndpoint("logs", host) },
+    adresses: { traces: ingestEndpoint("traces", host), logs: ingestEndpoint("logs", host) },
   });
 
   // La clé n'est exigée que si la collecte ferme l'accès sans clé ; lu ici plutôt
@@ -336,6 +341,13 @@ async function Integration({
               </Link>
               .
             </p>
+            {voie === "directe" && (
+              <p className="mt-2 text-xs leading-relaxed text-ink-soft" data-testid="voie-directe">
+                Collecte directe : le collecteur déduit le pays des visiteurs de leur adresse IP, sans la conserver.
+                Un site dont la politique de sécurité (CSP) fige <code>connect-src</code> prend plutôt le code
+                « par la console » de la fiche du projet.
+              </p>
+            )}
           </section>
 
           {/* Méthode 2 — favori de test. Masqué sous 768 px : un favori à glisser dans

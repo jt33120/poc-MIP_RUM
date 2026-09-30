@@ -561,10 +561,13 @@ describe("en-têtes transmis — liste EXACTE, jamais une adresse", () => {
         ...(signal === "sourcemaps" ? ENTETES_SOURCEMAPS : ENTETES_TRANSMIS),
         "x-mip-edge-auth",
         "x-mip-edge-country",
+        // 30/09/2026 : l'origine de la page, là où les gardes du collector la lisent.
+        ...(signal === "traces" || signal === "logs" ? ["x-mip-edge-origin"] : []),
       ].sort();
       expect(noms).toEqual(attendus);
       // Le secret du relais, pas la valeur forgée par le client.
       expect(envoyes.get("x-mip-edge-auth")).toBe(SECRET);
+      if (envoyes.has("x-mip-edge-origin")) expect(envoyes.get("x-mip-edge-origin")).toBe(ORIGINE);
       // Le pays de VERCEL, pas celui forgé par le client.
       expect(envoyes.get("x-mip-edge-country")).toBe("FR");
       for (const nom of ["x-forwarded-for", "x-real-ip", "x-vercel-forwarded-for", "forwarded", "cf-connecting-ip",
@@ -587,6 +590,22 @@ describe("en-têtes transmis — liste EXACTE, jamais une adresse", () => {
       await r.relayer("traces", new Request(req.url, { method: "POST", headers: h, body: "{}" }), corps, CORS);
       expect(new Headers(collector.posts()[0].init.headers).has("x-mip-edge-country")).toBe(false);
     }
+  });
+
+  it("origine de la page : transmise pour traces et logs seulement, et jamais inventée", async () => {
+    for (const signal of SIGNAUX) {
+      const { r, collector } = relais();
+      await r.relayer(signal, entrante({ origin: "https://app.client.fr" }), corps, CORS);
+      const envoyes = new Headers(collector.posts()[0].init.headers);
+      expect(envoyes.get("x-mip-edge-origin"), signal).toBe(signal === "traces" || signal === "logs" ? "https://app.client.fr" : null);
+    }
+    // Sans `Origin` (un agent serveur, un outil) : rien à transmettre.
+    const { r, collector } = relais();
+    const req = entrante();
+    const h = new Headers(req.headers);
+    h.delete("origin");
+    await r.relayer("traces", new Request(req.url, { method: "POST", headers: h, body: "{}" }), corps, CORS);
+    expect(new Headers(collector.posts()[0].init.headers).has("x-mip-edge-origin")).toBe(false);
   });
 
   it("le corps part octet pour octet", async () => {

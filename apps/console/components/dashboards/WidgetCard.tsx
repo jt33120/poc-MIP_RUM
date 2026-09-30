@@ -34,6 +34,7 @@ import { explorerHref, explorerHrefFromAst, valeurApprochee } from "@/lib/explor
 import { estAdditive } from "@/lib/analytics-schema";
 import { formater } from "@/lib/fmt-ids";
 import { fmtDate } from "@/lib/format";
+import type { FenetreCollecte } from "@/lib/series";
 import { widgetQuery, type WidgetData } from "@/lib/widget-data";
 import { WidgetBody } from "./WidgetBody";
 
@@ -72,6 +73,7 @@ export function WidgetCard({
   query,
   editable,
   edition = false,
+  fenetresCollecte,
 }: {
   id: number;
   index: number;
@@ -86,6 +88,8 @@ export function WidgetCard({
   editable: boolean;
   /** Mode édition du tableau (`?edition=1`) : seul lui montre les gestes d'écriture. */
   edition?: boolean;
+  /** Fenêtres hors collecte du tableau : hachures « non mesuré » des séries de la carte. */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const position = `${index + 1} sur ${count}`;
   const explorer = widget.kind === "v2" ? hrefExplorerDeCarte(widget, query) : null;
@@ -195,7 +199,7 @@ export function WidgetCard({
         )}
       </div>
 
-      <WidgetBody data={data} query={query} />
+      <WidgetBody data={data} query={query} fenetresCollecte={fenetresCollecte} />
 
       {/* Configuration par carte : réservée aux analyses, qui seules savent
           appliquer un filtre supplémentaire à leur requête. */}

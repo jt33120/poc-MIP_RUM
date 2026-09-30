@@ -1306,7 +1306,8 @@ function routeFromOtelName(name) {
  * Aplatit un payload OTLP/HTTP JSON en lignes SQL.
  * Rejette (compte) les resourceSpans sans mip.app_id (PLAN §7.2).
  * v0.2 : resources/longtasks/breadcrumbs/events (track.*), fingerprint d'erreur,
- * apiKeys = clé `mip.api_key` lue sur la resource, un élément par resourceSpan accepté.
+ * apiKeys = clé `mip.api_key` lue sur la resource, un élément par resourceSpan accepté
+ * (`extension: true` en plus quand tous ses spans portent le marqueur de l'extension).
  * v0.4 : spans de tracing distribué — 'http.client' (SDK web, session requise)
  * et 'http.server' (middleware backend, session optionnelle via tracestate) ->
  * table rum_span, corrélés par mip.trace_id.
@@ -1318,7 +1319,7 @@ function routeFromOtelName(name) {
  *        `rejected` plutôt que traités (défaut 20 000).
  * @returns {{sessions: object[], pageviews: object[], metrics: object[], errors: object[],
  *            resources: object[], longtasks: object[], breadcrumbs: object[], events: object[], actions: object[],
- *            spans: object[], apiKeys: {app_id: string, api_key: string|null}[], rejected: number}}
+ *            spans: object[], apiKeys: {app_id: string, api_key: string|null, extension?: true}[], rejected: number}}
  */
 export function flattenOtlp(payload, opts = {}) {
   const maxSpans = opts.maxSpans ?? 20_000;
@@ -1404,7 +1405,16 @@ export function flattenOtlp(payload, opts = {}) {
       rejected++;
       continue;
     }
-    apiKeys.push({ app_id: appId, api_key: res["mip.api_key"] ?? null });
+    const cle = { app_id: appId, api_key: res["mip.api_key"] ?? null };
+    apiKeys.push(cle);
+    // LOT DE L'EXTENSION (30/09/2026) : le SDK injecté par l'extension ne porte
+    // son marqueur que sur chaque SPAN (`mip.collection_source`), pas sur la
+    // resource — et les postes déjà équipés gardent ce SDK. La resource n'est
+    // donc dite « extension » que si TOUS ses spans lus le disent ; un lot mêlé
+    // reste un lot du snippet. `extension` n'est posé que vrai : le contrôle
+    // d'authentification (`createPgAuth`) en fait une condition, jamais une preuve.
+    let spansLus = 0;
+    let spansExtension = 0;
     // Version de l'app (dé-minification, P6.1 : bornée, jamais scrubbée) et
     // environnement : déclarés par la resource, recopiés sur chaque signal.
     const release = boundedRelease(res["mip.release"]);
@@ -1443,6 +1453,8 @@ export function flattenOtlp(payload, opts = {}) {
           continue;
         }
         const a = attrsToObj(span.attributes);
+        spansLus++;
+        if (a["mip.collection_source"] === "extension") spansExtension++;
 
         // ── P5.3 : exceptions du span, AVANT toute branche. Les branches backend
         // qui suivent (http.server, serveur OTel, « detail ») sortent toutes par
@@ -1943,6 +1955,7 @@ export function flattenOtlp(payload, opts = {}) {
         // autres spans (futures instrumentations) : ignorés silencieusement
       }
     }
+    if (spansLus > 0 && spansExtension === spansLus) cle.extension = true;
   }
   // Une panne publiée par un span et son parent n'est écrite qu'une fois : le
   // compte `recues` de l'écrivain et les compteurs en aval partent de ce lot-ci.

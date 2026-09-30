@@ -1,7 +1,7 @@
 // Logique pure de l'onboarding clients (v0.5) — validations + dérivation du
 // statut d'intégration. Aucune I/O ici : tout est testé unitairement.
 
-import { ingestPath } from "./ingest-endpoint";
+import { ingestPath, type VoieCollecte } from "./ingest-endpoint";
 
 /**
  * Exemple de snippet du carrousel « Ajouter un client » de la vitrine. L'adresse
@@ -83,13 +83,29 @@ export function deriveStatus(p: OnboardingProbe): OnboardingStatus {
   };
 }
 
-/** Snippet HTML généré pour le client — la seule source de vérité du wizard. */
+/**
+ * Première ligne du code de suivi. Elle dit la VOIE quand elle est directe : le
+ * code vit ensuite des mois chez le client, loin de la fiche qui l'a produit, et
+ * c'est la seule trace, dans son propre HTML, de ce que sa CSP doit autoriser.
+ */
+function enteteSnippet(voie: VoieCollecte | undefined): string {
+  return voie === "directe" ? `<!-- MIP RUM — collecte directe (pays par l'adresse IP) -->` : `<!-- MIP RUM -->`;
+}
+
+/**
+ * Snippet HTML généré pour le client — la seule source de vérité du wizard.
+ *
+ * `voie` (P6b.G, facultatif) : `directe` quand `endpoint` est l'adresse du
+ * collector (`ingestEndpoint(…, "directe")`). Elle ne change que l'en-tête ;
+ * l'adresse, c'est `endpoint` qui la porte. Absente : le code d'avant, à l'octet.
+ */
 export function buildSnippet(opts: {
   sdkUrl: string;
   endpoint: string;
   appId: string;
   clientId: string | null;
   withConsent: boolean;
+  voie?: VoieCollecte;
 }): string {
   const init: string[] = [
     `    endpoint: ${JSON.stringify(opts.endpoint)},`,
@@ -105,7 +121,7 @@ export function buildSnippet(opts: {
   if (opts.withConsent)
     init.push(`    requireConsent: true, // rien ne part avant MIPRum.consent(true)`);
   return [
-    `<!-- MIP RUM -->`,
+    enteteSnippet(opts.voie),
     `<script src=${JSON.stringify(opts.sdkUrl)}></script>`,
     `<script>`,
     `  MIPRum.init({`,

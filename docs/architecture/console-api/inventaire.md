@@ -13,7 +13,7 @@
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
 | Modules `lib/queries*.ts` | 47 (208 fonctions exportées) | — |
-| Sections `lire()` (appels) | 297 | — |
+| Sections `lire()` (appels) | 300 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 5 / 0 | — |
 | Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 51 | — |
 | Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 45 | **45** / 47 |
@@ -78,7 +78,7 @@
 | `/select/new` | C1–C2 identité, sélection | **oui** | projets | queries, accounts, alerting, collecte, customers, dashboards, deploys, dsar, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, projects, read-tokens, saved-views, sessions, sourcemap-tokens, tracing, uptime, v2 | — | — | oui |
 | `/select` | C1–C2 identité, sélection | **oui** | projets | queries, collecte, customers, deploys, explorer, extension-scope, mobile, projects, sessions, tracing | — | — | oui |
 | `/sessions/[id]` | C3 | **oui** | session | queries, collecte, deploys, explorer, mobile, sessions, tracing | 2 | — | oui |
-| `/sessions` | C3 | **oui** | sessions | queries, collecte, deploys, explorer, mobile, sessions, tracing | 14 | — | oui |
+| `/sessions` | C3 | **oui** | sessions | queries, collecte, deploys, explorer, mobile, sessions, tracing | 15 | — | oui |
 | `/slo` | C8 alerting | **oui** | slo | queries, accounts, alerting, collecte, dashboards, deploys, dsar, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, tracing, uptime, v2 | 4 | — | oui |
 | `/tracing/[traceId]` | C4 | **oui** | session, trace | queries, collecte, deploys, explorer, mobile, sessions, tracing | 4 | — | oui |
 | `/tracing` | C4 | **oui** | tracing | collecte, deploys, events, explorer, tracing, v2 | 10 | — | oui |

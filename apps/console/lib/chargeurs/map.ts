@@ -10,6 +10,7 @@ import { samplingSessions } from "../queries-sessions";
 import { traceCoverage } from "../queries-tracing";
 import { paramReader } from "../query-contract";
 import { lireEtatDeVue } from "../view-state";
+import { sectionFenetresCollecte } from "./collecte";
 import { section, type Chargeur } from "./commun";
 
 export const chargerMap = (async (principal, sp) => {
@@ -21,7 +22,7 @@ export const chargerMap = (async (principal, sp) => {
   const panneau = vue.panel?.type === "noeud" ? vue.panel : null;
 
   // Chaque section a son sort : une lecture en échec n'efface pas les autres (§ 3.8).
-  const [noeuds, aretes, pages, couverture, echantillonnage, serieNoeud] = await Promise.all([
+  const [noeuds, aretes, pages, couverture, echantillonnage, serieNoeud, fenetresCollecte] = await Promise.all([
     section(() => mapNodes(f)),
     section(() => mapEdges(f)),
     section(() => mapPages(f)),
@@ -29,6 +30,8 @@ export const chargerMap = (async (principal, sp) => {
     section(() => samplingSessions(f, { avecSpans: true })),
     // B37 : la série du panneau n'est lue que si un panneau est ouvert.
     panneau ? section(() => mapNodeSerie(f, panneau.cote, panneau.route)) : Promise.resolve(null),
+    // Les hachures « non mesuré » de cette série : lues avec elle, jamais sans panneau.
+    panneau ? sectionFenetresCollecte(ecran.query) : Promise.resolve(null),
   ]);
   return {
     etat: "ok",
@@ -41,5 +44,6 @@ export const chargerMap = (async (principal, sp) => {
     couverture,
     echantillonnage,
     serieNoeud,
+    fenetresCollecte,
   } as const;
 }) satisfies Chargeur<unknown>;

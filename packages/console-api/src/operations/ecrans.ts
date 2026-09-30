@@ -22,6 +22,7 @@ import {
   type CleEcranAdmin,
   type CleEcranSession,
   type Coquille,
+  type EtatMesureCoquille,
   type Operation,
   type ParametresEcran,
   type Section,
@@ -64,6 +65,8 @@ export interface ChargeursEcrans {
     readonly projets: Lecture<readonly { app_id: string; name: string }[]>;
     readonly schema: Lecture<readonly string[]>;
     readonly fuseaux: Readonly<Record<string, string>>;
+    /** L'état de la chaîne de mesure (badge de l'en-tête) ; absent, la coquille ne le rend pas. */
+    readonly mesure?: Lecture<EtatMesureCoquille | null>;
   }>;
   /** C3 → C6 — un chargeur par écran du contrat (`ECRANS`), sans exception : le type l'exige. */
   readonly pages: { readonly [K in CleEcran]: ChargeurEcran };
@@ -107,6 +110,7 @@ export function operationsEcrans(c: ChargeursEcrans): Enregistrement[] {
         projets: versSection(l.projets, { ...ctx, section: "projets" }),
         schema: versSection(l.schema, { ...ctx, section: "schema" }),
         fuseaux: l.fuseaux,
+        ...(l.mesure ? { mesure: versSection(l.mesure, { ...ctx, section: "mesure" }) } : {}),
       };
       return reponse;
     }),

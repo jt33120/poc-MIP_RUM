@@ -63,7 +63,8 @@
 //
 // D'où un protocole explicite, `mip-edge/1` : le relais signe sa requête avec
 // `x-mip-edge-auth` (un secret partagé, EDGE_PROXY_SECRET), et n'y met QUE le
-// pays (`x-mip-edge-country`), jamais l'adresse. Le collector :
+// pays (`x-mip-edge-country`) et, depuis le 30/09/2026, l'origine de la page
+// (`x-mip-edge-origin`, `EDGE_ORIGIN_HEADER`) — jamais l'adresse. Le collector :
 //
 //   - vérifie la signature en TEMPS CONSTANT, contre une ou deux valeurs (deux
 //     pendant une rotation : on pose la nouvelle à côté de l'ancienne, on
@@ -239,6 +240,14 @@ export const EDGE_PROTOCOL = "mip-edge/1";
 export const EDGE_HEADER_PREFIX = "x-mip-edge-";
 export const EDGE_AUTH_HEADER = "x-mip-edge-auth";
 export const EDGE_COUNTRY_HEADER = "x-mip-edge-country";
+/**
+ * L'`Origin` de la page que le navigateur a présentée à la console (30/09/2026).
+ * Relayée, la requête vient d'une fonction Vercel : son propre `Origin` ne dit
+ * rien du site. C'est l'origine de la page qui autorise un lot de l'extension
+ * sans clé (`autoriseParDomaine`, `pg-ingest.mjs`) — lue ici seulement quand la
+ * signature est valide, comme le pays. Une origine de site, jamais une adresse.
+ */
+export const EDGE_ORIGIN_HEADER = "x-mip-edge-origin";
 /** Un secret de relais plus court se devine ; 32 caractères = 128 bits en hex. */
 export const EDGE_SECRET_MIN_LENGTH = 32;
 /** Deux valeurs au plus : l'ancienne et la nouvelle, le temps d'une rotation. */
@@ -289,8 +298,12 @@ export function creerBordDeConfiance(secrets) {
    *   `direct`   aucune signature : trafic direct, GeoIP permis, en-têtes pays
    *              de CDN ignorés.
    *
+   * `origine` : l'origine de la page transmise par le relais (`relaye`
+   * seulement), sinon `null` — en direct, c'est l'`Origin` de la requête qui
+   * fait foi, et l'appelant la lit lui-même.
+   *
    * @param {{headers?: any, rawHeaders?: string[]}} req
-   * @returns {{ mode: "relaye"|"refuse"|"direct", pays: string|null, forges: number }}
+   * @returns {{ mode: "relaye"|"refuse"|"direct", pays: string|null, origine: string|null, forges: number }}
    */
   function lire(req) {
     // PRÉSENCE, pas valeur : un `x-mip-edge-auth` VIDE vient d'un relais dont
@@ -317,8 +330,11 @@ export function creerBordDeConfiance(secrets) {
         break;
       }
     }
+    // Lue AVANT le retrait, et seulement signée : un client qui frappe le
+    // collector en direct avec un `x-mip-edge-origin` forgé le voit retiré.
+    const origine = mode === "relaye" ? entete(req, EDGE_ORIGIN_HEADER) : null;
     const retires = retirerEntetesBord(req);
-    return { mode, pays, forges: mode === "relaye" ? 0 : retires };
+    return { mode, pays, origine, forges: mode === "relaye" ? 0 : retires };
   }
 
   return { actif: attendues.length > 0, lire };

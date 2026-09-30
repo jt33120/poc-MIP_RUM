@@ -87,7 +87,7 @@ async function traiter(req: Request) {
     payload =secureOtlpIdentities(payload, process.env.IDENTITY_HASH_SECRET).payload;
     const parsed = flattenOtlpLogs(payload, { maxLogs: MAX_SPANS_PER_REQUEST });
 
-    const blocked = await guardApps(parsed.apiKeys, cors);
+    const blocked = await guardApps(parsed.apiKeys, cors, req.headers.get("origin"));
     if (blocked) return blocked;
 
     // P5.3 : les exceptions structurées des logs partent dans la même transaction.

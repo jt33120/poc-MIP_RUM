@@ -12,20 +12,30 @@ const RESUME = "cursor-pointer text-xs font-medium text-ink";
 const TEXTE = "text-xs leading-relaxed text-ink-soft";
 import type { InjectionArtifacts } from "@/lib/onboarding";
 
-/** Étape 2 : instructions d'intégration du snippet front (présentationnel). */
+/**
+ * Étape 2 : instructions d'intégration du snippet front (présentationnel).
+ *
+ * `parLaConsole` (P6b.G) : présent quand la collecte directe est ouverte. Le code
+ * principal vise alors le collecteur (recommandé : le pays vient de l'adresse IP),
+ * et celui-ci garde la voie par la console pour un site dont la CSP fige
+ * `connect-src` — la page ne peut pas le savoir, l'intégrateur si.
+ */
 export function SnippetStep({
   snippet,
   snippetConsent,
   sdkUrl,
   endpoint,
   injection,
+  parLaConsole = null,
 }: {
   snippet: string;
   snippetConsent: string;
   sdkUrl: string;
   endpoint: string;
   injection: InjectionArtifacts;
+  parLaConsole?: { snippet: string; endpoint: string } | null;
 }) {
+  const origineCollecte = new URL(endpoint).origin;
   return (
     <>
       <p className="mb-3 text-xs text-ink-soft">
@@ -33,6 +43,14 @@ export function SnippetStep({
         d&apos;autre à modifier : Web Vitals, erreurs, sessions et appels réseau sont mesurés
         sans autre code.
       </p>
+      {parLaConsole && (
+        <p className={`mb-2 ${TEXTE}`} data-testid="voie-directe">
+          <strong className="text-ink">Recommandé : collecte directe</strong> — les mesures vont au
+          collecteur, qui déduit le pays des visiteurs de leur adresse IP, le temps de la requête, sans
+          la conserver. Le site doit autoriser <code>connect-src {origineCollecte}</code> s&apos;il a
+          une CSP ; sinon, le code par la console, plus bas.
+        </p>
+      )}
       <CopyBlock code={snippet} />
       <p className={`mt-2 ${TEXTE}`} data-testid="cle-facultative">
         La ligne <code>apiKey</code> est facultative tant que la collecte n&apos;exige pas de clé : sans
@@ -52,11 +70,26 @@ export function SnippetStep({
           <summary className={RESUME}>Le site a une politique de sécurité (CSP) stricte ?</summary>
           <p className={`mt-2 ${TEXTE}`}>
             Ajouter à la CSP : <code>script-src {sdkUrl.replace("/mip-rum.js", "")}</code> et{" "}
-            <code>connect-src {new URL(endpoint).origin}</code>. Autre possibilité, recommandée :
+            <code>connect-src {origineCollecte}</code>
+            {parLaConsole ? " (le collecteur, pour la collecte directe)" : ""}. Autre possibilité, recommandée :
             héberger <code>mip-rum.js</code> sur le domaine du client (un seul fichier statique) — le
             script ne dépend alors plus d&apos;une origine externe.
           </p>
         </details>
+        {parLaConsole && (
+          <details className={BLOC} data-testid="voie-console">
+            <summary className={RESUME}>
+              La CSP du site fige <code>connect-src</code> et ne peut pas changer ? Le code par la console
+            </summary>
+            <p className={`mb-2 mt-2 ${TEXTE}`}>
+              Ce code envoie à la console, qui relaie au collecteur sans l&apos;adresse IP : le pays reste
+              estimé d&apos;après le fuseau horaire du terminal, ou « Inconnue ». CSP à autoriser :{" "}
+              <code>connect-src {new URL(parLaConsole.endpoint).origin}</code>. L&apos;écran des sessions dit,
+              pour chaque application, la part des pays venus de l&apos;adresse IP.
+            </p>
+            <CopyBlock code={parLaConsole.snippet} />
+          </details>
+        )}
         <details className={BLOC}>
           <summary className={RESUME}>RGPD : le client a une bannière de consentement ?</summary>
           <p className={`mb-2 mt-2 ${TEXTE}`}>
