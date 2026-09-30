@@ -72,7 +72,8 @@ const CSS = `
   .voile { opacity: 0; }
   .voile--gauche { background: linear-gradient(90deg, rgba(4,10,28,.88), rgba(4,10,28,.5) 45%, transparent 78%); }
   .voile--bas { background: linear-gradient(0deg, rgba(4,10,28,.86), rgba(4,10,28,.5) 45%, transparent 70%); }
-  .voile--final { background: radial-gradient(ellipse 72% 62% at 50% 50%, rgba(4,10,28,.72), rgba(4,10,28,.35) 70%, rgba(4,10,28,.2)); }
+  /* Assez sombre au centre pour que la carte finale se lise sur le tableau de bord du clip. */
+  .voile--final { background: radial-gradient(ellipse 62% 50% at 50% 52%, rgba(4,10,28,.88), rgba(4,10,28,.6) 62%, rgba(4,10,28,.25)); }
   .eclair { opacity: 0; background: radial-gradient(ellipse at 50% 50%, rgba(248,145,1,.5), rgba(248,145,1,.1) 70%); }
   .ligne { overflow: hidden; padding: .14em .06em .08em; margin: 0 -.06em -.22em; }
   .ligne > span { display: inline-block; white-space: nowrap; will-change: transform; }

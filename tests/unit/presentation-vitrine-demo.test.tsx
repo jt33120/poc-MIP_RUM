@@ -5,8 +5,8 @@
 // Ce que ces tests tiennent, en rendu SSR réel (`renderToStaticMarkup`) :
 //   - les entrées : le compte démo passe par la connexion pré-remplie, la connexion et
 //     l'inscription sont à droite ; connecté, une seule entrée ; démo fermée, verrouillée ;
-//   - l'aperçu : une légende et une capture décrite par étape, chaque capture présente
-//     et légère ; les pistes du script de captures ;
+//   - le film : monté, présent, léger, avec son affiche ;
+//   - l'aperçu : une légende par étape, une scène animée qui commence sur la santé ;
 //   - le pied de page commun (attribution GeoIP, conditions d'utilisation) ;
 //   - les images servies sans session (matcher du middleware).
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -16,7 +16,6 @@ import { describe, expect, it } from "vitest";
 import { Landing } from "@/components/presentation/Landing";
 import type { SessionUser } from "@/lib/auth";
 import { ETAPES_APERCU, FILM_ACCUEIL } from "@/lib/vitrine";
-import { CAPTURES, POIDS_MAX, adresse, premiereSession } from "../../scripts/captures-vitrine.mjs";
 
 const RACINE = join(__dirname, "../..");
 const ADMIN: SessionUser = { email: "a@mip.test", role: "admin", apps: null };
@@ -59,41 +58,33 @@ describe("le film d'accueil", () => {
     if (!FILM_ACCUEIL) expect(VISITEUR).not.toContain("<video");
   });
 
-  it("le film monté est un fichier du dépôt, avec son affiche", () => {
+  it("le film monté est un fichier du dépôt, léger, avec son affiche ; muet, sans lecture automatique en HTML", () => {
     if (!FILM_ACCUEIL) return;
     for (const f of [FILM_ACCUEIL.mp4, FILM_ACCUEIL.affiche]) {
       expect(existsSync(join(RACINE, "apps/console/public", f)), f).toBe(true);
     }
+    expect(statSync(join(RACINE, "apps/console/public", FILM_ACCUEIL.mp4)).size).toBeLessThanOrEqual(8_000_000);
+    const video = /<video [^>]*>/.exec(VISITEUR)?.[0] ?? "";
+    expect(video).toContain("muted");
+    expect(video).toContain(`poster="${FILM_ACCUEIL.affiche}"`);
+    // La lecture part du script, et jamais pour qui a demandé moins de mouvement.
+    expect(video).not.toContain("autoplay");
   });
 });
 
 describe("l'aperçu défilant", () => {
-  it("une légende et une capture décrite par étape, dans l'ordre", () => {
+  it("une légende par étape ; la scène animée commence sur la santé, et se tait pour les lecteurs d'écran", () => {
     expect(compte(VISITEUR, 'data-testid="apercu-legende"')).toBe(ETAPES_APERCU.length);
-    const images = [...VISITEUR.matchAll(/<img [^>]*src="\/vitrine\/([\w-]+)\.webp"[^>]*>/g)];
-    expect(images.map((m) => m[1])).toEqual(ETAPES_APERCU.map((e) => e.nom));
-    for (const [img] of images) expect(img, img).toMatch(/alt="[^"]{40,}"/);
+    expect(VISITEUR).toMatch(/<div class="scene" data-vue="sante" aria-hidden="true"/);
+    // Plus de captures : la scène est dessinée.
+    expect(VISITEUR).not.toMatch(/<img [^>]*src="\/vitrine\//);
   });
 
-  it("chaque capture existe et reste légère", () => {
-    for (const e of ETAPES_APERCU) {
-      const fichier = join(RACINE, "apps/console/public/vitrine", `${e.nom}.webp`);
-      expect(existsSync(fichier), fichier).toBe(true);
-      expect(statSync(fichier).size, e.nom).toBeLessThanOrEqual(POIDS_MAX);
-    }
-  });
-
-  it("le script de captures prend les mêmes écrans que l'aperçu", () => {
-    expect(CAPTURES.map((c: { nom: string }) => c.nom)).toEqual(ETAPES_APERCU.map((e) => e.nom));
-  });
-
-  it("le script trouve la session du récit et compose l'adresse de chaque écran", () => {
-    const id = "3c3f1ca2-6a09-4963-aa4c-dc9766fdf4a3";
-    expect(premiereSession(["/sessions?app=x", `/sessions/${id}?app=x&tab=replay`])).toBe(id);
-    expect(premiereSession(["/sessions/pas-un-uuid"])).toBeNull();
-    const session = CAPTURES.find((c: { nom: string }) => c.nom === "session");
-    expect(adresse(session, "mip-rum-console", id)).toBe(`/sessions/${id}?app=mip-rum-console&period=7d`);
-    expect(adresse(CAPTURES[0], "mip-rum-console", id)).toBe("/?app=mip-rum-console");
+  it("chaque étape est un écran de la scène, une seule fois ; la légende dit qu'il s'agit d'une illustration", () => {
+    const vues = ETAPES_APERCU.map((e) => e.nom);
+    expect(new Set(vues).size).toBe(vues.length);
+    expect(vues).toEqual(["sante", "pages", "erreurs", "session", "tracing", "assistant"]);
+    expect(VISITEUR).toContain("Illustration animée d&#x27;une boutique fictive");
   });
 });
 

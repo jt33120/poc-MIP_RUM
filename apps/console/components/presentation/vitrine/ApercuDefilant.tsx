@@ -1,17 +1,19 @@
 "use client";
 
-// L'aperçu défilant de la vitrine : la console, capture après capture, pilotée par le
+// L'aperçu défilant de la vitrine : la console, écran après écran, pilotée par le
 // défilement. La dynamique est celle de basedb (eodia.github.io/basedb) : une section
 // haute dont l'intérieur reste épinglé à l'écran ; le premier dixième du défilement
 // redresse le cadre (il arrive incliné, en perspective), le reste se partage entre les
-// étapes — chaque étape change la légende, fait glisser la capture suivante à la place
-// de la précédente, et remplit sa barre dans la navigation du bas.
+// étapes — chaque étape change la légende, fait se transformer la scène (SceneConsole :
+// une console dessinée, dont les éléments passent d'un écran à l'autre), et remplit sa
+// barre dans la navigation du bas.
 //
 // Le défilement n'écrit dans React que le numéro de l'étape ; tout ce qui bouge en
-// continu (inclinaison, barres, léger zoom) s'écrit en style direct, une fois par image
+// continu (inclinaison, barres) s'écrit en style direct, une fois par image
 // (requestAnimationFrame) : pas un rendu React par pixel défilé. Qui a demandé moins de
 // mouvement voit les mêmes étapes, sans inclinaison ni glissé.
 import { useEffect, useRef, useState } from "react";
+import { HAUTEUR_SCENE, LARGEUR_SCENE, SceneConsole } from "@/components/presentation/vitrine/SceneConsole";
 import type { EtapeApercu } from "@/lib/vitrine";
 
 /** Part du défilement qui redresse le cadre, avant la première étape. */
@@ -27,7 +29,6 @@ export function ApercuDefilant({ etapes }: { etapes: readonly EtapeApercu[] }) {
   const cadre = useRef<HTMLDivElement>(null);
   const intro = useRef<HTMLDivElement>(null);
   const barres = useRef<(HTMLSpanElement | null)[]>([]);
-  const zooms = useRef<(HTMLImageElement | null)[]>([]);
   // -1 : le cadre se redresse, aucune étape encore (la première capture est déjà là).
   const [etape, setEtape] = useState(-1);
   const n = etapes.length;
@@ -55,9 +56,6 @@ export function ApercuDefilant({ etapes }: { etapes: readonly EtapeApercu[] }) {
       const i = p < INTRO ? -1 : Math.min(n - 1, Math.floor((p - INTRO) / pas));
       setEtape((avant) => (avant === i ? avant : i));
       barres.current.forEach((b, k) => b?.style.setProperty("transform", `scaleX(${borne((p - INTRO - k * pas) / pas)})`));
-      if (!reduit) {
-        zooms.current.forEach((img, k) => img?.style.setProperty("transform", `scale(${1 + 0.035 * borne((p - INTRO - k * pas) / pas)})`));
-      }
     };
     const demander = () => {
       if (image === 0) image = requestAnimationFrame(maj);
@@ -98,7 +96,7 @@ export function ApercuDefilant({ etapes }: { etapes: readonly EtapeApercu[] }) {
           <div ref={intro} className="[grid-area:1/1]">
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-accent-ink">Aperçu</p>
             <h2 id="apercu-titre" className="mt-3 text-3xl font-extrabold tracking-[-0.03em] text-ink sm:text-5xl">
-              La console, telle que la voit la démo.
+              La console, en mouvement.
             </h2>
           </div>
           {etapes.map((e, k) => (
@@ -120,7 +118,7 @@ export function ApercuDefilant({ etapes }: { etapes: readonly EtapeApercu[] }) {
           <div
             ref={cadre}
             className="origin-top overflow-hidden rounded-xl border border-white/10 bg-[#0b1430] shadow-[0_60px_120px_-40px_rgba(248,145,1,0.35),0_0_0_1px_rgba(255,255,255,0.04)] will-change-transform sm:rounded-2xl"
-            style={{ width: "min(1080px, 100%, calc((100svh - 19rem) * 1.6))" }}
+            style={{ width: `min(1080px, 100%, calc((100svh - 22rem) * ${LARGEUR_SCENE / HAUTEUR_SCENE}))` }}
           >
             <div className="flex h-8 items-center gap-3 border-b border-white/10 bg-[#0e1936] px-3 sm:h-9">
               <span aria-hidden className="flex gap-1.5">
@@ -129,46 +127,27 @@ export function ApercuDefilant({ etapes }: { etapes: readonly EtapeApercu[] }) {
                 <i className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
               </span>
               <span className="mx-auto truncate rounded-md bg-white/5 px-3 py-0.5 font-mono text-[11px] text-white/60">
-                MIP RUM · compte démo · {etapes[visible]?.chemin}
+                MIP RUM · boutique démo · {etapes[visible]?.chemin}
               </span>
               <span aria-hidden className="w-[42px]" />
             </div>
-            <div className="relative aspect-[16/10] overflow-hidden bg-white">
-              {etapes.map((e, k) => (
-                <figure
-                  key={e.nom}
-                  className="apercu-vue absolute inset-0 m-0"
-                  data-etat={k === visible ? "actif" : k < visible ? "avant" : "apres"}
-                  aria-hidden={k !== visible}
-                >
-                  {/* <img>, pas next/image : une capture déjà au bon format, sans optimisation à la volée (quota Vercel). */}
-                  <img
-                    ref={(el) => {
-                      zooms.current[k] = el;
-                    }}
-                    src={`/vitrine/${e.nom}.webp`}
-                    alt={e.alt}
-                    width={2880}
-                    height={1800}
-                    decoding="async"
-                    loading={k === 0 ? "eager" : "lazy"}
-                    className="h-full w-full origin-top object-cover object-top"
-                  />
-                </figure>
-              ))}
-            </div>
+            <SceneConsole vue={etapes[visible].nom} />
           </div>
         </div>
 
+        <p className="mt-3 text-center text-[11px] text-ink-soft">
+          Illustration animée d&apos;une boutique fictive, fidèle aux écrans de la console. La démo montre de vraies mesures.
+        </p>
+
         {/* La navigation : une étape par bouton, sa barre se remplit au défilement. */}
-        <nav aria-label="Étapes de l'aperçu" className={`apercu-etapes mt-4 flex gap-2 sm:gap-3 ${etape < 0 ? "opacity-0" : "opacity-100"}`}>
+        <nav aria-label="Étapes de l'aperçu" className={`apercu-etapes mt-3 flex gap-1.5 sm:gap-3 ${etape < 0 ? "opacity-0" : "opacity-100"}`}>
           {etapes.map((e, k) => (
             <button
               key={e.nom}
               type="button"
               onClick={() => allerA(k)}
               aria-current={etape === k ? "step" : undefined}
-              className="group flex w-14 flex-col items-center gap-1.5 py-1 sm:w-24"
+              className="group flex w-12 flex-col items-center gap-1.5 py-1 sm:w-24"
             >
               <span className={`text-[11px] font-medium transition sm:text-xs ${etape === k ? "text-ink" : "text-ink-soft group-hover:text-ink"}`}>
                 {e.onglet}

@@ -589,7 +589,7 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
       // Chaque étape de l'aperçu : la section épinglée ne doit rien pousser hors de l'écran.
       const etapes = await page.getByTestId("apercu-legende").count();
       for (let k = 0; k < etapes; k++) {
-        await page.getByRole("button", { name: new RegExp(`^${["Santé", "Pages", "Erreurs", "Session", "Tracing"][k]}$`) }).click();
+        await page.getByRole("button", { name: new RegExp(`^${["Santé", "Pages", "Erreurs", "Session", "Tracing", "Assistant"][k]}$`) }).click();
         await expect(page.getByTestId("apercu-legende").nth(k)).toHaveAttribute("data-actif", "true");
         for (const f of await debordementsPss8(page)) fautes.push(`${largeur} px, étape ${k + 1} — ${f}`);
       }
