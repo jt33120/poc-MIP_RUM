@@ -702,6 +702,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const [vitauxB, vitauxA] = vitauxReleasesLus ?? [null, null];
   const lienRelease = (v: string) => lien("/", { release: v, cmp: null, rel_a: null, rel_b: null });
 
+  // Rien à signaler : aucun constat, aucune lecture en échec, aucun épisode détecté.
+  const constatsVides =
+    constats.constats.length === 0 &&
+    constats.echecs.length === 0 &&
+    (etatDetectes.kind === "absent" || (etatDetectes.kind === "ok" && etatDetectes.cartes.length === 0));
+
   return (
     <div className="animate-fade-up">
       <PageHeader title="Vue d'ensemble" sub={QUESTION} help="rum" />
@@ -866,7 +872,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           A1). Trois petits multiples, trois unités, trois échelles. */}
       <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-12">
         {blocs.hero && (
-          <div className="min-w-0 xl:col-span-8">
+          <div className={`min-w-0 ${constatsVides ? "xl:col-span-12" : "xl:col-span-8"}`}>
             <SectionErreur titre="Graphique principal">
               {/* Onglets du graphique principal (A2 § 6.1) : Web Vitals par défaut ;
                   Erreurs et Trafic tracent des comptes déjà lus pour la rangée Trafic
@@ -939,6 +945,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         {/* Constats automatiques à règle publiée, DÉPLIÉS à côté du hero qu'ils
             commentent : la colonne de 4 a la place de les montrer. Cible du lien
             « N constats » du bandeau R0. */}
+        {/* Recette du 30/09/2026 : rien à signaler, pas de colonne — le hero prend la
+            largeur. « Aucun constat » reste dit, une fois, dans le bandeau du haut. */}
+        {!constatsVides && (
         <div id="constats" className={`min-w-0 scroll-mt-16 ${blocs.hero ? "xl:col-span-4" : "xl:col-span-12"}`}>
           <SectionErreur titre="Constats">
             {constats.echecs.length > 0 && (
@@ -949,10 +958,14 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 />
               </div>
             )}
-            <ConstatsDetectes etat={etatDetectes} />
+            {/* Rien de détecté : pas de phrase « aucun épisode » (le compte le dit). */}
+            {(etatDetectes.kind === "echec" || (etatDetectes.kind === "ok" && etatDetectes.cartes.length > 0)) && (
+              <ConstatsDetectes etat={etatDetectes} />
+            )}
             <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut reglesEnInfobulle />
           </SectionErreur>
         </div>
+        )}
       </div>
 
       {/* R4 (spec A2 § 5.3) — la forme de l'expérience : la heatmap de latence du LCP. */}
