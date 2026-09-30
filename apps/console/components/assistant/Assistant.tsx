@@ -468,7 +468,12 @@ export function Assistant({ digest }: { digest: Digest }) {
     if (!pousse) setOuvert(false);
     requestAnimationFrame(() => {
       surligner(el, { reduit });
-      if (!pousse && focusable(el)) el.focus({ preventScroll: true });
+      // Le volet refermé emporte le focus : il va au chiffre montré (sa case est un
+      // bouton), sinon au bouton de l'assistant — jamais perdu en tête de page.
+      if (!pousse) {
+        const dedans = focusable(el) ? el : el.querySelector<HTMLElement>('button, a[href], summary, [tabindex="0"]');
+        (dedans ?? bouton.current)?.focus({ preventScroll: true });
+      }
       setAnnonce(`${fait.libelle} : ${fait.valeur}, surligné sur le tableau de bord.`);
     });
   }
