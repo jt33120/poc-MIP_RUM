@@ -249,6 +249,10 @@ describe("vocabulaire des constats", () => {
       "apps/console/lib/queries-detections.ts",
       "apps/console/lib/chargeurs/constats.ts",
       "apps/console/lib/chargeurs/vital-horaire.ts",
+      // Vague 3b : ce qui porte les détections à l'écran.
+      "apps/console/lib/chargeurs/detections-accueil.ts",
+      "apps/console/lib/detections-ecran.ts",
+      "apps/console/components/vue-ensemble/ConstatsDetectes.tsx",
     ]
       .map((f) => readFileSync(join(racine, f), "utf8"))
       // Les commentaires expliquent la règle (et la nomment) : ils ne vont pas à l'écran.
