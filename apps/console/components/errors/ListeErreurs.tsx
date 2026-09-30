@@ -20,8 +20,12 @@ import { INPUT_CLASS } from "@/components/forms/Field";
 import { STATUTS_ERREUR, type StatutErreur } from "@/lib/view-state";
 import { pluriel } from "@/lib/format";
 
-/** Une cellule de table au-dessus de 640 px, une ligne de carte en dessous. */
-export const CELLULE_GROUPE = "sm:table-cell sm:px-4 sm:py-3 sm:align-top";
+/**
+ * Une cellule de table au-dessus de 640 px, une ligne de carte en dessous. Tableau
+ * DENSE (recette du 30/09/2026, charte § 3.5) : 8 px de marge verticale, contenu
+ * centré sur la ligne — une ligne de groupe tient en deux lignes de texte.
+ */
+export const CELLULE_GROUPE = "sm:table-cell sm:px-3 sm:py-2 sm:align-middle";
 
 /** Cellule à libellé : le libellé n'apparaît qu'en carte, où l'en-tête a disparu. */
 export function CelluleGroupe({
@@ -100,22 +104,24 @@ export function FiltreStatut({
   statut: StatutErreur | null;
   hrefSansFiltre: string;
 }) {
+  // Une rangée, sans carte (recette du 30/09/2026) : le filtre se pose à côté de la
+  // bascule d'ordre, dans l'en-tête de la liste, au lieu d'occuper sa propre carte.
   return (
     <form
       method="get"
       action="/errors"
-      className="card mb-3 flex flex-wrap items-end gap-3 p-3"
+      className="flex min-w-0 flex-wrap items-center gap-2"
       aria-label="Filtre de statut des groupes"
       data-testid="filtre-statut"
     >
       {caches.map(([nom, valeur]) => (
         <input key={nom} type="hidden" name={nom} value={valeur} />
       ))}
-      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
+      <label className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-ink-soft">
         Statut de triage
         {/* Aucun `aria-label` : le libellé visible de ce `label` nomme déjà le champ,
             et un aria-label le remplacerait au lieu de le confirmer. */}
-        <select name="statut" defaultValue={statut ?? ""} className={INPUT_CLASS}>
+        <select name="statut" defaultValue={statut ?? ""} className={`${INPUT_CLASS} h-7 text-xs`}>
           <option value="">Tous les statuts</option>
           {STATUTS_ERREUR.map((valeur) => (
             <option key={valeur} value={valeur}>
@@ -124,11 +130,11 @@ export function FiltreStatut({
           ))}
         </select>
       </label>
-      <button className="btn-accent" type="submit">
+      <button className="btn-ghost px-2 py-1" type="submit">
         Filtrer
       </button>
       {statut && (
-        <Link href={hrefSansFiltre} className="btn-ghost">
+        <Link href={hrefSansFiltre} className="rounded text-xs font-medium text-brand hover:underline">
           Tous les statuts
         </Link>
       )}

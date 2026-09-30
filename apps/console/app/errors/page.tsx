@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { InfoTip } from "@/components/InfoTip";
 import { ErrorStatusBadges, ErrorTypeBadge } from "@/components/errors/ErrorBadges";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
@@ -86,7 +87,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
       <Breakdown
         title="Répartition des occurrences"
         tabs={breakdownTabs("/errors", ecran.query, dimension, dispoDecoupage, filtresEcran)}
-        notice={`${BREAKDOWN_NOTICES[dimension]} Ce classement porte sur toutes les occurrences de la période : les filtres de statut et de source de la liste ne s'y appliquent pas.`}
+        notice={`${BREAKDOWN_NOTICES[dimension]} Toutes les occurrences de la période, hors filtres de la liste.`}
         items={errorsBreakdownItems({ pathname: "/errors", query: ecran.query, schema, dimension }, decoupe.rows)}
         columns={ERRORS_BREAKDOWN_COLUMNS}
         groups={decoupe.groups}
@@ -173,12 +174,46 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
       errorsHref("/errors", f, f.app, { ...vueEcran, cmp: "release", rel_b: relB, ...(relA ? { rel_a: relA } : {}) }),
   });
 
+  // L'étage « Tendances » (charte § 3.2) : le graphique des occurrences (8/12) et, à
+  // côté, leur répartition (4/12) — elle tombait sous la liste, un écran plus bas.
+  const hero = (
+    <SectionErreur titre="Occurrences dans le temps, par groupe">
+      <HeroGroupesErreurs
+        plage={label}
+        bucketLabel={bucketLabel}
+        seauSecondes={range.bucketSeconds}
+        grille={grilleIso(bucketStarts(range))}
+        totaux={totaux}
+        top={top}
+        // Un segment ouvre le PANNEAU du groupe (F20, § 5.3.2) ; en mode issues,
+        // où le panneau historique ne s'ouvre pas, il ouvre sa page.
+        hrefGroupe={(g) => (modeIssues ? errorGroupHref(g.ref, f) : lienPanneau(g.ref.fingerprint))}
+        plusieursApps={query.scope.requestedApp === null}
+        annotations={annotations.annotations}
+        annotationsIndisponibles={deploys.ok ? annotations.indisponible : "marqueurs de déploiement indisponibles"}
+        zoomHref={zoomHref}
+        fenetresCollecte={fenetresLues(ecran.fenetresCollecte)}
+      />
+    </SectionErreur>
+  );
   const apercu = (
     <>
       {vue.cmp === "release" && (
-        <p role="note" className="mb-2 text-xs text-ink-soft" data-testid="note-cmp-release">
-          Comparaison de releases : les tuiles d&apos;erreurs ne comparent que la période précédente ; aucun écart n&apos;est
-          affiché ici.
+        <p
+          role="note"
+          className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-panel2 px-2.5 py-0.5 text-[11px] text-ink-soft"
+          data-testid="note-cmp-release"
+          title="Comparaison de releases : les tuiles d'erreurs ne comparent que la période précédente ; aucun écart n'est affiché ici."
+        >
+          <span aria-hidden className="text-ink-faint">
+            ⊘
+          </span>
+          <span className="font-medium text-ink">Écarts non affichés</span>
+          <span className="sr-only">
+            {" "}
+            — Comparaison de releases : les tuiles d&apos;erreurs ne comparent que la période précédente ; aucun écart
+            n&apos;est affiché ici.
+          </span>
         </p>
       )}
       <SectionErreur titre="Chiffres clés des erreurs">
@@ -197,24 +232,14 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
           hrefNouveaux={modeIssues ? null : lienListe({ nouveaux: "1", ...(tri !== "statut" ? { tri } : {}) })}
         />
       </SectionErreur>
-      <SectionErreur titre="Occurrences dans le temps, par groupe">
-        <HeroGroupesErreurs
-          plage={label}
-          bucketLabel={bucketLabel}
-          seauSecondes={range.bucketSeconds}
-          grille={grilleIso(bucketStarts(range))}
-          totaux={totaux}
-          top={top}
-          // Un segment ouvre le PANNEAU du groupe (F20, § 5.3.2) ; en mode issues,
-          // où le panneau historique ne s'ouvre pas, il ouvre sa page.
-          hrefGroupe={(g) => (modeIssues ? errorGroupHref(g.ref, f) : lienPanneau(g.ref.fingerprint))}
-          plusieursApps={query.scope.requestedApp === null}
-          annotations={annotations.annotations}
-          annotationsIndisponibles={deploys.ok ? annotations.indisponible : "marqueurs de déploiement indisponibles"}
-          zoomHref={zoomHref}
-          fenetresCollecte={fenetresLues(ecran.fenetresCollecte)}
-        />
-      </SectionErreur>
+      {decoupage ? (
+        <div className="mb-4 grid min-w-0 gap-2 lg:grid-cols-12">
+          <div className="min-w-0 lg:col-span-8">{hero}</div>
+          <div className="min-w-0 lg:col-span-4 [&>section]:h-full">{decoupage}</div>
+        </div>
+      ) : (
+        <div className="mb-4 min-w-0">{hero}</div>
+      )}
     </>
   );
   const notes =
@@ -243,7 +268,8 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
         sousTitre={QUESTION}
         avertissements={notes}
         apercu={apercu}
-        decoupage={decoupage}
+        // La répartition est déjà dans l'aperçu, à côté du graphique (étage « Tendances »).
+        decoupage={null}
         vue={vueEcran}
       />
     );
@@ -286,6 +312,10 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
     });
   // Échelle commune des sparklines de la page (F03 `Sparkline.max`, § 5.3.2).
   const echelle = echelleCommune(groups);
+  // Base des barres de volume : le plus gros groupe de la page affichée.
+  const maxOccurrences = Math.max(1, ...groups.map((g) => g.occurrences));
+  // Liste vide SANS restriction ni position : une ligne suffit, sans bascule ni filtre.
+  const listeVide = groups.length === 0 && totalListe === 0 && !statut && !nouveauxSeuls && page.offset === 0;
   const noteTendances = noteEchelle(echelle, bucketLabel);
   const hasNext = totalListe > page.offset + page.limit && page.offset + page.limit <= ERROR_LIST_MAX_OFFSET;
 
@@ -325,86 +355,110 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
         </p>
       )}
 
-      <h2 id="groupes-erreurs" className="mb-2 text-sm font-semibold text-ink">
-        Groupes ({totalListe.toLocaleString("fr-FR")}
-        {nouveauxSeuls ? " apparus sur la période" : ""}
-        {statut ? ` ${STATUT_LABELS[statut].toLowerCase()}` : ""})
-      </h2>
-      {/* Recette du 26/09/2026 : quatre lignes d'explication précédaient la liste. L'ordre
-          et les restrictions restent dits ; le mode d'emploi se déplie à la demande. */}
-      <div className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="ordre-liste">
-        <p>
-          Ordre : {ordreLu}.
+      {/* LA LISTE EN UNE RANGÉE D'EN-TÊTE, PUIS UN TABLEAU DENSE (recette du 30/09/2026).
+          Avant : « Groupes (0) », puis une phrase d'ordre, un repli « Comment lire », la
+          bascule sur sa ligne, le filtre dans sa carte — cinq étages avant la première
+          ligne. L'ordre se lit dans la bascule (et se dit en entier aux lecteurs d'écran),
+          le mode d'emploi passe dans une bulle, le filtre rejoint la rangée. */}
+      {listeVide ? (
+        // Aucun groupe, aucune restriction : une ligne — ni bascule d'ordre ni filtre
+        // pour une liste vide.
+        <section className="card mb-4 min-w-0 px-4 py-3" data-testid="liste-groupes" aria-labelledby="groupes-erreurs">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 id="groupes-erreurs" className="scroll-mt-4 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+              Groupes (0)
+            </h2>
+            <p className="flex items-center gap-1.5 text-xs text-ink-soft sm:ml-auto">
+              <span aria-hidden className="text-sm leading-none text-ink-faint">
+                ⊘
+              </span>
+              Aucune erreur sur cette période
+            </p>
+          </div>
+          <p className="sr-only" data-testid="ordre-liste">
+            Ordre : {ordreLu}.
+          </p>
+        </section>
+      ) : (
+      <>
+      <div className="mb-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+        <h2 id="groupes-erreurs" className="scroll-mt-4 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+          Groupes ({totalListe.toLocaleString("fr-FR")}
+          {nouveauxSeuls ? " apparus sur la période" : ""}
+          {statut ? ` ${STATUT_LABELS[statut].toLowerCase()}` : ""})
+        </h2>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-ink-soft" data-testid="ordre-liste">
+          <span className="sr-only">Ordre : {ordreLu}.</span>
           {nouveauxSeuls && (
-            <>
-              {" "}
-              Liste restreinte aux groupes apparus sur {label}.{" "}
-              <Link href={lienListe(tri !== "statut" ? { tri } : {})} className="text-brand hover:underline">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-panel2 px-2.5 py-0.5 text-[11px]">
+              <span className="sr-only">Liste restreinte aux groupes apparus sur {label}.</span>
+              <span aria-hidden>Apparus sur {label}</span>
+              <Link href={lienListe(tri !== "statut" ? { tri } : {})} className="font-medium text-brand hover:underline">
                 Tous les groupes
               </Link>
-            </>
+            </span>
           )}
           {statut && (
-            <>
-              {" "}
-              Liste restreinte aux groupes « {STATUT_LABELS[statut].toLowerCase()} » : les tuiles, le graphique et la
-              répartition portent sur toute la population.
-            </>
+            <span
+              className="inline-flex items-center rounded-full bg-panel2 px-2.5 py-0.5 text-[11px]"
+              title="Les tuiles, le graphique et la répartition portent sur toute la population."
+            >
+              <span className="sr-only">
+                Liste restreinte aux groupes « {STATUT_LABELS[statut].toLowerCase()} » : les tuiles, le graphique et la
+                répartition portent sur toute la population.
+              </span>
+              <span aria-hidden>Statut : {STATUT_LABELS[statut].toLowerCase()}</span>
+            </span>
           )}
-        </p>
-        <details className="mt-1">
-          <summary className="cursor-pointer rounded text-ink-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-            Comment lire cette liste
-          </summary>
-          <p className="mt-1">
-            Une ligne = une cause récurrente : même type, même message et même ligne de code, dans son application ;
-            sous le titre, la ligne de code et la route où l&apos;erreur survient le plus. Tous les compteurs portent
-            sur {label}, sauf « Première vue », qui remonte à la première apparition connue. « Inconnu » : aucune
+          <InfoTip label="Comment lire cette liste" align="start">
+            Ordre : {ordreLu}. Une ligne = une cause récurrente : même type, même message et même ligne de code, dans son
+            application ; sous le titre, la ligne de code et la route où l&apos;erreur survient le plus. Tous les compteurs
+            portent sur {label}, sauf « Première vue », qui remonte à la première apparition connue. « Inconnu » : aucune
             occurrence du groupe n&apos;est rattachée à une session ou à un visiteur connu (une erreur serveur sans
             session, par exemple) — ce n&apos;est pas zéro personne. {noteTendances}
-          </p>
-        </details>
+          </InfoTip>
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 sm:ml-auto">
+          {/* Changer d'ordre GARDE le filtre de statut : trier n'est pas dé-filtrer
+              (à la différence d'une tuile, qui repart de toute la population). */}
+          <BasculeTri
+            courant={tri}
+            options={[
+              { id: "statut", libelle: "Triage", href: lienTri({}) },
+              { id: "sessions", libelle: "Sessions touchées", href: lienTri({ tri: "sessions" }) },
+              { id: "recent", libelle: "Vus récemment", href: lienTri({ tri: "recent" }) },
+            ]}
+          />
+          <FiltreStatut caches={cachesFiltre} statut={statut} hrefSansFiltre={hrefSansStatut} />
+        </div>
       </div>
-      <div className="mb-3">
-        {/* Changer d'ordre GARDE le filtre de statut : trier n'est pas dé-filtrer
-            (à la différence d'une tuile, qui repart de toute la population). */}
-        <BasculeTri
-          courant={tri}
-          options={[
-            { id: "statut", libelle: "Triage", href: lienTri({}) },
-            { id: "sessions", libelle: "Sessions touchées", href: lienTri({ tri: "sessions" }) },
-            { id: "recent", libelle: "Vus récemment", href: lienTri({ tri: "recent" }) },
-          ]}
-        />
-      </div>
-
-      <FiltreStatut caches={cachesFiltre} statut={statut} hrefSansFiltre={hrefSansStatut} />
 
       {/* `relative` : la légende sr-only (position absolue) se place dans CE conteneur
           défilant, pas dans la page qu'elle élargirait à 390 px (piège de la vague 5).
           Sous 640 px la table devient une pile de CARTES (`block`) : plus de défilement
-          horizontal, occurrences et sessions lisibles à 390 px (§ 5.3.2). */}
+          horizontal, occurrences et sessions lisibles à 390 px (§ 5.3.2). Au-dessus, un
+          tableau DENSE (§ 3.5) : pastille de statut, compte et sa barre, sparkline. */}
       <div className="card relative min-w-0 sm:overflow-x-auto" data-testid="liste-groupes">
-        <table className="block w-full text-sm sm:table sm:min-w-table">
+        <table className="block w-full text-sm sm:table sm:min-w-[56rem]">
           <caption className="sr-only">
             Groupes d&apos;erreurs sur {label}
             {statut ? `, triage « ${STATUT_LABELS[statut].toLowerCase()} »` : ""}, ordre : {ordreLu}. {noteTendances}
           </caption>
           <thead className="hidden bg-panel2 sm:table-header-group">
             <tr>
-              <th scope="col" className="th">Groupe</th>
-              <th scope="col" className="th">Occurrences</th>
-              <th scope="col" className="th">Sessions</th>
-              <th scope="col" className="th">Visiteurs</th>
-              <th scope="col" className="th">Tendance · {label}</th>
+              <th scope="col" className="th px-3">Groupe</th>
+              <th scope="col" className="th whitespace-nowrap px-3 text-right">Occurrences</th>
+              <th scope="col" className="th whitespace-nowrap px-3 text-right">Sessions</th>
+              <th scope="col" className="th whitespace-nowrap px-3 text-right">Visiteurs</th>
+              <th scope="col" className="th whitespace-nowrap px-3">Tendance · {label}</th>
               <th
                 scope="col"
-                className="th"
+                className="th whitespace-nowrap px-3 text-right"
                 title="Première apparition connue, toutes fenêtres confondues — hors fenêtre, bornée seulement par la rétention."
               >
-                Première vue <span className="font-normal text-ink-faint">(depuis toujours)</span>
+                Première vue<span className="sr-only"> (depuis toujours)</span>
               </th>
-              <th scope="col" className="th">Dernière vue</th>
+              <th scope="col" className="th whitespace-nowrap px-3 text-right">Dernière vue</th>
             </tr>
           </thead>
           <tbody className="block sm:table-row-group">
@@ -415,7 +469,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
               return (
                 <tr
                   key={`${g.app_id}|${g.fingerprint}`}
-                  className={`block border-t border-line/60 px-4 py-3 align-top transition first:border-t-0 hover:bg-panel2/60 sm:table-row sm:p-0 ${
+                  className={`block border-t border-line/60 px-4 py-2 align-top transition first:border-t-0 hover:bg-panel2/60 sm:table-row sm:p-0 ${
                     dim ? "opacity-60" : ""
                   }`}
                   data-testid={`error-group-${g.fingerprint}`}
@@ -430,35 +484,44 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
                       href={lienPanneau(g.fingerprint)}
                       scroll={false}
                       aria-current={ouvert?.fingerprint === g.fingerprint ? "true" : undefined}
-                      className="block rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                      className="block min-w-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
                     >
-                      <ErrorTypeBadge type={g.error_type} />
-                      <ErrorStatusBadges status={g.status} regressed={g.regressed} />
-                      <span className="break-words font-medium text-ink" title={g.sample_message ?? ""}>
-                        {message.slice(0, 120)}
-                      </span>
-                      {/* Ce qui distingue deux groupes de même titre : la ligne de code
-                          (l'empreinte en dépend) et la route principale. */}
-                      {distinction && (
-                        <span className="mt-0.5 block break-words text-xs text-ink-soft" data-testid="distinction-groupe">
-                          {distinction.lieu && <span className="font-mono">{distinction.lieu}</span>}
-                          {distinction.lieu && distinction.route && " · "}
-                          {distinction.route}
+                      {/* Ligne 1 : statut en pastille, type, message — coupé, entier au survol. */}
+                      <span className="flex min-w-0 items-center">
+                        <ErrorStatusBadges status={g.status} regressed={g.regressed} />
+                        <ErrorTypeBadge type={g.error_type} />
+                        <span className="min-w-0 truncate font-medium text-ink" title={g.sample_message ?? ""}>
+                          {message.slice(0, 120)}
                         </span>
-                      )}
-                      <span className="mt-0.5 block break-all font-mono text-[11px] text-ink-faint">
-                        {g.fingerprint}
-                        {plusieursApps ? ` · ${g.app_id}` : ""}
+                      </span>
+                      {/* Ligne 2 : ce qui distingue deux groupes de même titre — la ligne de
+                          code (l'empreinte en dépend), la route principale —, puis l'empreinte. */}
+                      <span className="mt-0.5 flex min-w-0 items-baseline gap-x-2 text-[11px] text-ink-soft">
+                        {distinction && (
+                          <span className="min-w-0 truncate" data-testid="distinction-groupe">
+                            {distinction.lieu && <span className="font-mono">{distinction.lieu}</span>}
+                            {distinction.lieu && distinction.route && " · "}
+                            {distinction.route}
+                          </span>
+                        )}
+                        <span className="shrink-0 font-mono text-ink-faint">
+                          {g.fingerprint}
+                          {plusieursApps ? ` · ${g.app_id}` : ""}
+                        </span>
                       </span>
                     </Link>
                   </td>
-                  <CelluleGroupe libelle="Occurrences" className="sm:text-sm" testId="group-occurrences">
+                  <CelluleGroupe libelle="Occurrences" className="sm:text-right sm:text-sm" testId="group-occurrences">
                     <span className="font-bold tabular-nums text-ink">{g.occurrences.toLocaleString("fr-FR")}</span>
+                    {/* Barre de volume intégrée (§ 3.5) : la part du plus gros groupe de la page. */}
+                    <span aria-hidden className="ml-1.5 hidden h-1.5 w-12 overflow-hidden rounded-full bg-panel2 align-middle sm:inline-block">
+                      <span className="block h-full rounded-full bg-bad/60" style={{ width: `${Math.max(4, (g.occurrences / maxOccurrences) * 100)}%` }} />
+                    </span>
                   </CelluleGroupe>
-                  <CelluleGroupe libelle="Sessions" className="sm:text-sm">
+                  <CelluleGroupe libelle="Sessions" className="sm:text-right sm:text-sm">
                     <span className="tabular-nums">{fmtCount(g.sessions_affected)}</span>
                   </CelluleGroupe>
-                  <CelluleGroupe libelle="Visiteurs" className="sm:text-sm">
+                  <CelluleGroupe libelle="Visiteurs" className="sm:text-right sm:text-sm">
                     <span className="tabular-nums">{fmtCount(g.visitors_affected)}</span>
                   </CelluleGroupe>
                   <CelluleGroupe libelle="Tendance">
@@ -468,10 +531,10 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
                       label={`${pluriel(g.occurrences, "occurrence")} sur ${label}`}
                     />
                   </CelluleGroupe>
-                  <CelluleGroupe libelle="Première vue" className="text-ink-soft sm:whitespace-nowrap">
+                  <CelluleGroupe libelle="Première vue" className="text-ink-soft sm:whitespace-nowrap sm:text-right">
                     {fmtDate(g.first_seen)}
                   </CelluleGroupe>
-                  <CelluleGroupe libelle="Dernière vue" className="text-ink-soft sm:whitespace-nowrap">
+                  <CelluleGroupe libelle="Dernière vue" className="text-ink-soft sm:whitespace-nowrap sm:text-right">
                     {fmtDate(g.last_seen)}
                   </CelluleGroupe>
                 </tr>
@@ -479,7 +542,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
             })}
             {!groups.length && (
               <tr className="block sm:table-row">
-                <td colSpan={7} className="block px-4 py-8 text-center text-ink-faint sm:table-cell">
+                <td colSpan={7} className="block px-4 py-3 text-xs text-ink-soft sm:table-cell">
                   {totalListe > 0 ? (
                     // Offset au-delà de la population (lien ancien, erreurs résolues entre-temps).
                     <Link href={pageHref(0)} className="text-brand hover:underline">
@@ -498,6 +561,8 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
           </tbody>
         </table>
       </div>
+      </>
+      )}
 
       {groups.length > 0 && (page.offset > 0 || hasNext) && (
         <nav
@@ -530,8 +595,6 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
         </p>
       )}
 
-      {/* Répartition après la liste (§ 5.3.1, zone 5). */}
-      {decoupage && <div className="mt-6">{decoupage}</div>}
 
       {/* Panneau du groupe ouvert (F20, § 5.3.3) : blocs 1 à 5, sur la plage de l'écran. */}
       {ouvert && ecran.panneau && (
