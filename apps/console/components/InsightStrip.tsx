@@ -16,6 +16,7 @@
 // « Évaluer maintenant », pas un identifiant (§ 3.1). Une alerte précise se désigne
 // par `evt`.
 import Link from "next/link";
+import { InfoTip } from "@/components/InfoTip";
 
 export type TypeConstat = "anomalie" | "regression" | "alerte" | "erreur_nouvelle" | "surrepresentation" | "rupture";
 
@@ -69,6 +70,7 @@ export function InsightStrip({
   statuts,
   fenetre,
   ouvertParDefaut = false,
+  reglesEnInfobulle = false,
 }: {
   constats: Constat[];
   /**
@@ -81,6 +83,12 @@ export function InsightStrip({
   /** « 24 h fixes » si la fenêtre des constats diffère de la plage de l'écran. */
   fenetre: string;
   ouvertParDefaut?: boolean;
+  /**
+   * La règle de chaque constat derrière une bulle (i), au lieu d'une ligne sous lui :
+   * la colonne des constats de la Vue d'ensemble est étroite (spec A2 § 5.2, R2). Le
+   * texte reste dans la page pour les lecteurs d'écran.
+   */
+  reglesEnInfobulle?: boolean;
 }) {
   const aStatuts = !!statuts && statuts.length > 0;
 
@@ -88,7 +96,20 @@ export function InsightStrip({
     return (
       <div className="card min-w-0 px-4 py-3" data-testid="constats" data-compte={0}>
         <p className="min-w-0 break-words text-sm text-ink-soft" role="note" data-testid="constats-aucun">
-          <span className="font-semibold text-ink">Constats (0)</span> · {fenetre} · {phraseAucunConstat(regles)}
+          <span className="font-semibold text-ink">Constats (0)</span> · {fenetre} ·{" "}
+          {reglesEnInfobulle ? (
+            // Ce qui a été cherché reste dit (une liste vide ne dit pas quelles règles
+            // ont tourné), derrière la bulle ; le texte entier reste lisible à l'écran vocal.
+            <>
+              <span aria-hidden>Aucun constat automatique.</span>
+              <InfoTip icon="info" label="Règles évaluées" align="end" className="ml-1">
+                <span aria-hidden>{phraseAucunConstat(regles)}</span>
+              </InfoTip>
+              <span className="sr-only">{phraseAucunConstat(regles)}</span>
+            </>
+          ) : (
+            phraseAucunConstat(regles)
+          )}
         </p>
         {aStatuts && <Statuts statuts={statuts} />}
       </div>
@@ -111,7 +132,16 @@ export function InsightStrip({
               <Link href={c.href} className="break-words font-medium text-perf underline-offset-2 hover:underline">
                 {c.titre}
               </Link>
-              <span className="mt-0.5 block break-words text-xs text-ink-soft">Règle : {c.regle}</span>
+              {reglesEnInfobulle ? (
+                <>
+                  <InfoTip icon="info" label="Règle du constat" align="end" className="ml-1">
+                    <span aria-hidden>Règle : {c.regle}</span>
+                  </InfoTip>
+                  <span className="sr-only">Règle : {c.regle}</span>
+                </>
+              ) : (
+                <span className="mt-0.5 block break-words text-xs text-ink-soft">Règle : {c.regle}</span>
+              )}
             </li>
           ))}
         </ul>

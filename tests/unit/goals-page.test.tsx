@@ -119,7 +119,7 @@ describe("/goals — hero et table", () => {
     // Une seule app lue : pas de colonne App ; le taux juste après le nom (lisible à 390 px).
     expect(texte(tableObjectifs(html))).toMatch(/Objectif Taux Conversions \(sessions\) Condition Dernière conversion Actions/);
     // Un taux, une couleur : la barre de la table est celle du hero (série principale), plus le bleu `perf`.
-    expect(tableObjectifs(html)).toContain("background-color:#f89101");
+    expect(tableObjectifs(html)).toContain("background-color:rgb(var(--c-serie))");
     expect(tableObjectifs(html)).not.toContain("bg-perf");
     // Plus de justification technique visible.
     expect(t).not.toContain("dimension de filtre");

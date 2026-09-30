@@ -15,7 +15,7 @@ import {
   totalCount,
 } from "@/lib/distribution";
 import { fmtVital } from "@/lib/format";
-import { RATING_HEX } from "@/lib/palette";
+import { RATING_JETON } from "@/lib/palette";
 import type { HistoRow, VitalPercentiles } from "@/lib/queries";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
 import type { IntervalleP75 } from "@/lib/stats/incertitude";
@@ -177,7 +177,7 @@ export function Histogram({ name, rows, cap }: { name: string; rows: HistoRow[];
                 width={Math.max(bw - 1, 0.5)}
                 height={h}
                 rx={0.5}
-                fill={rating ? RATING_HEX[rating] : "currentColor"}
+                fill={rating ? RATING_JETON[rating] : "currentColor"}
                 className={rating ? undefined : "text-ink-soft"}
                 opacity={0.85}
               >

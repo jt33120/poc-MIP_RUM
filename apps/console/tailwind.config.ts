@@ -44,6 +44,13 @@ export default {
         good: { DEFAULT: "rgb(var(--c-good) / <alpha-value>)", ink: "rgb(var(--c-good-ink) / <alpha-value>)", fond: "#047857" },
         warn: { DEFAULT: "rgb(var(--c-warn) / <alpha-value>)", ink: "rgb(var(--c-warn-ink) / <alpha-value>)", fond: "#b45309" },
         bad: { DEFAULT: "rgb(var(--c-bad) / <alpha-value>)", ink: "rgb(var(--c-bad-ink) / <alpha-value>)", fond: "#b91c1c" },
+        // Série principale (le « réel ») : l'orange des TRACÉS, 3:1 sur blanc (globals.css).
+        serie: "rgb(var(--c-serie) / <alpha-value>)",
+        // Écart détecté par calcul (spec A2 § 3.5) : pas un état de seuil.
+        signal: {
+          DEFAULT: "rgb(var(--c-signal) / <alpha-value>)",
+          favorable: "rgb(var(--c-signal-favorable) / <alpha-value>)",
+        },
         // navy MIP fixe (texte sur boutons orange) — identique dans les deux modes
         navy: {
           700: "#16275c",

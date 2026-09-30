@@ -85,6 +85,19 @@ export function GlobalFilters({
   // (LIVE, 5 s) ne doit pas réinitialiser une saisie en cours.
   const [rangeDraft, setRangeDraft] = useState<{ from: string; to: string } | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Sous 640 px, la barre est repliée dans une feuille (spec A2 § 5.5) : dépliée, elle
+  // passait sur quatre lignes et l'en-tête collant prenait 171 px à 390 px, 20 % de
+  // l'écran en permanence (audit A1 T5). Au-delà, la feuille n'existe pas.
+  const [feuille, setFeuille] = useState(false);
+  useEffect(() => setFeuille(false), [pathname]);
+  useEffect(() => {
+    if (!feuille) return;
+    const echap = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFeuille(false);
+    };
+    document.addEventListener("keydown", echap);
+    return () => document.removeEventListener("keydown", echap);
+  }, [feuille]);
   const surface = surfaceFor(pathname);
   // Comparer deux périodes n'a de sens que sur un écran qui a une plage.
   const comparable = !!surface && surface.range !== "none";
@@ -131,6 +144,9 @@ export function GlobalFilters({
     mutate(next);
     for (const name of PAGINATION_PARAMS) next.delete(name);
     const qs = next.toString();
+    // Un choix fait, la feuille se referme : ouverte, elle couvrirait l'écran qu'on
+    // vient de filtrer.
+    setFeuille(false);
     router.replace(qs ? `${pathname}?${qs}` : pathname);
   }
 
@@ -169,132 +185,172 @@ export function GlobalFilters({
     );
   }
 
+  // Le résumé du bouton de la feuille : ce qui est choisi, en une ligne.
+  const resume = [
+    sansPeriode ? null : custom ? "Plage personnalisée" : PRESET_LABELS[preset ?? "24h"],
+    device ? DEVICE_LABELS[device] : null,
+    activeDimensions.length ? `${activeDimensions.length} filtre${activeDimensions.length > 1 ? "s" : ""}` : null,
+  ].filter((p): p is string => p !== null);
+  // Un réglage ignoré ou un filtre non appliqué se dit dans la feuille : le bouton
+  // porte un repère pour qu'on sache l'ouvrir.
+  const aSignaler =
+    (comparable && comparaison.ignores.length > 0) ||
+    activeDimensions.some((d) => !d.availability.available) ||
+    (custom && !customReadable);
+
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2" data-testid="global-filters">
-      {!sansPeriode && (
-        <Segmented
-          label="Période"
-          testid="filter-period"
-          availability={presetAvailability}
-          items={[
-            ...RANGE_PRESETS.map((key) => ({ key, label: PRESET_LABELS[key] })),
-            { key: "custom", label: "Personnalisée", availability: customAvailability },
-          ]}
-          value={custom ? "custom" : preset}
-          onChange={(key) => (key === "custom" ? toggleRangeEditor() : choosePreset(key as RangePreset))}
-        />
-      )}
-      {comparable && (
-        <CompareToggle
-          mode={comparaison.valeur.mode}
-          releases={releases.liste}
-          relA={comparaison.valeur.relA}
-          relB={comparaison.valeur.relB}
-          raison={releases.raison}
-        />
-      )}
-      <Segmented
-        label="Appareil"
-        testid="filter-device"
-        availability={deviceAvailability}
-        items={[
-          { key: "all", label: "Tous" },
-          ...DEVICES.map((key) => ({
-            key,
-            label: DEVICE_LABELS[key],
-            availability: conditionAvailability(surface, { dimension: "device", operator: "eq", value: key }, columns),
-          })),
-        ]}
-        value={device ?? "all"}
-        onChange={(key) => chooseDevice(key === "all" ? null : (key as Device))}
-      />
       <button
         type="button"
-        onClick={() => setDrawerOpen((open) => !open)}
-        aria-expanded={drawerOpen}
-        aria-controls="filtres-dimensions"
-        data-testid="filter-drawer-toggle"
-        className="rounded-lg border border-line bg-panel2 px-2.5 py-1 text-xs font-medium text-ink-soft transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+        onClick={() => setFeuille((ouvert) => !ouvert)}
+        aria-expanded={feuille}
+        aria-controls="filtres-globaux"
+        data-testid="filtres-feuille"
+        className="flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-line bg-panel2 px-2.5 text-xs font-medium text-ink transition hover:border-perf/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf sm:hidden"
       >
-        Filtres{activeDimensions.length ? ` (${activeDimensions.length})` : ""}
+        <span className="sr-only">Période et filtres : </span>
+        <span className="min-w-0 truncate">{resume.length ? resume.join(" · ") : "Filtres"}</span>
+        {aSignaler && (
+          <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn" data-testid="filtres-feuille-repere" />
+        )}
+        {aSignaler && <span className="sr-only"> (un réglage est à revoir)</span>}
+        <span aria-hidden className={`shrink-0 text-ink-faint transition ${feuille ? "rotate-180" : ""}`}>
+          ▾
+        </span>
       </button>
-
-      {custom && (
-        <Chip
-          testid="filter-chip-range"
-          label={
-            customReadable
-              ? // Le fuseau d'affichage est nommé une fois dans la barre ; seul un autre
-                // fuseau (application réglée ailleurs) se dit ici.
-                timeZone === FUSEAU_AFFICHAGE
-                ? rangeLabel({ from, to, preset: null, bucketSeconds: 0 }, timeZone)
-                : `${rangeLabel({ from, to, preset: null, bucketSeconds: 0 }, timeZone)} (${nomFuseau(timeZone)})`
-              : "Plage personnalisée illisible"
-          }
-          availability={customReadable ? customAvailability : { available: false, reason: "Plage illisible : retirez-la." }}
-          removeLabel="Retirer la plage personnalisée"
-          onRemove={() => {
-            setRangeDraft(null);
-            navigate((next) => {
-              next.delete("from");
-              next.delete("to");
-            });
-          }}
+      {/* Feuille sous 640 px : posée SOUS l'en-tête collant (qui la positionne), sur
+          toute sa largeur ; au-delà, les contrôles reprennent leur place dans la barre. */}
+      <div
+        id="filtres-globaux"
+        // `sm:contents` : au-delà de 640 px, la feuille n'a plus de boîte, ses contrôles
+        // se rangent dans la barre exactement comme avant le repli.
+        className={`${feuille ? "flex" : "hidden"} absolute inset-x-0 top-full z-20 max-h-[75vh] min-w-0 flex-wrap items-center gap-2 overflow-y-auto border-b border-line bg-panel p-3 shadow-pop sm:contents`}
+      >
+        {!sansPeriode && (
+          <Segmented
+            label="Période"
+            testid="filter-period"
+            availability={presetAvailability}
+            items={[
+              ...RANGE_PRESETS.map((key) => ({ key, label: PRESET_LABELS[key] })),
+              { key: "custom", label: "Personnalisée", availability: customAvailability },
+            ]}
+            value={custom ? "custom" : preset}
+            onChange={(key) => (key === "custom" ? toggleRangeEditor() : choosePreset(key as RangePreset))}
+          />
+        )}
+        {comparable && (
+          <CompareToggle
+            mode={comparaison.valeur.mode}
+            releases={releases.liste}
+            relA={comparaison.valeur.relA}
+            relB={comparaison.valeur.relB}
+            raison={releases.raison}
+          />
+        )}
+        <Segmented
+          label="Appareil"
+          testid="filter-device"
+          availability={deviceAvailability}
+          items={[
+            { key: "all", label: "Tous" },
+            ...DEVICES.map((key) => ({
+              key,
+              label: DEVICE_LABELS[key],
+              availability: conditionAvailability(surface, { dimension: "device", operator: "eq", value: key }, columns),
+            })),
+          ]}
+          value={device ?? "all"}
+          onChange={(key) => chooseDevice(key === "all" ? null : (key as Device))}
         />
-      )}
-      {activeDimensions.map(({ dimension, value, availability }) => (
-        <Chip
-          key={dimension}
-          testid={`filter-chip-${dimension}`}
-          label={`${DIMENSION_LABELS[dimension]} : ${value}`}
-          availability={availability}
-          removeLabel={`Retirer le filtre ${DIMENSION_LABELS[dimension]}`}
-          onRemove={() => navigate((next) => next.delete(dimension))}
-        />
-      ))}
+        <button
+          type="button"
+          onClick={() => setDrawerOpen((open) => !open)}
+          aria-expanded={drawerOpen}
+          aria-controls="filtres-dimensions"
+          data-testid="filter-drawer-toggle"
+          className="rounded-lg border border-line bg-panel2 px-2.5 py-1 text-xs font-medium text-ink-soft transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+        >
+          Filtres{activeDimensions.length ? ` (${activeDimensions.length})` : ""}
+        </button>
 
-      {/* Un réglage de comparaison illisible ne touche aucun chiffre : il n'est pas
-          refusé comme un filtre, mais ignoré — et on le dit (§ 3.1, règle 3). */}
-      {comparable &&
-        comparaison.ignores.map((ligne) => (
-          <p key={ligne} role="note" className="basis-full text-[11px] text-ink-soft" data-testid="reglage-ignore">
-            {ligne}
-          </p>
+        {custom && (
+          <Chip
+            testid="filter-chip-range"
+            label={
+              customReadable
+                ? // Le fuseau d'affichage est nommé une fois dans la barre ; seul un autre
+                  // fuseau (application réglée ailleurs) se dit ici.
+                  timeZone === FUSEAU_AFFICHAGE
+                  ? rangeLabel({ from, to, preset: null, bucketSeconds: 0 }, timeZone)
+                  : `${rangeLabel({ from, to, preset: null, bucketSeconds: 0 }, timeZone)} (${nomFuseau(timeZone)})`
+                : "Plage personnalisée illisible"
+            }
+            availability={customReadable ? customAvailability : { available: false, reason: "Plage illisible : retirez-la." }}
+            removeLabel="Retirer la plage personnalisée"
+            onRemove={() => {
+              setRangeDraft(null);
+              navigate((next) => {
+                next.delete("from");
+                next.delete("to");
+              });
+            }}
+          />
+        )}
+        {activeDimensions.map(({ dimension, value, availability }) => (
+          <Chip
+            key={dimension}
+            testid={`filter-chip-${dimension}`}
+            label={`${DIMENSION_LABELS[dimension]} : ${value}`}
+            availability={availability}
+            removeLabel={`Retirer le filtre ${DIMENSION_LABELS[dimension]}`}
+            onRemove={() => navigate((next) => next.delete(dimension))}
+          />
         ))}
 
-      {rangeDraft && !sansPeriode && customAvailability.available && (
-        <RangeEditor
-          initialFrom={rangeDraft.from}
-          initialTo={rangeDraft.to}
-          timeZone={timeZone}
-          onCancel={() => setRangeDraft(null)}
-          onApply={(fromIso, toIso) => {
-            setRangeDraft(null);
-            navigate((next) => {
-              next.delete("period");
-              next.set("from", fromIso);
-              next.set("to", toIso);
-            });
-          }}
-        />
-      )}
+        {/* Un réglage de comparaison illisible ne touche aucun chiffre : il n'est pas
+            refusé comme un filtre, mais ignoré — et on le dit (§ 3.1, règle 3). */}
+        {comparable &&
+          comparaison.ignores.map((ligne) => (
+            <p key={ligne} role="note" className="basis-full text-[11px] text-ink-soft" data-testid="reglage-ignore">
+              {ligne}
+            </p>
+          ))}
 
-      {drawerOpen && (
-        <DimensionDrawer
-          sp={sp}
-          availability={(dimension) => dimensionAvailability(surface, dimension, columns)}
-          onClose={() => setDrawerOpen(false)}
-          onApply={(values) => {
-            setDrawerOpen(false);
-            navigate((next) => {
-              for (const [dimension, value] of Object.entries(values)) {
-                if (value) next.set(dimension, value);
-                else next.delete(dimension);
-              }
-            });
-          }}
-        />
-      )}
+        {rangeDraft && !sansPeriode && customAvailability.available && (
+          <RangeEditor
+            initialFrom={rangeDraft.from}
+            initialTo={rangeDraft.to}
+            timeZone={timeZone}
+            onCancel={() => setRangeDraft(null)}
+            onApply={(fromIso, toIso) => {
+              setRangeDraft(null);
+              navigate((next) => {
+                next.delete("period");
+                next.set("from", fromIso);
+                next.set("to", toIso);
+              });
+            }}
+          />
+        )}
+
+        {drawerOpen && (
+          <DimensionDrawer
+            sp={sp}
+            availability={(dimension) => dimensionAvailability(surface, dimension, columns)}
+            onClose={() => setDrawerOpen(false)}
+            onApply={(values) => {
+              setDrawerOpen(false);
+              navigate((next) => {
+                for (const [dimension, value] of Object.entries(values)) {
+                  if (value) next.set(dimension, value);
+                  else next.delete(dimension);
+                }
+              });
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

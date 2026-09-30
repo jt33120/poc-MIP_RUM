@@ -145,14 +145,15 @@ test.describe("F11 — Vue d'ensemble : santé, KPI, constats", () => {
     expect(await debordements(page)).toEqual([]);
   });
 
-  test("les constats se lisent repliés, avec leur règle ; aucun lien ne porte fired=", async ({ page }) => {
+  test("les constats se lisent dépliés, avec leur règle ; aucun lien ne porte fired=", async ({ page }) => {
     await login(page);
     await page.goto(ACCUEIL_F11, { waitUntil: "domcontentloaded" });
     const constats = page.getByTestId("constats");
     await expect(constats).toBeVisible({ timeout: 15_000 });
     // Le déploiement semé dégrade le LCP : un constat de régression, lien cmp=release.
     await expect(constats).toContainText(/Constats \(\d+\)/);
-    await constats.locator("summary").click();
+    // Dépliés depuis la vague 2 : à côté du hero (R2), ils ne le poussent plus sous le pli.
+    await expect(constats.locator("details")).toHaveAttribute("open", "");
     const regression = constats.getByTestId("constat").filter({ hasText: "Déploiement f11-2.0.0" });
     await expect(regression).toContainText("pages vues avant");
     await expect(regression).toContainText("Règle :");

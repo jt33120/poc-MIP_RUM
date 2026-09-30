@@ -50,7 +50,7 @@ import { fmtDate, pluriel } from "@/lib/format";
 import { ERROR_CLICK_WINDOW_MS } from "@/lib/frustration-regles";
 import { libelleAction } from "@/lib/libelle-action";
 import { type SectionLue } from "@/lib/lecture";
-import { categorie } from "@/lib/palette";
+import { AUTRES } from "@/lib/palette";
 import { referencePeriodePrecedente } from "@/lib/perf-domain";
 import {
   ACTIONS_MAX_OFFSET,
@@ -82,8 +82,8 @@ const ORDRES: Record<OrdreActions, { titre: string; bouton: string }> = {
   reseau: { titre: "Actions classées par temps réseau cumulé", bouton: "Temps réseau" },
 };
 
-/** Teinte des barres : un compte ou une durée cumulée, sans seuil — neutre (ardoise), jamais orange. */
-const TEINTE_NEUTRE = categorie(4);
+/** Teinte des barres : un compte ou une durée cumulée, sans seuil — neutre (gris du thème), jamais orange. */
+const TEINTE_NEUTRE = AUTRES;
 
 const PRECEDENTE_EN_ECHEC: CouverturePrecedente = {
   etat: "inconnue",

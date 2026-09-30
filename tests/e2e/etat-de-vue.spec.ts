@@ -300,6 +300,17 @@ test("barre de filtres avec les deux sélecteurs de release : aucun débordement
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${consoleUrl}/?app=${APP}&period=24h&cmp=release&rel_a=1.0.0&rel_b=1.1.0`, { waitUntil: "domcontentloaded" });
+    // Sous 640 px, la barre est repliée dans une feuille (vague 2) : on la déplie, le
+    // cas le plus large, pour vérifier qu'elle tient elle aussi dans la fenêtre.
+    // Le clic est rejoué tant que la page n'est pas hydratée (chargement au
+    // `domcontentloaded`), sans jamais refermer une feuille déjà ouverte.
+    if (width < 640) {
+      const feuille = page.getByTestId("filtres-feuille");
+      await expect(async () => {
+        if ((await feuille.getAttribute("aria-expanded")) !== "true") await feuille.click();
+        await expect(feuille).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+      }).toPass({ timeout: 15_000 });
+    }
     await expect(page.getByTestId("compare-rel-b")).toBeVisible({ timeout: 15_000 });
     expect(await debordements(page), `${width} px`).toEqual([]);
   }

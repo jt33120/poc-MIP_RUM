@@ -60,7 +60,7 @@ import { ecrirePanel, gabaritZoom, ligneIgnoree, lireEtatDeVue } from "@/lib/vie
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { fmtInstant, pluriel } from "@/lib/format";
 import { LIBELLE_APPAREIL } from "@/lib/goals";
-import { categorie } from "@/lib/palette";
+import { AUTRES, INDEX_AUTRES } from "@/lib/palette";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +94,7 @@ function appareil(e: EventIndexRow): string {
  * catégorielle neutre (ardoise). Un compte n'a pas de seuil : ni l'orange de la
  * série principale, ni une couleur de verdict (recette du 26/09/2026).
  */
-const TEINTE_VOLUME = categorie(4);
+const TEINTE_VOLUME = AUTRES;
 
 /** Lien vers la session d'un événement ; le panneau session arrive avec F43. */
 function lienSession(e: EventIndexRow, query: AnalyticsQuery): string | null {
@@ -458,7 +458,7 @@ function ResultatJournal({
               <ThresholdSeries
                 grille={grille}
                 points={points}
-                series={[{ cle: "n", libelle: "Événements", role: "categorie", categorieIndex: 4, forme: "barres", additive: true }]}
+                series={[{ cle: "n", libelle: "Événements", role: "categorie", categorieIndex: INDEX_AUTRES, forme: "barres", additive: true }]}
                 format="count"
                 annotations={annotations.annotations}
                 annotationsIndisponibles={annotations.indisponible ?? undefined}
