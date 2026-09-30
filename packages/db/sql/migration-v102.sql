@@ -1,7 +1,9 @@
--- migration-v98 — Des agrégats justes (29/09/2026) : une erreur arrivée tard ne
+-- migration-v102 — Des agrégats justes (29/09/2026) : une erreur arrivée tard ne
 -- remet plus une heure à zéro, et les reprises partent d'un filigrane.
 --
--- Rejouable, PostgreSQL 15 à 17. v97 (base propre) est le fichier précédent.
+-- Rejouable, PostgreSQL 15 à 17. Numérotée v98 à l'écriture, renumérotée v102 le
+-- 30/09/2026 : v100 et v101 ont été fusionnées avant elle (garde des migrations figées).
+-- Elle ne redéfinit aucune fonction de v100 ni de v101.
 -- Lot L0 de la refonte du monitoring (relevé des trous du 28/09/2026, T4 et T6) :
 --
 --   1. `agregat_filigrane` : pour chaque agrégat repris par le scheduler, l'instant
@@ -43,7 +45,7 @@ create table if not exists agregat_filigrane (
 );
 
 comment on table agregat_filigrane is
-  'Filigrane des agrégats repris par le scheduler (v98) : tout ce qui précède `complet_avant` a été '
+  'Filigrane des agrégats repris par le scheduler (v102) : tout ce qui précède `complet_avant` a été '
   'agrégé par un passage abouti. Une ligne par agrégat, écrite dans la transaction du passage.';
 
 -- Aucun rôle applicatif n'y a droit : seul le scheduler, propriétaire, l'écrit
@@ -171,7 +173,7 @@ comment on function refresh_rum_rollups(int) is
   'Rafraîchit la heatmap horaire sous le verrou d''ingestion des applications concernées. Fenêtre : '
   'celle demandée, élargie à la plus vieille marque d''invalidation (90 jours au plus) et au filigrane '
   '(35 jours au plus). Une heure plus ancienne touchée par une erreur arrivée tard est recalculée en '
-  'entier, jamais écrasée avec ses seules erreurs (v98). Avance le filigrane.';
+  'entier, jamais écrasée avec ses seules erreurs (v102). Avance le filigrane.';
 
 -- ── 3. `meter_tenant_usage` : rattraper les jours jamais comptés ────────────
 --
@@ -225,7 +227,7 @@ end $$;
 
 comment on function mip_rattraper_usage(int) is
   'Compte chaque jour depuis le filigrane de tenant_usage_daily jusqu''à la veille, bornés à '
-  'p_jours_max jours (14 par défaut, 60 au plus), puis avance le filigrane (v98). Sans filigrane : '
+  'p_jours_max jours (14 par défaut, 60 au plus), puis avance le filigrane (v102). Sans filigrane : '
   'la veille, et les jours de la borne qui n''ont aucune ligne.';
 
 -- Reprise du corps de v70 (unité facturée : signaux sources, exceptions dérivées
@@ -268,4 +270,4 @@ end $$;
 
 comment on function meter_tenant_usage(date) is
   'Compte l''usage facturé d''un jour (v70). Sans jour : rattrape depuis le filigrane jusqu''à la '
-  'veille (mip_rattraper_usage, v98).';
+  'veille (mip_rattraper_usage, v102).';

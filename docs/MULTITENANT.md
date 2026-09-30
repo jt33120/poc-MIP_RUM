@@ -98,7 +98,7 @@ des fonctions `security definer`.
   le service `scheduler` à son passage **quotidien de 03:17 UTC**, juste après
   `purge_rum_tenants(30)` (`packages/backend/jobs/planifie.mjs`) : la purge ne touche que des
   données de plus de 30 jours, la veille qu'il compte est intacte. Appelé **sans jour**
-  (ce que fait le scheduler), il rattrape depuis la migration v98 chaque jour laissé sans
+  (ce que fait le scheduler), il rattrape depuis la migration v102 chaque jour laissé sans
   comptage par un passage manqué, depuis le filigrane (`agregat_filigrane`) jusqu'à la veille,
   14 jours au plus ; au premier passage, sans filigrane, seuls la veille et les jours sans
   aucune ligne sont comptés.

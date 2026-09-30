@@ -1,4 +1,4 @@
-// L0 — migration-v98 : des agrégats justes, sur un vrai PostgreSQL.
+// L0 — migration-v102 : des agrégats justes, sur un vrai PostgreSQL.
 //
 // Ce que ce fichier prouve ne se lit pas dans la migration :
 //
@@ -19,9 +19,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
-const V98 = readFileSync(join(SQL_DIR, "migration-v98.sql"), "utf8");
-const APP = "l0-v98-test";
-const SESSION = "l0-v98-session";
+const V102 = readFileSync(join(SQL_DIR, "migration-v102.sql"), "utf8");
+const APP = "l0-v102-test";
+const SESSION = "l0-v102-session";
 
 function migrations(): string[] {
   const version = (f: string) => Number(f.match(/\d+/)![0]);
@@ -31,7 +31,7 @@ function migrations(): string[] {
     .map((f) => join(SQL_DIR, f));
 }
 
-(url ? describe : describe.skip)("L0 — migration-v98 : agrégats justes et reprises sur filigrane", () => {
+(url ? describe : describe.skip)("L0 — migration-v102 : agrégats justes et reprises sur filigrane", () => {
   const pool = new pg.Pool(url ? { connectionString: url, max: 3 } : {});
 
   async function nettoyer() {
@@ -39,7 +39,7 @@ function migrations(): string[] {
       await pool.query(`delete from ${table} where app_id = $1`, [APP]);
     }
     await pool.query("delete from rum_session where app_id = $1", [APP]);
-    // Sans filigrane, les deux fonctions se comportent comme avant v98 : c'est
+    // Sans filigrane, les deux fonctions se comportent comme avant v102 : c'est
     // l'état que les autres fichiers de test attendent.
     await pool.query("delete from agregat_filigrane");
   }
@@ -103,8 +103,8 @@ function migrations(): string[] {
   });
 
   it("la migration se rejoue sans erreur", async () => {
-    await pool.query(V98);
-    await pool.query(V98);
+    await pool.query(V102);
+    await pool.query(V102);
   });
 
   // ─────────────────────────── (a) l'erreur arrivée tard ─────────────────────
@@ -117,7 +117,7 @@ function migrations(): string[] {
     // Un rejeu hors ligne : l'erreur date de l'heure ancienne, elle est écrite maintenant.
     await erreur(72);
     await pool.query("select refresh_rum_rollups(26)");
-    // Avant v98 : { pageviews: 0, total_w: 0, good_w: 0, errors: 1 }.
+    // Avant v102 : { pageviews: 0, total_w: 0, good_w: 0, errors: 1 }.
     expect(await cellule(72)).toEqual({ pageviews: 7, total_w: 2, good_w: 2, errors: 1 });
   });
 

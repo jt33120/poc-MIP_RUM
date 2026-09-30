@@ -138,7 +138,7 @@ export const ROLLUP_SOURCES = {
     label: "Trafic horaire (vues et occurrences d'erreurs)",
     table: "rum_rollup_hourly",
     hour: "hour",
-    // Pas d'état de lecture : le filigrane de `refresh_rum_rollups` (migration-v98)
+    // Pas d'état de lecture : le filigrane de `refresh_rum_rollups` (migration-v102)
     // borne sa reprise, il ne porte aucun identifiant maximal. Sa table n'est pas
     // nommée ici : le contrôle du bundle de l'API y verrait une lecture sans droit.
     state: null,
