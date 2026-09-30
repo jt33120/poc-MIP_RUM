@@ -22,6 +22,10 @@ export interface SignauxProjet {
   extensionDeclaree: boolean;
   /** Anomalies de LCP détectées sur les dernières 24 h (z-score > 3). */
   anomalies: number;
+  /** Sessions actives par tranche de 24 h glissantes, la plus ancienne d'abord (7 valeurs). */
+  sessionsParJour: number[];
+  /** Dernière activité d'une session (ISO), sur 30 jours ; null si aucune. */
+  derniereDonnee: string | null;
 }
 
 export type SignauxParApp = Record<string, SignauxProjet>;
@@ -31,7 +35,22 @@ const VIDE: SignauxProjet = {
   mode: "aucun",
   extensionDeclaree: false,
   anomalies: 0,
+  sessionsParJour: [0, 0, 0, 0, 0, 0, 0],
+  derniereDonnee: null,
 };
+
+/**
+ * Sept tranches de 24 h GLISSANTES (et non des jours civils) : la dernière barre
+ * de la carte est alors « les dernières 24 h », pleine à toute heure, au lieu
+ * d'une journée entamée qui paraîtrait toujours en chute le matin.
+ */
+const TRANCHES = Array.from({ length: 7 }, (_, i) => 6 - i)
+  .map(
+    (j) =>
+      `count(*) filter (where s.last_seen_at > now() - interval '${j + 1} days'` +
+      ` and s.last_seen_at <= now() - interval '${j} days')::int`,
+  )
+  .join(",\n            ");
 
 /**
  * Domaines par application. Source DÉCLARATIVE, à dessein :
@@ -72,9 +91,18 @@ async function domainesParApp(appIds: string[]): Promise<Map<string, string[]>> 
   return new Map(rows.map((r) => [r.app_id, r.domaines ?? []]));
 }
 
+interface Activite {
+  mode: ModeCollecte;
+  declaree: boolean;
+  jours: number[];
+  derniere: string | null;
+}
+
 /**
  * Mode de collecte OBSERVÉ, par jointure sur `rum_session.collection_source`,
- * plus la déclaration d'un périmètre extension.
+ * plus la déclaration d'un périmètre extension, et l'activité récente (sessions
+ * des sept dernières tranches de 24 h, dernière donnée) : le même passage sur
+ * `rum_session`, pas une requête de plus.
  *
  * Deux avertissements que l'affichage doit respecter :
  *  - `'sdk'` est la valeur PAR DÉFAUT de la colonne, pas une affirmation : elle
@@ -88,11 +116,18 @@ async function domainesParApp(appIds: string[]): Promise<Map<string, string[]>> 
  * purgées de toute façon, et la borne évite un scan de tout l'historique
  * (rum_session n'a pas d'index b-tree simple sur app_id).
  */
-async function modesParApp(
-  appIds: string[],
-): Promise<Map<string, { mode: ModeCollecte; declaree: boolean }>> {
-  const rows = await q<{ app_id: string; sdk: number; ext: number; declaree: boolean }>(
+async function modesParApp(appIds: string[]): Promise<Map<string, Activite>> {
+  const rows = await q<{
+    app_id: string;
+    sdk: number;
+    ext: number;
+    declaree: boolean;
+    jours: number[];
+    derniere: Date | string | null;
+  }>(
     `select ids.app_id,
+            array[${TRANCHES}] as jours,
+            max(s.last_seen_at)                                             as derniere,
             count(*) filter (where s.collection_source = 'sdk')::int       as sdk,
             count(*) filter (where s.collection_source = 'extension')::int as ext,
             exists (select 1 from extension_scope e
@@ -108,7 +143,8 @@ async function modesParApp(
     rows.map((r) => {
       const mode: ModeCollecte =
         r.sdk > 0 && r.ext > 0 ? "mixte" : r.ext > 0 ? "extension" : r.sdk > 0 ? "sdk" : "aucun";
-      return [r.app_id, { mode, declaree: r.declaree }];
+      const derniere = r.derniere == null ? null : new Date(r.derniere).toISOString();
+      return [r.app_id, { mode, declaree: r.declaree, jours: r.jours ?? VIDE.sessionsParJour, derniere }];
     }),
   );
 }
@@ -152,7 +188,7 @@ export async function signauxProjets(appIds: string[]): Promise<SignauxParApp> {
 
   const [domaines, modes, anomalies] = await Promise.all([
     souple(domainesParApp(appIds), new Map<string, string[]>()),
-    souple(modesParApp(appIds), new Map<string, { mode: ModeCollecte; declaree: boolean }>()),
+    souple(modesParApp(appIds), new Map<string, Activite>()),
     souple(anomaliesParApp(), new Map<string, number>()),
   ]);
 
@@ -165,6 +201,8 @@ export async function signauxProjets(appIds: string[]): Promise<SignauxParApp> {
       mode: m?.mode ?? "aucun",
       extensionDeclaree: m?.declaree ?? false,
       anomalies: anomalies.get(id) ?? 0,
+      sessionsParJour: m?.jours ?? VIDE.sessionsParJour,
+      derniereDonnee: m?.derniere ?? null,
     };
   }
   return out;
