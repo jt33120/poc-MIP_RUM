@@ -125,10 +125,13 @@ describe("/sessions — Frustration et Rejeu viennent de la lecture, plus d'un n
     return { frustration: colonne("frustration"), rejeu: colonne("rejeu") };
   };
 
+  /** Le texte d'une cellule, balises retirées (le compte est une pastille depuis le 30/09/2026). */
+  const texteCellule = (cellule: string) => cellule.replace(/^[^>]*>/, "").replace(/<[^>]+>/g, "").trim();
+
   it("le compte de signaux est écrit ; une session mobile dit « non collecté », jamais 0", async () => {
     const html = await rendre();
-    expect(signauxDe(rangee(html, "avec-rejeu-7")).frustration).toMatch(/>7<\/td>$/);
-    expect(signauxDe(rangee(html, "sans-rejeu-3")).frustration).toMatch(/>3<\/td>$/);
+    expect(texteCellule(signauxDe(rangee(html, "avec-rejeu-7")).frustration)).toBe("7");
+    expect(texteCellule(signauxDe(rangee(html, "sans-rejeu-3")).frustration)).toBe("3");
     const mobile = signauxDe(rangee(html, "mobile-sans-capteur"));
     expect(mobile.frustration).toContain('data-testid="signal-non-collecte"');
     expect(mobile.frustration).not.toMatch(/>0</);
