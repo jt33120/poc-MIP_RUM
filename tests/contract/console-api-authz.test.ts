@@ -200,10 +200,13 @@ const ABOUTIS: Record<string, readonly string[]> = {
  * monde, et c'est leur contrat : une connexion aux identifiants inconnus est
  * refusée (401) quelle que soit la session présentée, et la démo est fermée ici
  * (404). La politique (publique) est la même pour tous ; le statut fixe le dit.
+ * L'inscription (v107) est fermée ici aussi : une saisie VALIDE rend le 404 d'une
+ * opération inconnue, quelle que soit la session — rien n'est créé.
  */
-const STATUT_FIXE: Record<string, number> = { "auth.login": 401, "auth.demo": 404, "auth.oidcStart": 404, "auth.oidc": 400 };
+const STATUT_FIXE: Record<string, number> = { "auth.login": 401, "auth.demo": 404, "auth.oidcStart": 404, "auth.oidc": 400, "auth.signup": 404 };
 const CORPS: Record<string, unknown> = {
   "auth.login": { email: "authz-inconnu@test.local", mot_de_passe: "pas-le-bon" },
+  "auth.signup": { email: "authz-inscription@test.local", mot_de_passe: "authz-douze-car", nom_site: "authz", url_site: "https://authz.exemple.fr" },
   // C6 — un corps VALIDE par écriture : la matrice éprouve l'accès, pas l'entrée.
   "dashboards.create": { name: "authz", app_id: A },
   "dashboards.cloneTemplate": { app_id: A },

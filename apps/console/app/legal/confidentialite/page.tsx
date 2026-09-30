@@ -71,7 +71,8 @@ export default function Confidentialite() {
         ))}
         <p>
           <strong>Comptes de la console</strong>&nbsp;: adresse e-mail, rôle, applications autorisées, journal des
-          actions sensibles. <strong>Alertes</strong>&nbsp;: adresse e-mail des opérateurs destinataires et texte de
+          actions sensibles&nbsp;; pour un compte créé par l&apos;inscription en libre-service, la date de
+          l&apos;inscription. <strong>Alertes</strong>&nbsp;: adresse e-mail des opérateurs destinataires et texte de
           l&apos;alerte.
         </p>
       </LegalSection>

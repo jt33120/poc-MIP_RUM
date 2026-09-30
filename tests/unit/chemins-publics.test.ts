@@ -31,6 +31,13 @@ describe("estCheminPublic", () => {
     expect(estCheminPublic("/legalxyz")).toBe(false);
   });
 
+  // L'inscription en libre-service s'adresse à qui n'a pas de compte : publique, par
+  // son chemin exact — une page rangée dessous ne le devient pas par hasard.
+  it("ouvre l'inscription, et elle seule", () => {
+    expect(estCheminPublic("/inscription")).toBe(true);
+    for (const p of ["/inscription/admin", "/inscriptions", "/inscription-interne"]) expect(estCheminPublic(p), p).toBe(false);
+  });
+
   it("ne s'ouvre pas non plus sur une variante de la vitrine", () => {
     expect(estCheminPublic("/presentations")).toBe(false);
     expect(estCheminPublic("/presentation/secret")).toBe(false);

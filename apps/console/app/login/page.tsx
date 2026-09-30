@@ -162,8 +162,18 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
               </>
             )}
             {/* Pas de réinitialisation de mot de passe : les comptes sont créés par un
-                administrateur de la console, c'est donc à lui de s'adresser. */}
-            {!formulaireDemo && (
+                administrateur de la console, c'est donc à lui de s'adresser. Depuis le
+                30/09/2026, un visiteur peut aussi ouvrir le sien, quand l'inscription
+                est ouverte (console-api le dit). */}
+            {formulaireDemo ? null : methodes.inscription ? (
+              <p className="mt-5 text-xs leading-relaxed text-ink-soft">
+                Pas encore de compte ?{" "}
+                <Link href="/inscription" data-testid="login-inscription" className="font-medium text-accent-ink underline-offset-2 hover:underline">
+                  Créer un compte d&apos;essai
+                </Link>
+                . Mot de passe oublié : demandez-le à l&apos;administrateur de votre console.
+              </p>
+            ) : (
               <p className="mt-5 text-xs leading-relaxed text-ink-soft">
                 Mot de passe oublié, ou pas encore de compte : demandez-le à l&apos;administrateur de votre
                 console.

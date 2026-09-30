@@ -106,6 +106,31 @@ export interface Identifiants {
 export const CONNEXION = operation<Aucun, Aucun, Identifiants, SessionOuverte>("auth.login", "POST", "/v1/auth/sessions");
 /** Session de démonstration : lecture seule, périmètre fixé par le service (`DEMO_USER_APPS`). 404 si la démo est fermée. */
 export const DEMO = operation<Aucun, Aucun, never, SessionOuverte>("auth.demo", "POST", "/v1/auth/demo-sessions");
+/**
+ * L'inscription en libre-service (vitrine du 30/09/2026) : le compte ET son premier
+ * site, en une fois. Le compte est administrateur de ce seul site ; le site a un
+ * débit de collecte plafonné. Les règles de saisie sont celles de `inscription.ts`,
+ * que la console applique aussi avant d'appeler.
+ */
+export interface Inscription {
+  readonly email: string;
+  readonly mot_de_passe: string;
+  readonly nom_site: string;
+  readonly url_site: string;
+}
+export interface InscriptionFaite {
+  readonly session: SessionOuverte;
+  /** L'identifiant du site créé. */
+  readonly app: string;
+  /** Sa clé d'ingestion, rendue UNE fois : seul son haché est gardé. */
+  readonly cle: string;
+}
+/**
+ * Refus : `entree_invalide` (le champ en détail), `conflit` (un compte porte déjà
+ * cette adresse), `debit_depasse` (trop d'inscriptions depuis cette adresse IP, ou
+ * pour la journée), 404 si l'inscription est fermée.
+ */
+export const INSCRIPTION = operation<Aucun, Aucun, Inscription, InscriptionFaite>("auth.signup", "POST", "/v1/auth/accounts");
 /** Déconnexion : la session est RÉVOQUÉE en base — le jeton ne vaut plus rien, même avant son expiration. */
 export const DECONNEXION = operation<Aucun, Aucun, never, { readonly revoquee: boolean }>("auth.logout", "DELETE", "/v1/auth/sessions/current");
 export const MOI = operation<Aucun, Aucun, never, Moi>("auth.me", "GET", "/v1/me");
@@ -119,6 +144,8 @@ export interface MethodesConnexion {
   readonly mot_de_passe: true;
   readonly sso: boolean;
   readonly demo: boolean;
+  /** L'inscription en libre-service est-elle ouverte ? (absent chez un service d'avant le 30/09/2026) */
+  readonly inscription?: boolean;
 }
 export const METHODES = operation<Aucun, Aucun, never, MethodesConnexion>("auth.methods", "GET", "/v1/auth/methods");
 
@@ -411,6 +438,7 @@ export const OPERATIONS = Object.freeze([
   ETAT_PLATEFORME,
   CONNEXION,
   DEMO,
+  INSCRIPTION,
   DECONNEXION,
   MOI,
   METHODES,

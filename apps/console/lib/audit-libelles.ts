@@ -33,6 +33,7 @@ const LIBELLES: Record<string, string> = {
   auth_logout: "Déconnexion",
   demo_session: "Ouverture d'une démonstration",
   auth_demo: "Ouverture d'une démonstration",
+  auth_signup: "Inscription en libre-service",
   demo_refused: "Démonstration refusée",
   demo_user_seeded: "Compte de démonstration préparé",
   seed_admin: "Compte administrateur initialisé",

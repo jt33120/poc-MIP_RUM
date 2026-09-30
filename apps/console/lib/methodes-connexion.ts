@@ -1,5 +1,6 @@
 // Les moyens de se connecter qu'offre la plateforme : mot de passe toujours, SSO
-// et démo selon la configuration (C1c).
+// et démo selon la configuration (C1c) ; l'inscription en libre-service (30/09/2026),
+// que seul console-api sert : non branchée, la console la dit fermée.
 //
 // Branchée sur console-api, la console ne détient plus la configuration
 // d'identité : le service la dit (`GET /v1/auth/methods`, gardé une minute par
@@ -13,11 +14,13 @@ import { isOidcEnabled } from "./oidc";
 export interface Methodes {
   readonly sso: boolean;
   readonly demo: boolean;
+  readonly inscription: boolean;
 }
 
 export async function methodesConnexion(client: Pick<ReturnType<typeof backend>, "appeler" | "estBranche"> = backend()): Promise<Methodes> {
-  const locales = { sso: isOidcEnabled(), demo: demoConfig() !== null };
+  const locales = { sso: isOidcEnabled(), demo: demoConfig() !== null, inscription: false };
   if (!client.estBranche()) return locales;
   const r = await client.appeler(METHODES, {}, { revalider: 60 });
-  return r.ok ? { sso: r.data.sso, demo: r.data.demo } : locales;
+  // `inscription` manque chez un service d'avant le 30/09/2026 : fermée.
+  return r.ok ? { sso: r.data.sso, demo: r.data.demo, inscription: r.data.inscription === true } : locales;
 }

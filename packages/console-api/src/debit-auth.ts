@@ -13,7 +13,7 @@
 // compteurs à zéro — ils ne vivent qu'une heure.
 import type { Lecteur } from "./contexte";
 
-export type Compteur = "ip_email" | "ip" | "email" | "demo_ip";
+export type Compteur = "ip_email" | "ip" | "email" | "demo_ip" | "inscription_ip";
 
 export interface Regle {
   /** Au-delà de ce nombre d'événements dans la fenêtre, le compteur bloque. */
@@ -30,13 +30,17 @@ export interface Regle {
  *   · IP seule : 30 échecs par 10 min — un poste qui essaie beaucoup de comptes ;
  *   · e-mail : 20 échecs par heure, puis un délai qui double (1 min → 1 h) — un
  *     compte visé depuis beaucoup d'adresses ;
- *   · démo : 5 sessions par heure et par IP (chaque ouverture compte, pas les échecs).
+ *   · démo : 5 sessions par heure et par IP (chaque ouverture compte, pas les échecs) ;
+ *   · inscription : 3 tentatives par heure et par IP (migration-v107) — chaque
+ *     tentative qui atteint la base compte, réussie ou non : elle borne aussi qui
+ *     sonderait les adresses déjà inscrites.
  */
 export const REGLES: Readonly<Record<Compteur, Regle>> = Object.freeze({
   ip_email: { max: 8, fenetreS: 600, blocageS: 600, plafondS: 600 },
   ip: { max: 30, fenetreS: 600, blocageS: 600, plafondS: 600 },
   email: { max: 20, fenetreS: 3600, blocageS: 60, plafondS: 3600 },
   demo_ip: { max: 5, fenetreS: 3600, blocageS: 3600, plafondS: 3600 },
+  inscription_ip: { max: 3, fenetreS: 3600, blocageS: 3600, plafondS: 3600 },
 });
 
 export interface DebitAuth {

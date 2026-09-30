@@ -4,7 +4,7 @@
 // La même chose contre PostgreSQL (vraies sessions, vrai bcrypt, vrais compteurs) :
 // `tests/integration/console-api-identite-sql.test.ts`.
 import { describe, expect, it, vi } from "vitest";
-import { operation } from "@mip/console-contract";
+import { identifiantSite, MOT_DE_PASSE_INSCRIPTION, operation, verifierInscription } from "@mip/console-contract";
 import { creerConsoleApi, creerDebitAuth, operationsIdentite, REGLES_DEBIT_AUTH, servir, verifierTable, type Lecteur } from "@mip/console-api";
 import { chargerTrousseau } from "@mip/console-api";
 
@@ -33,14 +33,26 @@ describe("C1 — le débit d'authentification : des clés HMAC, jamais une IP ni
     expect(REGLES_DEBIT_AUTH.email).toMatchObject({ max: 20, fenetreS: 3600, blocageS: 60, plafondS: 3600 });
     expect(REGLES_DEBIT_AUTH.demo_ip).toMatchObject({ max: 5, fenetreS: 3600 });
   });
+
+  it("l'inscription en libre-service (v107) : 3 tentatives par heure et par IP, puis une heure de blocage", async () => {
+    expect(REGLES_DEBIT_AUTH.inscription_ip).toEqual({ max: 3, fenetreS: 3600, blocageS: 3600, plafondS: 3600 });
+    // Le préfixe est l'un de ceux qu'admet la contrainte `auth_throttle_cle` de v107.
+    expect(await (await creerDebitAuth(SECRET)).cle("inscription_ip", "203.0.113.7")).toMatch(/^inscription_ip:[0-9a-f]{64}$/);
+  });
 });
 
 describe("C1 — les politiques des opérations d'identité", () => {
-  async function table() {
+  /** `requetes` : ce que les opérations ont demandé à la base (aucune base réelle ici). */
+  async function table(inscription: { parJour: number; debitMaxMin: number } | null = null, requetes: string[] = []) {
     const paire = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
     const j = await crypto.subtle.exportKey("jwk", paire.privateKey);
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [{ kty: "EC", crv: "P-256", x: j.x, y: j.y, d: j.d, kid: "session-c1" }] }), { production: false });
-    const db: Lecteur = { query: async () => ({ rows: [] }) };
+    const db: Lecteur = {
+      query: async (sql: string) => {
+        requetes.push(sql);
+        return { rows: [] };
+      },
+    };
     return operationsIdentite({
       trousseau,
       db,
@@ -50,8 +62,18 @@ describe("C1 — les politiques des opérations d'identité", () => {
       hachageFactice: "",
       demo: null,
       oublierSession: () => {},
+      inscription: inscription && { ...inscription, hacherMotDePasse: async () => "haché" },
     });
   }
+  const service = async (inscription: { parJour: number; debitMaxMin: number } | null, requetes: string[] = []) =>
+    creerConsoleApi({ table: await table(inscription, requetes), secretsClient: [SECRET], journal: { info() {}, warn() {}, error() {} } });
+  const appel = (chemin: string, corps?: unknown) =>
+    new Request(`https://c.test${chemin}`, {
+      method: corps === undefined ? "GET" : "POST",
+      headers: { "x-mip-client": SECRET, "x-mip-visitor-ip": "203.0.113.7", ...(corps === undefined ? {} : { "content-type": "application/json" }) },
+      body: corps === undefined ? undefined : JSON.stringify(corps),
+    });
+  const SAISIE = { email: "ana@exemple.fr", mot_de_passe: "douze-caracteres", nom_site: "Ma boutique", url_site: "https://ma-boutique.fr/panier" };
 
   it("respectent les règles de la table : toute écriture auditée, refusée à la démo sauf la déconnexion", async () => {
     const t = await table();
@@ -61,8 +83,98 @@ describe("C1 — les politiques des opérations d'identité", () => {
     expect(p["auth.demo"]).toMatchObject({ auth: "public", demo: "refus", audit: "auth.demo" });
     expect(p["auth.logout"]).toMatchObject({ auth: "session", demo: "lecture", audit: "auth.logout" });
     expect(p["auth.me"]).toMatchObject({ auth: "session", demo: "lecture" });
+    // L'inscription (v107) : ouverte à qui n'a pas de session — c'est son objet —,
+    // jamais à une démo, et auditée comme une connexion.
+    expect(p["auth.signup"]).toMatchObject({ auth: "public", portee: "globale", demo: "refus", audit: "auth.signup" });
     // Aucune ne se passe du secret client : seul le serveur de la console ouvre une session.
     expect(t.every((e) => e.politique.secretClient !== "aucun")).toBe(true);
+  });
+
+  it("l'inscription fermée (INSCRIPTIONS_PAR_JOUR=0) : le même 404 qu'un chemin inconnu, et `methods` la dit fermée", async () => {
+    const requetes: string[] = [];
+    const api = await service(null, requetes);
+    const res = await api(appel("/v1/auth/accounts", SAISIE));
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("route_inconnue");
+    expect((await (await api(appel("/v1/auth/methods"))).json()).data).toMatchObject({ inscription: false });
+    expect(requetes).toEqual([]);
+  });
+
+  it("l'inscription ouverte : `methods` le dit ; une saisie refusée l'est champ par champ, AVANT la base", async () => {
+    const requetes: string[] = [];
+    const api = await service({ parJour: 20, debitMaxMin: 120 }, requetes);
+    expect((await (await api(appel("/v1/auth/methods"))).json()).data).toMatchObject({ inscription: true });
+    for (const [champ, valeur] of [
+      ["email", "pas-une-adresse"],
+      ["mot_de_passe", "court"],
+      ["nom_site", "   "],
+      ["url_site", "ftp://ma-boutique.fr"],
+    ] as const) {
+      const res = await api(appel("/v1/auth/accounts", { ...SAISIE, [champ]: valeur }));
+      expect(res.status, champ).toBe(400);
+      expect((await res.json()).error, champ).toMatchObject({ code: "entree_invalide", details: { champ } });
+    }
+    // Une saisie refusée ne coûte ni bcrypt, ni une tentative du compteur par IP.
+    expect(requetes).toEqual([]);
+  });
+});
+
+describe("Inscription — les règles de saisie, communes à la console et au service", () => {
+  const SAISIE = { email: " Ana@Exemple.FR ", mot_de_passe: "douze-caracteres", nom_site: "  Ma boutique ", url_site: " https://ma-boutique.fr:443/panier?x=1 " };
+
+  it("normalise : e-mail en minuscules, nom sans blancs, l'ORIGINE du site (celle que la collecte admettra)", () => {
+    expect(verifierInscription(SAISIE)).toEqual({ ok: true, valeur: { email: "ana@exemple.fr", nom: "Ma boutique", origine: "https://ma-boutique.fr" } });
+    expect(verifierInscription({ ...SAISIE, url_site: "http://localhost:8080/" })).toMatchObject({ ok: true, valeur: { origine: "http://localhost:8080" } });
+  });
+
+  it("refuse le premier champ fautif, dans l'ordre du formulaire", () => {
+    const refus = (m: Partial<typeof SAISIE>) => verifierInscription({ ...SAISIE, ...m });
+    expect(refus({ email: "ana@exemple" })).toEqual({ ok: false, champ: "email" });
+    expect(refus({ email: `${"a".repeat(195)}@exemple.fr` })).toEqual({ ok: false, champ: "email" });
+    expect(refus({ email: "x", mot_de_passe: "x" })).toEqual({ ok: false, champ: "email" });
+    expect(refus({ nom_site: "" })).toEqual({ ok: false, champ: "nom_site" });
+    expect(refus({ nom_site: "n".repeat(201) })).toEqual({ ok: false, champ: "nom_site" });
+    for (const url_site of ["ma-boutique.fr", "javascript:alert(1)", "ftp://ma-boutique.fr", `https://exemple.fr/${"a".repeat(2048)}`])
+      expect(refus({ url_site }), url_site).toEqual({ ok: false, champ: "url_site" });
+  });
+
+  it("mot de passe : 12 caractères au moins, 72 octets au plus (au-delà, bcrypt tronque en silence)", () => {
+    expect(MOT_DE_PASSE_INSCRIPTION).toEqual({ min: 12, maxOctets: 72 });
+    const mdp = (mot_de_passe: string) => verifierInscription({ ...SAISIE, mot_de_passe }).ok;
+    expect(mdp("a".repeat(11))).toBe(false);
+    expect(mdp("a".repeat(12))).toBe(true);
+    expect(mdp("a".repeat(72))).toBe(true);
+    expect(mdp("a".repeat(73))).toBe(false);
+    // Des caractères de 2 octets : 36 passent (72 octets), 37 non — la borne est en octets.
+    expect(mdp("é".repeat(36))).toBe(true);
+    expect(mdp("é".repeat(37))).toBe(false);
+    // 12 caractères, comptés comme tels, même hors du plan multilingue de base.
+    expect(mdp("😀".repeat(12))).toBe(true);
+  });
+});
+
+describe("Inscription — l'identifiant du site créé", () => {
+  // Le motif de `validateAppId` (apps/console/lib/onboarding.ts) : un identifiant
+  // qu'il refuserait ne s'ouvrirait nulle part dans la console.
+  const VALIDE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
+
+  it("le nom en minuscules, sans accents ni ponctuation, suivi du suffixe", () => {
+    expect(identifiantSite("Ma Boutique", "1a2b")).toBe("ma-boutique-1a2b");
+    expect(identifiantSite("Crêperie Éléonore & Fils !", "00ff")).toBe("creperie-eleonore-fils-00ff");
+    expect(identifiantSite("--Déjà--vu--", "abcd")).toBe("deja-vu-abcd");
+  });
+
+  it("un nom sans lettre latine ni chiffre : « site- » et le suffixe", () => {
+    for (const nom of ["", "   ", "!!!", "東京ストア", "—"]) expect(identifiantSite(nom, "beef"), nom).toBe("site-beef");
+  });
+
+  it("toujours admis par validateAppId, même d'un nom très long", () => {
+    const noms = ["a", "Ma boutique", "x".repeat(200), `${"a".repeat(29)} b`, "é".repeat(80), "a-".repeat(40), "Z9"];
+    for (const nom of noms) {
+      const id = identifiantSite(nom, "c0de");
+      expect(id, nom).toMatch(VALIDE);
+      expect(id.length, nom).toBeLessThanOrEqual(35);
+    }
   });
 });
 

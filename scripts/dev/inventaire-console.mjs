@@ -266,7 +266,7 @@ function cheminApp(f, suffixe) {
 // motif qui correspond l'emporte.
 
 const LOTS_ECRANS = [
-  [/^\/(login|select(\/new)?)$/, "C1–C2 identité, sélection"],
+  [/^\/(login|inscription|select(\/new)?)$/, "C1–C2 identité, sélection"],
   [/^\/(legal(\/.*)?|presentation|api-docs|extension-privacy)$/, "statique ou vitrine"],
   [/^\/admin\/privacy$/, "C10 RGPD"],
   [/^\/admin\//, "C9 administration"],
