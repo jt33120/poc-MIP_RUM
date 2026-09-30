@@ -81,8 +81,9 @@ function Formulaire({ erreur }: { erreur: string | null }) {
   return (
     <>
       <p className="mb-5 rounded-lg border border-line bg-panel2 px-3 py-2.5 text-xs leading-relaxed text-ink-soft" data-testid="inscription-essai">
-        Un essai : <strong className="text-ink">un site</strong>, dont vous êtes administrateur, avec une collecte
-        plafonnée. Le snippet du capteur vous attend à l&apos;étape suivante.
+        Un essai : <strong className="text-ink">un site</strong>, que vous consultez en lecture, avec une collecte
+        plafonnée. Le snippet du capteur vous attend à l&apos;étape suivante ; sa clé, ses origines et ses domaines
+        restent gérés par MIP.
       </p>
       {/* La clé d'ingestion du site, rendue une fois, passe du formulaire à la page
           d'installation (C9c) : jamais par l'URL. */}

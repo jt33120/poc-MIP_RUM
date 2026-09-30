@@ -5,7 +5,7 @@
 // `tests/integration/console-api-identite-sql.test.ts`.
 import { describe, expect, it, vi } from "vitest";
 import { identifiantSite, MOT_DE_PASSE_INSCRIPTION, operation, verifierInscription } from "@mip/console-contract";
-import { creerConsoleApi, creerDebitAuth, operationsIdentite, REGLES_DEBIT_AUTH, servir, verifierTable, type Lecteur } from "@mip/console-api";
+import { adresseDeDebit, creerConsoleApi, creerDebitAuth, operationsIdentite, REGLES_DEBIT_AUTH, servir, verifierTable, type Lecteur } from "@mip/console-api";
 import { chargerTrousseau } from "@mip/console-api";
 
 const SECRET = "c".repeat(40);
@@ -39,18 +39,52 @@ describe("C1 — le débit d'authentification : des clés HMAC, jamais une IP ni
     // Le préfixe est l'un de ceux qu'admet la contrainte `auth_throttle_cle` de v107.
     expect(await (await creerDebitAuth(SECRET)).cle("inscription_ip", "203.0.113.7")).toMatch(/^inscription_ip:[0-9a-f]{64}$/);
   });
+
+  // Un abonné IPv6 reçoit un /64 : 2^64 adresses. Comptées une à une, trois
+  // tentatives par heure ne borneraient rien.
+  it("l'adresse d'un compteur d'inscription : une IPv4 entière, une IPv6 par son /64, une IPv4 mappée redevient IPv4", () => {
+    expect(adresseDeDebit("203.0.113.7")).toBe("203.0.113.7");
+    expect(adresseDeDebit(" 203.0.113.7 ")).toBe("203.0.113.7");
+    // Complète, compressée, en capitales : le même /64.
+    const slash64 = "2001:db8:a:b::/64";
+    for (const ip of ["2001:0db8:000a:000b:1111:2222:3333:4444", "2001:db8:a:b::1", "2001:DB8:A:B:FFFF::", "2001:db8:a:b:0:0:0:0"])
+      expect(adresseDeDebit(ip), ip).toBe(slash64);
+    expect(adresseDeDebit("2001:db8:a:c::1")).toBe("2001:db8:a:c::/64");
+    expect(adresseDeDebit("2001:db8::1")).toBe("2001:db8:0:0::/64");
+    expect(adresseDeDebit("::1")).toBe("0:0:0:0::/64");
+    // IPv4 mappée, sous ses deux écritures.
+    expect(adresseDeDebit("::ffff:198.51.100.9")).toBe("198.51.100.9");
+    expect(adresseDeDebit("::FFFF:c633:6409")).toBe("198.51.100.9");
+    expect(adresseDeDebit("0:0:0:0:0:ffff:198.51.100.9")).toBe("198.51.100.9");
+    // Illisible : rendue telle quelle (une clé, non regroupée) — jamais une exception.
+    for (const ip of ["1:2:3", "1::2::3", "::ffff:300.1.1.1", "1:2:3:4:5:6:7:8:9", "12345::1"]) expect(adresseDeDebit(ip), ip).toBe(ip);
+  });
+
+  it("deux adresses du même /64 partagent la même clé ; deux /64 voisins, non", async () => {
+    const d = await creerDebitAuth(SECRET);
+    const cle = (ip: string) => d.cle("inscription_ip", adresseDeDebit(ip));
+    expect(await cle("2001:db8:a:b::1")).toBe(await cle("2001:db8:a:b:dead:beef:0:2"));
+    expect(await cle("2001:db8:a:b::1")).not.toBe(await cle("2001:db8:a:c::1"));
+    expect(await cle("::ffff:203.0.113.7")).toBe(await cle("203.0.113.7"));
+  });
 });
 
 describe("C1 — les politiques des opérations d'identité", () => {
   /** `requetes` : ce que les opérations ont demandé à la base (aucune base réelle ici). */
-  async function table(inscription: { parJour: number; debitMaxMin: number } | null = null, requetes: string[] = []) {
+  /** `inscrits` : les adresses que la fausse base dit déjà inscrites. */
+  async function table(
+    inscription: { parJour: number; debitMaxMin: number; hacher?: (clair: string) => Promise<string> } | null = null,
+    requetes: string[] = [],
+    inscrits: string[] = [],
+  ) {
     const paire = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
     const j = await crypto.subtle.exportKey("jwk", paire.privateKey);
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [{ kty: "EC", crv: "P-256", x: j.x, y: j.y, d: j.d, kid: "session-c1" }] }), { production: false });
     const db: Lecteur = {
-      query: async (sql: string) => {
+      query: async (sql: string, params?: unknown[]) => {
         requetes.push(sql);
-        return { rows: [] };
+        const existe = /from console_user where email = \$1/.test(sql) && inscrits.includes(String(params?.[0]));
+        return { rows: existe ? [{ "?column?": 1 }] : [] };
       },
     };
     return operationsIdentite({
@@ -62,7 +96,7 @@ describe("C1 — les politiques des opérations d'identité", () => {
       hachageFactice: "",
       demo: null,
       oublierSession: () => {},
-      inscription: inscription && { ...inscription, hacherMotDePasse: async () => "haché" },
+      inscription: inscription && { parJour: inscription.parJour, debitMaxMin: inscription.debitMaxMin, hacherMotDePasse: inscription.hacher ?? (async () => "haché") },
     });
   }
   const service = async (inscription: { parJour: number; debitMaxMin: number } | null, requetes: string[] = []) =>
@@ -116,6 +150,23 @@ describe("C1 — les politiques des opérations d'identité", () => {
     }
     // Une saisie refusée ne coûte ni bcrypt, ni une tentative du compteur par IP.
     expect(requetes).toEqual([]);
+  });
+
+  it("une adresse déjà inscrite : 409 AVANT le hachage — la tentative est comptée, bcrypt n'est pas payé", async () => {
+    const requetes: string[] = [];
+    const hacher = vi.fn(async () => "haché");
+    const api = creerConsoleApi({
+      table: await table({ parJour: 20, debitMaxMin: 120, hacher }, requetes, ["ana@exemple.fr"]),
+      secretsClient: [SECRET],
+      journal: { info() {}, warn() {}, error() {} },
+    });
+    const res = await api(appel("/v1/auth/accounts", SAISIE));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("conflit");
+    expect(hacher).not.toHaveBeenCalled();
+    expect(requetes.some((q) => q.includes("insert into auth_throttle"))).toBe(true);
+    // Ni verrou, ni site, ni compte : la transaction de l'inscription n'est pas ouverte.
+    expect(requetes.filter((q) => /pg_advisory_xact_lock|insert into app_registry|insert into console_user/.test(q))).toEqual([]);
   });
 });
 

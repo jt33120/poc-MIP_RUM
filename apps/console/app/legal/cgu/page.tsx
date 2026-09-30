@@ -53,8 +53,9 @@ export default function CGU() {
           rôles (administrateur et lecteur) et journalise les actions sensibles.
         </p>
         <p>
-          Un compte créé par l&apos;inscription en libre-service est un compte d&apos;essai&nbsp;: il administre un
-          seul site, créé en même temps que lui, dont la collecte est plafonnée. L&apos;Éditeur peut limiter ou
+          Un compte créé par l&apos;inscription en libre-service est un compte d&apos;essai&nbsp;: il est lecteur
+          d&apos;un seul site, créé en même temps que lui, dont la collecte est plafonnée&nbsp;; la clé
+          d&apos;ingestion, les origines autorisées et les domaines de ce site restent gérés par l&apos;Éditeur. L&apos;Éditeur peut limiter ou
           fermer l&apos;inscription à tout moment, et désactiver un compte d&apos;essai dont l&apos;usage contrevient
           aux présentes conditions.
         </p>

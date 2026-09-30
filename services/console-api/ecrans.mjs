@@ -132,13 +132,14 @@ export const ecrans = {
     jetonsLecture: page(chargerJetonsLecture),
     domaines: page(chargerDomaines),
     sourcemaps: page(chargerSourcemaps),
-    nouveauSite: page(chargerNouveauSite),
     // C10
     viePrivee: page(chargerViePrivee),
   },
   // C9 — les écrans de session sans portée : le choix du projet.
   session: {
     projets: page(chargerProjets),
+    // L'ajout d'un site et son intégration (le chargeur garde la règle, 30/09/2026).
+    nouveauSite: page(chargerNouveauSite),
   },
   refusDeFiltre: (e) => (e instanceof UnsupportedFilterError ? { code: e.error.code, message: e.error.message } : null),
 };

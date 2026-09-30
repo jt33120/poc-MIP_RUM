@@ -92,7 +92,7 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `screens.adminExtensionInstalls` | `GET /v1/screens/admin/extension-installs` | session administrateur | — | lecture | exigé | — |
 | `screens.adminExtensionScopes` | `GET /v1/screens/admin/extension-scopes` | session administrateur | — | lecture | exigé | — |
 | `screens.adminHealth` | `GET /v1/screens/admin/health` | session administrateur | — | lecture | exigé | — |
-| `screens.adminNewSite` | `GET /v1/screens/admin/new-site` | session administrateur | — | lecture | exigé | — |
+| `screens.adminNewSite` | `GET /v1/screens/admin/new-site` | session | — | lecture | exigé | — |
 | `screens.adminPrivacy` | `GET /v1/screens/admin/privacy` | session administrateur | — | lecture | exigé | — |
 | `screens.adminReadTokens` | `GET /v1/screens/admin/read-tokens` | session administrateur | — | lecture | exigé | — |
 | `screens.adminSourcemaps` | `GET /v1/screens/admin/sourcemaps` | session administrateur | — | lecture | exigé | — |

@@ -12,9 +12,9 @@
 //     par IP, et jamais l'adresse IP dans le journal ;
 //   · chaque écriture laisse sa ligne d'audit, avec le `request_id` de l'appel ;
 //   · l'inscription en libre-service (v107), SOUS `mip_identity` quand la base a
-//     les rôles : le compte (administrateur de son seul site) et le site (débit
-//     plafonné) ensemble ou rien ; adresse déjà prise → 409 sans rien créer ;
-//     plafond du jour, 4ᵉ tentative d'une même IP → 429 ; fermée → 404.
+//     les rôles : le compte (LECTEUR de son seul site) et le site (débit plafonné)
+//     ensemble ou rien ; adresse déjà prise → 409 sans rien créer ; plafond du
+//     jour, 4ᵉ tentative d'une même IP — d'un même /64 en IPv6 — → 429 ; fermée → 404.
 //
 //   SQL_TEST_DATABASE_URL=<base jetable> pnpm test:sql
 import { createRequire } from "node:module";
@@ -253,7 +253,7 @@ function migrations(): string[] {
     expect((await ouvert(appel("/v1/auth/sessions/current", { methode: "DELETE", jeton: data.jeton }))).status).toBe(200);
   });
 
-  it("inscription : le compte, administrateur de SON site, et le site plafonné, en une fois ; session ouverte, audit", async () => {
+  it("inscription : le compte, lecteur de SON site, et le site plafonné, en une fois ; session ouverte, audit", async () => {
     await pool.query("delete from auth_throttle");
     const email = adresse("ok");
     const res = await inscrire(inscrit, { email: `  ${email.toUpperCase()} ` }, "198.51.100.20");
@@ -263,9 +263,9 @@ function migrations(): string[] {
     expect(data.cle).toMatch(/^mip_[0-9a-f]{32}$/);
     expect(data.session.connexion_precedente).toBeNull();
 
-    // Le compte : administrateur de ce seul site — jamais la portée plateforme.
+    // Le compte : LECTEUR de ce seul site — ni la portée plateforme, ni l'administration.
     const compte = (await pool.query("select role, apps, active, inscrit_le, password_hash from console_user where email = $1", [email])).rows[0];
-    expect(compte).toMatchObject({ role: "admin", apps: [data.app], active: true });
+    expect(compte).toMatchObject({ role: "viewer", apps: [data.app], active: true });
     expect(compte.inscrit_le).toBeInstanceOf(Date);
     expect(await bcrypt.compare("c1-inscription-mdp", compte.password_hash)).toBe(true);
 
@@ -282,7 +282,7 @@ function migrations(): string[] {
 
     // La session est celle du compte, relue en base.
     const moi = await inscrit(appel("/v1/me", { jeton: data.session.jeton }));
-    expect((await moi.json()).data).toEqual({ email, role: "admin", apps: [data.app], demo: false });
+    expect((await moi.json()).data).toEqual({ email, role: "viewer", apps: [data.app], demo: false });
 
     // L'audit : l'action, le site, l'appel — jamais l'adresse IP.
     const audit = (await pool.query("select detail, app_id, actor_kind, request_id from audit_log where action = 'auth.signup' and user_email = $1", [email])).rows;
@@ -319,6 +319,17 @@ function migrations(): string[] {
     expect(await compter("select count(*)::int as n from console_user where email = $1", [email])).toBe(0);
     // Ailleurs, l'inscription passe.
     expect((await inscrire(inscrit, { email }, "198.51.100.23")).status).toBe(200);
+  });
+
+  it("inscription : en IPv6, le /64 compte comme UNE adresse — changer les 64 derniers bits ne rouvre rien", async () => {
+    await pool.query("delete from auth_throttle");
+    for (const ip of ["2001:db8:c1:1::1", "2001:db8:c1:1::2", "2001:db8:c1:1:ffff:ffff:ffff:ffff"])
+      expect((await inscrire(inscrit, { email: EMAIL }, ip)).status, ip).toBe(409);
+    const email = adresse("ipv6");
+    const bloque = await inscrire(inscrit, { email }, "2001:db8:c1:1:abcd::9");
+    expect(bloque.status).toBe(429);
+    // Le /64 voisin est un autre abonné.
+    expect((await inscrire(inscrit, { email }, "2001:db8:c1:2::1")).status).toBe(200);
   });
 
   it("inscription : le plafond du jour, compté sur `inscrit_le`, pour toute la plateforme → 429", async () => {

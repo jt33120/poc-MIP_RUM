@@ -635,7 +635,6 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
       comptes: { admin: "interdit", plateforme: "ok" },
       sante: { admin: "interdit", plateforme: "ok" },
       postes: { admin: "interdit", plateforme: "ok" },
-      nouveauSite: { admin: "interdit", plateforme: "creation" },
     };
     const ecarts: string[] = [];
     const verifier = async (nom: string, e: Enregistrement, profil: Profil, attendu: string, variante = "") => {
@@ -651,11 +650,6 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
       for (const profil of ["admin", "plateforme"] as const) await verifier(cle, e, profil, ATTENDU[cle]?.[profil] ?? "ok");
       expect((await servirRequete(requete(e, "viewer", { nom: "" }))).status, cle).toBe(403);
     }
-    // L'intégration d'un site : à l'administrateur de ce site ; hors de son périmètre, introuvable, comme absent.
-    const site = table.find((x) => x.operation.id === ECRANS_ADMIN.nouveauSite.id)!;
-    await verifier("nouveauSite?app=A", site, "admin", "integration", `app=${A}`);
-    await verifier("nouveauSite?app=B", site, "admin", "introuvable", `app=${B}`);
-    await verifier("nouveauSite?app=B", site, "plateforme", "integration", `app=${B}`);
     const client = table.find((x) => x.operation.id === ECRANS_ADMIN.client.id)!;
     const horsPerimetre = requete(client, "admin", { nom: "" });
     const res = await servirRequete(new Request(horsPerimetre.url.replace(`/customers/${A}`, `/customers/${B}`), { headers: horsPerimetre.headers }));
@@ -679,6 +673,40 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
     const sansJeton = new Headers(anonyme.headers);
     sansJeton.delete("authorization");
     expect((await servirRequete(new Request(anonyme.url, { headers: sansJeton }))).status).toBe(401);
+  });
+
+  it("l'ajout d'un site et son intégration (`/select/new`) : la création à la plateforme ; l'intégration à qui a le site, LECTEUR compris ; jamais à la démo", async () => {
+    // Écran de session depuis le 30/09/2026 : le compte d'une inscription est lecteur
+    // de son site, et reçoit sa clé ici. Le chargeur garde la règle ; ce test la tient.
+    const site = table.find((x) => x.operation.id === ECRANS_SESSION.nouveauSite.id)!;
+    const ecarts: string[] = [];
+    const etat = async (profil: Profil, app?: string) => {
+      const base = requete(site, profil, { nom: "" });
+      const url = app ? `${base.url}${base.url.includes("?") ? "&" : "?"}app=${app}` : base.url;
+      const res = await servirRequete(new Request(url, { headers: base.headers }));
+      if (res.status !== 200) return `${res.status}`;
+      return ((await res.json()) as { data: { etat: string; administrable?: boolean } }).data;
+    };
+    const attendus: [Profil, string | undefined, string, boolean?][] = [
+      ["viewer", undefined, "interdit"],
+      ["viewer", A, "integration", false],
+      ["viewer", B, "introuvable"],
+      ["admin", undefined, "interdit"],
+      ["admin", A, "integration", true],
+      ["admin", B, "introuvable"],
+      ["plateforme", undefined, "creation"],
+      ["plateforme", B, "integration", true],
+      ["demo", undefined, "interdit"],
+      ["demo", A, "interdit"],
+    ];
+    for (const [profil, app, voulu, administrable] of attendus) {
+      const r = await etat(profil, app);
+      const nom = `${profil} · ${app ?? "sans app"}`;
+      if (typeof r === "string") ecarts.push(`${nom} : statut ${r}`);
+      else if (r.etat !== voulu) ecarts.push(`${nom} : état ${r.etat}, attendu ${voulu}`);
+      else if (administrable !== undefined && r.administrable !== administrable) ecarts.push(`${nom} : administrable ${r.administrable}`);
+    }
+    expect(ecarts).toEqual([]);
   });
 
   it("les écritures (C6 → C9), de bout en bout : chaque commande aboutit pour qui a le droit, et s'inscrit au journal", async () => {

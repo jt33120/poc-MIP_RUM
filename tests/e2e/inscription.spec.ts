@@ -3,8 +3,9 @@
 //
 //   · le parcours : /inscription → le formulaire → la page d'installation du site
 //     créé, sa clé d'ingestion affichée UNE fois (remise par le formulaire, jamais
-//     par l'URL) ; en base, un compte administrateur de ce seul site et un site
-//     au débit plafonné ; connecté, /inscription renvoie à la console ;
+//     par l'URL), sans lien d'administration ; en base, un compte LECTEUR de ce
+//     seul site et un site au débit plafonné ; connecté, /inscription renvoie à la
+//     console ;
 //   · une session de DÉMO peut s'inscrire : sa borne « lecture seule » excepte
 //     /inscription, et le cookie du compte créé remplace le sien ;
 //   · un refus : le mot de passe trop court, refusé côté SERVEUR (l'action de la
@@ -12,8 +13,9 @@
 //     navigateur ne l'arrête pas, et dit sans qu'aucune saisie passe dans l'URL.
 //
 // Chaque test se présente sous sa propre adresse IP (`x-forwarded-for`, que la
-// console transmet comme Vercel le poserait) : le plafond de 3 tentatives par heure
-// et par IP ne bloque pas un second passage. Les comptes créés sont effacés.
+// console transmet comme Vercel le poserait), dans son propre /64 — le service
+// compte une IPv6 par son /64 : le plafond de 3 tentatives par heure ne bloque pas
+// un second passage. Les comptes créés sont effacés.
 import { expect, test, type Page } from "@playwright/test";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
@@ -27,9 +29,9 @@ const adresse = () => `e2e-inscription-${hex(4)}@mip-rum.local`;
 const crees: string[] = [];
 const DEMO = `e2e-inscription-demo-${hex(3)}@mip-rum.local`;
 
-/** Une IPv6 de documentation (2001:db8::/32), neuve à chaque test. */
+/** Une IPv6 de documentation (2001:db8::/32), dans un /64 neuf à chaque test. */
 async function sousUneIpNeuve(page: Page) {
-  await page.setExtraHTTPHeaders({ "x-forwarded-for": `2001:db8::${hex(2)}:${hex(2)}` });
+  await page.setExtraHTTPHeaders({ "x-forwarded-for": `2001:db8:${hex(2)}:${hex(2)}::1` });
 }
 
 async function remplir(page: Page, champs: { email: string; mot_de_passe: string }) {
@@ -67,10 +69,12 @@ test("inscription : compte et site en une fois, la clé affichée une fois sur l
   const cle = (await page.getByTestId("generated-key").textContent())!;
   // La clé ne passe jamais par l'URL.
   expect(page.url()).not.toContain(cle);
+  // Un lecteur : aucun lien vers l'administration (fiche du projet, domaines).
+  await expect(page.locator('a[href^="/admin/"]')).toHaveCount(0);
 
-  // En base : administrateur de CE site seul, et un site au débit plafonné.
+  // En base : LECTEUR de CE site seul, et un site au débit plafonné.
   const compte = (await pool.query("select role, apps, inscrit_le from console_user where email = $1", [email])).rows[0];
-  expect(compte).toMatchObject({ role: "admin", apps: [app] });
+  expect(compte).toMatchObject({ role: "viewer", apps: [app] });
   expect(compte.inscrit_le).not.toBeNull();
   const site = (await pool.query("select allowed_origins, debit_max_min, created_by from app_registry where app_id = $1", [app])).rows[0];
   expect(site).toEqual({ allowed_origins: ["https://boutique-e2e.exemple.fr"], debit_max_min: 120, created_by: email });

@@ -3,7 +3,9 @@
 // (1) formulaire minimal nom + adresse ; (2) l'intégration en deux méthodes — le SDK
 // embarqué (site dont on contrôle le code) OU un favori de test (n'importe quelle
 // page, pour simuler un parcours) — puis un guide de simulation et la vérification en
-// direct. Création réservée aux administrateurs.
+// direct. Création réservée à l'administrateur de la plateforme ; l'intégration, à
+// quiconque a le site dans son périmètre — le LECTEUR d'une inscription en libre-service
+// y reçoit sa clé (30/09/2026) —, les liens d'administration à ses seuls administrateurs.
 //
 // Vocabulaire aligné sur la présentation (recette du 26/09/2026) : « SDK embarqué »
 // et « extension navigateur », « favori de test » plutôt que « bookmarklet », sans
@@ -11,7 +13,7 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { ECRANS_ADMIN } from "@mip/console-contract";
+import { ECRANS_SESSION } from "@mip/console-contract";
 import { CopyBlock } from "@/components/CopyBlock";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -75,8 +77,8 @@ const MODES = [
 export default async function AddSite({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/projets.ts`, C9) : le formulaire à la plateforme ;
-  // l'intégration d'un site à ses administrateurs. Hors de là, retour aux projets.
-  const ecran = await chargerEcran(ECRANS_ADMIN.nouveauSite, chargerNouveauSite, sp);
+  // l'intégration d'un site à qui l'a dans son périmètre. Hors de là, retour aux projets.
+  const ecran = await chargerEcran(ECRANS_SESSION.nouveauSite, chargerNouveauSite, sp);
   if (ecran.etat === "sans_session") redirect("/login");
   if (ecran.etat === "interdit") redirect("/select");
   if (ecran.etat === "introuvable") redirect("/select/new");
@@ -226,7 +228,7 @@ async function Integration({
 }) {
   // Domaines observés par l'extension (dérivés des origines CORS de l'app), avec
   // leur statut réel dans le registre extension_scope : lus par le chargeur.
-  const { app: appId, mode, client: customer, sonde: probe, domaines: extensionDomains } = ecran;
+  const { app: appId, mode, client: customer, sonde: probe, domaines: extensionDomains, administrable } = ecran;
   const status = deriveStatus(probe);
   // La clé d'API, juste après la création : rendue au formulaire de l'étape 1 et
   // remise ici (C9c) — le bandeau l'affiche, le bookmarklet et les recettes des
@@ -307,6 +309,7 @@ async function Integration({
         <ExtensionConfig
           appId={appId}
           domains={extensionDomains}
+          administrable={administrable}
           storeUrl={process.env.CHROME_STORE_URL ?? null}
           updateUrl={process.env.EXTENSION_UPDATE_URL ?? null}
         />
@@ -336,10 +339,16 @@ async function Integration({
               )}
               Une clé posée dans la page est lisible par tout visiteur : elle identifie le projet, elle ne
               protège rien. Pour en générer une nouvelle :{" "}
-              <Link href={`/admin/customers/${encodeURIComponent(appId)}`} className="text-accent-ink underline-offset-2 hover:underline">
-                fiche du projet
-              </Link>
-              .
+              {administrable ? (
+                <>
+                  <Link href={`/admin/customers/${encodeURIComponent(appId)}`} className="text-accent-ink underline-offset-2 hover:underline">
+                    fiche du projet
+                  </Link>
+                  .
+                </>
+              ) : (
+                <>demandez-la à l&apos;administrateur du projet.</>
+              )}
             </p>
             {voie === "directe" && (
               <p className="mt-2 text-xs leading-relaxed text-ink-soft" data-testid="voie-directe">
@@ -409,9 +418,15 @@ async function Integration({
         </div>
         <p className="mt-2 text-xs text-ink-soft">
           Injection du code de suivi sans toucher au code du site : le guide d&apos;intégration de la{" "}
-          <Link href={`/admin/customers/${encodeURIComponent(appId)}`} className="text-accent-ink underline-offset-2 hover:underline">
-            fiche du projet
-          </Link>
+          {administrable ? (
+            <Link href={`/admin/customers/${encodeURIComponent(appId)}`} className="text-accent-ink underline-offset-2 hover:underline">
+              fiche du projet
+            </Link>
+          ) : (
+            <Link href={`/installer?app=${encodeURIComponent(appId)}`} className="text-accent-ink underline-offset-2 hover:underline">
+              page Installer
+            </Link>
+          )}
           . Application mobile React Native : un SDK dédié existe, sur demande (il n&apos;est pas encore publié).
         </p>
       </section>
@@ -479,11 +494,14 @@ const GH_DOC = DOC_DEPLOIEMENT_EXTENSION;
 function ExtensionConfig({
   appId,
   domains,
+  administrable,
   storeUrl,
   updateUrl,
 }: {
   appId: string;
   domains: { host: string; registered: boolean }[];
+  /** Les domaines se gèrent à l'administration : le lien n'est montré qu'à qui peut la suivre. */
+  administrable: boolean;
   storeUrl: string | null;
   updateUrl: string | null;
 }) {
@@ -541,9 +559,13 @@ function ExtensionConfig({
             Aucun domaine détecté depuis l&apos;URL — ajoutez-le dans la gestion des domaines ci-dessous.
           </p>
         )}
-        <Link href="/admin/extension-scope" className="mt-3 inline-block text-xs font-medium text-accent-ink underline-offset-2 hover:underline">
-          Gérer les domaines observés →
-        </Link>
+        {administrable ? (
+          <Link href="/admin/extension-scope" className="mt-3 inline-block text-xs font-medium text-accent-ink underline-offset-2 hover:underline">
+            Gérer les domaines observés →
+          </Link>
+        ) : (
+          <p className="mt-3 text-xs text-ink-soft">Les domaines observés sont gérés par l&apos;administrateur du projet.</p>
+        )}
       </section>
 
       {/* Voie A — poste individuel : Store (1 clic) ou .zip (dès maintenant). */}

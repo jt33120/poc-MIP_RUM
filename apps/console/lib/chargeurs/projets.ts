@@ -5,13 +5,20 @@
 // domaines, anomalie en cours), en trois requêtes pour toute la liste. Écran de
 // SESSION sans portée (`ECRANS_SESSION`) : on le visite avant d'avoir choisi une app.
 //
-// `/select/new` : l'assistant d'ajout d'un site. Écran d'ADMINISTRATION. Sans
-// `?app=`, le formulaire de création (la plateforme seule, comme la commande) ; avec,
-// l'intégration du site : son état (sonde d'intégration) et, en mode extension, les
-// domaines observés — chacun avec son statut réel dans le registre.
+// `/select/new` : l'assistant d'ajout d'un site. Écran de SESSION (depuis le
+// 30/09/2026 ; d'administration avant). Sans `?app=`, le formulaire de création (la
+// plateforme seule, comme la commande) ; avec, l'intégration du site : son état (sonde
+// d'intégration) et, en mode extension, les domaines observés — chacun avec son
+// statut réel dans le registre.
+//
+// L'intégration s'ouvre au LECTEUR du site : le compte d'une inscription en
+// libre-service l'est, et c'est ici qu'il reçoit sa clé, au sortir du formulaire. Il
+// n'y lit rien de plus que ce que `/installer` lui montre déjà — la configuration de
+// `configInstallation` (pas les notes ni l'auteur de la fiche), la sonde, les
+// domaines — et `administrable` retire de la page les liens d'administration.
 // L'hôte de la console (URL du SDK, de l'ingestion) reste à la page.
 import { projectsForUser } from "../project-liste";
-import { getCustomer, probeOnboarding } from "../queries-customers";
+import { configInstallation, probeOnboarding } from "../queries-customers";
 import { resolveExtensionScope } from "../queries-extension-scope";
 import { signauxProjets } from "../queries-projects";
 import type { Chargeur } from "./commun";
@@ -36,14 +43,16 @@ function hote(origine: string): string | null {
 
 export const chargerNouveauSite = (async (principal, sp) => {
   if (!principal) return { etat: "sans_session" } as const;
-  if (principal.role !== "admin" || principal.demo) return { etat: "interdit" } as const;
+  // Une démo ne crée rien et n'installe rien : elle regarde les projets de la vitrine.
+  if (principal.demo) return { etat: "interdit" } as const;
   const app = typeof sp.app === "string" && sp.app ? sp.app : null;
   // Le formulaire crée une application : la commande `creerSite` est à la plateforme.
-  // L'intégration d'un site existant, à tout administrateur de ce site.
-  if (!app) return principal.apps === null ? ({ etat: "creation" } as const) : ({ etat: "interdit" } as const);
+  if (!app) return principal.role === "admin" && principal.apps === null ? ({ etat: "creation" } as const) : ({ etat: "interdit" } as const);
+  // L'intégration d'un site existant : à qui l'a dans son périmètre, lecteur compris.
   if (principal.apps !== null && !principal.apps.includes(app)) return { etat: "introuvable" } as const;
-  const client = await getCustomer(app);
+  const client = await configInstallation(app);
   if (!client) return { etat: "introuvable" } as const;
+  const administrable = principal.role === "admin";
   const mode = sp.mode === "extension" ? "extension" : "sdk";
   const [sonde, domaines] = await Promise.all([
     probeOnboarding(app),
@@ -56,5 +65,5 @@ export const chargerNouveauSite = (async (principal, sp) => {
         )
       : Promise.resolve([] as { host: string; registered: boolean }[]),
   ]);
-  return { etat: "integration", app, mode, client, sonde, domaines } as const;
+  return { etat: "integration", app, mode, client, sonde, domaines, administrable } as const;
 }) satisfies Chargeur<unknown>;

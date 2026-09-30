@@ -108,7 +108,8 @@ export const CONNEXION = operation<Aucun, Aucun, Identifiants, SessionOuverte>("
 export const DEMO = operation<Aucun, Aucun, never, SessionOuverte>("auth.demo", "POST", "/v1/auth/demo-sessions");
 /**
  * L'inscription en libre-service (vitrine du 30/09/2026) : le compte ET son premier
- * site, en une fois. Le compte est administrateur de ce seul site ; le site a un
+ * site, en une fois. Le compte est LECTEUR de ce seul site (moindre privilège :
+ * la clé, les origines et les domaines restent à la plateforme) ; le site a un
  * débit de collecte plafonné. Les règles de saisie sont celles de `inscription.ts`,
  * que la console applique aussi avant d'appeler.
  */
@@ -314,8 +315,6 @@ export const ECRANS_ADMIN = Object.freeze({
   jetonsLecture: ecranAdmin("screens.adminReadTokens", "/v1/screens/admin/read-tokens"),
   domaines: ecranAdmin("screens.adminExtensionScopes", "/v1/screens/admin/extension-scopes"),
   sourcemaps: ecranAdmin("screens.adminSourcemaps", "/v1/screens/admin/sourcemaps"),
-  /** L'assistant d'ajout d'un site (`/select/new`), et l'intégration d'un site avec `?app=`. */
-  nouveauSite: ecranAdmin("screens.adminNewSite", "/v1/screens/admin/new-site"),
   // C10 — les demandes RGPD d'une personne (`/admin/privacy`) : ce qu'elles couvriraient, avant d'agir.
   viePrivee: ecranAdmin("screens.adminPrivacy", "/v1/screens/admin/privacy"),
 });
@@ -328,6 +327,16 @@ export type CleEcranAdmin = keyof typeof ECRANS_ADMIN;
  */
 export const ECRANS_SESSION = Object.freeze({
   projets: operation<Aucun, ParametresEcran, never, unknown>("screens.projects", "GET", "/v1/screens/projects"),
+  /**
+   * L'assistant d'ajout d'un site (`/select/new`) et, avec `?app=`, l'intégration
+   * d'un site. Écran de SESSION depuis le 30/09/2026 : le compte d'une inscription
+   * en libre-service est LECTEUR de son site, et c'est ici qu'il reçoit sa clé. Le
+   * chargeur garde la règle : le formulaire de création à la plateforme seule,
+   * l'intégration à qui a le site dans son périmètre (hors démo).
+   * L'identifiant et le chemin gardent « admin » : console et service se déploient
+   * chacun de leur côté, et le même chemin sert pendant l'intervalle.
+   */
+  nouveauSite: operation<Aucun, ParametresEcran, never, unknown>("screens.adminNewSite", "GET", "/v1/screens/admin/new-site"),
 });
 export type CleEcranSession = keyof typeof ECRANS_SESSION;
 

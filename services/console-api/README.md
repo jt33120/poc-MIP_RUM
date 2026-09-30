@@ -68,7 +68,7 @@ Côté Vercel (C0b) : `CONSOLE_API_URL` (le domaine généré, en https), `CONSO
 |---|---|
 | `POST /v1/auth/sessions` | connexion par mot de passe : une **ligne** `console_session` et un jeton ES256 qui ne porte que son identifiant. Refus générique `identifiants_refuses` (un compte inconnu coûte le même bcrypt, contre un hachage factice) |
 | `POST /v1/auth/demo-sessions` | session de démonstration : `viewer`, périmètre `DEMO_USER_APPS`, **5 par heure et par IP** ; jamais l'IP au journal |
-| `POST /v1/auth/accounts` | inscription en libre-service : le compte (`admin` de son seul site) et son site (débit `INSCRIPTION_DEBIT_MAX_MIN`) en une transaction, la session ouverte et la clé d'ingestion rendue une fois ; **3 tentatives par heure et par IP**, `INSCRIPTIONS_PAR_JOUR` par 24 h |
+| `POST /v1/auth/accounts` | inscription en libre-service : le compte (`viewer` de son seul site : la clé, les origines et les domaines restent à la plateforme) et son site (débit `INSCRIPTION_DEBIT_MAX_MIN`) en une transaction, la session ouverte et la clé d'ingestion rendue une fois ; **3 tentatives par heure et par IP**, `INSCRIPTIONS_PAR_JOUR` par 24 h |
 | `DELETE /v1/auth/sessions/current` | déconnexion : la session est **révoquée** en base, le jeton ne vaut plus rien, tout de suite sur cette réplique, en 30 s sur l'autre |
 | `GET /v1/me` | le principal, relu en base : rôle et périmètre du compte, jamais du jeton |
 | `GET /v1/auth/methods` | les moyens de connexion offerts (SSO, démo) : la console montre ses boutons sans détenir la configuration |

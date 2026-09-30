@@ -56,6 +56,48 @@ export interface DebitAuth {
 
 const texte = (s: string) => new TextEncoder().encode(s);
 
+/**
+ * L'adresse qui porte un compteur par IP de l'inscription (30/09/2026) : une IPv4
+ * seule ; une IPv6 par son /64, le préfixe qu'un fournisseur attribue à UN abonné.
+ * Sans ce regroupement, un seul poste IPv6 dispose de 2^64 adresses, et chaque
+ * tentative aurait un compteur neuf. Une IPv4 mappée (`::ffff:1.2.3.4`, ou sa forme
+ * hexadécimale) redevient l'IPv4 qu'elle porte : la même personne, le même compteur.
+ * Une forme que la fonction ne sait pas lire est rendue telle quelle — elle a passé
+ * le contrôle de forme du pipeline, et reste une clé, simplement non regroupée.
+ */
+export function adresseDeDebit(ip: string): string {
+  const a = ip.trim().toLowerCase();
+  if (!a.includes(":")) return a;
+  const g = groupesIpv6(a);
+  if (!g) return a;
+  if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) {
+    return [g[6] >> 8, g[6] & 0xff, g[7] >> 8, g[7] & 0xff].join(".");
+  }
+  return `${g.slice(0, 4).map((x) => x.toString(16)).join(":")}::/64`;
+}
+
+/** Les huit groupes de 16 bits d'une IPv6 (forme complète, compressée, ou à IPv4 finale) ; `null` si illisible. */
+function groupesIpv6(a: string): number[] | null {
+  let s = a;
+  const v4 = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+  if (v4) {
+    const o = v4.slice(1).map(Number);
+    if (o.some((x) => x > 255)) return null;
+    s = `${s.slice(0, v4.index)}${((o[0] << 8) | o[1]).toString(16)}:${((o[2] << 8) | o[3]).toString(16)}`;
+  }
+  const moities = s.split("::");
+  if (moities.length > 2) return null;
+  const lire = (m: string) => (m ? m.split(":") : []);
+  const tete = lire(moities[0]);
+  const queue = moities.length === 2 ? lire(moities[1]) : [];
+  const manquants = 8 - tete.length - queue.length;
+  // Sans « :: », huit groupes exactement ; avec, il en remplace au moins un.
+  if (moities.length === 1 ? manquants !== 0 : manquants < 1) return null;
+  const tous = [...tete, ...Array<string>(moities.length === 2 ? manquants : 0).fill("0"), ...queue];
+  if (tous.some((x) => !/^[0-9a-f]{1,4}$/.test(x))) return null;
+  return tous.map((x) => parseInt(x, 16));
+}
+
 export async function creerDebitAuth(secretClient: string): Promise<DebitAuth> {
   const materiau = await crypto.subtle.importKey("raw", texte(secretClient) as BufferSource, "HKDF", false, ["deriveKey"]);
   const cleHmac = await crypto.subtle.deriveKey(

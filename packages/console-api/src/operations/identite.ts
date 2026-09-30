@@ -29,7 +29,7 @@ import {
 } from "@mip/console-contract";
 import type { Trousseau } from "../cles";
 import type { Contexte, Lecteur, Transacteur } from "../contexte";
-import type { DebitAuth } from "../debit-auth";
+import { adresseDeDebit, type DebitAuth } from "../debit-auth";
 import { ErreurContrat } from "../erreurs";
 import { domaineAutorise, RefusSso, type ConfigOidc, type IdentiteSso, type Oidc } from "../oidc";
 import { servir, type Enregistrement } from "../politique";
@@ -299,12 +299,20 @@ export function operationsIdentite(d: DependancesIdentite): Enregistrement[] {
         if (!v.ok) throw new ErreurContrat("entree_invalide", `saisie refusée : ${v.champ}`, { details: { champ: v.champ } });
         const { email, nom, origine } = v.valeur;
 
-        // Trois tentatives par heure et par IP. Chacune compte, dans sa propre
-        // transaction : un refus (adresse déjà inscrite) ne l'annule pas, sans quoi
-        // sonder les adresses inscrites serait gratuit.
-        const cleIp = await d.debit.cle("inscription_ip", exigerIp(ctx));
+        // Trois tentatives par heure et par IP — une IPv6 comptée par son /64
+        // (`adresseDeDebit`). Chacune compte, dans sa propre transaction : un refus
+        // (adresse déjà inscrite) ne l'annule pas, sans quoi sonder les adresses
+        // inscrites serait gratuit.
+        const cleIp = await d.debit.cle("inscription_ip", adresseDeDebit(exigerIp(ctx)));
         await refuserSiBloque(d, [cleIp]);
         await d.transacteur.transaction((c) => d.debit.compter(c, cleIp, "inscription_ip"));
+
+        // L'adresse déjà inscrite se dit AVANT le hachage : le 409 la dit de toute
+        // façon, inutile de payer un bcrypt pour la dire. Lecture légère, hors verrou ;
+        // la vérification qui fait foi reste dans la transaction (deux inscriptions de
+        // la même adresse au même instant).
+        const deja = await d.db.query("select 1 from console_user where email = $1", [email]);
+        if (deja.rows.length) throw new ErreurContrat("conflit", "un compte porte déjà cette adresse");
 
         const hache = await bcrypt(() => regles.hacherMotDePasse(ctx.corps.mot_de_passe));
         // La clé d'ingestion : le format de la console (`mip_` + 32 hex), dont on ne
@@ -343,10 +351,14 @@ export function operationsIdentite(d: DependancesIdentite): Enregistrement[] {
           }
           if (app === null) throw new ErreurContrat("conflit", "identifiant de site indisponible, réessayer");
 
-          // Administrateur de son SEUL site : jamais la portée plateforme (`apps` nul).
+          // LECTEUR de son SEUL site (moindre privilège, 30/09/2026) : ni la portée
+          // plateforme (`apps` nul), ni l'administration du site — un essai n'a besoin
+          // ni de déclarer des domaines à l'extension, ni de réactiver un site, ni de
+          // sondes ou de canaux vers des cibles de son choix. La clé, les origines et
+          // les domaines restent à la plateforme.
           const cree = await c.query<{ id: string }>(
             `insert into console_user (email, password_hash, role, apps, active, inscrit_le, last_login_at)
-             values ($1, $2, 'admin', $3, true, now(), now()) on conflict (email) do nothing returning id::text`,
+             values ($1, $2, 'viewer', $3, true, now(), now()) on conflict (email) do nothing returning id::text`,
             [email, hache, [app]],
           );
           const compte = cree.rows[0];

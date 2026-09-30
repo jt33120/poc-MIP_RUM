@@ -212,10 +212,12 @@ modification ni redistribution.
   rate limiting durable, logs structurés avec **redaction des secrets**.
 - **Cloisonnement multi-tenant** : scoping `app_id` + RBAC (renforcement P0 #5 à venir).
 - **Inscription en libre-service** (30/09/2026, migration-v107 ; fermée tant que
-  `INSCRIPTIONS_PAR_JOUR` vaut 0 sur `console-api`) : un visiteur crée un compte **administrateur
-  d'un seul site**, créé avec lui — jamais la portée plateforme. Plafonnée : 3 tentatives par heure
-  et par adresse IP (réduite à une empreinte HMAC, compteur `inscription_ip`, comme la connexion),
-  `INSCRIPTIONS_PAR_JOUR` sur 24 h pour toute la plateforme, et une collecte limitée pour le site
+  `INSCRIPTIONS_PAR_JOUR` vaut 0 sur `console-api`) : un visiteur crée un compte **lecteur d'un
+  seul site**, créé avec lui — ni la portée plateforme, ni l'administration du site : la clé, les
+  origines et les domaines de l'extension restent à la plateforme. Plafonnée : 3 tentatives par heure
+  et par adresse IP (une IPv6 comptée par son /64 ; réduite à une empreinte HMAC, compteur
+  `inscription_ip`, comme la connexion), `INSCRIPTIONS_PAR_JOUR` sur 24 h pour toute la
+  plateforme, et une collecte limitée pour le site
   (`app_registry.debit_max_min`, 120 événements par minute par défaut). Ce qui est gardé : l'adresse
   e-mail, le haché bcrypt du mot de passe, la **date d'inscription** (`console_user.inscrit_le`), la
   ligne d'audit `auth.signup` ; aucun tiers nouveau (pas d'e-mail de confirmation).
