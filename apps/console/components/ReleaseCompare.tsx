@@ -212,8 +212,8 @@ function EnTete({ role, stats, href }: { role: "A" | "B"; stats: ReleaseStats; h
   );
 }
 
-/** Teinte de la pastille d'un verdict affirmé (jeton de remplissage, suit le mode sombre). */
-const TEINTE_PASTILLE = { good: "text-good", "needs-improvement": "text-warn", poor: "text-bad" } as const;
+/** Teinte de la pastille d'un verdict affirmé : le jeton de TEXTE (4,5:1), qui suit le mode sombre. */
+const TEINTE_PASTILLE = { good: "text-good-ink", "needs-improvement": "text-warn-ink", poor: "text-bad-ink" } as const;
 
 /** Libellés courts de la case : la colonne est étroite, la fenêtre écrit les longs. */
 const COURT: Record<string, string> = { sessions: "Sessions", lcp: "LCP", inp: "INP", cls: "CLS", erreurs: "En erreur" };

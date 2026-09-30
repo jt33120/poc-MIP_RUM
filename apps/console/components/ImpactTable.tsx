@@ -150,11 +150,15 @@ function teinte(v: VerdictVital | null): Rating | null {
   return v?.kind === "etabli" ? v.rating : null;
 }
 
-/** Teinte de la pastille (jeton de remplissage, qui suit le mode sombre). */
+/**
+ * Teinte de la pastille : le jeton de TEXTE du verdict (`-ink`, 4,5:1 sur le fond, qui
+ * suit le mode sombre). La forme est un caractère : le vert de remplissage n'y tenait
+ * que 3,8:1, sous le seuil d'un texte (axe, e2e `theme-contraste`).
+ */
 const TEINTE_PASTILLE: Record<Rating, string> = {
-  good: "text-good",
-  "needs-improvement": "text-warn",
-  poor: "text-bad",
+  good: "text-good-ink",
+  "needs-improvement": "text-warn-ink",
+  poor: "text-bad-ink",
 };
 
 /**
