@@ -1,5 +1,5 @@
-// PageHeader — le surtitre dit la catégorie, sauf s'il redit le titre (recette du
-// 26/09/2026 : « Explorer » écrit quatre fois en haut de l'Explorer).
+// PageHeader — le titre seul (recette du 30/09/2026) : ni surtitre, qui redisait la
+// catégorie allumée dans la barre latérale, ni phrase-question sous le titre.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,15 +11,15 @@ vi.mock(NAVIGATION, () => ({ usePathname: () => "/explorer" }));
 
 const { PageHeader } = await import("@/components/PageHeader");
 
-describe("PageHeader — surtitre", () => {
-  it("un surtitre qui redit le titre n'est pas écrit", () => {
-    const html = renderToStaticMarkup(<PageHeader title="Explorer" />);
-    expect(html.match(/Explorer/gi)).toHaveLength(1);
+describe("PageHeader — le titre seul", () => {
+  it("n'écrit pas la catégorie : la barre latérale la dit", () => {
+    const html = renderToStaticMarkup(<PageHeader title="Pages" domain="perf" />);
+    expect(html).toContain("Pages");
+    expect(html).not.toContain("Performance");
   });
 
-  it("un surtitre qui dit autre chose reste", () => {
-    const html = renderToStaticMarkup(<PageHeader title="Pages" domain="perf" />);
-    expect(html).toContain("Performance");
-    expect(html).toContain("Pages");
+  it("n'écrit pas la phrase-question", () => {
+    const html = renderToStaticMarkup(<PageHeader title="Vue d'ensemble" sub="Les vrais visiteurs vont-ils bien ?" />);
+    expect(html).not.toContain("visiteurs");
   });
 });

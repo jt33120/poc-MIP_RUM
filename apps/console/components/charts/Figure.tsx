@@ -213,8 +213,14 @@ export function Figure({
       <div role="figure" aria-labelledby={titreId} className="min-w-0">
         {zone}
       </div>
-      {lecture && <p className="mt-3 text-xs leading-relaxed text-ink-soft">{lecture}</p>}
-      {methode && !etat && <MethodeRepliee>{methode}</MethodeRepliee>}
+      {/* Recette du 30/09/2026 : la phrase de lecture ne s'affiche plus sous le dessin,
+          elle ouvre le repli « Méthode » — la figure parle par ses chiffres et ses axes. */}
+      {(lecture || (methode && !etat)) && (
+        <MethodeRepliee>
+          {lecture && <p>{lecture}</p>}
+          {methode && !etat && <div className={lecture ? "mt-2" : undefined}>{methode}</div>}
+        </MethodeRepliee>
+      )}
       {alternative && !etat && <TableAlternative alternative={alternative} titre={titreAlternative} />}
     </section>
   );

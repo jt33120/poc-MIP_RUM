@@ -257,6 +257,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             props: {
               label: "Sessions commencées",
               source: SOURCE_TRAFIC,
+              categorie: "Navigateur · trafic",
+              grapheDebuts: debutsSeaux.map((t) => new Date(t).toISOString()),
+              titreAxeY: "sessions commencées par tranche",
               valeur: engagement.data.sessions_started,
               format: "count",
               sensMeilleur: "neutre",
@@ -283,6 +286,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             props: {
               label: "Pages vues",
               source: SOURCE_TRAFIC,
+              categorie: "Navigateur · trafic",
+              grapheDebuts: debutsSeaux.map((t) => new Date(t).toISOString()),
+              titreAxeY: "pages vues par tranche",
               valeur: stats.data.pageviews,
               format: "count",
               sensMeilleur: "neutre",
@@ -303,6 +309,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             props: {
               label: "Occurrences d'erreurs pour 100 pages vues",
               source: SOURCE_ERREURS,
+              categorie: "Navigateur · erreurs",
+              grapheDebuts: vues.ok ? vues.data.map((v) => v.bucket) : undefined,
+              titreAxeY: "erreurs pour 100 pages vues",
               valeur: ratioPour100(erreurs.data.navigateur, stats.data.pageviews),
               raisonNull: RAISON_AUCUNE_VUE,
               format: "pour100",
@@ -362,6 +371,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       props: {
         label: titre,
         source: SOURCE_VITAL[nom],
+        categorie: CATEGORIE_VITAL[nom],
+        grapheDebuts: !modeRelease && serieLue.ok ? serieLue.data.map((p) => p.bucket) : undefined,
+        titreAxeY: `${nom} au 75ᵉ centile${nom === "CLS" ? " (sans unité)" : ""}`,
         valeur: courant?.p75 ?? null,
         raisonNull: `aucune mesure ${nom} sur ${modeRelease && releases.ok ? `la release ${releases.relB}, ` : ""}${period.label}`,
         format,
@@ -805,21 +817,21 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               {/* Recette du 30/09/2026 : les mesures RANGÉES PAR SOURCE, chaque groupe
                   nommant d'où viennent ses chiffres ; une tuile ne montre que sa valeur
                   et son unité, le reste s'ouvre au survol. */}
-              {blocs.trafic && (
-                <SectionErreur titre="Trafic">
-                  <div className="grid min-w-0 gap-3 sm:grid-cols-[2fr_1fr]">
-                    <GroupeMesures titre="Trafic" source="SDK navigateur" tuiles={tuilesTrafic.filter((t) => t.cle !== "erreurs")} colonnes="grid-cols-2" />
-                    <GroupeMesures titre="Erreurs" source="SDK navigateur" tuiles={tuilesTrafic.filter((t) => t.cle === "erreurs")} colonnes="grid-cols-1" />
-                  </div>
-                </SectionErreur>
-              )}
-              {blocs.vitals && (
-                <SectionErreur titre="Web Vitals">
+              {/* Recette du 30/09/2026 : UNE grille régulière, cases égales, rangées par
+                  source (trafic, erreurs, Core Web Vitals, rendu, réseau et serveur). Une
+                  case = une valeur ; un clic ouvre sa fenêtre (graphique, détail, source). */}
+              {(blocs.trafic || blocs.vitals) && (
+                <SectionErreur titre="Mesures">
                   <div className="min-w-0">
-                    <div className="grid min-w-0 gap-3 sm:grid-cols-[3fr_1fr_1fr]">
-                      <GroupeMesures titre="Core Web Vitals" source="navigateur · p75" tuiles={tuilesVitaux.filter((t) => ["LCP", "INP", "CLS"].includes(t.cle))} colonnes="grid-cols-3" />
-                      <GroupeMesures titre="Rendu" source="navigateur · p75" tuiles={tuilesVitaux.filter((t) => t.cle === "FCP")} colonnes="grid-cols-1" />
-                      <GroupeMesures titre="Réseau et serveur" source="navigateur · p75" tuiles={tuilesVitaux.filter((t) => t.cle === "TTFB")} colonnes="grid-cols-1" />
+                    <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4" data-testid="grille-mesures">
+                      {[
+                        ...(blocs.trafic ? tuilesTrafic : []),
+                        ...(blocs.vitals ? tuilesVitaux : []),
+                      ].map((t) => (
+                        <div key={t.cle} className="flex min-w-0 flex-col" data-testid={`tuile-${t.cle}`}>
+                          {"echec" in t ? <EchecLecture compact titre={t.titre} /> : <KpiTile {...t.props} compact epure />}
+                        </div>
+                      ))}
                     </div>
                     {etatEchantillon && (
                       <div className="mt-3">
@@ -1213,34 +1225,18 @@ function fusionnerNotes(notes: readonly string[]): string {
  * compactes (spec A2 § 4) : une ligne sous le chiffre, le détail en infobulle — la
  * tuile LCP empilait six lignes (283 px) et poussait le hero sous le pli.
  */
-/**
- * Un groupe de mesures d'une même source (recette du 30/09/2026) : son nom, sa
- * source en une ligne, puis des tuiles épurées — la valeur et l'unité seules.
- */
-function GroupeMesures({ titre, source, tuiles, colonnes }: { titre: string; source: string; tuiles: Tuile[]; colonnes: string }) {
-  if (tuiles.length === 0) return null;
-  return (
-    <section className="min-w-0" aria-label={titre}>
-      <h3 className="mb-1.5 flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft">
-        {titre}
-        <span className="font-normal normal-case tracking-normal text-ink-faint">{source}</span>
-      </h3>
-      <div className={`grid min-w-0 gap-2 ${colonnes}`}>
-        {tuiles.map((t) => (
-          <div key={t.cle} className="flex min-w-0 flex-col" data-testid={`tuile-${t.cle}`}>
-            {"echec" in t ? <EchecLecture compact titre={t.titre} /> : <KpiTile {...t.props} compact epure />}
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 /** Les sources écrites dans la fiche de chaque tuile : le capteur, l'API, la référence des seuils. */
 const SOURCE_TRAFIC =
   "SDK MIP RUM dans la page : une session par visite, une page vue par chargement ou changement de route.";
 const SOURCE_ERREURS =
   "SDK MIP RUM : événements error et unhandledrejection, échecs réseau et violations CSP, rapportés aux pages vues.";
+const CATEGORIE_VITAL: Record<VitalName, string> = {
+  LCP: "Navigateur · Core Web Vitals",
+  INP: "Navigateur · Core Web Vitals",
+  CLS: "Navigateur · Core Web Vitals",
+  FCP: "Navigateur · rendu",
+  TTFB: "Réseau et serveur",
+};
 const SEUILS_WEB_DEV = "Seuils : web.dev (Google), lus au 75ᵉ centile.";
 const SOURCE_VITAL: Record<VitalName, string> = {
   LCP: `Navigateur, bibliothèque web-vitals 5.3 (Largest Contentful Paint, W3C). ${SEUILS_WEB_DEV}`,

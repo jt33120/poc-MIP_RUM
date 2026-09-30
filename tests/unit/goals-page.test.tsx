@@ -247,7 +247,8 @@ describe("/goals — lectures", () => {
   it("lecture des conversions en échec : l'en-tête reste, chaque bloc qui en dépend le dit", async () => {
     goalConversions.mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:5433"));
     const html = await rendre();
-    expect(texte(html)).toContain("Quelle part des sessions atteint chaque objectif");
+    // L'en-tête reste : son titre (la phrase-question n'est plus écrite, 30/09/2026).
+    expect(html).toMatch(/<h1[^>]*>Conversions<\/h1>/);
     expect(html).toContain('data-echec="Chiffres clés"');
     expect(html).toContain('data-echec="Objectifs"');
     expect(html).not.toContain('data-testid="kpi-tile"');
