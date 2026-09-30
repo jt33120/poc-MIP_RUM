@@ -340,8 +340,13 @@ export function etapesLivraison(pool, { log = console, dispatch = null, echeance
  * scheduler la coupe (`SCHEDULER_DELIVERY=off`) quand le notifier prend le relais ;
  * le tick ne fait plus alors que DÉCIDER (alertes, SLO, uptime) — il écrit des
  * livraisons `queued`, le notifier les envoie.
+ *
+ * `sondes` (`creerSondes`, `./sondes.mjs`) : le canari de bout en bout. Son
+ * émission ouvre le tick, sa vérification (journal, registre des fenêtres,
+ * alerte d'absence) le ferme AVANT la livraison — l'alerte qu'elle lève part
+ * dans le même passage. Absent (tests, passage manuel) : aucune sonde.
  */
-export function travaux(pool, { log = console, dispatch = null, livraison = true } = {}) {
+export function travaux(pool, { log = console, dispatch = null, livraison = true, sondes = null } = {}) {
   /** Une étape SQL : l'appel `appel`, borné par le délai de l'étape `nom`. */
   const sql = (nom, appel) => {
     const delaiMs = delaiEtape(nom);
@@ -355,11 +360,15 @@ export function travaux(pool, { log = console, dispatch = null, livraison = true
       const l = etapesLivraison(pool, { log, dispatch, echeance });
       return executerEtapes(
         [
+          // Le canari part EN TÊTE : la base vient d'être réveillée par le bail.
+          ...(sondes ? [sondes.emettre] : []),
           // Évaluation des règles : insère les alert_event + livraisons 'queued'.
           sql("check_alerts", "check_alerts()"),
           ...(livraison ? [l.route] : []),
           sql("check_slo_burn", "check_slo_burn()"),
           { name: "uptime", run: () => sonderUptime(pool, log) },
+          // Vérification du canari, registre, alerte d'absence : avant la livraison.
+          ...(sondes ? [sondes.verifier] : []),
           ...(livraison ? [l.dispatch, l.reconcile].filter(Boolean) : []),
         ],
         log,

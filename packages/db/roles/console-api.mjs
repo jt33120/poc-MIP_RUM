@@ -71,6 +71,8 @@ export const MIP_CONSOLE = Object.freeze({
   tables: Object.freeze({
     // Les écrans : la télémétrie et ses agrégats, en lecture.
     alert_delivery: L,
+    // v103 : les fenêtres hors collecte, lues par la comparaison des périodes.
+    collecte_fenetre: L,
     deploy_marker: L,
     error_grouping_config: L,
     error_issue_alias: L,
@@ -82,6 +84,10 @@ export const MIP_CONSOLE = Object.freeze({
     route_cardinality: L,
     rum_rollup_hourly: L,
     scheduler_lease: L,
+    // v103 : le journal des sondes et les battements, lus par la carte « Santé de
+    // la chaîne de mesure » (`/admin/health`, `lib/queries-chaine.ts`).
+    sonde_battement: L,
+    sonde_passage: L,
     sourcemap: L,
     syn_snapshot: L,
     tenant_usage_daily: L,

@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { Fragment } from "react";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
+import { SanteChaine } from "@/components/SanteChaine";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { chargerSante } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
@@ -19,7 +20,7 @@ export default async function Health() {
   // (F02) — un tableau de bord « 0 alerte, 0 lot en attente » pendant une panne
   // serait le pire des mensonges sur une page de santé. Le bloc d'adresse, lui,
   // ne lit rien en base.
-  const { sante, identite: identity, causales: causal } = accesAdmin(await chargerEcran(ECRANS_ADMIN.sante, chargerSante, {}));
+  const { sante, identite: identity, causales: causal, chaine } = accesAdmin(await chargerEcran(ECRANS_ADMIN.sante, chargerSante, {}));
 
   // Où le capteur de la console POSTE réellement, résolu comme il l'est pour le
   // navigateur. Affiché parce que sa panne est SILENCIEUSE : NEXT_PUBLIC_RUM_ENDPOINT
@@ -84,6 +85,16 @@ export default async function Health() {
             </div>
           )}
         </div>
+      )}
+
+      {/* La preuve que la mesure passe, étage par étage (canari du scheduler, A3 § 2.6). */}
+      <h2 id="chaine" className="mb-2 scroll-mt-20 text-sm font-semibold text-ink">
+        Santé de la chaîne de mesure
+      </h2>
+      {chaine?.ok ? (
+        <SanteChaine brute={chaine.data.brute} cadenceMin={chaine.data.cadenceMin} maintenant={Date.now()} />
+      ) : (
+        <EchecLecture titre="Santé de la chaîne de mesure" />
       )}
 
       <h2 id="collecte" className="mb-2 scroll-mt-20 text-sm font-semibold text-ink">

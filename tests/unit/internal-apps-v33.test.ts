@@ -39,8 +39,10 @@ describe("compileScope — exclusion conditionnelle des apps internes (v33)", ()
     expect(params).toEqual([["mip-rum-console"]]);
   });
 
-  it("toggle « inclure les apps internes » -> aucune exclusion", () => {
-    expect(compileScope(requete("internal=1"), "m.app_id", binder().bind)).toBe("");
+  it("toggle « inclure les apps internes » -> plus d'exclusion des internes, les apps sonde restent dehors (v103)", () => {
+    expect(compileScope(requete("internal=1"), "m.app_id", binder().bind)).toBe(
+      " and not exists (select 1 from app_registry sondes where sondes.app_id = m.app_id and (to_jsonb(sondes) ->> 'sonde') = 'true')",
+    );
   });
 
   it("viewer scopé en vue « toutes » : ses apps autorisées, liées, jamais une exclusion seule", () => {

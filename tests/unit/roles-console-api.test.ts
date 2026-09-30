@@ -18,6 +18,17 @@ const SQL = V93.split("\n").filter((l) => !l.trimStart().startsWith("--")).join(
 const liste = (brut: string) =>
   brut.split(",").map((s) => s.trim().replace(/^'|'$/g, "")).filter((s) => s && !(s in SUPPRIMEES));
 const trie = (l: readonly string[]) => [...l].sort();
+/**
+ * Les tables accordées à `mip_console` APRÈS v93, par la migration qui les crée :
+ * v93 ne peut pas les nommer. Chacune est vérifiée dans SA migration (droit et
+ * policy), et retirée de la comparaison avec v93.
+ */
+const APRES_V93: Record<string, { version: number; privileges: string[] }> = {
+  collecte_fenetre: { version: 103, privileges: ["SELECT"] },
+  sonde_battement: { version: 103, privileges: ["SELECT"] },
+  sonde_passage: { version: 103, privileges: ["SELECT"] },
+};
+const sansApresV93 = <T>(o: Record<string, T>) => Object.fromEntries(Object.entries(o).filter(([t]) => !(t in APRES_V93)));
 
 type Spec = { nom: string; tables: Record<string, string[]>; colonnes: Record<string, Record<string, string[]>>; fonctions: string[]; reglages: Record<string, string>; limiteConnexions: number };
 
@@ -32,7 +43,7 @@ function tablesAccordees(role: string): Record<string, string[]> {
 describe("C13 — migration-v93 ↔ packages/db/roles/console-api.mjs", () => {
   for (const spec of ROLES as Spec[]) {
     it(`${spec.nom} : les privilèges de table, table par table`, () => {
-      expect(tablesAccordees(spec.nom)).toEqual(Object.fromEntries(Object.entries(spec.tables).map(([t, p]) => [t, trie(p)])));
+      expect(tablesAccordees(spec.nom)).toEqual(Object.fromEntries(Object.entries(sansApresV93(spec.tables)).map(([t, p]) => [t, trie(p)])));
     });
 
     it(`${spec.nom} : les privilèges par colonnes`, () => {
@@ -56,8 +67,17 @@ describe("C13 — migration-v93 ↔ packages/db/roles/console-api.mjs", () => {
 
   it("une policy est prévue pour chaque table accordée de chaque rôle, et aucune autre", () => {
     const [consoleRls, identiteRls] = [...SQL.matchAll(/c\.relname in \(([\s\S]+?)\)\s+loop/g)].map((m) => trie(liste(m[1])));
-    expect(consoleRls).toEqual(trie([...new Set([...Object.keys(MIP_CONSOLE.tables), ...Object.keys(MIP_CONSOLE.colonnes)])].filter((t) => !t.startsWith("v_"))));
+    expect(consoleRls).toEqual(trie([...new Set([...Object.keys(sansApresV93(MIP_CONSOLE.tables)), ...Object.keys(MIP_CONSOLE.colonnes)])].filter((t) => !t.startsWith("v_"))));
     expect(identiteRls).toEqual(trie(Object.keys(MIP_IDENTITY.tables)));
+  });
+
+  it("une table accordée après v93 l'est par sa migration, avec sa policy, et figure dans la liste", () => {
+    for (const [table, { version, privileges }] of Object.entries(APRES_V93)) {
+      const sql = readFileSync(join(SQL_DIR, `migration-v${version}.sql`), "utf8");
+      expect(sql, table).toContain(`grant ${privileges.join(", ").toLowerCase()} on ${table} to mip_console;`);
+      expect(sql, table).toMatch(new RegExp(`create policy mip_console_acces on ${table}\\b`));
+      expect(trie(MIP_CONSOLE.tables[table] ?? []), table).toEqual(trie(privileges));
+    }
   });
 
   it("les fonctions retirées à PUBLIC : celles de la liste, à mip_console seulement", () => {
