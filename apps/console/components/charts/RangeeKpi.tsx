@@ -41,10 +41,21 @@ export function BandeauComparaison({
 }) {
   const raisons = raisonsIncompletes(couvertures);
   if (raisons.length === 0) return null;
+  const phrase = `période précédente incomplète : ${raisons.join(" ; ")}.`;
+  // Recette du 30/09/2026 : une pastille, pas une phrase au-dessus de la rangée ; la
+  // raison au survol et pour les lecteurs d'écran.
   return (
-    <p role="note" data-testid="bandeau-comparaison" className="mb-2 text-xs text-ink-soft">
-      <span className="font-medium text-ink">Écarts non affichés</span> — période précédente incomplète :{" "}
-      {raisons.join(" ; ")}.
+    <p
+      role="note"
+      data-testid="bandeau-comparaison"
+      title={phrase}
+      className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-panel2 px-2.5 py-0.5 text-[11px] text-ink-soft"
+    >
+      <span aria-hidden className="text-ink-faint">
+        ⊘
+      </span>
+      <span className="font-medium text-ink">Écarts non affichés</span>
+      <span className="sr-only"> — {phrase}</span>
     </p>
   );
 }

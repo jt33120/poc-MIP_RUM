@@ -1142,7 +1142,11 @@ export function ThresholdSeries({
 
       {!apercu && (
       <>
-      <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft" data-testid="legende-serie">
+      {/* Recette du 30/09/2026 : une légende sur une ligne, en petit. Les séries et les
+          seuils gardent leur texte ; les repères secondaires (effectif faible, tranche en
+          cours, début partiel, collecte interrompue) s'écrivent court, le libellé complet
+          au survol et pour les lecteurs d'écran. */}
+      <ul className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-ink-soft" data-testid="legende-serie">
         {tracees.map((s) => (
           <li key={s.cle} className="flex min-w-0 items-center gap-1.5" data-serie={s.cle}>
             {/* Légende chiffrée et cliquable (spec A2 § 5.4) : clic = isoler, Alt-clic =
@@ -1165,9 +1169,10 @@ export function ThresholdSeries({
           </li>
         )}
         {episodes && episodes.length > 0 && (
-          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-episodes">
+          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-episodes" title="hors plage habituelle (détecté par calcul)">
             <PaveLegende couleur="rgb(var(--c-signal))" opacite={0.25} />
-            <span className="min-w-0 [overflow-wrap:anywhere]">hors plage habituelle (détecté par calcul)</span>
+            <span aria-hidden>hors plage</span>
+            <span className="sr-only">hors plage habituelle (détecté par calcul)</span>
           </li>
         )}
         {bandes && (
@@ -1187,27 +1192,31 @@ export function ThresholdSeries({
           </>
         )}
         {prep.faibleEffectif && (
-          <li className="flex items-center gap-1.5" data-testid="legende-faible-effectif">
+          <li className="flex items-center gap-1.5" data-testid="legende-faible-effectif" title={`moins de ${faibleSous} mesures`}>
             <PointCreuxLegende />
-            moins de {faibleSous} mesures
+            <span aria-hidden>&lt; {faibleSous} mes.</span>
+            <span className="sr-only">moins de {faibleSous} mesures</span>
           </li>
         )}
         {enCours && (
-          <li className="flex items-center gap-1.5" data-testid="legende-seau-en-cours">
+          <li className="flex items-center gap-1.5" data-testid="legende-seau-en-cours" title={periodeEnCours}>
             {barres.length > 0 ? <PaveEnCours id={barres[0].id} /> : <PointCreuxLegende />}
-            {periodeEnCours}
+            <span aria-hidden>en cours</span>
+            <span className="sr-only">{periodeEnCours}</span>
           </li>
         )}
         {premierPartiel && (
-          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-premier-partiel">
+          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-premier-partiel" title={premierPartiel.libelle}>
             <PointCreuxLegende />
-            <span className="min-w-0 [overflow-wrap:anywhere]">{premierPartiel.libelle}</span>
+            <span aria-hidden>début partiel</span>
+            <span className="sr-only">{premierPartiel.libelle}</span>
           </li>
         )}
         {prep.horsCollecte.length > 0 && (
-          <li className="flex items-center gap-1.5" data-testid="legende-hors-collecte">
+          <li className="flex items-center gap-1.5" data-testid="legende-hors-collecte" title="non mesuré (collecte interrompue)">
             <PaveHorsCollecte id={motifHorsCollecte} />
-            non mesuré (collecte interrompue)
+            <span aria-hidden>non mesuré</span>
+            <span className="sr-only">non mesuré (collecte interrompue)</span>
           </li>
         )}
       </ul>

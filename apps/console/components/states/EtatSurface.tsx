@@ -69,6 +69,7 @@ export function CadreEtat({
   ton,
   role,
   compact = false,
+  enLigne = false,
   testId,
   etat,
   className = "",
@@ -77,6 +78,11 @@ export function CadreEtat({
   ton: Ton;
   role: "status" | "note" | "alert";
   compact?: boolean;
+  /**
+   * Sans cadre (recette du 30/09/2026) : une ligne de texte discret, posée dans l'en-tête
+   * d'une figure vide plutôt qu'une grande boîte centrée sous un titre.
+   */
+  enLigne?: boolean;
   testId?: string;
   /** Valeur de `data-etat`, lue par les tests e2e. */
   etat?: string;
@@ -89,10 +95,26 @@ export function CadreEtat({
       role={role}
       data-testid={testId}
       data-etat={etat}
-      className={`rounded-lg border leading-relaxed ${taille} ${TONS[ton]} ${className}`}
+      className={
+        enLigne
+          ? `text-xs leading-snug text-ink-soft ${className}`
+          : `rounded-lg border leading-relaxed ${taille} ${TONS[ton]} ${className}`
+      }
     >
       {children}
     </div>
+  );
+}
+
+/**
+ * Le pictogramme d'une absence : un cercle barré, discret. Un CARACTÈRE et non un
+ * `<svg>` : un état vide ne dessine rien (les tests « aucun dessin » le vérifient).
+ */
+function IconeVide() {
+  return (
+    <span aria-hidden className="shrink-0 text-sm leading-none text-ink-faint">
+      ⊘
+    </span>
   );
 }
 
@@ -113,7 +135,7 @@ function probaConnue(p: number | null): p is number {
   return p != null && Number.isFinite(p) && p > 0 && p < 1;
 }
 
-export function EtatSurface({ etat, compact = false }: { etat: Etat; compact?: boolean }) {
+export function EtatSurface({ etat, compact = false, enLigne = false }: { etat: Etat; compact?: boolean; enLigne?: boolean }) {
   const role = ROLE_ETAT[etat.kind];
   const testId = `etat-${etat.kind}`;
 
@@ -130,16 +152,21 @@ export function EtatSurface({ etat, compact = false }: { etat: Etat; compact?: b
       );
 
     case "vide":
+      // Recette du 30/09/2026 : une ligne alignée à gauche, un pictogramme, plus de
+      // grande boîte centrée. La borne (ce que le zéro exclut) et le geste suivent.
       return (
-        <CadreEtat ton="neutre" role={role} compact={compact} testId={testId} etat={etat.kind} className="text-center">
-          <p>
-            {etat.masculin ? "Aucun" : "Aucune"} {etat.population} sur {etat.plage}.
+        <CadreEtat ton="neutre" role={role} compact={compact} enLigne={enLigne} testId={testId} etat={etat.kind}>
+          <p className="flex items-center gap-1.5">
+            <IconeVide />
+            <span>
+              {etat.masculin ? "Aucun" : "Aucune"} {etat.population} sur {etat.plage}.
+            </span>
           </p>
           {etat.borne && <p className="mt-1 text-ink-soft">{etat.borne}</p>}
           {etat.geste && (
             <Link
               href={etat.geste.href}
-              className="mt-2 inline-block font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+              className="mt-1 inline-block font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
             >
               {etat.geste.libelle}
             </Link>
@@ -171,7 +198,7 @@ export function EtatSurface({ etat, compact = false }: { etat: Etat; compact?: b
     case "non_collecte":
       // Jamais de borne ici : rien n'est collecté, donc rien n'est borné.
       return (
-        <CadreEtat ton="neutre" role={role} compact={compact} testId={testId} etat={etat.kind}>
+        <CadreEtat ton="neutre" role={role} compact={compact} enLigne={enLigne} testId={testId} etat={etat.kind}>
           <p>
             <strong className="font-semibold text-ink">Non collecté{NBSP}:</strong> {etat.manque}
           </p>

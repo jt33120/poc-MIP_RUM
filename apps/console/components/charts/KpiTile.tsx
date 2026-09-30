@@ -177,8 +177,10 @@ export function CadreTuile({
   compact?: boolean;
   children: ReactNode;
 }) {
+  // Compact : le même gabarit que la case épurée (30/09/2026), pour qu'une tuile texte
+  // (`KpiLibelle`) et une case chiffrée s'alignent dans la même rangée.
   const classes = compact
-    ? `relative flex h-full min-w-0 flex-col gap-0.5 rounded-lg border bg-panel p-3 shadow-card dark:shadow-none ${alerte ? "border-bad/50" : "border-line"}`
+    ? `relative flex h-full min-h-[6.5rem] min-w-0 flex-col justify-between gap-1 rounded-xl border bg-panel px-3.5 py-3 ${alerte ? "border-bad/50" : "border-line"}`
     : `card flex min-w-0 flex-col gap-1 p-4 ${alerte ? "border-bad/50" : ""}`;
   if (href) {
     return (
