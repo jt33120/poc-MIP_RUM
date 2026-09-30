@@ -25,13 +25,20 @@
 // (`lireVital`) : affirmé seulement s'il tient sur tout l'intervalle à 95 % de la
 // release. Et l'écart d'un TAUX s'écrit en points : « +46 % » sur 43,5 % → 63,6 %
 // se lisait comme une hausse de 46 points.
+//
+// SUR LA VUE D'ENSEMBLE, UNE CASE (recette du 30/09/2026) : `VignetteRelease` résume
+// la comparaison en quatre lignes chiffrées (A, B, écart), la pastille de verdict de
+// B quand il est affirmé ; un clic ouvre la comparaison entière ci-dessous, avec ses
+// effectifs, sa règle de choix, sa source et sa phrase de fenêtre.
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { FicheMesure } from "@/components/charts/FicheMesure";
 import { TableDefilante } from "@/components/TableDefilante";
+import { DessinVignette, EnteteVignette } from "@/components/vue-ensemble/Vignette";
 import { formater, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import type { VersionRow, VersionSource } from "@/lib/queries-deploys";
 import { relativeChange } from "@/lib/query-contract";
-import { RATING_CLASS, RATING_LABEL } from "@/lib/rating";
+import { FORME_RATING, RATING_CLASS, RATING_LABEL } from "@/lib/rating";
 import type { IntervalleP75 } from "@mip/stats/incertitude";
 import type { Intervalle } from "@mip/stats/types";
 import { fmtInstant } from "@/lib/format";
@@ -202,6 +209,70 @@ function EnTete({ role, stats, href }: { role: "A" | "B"; stats: ReleaseStats; h
         </span>
       )}
     </div>
+  );
+}
+
+/** Teinte de la pastille d'un verdict affirmé (jeton de remplissage, suit le mode sombre). */
+const TEINTE_PASTILLE = { good: "text-good", "needs-improvement": "text-warn", poor: "text-bad" } as const;
+
+/**
+ * La case de la Vue d'ensemble : A, B et l'écart, une ligne par mesure lue ; une
+ * release sans session l'écrit « — » (la fenêtre dit pourquoi). Le verdict de B n'est
+ * posé qu'affirmé sur tout l'intervalle — une pastille de forme et de couleur, le mot
+ * pour l'écran vocal ; sinon aucune couleur.
+ */
+export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
+  const { a, b, plage } = props;
+  const vide = (s: ReleaseStats) => s.sessions == null || s.sessions === 0;
+  const clsLu = a.cls_p75 !== undefined && b.cls_p75 !== undefined;
+  const lignes = MESURES.filter((m) => m.cle !== "cls" || clsLu);
+  const valeur = (m: Mesure, s: ReleaseStats) => (vide(s) && m.cle !== "sessions" ? "—" : formater(m.format, m.lire(s) ?? null));
+  return (
+    <FicheMesure
+      titre={`Release ${b.release} face à ${a.release}`}
+      ariaLabel={`Release ${b.release} face à ${a.release}, ${plage} : ${lignes
+        .map((m) => `${m.libelle} ${valeur(m, a)} puis ${valeur(m, b)}`)
+        .join(", ")} — ouvrir la comparaison`}
+      testId="vignette-release"
+      case={
+        <>
+          <EnteteVignette titre={`Release ${b.release} vs ${a.release}`} meta={plage} />
+          <DessinVignette>
+            <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-baseline gap-x-2 gap-y-0.5 text-[11px] tabular-nums">
+              <span />
+              <span className="truncate text-right text-[10px] text-ink-faint" title={a.release}>
+                A
+              </span>
+              <span className="truncate text-right text-[10px] text-ink-faint" title={b.release}>
+                B
+              </span>
+              <span className="text-right text-[10px] text-ink-faint">B / A</span>
+              {lignes.map((m) => {
+                const vb = m.lire(b) ?? null;
+                const verdict = m.vital && vb != null && !vide(b) ? verdictRelease(m.vital, vb, b) : null;
+                return (
+                  <span key={m.cle} className="contents">
+                    <span className="truncate text-ink-soft">{m.libelle}</span>
+                    <span className="text-right text-ink-soft">{valeur(m, a)}</span>
+                    <span className="flex items-baseline justify-end gap-1 font-semibold text-ink">
+                      {verdict?.kind === "etabli" && (
+                        <i className={`text-[8px] not-italic ${TEINTE_PASTILLE[verdict.rating]}`}>{FORME_RATING[verdict.rating]}</i>
+                      )}
+                      {valeur(m, b)}
+                    </span>
+                    <span className="text-right text-ink">{ecrireEcart(m.lire(a) ?? null, vb, m.format)}</span>
+                  </span>
+                );
+              })}
+            </span>
+          </DessinVignette>
+        </>
+      }
+    >
+      <div className="mt-3">
+        <ReleaseCompare {...props} />
+      </div>
+    </FicheMesure>
   );
 }
 

@@ -269,6 +269,8 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
   test("« Charge, erreurs et LCP » : trois panneaux, un axe chacun, le même nombre de seaux que le hero", async ({ page }) => {
     await login(page);
     await page.goto(ACCUEIL_F12, { waitUntil: "domcontentloaded" });
+    // 30/09/2026 : sur la page, un panneau compact ; les trois graphiques s'ouvrent en grand.
+    await page.getByTestId("vignette-charge").click();
     const figure = page.locator("#charge-erreurs-lcp");
     await expect(figure.locator('[role="img"]')).toHaveCount(3, { timeout: 15_000 });
     const panneaux = figure.locator('[data-testid="stacked-bars"], [data-testid="threshold-series"]');
@@ -328,7 +330,9 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
       await page.setViewportSize({ width: largeur, height: 900 });
       await login(page);
       await page.goto(ACCUEIL_F12, { waitUntil: "domcontentloaded" });
-      await expect(page.locator("#charge-erreurs-lcp .recharts-surface").first()).toBeVisible({ timeout: 15_000 });
+      // La page telle qu'elle s'affiche (30/09/2026) : vignettes et panneau compact, fenêtres fermées.
+      await expect(page.locator('[data-testid="vignette-LCP"] .recharts-surface').first()).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("vignette-charge")).toBeVisible();
       expect(await debordements(page), `${largeur} px`).toEqual([]);
     });
   }
@@ -433,10 +437,11 @@ test.describe("F13 — Vue d'ensemble : segments, release, angle mort, historiqu
     await page.goto(ACCUEIL_F13, { waitUntil: "domcontentloaded" });
     const angle = page.getByTestId("angle-mort");
     await expect(angle.getByTestId("kpi-valeur")).toHaveText("3", { timeout: 15_000 });
-    // La règle est la méthode de la tuile (son infobulle) ; plus de chemin du dépôt à l'écran.
-    await expect(angle.getByTestId("kpi-tile")).toHaveAttribute("title", /seuil Bon du LCP/);
+    // 30/09/2026 : une case qui s'ouvre ; la règle (sa méthode) et le lien vers la
+    // corrélation sont dans sa fenêtre. Plus de chemin du dépôt à l'écran.
+    await expect(angle.getByTestId("kpi-methode")).toContainText("seuil Bon du LCP");
     await expect(angle).not.toContainText("lib/rating.ts");
-    const tuile = new URL((await angle.getByTestId("kpi-tile").getAttribute("href"))!, consoleUrl);
+    const tuile = new URL((await angle.getByTestId("angle-mort-lien").getAttribute("href"))!, consoleUrl);
     expect(tuile.pathname).toBe("/correlation");
     expect(tuile.hash).toBe("#angles-morts");
     expect(tuile.searchParams.get("app")).toBe(APP_F13);
@@ -2301,7 +2306,8 @@ test.describe("F27 — Recette transverse du domaine performance", () => {
   // partir de l'événement de clic lui-même ; `locator.click()` échouerait sur le
   // point actif que recharts pose par-dessus au survol.
   const ZOOMS_F27 = [
-    { chemin: "/", serie: '#charge-erreurs-lcp [data-testid="panneau-lcp"]', figure: "Charge, erreurs et LCP (panneau LCP)" },
+    // Sur `/`, le graphique vit dans la fenêtre de sa vignette (30/09/2026) : on l'ouvre d'abord.
+    { chemin: "/", ouvrir: "vignette-charge", serie: '#charge-erreurs-lcp [data-testid="panneau-lcp"]', figure: "Charge, erreurs et LCP (panneau LCP)" },
     { chemin: "/pages", serie: '#figure-taches-longues [data-testid="threshold-series"]', figure: "tâches longues (blocage p75)" },
     { chemin: "/ux", serie: "#figure-inp-dans-le-temps", figure: "INP p75 dans le temps" },
     { chemin: "/experience", serie: '#satisfaction-dans-le-temps [data-testid="threshold-series"]', figure: "satisfaction dans le temps" },
@@ -2310,6 +2316,7 @@ test.describe("F27 — Recette transverse du domaine performance", () => {
     test(`P8 — ${zoom.chemin} : un point de « ${zoom.figure} » zoome sur son seau`, async ({ page }) => {
       await login(page);
       await ouvrirF27(page, zoom.chemin);
+      if (zoom.ouvrir) await page.getByTestId(zoom.ouvrir).click();
       const point = page.locator(`${zoom.serie} .recharts-line-dots circle`).first();
       await expect(point).toBeVisible({ timeout: 15_000 });
       await point.scrollIntoViewIfNeeded();

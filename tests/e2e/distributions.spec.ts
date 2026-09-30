@@ -182,6 +182,9 @@ test("découpage de `/` : tri=impact (B2 absent) est ignoré et signalé, l'ordr
 test("heatmap : aucune couleur de verdict ; une case ouvre son heure en instants UTC", async ({ page }) => {
   await login(page);
   await page.goto(ACCUEIL, { waitUntil: "domcontentloaded" });
+  // 30/09/2026 : sur la page, l'historique est une vignette ; la carte, case par case
+  // cliquable, s'ouvre dans sa fenêtre.
+  await page.getByTestId("vignette-historique").click();
   const heatmap = page.getByTestId("heatmap");
   await expect(heatmap).toBeVisible();
   const html = await heatmap.innerHTML();
