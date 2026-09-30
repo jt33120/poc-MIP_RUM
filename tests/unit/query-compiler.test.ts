@@ -227,7 +227,7 @@ describe("périmètre et apps internes", () => {
       " and not exists (select 1 from app_registry internes where internes.internal and internes.app_id = x.app_id)",
     );
     expect(params).toEqual([]);
-    // Apps internes incluses : seules les apps sonde (v99, le canari) restent dehors.
+    // Apps internes incluses : seules les apps sonde (v103, le canari) restent dehors.
     expect(compileScope(requete("internal=1"), "x.app_id", bind)).toBe(
       " and not exists (select 1 from app_registry sondes where sondes.app_id = x.app_id and (to_jsonb(sondes) ->> 'sonde') = 'true')",
     );
