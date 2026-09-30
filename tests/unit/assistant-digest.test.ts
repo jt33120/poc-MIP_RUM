@@ -148,6 +148,11 @@ describe("condensé — valeurs écrites comme la case", () => {
     const lcp = d.faits.find((f) => f.cle === "tuile:LCP")!;
     expect(lcp.variation).toBeUndefined();
     expect(lcp.detail).toContain("variation non affichée : période précédente incomplète (rétention de 7 jours)");
+    // Une référence à zéro : pas de « +∞ % », la raison est écrite.
+    const zero = construireDigestVueEnsemble(
+      entrees({ cases: [{ cle: "sessions", titre: "Sessions", props: { label: "Sessions commencées", valeur: 12, format: "count", precedent: 0, reference: "vs 24 h précédentes" } }] }),
+    );
+    expect(zero.faits.find((f) => f.cle === "tuile:sessions")?.detail).toBe("variation non affichée : la valeur de référence est nulle sur 24 h précédentes");
   });
 });
 

@@ -230,7 +230,7 @@ function comparaison(p: ProprietesCase): { texte: string | null; pct?: number; v
     return { texte: `variation non affichée : période précédente incomplète (${p.couverturePrecedente.raison ?? "raison non lue"})` };
   }
   if (p.precedent === null || !Number.isFinite(p.precedent)) return { texte: `variation non affichée : pas de mesure sur ${sansVs(p.reference)}` };
-  if (p.precedent === 0) return { texte: `variation non affichée : la valeur de référence est nulle (${sansVs(p.reference)})` };
+  if (p.precedent === 0) return { texte: `variation non affichée : la valeur de référence est nulle sur ${sansVs(p.reference)}` };
   const faibleSous = p.couverture?.faibleSous ?? FAIBLE_SOUS_DEFAUT;
   const faible = (n: number | null | undefined) => n != null && n < faibleSous;
   if (faible(p.couverture?.n) || faible(p.couverturePrecedente?.n)) {
