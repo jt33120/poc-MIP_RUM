@@ -167,6 +167,8 @@ const JETON = genererJetonUpload() as { id: string; jeton: string; empreinte: st
 const JETON_DEPLOIEMENT = genererJetonUpload() as { id: string; jeton: string; empreinte: string };
 /** C11 — le domaine de l'extension rattaché à l'app A. */
 const DOMAINE_A = "parite-a.exemple.fr";
+/** 30/09/2026 — un second domaine de A, DÉSACTIVÉ : il n'autorise rien. */
+const DOMAINE_A_COUPE = "parite-a-coupe.exemple.fr";
 
 /**
  * Ce que les MIGRATIONS sèment elles-mêmes (apps `demo-app`, `gip-plateforme`… ;
@@ -220,6 +222,10 @@ async function amorcer(db: pg.Pool) {
     [JETON_DEPLOIEMENT.id, APP.a.id, JETON_DEPLOIEMENT.empreinte, AMORCE],
   );
   await db.query("insert into extension_scope (domain, app_id, created_at) values ($1, $2, $3)", [DOMAINE_A, APP.a.id, AMORCE]);
+  await db.query(
+    "insert into extension_scope (domain, app_id, active, created_at) values ($1, $2, false, $3)",
+    [DOMAINE_A_COUPE, APP.a.id, AMORCE],
+  );
   // Débit : l'app `debit` a DÉJÀ consommé sa minute, et les quatre suivantes —
   // les cas 429 tombent quelques secondes après l'amorce, mais peuvent chevaucher
   // un changement de minute entre les deux côtés, ou arriver sur un poste lent.
@@ -281,6 +287,20 @@ function traces(app: App, session: string, n: number) {
       attr("mip.identity.user_id", "alice@example.test"),
     ],
   });
+  return lot;
+}
+
+/**
+ * 30/09/2026 — le lot du SDK injecté par l'extension : SANS clé, et chaque span
+ * marqué `mip.collection_source = "extension"` (le marqueur est par span, jamais
+ * sur la resource : c'est ainsi que le SDK des postes équipés l'émet).
+ */
+function tracesExtension(app: App, session: string, n: number) {
+  const lot = traces({ id: app.id, cle: null }, session, n);
+  for (const span of lot.resourceSpans[0].scopeSpans[0].spans as Array<Record<string, any>>) {
+    span.attributes = span.attributes.filter((a: { key: string }) => a.key !== "mip.collection_source");
+    span.attributes.push(attr("mip.collection_source", "extension"));
+  }
   return lot;
 }
 
@@ -1107,6 +1127,34 @@ const CAS: Cas[] = [
     nom: "extension : install_id qui n'est pas un UUID → 400",
     envoi: { chemin: "/api/extension/heartbeat", ...json({ install_id: "poste-42" }) },
     statut: 400,
+  },
+  // ── 30/09/2026 — l'extension SANS CLÉ : le domaine enregistré tient lieu de clé ──
+  // Même règle aux deux ports (`createPgAuth.checkApiKey`), et le registre de
+  // l'extension lu sur une VRAIE base : seul un domaine ACTIF de l'app autorise.
+  {
+    nom: "extension sans clé, depuis un domaine enregistré de l'app → 200",
+    envoi: { chemin: "/api/ingest/v1/traces", ...json(tracesExtension(APP.a, SESSION(30), 30), { origin: `https://${DOMAINE_A}` }) },
+    statut: 200,
+  },
+  {
+    nom: "extension sans clé, origine hors registre → 403",
+    envoi: { chemin: "/api/ingest/v1/traces", ...json(tracesExtension(APP.a, SESSION(31), 31), { origin: "https://ailleurs.exemple.fr" }) },
+    statut: 403,
+  },
+  {
+    nom: "extension sans clé, domaine enregistré mais DÉSACTIVÉ → 403",
+    envoi: { chemin: "/api/ingest/v1/traces", ...json(tracesExtension(APP.a, SESSION(32), 32), { origin: `https://${DOMAINE_A_COUPE}` }) },
+    statut: 403,
+  },
+  {
+    nom: "extension sans clé, domaine de A revendiqué pour B → 403",
+    envoi: { chemin: "/api/ingest/v1/traces", ...json(tracesExtension(APP.b, SESSION(33), 33), { origin: `https://${DOMAINE_A}` }) },
+    statut: 403,
+  },
+  {
+    nom: "snippet sans clé, depuis le domaine enregistré de l'app → 403 (rien ne change pour lui)",
+    envoi: { chemin: "/api/ingest/v1/traces", ...json(traces({ id: APP.a.id, cle: null }, SESSION(34), 34), { origin: `https://${DOMAINE_A}` }) },
+    statut: 403,
   },
   {
     nom: "extension : battement de plus de 4 Kio → 413",
