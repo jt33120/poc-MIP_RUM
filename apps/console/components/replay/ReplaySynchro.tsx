@@ -8,7 +8,8 @@
 // lien « Replay » suivi (`tab=replay`, `at`) est ce geste, à toutes les largeurs.
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReplayPlayer, { type CommandeLecteur } from "./ReplayPlayer";
-import { TEXTE_COUVERTURE, ligneActive, type LigneSynchro, type Marqueur } from "@/lib/replay-synchro";
+import { CouvertureRejeu } from "./CouvertureRejeu";
+import { ligneActive, type LigneSynchro, type Marqueur } from "@/lib/replay-synchro";
 
 export type { Marqueur } from "@/lib/replay-synchro";
 
@@ -100,8 +101,8 @@ export function ReplaySynchro({
     return <ReplayPlayer ref={lecteur} sessionId={sessionId} atMs={atMs} marqueurs={marqueurs} onTemps={onTemps} />;
   }
   return (
-    <div className="card min-w-0 p-4 sm:p-6" data-testid="replay-attente" data-attente={monte === null ? "decision" : "geste"}>
-      <p className="mb-3 text-xs leading-relaxed text-ink-soft">{TEXTE_COUVERTURE}</p>
+    <div className="card min-w-0 p-3" data-testid="replay-attente" data-attente={monte === null ? "decision" : "geste"}>
+      <CouvertureRejeu />
       {/* Un état, pas une décoration : `ink-soft`, jamais `ink-faint` (≈ 2,8:1, § 3.9). */}
       <p className={`py-6 text-center text-sm text-ink-soft ${avecGeste ? "" : "hidden sm:block"}`}>Chargement du replay…</p>
       {!avecGeste && (
@@ -109,7 +110,7 @@ export function ReplaySynchro({
           <button type="button" className="btn-accent" onClick={() => setMonte(true)}>
             Lancer le rejeu
           </button>
-          <p className="mt-2 text-xs text-ink-soft">
+          <p className="mt-2 text-[11px] text-ink-soft">
             Sur un petit écran, le lecteur ne se charge qu&apos;à votre demande : il télécharge tout l&apos;enregistrement
             (1 Mo compressé au plus).
           </p>

@@ -76,13 +76,13 @@ export function Deroule({
         </div>
       )}
       {visibles.length === 0 ? (
-        <p className="py-8 text-center text-sm text-ink-soft" data-testid="deroule-vide">
+        <p className="py-2 text-sm text-ink-soft" data-testid="deroule-vide">
           {items.length === 0
             ? "Aucun événement enregistré pour cette session"
             : "Aucun événement de cette nature dans cette session"}
         </p>
       ) : (
-        <ol className="min-w-0 space-y-5" data-testid="timeline">
+        <ol className="min-w-0 space-y-3" data-testid="timeline">
           {groupes.map((g, gi) => (
             // L'ANCRE D'UNE VUE EST PORTÉE PAR LE `li` : le récit « En bref »
             // (P*.9) vérifie que chaque lien désigne un `li#evt-N` de la
@@ -109,7 +109,7 @@ export function Deroule({
               )}
               {g.phases.length > 0 && <PhasesReseau phases={g.phases} ancre={ancre} />}
               {(g.actions.length > 0 || g.autres.length > 0) && (
-                <ol className="relative ml-2 mt-3 border-l-2 border-line">
+                <ol className="relative ml-2 mt-2 border-l-2 border-line">
                   {elementsDuGroupe(g).map((e, ei) =>
                     e.type === "ligne" ? (
                       <TimelineRow
@@ -129,7 +129,7 @@ export function Deroule({
                           instant={instantDe(e.entree.action)}
                         />
                         {e.entree.effets.length > 0 && (
-                          <li className="mb-4 ml-6 min-w-0" data-testid="effets-action">
+                          <li className="mb-2 ml-6 min-w-0" data-testid="effets-action">
                             <p className="mb-1 text-[11px] uppercase tracking-wider text-ink-faint">
                               Déclenché par cette action
                             </p>
@@ -194,7 +194,7 @@ function EnteteVue({
       // L'ancre `evt-N` reste sur le `li` du groupe (récit P*.9) ; la LIGNE que la tête
       // de lecture désigne est ce titre, pas toute la section.
       data-ligne={ancre(vue)}
-      className={`flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 rounded-t border-b border-line pb-2 ${LIGNE_COURANTE}`}
+      className={`flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 rounded-t border-b border-line pb-1.5 ${LIGNE_COURANTE}`}
       data-testid="entete-vue"
     >
       <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${KIND_STYLE.pageview.badge}`}>
