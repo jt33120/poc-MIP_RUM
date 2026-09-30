@@ -228,6 +228,9 @@ export function HeroCwv({
                 </>
               }
             >
+              {/* Les notes valent pour les trois : écrites une fois, dans la fenêtre du LCP
+                  (un repère de test unique, pas trois copies). */}
+              {i === 0 && (
               <div className="mt-3 space-y-1 text-xs text-ink-soft">
                 {lecture}
                 {phrasePlage && (
@@ -236,6 +239,7 @@ export function HeroCwv({
                   </p>
                 )}
               </div>
+              )}
               <div className="mt-3">
                 <Figure
                   titre={`${l.vital} p75`}

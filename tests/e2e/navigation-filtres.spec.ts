@@ -164,10 +164,10 @@ const NAVIGATION = [
     ],
   },
   {
-    categorie: "Robot et réel",
+    categorie: "Synthétique × RUM",
     landing: "/correlation",
     onglets: [
-      ["/correlation", "Robot et réel"],
+      ["/correlation", "Corrélation"],
       ["/tracing", "Tracing"],
       ["/map", "Carte"],
     ],

@@ -90,9 +90,11 @@ test.describe("F11 — Vue d'ensemble : santé, KPI, constats", () => {
     );
   });
 
-  test("la tuile LCP ouvre /pages?vital=LCP en gardant l'app et la plage", async ({ page }) => {
+  test("la fenêtre de la tuile LCP mène à /pages?vital=LCP en gardant l'app et la plage", async ({ page }) => {
     await login(page);
     await page.goto(`${consoleUrl}/?app=${APP_F11}&period=7d`, { waitUntil: "domcontentloaded" });
+    // 30/09/2026 : la case ouvre sa fenêtre ; le lien « Écran détaillé » y est.
+    await page.getByTestId("tuile-LCP").getByTestId("kpi-tile").click();
     const lienLcp = page.getByTestId("tuile-LCP").locator("a").first();
     await expect(lienLcp).toBeVisible({ timeout: 15_000 });
     const href = new URL((await lienLcp.getAttribute("href"))!, consoleUrl);
@@ -244,9 +246,10 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
     await page.goto(ACCUEIL_F12, { waitUntil: "domcontentloaded" });
     const hero = page.getByTestId("hero-cwv");
     await expect(hero).toContainText("Core Web Vitals dans le temps");
-    await expect(hero.locator('[role="img"]')).toHaveCount(3, { timeout: 15_000 });
+    // 30/09/2026 : trois VIGNETTES (le détail s'ouvre au clic, dans une fenêtre).
+    await expect(hero.locator('[data-testid^="vignette-"] [role="img"]')).toHaveCount(3, { timeout: 15_000 });
     for (const nom of ["LCP", "INP", "CLS"]) {
-      const serie = page.locator(`#hero-${nom} [data-testid="threshold-series"]`);
+      const serie = page.locator(`[data-testid="vignette-${nom}"] [data-testid="threshold-series"]`);
       await expect(serie).toHaveAttribute("data-vital", nom);
       await expect(serie.locator(".recharts-reference-area.bande-bon")).toBeVisible({ timeout: 15_000 });
     }
@@ -282,7 +285,7 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
     await login(page);
     await page.goto(`${ACCUEIL_F12}&cmp=release&rel_a=f12-1.0&rel_b=f12-1.1`, { waitUntil: "domcontentloaded" });
     const lcp = page.locator("#hero-LCP");
-    await expect(lcp.locator("path.recharts-line-curve")).toHaveCount(2, { timeout: 15_000 });
+    await expect(page.locator('[data-testid="vignette-LCP"] path.recharts-line-curve')).toHaveCount(2, { timeout: 15_000 });
     await expect(lcp.getByTestId("legende-serie")).toContainText("Release f12-1.1");
     await expect(lcp.getByTestId("legende-serie")).toContainText("Release f12-1.0");
   });
@@ -302,6 +305,8 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
     // puis clic souris à son centre — le point actif qui apparaît au passage est dans
     // le même graphique, le clic remonte au même gestionnaire. Le premier point est le
     // plus ancien seau mesuré, jamais le seau en cours, dont le zoom peut être vide.
+    // Le graphique cliquable est celui de la fenêtre : on l'ouvre depuis sa vignette.
+    await page.getByTestId("vignette-LCP").click();
     const point = page.locator("#hero-LCP .recharts-line-dots circle").first();
     await expect(point).toBeVisible({ timeout: 15_000 });
     await point.hover({ trial: true });
