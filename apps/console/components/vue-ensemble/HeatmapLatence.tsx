@@ -35,7 +35,7 @@ import { DessinVignette, EnteteVignette } from "./Vignette";
 
 const HAUTEUR = 180;
 /** Hauteur du dessin réduit d'une vignette. */
-const HAUTEUR_APERCU = 96;
+const HAUTEUR_APERCU = 84;
 const pct = (p: number) => `${Math.round(p * 100)} %`;
 const totalDe = (h: Heatmap) => h.colonnes.reduce((s, c) => s + c.n, 0);
 

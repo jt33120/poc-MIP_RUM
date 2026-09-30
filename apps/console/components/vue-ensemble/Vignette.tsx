@@ -18,7 +18,7 @@ import { sommetRobuste } from "@/components/charts/GrapheMesure";
 import { RATING_JETON } from "@/lib/palette";
 
 /** Hauteur du dessin d'une vignette de série (recharts, `apercu`). */
-export const HAUTEUR_VIGNETTE = 118;
+export const HAUTEUR_VIGNETTE = 110;
 
 /** L'en-tête d'une vignette : son titre à gauche, son contexte (tranches, plage) à droite. */
 export function EnteteVignette({ titre, meta, id }: { titre: string; meta?: ReactNode; id?: string }) {

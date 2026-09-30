@@ -70,7 +70,7 @@ export function OngletsHero({ onglets, initial }: { onglets: OngletContenu[]; in
       <div
         role="tablist"
         aria-label="Série du graphique principal"
-        className="mb-3 flex min-w-0 flex-wrap gap-1 border-b border-line"
+        className="mb-2 flex min-w-0 flex-wrap gap-1 border-b border-line"
         onKeyDown={clavier}
       >
         {onglets.map((o) => {
@@ -90,7 +90,7 @@ export function OngletsHero({ onglets, initial }: { onglets: OngletContenu[]; in
               tabIndex={choisi ? 0 : -1}
               data-onglet={o.cle}
               onClick={() => choisir(o.cle)}
-              className={`-mb-px min-w-0 border-b-2 px-3 py-1.5 text-sm [overflow-wrap:anywhere] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+              className={`-mb-px min-w-0 border-b-2 px-3 py-1 text-sm [overflow-wrap:anywhere] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
                 choisi ? "border-brand font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"
               }`}
             >

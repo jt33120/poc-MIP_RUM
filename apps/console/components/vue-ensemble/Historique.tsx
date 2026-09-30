@@ -4,7 +4,7 @@
 // 50 % ne sont pas des seuils publiés : R-S). Une case ouvre son heure en instants UTC.
 //
 // SUR LA PAGE, UNE VIGNETTE (recette du 30/09/2026) : la grille réduite à des cases de
-// 5 px, sans légende ni phrase ; un clic ouvre la carte entière — la bascule « heures
+// 4 px, sans légende ni phrase ; un clic ouvre la carte entière — la bascule « heures
 // ouvrées », les cases cliquables, la légende, la fenêtre et le fuseau écrits, la
 // méthode et l'alternative. Sans donnée, pas de vignette : une ligne le dit.
 import Link from "next/link";

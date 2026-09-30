@@ -93,7 +93,7 @@ function lienDeCase(jour: string, heure: number, fuseau: string, zoomHref: strin
 /**
  * L'APERÇU de l'historique dans une vignette (recette du 30/09/2026 : « cases plus
  * denses », « pas de légende à l'écran ») : la même grille jour × heure, réduite à
- * des cases de 5 px, sans lien, sans légende, sans infobulle — un indice de forme. La
+ * des cases de 4 px, sans lien, sans légende, sans infobulle — un indice de forme. La
  * carte entière, cliquable case par case, s'ouvre dans la fenêtre de la vignette.
  * Aucun repère de test de la carte (`heatmap`, `heatmap-case`) : ils restent uniques.
  */
@@ -121,9 +121,9 @@ export function ApercuHistorique({
         heures.map((h) => {
           const part = partBon(parCase.get(`${jour}|${h}`));
           return part == null ? (
-            <span key={`${jour}|${h}`} className="h-[5px] rounded-[1px] bg-panel2" />
+            <span key={`${jour}|${h}`} className="h-1 rounded-[1px] bg-panel2" />
           ) : (
-            <span key={`${jour}|${h}`} className="h-[5px] rounded-[1px]" style={{ backgroundColor: sequentielleJeton(part) }} />
+            <span key={`${jour}|${h}`} className="h-1 rounded-[1px]" style={{ backgroundColor: sequentielleJeton(part) }} />
           );
         }),
       )}
