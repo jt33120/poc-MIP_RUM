@@ -123,10 +123,10 @@ export function PanneauErreur({
         </span>
       </div>
 
-      {/* ── Bloc 2 : phrase d'impact, puis quatre tuiles ── */}
+      {/* ── Bloc 2 : quatre tuiles, puis la part des sessions touchées en pastille ── */}
       <SectionErreur titre="Impact de ce groupe">
-        <PhraseImpact impact={group} plage={label} part={part} hrefSessions={null} />
         <TuilesDetailErreur impact={group} plage={label} />
+        <PhraseImpact impact={group} plage={label} part={part} hrefSessions={null} />
       </SectionErreur>
 
       {/* ── Bloc 3 ── */}
@@ -165,11 +165,15 @@ export function PanneauErreur({
         </SectionErreur>
       </div>
 
-      <p className="text-xs text-ink-soft">
-        Pile du dernier exemplaire, table des occurrences et triage sont sur la page du groupe.{" "}
+      {/* Une ligne : ce qui n'est pas dans le panneau, et le lien qui y mène. */}
+      <p className="flex flex-wrap items-center gap-x-2 text-xs text-ink-soft">
+        <span>Pile, occurrences et triage :</span>
         <Link href={pageHref} className={ERROR_LINK}>
           Ouvrir en page
         </Link>
+        <span className="sr-only">
+          Pile du dernier exemplaire, table des occurrences et triage sont sur la page du groupe.
+        </span>
       </p>
     </DetailPanel>
   );
