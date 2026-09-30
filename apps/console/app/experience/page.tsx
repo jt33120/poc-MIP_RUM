@@ -615,7 +615,7 @@ function HeroSatisfaction({
           <span>point creux : moins de {AVIS_FAIBLE_SOUS} avis dans la tranche</span>
         </>
       }
-      lecture="En haut, la part des avis notés 4 ou 5 sur 5 ; une tranche sans avis reste vide, jamais 0 %. En bas, le nombre d'avis notés. Un clic sur une tranche zoome sur sa plage."
+      lecture={`En haut, la part des avis notés 4 ou 5 sur 5 ; une tranche sans avis reste vide, jamais 0 %. En bas, le nombre d'avis notés. Un clic sur une tranche zoome sur sa plage. Source : ${SOURCE_AVIS}`}
       alternative={
         avis > 0
           ? {

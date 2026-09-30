@@ -464,7 +464,7 @@ export function OccurrencesDansLeTemps({
           <span>{compte(total)} occurrences sur {plage}</span>
         </>
       }
-      lecture="Une barre par tranche ; une tranche sans occurrence vaut zéro. Même période que l'écran."
+      lecture={`Une barre par tranche ; une tranche sans occurrence vaut zéro. Même période que l'écran. Source : ${SOURCE_ERREURS}`}
       alternative={{
         legende: `Occurrences par tranche de ${bucketLabel} sur ${plage}`,
         colonnes: ["Période", "Occurrences"],

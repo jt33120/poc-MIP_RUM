@@ -340,7 +340,8 @@ export function HeroGroupesErreurs({
             zoome sur sa plage.{" "}
             <Link href="#groupes-erreurs" className="text-perf underline-offset-2 hover:underline">
               Tous les groupes
-            </Link>
+            </Link>{" "}
+            Source : {SOURCE_ERREURS}
           </>
         }
         alternative={{

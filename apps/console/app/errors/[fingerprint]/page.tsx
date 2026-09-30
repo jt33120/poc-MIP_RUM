@@ -149,7 +149,7 @@ export default async function ErrorGroup({
       {/* ── Blocs 3 et 4 : versions touchées (4/12) à côté des occurrences dans le temps
           (8/12) — deux étages pleins devenus une rangée (recette du 30/09/2026). ── */}
       <div className="mb-4 grid min-w-0 gap-2 lg:grid-cols-12">
-        <div className="min-w-0 lg:col-span-4 [&>section]:mb-0 [&>section]:h-full">
+        <div className="min-w-0 lg:col-span-4 lg:self-start [&>section]:mb-0">
           <SectionErreur titre="Versions touchées">
             <VersionsTouchees releases={releases} />
           </SectionErreur>

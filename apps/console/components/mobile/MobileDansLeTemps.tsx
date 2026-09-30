@@ -138,7 +138,8 @@ export function MobileDansLeTemps({
           {/* « runtime = react_native », « dimension de source d'erreur » : des noms de
               champ, retirés du texte (recette du 26/09/2026). */}
           Les mêmes sessions que les tuiles : les sessions React Native commencées dans chaque tranche, et les erreurs
-          JavaScript de ces sessions, datées à leur réception. Additionnées, les tranches donnent les tuiles.
+          JavaScript de ces sessions, datées à leur réception. Additionnées, les tranches donnent les tuiles. Source :
+          SDK React Native MIP RUM (couche JavaScript).
           {explorer && " L'Explorer rouvre le panneau des sessions ; les erreurs JavaScript ne s'y isolent pas."}
         </>
       }
