@@ -7,16 +7,16 @@
 //     navigateurs que l'extension prend en charge (cadenas sur les autres) ;
 //   · serveur — les langages dont l'agent OpenTelemetry officiel a une recette
 //     éprouvée en production, cadenas sur ceux qui ne l'ont pas encore.
+// Les onglets sous le schéma mènent aux parcours (OngletsInstallation) : le schéma
+// décrit, il ne navigue pas.
 //
 // Rien n'est affirmé ici qui ne soit ailleurs : les langages suivent
 // lib/recettes-agents-otel.ts (recettes dédiées, `etat` « éprouvé en production ») et
 // ses `autres` (Go, PHP, Ruby : point R11 de « Ce qui reste ») ; les navigateurs, le
 // périmètre de l'extension (Chrome et Edge en Manifest V3, Firefox hors périmètre :
 // docs/CADRAGE_EXTENSION.md). tests/unit/schema-installation.test.tsx les confronte.
-import Link from "next/link";
 import { useRef, useState, type FocusEvent, type ReactNode } from "react";
 import { LOGOS, type Marque } from "@/lib/logos-marques";
-import { cheminParcours } from "@/lib/vitrine-navigation";
 
 type Cote = "navigateur" | "serveur";
 
@@ -212,7 +212,7 @@ function Volet({
   );
 }
 
-function Choix({ titre, badge, phrase, href, children }: { titre: string; badge: string; phrase: string; href: string; children?: ReactNode }) {
+function Choix({ titre, badge, phrase, children }: { titre: string; badge: string; phrase: string; children?: ReactNode }) {
   return (
     <li className="schema-choix rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -221,9 +221,6 @@ function Choix({ titre, badge, phrase, href, children }: { titre: string; badge:
       </div>
       <p className="mt-1.5 text-sm leading-relaxed text-white/70">{phrase}</p>
       {children}
-      <Link href={href} className="mt-2 inline-block text-sm font-semibold text-[#fbbc64] transition hover:translate-x-1">
-        Lire le parcours →
-      </Link>
     </li>
   );
 }
@@ -251,13 +248,11 @@ export function SchemaInstallation() {
                 titre="SDK JavaScript"
                 badge="Recommandé"
                 phrase="Deux balises dans vos pages : chaque visiteur est mesuré, quel que soit son navigateur."
-                href={cheminParcours("snippet")}
               />
               <Choix
                 titre="Extension navigateur"
                 badge="Sans toucher au site"
                 phrase="Ne touche pas au site, mais ne mesure que les postes où elle est installée."
-                href={cheminParcours("extension")}
               >
                 <ul className="mt-2.5 flex flex-wrap gap-3" aria-label="Navigateurs de l'extension">
                   {NAVIGATEURS_EXTENSION.map((n) => (
@@ -296,15 +291,17 @@ export function SchemaInstallation() {
         ouvert={ouvert === "serveur"}
         onOuvrir={() => setOuvert("serveur")}
         onFermer={fermer("serveur")}
-        surtitre="Côté serveur · facultatif"
+        surtitre="Côté serveur · recommandé"
         titre="L'agent OpenTelemetry"
-        resume="Relie chaque appel du navigateur à sa part côté serveur."
+        resume="Chaque appel suivi jusqu'au serveur, et sa lenteur localisée."
         dessin={<DessinServeur />}
         detail={
           <>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#fbbc64]">L&apos;agent officiel de votre langage</p>
             <p className="mt-2 text-sm leading-relaxed text-white/70">
-              Aucun code MIP sur vos serveurs : l&apos;agent standard, réglé par quelques variables.
+              Plus seulement la vue du navigateur : chaque appel est suivi jusqu&apos;au serveur, et sa lenteur localisée,
+              dans le serveur ou dans le trajet (réseau, proxy). Aucun code MIP sur vos serveurs : l&apos;agent standard,
+              réglé par quelques variables.
             </p>
             <ul className="mt-4 grid grid-cols-2 gap-2" aria-label="Langages">
               {LANGAGES.map((l) => (
@@ -324,9 +321,6 @@ export function SchemaInstallation() {
               ))}
             </ul>
             <p className="mt-3 text-[11px] text-white/45">Cadenas : recette pas encore éprouvée en production.</p>
-            <Link href={cheminParcours("serveur")} className="mt-2 inline-block text-sm font-semibold text-[#fbbc64] transition hover:translate-x-1">
-              Lire le parcours →
-            </Link>
           </>
         }
       />

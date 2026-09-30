@@ -673,7 +673,8 @@ export function ParcoursServeur({
             </BandeauIA>
           )}
         <p className="mb-4 text-xs leading-relaxed text-ink-soft">
-          Facultatif : sans lui, la mesure du navigateur fonctionne déjà. Rien à télécharger chez MIP : l&apos;agent
+          Recommandé : la mesure du navigateur fonctionne sans lui, mais avec lui chaque appel est suivi jusqu&apos;au
+          serveur, et sa lenteur localisée. Rien à télécharger chez MIP : l&apos;agent
           OpenTelemetry officiel de votre langage, réglé par quelques variables d&apos;environnement.
         </p>
         </>

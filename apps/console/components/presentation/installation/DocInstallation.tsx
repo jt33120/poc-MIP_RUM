@@ -14,7 +14,7 @@ import { ingestEndpoint, voieRecommandee } from "@/lib/ingest-endpoint";
 import { LIBELLE_PARCOURS, PARCOURS, appelInit, codeNextAppRouter, codeNextPagesRouter, directivesCsp, type Parcours } from "@/lib/installer";
 import { buildInjectionArtifacts, buildSnippet } from "@/lib/onboarding";
 import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
-import { cheminParcours } from "@/lib/vitrine-navigation";
+import { CHEMIN_INSTALLATION, cheminParcours } from "@/lib/vitrine-navigation";
 
 /** L'application d'exemple : un repère à remplacer, jamais un projet réel. */
 export const APP_EXEMPLE = "votre-application";
@@ -33,32 +33,47 @@ const CONTEXTE: ContexteParcours = {
   verifications: [],
 };
 
-/** Les trois parcours en cartes, qui mènent chacune à sa page. */
-export function CartesParcours({ courant }: { courant?: Parcours }) {
+/**
+ * Les sous-onglets de la page Installation : la vue d'ensemble, puis les trois
+ * parcours. Une barre à plat, collée sous la barre de navigation, et non plus des
+ * cartes : on change de parcours comme on change d'onglet, sans relire leur résumé
+ * (le schéma de la vue d'ensemble le donne). La page courante porte le trait orange.
+ */
+export function OngletsInstallation({ courant }: { courant: Parcours | "apercu" }) {
+  const onglets = [
+    { cle: "apercu" as const, href: CHEMIN_INSTALLATION, libelle: "Vue d'ensemble", badge: null },
+    ...PARCOURS.map((p) => ({ cle: p, href: cheminParcours(p), libelle: LIBELLE_PARCOURS[p], badge: CARTES_PARCOURS[p].badge })),
+  ];
   return (
-    <ul className="grid gap-4 md:grid-cols-3" data-testid="doc-parcours">
-      {PARCOURS.map((p, i) => (
-        <li key={p} className="min-w-0">
-          <Link
-            href={cheminParcours(p)}
-            aria-current={courant === p ? "page" : undefined}
-            className={`group flex h-full flex-col rounded-2xl border p-5 transition hover:-translate-y-0.5 hover:border-[#f89101]/60 ${
-              courant === p ? "border-[#f89101]/70 bg-[#f89101]/10" : "border-white/10 bg-white/[0.03]"
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <span className="font-mono text-xs font-bold text-[#fbbc64]">{String(i + 1).padStart(2, "0")}</span>
-              <span className="text-base font-bold text-white">{LIBELLE_PARCOURS[p]}</span>
-              <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/75">
-                {CARTES_PARCOURS[p].badge}
-              </span>
-            </span>
-            <span className="mt-3 flex-1 text-sm leading-relaxed text-white/65">{CARTES_PARCOURS[p].texte}</span>
-            <span className="mt-4 text-sm font-semibold text-[#fbbc64] transition group-hover:translate-x-1">Lire le parcours →</span>
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <nav aria-label="Installation" className="sticky top-16 z-30 border-y border-white/10 bg-[#040a1c]/85 backdrop-blur-md">
+      <ul className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 sm:px-6" data-testid="onglets-installation">
+        {onglets.map((o, i) => {
+          const actif = o.cle === courant;
+          return (
+            <li key={o.cle} className="shrink-0">
+              <Link
+                href={o.href}
+                aria-current={actif ? "page" : undefined}
+                data-testid={`onglet-${o.cle}`}
+                className={`onglet-installation group relative flex items-center gap-2 whitespace-nowrap px-3 py-3.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#f89101] ${
+                  actif ? "text-white" : "text-white/60 hover:text-white"
+                }`}
+              >
+                {i > 0 && (
+                  <span className={`font-mono text-[11px] font-bold ${actif ? "text-[#f89101]" : "text-white/35 group-hover:text-[#fbbc64]"}`}>
+                    {String(i).padStart(2, "0")}
+                  </span>
+                )}
+                {o.libelle}
+                {o.badge && (
+                  <span className="hidden rounded-full bg-white/[0.07] px-2 py-0.5 text-[10px] font-semibold text-white/55 md:inline">{o.badge}</span>
+                )}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
   );
 }
 

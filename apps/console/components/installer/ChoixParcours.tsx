@@ -16,10 +16,10 @@ export const CARTES_PARCOURS: Record<Parcours, { badge: string; ton: string; tex
       "Ne mesure que les postes où elle est installée : un pilote, un parc géré, un site dont vous n'avez pas le code.",
   },
   serveur: {
-    badge: "Facultatif",
-    ton: "bg-panel2 text-ink-soft",
+    badge: "Recommandé",
+    ton: "bg-good/15 text-good-ink",
     texte:
-      "L'agent OpenTelemetry officiel du langage de votre serveur. Il relie chaque appel du navigateur à sa part côté serveur.",
+      "Plus seulement la vue du navigateur : chaque appel est suivi jusqu'au serveur, et sa lenteur localisée, dans le serveur ou dans le trajet (réseau, proxy).",
   },
 };
 

@@ -132,6 +132,22 @@
 .nav-sous-lien[data-actif="true"] { background: linear-gradient(90deg, rgba(248, 145, 1, 0.14), rgba(248, 145, 1, 0.02)); }
 .nav-sous-lien:hover::before,
 .nav-sous-lien[data-actif="true"]::before { transform: scaleY(1); }
+/* Les sous-onglets d'Installation (OngletsInstallation) : le trait orange de l'onglet
+   courant, tracé depuis le centre ; au survol, un trait plus discret. */
+.onglet-installation::after {
+  content: "";
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #fbbc64, #f89101);
+  transform: scaleX(0);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease;
+}
+.onglet-installation:hover::after { transform: scaleX(1); opacity: 0.4; }
+.onglet-installation[aria-current="page"]::after { transform: scaleX(1); opacity: 1; }
 /* Le schéma d'installation (SchemaInstallation.tsx) : les mesures qui coulent vers la
    collecte, le SDK et l'agent qui battent, les voyants des serveurs, et les options
    qui arrivent en cascade quand un côté s'ouvre. */

@@ -1,7 +1,7 @@
 // « Installation » (/presentation/installation) : les trois façons de poser MIP RUM,
 // lisibles sans compte ; chacune a sa page (components/presentation/installation/).
 import type { Metadata } from "next";
-import { CartesParcours } from "@/components/presentation/installation/DocInstallation";
+import { OngletsInstallation } from "@/components/presentation/installation/DocInstallation";
 import { SchemaInstallation } from "@/components/presentation/installation/SchemaInstallation";
 import { PageVitrine } from "@/components/presentation/vitrine/PageVitrine";
 import { getUser } from "@/lib/auth";
@@ -33,7 +33,8 @@ export default async function Installation() {
         </>
       }
     >
-      <section className="mx-auto max-w-6xl px-4 pb-20 sm:px-6">
+      <OngletsInstallation courant="apercu" />
+      <section className="mx-auto max-w-6xl px-4 pb-20 pt-12 sm:px-6">
         <SchemaInstallation />
         {/* Le prompt pour l'IA de code vit dans la console : il porte les valeurs de
             l'application, qu'une page publique ne connaît pas (lib/prompts-ia.ts). */}
@@ -59,8 +60,6 @@ export default async function Installation() {
             Ouvrir dans la console →
           </a>
         </div>
-        <h2 className="mb-5 mt-16 text-xl font-bold text-white">Les trois parcours, pas à pas</h2>
-        <CartesParcours />
         <p className="mt-8 text-sm text-white/60">
           Connecté, la page <strong className="font-semibold text-white/85">Installer</strong> de la console reprend ces
           parcours avec les valeurs de votre application, et un test en direct qui passe au vert quand les données

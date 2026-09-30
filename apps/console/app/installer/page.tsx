@@ -1,6 +1,6 @@
 // « Installer » : poser MIP RUM sur l'application sélectionnée, pas à pas, selon
 // trois parcours — le code de suivi (tous les visiteurs), l'extension navigateur
-// (les postes équipés), le serveur (facultatif) —, chacun terminé par un test
+// (les postes équipés), le serveur (recommandé en complément) —, chacun terminé par un test
 // « ça arrive » en direct.
 //
 // LECTEUR : l'équipe technique du client, et son service informatique pour

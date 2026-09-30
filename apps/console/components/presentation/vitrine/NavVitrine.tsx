@@ -23,7 +23,7 @@ import { CHEMIN_A_FAIRE, CHEMIN_GRAPHE, CHEMIN_INSTALLATION, DEPOT_GITHUB, chemi
 const SOUS_TITRE: Record<(typeof PARCOURS)[number], string> = {
   snippet: "Une balise script dans vos pages : tous les visiteurs",
   extension: "Sur les postes équipés, sans toucher au site",
-  serveur: "L'agent OpenTelemetry officiel, côté serveur",
+  serveur: "Chaque appel suivi jusqu'au serveur",
 };
 
 /** Le logo GitHub (marque officielle, tracé unique). */

@@ -207,12 +207,14 @@ test.describe("menu des pages publiques", () => {
       await expect(page.getByTestId("nav-vitrine")).toBeVisible();
     }
 
-    // La page d'installation mène à chacun des trois parcours.
+    // Les sous-onglets d'Installation : la vue d'ensemble, puis chacun des trois parcours.
     await page.goto(`${consoleUrl}/presentation/installation`);
-    const cartes = page.getByTestId("page-installation").getByTestId("doc-parcours").getByRole("link");
-    expect(await cartes.evaluateAll((as) => as.map((a) => a.getAttribute("href")))).toEqual(
-      parcours.map(([, segment]) => `/presentation/installation/${segment}`),
-    );
+    const onglets = page.getByTestId("onglets-installation").getByRole("link");
+    expect(await onglets.evaluateAll((as) => as.map((a) => a.getAttribute("href")))).toEqual([
+      "/presentation/installation",
+      ...parcours.map(([, segment]) => `/presentation/installation/${segment}`),
+    ]);
+    await expect(page.getByTestId("onglet-apercu")).toHaveAttribute("aria-current", "page");
 
     // Les deux autres entrées du menu, et le dépôt public, dans un nouvel onglet.
     const nav = page.getByTestId("nav-vitrine");

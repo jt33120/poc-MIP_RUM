@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { OngletsInstallation } from "@/components/presentation/installation/DocInstallation";
 import { LANGAGES, NAVIGATEURS_EXTENSION, SchemaInstallation } from "@/components/presentation/installation/SchemaInstallation";
 import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
 
@@ -32,12 +33,26 @@ describe("le schéma d'installation", () => {
     expect(NAVIGATEURS_EXTENSION.filter((n) => !n.ouvert).map((n) => n.nom)).toEqual(["Firefox"]);
   });
 
-  it("fermé au rendu, chaque côté mène à son parcours, et un cadenas se dit aux lecteurs d'écran", () => {
+  it("fermé au rendu, sans lien (il décrit, les onglets naviguent), et un cadenas se dit aux lecteurs d'écran", () => {
     const html = renderToStaticMarkup(<SchemaInstallation />);
     expect(html.match(/data-ouvert="false"[^>]*data-testid|data-testid="schema-(navigateur|serveur)"[^>]*data-ouvert="false"/g)?.length).toBe(2);
-    for (const s of ["sdk-javascript", "extension", "serveur"]) expect(html).toContain(`href="/presentation/installation/${s}"`);
+    expect(html).not.toContain("<a ");
     expect(html.split("(pas encore disponible)").length - 1).toBe(
       LANGAGES.filter((l) => !l.ouvert).length + NAVIGATEURS_EXTENSION.filter((n) => !n.ouvert).length,
     );
+  });
+
+  it("les sous-onglets : la vue d'ensemble puis les trois parcours, l'onglet courant marqué", () => {
+    const html = renderToStaticMarkup(<OngletsInstallation courant="serveur" />);
+    const liens = [...html.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]);
+    expect(liens).toEqual([
+      "/presentation/installation",
+      "/presentation/installation/sdk-javascript",
+      "/presentation/installation/extension",
+      "/presentation/installation/serveur",
+    ]);
+    expect(html.match(/aria-current="page"/g)?.length).toBe(1);
+    const courant = /<a [^>]*aria-current="page"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(courant).toContain('href="/presentation/installation/serveur"');
   });
 });

@@ -4,7 +4,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { CartesParcours, PanneauParcours } from "@/components/presentation/installation/DocInstallation";
+import { OngletsInstallation, PanneauParcours } from "@/components/presentation/installation/DocInstallation";
 import { PageVitrine } from "@/components/presentation/vitrine/PageVitrine";
 import { getUser } from "@/lib/auth";
 import { methodesConnexion } from "@/lib/methodes-connexion";
@@ -38,9 +38,9 @@ export default async function ParcoursPublic({ params }: { params: Params }) {
         </>
       }
     >
-      <div className="mx-auto max-w-6xl px-4 pb-20 sm:px-6">
-        <CartesParcours courant={parcours} />
-        <section aria-label={`Parcours : ${LIBELLE_PARCOURS[parcours]}`} className="mt-10 rounded-3xl border border-white/10 bg-panel/70 p-5 sm:p-8">
+      <OngletsInstallation courant={parcours} />
+      <div className="mx-auto max-w-6xl px-4 pb-20 pt-10 sm:px-6">
+        <section aria-label={`Parcours : ${LIBELLE_PARCOURS[parcours]}`} className="rounded-3xl border border-white/10 bg-panel/70 p-5 sm:p-8">
           <PanneauParcours parcours={parcours} host={h.get("host") ?? "localhost:3000"} />
         </section>
       </div>
