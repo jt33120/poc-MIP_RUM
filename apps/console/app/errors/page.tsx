@@ -31,7 +31,7 @@ import { ERROR_LIST_MAX_OFFSET, parseErrorListPage, type ErrorGroupRef, type Ord
 import { annotationsDeploiements } from "@/lib/annotations";
 import { referencePeriodePrecedente } from "@/lib/perf-domain";
 import { bucketStarts, paramReader } from "@/lib/query-contract";
-import { grilleIso } from "@/lib/series";
+import { fenetresLues, grilleIso } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
@@ -212,6 +212,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
           annotations={annotations.annotations}
           annotationsIndisponibles={deploys.ok ? annotations.indisponible : "marqueurs de déploiement indisponibles"}
           zoomHref={zoomHref}
+          fenetresCollecte={fenetresLues(ecran.fenetresCollecte)}
         />
       </SectionErreur>
     </>

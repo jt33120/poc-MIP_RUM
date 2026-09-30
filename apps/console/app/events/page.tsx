@@ -55,12 +55,12 @@ import {
   type EventQuery,
 } from "@/lib/queries-events";
 import { bucketStarts, hrefWithQuery, paramReader, queryToSearchParams, type AnalyticsQuery } from "@/lib/query-contract";
-import { alignerSeaux, grilleIso, libelleSeauComplet } from "@/lib/series";
+import { alignerSeaux, fenetresLues, grilleIso, libelleSeauComplet, type FenetreCollecte } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, ligneIgnoree, lireEtatDeVue } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { fmtInstant, pluriel } from "@/lib/format";
 import { LIBELLE_APPAREIL } from "@/lib/goals";
-import { categorie } from "@/lib/palette";
+import { AUTRES, INDEX_AUTRES } from "@/lib/palette";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +94,7 @@ function appareil(e: EventIndexRow): string {
  * catégorielle neutre (ardoise). Un compte n'a pas de seuil : ni l'orange de la
  * série principale, ni une couleur de verdict (recette du 26/09/2026).
  */
-const TEINTE_VOLUME = categorie(4);
+const TEINTE_VOLUME = AUTRES;
 
 /** Lien vers la session d'un événement ; le panneau session arrive avec F43. */
 function lienSession(e: EventIndexRow, query: AnalyticsQuery): string | null {
@@ -189,6 +189,7 @@ export default async function Journal({ searchParams }: { searchParams: Promise<
               : { annotations: [], liste: [], indisponible: "déploiements non lus (lecture en échec)" }
           }
           ouvertId={ouvert?.ligne.id ?? null}
+          fenetresCollecte={fenetresLues(ecran.fenetresCollecte)}
           // Filtré sur UNE app, l'écran ne répète pas son nom sous chaque événement.
           avecApp={ecran.query.scope.effectiveApps === null || ecran.query.scope.effectiveApps.length > 1}
         />
@@ -374,6 +375,7 @@ function ResultatJournal({
   zoom,
   annotations,
   ouvertId,
+  fenetresCollecte,
   avecApp,
 }: {
   r: EventExplorerResult;
@@ -386,6 +388,8 @@ function ResultatJournal({
   zoom: string;
   annotations: ReturnType<typeof annotationsDeploiements>;
   ouvertId: string | null;
+  /** Fenêtres hors collecte (`sectionFenetresCollecte`) : un seau interrompu est hachuré, pas une barre à 0. */
+  fenetresCollecte?: readonly FenetreCollecte[];
   avecApp: boolean;
 }) {
   const enrichi = r.enrichment.available;
@@ -444,7 +448,7 @@ function ResultatJournal({
                   <span>journal tenu depuis sa mise en service : les événements plus anciens n&apos;y figurent pas</span>
                 </>
               }
-              lecture="Chaque barre compte les événements du résultat dans sa tranche, filtres compris ; une tranche vide vaut 0. Un clic sur une barre zoome sur sa plage."
+              lecture="Chaque barre compte les événements du résultat dans sa tranche, filtres compris ; une tranche vide vaut 0, une tranche hors collecte est hachurée « non mesuré ». Un clic sur une barre zoome sur sa plage."
               alternative={{
                 legende: `Événements du résultat par tranche de ${bucketLabel}`,
                 colonnes: ["Période", "Événements"],
@@ -454,7 +458,7 @@ function ResultatJournal({
               <ThresholdSeries
                 grille={grille}
                 points={points}
-                series={[{ cle: "n", libelle: "Événements", role: "categorie", categorieIndex: 4, forme: "barres", additive: true }]}
+                series={[{ cle: "n", libelle: "Événements", role: "categorie", categorieIndex: INDEX_AUTRES, forme: "barres", additive: true }]}
                 format="count"
                 annotations={annotations.annotations}
                 annotationsIndisponibles={annotations.indisponible ?? undefined}
@@ -462,6 +466,7 @@ function ResultatJournal({
                 fuseau={FUSEAU_AFFICHAGE}
                 zoomHref={zoom}
                 hauteur={180}
+                fenetresCollecte={fenetresCollecte}
                 ariaLabel={`Événements du résultat par tranche de ${bucketLabel}, ${label}`}
               />
             </Figure>

@@ -60,6 +60,18 @@ export type Comparaison =
   | { kind: "silence"; texte: string; motif?: "periode-incomplete" }
   | null;
 
+/**
+ * La forme qui double la couleur du verdict (spec A2 § 3.4) : disque, triangle, carré.
+ * En pseudo-élément CSS : le texte du badge reste le seul libellé (« Bon »), la forme
+ * n'est ni lue ni recopiée. Classes écrites en toutes lettres (Tailwind ne détecte pas
+ * les classes construites).
+ */
+const FORME_VERDICT: Record<keyof typeof RATING_LABEL, string> = {
+  good: "before:mr-1 before:content-['●']",
+  "needs-improvement": "before:mr-1 before:content-['▲']",
+  poor: "before:mr-1 before:content-['■']",
+};
+
 function alerteVraie(valeur: number, a: AlerteTuile): boolean {
   if (a.si === ">") return valeur > a.valeur;
   if (a.si === ">=") return valeur >= a.valeur;
@@ -131,6 +143,7 @@ export function CadreTuile({
   alerte = false,
   testId,
   titre,
+  compact = false,
   children,
 }: {
   href?: string;
@@ -139,9 +152,13 @@ export function CadreTuile({
   testId: string;
   /** Infobulle native d'une tuile-lien (sa méthode, qu'un bouton « ? » ne peut pas porter). */
   titre?: string;
+  /** Tuile de rangée KPI (spec A2 § 3.1) : 12 px de marge, rayon 8 px, pas d'ombre la nuit. */
+  compact?: boolean;
   children: ReactNode;
 }) {
-  const classes = `card flex min-w-0 flex-col gap-1 p-4 ${alerte ? "border-bad/50" : ""}`;
+  const classes = compact
+    ? `relative flex h-full min-w-0 flex-col gap-0.5 rounded-lg border bg-panel p-3 shadow-card dark:shadow-none ${alerte ? "border-bad/50" : "border-line"}`
+    : `card flex min-w-0 flex-col gap-1 p-4 ${alerte ? "border-bad/50" : ""}`;
   if (href) {
     return (
       <Link
@@ -157,7 +174,7 @@ export function CadreTuile({
     );
   }
   return (
-    <div role="group" aria-label={ariaLabel} data-testid={testId} data-ton={alerte ? "bad" : "neutre"} className={classes}>
+    <div role="group" aria-label={ariaLabel} title={titre} data-testid={testId} data-ton={alerte ? "bad" : "neutre"} className={classes}>
       {children}
     </div>
   );
@@ -183,6 +200,7 @@ export function KpiTile({
   href,
   testid,
   approchee = false,
+  compact = false,
 }: {
   /** « LCP p75 », « Sessions commencées ». */
   label: string;
@@ -238,6 +256,14 @@ export function KpiTile({
    * chiffre qu'elle qualifie (recette du 26/09/2026).
    */
   approchee?: boolean;
+  /**
+   * Tuile de rangée KPI (spec A2 § 4, audit A1 « À garder ») : les MÊMES refus, dans
+   * une tuile de ~112 px. Une seule ligne visible dit l'essentiel (raison du « — »,
+   * delta, ou pourquoi il se tait) ; le reste (intervalle, verdict non établi,
+   * effectif) passe dans l'infobulle de la tuile et reste lu par les lecteurs d'écran
+   * — la tuile LCP empilait six lignes pour un chiffre (283 px).
+   */
+  compact?: boolean;
 }) {
   const connue = valeur != null && Number.isFinite(valeur);
   const faibleSous = couverture?.faibleSous ?? FAIBLE_SOUS_DEFAUT;
@@ -301,34 +327,11 @@ export function KpiTile({
     .filter(Boolean)
     .join(", ");
 
-  return (
-    <CadreTuile href={href} ariaLabel={ariaLabel} alerte={enAlerte} testId="kpi-tile" titre={href ? methode : undefined}>
-      <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
-        <span className="flex min-w-0 items-start gap-1 break-words text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-          <span className="min-w-0">{label}</span>
-          {methode && !href && (
-            <InfoTip label={`Méthode : ${label}`} align="start" className="shrink-0 normal-case">
-              <span data-testid="kpi-methode">{methode}</span>
-            </InfoTip>
-          )}
-        </span>
-        {verdict?.kind === "etabli" && (
-          <span
-            className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${RATING_CLASS[verdict.rating]}`}
-            data-testid="kpi-verdict"
-          >
-            {RATING_LABEL[verdict.rating]}
-          </span>
-        )}
-      </div>
-
-      <span
-        className={`text-2xl font-bold tabular-nums tracking-tight ${enAlerte ? "text-bad-ink" : "text-ink"}`}
-        data-testid={testid ?? "kpi-valeur"}
-      >
-        {texteValeur}
-      </span>
-
+  // Les lignes secondaires, avec leurs repères de test. En tuile compacte, elles
+  // restent dans le document (lecteurs d'écran, e2e) mais hors de la vue : la tuile
+  // n'en montre qu'une, la plus utile, et range le reste dans son infobulle.
+  const secondaires = (
+    <>
       {!connue && raisonNull && (
         <p className="text-xs text-ink-soft" data-testid="kpi-raison">
           {raisonNull}
@@ -346,7 +349,7 @@ export function KpiTile({
         // La bulle OUVRE la ligne (elle s'ouvre vers l'intérieur à 390 px) ; dans une
         // tuile-lien, pas de bulle : un bouton dans un lien est un HTML invalide.
         <p className="flex min-w-0 items-start gap-1 text-xs text-ink-soft" data-testid="kpi-intervalle">
-          {!href && <GlossaryTip id="intervalle" />}
+          {!href && !compact && <GlossaryTip id="intervalle" />}
           <span className="min-w-0 break-words">{texteIntervalle}</span>
         </p>
       )}
@@ -359,16 +362,8 @@ export function KpiTile({
           {texteComparaison}
         </p>
       )}
-      {comparaison?.kind === "delta" && !deltaNonEtabli && (
-        <DeltaBadge pct={comparaison.pct} reference={comparaison.reference} sensMeilleur={sens} />
-      )}
       {comparaison?.kind === "silence" && (
-        <p
-          className="text-xs text-ink-soft"
-          data-testid="kpi-comparaison"
-          data-ecart="silence"
-          data-motif={comparaison.motif}
-        >
+        <p className="text-xs text-ink-soft" data-testid="kpi-comparaison" data-ecart="silence" data-motif={comparaison.motif}>
           {comparaison.texte}
         </p>
       )}
@@ -392,6 +387,81 @@ export function KpiTile({
           )}
         </p>
       )}
+    </>
+  );
+
+  // Tuile compacte : la ligne visible, dans l'ordre de ce qui compte le plus — pourquoi
+  // il n'y a pas de chiffre, l'alerte, pourquoi le verdict ou le delta se taisent.
+  const resume = !compact
+    ? null
+    : !connue
+      ? (raisonNull ?? null)
+      : enAlerte
+        ? (alerte?.regle ?? null)
+        : verdict && verdict.kind !== "etabli"
+          ? texteVerdict(verdict)
+          : deltaNonEtabli || comparaison?.kind === "silence"
+            ? texteComparaison
+            : null;
+  const infobulle = compact
+    ? [methode, !connue ? raisonNull : null, verdict ? texteVerdict(verdict) : null, texteIntervalle, texteComparaison, lecture, texteEffectif]
+        .filter(Boolean)
+        .join("\n")
+    : href
+      ? methode
+      : undefined;
+  const pied = compact ? [texteEffectif, echantillonFaible ? "échantillon faible" : null].filter(Boolean).join(" · ") : null;
+
+  return (
+    <CadreTuile href={href} ariaLabel={ariaLabel} alerte={enAlerte} testId="kpi-tile" titre={infobulle} compact={compact}>
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
+        {/* Libellé de tuile : 12 px, casse de phrase (spec A2 § 3.9) — les capitales
+            espacées de 11 px sont le style des en-têtes de tableau. */}
+        <span className="flex min-w-0 items-start gap-1 text-xs font-medium text-ink-soft [overflow-wrap:anywhere]">
+          <span className="min-w-0">{label}</span>
+          {methode && !href && (
+            <InfoTip label={`Méthode : ${label}`} align="start" className="shrink-0">
+              <span data-testid="kpi-methode">{methode}</span>
+            </InfoTip>
+          )}
+        </span>
+        {verdict?.kind === "etabli" && (
+          <span
+            className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${RATING_CLASS[verdict.rating]} ${FORME_VERDICT[verdict.rating]}`}
+            data-testid="kpi-verdict"
+          >
+            {RATING_LABEL[verdict.rating]}
+          </span>
+        )}
+      </div>
+
+      {/* Valeur KPI : 28 / 32 px, chiffres tabulaires (§ 3.9). Sur un échantillon faible,
+          en `ink-soft` : le chiffre existe, il ne s'affirme pas (§ 4.3). */}
+      <span
+        className={`text-[28px] font-semibold leading-8 tabular-nums tracking-tight [overflow-wrap:anywhere] ${
+          enAlerte ? "text-bad-ink" : echantillonFaible && compact ? "text-ink-soft" : "text-ink"
+        }`}
+        data-testid={testid ?? "kpi-valeur"}
+      >
+        {texteValeur}
+      </span>
+
+      {comparaison?.kind === "delta" && !deltaNonEtabli && (
+        <DeltaBadge pct={comparaison.pct} reference={comparaison.reference} sensMeilleur={sens} />
+      )}
+
+      {compact ? (
+        <>
+          {resume && (
+            <p aria-hidden="true" className={`line-clamp-2 text-xs [overflow-wrap:anywhere] ${enAlerte ? "font-medium text-bad-ink" : "text-ink-soft"}`}>
+              {resume}
+            </p>
+          )}
+          <div className="sr-only">{secondaires}</div>
+        </>
+      ) : (
+        secondaires
+      )}
 
       {serie && serie.length > 0 && (
         <div className="mt-1">
@@ -401,6 +471,13 @@ export function KpiTile({
             seuils={vital ? THRESHOLDS[vital] : undefined}
           />
         </div>
+      )}
+
+      {pied && (
+        // Pied de tuile, 11 px (§ 3.9) : l'effectif, et s'il est faible.
+        <p aria-hidden="true" className="mt-auto truncate pt-0.5 text-[11px] text-ink-faint">
+          {pied}
+        </p>
       )}
     </CadreTuile>
   );

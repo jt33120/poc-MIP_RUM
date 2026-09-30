@@ -38,6 +38,7 @@ import { dimensionSupport } from "../query-compiler";
 import { paramReader } from "../query-contract";
 import { dimensionSchema } from "../query-schema";
 import { lireComparaison, lireEtatDeVue } from "../view-state";
+import { sectionFenetresCollecte } from "./collecte";
 import { section, sansSection, type Chargeur } from "./commun";
 import { lirePanneauRoute } from "./panneau-route";
 
@@ -103,6 +104,7 @@ export const chargerPages = (async (principal, sp) => {
     ressources,
     blocages,
     pires,
+    fenetresCollecte,
     panneauLu,
   ] = await Promise.all([
     classement.disponible ? section(() => vitalsBreakdown(f, "route", ROUTES_MAX)) : sansSection<BreakdownResult<VitalsBreakdownRow> | null>(null),
@@ -128,6 +130,8 @@ export const chargerPages = (async (principal, sp) => {
     section(() => resourcesVue(f)),
     section(() => longtaskSeries(f)),
     section(() => worstLongtasks(f)),
+    // Les fenêtres hors collecte : hachures « non mesuré » de la série des blocages.
+    sectionFenetresCollecte(query),
     // Le panneau d'une route (F17), lu avec l'écran — jamais sans panneau.
     panneau ? lirePanneauRoute(panneau, f, query, vital) : Promise.resolve(null),
   ]);
@@ -198,6 +202,7 @@ export const chargerPages = (async (principal, sp) => {
     ressources,
     blocages,
     pires,
+    fenetresCollecte,
     distributions,
     histos,
     choix,

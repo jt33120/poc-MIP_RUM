@@ -23,6 +23,8 @@ import { PHRASE_REGLE_RELEASE, RAISON_DETECTION_RELEASE } from "@/components/ale
 import { PHRASE_FENETRE } from "@/components/ReleaseCompare";
 import { RuleRow } from "@/components/alerts/RuleRow";
 import type { AlertRuleRow } from "@/lib/queries-v2";
+import { THRESHOLDS } from "@/lib/rating";
+import { SEUILS_MIP } from "@/lib/seuils";
 
 const APPS = [{ app_id: "demo", name: "Démo" }];
 
@@ -222,5 +224,43 @@ describe("F64 — RuleRow : l'état d'abord, l'écriture seulement pour un admin
     expect(html).not.toContain("<button");
     // L'état, lui, reste lisible.
     expect(texte(html)).toContain("Données insuffisantes");
+  });
+});
+
+// Vague 4 (lot 4c) — une règle neuve propose la borne « mauvais » de sa métrique.
+describe("vague 4 — RuleFields : seuil « mauvais » proposé", () => {
+  const champSeuil = (html: string) => /<input[^>]*name="threshold"[^>]*>/.exec(html)?.[0] ?? "";
+  const comparateurChoisi = (html: string) => {
+    const options = /<select[^>]*name="comparator"[^>]*>([\s\S]*?)<\/select>/.exec(html)?.[1] ?? "";
+    return [...options.matchAll(/<option([^>]*)>/g)].find((o) => o[1].includes("selected"))?.[1].match(/value="([^"]+)"/)?.[1];
+  };
+
+  it("règle neuve (LCP par défaut) : la borne web.dev, et d'où elle vient", () => {
+    const html = renderToStaticMarkup(<RuleFields apps={APPS} />);
+    expect(champSeuil(html)).toContain(`value="${THRESHOLDS.LCP[1]}"`);
+    expect(texte(html)).toContain("Seuil proposé : la borne « mauvais » de LCP (ms) — LCP : bon ≤");
+    expect(texte(html)).toContain("(web.dev)");
+  });
+
+  it("DOWNLINK proposé par l'URL : borne MIP et comparateur « < »", () => {
+    const html = renderToStaticMarkup(<RuleFields apps={APPS} regle={{ metrique: "DOWNLINK", route: null, seuil: null }} />);
+    expect(champSeuil(html)).toContain(`value="${SEUILS_MIP.DOWNLINK.mauvais}"`);
+    expect(comparateurChoisi(html)).toBe("&lt;");
+    expect(texte(html)).toContain("règle MIP : Débit descendant < 1 Mbit/s");
+  });
+
+  it("un seuil d'URL ou une règle existante gardent leur valeur, sans phrase de proposition", () => {
+    const url = renderToStaticMarkup(<RuleFields apps={APPS} regle={{ metrique: "INP", route: null, seuil: 300 }} />);
+    expect(champSeuil(url)).toContain('value="300"');
+    expect(url).not.toContain('data-testid="seuil-propose"');
+    const edition = renderToStaticMarkup(<RuleFields apps={APPS} rule={REGLE} />);
+    expect(champSeuil(edition)).toContain('value="2500"');
+    expect(edition).not.toContain('data-testid="seuil-propose"');
+  });
+
+  it("une métrique sans borne (logs en erreur) : champ vide, rien de proposé", () => {
+    const html = renderToStaticMarkup(<RuleFields apps={APPS} regle={{ metrique: "log_errors", route: null, seuil: null }} />);
+    expect(champSeuil(html)).toContain('value=""');
+    expect(html).not.toContain('data-testid="seuil-propose"');
   });
 });

@@ -11,6 +11,8 @@
 import {
   DIMENSION_LABELS,
   conditionsOf,
+  FUSEAU_SEAUX,
+  SEAU_ALIGNE_LOCAL_DES,
   type AnalyticsQuery,
   type ContractError,
   type Dimension,
@@ -330,15 +332,36 @@ function bucketInterval(range: ResolvedRange): string {
   return `interval '${range.bucketSeconds} seconds'`;
 }
 
-/** Seau aligné UTC d'une colonne temporelle qualifiée. */
+// Seaux de 6 h et d'un jour : alignés sur l'heure MURALE de Paris (`FUSEAU_SEAUX`,
+// query-contract.ts), changements d'heure compris — `date_bin` sur l'heure locale
+// (`timestamp`, sans saut), puis retour en `timestamptz`. Même calcul que
+// `bucketStarts` : la grille et les lignes tombent sur les mêmes instants.
+const FUSEAU_SQL = `'${FUSEAU_SEAUX}'`;
+const MUR_ORIGIN = "timestamp '2000-01-01 00:00:00'";
+
+/** Seau d'une colonne temporelle qualifiée : UTC sous 6 h, heure de Paris au-delà. */
 export function bucketExpr(column: string, range: ResolvedRange): string {
   if (!QUALIFIED.test(column) && !/^[a-z][a-z0-9_]{0,62}$/.test(column)) throw new Error("colonne de seau invalide");
+  if (range.bucketSeconds >= SEAU_ALIGNE_LOCAL_DES) {
+    return `(date_bin(${bucketInterval(range)}, (${column}) at time zone ${FUSEAU_SQL}, ${MUR_ORIGIN}) at time zone ${FUSEAU_SQL})`;
+  }
   return `date_bin(${bucketInterval(range)}, ${column}, ${UTC_ORIGIN})`;
 }
 
-/** Série des seaux couvrant [from,to), zéros compris (le dernier contient l'instant avant `to`). */
+/**
+ * Série des seaux couvrant [from,to), zéros compris (le dernier contient l'instant
+ * avant `to`). Un seul APPEL de fonction dans les deux cas : l'expression sert
+ * dans un `from … as g(bucket)` comme dans une liste de `select`.
+ */
 export function bucketSeriesSql(range: ResolvedRange, bind: Bind): string {
   const width = bucketInterval(range);
+  if (range.bucketSeconds >= SEAU_ALIGNE_LOCAL_DES) {
+    return `unnest(array(select (g at time zone ${FUSEAU_SQL})
+                           from generate_series(date_bin(${width}, ${bind(range.from)}::timestamptz at time zone ${FUSEAU_SQL}, ${MUR_ORIGIN}),
+                                                (${bind(range.to)}::timestamptz - interval '1 microsecond') at time zone ${FUSEAU_SQL},
+                                                ${width}) as g
+                          order by 1))`;
+  }
   return `generate_series(date_bin(${width}, ${bind(range.from)}::timestamptz, ${UTC_ORIGIN}),
                           ${bind(range.to)}::timestamptz - interval '1 microsecond', ${width})`;
 }

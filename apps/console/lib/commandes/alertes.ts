@@ -32,6 +32,8 @@ import {
   ALERT_COMPARATORS,
   insertAlertRule,
   isAlertMetric,
+  METRIQUES_SEUIL_SEUL,
+  metricLabel,
   runCheckAlerts,
   runCheckSloBurn,
   runRouteIssueNotifications,
@@ -101,6 +103,12 @@ export function regleDesChamps(ch: Champs): RuleInput {
   const mode = lire(ch, "mode") ?? "threshold";
   if (!(ALERT_MODES as readonly string[]).includes(mode)) throw new Invalide(`mode invalide : ${mode}`);
   const release = mode === "release";
+  // Vague 4 (migration-v100) : l'écart à l'habitude ne sait pas calculer un débit au
+  // p25, une durée hors `rum_metric` ni une part de sessions. Refusé plutôt que
+  // laissé à un no_data permanent.
+  if (mode === "baseline" && METRIQUES_SEUIL_SEUL.includes(metric)) {
+    throw new Invalide(`${metricLabel(metric)} : seuil fixe seulement, l'écart à l'habitude ne sait pas calculer cette mesure`);
+  }
   if (release && !(RELEASE_METRICS as readonly string[]).includes(metric)) {
     throw new Invalide("régression de release : réservée aux Web Vitals (LCP, INP, CLS, FCP, TTFB)");
   }

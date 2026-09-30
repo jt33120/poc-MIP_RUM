@@ -24,7 +24,7 @@ import { Reste } from "@/components/presentation/Reste";
 import { SaitFaire, ancreDuPoint } from "@/components/presentation/SaitFaire";
 import { CAPACITES, RELEVE, SHA, VERDICT_LABEL, compte } from "@/lib/couverture";
 import { DEPLOYEES_INERTES, lireFichierCite } from "@/lib/couverture-controle";
-import { CATEGORIELLE, RATING_HEX } from "@/lib/palette";
+import { AUTRES, CATEGORIELLE, RATING_HEX } from "@/lib/palette";
 import { POINTS_RESTE } from "@/lib/presentation-reste";
 import { CARTES, METHODE, repartitionCouverture } from "@/lib/presentation-sait-faire";
 import { idTitre } from "@/lib/presentation-parties";
@@ -183,7 +183,8 @@ describe("V-E — la barre de couverture", () => {
     const teintes = new Set([...html.matchAll(/fill="([^"]+)"/g)].map((m) => m[1]));
     expect(teintes.size).toBe(parts.length);
     for (const t of teintes) {
-      expect(CATEGORIELLE).toContain(t);
+      // Six teintes catégorielles, puis le gris « Autres » (spec A2 § 3.6).
+      expect([...CATEGORIELLE, AUTRES]).toContain(t);
       expect(Object.values(RATING_HEX)).not.toContain(t);
     }
     expect(html).not.toMatch(/\b(bg|text|fill)-(good|warn|bad)\b/);

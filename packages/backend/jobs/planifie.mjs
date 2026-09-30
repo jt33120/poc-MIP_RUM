@@ -31,6 +31,7 @@
 // montée à deux répliques — avec des verrous de TRANSACTION seulement, puisque le
 // pooler Neon perd un verrou de session.
 import { importerNotesHistoriques } from "../lib/error-issue-workflow.mjs";
+import { detecterPlages } from "./detections.mjs";
 import { ErreurCibleRefusee, safeFetch } from "../lib/net/safe-fetch.mjs";
 
 /**
@@ -161,6 +162,21 @@ export async function appelerFnSiPresente(pool, signature, fn, migration, option
   const { rows } = await pool.query("select to_regprocedure($1) is not null as present", [signature]);
   if (!rows[0]?.present) return { absent: `${migration} non appliquée` };
   return appelerFn(pool, fn, options);
+}
+
+/**
+ * LES DÉTECTIONS HORAIRES (migration-v101, A2 § 7.1) : les p75 des trois dernières
+ * heures fermées (`refresh_vital_horaire`, SQL, borné par son délai), puis la
+ * plage habituelle et les épisodes (JS, sur ces agrégats — `detections.mjs`).
+ * Sur une base sans v101, l'étape le dit au lieu d'échouer.
+ */
+export async function detectionsHoraires(pool, { maintenantMs = Date.now() } = {}) {
+  const delaiMs = delaiEtape("refresh_vital_horaire");
+  const lignes = await appelerFnSiPresente(pool, "refresh_vital_horaire(integer)", "refresh_vital_horaire(3)", "migration-v101", {
+    delaiMs,
+  });
+  if (lignes && typeof lignes === "object" && "absent" in lignes) return lignes;
+  return { vital_horaire: lignes, ...(await detecterPlages(pool, { maintenantMs })) };
 }
 
 /** Sondes uptime menées de front, au plus. */
@@ -374,6 +390,10 @@ export function travaux(pool, { log = console, dispatch = null, livraison = true
           // Notes de triage des groupes historiques devenus alias d'une issue,
           // importées une fois en activité (clé d'événement unique).
           { name: "import_legacy_issue_notes", run: () => importerNotesHistoriques(pool) },
+          // APRÈS les rollups : la plage habituelle et ses épisodes (v101). Son
+          // délai SQL borne le calcul des p75 ; les lectures qui suivent sont
+          // courtes, bornées par le `query_timeout` du pool.
+          { name: "detections_horaires", delaiMs: delaiEtape("refresh_vital_horaire"), run: () => detectionsHoraires(pool) },
         ],
         log,
         { job: "horaire" },
@@ -394,6 +414,16 @@ export function travaux(pool, { log = console, dispatch = null, livraison = true
           sql("purge_rum_tenants", "purge_rum_tenants(30)"),
           sql("meter_tenant_usage", "meter_tenant_usage()"),
           sql("purge_console_sessions", "purge_console_sessions()"),
+          // v101 : 8 semaines de p75 horaires et de constats. Une fonction à part,
+          // pas une ligne de plus dans `purge_rum_tenants` (que d'autres PR redéfinissent).
+          {
+            name: "purge_detections",
+            delaiMs: delaiEtape("purge_detections"),
+            run: () =>
+              appelerFnSiPresente(pool, "purge_detections(integer)", "purge_detections(8)", "migration-v101", {
+                delaiMs: delaiEtape("purge_detections"),
+              }),
+          },
         ],
         log,
         { job: "quotidien" },

@@ -78,7 +78,7 @@ import { TousEteints } from "@/components/TousEteints";
 import { explorerHref } from "@/lib/explorer-page-params";
 import { formater } from "@/lib/fmt-ids";
 import { CATEGORIELLE } from "@/lib/palette";
-import { alignerSeaux, grilleIso, libelleSeauComplet } from "@/lib/series";
+import { alignerSeaux, fenetresLues, grilleIso, libelleSeauComplet } from "@/lib/series";
 import { annotationsDeploiements } from "@/lib/annotations";
 import { type CouverturePrecedente } from "@/lib/comparaison";
 import { AVEC_SESSIONS, VIEW_CONTEXT_PARAMS, contextHref, gabaritZoom, lireComparaison } from "@/lib/view-state";
@@ -209,6 +209,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     panneauLu,
     signaux,
   } = d;
+  const fenetresCollecte = fenetresLues(d.fenetresCollecte);
 
   const engagement = engagementLu.ok ? engagementLu.data : null;
   const commencees = engagement?.sessions_started ?? null;
@@ -567,6 +568,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
                     zoomHref={gabarit}
                     hauteur={160}
                     synchro="sessions-volume"
+                    fenetresCollecte={fenetresCollecte}
                     ariaLabel={`Sessions commencées par tranche de ${bucketLabel(query.range.bucketSeconds)}, ${ecran.label}`}
                   />
                 </div>
@@ -583,6 +585,9 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
                     hauteur={160}
                     synchro="sessions-volume"
                     legendeAnnotations={false}
+                    // Panneaux empilés : les fenêtres datées sont écrites une fois, sous le premier.
+                    noteCollecte={false}
+                    fenetresCollecte={fenetresCollecte}
                     ariaLabel={`Visiteurs distincts par tranche de ${bucketLabel(query.range.bucketSeconds)}, ${ecran.label} ; valeurs non additionnables`}
                   />
                 </div>

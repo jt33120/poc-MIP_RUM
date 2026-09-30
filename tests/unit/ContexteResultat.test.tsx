@@ -36,6 +36,7 @@ vi.mock("@/components/charts/ThresholdSeries", () => ({
 import { RepartitionResultat, VolumeResultat, type OngletRepartition } from "@/components/explorer/ContexteResultat";
 import { parseExplorerPlan, type ExplorerPlan } from "@/lib/analytics-schema";
 import { explorerSource, planDeRepartition, planDeVolume } from "@/lib/explorer-page-params";
+import { INDEX_AUTRES } from "@/lib/palette";
 import type { ExplorerData, ExplorerMeta, ExplorerResult } from "@/lib/queries-explorer";
 import { bucketStarts, parseAnalyticsQuery, type AnalyticsQuery } from "@/lib/query-contract";
 
@@ -114,7 +115,7 @@ describe("F33 — W-E2 « Volume du résultat »", () => {
     );
     const series = JSON.parse(html.match(/data-series="([^"]*)"/)![1].replace(/&quot;/g, '"'));
     expect(series).toHaveLength(1);
-    expect(series[0]).toMatchObject({ forme: "barres", role: "categorie", categorieIndex: 4, libelle: "vues", additive: true });
+    expect(series[0]).toMatchObject({ forme: "barres", role: "categorie", categorieIndex: INDEX_AUTRES, libelle: "vues", additive: true });
     expect(html).toContain('data-vital="aucun"');
     expect(html).toContain('data-hauteur="120"');
     expect(texte(html)).toContain("Volume du résultat");

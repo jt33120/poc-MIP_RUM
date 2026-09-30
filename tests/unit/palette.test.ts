@@ -3,14 +3,42 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  AUTRES,
   CATEGORIELLE,
+  DIVERGENTE,
   PALIERS_SEQUENTIELLE,
   PALIERS_SEQUENTIELLE_JETONS,
   RATING_HEX,
+  RATING_JETON,
   SEQUENTIELLE,
+  SERIE,
   SEVERITE,
   sequentielleJeton,
 } from "../../apps/console/lib/palette";
+
+/** OKLab (Ottosson 2020) d'une couleur #rrggbb : pour la chroma et les écarts perçus. */
+function oklab(hex: string): [number, number, number] {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+const chroma = (hex: string) => {
+  const [, a, b] = oklab(hex);
+  return Math.hypot(a, b);
+};
+const ecartOklab = (x: string, y: string) => {
+  const [p, q] = [oklab(x), oklab(y)];
+  return 100 * Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+};
 
 /** Luminance relative WCAG d'une couleur #rrggbb ou d'un triplet. */
 function luminance(c: string | [number, number, number]): number {
@@ -47,6 +75,53 @@ describe("CATEGORIELLE", () => {
     for (const c of CATEGORIELLE) {
       expect(contraste(c, variable(":root", "c-panel")), `${c} sur clair`).toBeGreaterThanOrEqual(3);
       expect(contraste(c, variable(".dark", "c-panel")), `${c} sur sombre`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  // Spec A2 § 3.6 : l'ancienne palette à huit passait le 3:1 mais avait deux gris
+  // (ardoise, pierre) et deux voisines indiscernables (ciel ↔ ardoise, ΔE 10,6).
+  it("aucune teinte ne se lit grise (chroma OKLab ≥ 0,10)", () => {
+    for (const c of CATEGORIELLE) expect(chroma(c), c).toBeGreaterThanOrEqual(0.1);
+  });
+
+  it("deux voisines se distinguent en vision normale (ΔE OKLab × 100 ≥ 15)", () => {
+    for (let i = 1; i < CATEGORIELLE.length; i++) {
+      expect(ecartOklab(CATEGORIELLE[i - 1], CATEGORIELLE[i]), `${CATEGORIELLE[i - 1]} ↔ ${CATEGORIELLE[i]}`).toBeGreaterThanOrEqual(15);
+    }
+  });
+
+  it("six teintes au plus ; au-delà, le gris du thème (« Autres »)", () => {
+    expect(CATEGORIELLE).toHaveLength(6);
+    expect(AUTRES).toBe("rgb(var(--c-ink-faint))");
+  });
+});
+
+describe("SERIE (tracés)", () => {
+  it("la série principale est un jeton qui tient 3:1 sur la carte, en clair ET en sombre (WCAG 1.4.11)", () => {
+    expect(SERIE.principale).toBe("rgb(var(--c-serie))");
+    expect(contraste(variable(":root", "c-serie"), variable(":root", "c-panel"))).toBeGreaterThanOrEqual(3);
+    expect(contraste(variable(".dark", "c-serie"), variable(".dark", "c-panel"))).toBeGreaterThanOrEqual(3);
+  });
+
+  it("le robot suit le bleu du thème ; les états des figures SVG suivent les jetons", () => {
+    expect(SERIE.robot).toBe("rgb(var(--c-brand))");
+    expect(Object.values(RATING_JETON)).toEqual(["rgb(var(--c-good))", "rgb(var(--c-warn))", "rgb(var(--c-bad))"]);
+  });
+});
+
+describe("signal et DIVERGENTE (spec A2 § 3.5, § 3.8)", () => {
+  it("le signal tient 3:1 sur la carte dans les deux thèmes", () => {
+    for (const bloc of [":root", ".dark"] as const) {
+      expect(contraste(variable(bloc, "c-signal"), variable(bloc, "c-panel")), bloc).toBeGreaterThanOrEqual(3);
+      expect(contraste(variable(bloc, "c-signal-favorable"), variable(bloc, "c-panel")), bloc).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("sept pas, tous définis en clair et en sombre ; le pôle « pire » est le signal", () => {
+    expect(DIVERGENTE).toHaveLength(7);
+    for (const bloc of [":root", ".dark"] as const) {
+      for (const k of ["m3", "m2", "m1", "0", "p1", "p2", "p3"]) expect(() => variable(bloc, `c-div-${k}`)).not.toThrow();
+      expect(variable(bloc, "c-div-p3")).toEqual(variable(bloc, "c-signal"));
     }
   });
 });

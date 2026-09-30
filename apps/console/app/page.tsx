@@ -11,6 +11,7 @@ import { ReleaseCompare, statsDeVersion, type ReleaseStats } from "@/components/
 import { Methode } from "@/components/perf/Methode";
 import { ChargeErreursLcp, HeroCwv, type AnnotationsFigure, type ModeSeries } from "@/components/vue-ensemble/SeriesVueEnsemble";
 import { LIBELLE_ANGLE_MORT, TuileAngleMort, type EtatAngleMort } from "@/components/vue-ensemble/AngleMort";
+import { BandeauR0 } from "@/components/vue-ensemble/BandeauR0";
 import { blocsDe } from "@/lib/chargeurs/commun";
 import { chargerOverview, DECOUPAGE_LUS, VITAUX_HERO } from "@/lib/chargeurs/overview";
 import { avecBlocs, chargerEcran } from "@/lib/ecran";
@@ -696,6 +697,19 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <PresetBar vues={vuesPrereglees} actif={null} />
       </div>
 
+      {/* R0 (spec A2 § 5.2) — « ça va ? » en une ligne : score, le constat le plus
+          prioritaire, le nombre de constats, le dernier déploiement. Aucune lecture de
+          plus : tout vient des sections déjà lues ci-dessus. */}
+      <BandeauR0
+        sante={!health.ok ? "echec" : health.data.score == null || health.data.label == null ? null : { score: health.data.score, label: health.data.label }}
+        constat={constats.constats[0] ? { titre: constats.constats[0].titre, href: constats.constats[0].href } : null}
+        nbConstats={constats.constats.length}
+        constatsPartiels={constats.echecs.length > 0}
+        deploiement={!deploys.ok ? "echec" : deploys.data[0] ? { version: deploys.data[0].version, ts: deploys.data[0].ts } : null}
+        hrefSante={blocs.sante ? "#sante" : undefined}
+        hrefDeploiement={blocs.versions ? "#release-titre" : undefined}
+      />
+
       {/* Pourquoi les tuiles n'ont pas d'écart : dit en clair, UNE fois par raison,
           jamais un delta calculé sur une période à moitié mesurée (§ 3.2). */}
       {(blocs.vitals || blocs.trafic) &&
@@ -718,13 +732,17 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </div>
         )}
 
-      {/* Zone 2 — santé (compacte) et trafic, sur une rangée à 1440 px. Le trafic
-          prend 7/12 : ses trois tuiles portent des valeurs « 2,4 pour 100 » qu'une
-          colonne de 5/12 ne loge pas sans déborder (écart au § 5.1.1, dit en PR). */}
-      {(blocs.sante || blocs.trafic) && (
-        <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 min-[1400px]:grid-cols-12">
+      {/* R1 (spec A2 § 5.2) — les chiffres, sur UNE rangée dès 1280 px (grille de 12
+          colonnes, § 3.1) : la santé sur 4 colonnes ; sur 8, le trafic puis les Web
+          Vitals, empilés. La santé compacte (anneau, facteurs dessous) est aussi haute
+          que ces deux rangées de tuiles : côte à côte, le hero remonte d'environ 140 px
+          à 1440 × 900. Le trafic garde plus de 5/12 : ses tuiles portent des valeurs
+          « 2,4 pour 100 » qu'une colonne étroite ne loge pas (écart au § 5.1.1). Sous
+          1280 px, empilés dans l'ordre santé, trafic, Web Vitals. */}
+      {(blocs.sante || blocs.trafic || blocs.vitals) && (
+        <div className="mb-4 grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-12 xl:gap-4">
           {blocs.sante && (
-            <div className={`min-w-0 ${blocs.trafic ? "min-[1400px]:col-span-5" : "min-[1400px]:col-span-12"}`}>
+            <div id="sante" className={`min-w-0 scroll-mt-16 ${blocs.trafic || blocs.vitals ? "xl:col-span-4" : "xl:col-span-12"}`}>
               <SectionErreur titre="Santé de la période">
                 {!health.ok ? (
                   <EchecLecture titre="Santé de la période" />
@@ -744,83 +762,94 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               </SectionErreur>
             </div>
           )}
-          {blocs.trafic && (
-            <div className={`min-w-0 ${blocs.sante ? "min-[1400px]:col-span-7" : "min-[1400px]:col-span-12"}`}>
-              <SectionErreur titre="Trafic">
-                <RangeeTuiles tuiles={tuilesTrafic} classes="grid-cols-1 sm:grid-cols-3" />
-              </SectionErreur>
+          {(blocs.trafic || blocs.vitals) && (
+            <div className={`flex min-w-0 flex-col gap-3 xl:gap-4 ${blocs.sante ? "xl:col-span-8" : "xl:col-span-12"}`}>
+              {blocs.trafic && (
+                <SectionErreur titre="Trafic">
+                  <RangeeTuiles tuiles={tuilesTrafic} classes="grid-cols-2 sm:grid-cols-3" />
+                </SectionErreur>
+              )}
+              {/* Zone 3 — Web Vitals au p75, verdict et intervalle (P*.1), sparkline sur la
+                  bande « Bon ». Cinq de front à partir de 1440 px seulement : sur 8/12 à
+                  1280 px, une tuile n'aurait que ~90 px pour « 350 ms » en 28 px. */}
+              {blocs.vitals && (
+                <SectionErreur titre="Web Vitals">
+                  <div className="min-w-0">
+                    <RangeeTuiles tuiles={tuilesVitaux} classes="grid-cols-2 md:grid-cols-3 min-[1440px]:grid-cols-5" />
+                    {etatEchantillon && (
+                      <div className="mt-3">
+                        <EtatSurface compact etat={etatEchantillon} />
+                      </div>
+                    )}
+                  </div>
+                </SectionErreur>
+              )}
             </div>
           )}
         </div>
       )}
 
-      {/* Zone 3 — Web Vitals au p75, verdict et intervalle (P*.1), sparkline sur la bande « Bon ». */}
-      {blocs.vitals && (
-        <SectionErreur titre="Web Vitals">
-          <div className="mb-6 min-w-0">
-            <RangeeTuiles tuiles={tuilesVitaux} classes="grid-cols-2 md:grid-cols-3 xl:grid-cols-5" />
-            {etatEchantillon && (
-              <div className="mt-3">
-                <EtatSurface compact etat={etatEchantillon} />
+      {/* R2 (spec A2 § 5.2) — « qu'est-ce qui a changé ? » : le HERO sur 8 colonnes et
+          les constats sur 4, côte à côte dès 1280 px ; empilés en dessous, le hero
+          d'abord (il commençait à y = 1 242 à 1440 px, derrière les constats : audit
+          A1). Trois petits multiples, trois unités, trois échelles. */}
+      <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-12">
+        {blocs.hero && (
+          <div className="min-w-0 xl:col-span-8">
+            <SectionErreur titre="Core Web Vitals dans le temps">
+              <HeroCwv
+                {...communSeries}
+                mode={modeSeries}
+                lecture={
+                  <>
+                    {noteHero && <p>{noteHero}</p>}
+                    <div data-testid="datation-rupture">
+                      <p>{phraseDatationP7}</p>
+                      <Methode className="mt-1" testId="methode-hero">
+                        {guideHero} {methodeHeroP7}
+                      </Methode>
+                    </div>
+                  </>
+                }
+                vitaux={VITAUX_HERO.map((nom, i) => ({
+                  vital: nom,
+                  courant: serieDe(nom),
+                  precedent: precedenteDe(i),
+                  releaseB: seriesRelease?.[i].b ?? null,
+                  releaseA: seriesRelease?.[i].a ?? null,
+                  explorer: explorerHref(query, {
+                    version: 1,
+                    dataset: "vitals",
+                    measure: { field: "value", aggregation: "p75" },
+                    variant: nom,
+                    groupBy: [],
+                    visualization: "timeseries",
+                    limit: 5,
+                    cursor: null,
+                  }),
+                }))}
+              />
+            </SectionErreur>
+          </div>
+        )}
+
+        {/* Constats automatiques à règle publiée, DÉPLIÉS à côté du hero qu'ils
+            commentent : la colonne de 4 a la place de les montrer. Cible du lien
+            « N constats » du bandeau R0. */}
+        <div id="constats" className={`min-w-0 scroll-mt-16 ${blocs.hero ? "xl:col-span-4" : "xl:col-span-12"}`}>
+          <SectionErreur titre="Constats">
+            {constats.echecs.length > 0 && (
+              <div className="mb-2">
+                <EtatSurface
+                  compact
+                  etat={{ kind: "partiel", raison: `constats partiels : lecture en échec de ${constats.echecs.join(", ")}` }}
+                />
               </div>
             )}
-          </div>
-        </SectionErreur>
-      )}
-
-      {/* Zone 4 — constats automatiques à règle publiée, repliés. */}
-      <div className="mb-6 min-w-0">
-        <SectionErreur titre="Constats">
-          {constats.echecs.length > 0 && (
-            <div className="mb-2">
-              <EtatSurface
-                compact
-                etat={{ kind: "partiel", raison: `constats partiels : lecture en échec de ${constats.echecs.join(", ")}` }}
-              />
-            </div>
-          )}
-          <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} />
-        </SectionErreur>
+            <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut reglesEnInfobulle />
+          </SectionErreur>
+        </div>
       </div>
-
-      {/* Zone 5 — HERO (P1) : il répond à la question de l'écran, au-dessus du pli à
-          1440 × 900. Trois petits multiples, trois unités, trois échelles. */}
-      {blocs.hero && (
-        <SectionErreur titre="Core Web Vitals dans le temps">
-          <HeroCwv
-            {...communSeries}
-            mode={modeSeries}
-            lecture={
-              <>
-                {noteHero && <p>{noteHero}</p>}
-                <div data-testid="datation-rupture">
-                  <p>{phraseDatationP7}</p>
-                  <Methode className="mt-1" testId="methode-hero">
-                    {guideHero} {methodeHeroP7}
-                  </Methode>
-                </div>
-              </>
-            }
-            vitaux={VITAUX_HERO.map((nom, i) => ({
-              vital: nom,
-              courant: serieDe(nom),
-              precedent: precedenteDe(i),
-              releaseB: seriesRelease?.[i].b ?? null,
-              releaseA: seriesRelease?.[i].a ?? null,
-              explorer: explorerHref(query, {
-                version: 1,
-                dataset: "vitals",
-                measure: { field: "value", aggregation: "p75" },
-                variant: nom,
-                groupBy: [],
-                visualization: "timeseries",
-                limit: 5,
-                cursor: null,
-              }),
-            }))}
-          />
-        </SectionErreur>
-      )}
 
       {/* Zone 6 — la dégradation coïncide-t-elle avec la charge ou avec des erreurs ?
           Trois panneaux empilés, un axe chacun (P5) — 8/12 ; à côté, 4/12, les heures
@@ -1004,9 +1033,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 </>
               }
               lecture={
+                // Une phrase de lecture, pas deux (audit A1 T5 : 1 553 mots sur cet écran).
                 businessHours
-                  ? "Vue Lun–Ven, 8 h–19 h. Teinte d'une seule couleur : plus foncée, plus de mesures « Bon » ; aucune couleur de verdict."
-                  : "Une case vide : aucune donnée sur ce créneau (le RUM n'enregistre que le trafic réel). Teinte d'une seule couleur : plus foncée, plus de mesures « Bon » ; aucune couleur de verdict."
+                  ? "Lun–Ven, 8 h–19 h. Plus foncé : plus de mesures « Bon » (une seule teinte, sans verdict)."
+                  : "Case vide : aucune visite sur ce créneau. Plus foncé : plus de mesures « Bon » (une seule teinte, sans verdict)."
               }
             >
               {/* Heures ouvrées (Lun–Ven, 8 h–19 h) : les créneaux où l'on attend du trafic. */}
@@ -1054,6 +1084,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <AnomalyTable
               health={health.data}
               filtree={health.data.factors.some((x) => x.key === "anomalies" && x.raisonNull === "sous filtre")}
+              sansApp={!!query.scope.requestedApp}
               lien={(a) => {
                 const debut = new Date(a.bucket).getTime();
                 return lien("/pages", {
@@ -1091,14 +1122,16 @@ function fusionnerNotes(notes: readonly string[]): string {
 /**
  * Une rangée de tuiles (§ 3.12 : une rangée = une population). Une tuile dont la
  * lecture a échoué dit l'échec à SA place : ni « 0 », ni « — », qui se liraient
- * comme une mesure sur une fenêtre qu'on n'a simplement pas pu lire.
+ * comme une mesure sur une fenêtre qu'on n'a simplement pas pu lire. Tuiles
+ * compactes (spec A2 § 4) : une ligne sous le chiffre, le détail en infobulle — la
+ * tuile LCP empilait six lignes (283 px) et poussait le hero sous le pli.
  */
 function RangeeTuiles({ tuiles, classes }: { tuiles: Tuile[]; classes: string }) {
   return (
     <div className={`grid min-w-0 gap-3 ${classes}`}>
       {tuiles.map((t) => (
         <div key={t.cle} className="flex min-w-0 flex-col" data-testid={`tuile-${t.cle}`}>
-          {"echec" in t ? <EchecLecture compact titre={t.titre} /> : <KpiTile {...t.props} />}
+          {"echec" in t ? <EchecLecture compact titre={t.titre} /> : <KpiTile {...t.props} compact />}
         </div>
       ))}
     </div>

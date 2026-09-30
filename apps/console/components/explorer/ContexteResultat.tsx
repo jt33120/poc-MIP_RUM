@@ -30,6 +30,7 @@ import type { ExplorerResult } from "@/lib/queries-explorer";
 import { bucketLabel, rangeLabel, type ResolvedRange } from "@/lib/query-contract";
 import { libelleSeauComplet, type PointSerie, type SerieDef } from "@/lib/series";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { INDEX_AUTRES } from "@/lib/palette";
 
 /**
  * Ce qu'une lecture de contexte a donné. `budget` n'est pas une panne : c'est une
@@ -152,9 +153,9 @@ export function VolumeResultat({
   const { grille, points, groupes } = pointsDeSerie(meta, data);
   const seauSecondes = meta.range.bucket_seconds;
   const cle = groupes[0]?.cle ?? "s0";
-  // Un volume se situe, il ne se juge pas : teinte neutre (ardoise, `categorie(4)`),
+  // Un volume se situe, il ne se juge pas : teinte neutre (le gris « Autres », `INDEX_AUTRES`),
   // pas l'orange de la série mesurée principale — c'est le résultat, au-dessus.
-  const series: SerieDef[] = [{ cle, libelle: unite, role: "categorie", categorieIndex: 4, forme: "barres", additive: true }];
+  const series: SerieDef[] = [{ cle, libelle: unite, role: "categorie", categorieIndex: INDEX_AUTRES, forme: "barres", additive: true }];
   const ariaLabel = `${titre} : ${unite} par tranche, ${grille.length} tranches de ${bucketLabel(seauSecondes)}`;
   // Un dénombrement : un seau sans ligne vaut réellement 0 — ce n'est pas un trou.
   const parT = new Map(points.map((p: PointSerie) => [Date.parse(p.t), p]));

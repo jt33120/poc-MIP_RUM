@@ -605,7 +605,9 @@ export function constatsVueEnsemble(e: EntreesConstats, liens: LiensConstats): C
   else {
     const groupes = e.regresses.data;
     for (const g of groupes.slice(0, MAX_REGRESSIONS_NOMMEES)) {
-      const nom = g.sample_message ?? g.error_type ?? `empreinte ${g.fingerprint.slice(0, 8)}`;
+      // Jamais l'empreinte brute à l'écran (audit A1 T5) : un groupe sans message ni
+      // type se nomme comme tel, et son lien ouvre le groupe.
+      const nom = g.sample_message ?? g.error_type ?? "erreur sans message";
       constats.push({
         type: "regression",
         titre: `Erreur réapparue : ${nom} (${pluriel(g.occurrences, "occurrence")} sur la période)`,
