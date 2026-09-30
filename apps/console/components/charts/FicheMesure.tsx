@@ -16,6 +16,7 @@ export function FicheMesure({
   ariaLabel,
   alerte = false,
   testId = "kpi-tile",
+  fond,
   children,
 }: {
   /** Ce que la case montre : libellé, valeur, unité. */
@@ -25,6 +26,8 @@ export function FicheMesure({
   ariaLabel: string;
   alerte?: boolean;
   testId?: string;
+  /** L'aperçu de la courbe, dessiné derrière le contenu de la case. */
+  fond?: ReactNode;
   children: ReactNode;
 }) {
   const fenetre = useRef<HTMLDialogElement>(null);
@@ -37,11 +40,12 @@ export function FicheMesure({
         aria-haspopup="dialog"
         data-testid={testId}
         data-ton={alerte ? "bad" : "neutre"}
-        className={`flex h-full min-h-[6.5rem] w-full min-w-0 flex-col justify-between gap-1 rounded-xl border bg-panel px-3.5 py-3 text-left transition hover:border-ink-faint/60 hover:bg-panel2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
+        className={`relative isolate flex h-full min-h-[6.5rem] w-full min-w-0 flex-col justify-between gap-1 overflow-hidden rounded-xl border bg-panel px-3.5 py-3 text-left transition hover:border-ink-faint/60 hover:bg-panel2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
           alerte ? "border-bad/50" : "border-line"
         }`}
       >
-        {contenuCase}
+        {fond}
+        <span className="relative z-10 flex h-full min-w-0 flex-col justify-between gap-1">{contenuCase}</span>
       </button>
       <dialog
         ref={fenetre}

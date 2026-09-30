@@ -29,7 +29,7 @@ import { pluriel } from "@/lib/format";
 import { lireVital, texteVerdict } from "@/lib/vital-lecture";
 import { ValeurNoteeMip } from "../NoteMip";
 import { FicheMesure } from "./FicheMesure";
-import { GrapheMesure } from "./GrapheMesure";
+import { ApercuFond, GrapheMesure } from "./GrapheMesure";
 
 export type SensMeilleur = "bas" | "haut" | "neutre";
 
@@ -224,6 +224,7 @@ export function KpiTile({
   epure = false,
   source,
   categorie,
+  libelleCase,
   grapheDebuts,
   titreAxeY,
   noteMip,
@@ -307,8 +308,10 @@ export function KpiTile({
   epure?: boolean;
   /** D'où vient la mesure (capteur, API du navigateur, table) : écrite dans la fiche. */
   source?: string;
-  /** Étiquette courte de la source, en tête de case (« Navigateur · CWV »). */
+  /** Étiquette courte de la source, en pied de case (« Navigateur · Core Web Vitals »). */
   categorie?: string;
+  /** Libellé court de la case, quand `label` est trop long pour elle ; `label` reste lu. */
+  libelleCase?: string;
   /** Début ISO de chaque point de `serie` : sans eux, pas de graphique grand format. */
   grapheDebuts?: string[];
   /** Titre de l'axe vertical du graphique grand format (grandeur et unité). */
@@ -489,10 +492,11 @@ export function KpiTile({
         titre={label}
         ariaLabel={ariaLabel}
         alerte={enAlerte}
+        fond={serie ? <ApercuFond valeurs={serie} /> : undefined}
         case={
           <>
             <span className="flex min-w-0 items-center justify-between gap-2">
-              <span className="min-w-0 truncate text-[11px] font-medium text-ink-soft">{label}</span>
+              <span className="min-w-0 truncate text-[11px] font-medium text-ink-soft">{libelleCase ?? label}</span>
               {couleurPoint && <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${couleurPoint}`} />}
             </span>
             <span
@@ -502,7 +506,7 @@ export function KpiTile({
               <span className="text-[26px] font-semibold leading-8">{nombre}</span>
               {unite && <span className="text-sm font-medium text-ink-soft">{unite}</span>}
             </span>
-            {categorie && <span className="truncate text-[10px] uppercase tracking-[0.1em] text-ink-faint">{categorie}</span>}
+            {categorie && <span className="truncate text-[10px] text-ink-faint">{categorie}</span>}
             {/* Tout le reste, pour les lecteurs d'écran et les tests. */}
             <span className="sr-only">
               {verdict?.kind === "etabli" && <span data-testid="kpi-verdict">{RATING_LABEL[verdict.rating]}</span>}

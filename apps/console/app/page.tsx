@@ -3,6 +3,8 @@ import { ECRANS } from "@mip/console-contract";
 import { Figure } from "@/components/charts/Figure";
 import { HealthHeatmap } from "@/components/charts/HealthHeatmap";
 import { KpiTile } from "@/components/charts/KpiTile";
+import { FicheMesure } from "@/components/charts/FicheMesure";
+import { HEALTH_CLASS } from "@/lib/health-libelles";
 import { ImpactTable } from "@/components/ImpactTable";
 import { InsightStrip } from "@/components/InsightStrip";
 import { PageHeader } from "@/components/PageHeader";
@@ -310,6 +312,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               label: "Occurrences d'erreurs pour 100 pages vues",
               source: SOURCE_ERREURS,
               categorie: "Navigateur · erreurs",
+              libelleCase: "Erreurs / 100 pages vues",
               grapheDebuts: vues.ok ? vues.data.map((v) => v.bucket) : undefined,
               titreAxeY: "erreurs pour 100 pages vues",
               valeur: ratioPour100(erreurs.data.navigateur, stats.data.pageviews),
@@ -757,6 +760,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         constatsPartiels={constats.echecs.length > 0 || etatDetectes.kind === "echec"}
         deploiement={!deploys.ok ? "echec" : deploys.data[0] ? { version: deploys.data[0].version, ts: deploys.data[0].ts } : null}
         hrefSante={blocs.sante ? "#sante" : undefined}
+        masquerSante={blocs.sante}
         hrefDeploiement={blocs.versions ? "#release-titre" : undefined}
       />
 
@@ -782,68 +786,78 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </div>
         )}
 
-      {/* R1 (spec A2 § 5.2) — les chiffres, sur UNE rangée dès 1280 px (grille de 12
-          colonnes, § 3.1) : la santé sur 4 colonnes ; sur 8, le trafic puis les Web
-          Vitals, empilés. La santé compacte (anneau, facteurs dessous) est aussi haute
-          que ces deux rangées de tuiles : côte à côte, le hero remonte d'environ 140 px
-          à 1440 × 900. Le trafic garde plus de 5/12 : ses tuiles portent des valeurs
-          « 2,4 pour 100 » qu'une colonne étroite ne loge pas (écart au § 5.1.1). Sous
-          1280 px, empilés dans l'ordre santé, trafic, Web Vitals. */}
+      {/* R1 — recette du 30/09/2026 : UNE grille régulière de cases égales, rangées
+          par source. La santé est la première case, sur deux lignes (5 colonnes × 2) ;
+          son score n'est plus écrit ailleurs. Une case = une valeur, son aperçu de
+          courbe en fond ; un clic ouvre sa fenêtre (graphique, détail, source). */}
       {(blocs.sante || blocs.trafic || blocs.vitals) && (
-        <div className="mb-4 grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-12 xl:gap-4">
-          {blocs.sante && (
-            <div id="sante" className={`min-w-0 scroll-mt-16 ${blocs.trafic || blocs.vitals ? "xl:col-span-4" : "xl:col-span-12"}`}>
-              <SectionErreur titre="Santé de la période">
-                {!health.ok ? (
-                  <EchecLecture titre="Santé de la période" />
-                ) : (
-                  <HealthBanner
-                    health={health.data}
-                    periodLabel={period.label}
-                    compact
-                    liens={{
-                      vitals: lien("/pages"),
-                      errors: lien("/errors"),
-                      stability: lien("/sessions"),
-                      anomalies: "#anomalies",
-                    }}
-                  />
-                )}
-              </SectionErreur>
-            </div>
-          )}
-          {(blocs.trafic || blocs.vitals) && (
-            <div className={`flex min-w-0 flex-col gap-3 xl:gap-4 ${blocs.sante ? "xl:col-span-8" : "xl:col-span-12"}`}>
-              {/* Recette du 30/09/2026 : les mesures RANGÉES PAR SOURCE, chaque groupe
-                  nommant d'où viennent ses chiffres ; une tuile ne montre que sa valeur
-                  et son unité, le reste s'ouvre au survol. */}
-              {/* Recette du 30/09/2026 : UNE grille régulière, cases égales, rangées par
-                  source (trafic, erreurs, Core Web Vitals, rendu, réseau et serveur). Une
-                  case = une valeur ; un clic ouvre sa fenêtre (graphique, détail, source). */}
-              {(blocs.trafic || blocs.vitals) && (
-                <SectionErreur titre="Mesures">
-                  <div className="min-w-0">
-                    <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4" data-testid="grille-mesures">
-                      {[
-                        ...(blocs.trafic ? tuilesTrafic : []),
-                        ...(blocs.vitals ? tuilesVitaux : []),
-                      ].map((t) => (
-                        <div key={t.cle} className="flex min-w-0 flex-col" data-testid={`tuile-${t.cle}`}>
-                          {"echec" in t ? <EchecLecture compact titre={t.titre} /> : <KpiTile {...t.props} compact epure />}
-                        </div>
-                      ))}
-                    </div>
-                    {etatEchantillon && (
+        <SectionErreur titre="Mesures">
+          <div className="mb-4 min-w-0">
+            <div
+              className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 lg:grid-rows-2"
+              data-testid="grille-mesures"
+            >
+              {blocs.sante && (
+                <div id="sante" className="flex min-w-0 scroll-mt-16 flex-col lg:row-span-2">
+                  {!health.ok ? (
+                    <EchecLecture compact titre="Santé de la période" />
+                  ) : (
+                    <FicheMesure
+                      titre="Santé de la période"
+                      ariaLabel={
+                        health.data.score == null
+                          ? "Santé : score non calculable"
+                          : `Santé ${health.data.score} sur 100, ${health.data.label}`
+                      }
+                      testId="case-sante"
+                      case={
+                        <>
+                          <span className="flex min-w-0 items-center justify-between gap-2">
+                            <span className="text-[11px] font-medium text-ink-soft">Santé</span>
+                            {health.data.label && (
+                              <span className={`rounded-full border px-1.5 py-px text-[10px] font-semibold ${HEALTH_CLASS[health.data.label]}`}>
+                                {health.data.label}
+                              </span>
+                            )}
+                          </span>
+                          <span className="flex items-baseline gap-1 tabular-nums tracking-tight">
+                            <span className="text-5xl font-semibold leading-none text-ink">{health.data.score ?? "—"}</span>
+                            <span className="text-sm font-medium text-ink-soft">/ 100</span>
+                          </span>
+                          <span className="truncate text-[10px] text-ink-faint">Score composite MIP</span>
+                        </>
+                      }
+                    >
                       <div className="mt-3">
-                        <EtatSurface compact etat={etatEchantillon} />
+                        <HealthBanner
+                          health={health.data}
+                          periodLabel={period.label}
+                          compact
+                          liens={{
+                            vitals: lien("/pages"),
+                            errors: lien("/errors"),
+                            stability: lien("/sessions"),
+                            anomalies: "#anomalies",
+                          }}
+                        />
                       </div>
-                    )}
-                  </div>
-                </SectionErreur>
+                    </FicheMesure>
+                  )}
+                </div>
               )}
+              {[...(blocs.trafic ? tuilesTrafic : []), ...(blocs.vitals ? tuilesVitaux : [])].map((t) => (
+                <div key={t.cle} className="flex min-w-0 flex-col" data-testid={`tuile-${t.cle}`}>
+                  {"echec" in t ? <EchecLecture compact titre={t.titre} /> : <KpiTile {...t.props} compact epure />}
+                </div>
+              ))}
             </div>
-          )}
-        </div>
+            {blocs.vitals && etatEchantillon && (
+              <div className="mt-3">
+                <EtatSurface compact etat={etatEchantillon} />
+              </div>
+            )}
+          </div>
+        </SectionErreur>
       )}
 
       {/* R2 (spec A2 § 5.2) — « qu'est-ce qui a changé ? » : le HERO sur 8 colonnes et

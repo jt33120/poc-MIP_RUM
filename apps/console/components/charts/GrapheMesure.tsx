@@ -171,3 +171,30 @@ export function GrapheMesure({
     </figure>
   );
 }
+
+/**
+ * L'aperçu de la courbe en FOND d'une case (recette du 30/09/2026) : une aire douce,
+ * sans axe ni chiffre — la tendance d'un coup d'œil, le chiffre restant au premier
+ * plan. Même échelle robuste que le grand format : une tranche aberrante ne l'aplatit
+ * pas. Moins de deux points mesurés : rien.
+ */
+export function ApercuFond({ valeurs }: { valeurs: (number | null)[] }) {
+  const n = valeurs.length;
+  const mesurees = valeurs.filter((v): v is number => v != null && Number.isFinite(v));
+  if (n < 2 || mesurees.length < 2) return null;
+  const sommet = sommetRobuste(mesurees) || 1;
+  const x = (i: number) => (i / (n - 1)) * 100;
+  const y = (v: number) => 30 - (Math.min(v, sommet) / sommet) * 26;
+  const points = valeurs
+    .map((v, i) => (v == null || !Number.isFinite(v) ? null : `${x(i).toFixed(2)},${y(v).toFixed(2)}`))
+    .filter((p): p is string => p !== null);
+  const ligne = `M${points.join(" L")}`;
+  const premier = points[0].split(",")[0];
+  const dernier = points[points.length - 1].split(",")[0];
+  return (
+    <svg aria-hidden viewBox="0 0 100 30" preserveAspectRatio="none" className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 w-full">
+      <path d={`${ligne} L${dernier},30 L${premier},30 Z`} className="fill-perf/[0.07]" />
+      <path d={ligne} fill="none" className="stroke-perf/35" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
