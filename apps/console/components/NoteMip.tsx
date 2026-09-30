@@ -54,10 +54,13 @@ export function ValeurNoteeMip({
   }
   return (
     <span className={`inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5 ${className}`}>
+      {/* `relative` : le libellé `sr-only` (position absolue) se place dans la pastille.
+          Sans ancêtre positionné, il se plaçait par rapport à la PAGE et, dans un tableau
+          défilant (`ResourcesView`), l'élargissait à 499 px sur 390 (piège 16). */}
       <span
         data-note={note}
         data-mesure={mesure}
-        className={`rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums ${RATING_CLASS[note]}`}
+        className={`relative rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums ${RATING_CLASS[note]}`}
       >
         <span aria-hidden="true" className="mr-1">
           {FORME_RATING[note]}
