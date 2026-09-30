@@ -9,6 +9,7 @@ import {
   DOMAINE_DE_CATEGORIE,
   activeCategory,
   domaineDe,
+  estAdministration,
   hrefMatches,
   lienAdministrationActif,
   ongletActif,
@@ -85,16 +86,18 @@ describe("CATEGORIES (§ 2.2)", () => {
     for (const c of ouvertes()) expect(sousOnglets(c)[0].href, c.label).toBe(c.href);
   });
 
-  it("libellés du § 2.3, et /actions masqué juste après /ux", () => {
+  it("libellés du § 2.3, /actions masqué juste après /ux, /mobile hors menu", () => {
     const perf = CATEGORIES[0];
-    expect(perf.children?.map((l) => [l.href, l.label, l.sousOnglet ?? true])).toEqual([
-      ["/", "Vue d'ensemble", true],
-      ["/pages", "Pages", true],
-      ["/errors", "Erreurs", true],
-      ["/ux", "Interactions", true],
-      ["/actions", "Actions", false],
-      ["/experience", "Satisfaction", true],
-      ["/mobile", "Mobile", true],
+    expect(perf.children?.map((l) => [l.href, l.label, l.sousOnglet ?? true, l.horsMenu ?? false])).toEqual([
+      ["/", "Vue d'ensemble", true, false],
+      ["/pages", "Pages", true, false],
+      ["/errors", "Erreurs", true, false],
+      ["/ux", "Interactions", true, false],
+      ["/actions", "Actions", false, false],
+      ["/experience", "Satisfaction", true, false],
+      // Recette du 30/09/2026 : seul le SDK React Native, non publié, l'alimente ;
+      // aucun projet n'est mobile. Hors menu, l'adresse reste.
+      ["/mobile", "Mobile", true, true],
     ]);
     const libelles = Object.fromEntries(ouvertes().flatMap((c) => c.children!.map((l) => [l.href, l.label])));
     expect(libelles["/goals"]).toBe("Conversions");
@@ -129,8 +132,9 @@ describe("CATEGORIES (§ 2.2)", () => {
 describe("sousOnglets et ongletActif", () => {
   const perf = CATEGORIES[0];
 
-  it("SubNav ne rend pas les liens sousOnglet: false", () => {
+  it("SubNav ne rend pas les liens sousOnglet: false ni horsMenu", () => {
     expect(sousOnglets(perf).map((l) => l.href)).not.toContain("/actions");
+    expect(sousOnglets(perf).map((l) => l.href)).toEqual(["/", "/pages", "/errors", "/ux", "/experience"]);
   });
 
   it("un lien masqué allume l'onglet visible qui le précède", () => {
@@ -139,6 +143,20 @@ describe("sousOnglets et ongletActif", () => {
     expect(ongletActif(perf, "/errors/issues/7")).toBe("/errors");
     expect(ongletActif(perf, "/")).toBe("/");
     expect(ongletActif(perf, "/sessions")).toBeUndefined();
+  });
+
+  it("une route hors menu garde sa catégorie mais n'allume AUCUN onglet", () => {
+    // « Satisfaction » allumé sur /mobile dirait qu'on lit les avis.
+    expect(activeCategory("/mobile")?.label).toBe("Performance");
+    expect(domaineDe("/mobile")).toBe("perf");
+    expect(ongletActif(perf, "/mobile")).toBeUndefined();
+    // Et l'onglet précédent garde sa propre route.
+    expect(ongletActif(perf, "/experience")).toBe("/experience");
+  });
+
+  it("aucune autre entrée n'est hors menu", () => {
+    const horsMenu = CATEGORIES.flatMap((c) => (c.children ?? []).filter((l) => l.horsMenu).map((l) => l.href));
+    expect(horsMenu).toEqual(["/mobile"]);
   });
 });
 
@@ -208,5 +226,19 @@ describe("ADMINISTRATION — le bloc de la sidebar", () => {
     expect(lienAdministrationActif("/admin/customers/demo-app")?.href).toBe("/admin/customers");
     expect(lienAdministrationActif("/admin/users")?.href).toBe("/admin/users");
     expect(lienAdministrationActif("/")).toBeUndefined();
+  });
+
+  it("« Jetons d'accès » : le libellé change, l'adresse reste (recette du 30/09/2026)", () => {
+    const jetons = ADMINISTRATION.find((l) => l.href === "/admin/read-tokens");
+    expect(jetons?.label).toBe("Jetons d'accès");
+    expect(ADMINISTRATION.map((l) => l.label).join(" ")).not.toMatch(/lecture/i);
+  });
+
+  it("estAdministration : /admin et ses sous-pages, rien d'autre", () => {
+    expect(estAdministration("/admin")).toBe(true);
+    expect(estAdministration("/admin/customers/demo-app")).toBe(true);
+    expect(estAdministration("/administrateur")).toBe(false);
+    expect(estAdministration("/api-docs")).toBe(false);
+    expect(estAdministration("/")).toBe(false);
   });
 });

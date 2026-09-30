@@ -9,8 +9,14 @@ import type { IconName } from "./icons";
  * route gardée derrière un onglet INTERNE à une page (/actions, sous
  * « Interactions ») : une entrée de plus dans la barre dirait deux écrans là où
  * il n'y a qu'une question. Défaut : `true`.
+ *
+ * `horsMenu: true` (recette du 30/09/2026) : la page n'a rien à montrer à aucun
+ * projet actuel, elle quitte le menu mais GARDE son adresse (liens partagés, e2e).
+ * Sur sa route, la catégorie reste allumée et AUCUN onglet ne l'est : l'onglet
+ * voisin allumé dirait qu'on lit un autre écran, ce que `sousOnglet: false` fait
+ * exprès pour un onglet interne.
  */
-export type NavLink = { href: string; label: string; sousOnglet?: boolean };
+export type NavLink = { href: string; label: string; sousOnglet?: boolean; horsMenu?: boolean };
 
 export type NavCategory = {
   href: string; // page d'atterrissage de la catégorie (1er onglet)
@@ -57,7 +63,11 @@ export const CATEGORIES: NavCategory[] = [
       // P7.5 : le runtime React Native a son écran parce qu'il a ses angles
       // MORTS — crashes natifs, ANR, démarrage natif. Les fondre dans les
       // écrans web ferait lire leurs absences comme des zéros.
-      { href: "/mobile", label: "Mobile" },
+      // Hors menu depuis la recette du 30/09/2026 : seul le SDK React Native
+      // l'alimente, il n'est pas publié et aucun projet n'est mobile — l'onglet
+      // ne menait qu'à un écran vide. La page reste à son adresse, prête pour le
+      // premier projet mobile.
+      { href: "/mobile", label: "Mobile", horsMenu: true },
     ],
   },
   // Synthétique × RUM : la promesse « synthétique + RUM unifiés », notre
@@ -145,7 +155,10 @@ export const ADMINISTRATION: readonly LienAdministration[] = [
   { href: "/admin/customers", label: "Clients", icon: "building" },
   { href: "/admin/users", label: "Utilisateurs", icon: "user" },
   { href: "/admin/privacy", label: "Vie privée · RGPD", icon: "shield" },
-  { href: "/admin/read-tokens", label: "Jetons de lecture", icon: "key" },
+  // « Jetons d'accès » (recette du 30/09/2026) : un « jeton de lecture » EST un jeton
+  // d'accès porteur, en lecture seule, limité à la synthèse d'une application — le
+  // nom que le métier connaît. L'adresse, la table et le code gardent « read ».
+  { href: "/admin/read-tokens", label: "Jetons d'accès", icon: "key" },
   { href: "/admin/sourcemaps", label: "Source maps", icon: "fileCode" },
   { href: "/admin/extension-scope", label: "Extension navigateur", icon: "puzzle" },
   { href: "/admin/extension-installs", label: "Postes équipés", icon: "monitor" },
@@ -156,6 +169,11 @@ export const ADMINISTRATION: readonly LienAdministration[] = [
   { href: "/admin/usage", label: "Consommation", icon: "barChart" },
   { href: "/admin/health", label: "Santé interne", icon: "heartPulse" },
 ];
+
+/** Le chemin est-il un écran d'administration ? Le bloc repliable s'y ouvre d'office. */
+export function estAdministration(pathname: string): boolean {
+  return hrefMatches("/admin", pathname);
+}
 
 /** Entrée d'administration active pour ce chemin (préfixe le plus long), ou undefined. */
 export function lienAdministrationActif(pathname: string): LienAdministration | undefined {
@@ -213,24 +231,26 @@ export function surtitreDe(pathname: string): DomaineRum | DomaineHorsRum | null
   return null;
 }
 
-/** Sous-onglets RENDUS par la barre : les liens `sousOnglet: false` en sont retirés. */
+/** Sous-onglets RENDUS par la barre : les liens `sousOnglet: false` et `horsMenu` en sont retirés. */
 export function sousOnglets(c: NavCategory): NavLink[] {
-  return (c.children ?? []).filter((l) => l.sousOnglet !== false);
+  return (c.children ?? []).filter((l) => l.sousOnglet !== false && !l.horsMenu);
 }
 
 /**
  * Onglet RENDU à allumer pour ce chemin. Un lien masqué est rattaché à l'onglet
  * visible qui le précède : sur /actions, c'est « Interactions » qui est actif —
- * la barre ne doit jamais n'allumer aucun onglet sur une route de sa catégorie.
+ * la barre ne doit jamais n'allumer aucun onglet sur une route gardée derrière un
+ * onglet interne. Une route `horsMenu` (/mobile) n'en allume AUCUN : elle n'est
+ * derrière aucun onglet.
  */
 export function ongletActif(c: NavCategory, pathname: string): string | undefined {
   let visible: string | undefined;
   let best: string | undefined;
   let bestLen = -1;
   for (const l of c.children ?? []) {
-    if (l.sousOnglet !== false) visible = l.href;
+    if (l.sousOnglet !== false && !l.horsMenu) visible = l.href;
     if (visible !== undefined && hrefMatches(l.href, pathname) && l.href.length > bestLen) {
-      best = visible;
+      best = l.horsMenu ? undefined : visible;
       bestLen = l.href.length;
     }
   }
