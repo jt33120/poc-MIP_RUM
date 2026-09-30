@@ -23,6 +23,18 @@ export function isAllowedOrigin(origin, extraOrigins = []) {
 }
 
 /**
+ * En-têtes de RÉPONSE qu'un navigateur d'une autre origine a le droit de lire.
+ *
+ * `Retry-After` n'est pas un en-tête « simple » au sens de CORS : sans cette
+ * déclaration, `res.headers.get("retry-after")` rend `null` au SDK dès que la
+ * collecte est sur une autre origine que la page — c'est-à-dire toujours chez un
+ * client, et désormais aussi pour la collecte directe au collector (P6b.G). Le
+ * SDK retombait alors sur son propre recul (30 s) : trop tôt après un 429
+ * `retry-after: 60`, trop tard après un 503 `retry-after: 2`.
+ */
+export const EXPOSE_HEADERS = "retry-after";
+
+/**
  * En-têtes CORS pour une requête. `Access-Control-Allow-Origin` n'est présent
  * QUE si l'origine est autorisée ; sinon seuls les en-têtes de préflight sont
  * renvoyés (le navigateur bloque, ce qui est le comportement voulu).
@@ -37,8 +49,10 @@ export function corsHeaders(origin, extraOrigins = [], opts = {}) {
     "Access-Control-Allow-Headers": opts.allowHeaders ?? "content-type",
     "Access-Control-Max-Age": "86400",
   };
+  // Exposé avec l'origine seulement : sans `Allow-Origin`, le navigateur ne
+  // livre de toute façon rien de la réponse à la page.
   return isAllowedOrigin(origin, extraOrigins)
-    ? { "Access-Control-Allow-Origin": origin, ...preflight }
+    ? { "Access-Control-Allow-Origin": origin, "Access-Control-Expose-Headers": EXPOSE_HEADERS, ...preflight }
     : { ...preflight };
 }
 

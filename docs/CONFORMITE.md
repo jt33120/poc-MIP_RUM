@@ -25,10 +25,13 @@
   pour les machines** (service `api`, sur jeton, en lecture seule), le **backend de la console** (service
   `console-api` : comptes, sessions, écrans, écritures et demandes RGPD, pour le seul serveur de la console)
   et le **serveur MCP** tournent au même endroit.
-- **Une exception, la console elle-même** (application `mip-rum-console`) : quand la collecte directe est
-  allumée (variable Vercel `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL`, 28/09/2026), ses mesures vont du navigateur
-  **directement** au collecteur Railway, sans passer par Vercel. Le collecteur lit alors l'adresse IP pour en
-  déduire le pays, sans la conserver (§3.2). Les mesures des clients, elles, passent toujours par la console.
+- **Une exception, la collecte directe** : quand elle est allumée, les mesures vont du navigateur
+  **directement** au collecteur Railway, sans passer par Vercel, et le collecteur lit l'adresse IP pour en
+  déduire le pays, sans la conserver (§3.2). Deux interrupteurs, deux périmètres : la console elle-même
+  (application `mip-rum-console`, variable Vercel `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL`, depuis le
+  28/09/2026) ; les sites des clients dont le code de suivi, ou l'extension, vise le collecteur (variable
+  Vercel `NEXT_PUBLIC_DIRECT_COLLECTOR_URL`, code prêt le 30/09/2026, non posée à cette date). Un site
+  dont la politique de sécurité (CSP) n'autorise que la console reste en relais.
 - **Donnée et traitement sont en UE. La souveraineté, non** : Neon, Vercel et Railway sont trois
   sociétés de droit américain. La résidence européenne des données n'est pas la souveraineté ;
   la cible reste un hébergeur de droit européen (cf. §8).
@@ -129,16 +132,22 @@ variante « appel à un fournisseur de géolocalisation », qui aurait envoyé l
 scrub MIP**, a été explicitement écartée. DB-IP n'est donc **pas un sous-traitant** : nous
 téléchargeons un fichier, il ne reçoit aucune donnée.
 
-**Où c'est allumé (28/09/2026) : la collecte directe de la console elle-même, et rien d'autre.** Le
-relais de la console vers le collecteur ne transmet que le code pays, jamais l'adresse (ADR 0005) : pour
-les mesures relayées, le collecteur ne lit aucune adresse. Seules les mesures envoyées **directement** au
-collecteur par le navigateur en portent une — aujourd'hui, celles du seul capteur de la console
-(`mip-rum-console`), quand `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL` est posée sur Vercel. Le collecteur lit
+**Où c'est allumé : la collecte directe, et elle seule.** Le relais de la console vers le collecteur ne
+transmet que le code pays, jamais l'adresse (ADR 0005) : pour les mesures relayées, le collecteur ne lit
+aucune adresse. Seules les mesures envoyées **directement** au collecteur par le navigateur en portent
+une : celles du capteur de la console (`mip-rum-console`), quand `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL` est
+posée sur Vercel (28/09/2026) ; et celles des sites des clients, quand `NEXT_PUBLIC_DIRECT_COLLECTOR_URL`
+l'est (code prêt le 30/09/2026) — le code de suivi proposé par la console et la résolution de
+l'extension visent alors le collecteur, sauf pour un domaine qui déclare son propre point de collecte
+(CSP figée sur la console). L'écran des sessions dit, par application, la part des pays tirés de
+l'adresse IP. Le collecteur lit
 alors l'en-tête `X-Real-IP` que pose la façade Railway (`GEOIP_IP_SOURCE=railway`, et seulement si la
 requête porte un marqueur de cette façade : `packages/backend/shared/client-ip.mjs`). Avant de l'allumer,
 `scripts/ops/verifier-ip-directe.mjs` prouve que la façade **écrase** une adresse forgée par le client,
 sans rien écrire ni renvoyer d'adresse. Couper : retirer la variable et redéployer la console
-(`docs/operations/relais-ingestion.md`). Comme Vercel pour la console, la plateforme Railway consigne
+(`docs/operations/relais-ingestion.md`) — un code de suivi déjà posé chez un client garde, lui, l'adresse
+du collecteur jusqu'à ce qu'il soit remplacé ; pour cesser toute lecture d'adresse, quel que soit le code
+posé : `GEOIP_IP_SOURCE: "none"` dans `.railway/railway.ts`, par l'apply. Comme Vercel pour la console, la plateforme Railway consigne
 l'adresse source de chaque requête dans ses **journaux HTTP** (champ `srcIp`), pour la durée de
 rétention des journaux de son offre : cela relève de son contrat d'hébergeur, pas du code de MIP RUM,
 qui ne l'écrit nulle part.
@@ -214,7 +223,7 @@ modification ni redistribution.
 |---|---|---|---|
 | Neon | base PostgreSQL managée | UE (Francfort, `aws-eu-central-1`) — société de droit américain | télémétrie, comptes |
 | Vercel Inc. | hébergement de la console ; réception des mesures et relais vers le collecteur | fonctions serveur en UE (Francfort, `fra1`) — société de droit américain | **télémétrie RUM en transit**, relayée telle quelle avec le **code pays seul** : la console ne conserve ni ne transmet l'adresse IP ; **en traitement** (scrub, identité retirée, écriture en base) pour la part non relayée et en repli si le collecteur est indisponible ; pas de stockage RUM |
-| Railway Corp. | collecteur (`collector`) : réception des mesures relayées et, directement du navigateur, de celles de la console elle-même ; pseudonymisation, écriture en base ; travaux planifiés, API de lecture v1 (machines, sur jeton), backend de la console (`console-api`), serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | **télémétrie RUM en traitement** : code pays seul pour les mesures relayées ; pour celles de la console elle-même, reçues directement, **adresse IP lue le temps de la requête** pour en déduire le pays, jamais conservée (§3.2) ; scrub, identité hachée (HMAC, secret posé sur Railway seul), écriture en base ; lecture des agrégats (travaux planifiés), réponses de l'API v1 et du MCP aux porteurs de jeton, sans écriture (rôle `mip_api`) ; comptes et sessions de la console, écrans, écritures et demandes RGPD (`console-api`, rôles `mip_identity` et `mip_console`), l'adresse d'un utilisateur de la console réduite à une empreinte HMAC dans les compteurs de débit de connexion, effacée après 24 h d'inactivité ; pas de stockage RUM |
+| Railway Corp. | collecteur (`collector`) : réception des mesures relayées et de celles que les navigateurs lui envoient directement (collecte directe : la console elle-même, et les sites dont le code de suivi vise le collecteur) ; pseudonymisation, écriture en base ; travaux planifiés, API de lecture v1 (machines, sur jeton), backend de la console (`console-api`), serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | **télémétrie RUM en traitement** : code pays seul pour les mesures relayées ; pour celles reçues directement du navigateur, **adresse IP lue le temps de la requête** pour en déduire le pays, jamais conservée (§3.2) ; scrub, identité hachée (HMAC, secret posé sur Railway seul), écriture en base ; lecture des agrégats (travaux planifiés), réponses de l'API v1 et du MCP aux porteurs de jeton, sans écriture (rôle `mip_api`) ; comptes et sessions de la console, écrans, écritures et demandes RGPD (`console-api`, rôles `mip_identity` et `mip_console`), l'adresse d'un utilisateur de la console réduite à une empreinte HMAC dans les compteurs de débit de connexion, effacée après 24 h d'inactivité ; pas de stockage RUM |
 | Resend, Inc. | envoi des alertes e-mail, appelé par le service `notifier` (Railway) | États-Unis — société de droit américain ; région d'envoi non choisie tant que l'expéditeur est le domaine de test `resend.dev`, `eu-west-1` (Irlande) à retenir en vérifiant le domaine | adresse du destinataire (un opérateur) et texte de l'alerte (application, mesure, valeur) ; aucune donnée d'utilisateur final |
 
 ## 8. Trajectoire de certification (gap analysis)

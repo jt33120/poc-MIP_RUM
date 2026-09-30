@@ -162,6 +162,24 @@ describe("affirmations que le code ne tient pas", () => {
     expect(DECLARE).toMatch(/ni en clair, ni hachée, ni tronquée/);
   });
 
+  it("la collecte directe des CLIENTS existe dans le code : le registre dit que leurs navigateurs écrivent au collecteur", () => {
+    // P6b.G, second palier (30/09/2026) : dès que le code sait donner aux sites
+    // des clients l'adresse du collecteur, Railway PEUT recevoir l'adresse IP de
+    // leurs visiteurs. « Les mesures des clients passent toujours par la
+    // console » deviendrait une déclaration inexacte le jour où la variable est
+    // posée — un geste sur Vercel, que rien dans la CI ne voit. Le texte suit
+    // donc le CODE, pas la variable.
+    const code = readFileSync(join(__dirname, "../../apps/console/lib/ingest-endpoint.ts"), "utf8");
+    if (!code.includes("NEXT_PUBLIC_DIRECT_COLLECTOR_URL")) return;
+    expect(HOSTS.backend).toMatch(/que les navigateurs lui envoient directement/);
+    const railway = SUBPROCESSORS.find((s) => s.name === "Railway Corp.");
+    expect(railway?.note).toMatch(/sites dont le code de suivi vise le collecteur/);
+    const ligne = lignesRegistre().find((l) => l.includes("Railway Corp.")) ?? "";
+    expect(ligne).toMatch(/sites dont le code de suivi vise le collecteur/);
+    expect(DECLARE).toContain("NEXT_PUBLIC_DIRECT_COLLECTOR_URL");
+    expect(DECLARE).not.toMatch(/Les mesures des clients, elles, passent toujours par la console/);
+  });
+
   it("ne présente pas le tampon de consentement comme couvrant le terminal", () => {
     // `requireConsent` retient le RÉSEAU. L'identifiant de session est écrit dans
     // le stockage local avant la barrière, et survit au refus.

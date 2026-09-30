@@ -196,6 +196,13 @@ describe("corsHeaders — origine autorisée reflétée, sinon AUCUN ACAO", () =
     expect(isAllowedOrigin("")).toBe(false);
   });
 
+  it("origine autorisée -> `retry-after` lisible par la page ; refusée -> rien d'exposé", () => {
+    // Une collecte sur une autre origine (tous les clients, et la collecte directe
+    // P6b.G) ne lit sinon jamais le `retry-after` d'un 429 ou d'un 503.
+    expect(corsHeaders(GIT)["Access-Control-Expose-Headers"]).toBe("retry-after");
+    expect(corsHeaders("https://evil.example.com")["Access-Control-Expose-Headers"]).toBeUndefined();
+  });
+
   it("allowHeaders surchargeable (ingestion replay : en-têtes x-mip-*)", () => {
     const h = corsHeaders(GIT, [], { allowHeaders: "content-type,x-mip-session" });
     expect(h["Access-Control-Allow-Headers"]).toBe("content-type,x-mip-session");

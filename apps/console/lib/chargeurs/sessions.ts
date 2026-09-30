@@ -21,6 +21,7 @@ import {
   type SignauxSession,
 } from "../queries-sessions";
 import { paramReader } from "../query-contract";
+import { dimensionSupport } from "../query-compiler";
 import { dimensionSchema } from "../query-schema";
 import { DIMENSIONS_REPARTITION, SOURCE_VISITEURS, disponibiliteRepartition, lireRepartition, type DimensionRepartition } from "../sessions-kpi";
 import {
@@ -85,6 +86,11 @@ export const chargerSessions = (async (principal, sp) => {
   const schema = await dimensionSchema();
   const disponibles = DIMENSIONS_REPARTITION.filter((d) => disponibiliteRepartition(d, schema).available);
   const dimension: DimensionRepartition | null = blocs.repartition ? lireRepartition(url.get(BREAKDOWN_PARAM), disponibles) : null;
+  // Sous « Pays estimé », la part des sessions dont le pays vient de l'adresse IP
+  // (collecte directe) et celle où il est estimé ou inconnu : la MÊME lecture que
+  // la répartition, sur la provenance (`country_source`). Un schéma sans elle ne
+  // la lance pas : l'écran se tait plutôt que d'affirmer.
+  const lireProvenance = dimension === "country" && dimensionSupport("sessions", "country_source", schema).supported;
 
   // Une ligne de plus que la page : c'est ainsi qu'on sait s'il en reste, sans
   // compter toute la population à chaque affichage.
@@ -113,6 +119,7 @@ export const chargerSessions = (async (principal, sp) => {
     erreursLu,
     erreursPrec,
     repartition,
+    provenancePays,
     deploys,
     releaseParOccurrence,
     echantillonnage,
@@ -136,6 +143,7 @@ export const chargerSessions = (async (principal, sp) => {
     section(() => erreursParSessionCommencee(f)),
     prev ? section(() => erreursParSessionCommencee(f, true)) : sansSection(null),
     dimension ? section(() => repartitionSessions(query, dimension)) : sansSection(null),
+    lireProvenance ? section(() => repartitionSessions(query, "country_source")) : sansSection(null),
     blocs.visiteurs ? section(() => listDeploys(f, 20)) : sansSection([]),
     releaseRechercheParOccurrence(),
     // S7 : la population de l'écran (sessions commencées OU actives) est-elle un
@@ -171,6 +179,7 @@ export const chargerSessions = (async (principal, sp) => {
     erreursLu,
     erreursPrec,
     repartition,
+    provenancePays,
     deploys,
     releaseParOccurrence,
     echantillonnage,

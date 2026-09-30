@@ -96,6 +96,10 @@ async function semer(c: pg.Client): Promise<void> {
   await session(c, { id: "f41-a3", app: A, debut: IL_Y_A(4 * HEURE), fin: IL_Y_A(4 * HEURE), visiteur: null, navigateur: null });
   await session(c, { id: "f41-a4", app: A, debut: IL_Y_A(2 * HEURE), fin: IL_Y_A(HEURE), visiteur: "f41-bot", navigateur: "Chrome", bot: true });
   await session(c, { id: "f41-b1", app: B, debut: IL_Y_A(2 * HEURE), fin: IL_Y_A(HEURE), visiteur: "f41-vb", navigateur: "Safari" });
+  // P6b.G — provenance du pays : a1 par l'adresse IP (collecte directe), a2 estimé
+  // (fuseau, voie de la console), a3 sans pays ; b1 par l'adresse, dans l'AUTRE app.
+  await c.query(`update rum_session set geo_country = 'FR', geo_source = 'geoip' where session_id in ('f41-a1', 'f41-b1')`);
+  await c.query(`update rum_session set geo_country = 'FR', geo_source = 'timezone' where session_id = 'f41-a2'`);
   await erreur(c, A, "f41-a1", 4, IL_Y_A(HEURE));
   await erreur(c, A, "f41-a4", 11, IL_Y_A(HEURE)); // robot : exclu
   await erreur(c, B, "f41-b1", 7, IL_Y_A(HEURE)); // autre app : jamais dans A
@@ -221,6 +225,16 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
       expect(r.groupes).toContainEqual({ valeur: "Firefox", sessions: 2 });
       expect(r.groupes).toContainEqual({ valeur: null, sessions: 1 });
       expect(r.groupes.some((g) => g.valeur === "Safari" || g.valeur === "Chrome")).toBe(false);
+    });
+
+    it("provenance du pays (P6b.G) : adresse IP, estimé, inconnu — sur les seules sessions de l'app", async () => {
+      const r = await lib.repartitionSessions(requete(`app=${A}&period=24h`), "country_source");
+      expect(r.total).toBe(3);
+      expect(r.groupes).toContainEqual({ valeur: "geoip", sessions: 1 });
+      expect(r.groupes).toContainEqual({ valeur: "timezone", sessions: 1 });
+      expect(r.groupes).toContainEqual({ valeur: null, sessions: 1 });
+      const kpi = await import("../../apps/console/lib/sessions-kpi");
+      expect(kpi.partsProvenancePays(r.groupes, r.total)).toEqual({ total: 3, adresseIp: 1, estime: 1, inconnu: 1 });
     });
 
     it("répartition par capteur : SDK et extension", async () => {

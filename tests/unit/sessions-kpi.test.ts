@@ -35,6 +35,7 @@ import {
   visiteursAffiches,
 } from "../../apps/console/lib/sessions-kpi";
 import { SOURCE_VISITEURS, visiteursDuSeau } from "../../apps/console/lib/sessions-kpi";
+import { partsProvenancePays, phraseProvenancePays } from "../../apps/console/lib/sessions-kpi";
 
 const NOW = Date.parse("2026-09-21T14:00:00.000Z");
 const NBSP = String.fromCharCode(0xa0);
@@ -244,5 +245,49 @@ describe("revue F41 — visiteurs : couverture et seaux sans identifiant", () =>
     expect(visiteursDuSeau({ visitors: 0, sessions: 4, sans_identifiant: 4 })).toBeNull();
     expect(visiteursDuSeau({ visitors: 2, sessions: 4, sans_identifiant: 1 })).toBe(2);
     expect(visiteursDuSeau(null)).toBe(0);
+  });
+});
+
+// P6b.G — « l'écran doit le dire » : sous « Pays estimé », la part des pays tirés
+// de l'adresse IP (collecte directe) et celle estimée (relais) ou inconnue.
+describe("provenance du pays des sessions", () => {
+  it("adresse IP, estimé (fuseau et pays du relais réunis), inconnu = le reste du tout", () => {
+    const p = partsProvenancePays(
+      [
+        { valeur: "geoip", sessions: 5 },
+        { valeur: "timezone", sessions: 3 },
+        { valeur: "cdn", sessions: 1 },
+        { valeur: null, sessions: 1 },
+      ],
+      10,
+    );
+    expect(p).toEqual({ total: 10, adresseIp: 5, estime: 4, inconnu: 1 });
+  });
+
+  it("une valeur hors registre ou un groupe absent tombe dans « inconnu », jamais dans une part connue", () => {
+    expect(partsProvenancePays([{ valeur: "autre", sessions: 2 }, { valeur: "timezone", sessions: 1 }], 4)).toEqual({
+      total: 4,
+      adresseIp: 0,
+      estime: 1,
+      inconnu: 3,
+    });
+  });
+
+  it("une application en relais : la phrase dit pourquoi aucun pays ne vient de l'adresse IP", () => {
+    const phrase = phraseProvenancePays(partsProvenancePays([{ valeur: "timezone", sessions: 9 }, { valeur: null, sessions: 1 }], 10))!;
+    expect(phrase).toContain(`Pays tiré de l'adresse IP : 0,0${NBSP}%`);
+    expect(phrase).toContain(`inconnu : 10,0${NBSP}%`);
+    expect(phrase).toContain("passent par la console, qui ne transmet pas l'adresse");
+    expect(phrase).toContain("CSP");
+  });
+
+  it("une application en collecte directe : la part chiffrée, sans l'explication du relais", () => {
+    const phrase = phraseProvenancePays(partsProvenancePays([{ valeur: "geoip", sessions: 3 }, { valeur: "timezone", sessions: 1 }], 4))!;
+    expect(phrase).toContain(`Pays tiré de l'adresse IP : 75,0${NBSP}%`);
+    expect(phrase).not.toContain("Aucune de ces sessions");
+  });
+
+  it("sans session commencée : rien à dire", () => {
+    expect(phraseProvenancePays(partsProvenancePays([], 0))).toBeNull();
   });
 });

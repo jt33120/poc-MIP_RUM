@@ -14,6 +14,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { LIMITES_EXTENSION, lireDomaine } from "@mip/backend/lib/extension-parc.mjs";
 import { rateLimit } from "@/lib/api/ratelimit";
+import { completerResolutionRelayee, endpointExtension } from "@/lib/extension-resolution";
 import { relayer } from "@/lib/ingest-relay";
 import { resolveExtensionScope } from "@/lib/queries-extension-scope";
 
@@ -40,8 +41,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   const domain = lireDomaine(new URL(req.url).searchParams.get("domain"));
   if (!domain) return err(400, "domain requis");
 
+  // P6b.G : collecte directe ouverte, l'adresse du collector remplace un
+  // `endpoint` vide — relayée ou non (`lib/extension-resolution.ts`).
   const relayee = await relayer("extensionResolve", req, new Uint8Array(), CORS);
-  if (relayee) return relayee;
+  if (relayee) return completerResolutionRelayee(relayee);
 
   const rl = rateLimit(`ext-resolve:${domain}`, LIMIT, WINDOW_MS, Date.now());
   if (!rl.ok) return err(429, "trop de requêtes", { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) });
@@ -50,7 +53,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!scope) return err(404, "domaine non enregistré");
 
   return NextResponse.json(
-    { app_id: scope.app_id, endpoint: scope.endpoint, active: scope.active },
+    { app_id: scope.app_id, endpoint: endpointExtension(scope.endpoint), active: scope.active },
     { headers: { ...CORS, "cache-control": "public, max-age=60" } },
   );
 }

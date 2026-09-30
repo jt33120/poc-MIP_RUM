@@ -105,6 +105,8 @@ import {
   occurrencesParSession,
   parRang,
   partDuTout,
+  partsProvenancePays,
+  phraseProvenancePays,
   referencePrecedente,
   resteNonAffiche,
   visiteursAffiches,
@@ -199,6 +201,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     erreursLu,
     erreursPrec,
     repartition,
+    provenancePays,
     deploys,
     releaseParOccurrence,
     echantillonnage,
@@ -487,6 +490,13 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
                     })}
                     hrefDe={(valeur) => avecContexte(hrefGroupe(query, dimension, valeur, schema))}
                     plage={ecran.label}
+                    // Sous « Pays estimé » seulement, et seulement lue : une lecture en
+                    // échec tait la phrase, elle n'en écrit pas une fausse.
+                    precision={
+                      dimension === "country" && provenancePays.ok && provenancePays.data
+                        ? phraseProvenancePays(partsProvenancePays(provenancePays.data.groupes, provenancePays.data.total))
+                        : null
+                    }
                   />
                 )}
               </SectionErreur>
@@ -796,12 +806,15 @@ function Repartition({
   onglets,
   hrefDe,
   plage,
+  precision = null,
 }: {
   dimension: DimensionRepartition;
   donnees: RepartitionSessions;
   onglets: OngletDecoupage[];
   hrefDe: (valeur: string | null) => string;
   plage: string;
+  /** Provenance du pays, sous l'onglet « Pays estimé » (`phraseProvenancePays`). */
+  precision?: string | null;
 }) {
   const reste = resteNonAffiche(donnees.total, donnees.groupes, donnees.tronque);
   const items: BreakdownItem[] = donnees.groupes.map((g) => {
@@ -840,6 +853,7 @@ function Repartition({
       truncated={false}
       emptyLabel={`Aucune session commencée sur ${plage}.`}
       measureLabel="Sessions commencées"
+      precision={precision}
     />
   );
 }

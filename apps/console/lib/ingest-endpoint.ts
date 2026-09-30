@@ -33,6 +33,83 @@ function protocolFor(host: string): "http" | "https" {
   return /^(localhost|127\.|\[::1\]|0\.0\.0\.0)/.test(host) ? "http" : "https";
 }
 
+/** Chemins des canaux sur le collector, qui sert `/v1/*` et non `/api/ingest/v1/*`. */
+const CHEMINS_COLLECTOR = {
+  traces: "/v1/traces",
+  logs: "/v1/logs",
+  replay: "/v1/replay",
+} as const satisfies Record<IngestSignal, string>;
+
+/**
+ * Par où passe la collecte d'un navigateur (P6b.G) :
+ *   - `console` : `/api/ingest/v1/*` de la console, qui relaie au collector SANS
+ *     l'adresse IP (ADR 0005) — le pays reste estimé (fuseau horaire) ou inconnu ;
+ *   - `directe` : le collector lui-même, qui lit l'adresse posée par la façade
+ *     Railway pour en déduire le pays, sans la conserver.
+ */
+export type VoieCollecte = "console" | "directe";
+
+/**
+ * Une origine de collector utilisable par une page, ou `null`. Deux refus, qui
+ * ramènent au chemin par la console (il marche, lui) : une valeur qui n'est pas
+ * une URL, et `http:` hors poste local — une page https ne peut pas l'appeler.
+ * Un chemin éventuel est ignoré : seule l'origine compte, les chemins sont ceux
+ * du collector.
+ */
+function origineSure(brut: string | undefined): string | null {
+  const valeur = brut?.trim();
+  if (!valeur) return null;
+  let url: URL;
+  try {
+    url = new URL(valeur);
+  } catch {
+    return null;
+  }
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(url.hostname);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) return null;
+  return url.origin;
+}
+
+/**
+ * L'origine du collector pour la COLLECTE DIRECTE des navigateurs des clients,
+ * ou `null` : alors rien ne change, tout passe par la console.
+ *
+ * POURQUOI UNE TROISIÈME VARIABLE, `NEXT_PUBLIC_DIRECT_COLLECTOR_URL`.
+ *   - `NEXT_PUBLIC_RUM_ENDPOINT` déplace l'adresse de la CONSOLE (un chemin
+ *     `/api/ingest/v1/*` que le collector sert aussi, mais par alias) et vaut
+ *     pour les agents serveur comme pour les navigateurs ;
+ *   - `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL` ne vaut que pour le capteur de la
+ *     console elle-même, et seulement sur l'hôte de production.
+ * Les confondre aurait lié deux paliers que le plan sépare : le dogfooding
+ * d'abord, pour prouver que `geo_source = 'geoip'` s'écrit, PUIS les clients.
+ * Même valeur que la variable du dogfooding une fois celui-ci prouvé (l'origine
+ * du collector) ; posée plus tard, et à part (docs/operations/relais-ingestion.md).
+ *
+ * Pas de refus d'hôte ici, contrairement au dogfooding : la page qui enverra
+ * n'est pas la console mais le site du client, dont l'origine est au registre
+ * de SON application (`app_registry.allowed_origins`) — le collector l'accepte
+ * quelle que soit la console qui a produit le code de suivi.
+ */
+export function origineCollecteDirecte(): string | null {
+  return origineSure(process.env.NEXT_PUBLIC_DIRECT_COLLECTOR_URL);
+}
+
+/** La voie à proposer PAR DÉFAUT : directe dès que la variable est posée. */
+export function voieRecommandee(): VoieCollecte {
+  return origineCollecteDirecte() ? "directe" : "console";
+}
+
+/**
+ * Adresse DIRECTE d'un canal (`<collector>/v1/<canal>`), ou `null` si la
+ * collecte directe n'est pas ouverte. `null` est un vrai « rien » : l'appelant
+ * garde alors son comportement d'avant (la résolution de l'extension, par
+ * exemple, continue de rendre `endpoint: null`).
+ */
+export function ingestEndpointDirect(signal: IngestSignal): string | null {
+  const origine = origineCollecteDirecte();
+  return origine ? `${origine}${CHEMINS_COLLECTOR[signal]}` : null;
+}
+
 /**
  * Endpoint d'ingestion pour un canal donné.
  *
@@ -40,8 +117,11 @@ function protocolFor(host: string): "http" | "https" {
  * @param host    hôte de la requête courante (`headers().get("host")`). À fournir dès
  *                qu'on est dans un contexte de requête : c'est le repli le plus juste,
  *                celui qui suit naturellement les previews et le self-host.
+ * @param voie    `directe` : l'adresse du collector si la collecte directe est
+ *                ouverte (`ingestEndpointDirect`), SINON la console, comme sans
+ *                ce paramètre. Absent : `console`, la résolution d'avant P6b.G.
  *
- * Ordre de résolution :
+ * Ordre de résolution (voie `console`) :
  *   1. `NEXT_PUBLIC_RUM_ENDPOINT` — URL complète du canal traces ; les autres canaux en
  *      dérivent par substitution de chemin, jamais par remplacement de sous-chaîne (le
  *      `replace("v1-traces", …)` d'avant était devenu un no-op silencieux après la
@@ -51,7 +131,11 @@ function protocolFor(host: string): "http" | "https" {
  *      journalisation différée).
  *   4. le développement local.
  */
-export function ingestEndpoint(signal: IngestSignal, host?: string | null): string {
+export function ingestEndpoint(signal: IngestSignal, host?: string | null, voie: VoieCollecte = "console"): string {
+  if (voie === "directe") {
+    const directe = ingestEndpointDirect(signal);
+    if (directe) return directe;
+  }
   const path = PATHS[signal];
 
   const configured = process.env.NEXT_PUBLIC_RUM_ENDPOINT;
@@ -72,9 +156,6 @@ export function ingestEndpoint(signal: IngestSignal, host?: string | null): stri
   return `http://localhost:3000${path}`;
 }
 
-/** Chemin du canal traces sur le collector, qui sert `/v1/*` et non `/api/ingest/v1/*`. */
-const CHEMIN_COLLECTOR_TRACES = "/v1/traces";
-
 /**
  * L'origine du collector que le dogfooding vise EN DIRECT, ou `null` : alors il
  * passe par la console, comme avant (P6b.G, `docs/operations/relais-ingestion.md`).
@@ -94,19 +175,11 @@ const CHEMIN_COLLECTOR_TRACES = "/v1/traces";
  *     propre d'un déploiement verrait ses envois bloqués par CORS, en silence.
  */
 export function origineCollecteurDogfooding(host: string | null): string | null {
-  const brut = process.env.NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL?.trim();
-  if (!brut) return null;
-  let url: URL;
-  try {
-    url = new URL(brut);
-  } catch {
-    return null;
-  }
-  const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(url.hostname);
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) return null;
+  const origine = origineSure(process.env.NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL);
+  if (!origine) return null;
   const production = process.env.VERCEL_PROJECT_PRODUCTION_URL;
   if (production && host && host !== production) return null;
-  return url.origin;
+  return origine;
 }
 
 /**
@@ -125,7 +198,7 @@ export function origineCollecteurDogfooding(host: string | null): string | null 
  */
 export function dogfoodingEndpoint(host: string | null): string {
   const collecteur = origineCollecteurDogfooding(host);
-  if (collecteur) return `${collecteur}${CHEMIN_COLLECTOR_TRACES}`;
+  if (collecteur) return `${collecteur}${CHEMINS_COLLECTOR.traces}`;
   if (host) return `${protocolFor(host)}://${host}${PATHS.traces}`;
   const deploye = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL ?? null;
   return deploye ? `https://${deploye}${PATHS.traces}` : `http://localhost:3000${PATHS.traces}`;
