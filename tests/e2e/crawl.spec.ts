@@ -80,6 +80,9 @@ const EXEMPLES: Record<string, string> = {
   "[id]@issues": `select id::text as v, app_id as app from error_issue order by app_id = '${APP}' desc, last_seen desc limit 1`,
   "[id]@sessions": `select session_id as v, app_id as app from rum_session order by app_id = '${APP}' desc, started_at desc nulls last limit 1`,
   "[traceId]": `select trace_id as v, app_id as app from rum_span where trace_id is not null order by app_id = '${APP}' desc limit 1`,
+  // Un parcours d'installation de la vitrine (lib/vitrine-navigation.ts) : pas une
+  // ressource en base, un segment fixe.
+  "[parcours]": `select 'sdk-javascript' as v, '${APP}' as app`,
 };
 
 function cleExemple(ecran: string, segment: string): string {
