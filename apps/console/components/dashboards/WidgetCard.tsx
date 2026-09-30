@@ -121,10 +121,13 @@ export function WidgetCard({
   );
 
   return (
-    <div className="card flex min-w-0 flex-col gap-3 p-4" data-testid={`widget-${index}`}>
+    // Carte compacte (recette du 30/09/2026) : 12 px de marge, titre en 13 px.
+    <div className="card flex min-w-0 flex-col gap-2 p-3" data-testid={`widget-${index}`}>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-bold tracking-tight">{widget.title}</h3>
+          <h3 className="truncate text-[13px] font-semibold tracking-tight" title={widget.title}>
+            {widget.title}
+          </h3>
           {resume && (
             <p className="mt-0.5 text-sm font-medium text-ink-soft" data-testid={`widget-${index}-total`}>
               {resume}

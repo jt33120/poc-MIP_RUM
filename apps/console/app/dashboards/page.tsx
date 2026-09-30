@@ -68,11 +68,7 @@ export default async function Dashboards({
 
   return (
     <div className="animate-fade-up">
-      <PageHeader
-        domain="explorer"
-        title="Tableaux de bord"
-        sub="Quelles cartes surveiller ensemble ? Chaque carte est une analyse de l’Explorer ; export CSV et impression par le navigateur."
-      />
+      <PageHeader domain="explorer" title="Tableaux de bord" />
       <FiltersNotAppliedNote note={ecran.notApplied} />
 
       {refus?.champ === "modele" && (
@@ -84,13 +80,21 @@ export default async function Dashboards({
       {/* ----- W-D2 : tableaux du périmètre, EN PREMIER (recette du 26/09/2026) : les
           quatre modèles et leurs boutons orange occupaient le haut de page, et les
           tableaux de l'utilisateur venaient dessous (vers 1 300 px à 390 px). ----- */}
-      <section aria-labelledby="tableaux-titre" className="mb-8">
-        <h2 id="tableaux-titre" className="mb-2 text-sm font-semibold text-ink">
-          Tableaux de ce périmètre
-        </h2>
+      <section aria-labelledby="tableaux-titre" className="mb-5">
+        <div className="mb-2 flex flex-wrap items-baseline gap-x-3">
+          <h2 id="tableaux-titre" className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+            Tableaux de ce périmètre
+          </h2>
+          {dashboards.length > 0 && (
+            <span className="text-[11px] tabular-nums text-ink-faint">{pluriel(dashboards.length, "tableau", "tableaux")}</span>
+          )}
+        </div>
         {dashboards.length === 0 ? (
-          // Liste vide : le message seul, sans en-têtes de tableau à faire défiler.
-          <p role="status" className="card mb-3 px-4 py-6 text-center text-sm text-ink-soft">
+          // Liste vide : une ligne, sans en-têtes de tableau à faire défiler (recette du 30/09/2026).
+          <p role="status" className="card mb-2 flex items-center gap-1.5 px-3 py-2 text-xs text-ink-soft">
+            <span aria-hidden className="text-ink-faint">
+              ⊘
+            </span>
             Aucun tableau de bord dans ce périmètre : créez-en un, ou partez d’un modèle ci-dessous.
           </p>
         ) : (
@@ -99,7 +103,7 @@ export default async function Dashboards({
           // quoi. `min-w-[40rem]` : sans largeur plancher, le tableau s'écrasait au
           // lieu de défiler (« Mini-site de démo » sur 4 lignes, « Mise à jour »
           // invisible — recette 26/09). La zone de TableDefilante reste `relative`.
-          <TableDefilante className="card mb-3" label="Tableaux de ce périmètre">
+          <TableDefilante className="card mb-2" label="Tableaux de ce périmètre">
             <table className="w-full min-w-[40rem] text-sm" data-testid="tableaux-perimetre">
               <caption className="sr-only">Tableaux de bord lisibles dans ce périmètre</caption>
               <thead className="whitespace-nowrap">
@@ -113,17 +117,17 @@ export default async function Dashboards({
               </thead>
               <tbody>
                 {dashboards.map((d) => (
-                  <tr key={d.id} className="border-t border-line align-top hover:bg-panel2">
-                    <td className="px-3 py-2 font-medium">
+                  <tr key={d.id} className="border-t border-line align-middle hover:bg-panel2">
+                    <td className="px-3 py-1.5 font-medium">
                       <Link href={hrefWithQuery(`/dashboards/${d.id}`, ecran.query)} className="text-accent hover:underline">
                         {d.name}
                       </Link>
                     </td>
-                    <td className="px-3 py-2 text-ink-soft" data-testid="tableau-app">
+                    <td className="px-3 py-1.5 text-ink-soft" data-testid="tableau-app">
                       {d.app ?? "toutes les applications"}
                     </td>
-                    <td className="px-3 py-2 text-ink-soft">{d.proprietaire}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-1.5 text-ink-soft">{d.proprietaire}</td>
+                    <td className="px-3 py-1.5">
                       {/* F37 : un titre de section n'est pas une carte — ni compté, ni en puce. */}
                       {d.cartes === 0 ? (
                         <span className="text-xs text-ink-soft">aucune carte</span>
@@ -138,7 +142,7 @@ export default async function Dashboards({
                         </ul>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right text-xs tabular-nums text-ink-soft">{fmtDate(d.updated_at)}</td>
+                    <td className="px-3 py-1.5 text-right text-xs tabular-nums text-ink-soft">{fmtDate(d.updated_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -150,13 +154,13 @@ export default async function Dashboards({
             repliée tout en bas, après les modèles) ----- */}
         {peutCreer ? (
           <details className="card" open={!dashboards.length || (refus !== undefined && refus.champ !== "modele")}>
-            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-accent transition hover:text-ink">
+            <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-accent transition hover:text-ink">
               + Nouveau tableau de bord
             </summary>
             <form
               action={createDashboardAction}
               data-testid="creer-tableau"
-              className="flex flex-wrap items-start gap-3 border-t border-line p-4"
+              className="flex flex-wrap items-start gap-3 border-t border-line p-3"
             >
               <input type="hidden" name="ctx" value={ctx} />
               <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
@@ -218,7 +222,7 @@ export default async function Dashboards({
         open={!dashboards.length || refus?.champ === "modele"}
       >
         <summary className="mb-3 cursor-pointer list-none rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf [&::-webkit-details-marker]:hidden">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <h2 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
             <svg
               aria-hidden="true"
               viewBox="0 0 12 12"
@@ -231,11 +235,11 @@ export default async function Dashboards({
               {MODELES_TABLEAUX.length}
             </span>
           </h2>
-          <span className="mt-0.5 block pl-5 text-xs text-ink-soft">
+          <span className="sr-only">
             Des tableaux prêts à l’emploi : cloner un modèle en crée une copie à vous, dans l’application choisie.
           </span>
         </summary>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           {MODELES_TABLEAUX.map((m) => (
             <ModeleCarte
               key={m.cle}
