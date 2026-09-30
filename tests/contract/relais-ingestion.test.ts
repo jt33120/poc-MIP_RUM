@@ -126,6 +126,21 @@ function traces(session: string, n: number) {
   return Buffer.from(JSON.stringify(lot));
 }
 
+/** 30/09/2026 — le domaine de l'extension rattaché à l'app du test. */
+const DOMAINE = "relais-a.exemple.fr";
+
+/** Le même lot, tel que l'émet le SDK injecté par l'extension : sans clé, chaque span marqué. */
+function tracesExtension(session: string, n: number) {
+  const lot = JSON.parse(traces(session, n).toString("utf8"));
+  const rs = lot.resourceSpans[0];
+  rs.resource.attributes = rs.resource.attributes.filter((a: { key: string }) => a.key !== "mip.api_key");
+  for (const span of rs.scopeSpans[0].spans) {
+    span.attributes = span.attributes.filter((a: { key: string }) => a.key !== "mip.collection_source");
+    span.attributes.push(attr("mip.collection_source", "extension"));
+  }
+  return Buffer.from(JSON.stringify(lot));
+}
+
 function logs(session: string) {
   const t0 = Date.now() - 30_000;
   return Buffer.from(JSON.stringify({
@@ -195,6 +210,12 @@ suite("relais d'ingestion : console → collector réel → Postgres (Docker)", 
     await db.query(
       "insert into app_registry (app_id, name, api_key_hash, active, privacy_barrier_mode) values ($1, $1, $2, true, 'off')",
       [APP.id, sha256(APP.cle)],
+    );
+    // AVANT le démarrage du collector : son registre (cache 60 s) doit le voir.
+    await db.query(
+      `insert into extension_scope (domain, app_id) values ($1, $2)
+       on conflict (domain) do update set app_id = excluded.app_id, active = true`,
+      [DOMAINE, APP.id],
     );
     await db.query(
       `insert into sourcemap_upload_token (id, app_id, name, secret_hash, created_by, expires_at)
@@ -365,6 +386,27 @@ suite("relais d'ingestion : console → collector réel → Postgres (Docker)", 
       const { rows } = await db.query("select uploaded_by from sourcemap where app_id = $1 and release = '1.0.0'", [APP.id]);
       expect(rows).toEqual([{ uploaded_by: `jeton:${JETON.id}` }]);
       expect(appelsCollector().map(([u]) => String(u))).toContain(`${base}/v1/sourcemaps`);
+    });
+
+    it("extension sans clé : l'origine de la page traverse le relais signé — 200 écrit par le collector ; hors registre, son 403, sans repli", async () => {
+      fetchEspion.mockClear();
+      const ok = await POST_TRACES(requete("/api/ingest/v1/traces", tracesExtension("relais-s3", 4), { origin: `https://${DOMAINE}` }));
+      expect(ok.status).toBe(200);
+      // L'origine part sous le préfixe du bord (le collector ne la lit que signée).
+      const envoyes = new Headers((appelsCollector()[0][1] as RequestInit).headers);
+      expect(envoyes.get("x-mip-edge-origin")).toBe(`https://${DOMAINE}`);
+      expect(envoyes.has("origin")).toBe(false);
+      const { rows } = await db.query("select collection_source, user_id_hash from rum_session where session_id = 'relais-s3'");
+      // Écrit PAR LE COLLECTOR (identité hachée : la console n'a pas de secret).
+      expect(rows).toHaveLength(1);
+      expect(rows[0].collection_source).toBe("extension");
+      expect(rows[0].user_id_hash).toMatch(/^[0-9a-f]{64}$/);
+
+      const refus = await POST_TRACES(requete("/api/ingest/v1/traces", tracesExtension("relais-s4", 5), { origin: "https://ailleurs.exemple.fr" }));
+      expect(refus.status).toBe(403);
+      expect(await refus.json()).toEqual({ error: `extension origin not registered for app: ${APP.id}` });
+      const { rows: aucune } = await db.query("select 1 from rum_session where session_id = 'relais-s4'");
+      expect(aucune).toEqual([]);
     });
 
     it("collector ARRÊTÉ : erreur de connexion → repli local, 200, ligne écrite par la console (sans identité)", async () => {

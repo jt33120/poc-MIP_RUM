@@ -59,7 +59,7 @@ psql "$DATABASE_URL" -c "alter role console_ro login password '<PWD_FORT>'"
 > *fail-open*. Une fois toutes les apps porteuses d'une clé, passer
 > `REQUIRE_API_KEY=true` pour rejeter (403) tout `app_id` inconnu **ou sans clé**
 > (durcissement E1-S1) — sinon un tiers peut injecter sous l'`app_id` d'une app
-> sans clé.
+> sans clé. Exception (30/09/2026) : le lot de l'extension, sans clé, depuis un domaine actif de l'app (`docs/INTEGRATION.md` § 2).
 
 ### Vérifications immédiates (après déploiement Vercel, avant de toucher au site)
 
@@ -396,7 +396,7 @@ ont été retirés en P1 : ils tournaient hors bail, en concurrence du scheduler
 |---|---|---|
 | Erreur CORS dans la console navigateur | origine absente de la whitelist | socle statique dans `packages/backend/shared/cors.mjs`, ou `app_registry.allowed_origins` de l'app (pris en compte sans redéploiement, cache 60 s) |
 | **302 vers `/login` sur le POST d'ingestion** | `/api/ingest/*` ne contourne plus le middleware d'auth | vérifier le bypass en tête de `apps/console/middleware.ts` — sans lui, TOUTE l'ingestion tombe en silence |
-| 403 sur le POST | `REQUIRE_API_KEY=true` et l'app n'a pas de clé (ou clé fausse) | donner une clé à l'app (`app_registry.api_key_hash`) **avant** d'activer le flag, ou repasser à `false` |
+| 403 sur le POST | `REQUIRE_API_KEY=true` et l'app n'a pas de clé (ou clé fausse) ; pour l'extension, `extension origin not registered` : la page n'est pas un domaine actif de l'app | donner une clé à l'app (`app_registry.api_key_hash`) **avant** d'activer le flag, ou repasser à `false` ; pour l'extension, enregistrer le nom d'hôte exact (`/admin/extension-scope`) |
 | Rien en base mais POST 200 | `mip.app_id` manquant (payload rejeté) | vérifier `appId` dans `MIPRum.init` |
 | Console vide | `DATABASE_URL` manquant/faux sur Vercel | `vercel env ls` / re-add + redeploy |
 | Écrans, collecte et travaux en échec en même temps | calcul Neon suspendu (quota de l'offre gratuite) | `NEON_API_KEY=… node scripts/ops/conso-neon.mjs` ; runbook, « La base gratuite » |

@@ -223,8 +223,8 @@ export default defineRailway((ctx) => {
       // `mip-rum-console`, empreintes vérifiées au registre), posées dans le
       // snippet d'UTI (client-uti-platform#227), dans l'environnement de son
       // backend et dans le capteur de la console (#351 + variable Vercel). Les
-      // cinq autres applications n'avaient aucun trafic sur 7 jours ; l'extension
-      // n'envoie pas de clé et n'a aucun poste installé. Retour arrière :
+      // cinq autres applications n'avaient aucun trafic sur 7 jours. L'extension,
+      // sans clé, passe par son domaine enregistré (30/09/2026, `createPgAuth`). Retour arrière :
       // « false » ici, en PR (basculé dans le tableau de bord, le prochain apply
       // le remettrait) ; le repli du relais ne se déclenche pas sur un 403.
       REQUIRE_API_KEY: "true",

@@ -140,13 +140,19 @@ export function refusIngestion(
  * Gardes communes aux routes OTLP : clé d'API (403) puis débit (429), une fois
  * par app présente dans le lot. Retourne une Response à renvoyer telle quelle,
  * ou null si la requête passe.
+ *
+ * `origine` : l'en-tête `Origin` du navigateur. Il n'autorise qu'un lot de
+ * l'extension sans clé, depuis un domaine enregistré de l'app — la règle est
+ * dans `createPgAuth` (`packages/backend/lib/pg-ingest.mjs`), la même pour le
+ * collector ; ici, on ne fait que la lui passer.
  */
 export async function guardApps(
-  apiKeys: Array<{ app_id: string; api_key: string | null }>,
+  apiKeys: Array<{ app_id: string; api_key: string | null; extension?: true }>,
   cors: Record<string, string>,
+  origine: string | null = null,
 ): Promise<Response | null> {
-  for (const { app_id, api_key } of apiKeys) {
-    const reason = await auth.checkApiKey(app_id, api_key);
+  for (const { app_id, api_key, extension } of apiKeys) {
+    const reason = await auth.checkApiKey(app_id, api_key, { extension: extension === true, origine });
     if (reason) {
       log.warn("rejected: api key", { app_id, reason });
       return json({ error: reason }, 403, cors);
