@@ -19,11 +19,23 @@ export const BORNES_HEATMAP: Record<string, { bas: number; haut: number }> = {
   TTFB: { bas: 10, haut: 10_000 },
 };
 
+/**
+ * Les vitaux que la carte propose, dans l'ordre du sélecteur. Le CLS n'y est pas :
+ * c'est un score sans unité, pas une durée — des tranches de latence en
+ * millisecondes n'ont pas de sens pour lui (il n'a pas de bornes ci-dessus).
+ */
+export const VITAUX_HEATMAP = ["LCP", "INP", "FCP", "TTFB"] as const;
+
 export const TRANCHES = 24;
 /** Sous ce nombre de mesures, la colonne est hachurée (A2 § 6.1 et § 6.2). */
 export const MESURES_MIN_COLONNE = 13;
 
 export interface LigneHistogramme {
+  /**
+   * Le vital de la ligne. Absent : une lecture d'UN seul vital (celui demandé à
+   * `construireHeatmap`). Présent : une lecture de plusieurs, triée ici.
+   */
+  vital?: string;
   /** Début de l'heure, ISO UTC. */
   heure: string;
   bucket: number;
@@ -48,6 +60,12 @@ export interface Heatmap {
   colonnes: ColonneHeatmap[];
   /** La plus forte part réelle d'une case (légende de la rampe). */
   partMax: number;
+  /**
+   * Les heatmaps de chaque vital proposé (`VITAUX_HEATMAP`, celle-ci comprise), sur
+   * la même grille, quand la lecture les portait tous : la carte en offre le choix.
+   * Absent : un seul vital lu, pas de sélecteur.
+   */
+  choix?: Heatmap[];
 }
 
 /** Les bornes logarithmiques des tranches : `TRANCHES + 1` valeurs de `bas` à `haut`. */
@@ -67,8 +85,28 @@ export function trancheDe(valeur: number, bornes: readonly number[]): number {
 /**
  * La heatmap d'un vital sur une grille horaire. Les heures de la grille sans ligne
  * sont des colonnes vides (`n = 0`) : rien n'est comblé.
+ *
+ * Des lignes qui disent leur vital (`histogrammesHoraires` lit tous ceux de
+ * `VITAUX_HEATMAP` d'une requête) donnent en plus `choix` : une heatmap par vital
+ * proposé, `vital` étant celle affichée d'abord. Un vital sans ligne reste une
+ * heatmap vide — la carte le dit, elle ne le retire pas du choix.
  */
 export function construireHeatmap(vital: string, grille: readonly string[], lignes: readonly LigneHistogramme[]): Heatmap | null {
+  const plusieurs = lignes.some((l) => l.vital !== undefined);
+  const principale = heatmapDUnVital(vital, grille, plusieurs ? lignes.filter((l) => l.vital === vital) : lignes);
+  if (!principale || !plusieurs) return principale;
+  const autres = VITAUX_HEATMAP.filter((v) => v !== vital).map((v) => heatmapDUnVital(v, grille, lignes.filter((l) => l.vital === v))!);
+  // L'ordre du sélecteur est celui de `VITAUX_HEATMAP`, le vital demandé à sa place.
+  const choix = [principale, ...autres].sort((a, b) => rang(a.vital) - rang(b.vital));
+  return { ...principale, choix };
+}
+
+function rang(vital: string): number {
+  const i = (VITAUX_HEATMAP as readonly string[]).indexOf(vital);
+  return i < 0 ? -1 : i;
+}
+
+function heatmapDUnVital(vital: string, grille: readonly string[], lignes: readonly LigneHistogramme[]): Heatmap | null {
   const b = BORNES_HEATMAP[vital];
   if (!b) return null;
   const bornes = bornesTranches(b.bas, b.haut);
