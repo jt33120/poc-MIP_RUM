@@ -60,6 +60,9 @@ export function ErrorOccurrences({
         // Le nom de la zone ne commence pas par « Occurrences ( » : c'est la section
         // qui porte ce nom-là, et les recettes la visent par lui.
         <TableDefilante label="Tableau des occurrences">
+          {/* Les lignes défilent sous un en-tête collant au-delà de 30 rem (recette du
+              30/09/2026 : vingt occurrences faisaient un bloc de 1 000 px). */}
+          <div className="max-h-[30rem] overflow-y-auto [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10">
           <LignesParPaquets
             // Largeur minimale sous celle de la carte à 1 440 px : à 70rem, le tableau
             // dépassait de 2 px et annonçait un défilement inutile.
@@ -148,9 +151,13 @@ export function ErrorOccurrences({
                 );
               })}
           </LignesParPaquets>
+          </div>
         </TableDefilante>
       ) : (
-        <p className="px-4 py-8 text-center text-sm text-ink-faint">
+        <p className="px-4 py-3 text-xs text-ink-soft">
+          <span aria-hidden className="mr-1.5 text-ink-faint">
+            ⊘
+          </span>
           Aucune occurrence sur cette période avec ces filtres
         </p>
       )}

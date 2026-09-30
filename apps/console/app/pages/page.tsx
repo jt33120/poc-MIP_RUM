@@ -835,7 +835,11 @@ function FigureNavigation({
           </li>
         ))}
       </ul>
-      <RankBar data={data} labelWidth="13rem" alternative={false} legende={titre} />
+      {/* Treize lignes au plus : elles défilent au-delà de 15 rem, à la hauteur de la
+          table des percentiles voisine (même bord bas, charte § 3.1). */}
+      <div className="max-h-[15rem] overflow-y-auto pr-1">
+        <RankBar data={data} labelWidth="13rem" alternative={false} legende={titre} />
+      </div>
     </Figure>
   );
 }
@@ -1153,8 +1157,8 @@ function HeroRoutes({
     // défile DANS la page montrait 4 routes sur 9 sans le dire (recette du 26/09/2026).
     // Recette du 30/09/2026 : la notice (provenance de la route, troncature, colonnes lues
     // à part) précédait les lignes en paragraphe ; elle passe dans une bulle de la rangée
-    // du titre. La liste défile au-delà de 22 rem (≈ 10 routes).
-    <div className="min-w-0 sm:[&_ol]:max-h-[22rem] sm:[&_ol]:overflow-y-auto [&>section]:mb-4" data-testid="hero-routes" data-vital={vital}>
+    // du titre. La liste défile au-delà de 18 rem (≈ 8 routes).
+    <div className="min-w-0 sm:[&_ol]:max-h-[18rem] sm:[&_ol]:overflow-y-auto [&>section]:mb-4" data-testid="hero-routes" data-vital={vital}>
       {avertissements.length > 0 && (
         <div className="mb-2">
           <EtatSurface compact etat={{ kind: "partiel", raison: `${avertissements.join(" ; ")}.` }} />

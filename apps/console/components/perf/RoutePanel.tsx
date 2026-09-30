@@ -25,6 +25,7 @@ import { Figure } from "@/components/charts/Figure";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { InfoTip } from "@/components/InfoTip";
 import { sessionsDeLaRoute } from "@/lib/breakdowns";
 import type { LecturePanneauRoute } from "@/lib/chargeurs/panneau-route";
 import { LIBELLE_ETAT_ROBOT, regleAngleMort } from "@/lib/correlation";
@@ -139,10 +140,14 @@ export function RoutePanel({
       fermerHref={fermerHref}
       pageHref={pageHref}
     >
-      <div className="space-y-5">
-        <p className="text-xs text-ink-soft">
-          Plage de l&apos;écran : {plage}. Le panneau n&apos;a pas de fenêtre de temps propre : il lit la plage et les
-          filtres de la page, intersectés avec cette route.
+      <div className="space-y-4">
+        {/* La plage en pastille, sa règle en bulle (recette du 30/09/2026). */}
+        <p className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-panel2 px-2.5 py-0.5 text-[11px] text-ink-soft">
+          <span className="font-medium text-ink">Plage de l&apos;écran : {plage}</span>
+          <InfoTip label="Plage du panneau" align="start">
+            Le panneau n&apos;a pas de fenêtre de temps propre : il lit la plage et les filtres de la page, intersectés
+            avec cette route.
+          </InfoTip>
         </p>
 
         <Bloc titre={`${vital} sur cette route`} id="panneau-route-serie" titreDansLaFigure>
@@ -240,7 +245,7 @@ function SerieRoute({
   const points = pointsRelease(grille, serieRoute.data, serieEnsemble.ok ? serieEnsemble.data : []);
   const mesures = points.reduce((s, p) => s + p.nb, 0);
   if (mesures === 0) {
-    return <EtatSurface etat={{ kind: "vide", population: `mesure ${vital} sur ${route}`, plage }} />;
+    return <EtatSurface etat={{ kind: "vide", population: `mesure ${vital} sur ${route}`, plage }} enLigne />;
   }
   const largeur = bucketLabel(seau);
   return (
@@ -323,7 +328,7 @@ function DistributionRoute({
   if (!histo.ok) return <EchecLecture titre={titre} compact />;
   const bacs = bacsDeHistogramme(histo.data, plafond, HISTO_BUCKETS);
   const n = bacs.reduce((s, b) => s + b.n, 0);
-  if (n === 0) return <EtatSurface etat={{ kind: "vide", population: `mesure ${vital} sur cette route`, plage }} />;
+  if (n === 0) return <EtatSurface etat={{ kind: "vide", population: `mesure ${vital} sur cette route`, plage }} enLigne />;
   const p = percentiles?.pcts ?? null;
   const reperes = p ? { p50: p[0] ?? null, p75: p[1] ?? null, p95: p[3] ?? null } : null;
   const alternative = alternativeDistribution({ vital, bacs, plafond, percentiles: reperes, n });
@@ -484,19 +489,26 @@ function RessourcesRoute({
   if (!lecture.ok) return <EchecLecture titre={titre} compact />;
   const lignes = lecture.data.slice(0, RESSOURCES_PANNEAU);
   if (lignes.length === 0) {
-    return <EtatSurface etat={{ kind: "vide", population: "ressource mesurée sur cette route", plage }} />;
+    return <EtatSurface etat={{ kind: "vide", population: "ressource mesurée sur cette route", plage }} enLigne />;
   }
+  // Une ligne par ressource (recette du 30/09/2026) : l'adresse, coupée (entière au
+  // survol), puis durée moyenne et mesures alignées à droite ; type et blocage en puce.
   return (
-    <ul className="space-y-2 text-sm" data-testid="panneau-route-ressources-liste">
+    <ul className="divide-y divide-line/60 text-xs" data-testid="panneau-route-ressources-liste">
       {lignes.map((r) => (
-        <li key={r.url} className="min-w-0">
-          <span className="block truncate font-mono text-xs text-ink" title={r.url}>
-            {r.url}
+        <li key={r.url} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-x-3 py-1.5">
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className="min-w-0 truncate font-mono text-ink" title={r.url}>
+              {r.url}
+            </span>
+            <span className="shrink-0 rounded bg-panel2 px-1 text-[10px] text-ink-soft">{r.type ?? "type inconnu"}</span>
+            {r.render_blocking && <span className="shrink-0 rounded bg-warn/10 px-1 text-[10px] text-warn-ink">bloque le rendu</span>}
           </span>
-          <span className="text-xs text-ink-soft">
-            {r.type ?? "type inconnu"} · durée moyenne {formater("ms", r.avg_ms)} · {formater("count", r.n)} mesures
-            {r.render_blocking ? " · bloque le rendu" : ""}
+          <span className="text-right tabular-nums text-ink" title="durée moyenne">
+            <span className="sr-only">durée moyenne </span>
+            {formater("ms", r.avg_ms)}
           </span>
+          <span className="text-right tabular-nums text-ink-soft">{formater("count", r.n)} mesures</span>
         </li>
       ))}
     </ul>
@@ -509,32 +521,35 @@ function ErreursRoute({ lecture, plage, href }: { lecture: SectionLue<{ groups: 
   if (!lecture.ok) return <EchecLecture titre={titre} compact />;
   const groupes = lecture.data.groups.slice(0, ERREURS_PANNEAU);
   if (groupes.length === 0) {
-    return <EtatSurface etat={{ kind: "vide", population: "erreur reçue sur cette route", plage }} />;
+    return <EtatSurface etat={{ kind: "vide", population: "erreur reçue sur cette route", plage }} enLigne />;
   }
   return (
     <div className="min-w-0">
-      <ul className="space-y-2 text-sm" data-testid="panneau-route-erreurs-liste">
+      {/* Une ligne par groupe : le message coupé, puis occurrences et sessions à droite. */}
+      <ul className="divide-y divide-line/60 text-xs" data-testid="panneau-route-erreurs-liste">
         {groupes.map((g) => (
-          <li key={`${g.app_id}:${g.fingerprint}`} className="min-w-0">
-            <span className="block truncate font-medium text-ink" title={g.sample_message ?? g.error_type ?? g.fingerprint}>
+          <li key={`${g.app_id}:${g.fingerprint}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-x-3 py-1.5">
+            <span className="min-w-0 truncate font-medium text-ink" title={g.sample_message ?? g.error_type ?? g.fingerprint}>
               {g.error_type ?? "Erreur"}
               {g.sample_message ? ` — ${g.sample_message}` : ""}
             </span>
-            <span className="text-xs text-ink-soft">
-              {formater("count", g.occurrences)} occurrences ·{" "}
+            <span className="text-right tabular-nums text-ink">{formater("count", g.occurrences)} occurrences</span>
+            <span className="text-right tabular-nums text-ink-soft">
               {g.sessions_affected == null ? "sessions touchées : Inconnu" : `${formater("count", g.sessions_affected)} sessions touchées`}
             </span>
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-xs text-ink-soft">
-        {lecture.data.total > groupes.length
-          ? `${formater("count", groupes.length)} groupes sur ${formater("count", lecture.data.total)} sur ${plage}.`
-          : `${pluriel(groupes.length, "groupe")} sur ${plage}.`}
+      <p className="mt-2 flex flex-wrap items-baseline justify-between gap-2 text-xs text-ink-soft">
+        <span>
+          {lecture.data.total > groupes.length
+            ? `${formater("count", groupes.length)} groupes sur ${formater("count", lecture.data.total)} sur ${plage}.`
+            : `${pluriel(groupes.length, "groupe")} sur ${plage}.`}
+        </span>
+        <Link href={href} className={LIEN_BLOC} data-testid="panneau-route-erreurs-lien">
+          Toutes les erreurs de cette route
+        </Link>
       </p>
-      <Link href={href} className={`${LIEN_BLOC} mt-2`} data-testid="panneau-route-erreurs-lien">
-        Toutes les erreurs de cette route
-      </Link>
     </div>
   );
 }

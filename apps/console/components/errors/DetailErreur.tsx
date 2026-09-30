@@ -29,6 +29,8 @@ import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { ERROR_LINK } from "@/components/errors/ErrorOccurrences";
+import { InfoTip } from "@/components/InfoTip";
+import { SOURCE_ERREURS } from "@/components/perf/sources";
 import { formater } from "@/lib/fmt-ids";
 import { fmtDate, pluriel } from "@/lib/format";
 import type { SectionLue } from "@/lib/lecture";
@@ -177,29 +179,39 @@ export function PhraseImpact({
   // inconnu de visiteurs » — plus jamais « Inconnu sessions ».
   const combien = (v: number | null, nom: string) => (v === null ? `un nombre inconnu de ${nom}s` : pluriel(v, nom));
 
+  // Recette du 30/09/2026 : la phrase redisait les cases qui la suivent. Elle reste
+  // entière pour les lecteurs d'écran ; à l'écran, seule la part des sessions touchées
+  // — le chiffre qu'aucune case ne porte — s'écrit, en pastille.
   return (
-    <p className="mb-3 text-sm leading-relaxed text-ink" data-testid="phrase-impact">
-      <strong className="font-semibold">{pluriel(impact.occurrences, "occurrence")}</strong> sur {plage}, touchant{" "}
-      <strong className="font-semibold">
-        {hrefSessions && sessions !== null ? (
-          <Link href={hrefSessions} className={ERROR_LINK}>
-            {combien(sessions, "session")}
-          </Link>
+    <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2" data-testid="phrase-impact">
+      <p className="sr-only">
+        {pluriel(impact.occurrences, "occurrence")} sur {plage}, touchant {combien(sessions, "session")} et{" "}
+        {combien(visiteurs, "visiteur")}
+        {valeur.valeur !== null && lu ? (
+          <>
+            {" ; "}
+            {pct(valeur.valeur)} des {pluriel(lu.base, "session")} avec au moins une vue.
+          </>
         ) : (
-          combien(sessions, "session")
+          <> ; {valeur.raison}.</>
         )}
-      </strong>{" "}
-      et <strong className="font-semibold">{combien(visiteurs, "visiteur")}</strong>
-      {valeur.valeur !== null && lu ? (
-        <>
-          {" ; "}
-          <strong className="font-semibold">{pct(valeur.valeur)}</strong> des {pluriel(lu.base, "session")} avec au
-          moins une vue.
-        </>
-      ) : (
-        <> ; {valeur.raison}.</>
+      </p>
+      <span aria-hidden className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-panel2 px-2.5 py-0.5 text-[11px] text-ink-soft">
+        {valeur.valeur !== null && lu ? (
+          <>
+            <strong className="font-semibold tabular-nums text-ink">{pct(valeur.valeur)}</strong> des{" "}
+            {pluriel(lu.base, "session")} avec au moins une vue
+          </>
+        ) : (
+          <span className="min-w-0 truncate">{valeur.raison}</span>
+        )}
+      </span>
+      {hrefSessions && sessions !== null && (
+        <Link href={hrefSessions} className={`text-xs ${ERROR_LINK}`}>
+          {combien(sessions, "session")} →
+        </Link>
       )}
-    </p>
+    </div>
   );
 }
 
@@ -225,14 +237,17 @@ export function TuilesDetailErreur({
 }) {
   const { sessions, visiteurs } = comptesTouches(impact);
   return (
-    <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="kpi-detail-erreur">
+    <div className="mb-2 grid grid-cols-2 gap-2 lg:grid-cols-4" data-testid="kpi-detail-erreur">
       <KpiTile
         label={`Occurrences · ${plage}`}
+        libelleCase="Occurrences"
         valeur={impact.occurrences}
         format="count"
         sensMeilleur="bas"
         testid={`${prefixe}-occurrences`}
         lecture="somme des occurrences : une erreur répétée compte chaque fois"
+        source={SOURCE_ERREURS}
+        categorie={plage}
       />
       <KpiTile
         label="Sessions touchées"
@@ -241,6 +256,8 @@ export function TuilesDetailErreur({
         format="count"
         sensMeilleur="bas"
         testid={`${prefixe}-sessions`}
+        source={SOURCE_ERREURS}
+        categorie={plage}
       />
       <KpiTile
         label="Visiteurs touchés"
@@ -249,6 +266,8 @@ export function TuilesDetailErreur({
         format="count"
         sensMeilleur="bas"
         testid={`${prefixe}-users`}
+        source={SOURCE_ERREURS}
+        categorie={plage}
       />
       <KpiTile
         label="Couverture identité"
@@ -258,6 +277,8 @@ export function TuilesDetailErreur({
         sensMeilleur="haut"
         testid={`${prefixe}-couverture`}
         lecture="part des occurrences rattachées à un visiteur ou à une identité"
+        source={SOURCE_ERREURS}
+        categorie={plage}
       />
     </div>
   );
@@ -375,16 +396,22 @@ export function VersionsTouchees(props: { releases: SectionLue<ReleasesDuGroupe>
               </tbody>
             </table>
           )}
-          <p className="mt-2 text-xs text-ink-soft" data-testid="versions-portee">
-            {distinctes === null
-              ? "Releases de la première et de la dernière occurrence — depuis toujours, anciennes signatures reprises comprises ; ni la fenêtre ni les filtres de l'écran ne s'y appliquent."
-              : `${
-                  distinctes > 1 ? `${compte(distinctes)} versions distinctes ont porté ce groupe` : "une seule version a porté ce groupe"
-                } — depuis toujours, hors fenêtre${
-                  nonListees > 0 ? ` ; ${pluriel(nonListees, "autre release, vue moins récemment, n'est pas listée", "autres releases, vues moins récemment, ne sont pas listées")}` : ""
-                }.`}{" "}
-            Une erreur apparue avec une release récente se lit comme une régression ; apparue dans une release ancienne,
-            comme une dette.
+          {/* La portée en une ligne de 11 px ; la façon de la lire (régression ou dette)
+              passe dans une bulle (recette du 30/09/2026). */}
+          <p className="mt-2 flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-ink-soft" data-testid="versions-portee">
+            <span className="min-w-0">
+              {distinctes === null
+                ? "Releases de la première et de la dernière occurrence — depuis toujours, anciennes signatures reprises comprises ; ni la fenêtre ni les filtres de l'écran ne s'y appliquent."
+                : `${
+                    distinctes > 1 ? `${compte(distinctes)} versions distinctes ont porté ce groupe` : "une seule version a porté ce groupe"
+                  } — depuis toujours, hors fenêtre${
+                    nonListees > 0 ? ` ; ${pluriel(nonListees, "autre release, vue moins récemment, n'est pas listée", "autres releases, vues moins récemment, ne sont pas listées")}` : ""
+                  }.`}
+            </span>
+            <InfoTip label="Régression ou dette" align="start">
+              Une erreur apparue avec une release récente se lit comme une régression ; apparue dans une release
+              ancienne, comme une dette.
+            </InfoTip>
           </p>
         </>
       )}

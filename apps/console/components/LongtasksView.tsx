@@ -29,7 +29,6 @@ import { Figure } from "@/components/charts/Figure";
 import { StackedBars } from "@/components/charts/StackedBars";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EchecLecture } from "@/components/states/SectionErreur";
-import { Methode } from "@/components/perf/Methode";
 import { InfoTip } from "@/components/InfoTip";
 import { ValeurNoteeMip } from "@/components/NoteMip";
 import { TableDefilante } from "@/components/TableDefilante";
@@ -186,7 +185,11 @@ export function LongtasksView({
               )}
               La durée p75 de chaque API est notée par sa règle MIP, écrite à côté. En haut, les blocages comptés par
               API de mesure ; en bas, le p75 de leur temps de blocage, sans couleur de verdict : le temps de blocage
-              n&apos;a pas de règle MIP. <strong>Aucun cumul de durées n&apos;est affiché</strong>.
+              n&apos;a pas de règle MIP. <strong>Aucun cumul de durées n&apos;est affiché</strong>. Les deux API de
+              mesure ne sont jamais actives ensemble sur un même navigateur : un blocage n&apos;est compté qu&apos;une
+              fois ; elles restent séparées parce qu&apos;un parc mixte produit les deux. Des blocages concurrents de
+              plusieurs visiteurs ne s&apos;additionnent pas en temps d&apos;attente vécu : aucun cumul n&apos;est donc
+              calculé.
             </>
           }
           alternative={
@@ -206,14 +209,9 @@ export function LongtasksView({
           }
         >
           {total > 0 ? (
-            <div className="flex min-w-0 flex-col gap-3">
-              {/* La méthode, repliée : elle précédait le graphique sur cinq lignes. */}
-              <Methode>
-                Les deux API de mesure ne sont jamais actives ensemble sur un même navigateur : un blocage n&apos;est
-                compté qu&apos;une fois ; elles restent séparées parce qu&apos;un parc mixte produit les deux. Des
-                blocages concurrents de plusieurs visiteurs ne s&apos;additionnent pas en temps d&apos;attente vécu :
-                aucun cumul n&apos;est donc calculé.
-              </Methode>
+            <div className="flex min-w-0 flex-col gap-2">
+              {/* La méthode des deux API rejoint celle de la figure, dans le repli
+                  « Méthode » sous le dessin : un seul repli par figure (30/09/2026). */}
               {/* `relative` : le libellé `sr-only` d'une note (position absolue) reste dans
                   ce bloc, jamais placé par rapport à la page (piège 16). Une rangée de
                   valeurs notées (recette du 30/09/2026 : un encadré de quatre lignes) ;
@@ -256,7 +254,7 @@ export function LongtasksView({
                   format="count"
                   seauSecondes={bucketSeconds}
                   fuseau={FUSEAU_AFFICHAGE}
-                  hauteur={150}
+                  hauteur={120}
                   zoomHref={zoomHref}
                   annotations={annotations}
                   legendeAnnotations={false}
@@ -274,7 +272,7 @@ export function LongtasksView({
                   format="ms"
                   seauSecondes={bucketSeconds}
                   fuseau={FUSEAU_AFFICHAGE}
-                  hauteur={150}
+                  hauteur={120}
                   zoomHref={zoomHref}
                   annotations={annotations}
                   annotationsIndisponibles={annotationsIndisponibles}

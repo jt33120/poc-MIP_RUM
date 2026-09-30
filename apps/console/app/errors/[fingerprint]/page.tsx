@@ -133,38 +133,44 @@ export default async function ErrorGroup({
 
       <ErrorNotices sampling={sampling} enrichment={enrichment} />
 
-      {/* ── Bloc 2 : phrase d'impact, puis quatre tuiles ── */}
+      {/* ── Bloc 2 : quatre tuiles, et la part des sessions touchées en pastille ── */}
       <SectionErreur titre="Impact de ce groupe">
-        <PhraseImpact impact={group} plage={label} part={part} hrefSessions={null} />
         <TuilesDetailErreur impact={group} plage={label} />
-        <p className="mb-6 text-xs text-ink-soft" data-testid="detail-vues">
-          Première vue {fmtDate(group.first_seen)} (depuis toujours, hors période) · Dernière vue{" "}
-          {fmtDate(group.last_seen)}
-        </p>
+        <div className="mb-4 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+          <PhraseImpact impact={group} plage={label} part={part} hrefSessions={null} />
+          <p className="mb-2 text-[11px] text-ink-soft" data-testid="detail-vues">
+            Première vue {fmtDate(group.first_seen)}
+            <span className="text-ink-faint"> (depuis toujours, hors période)</span> · Dernière vue{" "}
+            {fmtDate(group.last_seen)}
+          </p>
+        </div>
       </SectionErreur>
 
-      {/* ── Bloc 3 : versions touchées ── */}
-      <SectionErreur titre="Versions touchées">
-        <VersionsTouchees releases={releases} />
-      </SectionErreur>
-
-      {/* ── Bloc 4 : occurrences dans le temps ── */}
-      <div className="mb-4">
-        <SectionErreur titre="Occurrences dans le temps">
-          <OccurrencesDansLeTemps
-            trend={trend}
-            grille={grilleIso(bucketStarts(range))}
-            plage={label}
-            bucketLabel={bucketLabel}
-            seauSecondes={range.bucketSeconds}
-            annotations={annotations.annotations}
-            annotationsIndisponibles={
-              deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement indisponibles"
-            }
-            zoomHref={zoomHref}
-            fenetresCollecte={fenetresLues(d.fenetresCollecte)}
-          />
-        </SectionErreur>
+      {/* ── Blocs 3 et 4 : versions touchées (4/12) à côté des occurrences dans le temps
+          (8/12) — deux étages pleins devenus une rangée (recette du 30/09/2026). ── */}
+      <div className="mb-4 grid min-w-0 gap-2 lg:grid-cols-12">
+        <div className="min-w-0 lg:col-span-4 [&>section]:mb-0 [&>section]:h-full">
+          <SectionErreur titre="Versions touchées">
+            <VersionsTouchees releases={releases} />
+          </SectionErreur>
+        </div>
+        <div className="min-w-0 lg:col-span-8 [&>section]:h-full">
+          <SectionErreur titre="Occurrences dans le temps">
+            <OccurrencesDansLeTemps
+              trend={trend}
+              grille={grilleIso(bucketStarts(range))}
+              plage={label}
+              bucketLabel={bucketLabel}
+              seauSecondes={range.bucketSeconds}
+              annotations={annotations.annotations}
+              annotationsIndisponibles={
+                deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement indisponibles"
+              }
+              zoomHref={zoomHref}
+              fenetresCollecte={fenetresLues(d.fenetresCollecte)}
+            />
+          </SectionErreur>
+        </div>
       </div>
 
       {/* ── Bloc 5 : où surviennent les occurrences affichées (repli tant que B3 manque) ── */}
