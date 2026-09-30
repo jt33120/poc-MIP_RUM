@@ -15,7 +15,6 @@
 import Link from "next/link";
 import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
-import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { ScatterPlot } from "@/components/charts/ScatterPlot";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { Figure } from "@/components/charts/Figure";
@@ -26,12 +25,13 @@ import { OngletsInteractions } from "@/components/perf/OngletsInteractions";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { TableDefilante } from "@/components/TableDefilante";
+import { ScriptsBloquants } from "@/components/ScriptsBloquants";
 import { annotationsDeploiements } from "@/lib/annotations";
 import type { SearchParams } from "@/lib/filters";
 import { type SectionLue } from "@/lib/lecture";
 import { chargerUx } from "@/lib/chargeurs/ux";
 import { chargerEcran } from "@/lib/ecran";
-import { accord, decouperUrlScript, fmtVital, pluriel } from "@/lib/format";
+import { accord, fmtVital, pluriel } from "@/lib/format";
 import { formater } from "@/lib/fmt-ids";
 import { MESURE_DU_SIGNAL, partSessionsTouchees } from "@/lib/notes-mip";
 import { libelleSeauComplet } from "@/lib/series";
@@ -50,7 +50,6 @@ import {
   frustrationParRoute,
   inpOffenders,
   type FrustrationTotaux,
-  type ScriptBloquant,
   type TypeSignal,
 } from "@/lib/queries-frustration";
 import { hrefWithQuery, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
@@ -640,105 +639,6 @@ function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof
           </tbody>
         </table>
       </TableDefilante>
-    </Figure>
-  );
-}
-
-/**
- * « Scripts qui bloquent le fil principal » (§ 5.4.2) : classement en barres du blocage
- * CUMULÉ, la mesure qui décide de l'INP.
- *
- * POURQUOI DES BARRES, ET PAS LA TABLE D'AVANT. La question n'est pas « combien de
- * millisecondes exactement », c'est « lequel de ces scripts pèse le plus » : une
- * longueur se compare d'un coup d'œil, cinq colonnes de chiffres non. Les chiffres
- * restent : blocage cumulé sur la barre, frames et pire cas en sous-texte, et
- * l'alternative textuelle de la figure rend les cinq colonnes de la table précédente.
- *
- * AUCUNE COULEUR DE VERDICT (R-S) : il n'existe aucun seuil publié pour un temps de
- * blocage cumulé. Les barres portent la série principale, rien d'autre.
- */
-function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<ScriptBloquant[]>; label: string }) {
-  const titre = "Scripts qui bloquent le fil principal (trames longues)";
-  if (!scripts.ok) return <Figure titre={titre} id="scripts-bloquants" etat={{ kind: "erreur", titre }} />;
-
-  // Un script intégré à la page n'a pas de fichier : la lecture le regroupe par
-  // fonction sur toutes les pages (recette du 26/09/2026 : la même fonction
-  // occupait huit lignes, une par URL de page), ses routes passent en détail.
-  const routesDe = (s: ScriptBloquant) =>
-    s.nbRoutes === 0
-      ? null
-      : s.nbRoutes === 1
-        ? `route ${s.routes[0]}`
-        : `${s.nbRoutes.toLocaleString("fr-FR")} routes (${s.routes.join(", ")}${s.nbRoutes > s.routes.length ? "…" : ""})`;
-  const fonction = (s: ScriptBloquant) => s.quoi ?? "exécution au chargement";
-  const lignes: RankDatum[] = scripts.data.map((s) => {
-    const trames = `${pluriel(s.n, "trame")} · pire ${formater("ms", s.worstMs)}`;
-    if (s.url === null) {
-      const routes = routesDe(s);
-      return {
-        label: s.quoi ?? "Script de la page, au chargement",
-        value: s.totalMs,
-        display: formater("ms", s.totalMs),
-        title: `Script intégré à la page — ${fonction(s)}${routes ? ` — ${routes}` : ""}`,
-        sub: `script intégré à la page${routes ? ` · ${routes}` : ""} · ${trames}`,
-      };
-    }
-    // Nom de fichier en évidence, hôte en sous-texte : une troncature de fin n'aurait
-    // montré que le préfixe, identique pour tous les scripts du même site. L'URL
-    // entière et la fonction restent en infobulle de la ligne.
-    const { fichier, hote } = decouperUrlScript(s.url);
-    return {
-      label: `${fichier} · ${fonction(s)}`,
-      value: s.totalMs,
-      display: formater("ms", s.totalMs),
-      title: `${s.url} — ${fonction(s)}`,
-      sub: `${hote ? `${hote} · ` : ""}${trames}`,
-    };
-  });
-
-  return (
-    <Figure
-      titre={titre}
-      id="scripts-bloquants"
-      meta={
-        <>
-          <span>{pluriel(scripts.data.length, "paire script et fonction", "paires script et fonction")}, 20 au plus</span>
-          <span>{label}</span>
-          <span>classement par blocage cumulé</span>
-        </>
-      }
-      etat={
-        lignes.length === 0
-          ? { kind: "vide", population: "trame bloquante attribuée à un script", plage: label }
-          : undefined
-      }
-      lecture={
-        <>
-          Classé par blocage <strong>cumulé</strong>, pas par pire cas : un script qui bloque 400 ms une fois est un
-          incident, un script qui bloque 60 ms à chaque frappe est le problème — et c&apos;est le second qui décide de
-          l&apos;INP. Un cumul de visiteurs différents n&apos;est le temps vécu de personne. La mesure des trames
-          longues n&apos;existe que sur Chromium : les visiteurs Safari et Firefox n&apos;en produisent pas, et une
-          absence de ligne ne veut donc pas dire qu&apos;ils n&apos;attendent pas.
-        </>
-      }
-      alternative={
-        lignes.length > 0
-          ? {
-              legende: `Blocage attribué par script et par fonction, ${label}`,
-              colonnes: ["Script", "Fonction / invocation", "Routes", "Trames", "Blocage cumulé", "Pire"],
-              lignes: scripts.data.map((s) => [
-                s.url ?? "intégré à la page",
-                fonction(s),
-                routesDe(s) ?? "—",
-                s.n,
-                formater("ms", s.totalMs),
-                formater("ms", s.worstMs),
-              ]),
-            }
-          : undefined
-      }
-    >
-      <RankBar data={lignes} alternative={false} legende="Blocage cumulé par script et par fonction" />
     </Figure>
   );
 }
