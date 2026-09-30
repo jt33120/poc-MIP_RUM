@@ -34,6 +34,7 @@ describe("C2 — GET /v1/shell : le chargeur reçoit le principal relu en base, 
           projets: { ok: true, data: [{ app_id: "app-a", name: "A" }] },
           schema: { ok: false, raison: "sonde en échec" },
           fuseaux: { "app-a": "Europe/Paris" },
+          mesure: { ok: true, data: { dernier: "2026-09-30T10:00:00.000Z", ouverte: { etat: "degradee", debut: "2026-09-30T09:30:00.000Z", cause: "c" }, cadenceMin: 15 } },
         };
       },
       pages: ECRANS_FACTICES.pages,
@@ -54,6 +55,8 @@ describe("C2 — GET /v1/shell : le chargeur reçoit le principal relu en base, 
       projets: { ok: true, data: [{ app_id: "app-a", name: "A" }] },
       schema: { ok: false, code: "lecture_en_echec" },
       fuseaux: { "app-a": "Europe/Paris" },
+      // L'état de la chaîne de mesure (badge de l'en-tête) : une section de plus.
+      mesure: { ok: true, data: { dernier: "2026-09-30T10:00:00.000Z", ouverte: { etat: "degradee", debut: "2026-09-30T09:30:00.000Z", cause: "c" }, cadenceMin: 15 } },
     });
     expect(vus.at(-1)).toEqual({ email: "v@mip.test", role: "viewer", apps: ["app-a"], demo: false });
   });

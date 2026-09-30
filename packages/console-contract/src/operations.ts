@@ -161,6 +161,22 @@ export interface Coquille {
   readonly schema: Section<readonly string[]>;
   /** Le fuseau d'affichage de chaque projet du principal. */
   readonly fuseaux: Readonly<Record<string, string>>;
+  /**
+   * L'état de la chaîne de mesure, pour le badge de l'en-tête (étude A3 § 2.6) :
+   * `null` si le schéma des sondes n'est pas là. Facultatif : un service plus
+   * ancien que la console ne le rend pas, et le badge ne s'affiche pas.
+   */
+  readonly mesure?: Section<EtatMesureCoquille | null>;
+}
+
+/** Ce que le badge lit : le verdict se calcule au rendu, depuis l'âge du dernier canari. */
+export interface EtatMesureCoquille {
+  /** Émission du dernier canari (ISO), ou `null` s'il n'y en a jamais eu. */
+  readonly dernier: string | null;
+  /** La fenêtre ouverte de la plateforme, s'il y en a une. */
+  readonly ouverte: { readonly etat: "degradee" | "interrompue"; readonly debut: string; readonly cause: string | null } | null;
+  /** La cadence publiée du tick, en minutes. */
+  readonly cadenceMin: number | null;
 }
 export const COQUILLE = operation<Aucun, Aucun, never, Coquille>("console.shell", "GET", "/v1/shell");
 

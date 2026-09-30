@@ -1,10 +1,15 @@
 // La carte « Santé de la chaîne de mesure » de `/admin/health` (étude A3 § 2.6,
 // lot L2). Rendu seul : les données viennent du chargeur de la page
 // (`chargerSante`, section `chaine`), la règle de `lib/chaine-mesure.ts`.
+import { FriseEtats } from "@/components/charts/FriseEtats";
 import {
   ETAGES_CHAINE,
+  ETATS_FRISE_CHAINE,
+  casesFrise,
+  debutsFrise,
   depuis,
   duree,
+  libelleLatences,
   libelleResultat,
   libelleSource,
   niveauResultat,
@@ -13,6 +18,7 @@ import {
   type NiveauChaine,
 } from "@/lib/chaine-mesure";
 import type { SanteChaineBrute } from "@/lib/queries-chaine";
+import { grilleIso } from "@/lib/series";
 
 const TON: Record<NiveauChaine, string> = {
   ok: "border-good/30 bg-good/10 text-good-ink",
@@ -46,6 +52,7 @@ export function SanteChaine({
   const etages = new Map((brute?.etages ?? []).map((e) => [e.etage, e]));
   const taux = brute ? tauxAboutis(brute.taux7j) : null;
   const notifier = brute?.battements.find((b) => b.service === "notifier") ?? null;
+  const grille = grilleIso(debutsFrise(maintenant));
 
   return (
     <section className="card mb-6 px-4 py-3" data-testid="sante-chaine" data-niveau={verdict.niveau}>
@@ -83,6 +90,32 @@ export function SanteChaine({
               );
             })}
           </ul>
+          <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+            Sur 7 jours, heure par heure (pire passage de l&apos;heure)
+          </div>
+          <div className="mt-1 grid min-w-0 gap-3" data-testid="sante-chaine-frise">
+            {ETAGES_CHAINE.map(({ etage, libelle }) => {
+              const latences = libelleLatences(brute.latences7j.find((l) => l.etage === etage));
+              return (
+                <div key={etage} className="min-w-0">
+                  <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 text-xs">
+                    <span className="font-semibold text-ink">{libelle}</span>
+                    <span className="min-w-0 text-ink-soft [overflow-wrap:anywhere]" data-testid={`sante-chaine-latences-${etage}`}>
+                      {latences ?? "aucune latence mesurée"}
+                    </span>
+                  </div>
+                  <FriseEtats
+                    grille={grille}
+                    seauSecondes={3600}
+                    cases={casesFrise(brute.heures, etage)}
+                    etats={ETATS_FRISE_CHAINE}
+                    hauteur={28}
+                    ariaLabel={`${libelle} : résultat du canari heure par heure, sur 7 jours`}
+                  />
+                </div>
+              );
+            })}
+          </div>
           <p className="mt-2 text-xs text-ink-soft">
             {taux === null
               ? "Aucun canari vérifié sur 7 jours."

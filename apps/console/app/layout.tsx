@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { BadgeMesure } from "@/components/BadgeMesure";
 import { CoquilleGarde } from "@/components/CoquilleGarde";
 import { GlobalFilters } from "@/components/GlobalFilters";
 import { ICON_PATHS, Icon } from "@/components/icons";
@@ -237,6 +238,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const timeZones = coquille.fuseaux;
 
   const coquilleDegradee = !coquille.projets.ok || !coquille.schema.ok;
+  const mesure = coquille.mesure?.ok ? coquille.mesure.data : null;
 
   return (
     <html lang="fr" suppressHydrationWarning>
@@ -368,6 +370,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   {/* « Heure de Paris » : le nom du fuseau, capitalisé en tête de libellé. */}
                   {nomFuseau(FUSEAU_AFFICHAGE).replace(/^./, (c) => c.toUpperCase())}
                 </span>
+                {/* La chaîne de mesure : lue avec la coquille, gardée 60 s. Sans
+                    schéma des sondes ou sans lecture, pas de badge plutôt qu'un faux. */}
+                {mesure && (
+                  <BadgeMesure
+                    etat={mesure}
+                    lien={user.role === "admin" && user.apps === null && !user.demo}
+                    maintenant={Date.now()}
+                  />
+                )}
                 {/* AutoRefresh re-fetch les server components toutes les 5 s, sauf
                     sur les routes à lecture explicite (SANS_RAFRAICHISSEMENT, § 3.11) :
                     il rend lui-même la pastille, « LIVE · 5 s » ou « Lu à … ». */}
