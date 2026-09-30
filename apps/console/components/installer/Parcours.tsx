@@ -99,7 +99,7 @@ function EtatCle({ ctx }: { ctx: ContexteParcours }) {
           peut pas la réafficher.
         </p>
       ) : (
-        <CadreEtat ton="attention" role="note" compact testId="sans-cle">
+        <CadreEtat ton="attention" role="note" compact>
           Aucune clé pour l&apos;instant : depuis le 29/09/2026, la collecte refuse toute mesure sans clé.
         </CadreEtat>
       )}

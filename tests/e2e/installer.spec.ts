@@ -63,7 +63,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await nettoyer();
   await pool.query("delete from app_registry where app_id = $1", [APP]);
-  await pool.query("delete from console_user where email = $1", [EMAIL]);
+  // Le compte reste (comme ceux des autres specs) : ses sessions le référencent.
   await pool.end();
 });
 

@@ -91,7 +91,8 @@ export function VueChecklist({
       aria-label={titre}
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 className="min-w-0 text-base font-semibold text-ink">{titre}</h2>
+        {/* h3 : la page range les parcours sous son titre de section « Les parcours, pas à pas » (h2). */}
+        <h3 className="min-w-0 text-base font-semibold text-ink">{titre}</h3>
         <span
           className={`ml-auto rounded-full px-2.5 py-0.5 text-xs font-semibold tabular-nums ${
             complet ? "bg-good/15 text-good-ink" : "bg-panel2 text-ink-soft"
@@ -115,7 +116,7 @@ export function VueChecklist({
           if (!duGroupe.length) return null;
           return (
             <div key={cle} className="min-w-0">
-              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">{titreGroupe}</h3>
+              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">{titreGroupe}</h4>
               {cle === "verification" && avantVerification && <div className="mb-2">{avantVerification}</div>}
               <ol className="grid gap-2" start={numero.get(duGroupe[0].id)}>
                 {duGroupe.map((e) => {
