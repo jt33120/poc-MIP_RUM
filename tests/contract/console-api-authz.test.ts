@@ -191,6 +191,8 @@ const ABOUTIS: Record<string, readonly string[]> = {
   // Capacités FERMÉES (`lib/capacites.ts`) : le chargeur ne lit rien et le dit.
   logs: ["fermee"],
   ai: ["fermee"],
+  // On installe UNE application : sous `app=all`, le chargeur le dit sans rien lire.
+  installer: ["ok", "sans_app"],
 };
 
 /**

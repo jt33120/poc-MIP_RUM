@@ -65,6 +65,7 @@ describe("CATEGORIES (§ 2.2)", () => {
       "Explorer",
       "Logs",
       "Supervision IA",
+      "Installer",
       "API et MCP",
     ]);
     expect(ouvertes().map((c) => [c.href, c.icon])).toEqual([
@@ -180,6 +181,8 @@ describe("surtitreDe — le surtitre suit la sidebar, y compris hors RUM", () =>
     ["/admin/users", "admin"],
     ["/admin/customers/demo-app", "admin"],
     ["/api-docs", "integrations"],
+    // La page d'installation d'une application : une intégration, comme l'API.
+    ["/installer", "integrations"],
     ["/logs", "logs"],
     ["/ai", "ai"],
   ])("%s → %s", (chemin, domaine) => {

@@ -296,12 +296,13 @@ describe("F53 — plus de lecture mono-app", () => {
 
 // § 3.11 (F09) : les routes à lecture explicite ne sont pas rafraîchies toutes les 5 s.
 describe("SANS_RAFRAICHISSEMENT", () => {
-  it("égalité exacte pour l'Explorer, ses vues et la liste des tableaux ; préfixe pour le détail", () => {
-    expect(SANS_RAFRAICHISSEMENT.exacts).toEqual(["/explorer", "/explorer/views", "/dashboards"]);
+  it("égalité exacte pour l'Explorer, ses vues, la liste des tableaux et l'installation ; préfixe pour le détail", () => {
+    // `/installer` relit lui-même son test « ça arrive », borné (lib/installer.ts).
+    expect(SANS_RAFRAICHISSEMENT.exacts).toEqual(["/explorer", "/explorer/views", "/dashboards", "/installer"]);
     expect(SANS_RAFRAICHISSEMENT.prefixes).toEqual(["/dashboards/"]);
   });
 
-  it.each(["/explorer", "/explorer/views", "/dashboards", "/dashboards/abc"])("%s : lu à la demande", (chemin) => {
+  it.each(["/explorer", "/explorer/views", "/dashboards", "/dashboards/abc", "/installer"])("%s : lu à la demande", (chemin) => {
     expect(sansRafraichissement(chemin)).toBe(true);
   });
 

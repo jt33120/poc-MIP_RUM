@@ -1,9 +1,10 @@
 "use client";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { estFermee } from "@/lib/capacites";
 import { fmtHeure } from "@/lib/format";
 import { sansRafraichissement } from "@/lib/surfaces";
+import { useRelecturePeriodique } from "./useRelecturePeriodique";
 
 /**
  * Effet « live » : re-fetch des server components toutes les 5 s (PLAN §9.2), et
@@ -19,16 +20,15 @@ import { sansRafraichissement } from "@/lib/surfaces";
  * l'heure de la dernière lecture et un bouton « Relire ».
  */
 export function AutoRefresh({ intervalMs = 5000 }: { intervalMs?: number }) {
-  const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
   const aLaDemande = sansRafraichissement(pathname);
   // Écran d'une capacité fermée : il n'y a rien à relire, et « LIVE · 5 s »
   // au-dessus d'une page sans donnée annonçait un flux qui n'existe pas.
   const ferme = estFermee(pathname ?? "");
-  const [pending, startTransition] = useTransition();
-  const pendingRef = useRef(pending);
-  pendingRef.current = pending;
+  // Le mécanisme (intervalle, onglet masqué, pas de chevauchement) est partagé avec
+  // `/installer`, qui le borne : `useRelecturePeriodique`.
+  const { pending, relire } = useRelecturePeriodique({ actif: !aLaDemande && !ferme, intervalMs });
   // Heure de la dernière lecture, posée côté client seulement : rendue au serveur,
   // elle différerait de celle du navigateur et casserait l'hydratation.
   const [lu, setLu] = useState<Date | null>(null);
@@ -37,23 +37,6 @@ export function AutoRefresh({ intervalMs = 5000 }: { intervalMs?: number }) {
   useEffect(() => {
     if (!pending) setLu(new Date());
   }, [pending, pathname, requete]);
-
-  useEffect(() => {
-    if (aLaDemande || ferme) return;
-    const tick = () => {
-      if (document.visibilityState !== "visible" || pendingRef.current) return;
-      startTransition(() => router.refresh());
-    };
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") tick();
-    };
-    const id = setInterval(tick, intervalMs);
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [router, intervalMs, aLaDemande, ferme]);
 
   if (ferme) return null;
 
@@ -82,7 +65,7 @@ export function AutoRefresh({ intervalMs = 5000 }: { intervalMs?: number }) {
       </span>
       <button
         type="button"
-        onClick={() => startTransition(() => router.refresh())}
+        onClick={relire}
         disabled={pending}
         className="shrink-0 rounded-full border border-line bg-panel px-2 py-0.5 text-[11px] font-semibold text-ink transition hover:border-perf/40 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
       >

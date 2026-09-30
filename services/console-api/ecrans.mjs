@@ -37,6 +37,7 @@ import { chargerExportTableau } from "@/lib/chargeurs/export-tableau";
 import { chargerForecast } from "@/lib/chargeurs/forecast";
 import { chargerForms } from "@/lib/chargeurs/forms";
 import { chargerGoals } from "@/lib/chargeurs/goals";
+import { chargerInstaller } from "@/lib/chargeurs/installer";
 import { chargerIssue } from "@/lib/chargeurs/issue";
 import { chargerLogs } from "@/lib/chargeurs/logs";
 import { chargerMap } from "@/lib/chargeurs/map";
@@ -104,6 +105,7 @@ export const ecrans = {
     goals: page(chargerGoals),
     logs: page(chargerLogs),
     ai: page(chargerAi),
+    installer: page(chargerInstaller),
     // C6
     tableaux: page(chargerTableaux),
     tableau: page(chargerTableau),

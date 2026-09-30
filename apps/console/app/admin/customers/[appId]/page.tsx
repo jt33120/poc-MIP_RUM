@@ -123,6 +123,11 @@ export default async function CustomerWizard({
           >
             {status.live ? "Données reçues" : "Intégration en cours"}
           </span>
+          {/* La même installation, écrite pour l'équipe du client et lisible par elle
+              (cette fiche est réservée aux administrateurs). */}
+          <Link href={`/installer?app=${encodeURIComponent(appId)}`} className="btn-ghost" data-testid="lien-installer">
+            Guide d&apos;installation pour le client →
+          </Link>
         </PageHeader>
 
         {/* La clé d'API (création de l'application ou rotation) : rendue au formulaire

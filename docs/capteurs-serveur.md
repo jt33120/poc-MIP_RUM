@@ -29,9 +29,9 @@ OTEL_METRICS_EXPORTER=none
 
 - **`mip.app_id`** est obligatoire : un lot sans lui est accepté (200) puis ignoré. C'est
   l'identifiant de l'application créée dans la console (`docs/INTEGRATION.md` § 1). La clé
-  du projet s'ajoute sous l'attribut `mip.api_key` : la production ne l'exige pas au
-  29/09/2026 (`REQUIRE_API_KEY: "false"`), et les preuves du § 2 s'en sont passées ; la
-  poser quand même : elle sera exigée (403 sinon) quand la variable passera à `true`.
+  du projet s'ajoute sous l'attribut `mip.api_key` : elle est **exigée** depuis le
+  29/09/2026 (`REQUIRE_API_KEY: "true"`, `.railway/railway.ts`) ; un lot sans clé ou avec
+  une clé fausse est refusé en 403. Les preuves du § 2, antérieures, s'en sont passées.
 - **`deployment.environment.name`** (ou l'ancien `deployment.environment`) devient
   l'environnement affiché ; **`service.name`** devient le service.
 - **Un endpoint par signal** (URL complète, prise telle quelle). MIP n'a pas de route

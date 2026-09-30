@@ -274,7 +274,7 @@ const LOTS_ECRANS = [
   [/^\/(dashboards(\/.*)?|explorer\/views)$/, "C6 espace de travail"],
   [/^\/(actions|events|mobile|sessions(\/.*)?|explorer)$/, "C3"],
   [/^\/(|forecast|pages|ux|map|errors(\/.*)?|tracing(\/.*)?|correlation)$/, "C4"],
-  [/^\/(logs|acquisition|forms|retention|paths|experience|goals|ai)$/, "C5"],
+  [/^\/(logs|acquisition|forms|retention|paths|experience|goals|ai|installer)$/, "C5"],
 ];
 
 const CIBLES_ROUTES = [

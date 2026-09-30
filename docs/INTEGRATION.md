@@ -4,6 +4,11 @@ Au 30/09/2026. Ce guide s'adresse à l'équipe technique d'un client : il dit co
 faire marcher la mesure, du navigateur au serveur. Les détails (options, CSP,
 consentement, routes…) sont en annexe, à la fin.
 
+**Dans la console, la page « Installer » (`/installer`)** déroule ce guide pour
+l'application sélectionnée : trois parcours (code de suivi, extension, serveur) en
+check-lists, codes préremplis, et un test « ça arrive » en direct. Elle est lisible par
+l'équipe du client, pas seulement par un administrateur (30/09/2026).
+
 Toute la collecte arrive sur la console, `https://mip-rum-console.vercel.app/api/ingest/v1/`
 (`traces`, `logs`, `replay`), qui la relaie au service `collector` (Railway,
 `ingest_relay_pct` à 100 % depuis le 28/09/2026) et l'écrit elle-même si le relais

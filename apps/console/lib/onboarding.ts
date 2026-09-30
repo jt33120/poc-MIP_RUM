@@ -114,9 +114,10 @@ export function buildSnippet(opts: {
   if (opts.clientId) init.push(`    clientId: ${JSON.stringify(opts.clientId)},`);
   init.push(`    env: "prod",`);
   // Une clé posée dans une balise <script> est publique de toute façon : le repère ne
-  // protège rien, il dit seulement où la mettre. Elle n'est exigée que si la collecte
-  // ferme l'accès sans clé (REQUIRE_API_KEY) ; sinon la ligne peut disparaître.
-  init.push(`    apiKey: "COLLE_ICI_LA_CLE_API", // facultative : retirez la ligne si le projet n'a pas de clé`);
+  // protège rien, il dit seulement où la mettre. Le collector l'exige depuis le
+  // 29/09/2026 (`REQUIRE_API_KEY: "true"`, `.railway/railway.ts`), et la console lui
+  // relaie toute la collecte : le commentaire ne la dit plus facultative.
+  init.push(`    apiKey: "COLLE_ICI_LA_CLE_API", // la clé d'API du projet : sans elle, les mesures sont refusées`);
   if (opts.withConsent)
     init.push(`    requireConsent: true, // rien ne part avant MIPRum.consent(true)`);
   return [
@@ -132,11 +133,16 @@ export function buildSnippet(opts: {
 
 // --- v0.6 : injection zéro-touch (poser le RUM sans modifier le code du site) ---
 
-/** Appel MIPRum.init compact (une ligne) pour les configs d'injection. */
+/**
+ * Appel MIPRum.init compact (une ligne) pour les configs d'injection. Il porte le
+ * repère de la clé depuis que la collecte l'exige (29/09/2026) : sans lui, une
+ * injection « sans toucher au code » posait un capteur dont chaque envoi prenait 403.
+ */
 function buildInitCall(o: { endpoint: string; appId: string; clientId: string | null }): string {
   const p = [`endpoint:${JSON.stringify(o.endpoint)}`, `appId:${JSON.stringify(o.appId)}`];
   if (o.clientId) p.push(`clientId:${JSON.stringify(o.clientId)}`);
   p.push(`env:"prod"`);
+  p.push(`apiKey:"COLLE_ICI_LA_CLE_API"`);
   return `MIPRum.init({${p.join(",")}})`;
 }
 
@@ -181,8 +187,9 @@ export interface InjectionArtifacts {
 
 /**
  * Génère les trois configs d'injection front préremplies pour un client.
- * Aucune n'embarque la clé d'API (clé front optionnelle, enforcement off) :
- * elles ne font que poser les deux balises <script> du SDK depuis l'infra.
+ * Aucune n'embarque la clé d'API elle-même : elles portent son repère
+ * (`COLLE_ICI_LA_CLE_API`), que le client remplace, et ne font que poser les deux
+ * balises <script> du SDK depuis l'infra.
  */
 export function buildInjectionArtifacts(opts: {
   sdkUrl: string;

@@ -29,6 +29,14 @@ export async function listExtensionScopes(): Promise<ExtensionScopeRow[]> {
   );
 }
 
+/** Les domaines d'UNE application et leur état (`/installer`) : l'extension n'observe que ceux-là. */
+export async function domainesExtensionDe(appId: string): Promise<{ domain: string; active: boolean }[]> {
+  return q<{ domain: string; active: boolean }>(
+    `select domain, active from extension_scope where app_id = $1 order by domain`,
+    [appId],
+  );
+}
+
 /** Enregistre un domaine (upsert par hostname exact) — active par défaut. */
 export async function createExtensionScope(domain: string, appId: string, client?: ClientEcriture): Promise<void> {
   await ecrire(

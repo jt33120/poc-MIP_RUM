@@ -19,6 +19,13 @@ import { OnboardingPoll } from "@/components/OnboardingPoll";
 import { CodeAvecSecret, FormulaireSecret, SecretAffiche, SecretFourni } from "@/components/secret/SecretUnique";
 import { BackendStep } from "@/components/wizard/BackendStep";
 import { WizardBadge } from "@/components/wizard/WizardStep";
+import {
+  DOC_DEPLOIEMENT_EXTENSION,
+  EXTENSION_ID,
+  ZIP_EXTENSION,
+  strategieExtension,
+  strategieNommage,
+} from "@/lib/extension-deploiement";
 import { ingestEndpoint, voieRecommandee } from "@/lib/ingest-endpoint";
 import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
 import { chargerNouveauSite } from "@/lib/chargeurs/projets";
@@ -438,21 +445,28 @@ async function Integration({
         </div>
       </section>
 
-      <form action={selectProjectAction} className="mt-6">
-        <input type="hidden" name="app" value={appId} />
-        <button type="submit" className="btn-accent px-4 py-2" data-testid="supervise-project">
-          Superviser ce projet →
-        </button>
-      </form>
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <form action={selectProjectAction}>
+          <input type="hidden" name="app" value={appId} />
+          <button type="submit" className="btn-accent px-4 py-2" data-testid="supervise-project">
+            Superviser ce projet →
+          </button>
+        </form>
+        {/* Le guide pas à pas, lisible aussi par l'équipe du client (trois parcours,
+            chacun avec son test en direct) : à transmettre à qui pose le capteur. */}
+        <Link href={`/installer?app=${encodeURIComponent(appId)}`} className="btn-ghost px-4 py-2" data-testid="lien-installer">
+          Guide d&apos;installation pas à pas
+        </Link>
+      </div>
     </SecretFourni>
   );
 }
 
-// ID stable de l'extension (dérivé de la clé publique du manifest — cf.
-// docs/DEPLOY_EXTENSION.md). Référencé tel quel par la policy d'entreprise.
-const EXT_ID = "gglpcalhlkfhgipfmemfiedjomifefba";
-const EXT_ZIP = "/downloads/mip-rum-extension.zip";
-const GH_DOC = "https://github.com/jt33120/poc-MIP_RUM/blob/master/docs/DEPLOY_EXTENSION.md";
+// L'identifiant, le paquet et les stratégies de l'extension : `lib/extension-deploiement.ts`,
+// partagé avec `/installer` — deux copies de l'identifiant pouvaient diverger.
+const EXT_ID = EXTENSION_ID;
+const EXT_ZIP = ZIP_EXTENSION;
+const GH_DOC = DOC_DEPLOIEMENT_EXTENSION;
 
 /**
  * Étape 2 — mode extension. Deux VOIES d'installation, tout dans la console
@@ -476,27 +490,14 @@ function ExtensionConfig({
   const allRegistered = domains.length > 0 && domains.every((d) => d.registered);
   // Policy ExtensionSettings pré-remplie : l'ID de l'extension + les domaines
   // réellement enregistrés (runtime_allowed_hosts). L'IT n'a qu'à coller.
-  const allowedHosts = domains.length ? domains.map((d) => `*://${d.host}`) : ["*://app.client.fr"];
-  const policy = JSON.stringify(
-    {
-      [EXT_ID]: {
-        installation_mode: "force_installed",
-        update_url: updateUrl ?? "https://<votre-hebergement>/update.xml",
-        runtime_allowed_hosts: allowedHosts,
-      },
-    },
-    null,
-    2,
+  const policy = strategieExtension(
+    domains.map((d) => d.host),
+    updateUrl,
   );
-  // Nommage des postes dans l'inventaire. C'est une policy SÉPARÉE d'ExtensionSettings :
-  // Chrome range la configuration destinée à une extension sous `3rdparty`, et elle
-  // arrive côté extension par chrome.storage.managed (lecture seule). MIP ne
-  // fabrique jamais ce libellé — sans cette policy, l'inventaire reste anonyme.
-  const nommage = JSON.stringify(
-    { "3rdparty": { extensions: { [EXT_ID]: { poste: "${machine_name}" } } } },
-    null,
-    2,
-  );
+  // Nommage des postes dans l'inventaire : une policy SÉPARÉE d'ExtensionSettings
+  // (`strategieNommage`). MIP ne fabrique jamais ce libellé — sans cette policy,
+  // l'inventaire reste anonyme.
+  const nommage = strategieNommage();
 
   return (
     <>

@@ -84,6 +84,13 @@ export function socleOtel({
   ].join("\n");
 }
 
+/**
+ * Le nom de service prérempli (`OTEL_SERVICE_NAME`). Exporté pour `/installer`, qui
+ * le range parmi ce qui est propre à l'application : le dire ailleurs autrement
+ * ferait lire au client un nom que sa recette ne porte pas.
+ */
+export const nomDeService = (appId: string) => `${appId}-api`;
+
 const DOC = "https://opentelemetry.io/docs/zero-code";
 const EPROUVE = "éprouvé en production le 28/09/2026";
 // Preuves du 29/09/2026 (même protocole que #342) : FastAPI sous opentelemetry-instrument,
@@ -99,7 +106,7 @@ export function recettesAgentsOtel({
   appId: string;
   adresses: AdressesCollecte;
 }): RecettesAgents {
-  const socle = socleOtel({ appId, adresses, service: `${appId}-api` });
+  const socle = socleOtel({ appId, adresses, service: nomDeService(appId) });
   const recette = (...lignes: string[]) =>
     ["# 1. Le socle commun, dans l'environnement du processus", socle, "", ...lignes].join("\n");
 
