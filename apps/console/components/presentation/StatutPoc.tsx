@@ -5,7 +5,7 @@
 // l'aveu devenait le message. Ces trois lignes disent la même chose dans l'ordre où
 // une DSI la lit — ce qui tourne, ce qui est livré, ce qui vient — sans rien retirer :
 // « la prochaine étape est de les éprouver » dit qu'elles ne le sont pas encore. Le
-// relevé détaillé, ses verdicts et ses limites sont dans le dossier technique.
+// relevé détaillé, ses verdicts et ses limites suivent, sur la même page (graphe technique).
 //
 // AUCUN CHIFFRE N'EST TAPÉ ICI : date du relevé et décomptes viennent du registre des
 // capacités (lib/couverture.ts), la date de la topologie de lib/presentation-topologie.ts.
@@ -14,6 +14,7 @@ import Link from "next/link";
 import { RELEVE_PERIME_JOURS, relevePerime } from "@/components/presentation/Releve";
 import { CAPACITES, RELEVE, compte } from "@/lib/couverture";
 import { TOPOLOGIE_RELEVEE } from "@/lib/presentation-topologie";
+import { CHEMIN_A_FAIRE } from "@/lib/vitrine-navigation";
 
 export function StatutPoc({ maintenant = new Date() }: { maintenant?: Date }) {
   const total = CAPACITES.length;
@@ -25,7 +26,7 @@ export function StatutPoc({ maintenant = new Date() }: { maintenant?: Date }) {
     },
     {
       quand: RELEVE,
-      texte: `${deployees} capacités sur ${total} déployées, chacune avec sa limite écrite dans le dossier technique.`,
+      texte: `${deployees} capacités sur ${total} déployées, chacune avec sa limite écrite plus bas.`,
     },
     {
       quand: "Prochaine étape",
@@ -51,10 +52,10 @@ export function StatutPoc({ maintenant = new Date() }: { maintenant?: Date }) {
         </p>
       )}
       <p className="mt-5 border-t border-line pt-4 text-sm">
-        <Link href="/presentation/dossier" className="font-medium text-ink underline decoration-line underline-offset-2 hover:decoration-ink">
-          Lire le dossier technique
+        <Link href={CHEMIN_A_FAIRE} className="font-medium text-ink underline decoration-line underline-offset-2 hover:decoration-ink">
+          Ce qui reste à faire
         </Link>
-        <span className="text-ink-soft"> : capacités, limites, ce qui reste à faire.</span>
+        <span className="text-ink-soft"> : les hypothèses réductrices du POC, et les chantiers.</span>
       </p>
     </section>
   );

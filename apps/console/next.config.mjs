@@ -31,7 +31,15 @@ const nextConfig = {
   // (avant le passage de scripts/captures-portail.mjs), rien n'est ajouté et la
   // légende reste sans date.
   outputFileTracingIncludes: {
-    "/presentation": ["./public/portail/manifest.json"],
+    "/presentation/graphe-technique": ["./public/portail/manifest.json"],
+  },
+  // Les deux pages d'explication d'avant le menu (30/09/2026) : leur texte est
+  // rassemblé dans le graphe technique. Un lien ancien y mène encore.
+  async redirects() {
+    return [
+      { source: "/presentation/dossier", destination: "/presentation/graphe-technique", permanent: true },
+      { source: "/presentation/archive", destination: "/presentation/graphe-technique", permanent: true },
+    ];
   },
   // Le correctif de React 19.3.0 sur le rejeu d'un élément pendant l'hydratation,
   // posé sur le React que Next embarque : sans lui, une page au RSC volumineux

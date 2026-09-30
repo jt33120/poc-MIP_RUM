@@ -106,17 +106,19 @@ describe("PS11 — le document de couverture, tel quel", () => {
   it("D8 et D9 (la reprise, faite le 28/09/2026) renvoient au point sorti de la liste ; D14 à sa carte", () => {
     for (const id of ["D8", "D9"]) {
       expect(renvoiLimite(id), id).toEqual({
-        href: "#reste-R2-titre",
+        href: "/presentation/a-faire#reste-R2-titre",
         libelle: "Sorti de la liste : « Reprise de l'historique des erreurs »",
       });
     }
     expect(renvoiLimite("D14")?.href).toBe("#capacite-K16");
   });
 
-  it("chaque renvoi vise une ancre qui existe sur la page : une carte de « Ce qu'il sait faire » ou un point de « Ce qui reste »", () => {
+  it("chaque renvoi vise une ancre qui existe : une carte de « Ce qu'il sait faire » (même page) ou un point de « Ce qui reste » (page À faire)", () => {
     const page = renderToStaticMarkup(<SaitFaire />) + renderToStaticMarkup(<Reste />);
     for (const c of CAPACITES) {
-      const cible = renvoiLimite(c.id)!.href.slice(1);
+      const href = renvoiLimite(c.id)!.href;
+      expect(href, c.id).toMatch(/^(#capacite-|\/presentation\/a-faire#reste-)/);
+      const cible = href.slice(href.indexOf("#") + 1);
       expect(page, `${c.id} → #${cible}`).toContain(`id="${cible}"`);
     }
   });

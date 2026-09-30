@@ -40,7 +40,7 @@
 import { Fragment, Suspense } from "react";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { Partie } from "@/components/presentation/Partie";
-import { ancreDuPoint, idCarte } from "@/components/presentation/SaitFaire";
+import { idCarte, lienDuPoint } from "@/components/presentation/SaitFaire";
 import { Specs } from "@/components/presentation/Specs";
 import { RELEVE, VERDICT_LABEL, parFamille, type Capacite } from "@/lib/couverture";
 import { lireEnLigne, type Noeud } from "@/lib/markdown-en-ligne";
@@ -60,10 +60,10 @@ export function renvoiLimite(id: string): { href: string; libelle: string } | nu
   const carte = CARTES.find((c) => c.limites.some((l) => l.id === id));
   if (carte) return { href: `#${idCarte(carte.id)}`, libelle: `Ce qu'il sait faire : « ${carte.titre} »` };
   const point = POINTS_RESTE.find((p) => p.sources.includes(id)) ?? POINTS_RESTE.find((p) => p.id === TRAITEES_PAR[id]);
-  if (point) return { href: `#${ancreDuPoint(point.id)}`, libelle: `Ce qui reste : « ${point.titre} »` };
+  if (point) return { href: lienDuPoint(point.id), libelle: `Ce qui reste : « ${point.titre} »` };
   // Un point fait, sorti de la liste (28/09/2026) : sa phrase datée dit l'état de la ligne.
   const fait = POINTS_FAITS.find((p) => p.sources.includes(id));
-  if (fait) return { href: `#${ancreDuPoint(fait.id)}`, libelle: `Sorti de la liste : « ${fait.titre} »` };
+  if (fait) return { href: lienDuPoint(fait.id), libelle: `Sorti de la liste : « ${fait.titre} »` };
   return null;
 }
 

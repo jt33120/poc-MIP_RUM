@@ -112,12 +112,9 @@ function Commande({ libelle, icone, onClick, testId }: { libelle: string; icone:
 
 export function FilmAccueil({
   film,
-  entete,
   suite,
 }: {
   film: { mp4: string; affiche: string } | null;
-  /** La marque, posée sur le film. */
-  entete: ReactNode;
   /** L'ancre de la section suivante, que vise l'invitation à descendre. */
   suite: string;
 }) {
@@ -185,7 +182,8 @@ export function FilmAccueil({
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-40 bg-gradient-to-b from-[#040a1c]/80 to-transparent" />
       <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-48 bg-gradient-to-t from-[#040a1c] to-transparent" />
 
-      <header className="mx-auto flex w-full max-w-6xl items-center px-4 py-5 sm:px-6">{entete}</header>
+      {/* La place de la barre de navigation, qui flotte au-dessus du film (NavVitrine). */}
+      <div aria-hidden className="h-16 shrink-0" />
 
       <div className="mx-auto flex w-full max-w-6xl flex-1 items-center px-4 sm:px-6">
         {/* Le même message que les titres du film : il s'efface quand le film les montre,

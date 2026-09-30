@@ -3,7 +3,7 @@
 // `ParcoursInstallation` suit.
 import { LIBELLE_PARCOURS, PARCOURS, type Parcours } from "@/lib/installer";
 
-const CARTES: Record<Parcours, { badge: string; ton: string; texte: string }> = {
+export const CARTES_PARCOURS: Record<Parcours, { badge: string; ton: string; texte: string }> = {
   snippet: {
     badge: "Recommandé",
     ton: "bg-good/15 text-good-ink",
@@ -30,9 +30,9 @@ export function ChoixParcours({ vert }: { vert: Record<Parcours, boolean> }) {
         <li key={p} className="card flex min-w-0 flex-col p-4" data-testid={`carte-${p}`}>
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="min-w-0 text-sm font-semibold text-ink">{LIBELLE_PARCOURS[p]}</h3>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${CARTES[p].ton}`}>{CARTES[p].badge}</span>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${CARTES_PARCOURS[p].ton}`}>{CARTES_PARCOURS[p].badge}</span>
           </div>
-          <p className="mt-2 flex-1 text-xs leading-relaxed text-ink-soft">{CARTES[p].texte}</p>
+          <p className="mt-2 flex-1 text-xs leading-relaxed text-ink-soft">{CARTES_PARCOURS[p].texte}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <a
               href={`#${p}`}

@@ -15,21 +15,21 @@
 // dépôt l'a déjà payé trois fois (les receveurs d'ingestion, la liste des
 // endpoints de l'API, les sous-traitants LLM). Celle-ci est la réponse.
 //
-// Fonction PURE, sans import : le middleware tourne sur le runtime edge, où
-// `node:*` n'existe pas.
+// Fonction PURE : le middleware tourne sur le runtime edge, où `node:*` n'existe
+// pas. Seul import, le menu de la vitrine, lui-même sans dépendance à l'exécution.
+import { CHEMINS_MENU } from "./vitrine-navigation";
 
 /**
  * Ce chemin est-il une page publique ?
  *
  *   /presentation       la vitrine — ce qu'on montre avant de connaître le produit
- *   /presentation/dossier  son dossier technique (recette du 26/09/2026) : le détail
- *                       que la vitrine résume. Chemin EXACT, comme la vitrine : une
- *                       autre page rangée sous /presentation reste privée
  *   /presentation/open-source  l'inventaire des composants open source (29/09/2026) :
  *                       qui veut vérifier les parties externes n'a pas à avoir de
- *                       compte. Chemin EXACT lui aussi
- *   /presentation/archive  la vitrine d'avant la refonte du 30/09/2026, gardée
- *                       lisible le temps que son texte trouve sa place. Chemin EXACT
+ *                       compte. Chemin EXACT, comme la vitrine : une autre page
+ *                       rangée sous /presentation reste privée
+ *   le menu de la vitrine  Installation (et ses trois parcours), À faire, Graphe
+ *                       technique (lib/vitrine-navigation.ts, 30/09/2026) : ce qu'un
+ *                       visiteur lit avant d'avoir un compte. Chemins EXACTS
  *   /extension-privacy  politique de confidentialité de l'extension : URL PUBLIQUE
  *                       exigée par le Chrome Web Store, donc jamais derrière un login
  *   /inscription        l'inscription en libre-service (30/09/2026) : elle s'adresse
@@ -43,9 +43,8 @@
 export function estCheminPublic(pathname: string): boolean {
   return (
     pathname === "/presentation" ||
-    pathname === "/presentation/dossier" ||
     pathname === "/presentation/open-source" ||
-    pathname === "/presentation/archive" ||
+    CHEMINS_MENU.includes(pathname) ||
     pathname === "/inscription" ||
     pathname === "/extension-privacy" ||
     pathname === "/legal" ||

@@ -334,7 +334,13 @@ function fichiersVitrine(): string[] {
     ...libs,
     "apps/console/components/AddClientCarousel.tsx",
     "apps/console/app/presentation/page.tsx",
-    "apps/console/app/presentation/dossier/page.tsx",
+    "apps/console/app/presentation/graphe-technique/page.tsx",
+    "apps/console/app/presentation/a-faire/page.tsx",
+    "apps/console/app/presentation/installation/page.tsx",
+    "apps/console/app/presentation/installation/[parcours]/page.tsx",
+    "apps/console/components/presentation/installation/DocInstallation.tsx",
+    "apps/console/components/presentation/vitrine/NavVitrine.tsx",
+    "apps/console/components/presentation/vitrine/PageVitrine.tsx",
     "apps/console/lib/specs.ts",
   ];
 }

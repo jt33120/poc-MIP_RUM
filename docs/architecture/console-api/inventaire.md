@@ -6,16 +6,16 @@
 
 | | Nombre | Atteignent la base |
 |---|---|---|
-| Écrans (`page.tsx`) | 57 | **47** |
-| Fichiers d'actions serveur (`"use server"`) | 20 (56 actions) | **18** |
+| Écrans (`page.tsx`) | 60 | **47** |
+| Fichiers d'actions serveur (`"use server"`) | 19 (55 actions) | **18** |
 | Actions déclarées dans un écran | 0 | — |
 | Routes (`route.ts`) | 45 | **37** |
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
 | Modules `lib/queries*.ts` | 48 (210 fonctions exportées) | — |
-| Sections `lire()` (appels) | 300 | — |
+| Sections `lire()` (appels) | 302 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 5 / 0 | — |
-| Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 52 | — |
+| Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 55 | — |
 | Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 45 | **45** / 47 |
 | Fichiers d'actions passés par une commande (`lib/commandes/`, C6 → C9) | 15 (51 commandes) | **15** / 18 |
 
@@ -59,7 +59,7 @@
 | `/forecast` | C4 | **oui** | forecast | collecte, deploys, explorer, grid | 3 | — | oui |
 | `/forms` | C5 | **oui** | forms | collecte, deploys, explorer, form-analytics, mobile, sessions, tracing | 3 | — | oui |
 | `/goals` | C5 | **oui** | goals | queries, accounts, alerting, collecte, dashboards, deploys, dsar, errors, events, explorer, extension-installs, extension-scope, frustration, goals, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, tracing, uptime, v2 | 4 | — | oui |
-| `/inscription` | C1–C2 identité, sélection | non | — | — | — | — | oui |
+| `/inscription` | à classer | non | — | — | — | — | oui |
 | `/installer` | C5 | **oui** | installer | collecte, customers, deploys, explorer, extension-scope | 3 | — | non |
 | `/legal/cgu` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/cgv` | statique ou vitrine | non | — | — | — | — | oui |
@@ -72,7 +72,10 @@
 | `/` | C4 | **oui** | detections-accueil, overview | queries, breakdowns, collecte, deploys, detections, errors, events, explorer, grid, heatmap, mobile, sessions, tracing, v2 | 37 | — | oui |
 | `/pages` | C4 | **oui** | pages | queries, breakdowns, collecte, deploys, errors, events, explorer, longtasks, mobile, resources, sessions, tracing, v2 | 22 | route | oui |
 | `/paths` | C5 | **oui** | paths | queries, collecte, deploys, explorer, funnel, mobile, paths, sessions, tracing | 9 | — | oui |
-| `/presentation/dossier` | à classer | **oui** | — | planifie | — | — | oui |
+| `/presentation/a-faire` | à classer | non | — | — | — | — | oui |
+| `/presentation/graphe-technique` | à classer | **oui** | — | planifie | — | — | oui |
+| `/presentation/installation/[parcours]` | à classer | non | — | — | — | — | oui |
+| `/presentation/installation` | à classer | non | — | — | — | — | oui |
 | `/presentation/open-source` | à classer | non | — | — | — | — | oui |
 | `/presentation` | statique ou vitrine | non | — | — | — | — | oui |
 | `/retention` | C5 | **oui** | retention | cohorts, collecte, deploys, explorer, mobile, sessions, tracing | 3 | — | oui |
@@ -106,7 +109,6 @@
 | `app/errors/issues/actions.ts` | muterIssue | **oui** | — | oui |
 | `app/explorer/actions.ts` | saveViewAction, renameViewAction, deleteViewAction | **oui** | creerVue, modifierVue, supprimerVue | par règle |
 | `app/goals/actions.ts` | createGoalAction, toggleGoalAction, deleteGoalAction | **oui** | activerObjectif, creerObjectif, supprimerObjectif | par règle |
-| `app/inscription/actions.ts` | inscrireAction | non | — | oui |
 | `app/login/actions.ts` | loginAction | **oui** | — | oui |
 | `app/mobile/actions.ts` | validerCapaciteAction | **oui** | validerCapaciteMobile | par règle |
 | `app/select/actions.ts` | selectProjectAction | **oui** | — | oui |
@@ -177,7 +179,7 @@
 | `components/errors/ErrorTriage.tsx` | `app/errors/[fingerprint]/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/explorer/ActionsVue.tsx` | `app/explorer/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/presentation/Annexe.tsx` | `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
-| `components/presentation/Dossier.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
+| `components/presentation/GrapheTechnique.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Specs.tsx` | `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/slo/SloStatusRow.tsx` | `app/alerts/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 

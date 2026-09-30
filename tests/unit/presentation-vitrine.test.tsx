@@ -1,7 +1,7 @@
-// La présentation publique (/presentation), réduite par la recette du 26/09/2026 à
-// une vitrine de deux ou trois écrans : la promesse et le statut daté, trois preuves
-// visuelles, le tableau « Où sont les données, et sous quel droit », l'invitation à
-// la démo. Le détail est dans le dossier technique (tests : presentation-ossature,
+// Le récit de l'ancienne vitrine (recette du 26/09/2026), repris en tête du graphe
+// technique le 30/09/2026 (GrapheTechnique.tsx, `Recit`) : la promesse et le statut
+// daté, trois preuves visuelles, le tableau « Où sont les données, et sous quel
+// droit ». La suite de la page est testée par partie (presentation-ossature,
 // Contient, SaitFaire, Reste, Annexe, Specs).
 //
 // Ce que ces tests tiennent, en rendu SSR réel (`renderToStaticMarkup`) :
@@ -10,17 +10,17 @@
 //   - le statut : trois lignes datées, décomptes LUS dans le registre, jamais tapés ;
 //   - les preuves : trois recadrages de vraies captures, chacun décrit (alt) ;
 //   - aucun code interne, aucun chemin du code, aucune empreinte, aucune adresse
-//     d'infrastructure, aucun journal de chantier ; une page courte ;
+//     d'infrastructure, aucun journal de chantier ;
 //   - le bandeau de la session de démonstration.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { BandeauDemo } from "@/components/presentation/BandeauDemo";
 import { Hebergement } from "@/components/presentation/Hebergement";
-import { LandingArchive as Landing } from "@/components/presentation/archive/LandingArchive";
+import { Pied } from "@/components/presentation/Cadre";
+import { Recit } from "@/components/presentation/GrapheTechnique";
 import { Preuves } from "@/components/presentation/Preuves";
 import { RELEVE_PERIME_JOURS } from "@/components/presentation/Releve";
 import { StatutPoc } from "@/components/presentation/StatutPoc";
-import type { SessionUser } from "@/lib/auth";
 import { CAPACITES, RELEVE, SHA, compte } from "@/lib/couverture";
 import { HEBERGEMENT, TOPOLOGIE_RELEVEE } from "@/lib/presentation-topologie";
 
@@ -47,8 +47,12 @@ function apresReleve(jours: number): Date {
   return new Date(Date.UTC(a, m - 1, j) + jours * 86_400_000);
 }
 
-const ADMIN: SessionUser = { email: "a@mip.test", role: "admin", apps: null };
-const VISITEUR = renderToStaticMarkup(<Landing user={null} demoOuverte />);
+const VISITEUR = renderToStaticMarkup(
+  <>
+    <Recit />
+    <Pied />
+  </>,
+);
 
 describe("où sont les données, et sous quel droit — la seule source de l'hébergement", () => {
   const html = renderToStaticMarkup(<Hebergement />);
@@ -88,10 +92,10 @@ describe("où en est le POC — trois lignes datées", () => {
     expect(items).toHaveLength(3);
     expect(items[0]).toMatch(new RegExp(`^${TOPOLOGIE_RELEVEE.railway} En production`));
     expect(items[1]).toBe(
-      `${RELEVE} ${compte("deploye_non_eprouve")} capacités sur ${CAPACITES.length} déployées, chacune avec sa limite écrite dans le dossier technique.`,
+      `${RELEVE} ${compte("deploye_non_eprouve")} capacités sur ${CAPACITES.length} déployées, chacune avec sa limite écrite plus bas.`,
     );
     expect(items[2]).toBe("Prochaine étape Les éprouver sur le trafic réel d'une application cliente.");
-    expect(html).toMatch(/<a [^>]*href="\/presentation\/dossier"/);
+    expect(html).toMatch(/<a [^>]*href="\/presentation\/a-faire"/);
     expect(html).not.toContain("presentation-statut-perime");
   });
 
@@ -124,12 +128,11 @@ describe("trois preuves visuelles, lisibles", () => {
   });
 });
 
-describe("la présentation : courte, sans jargon interne", () => {
+describe("le récit : sans jargon interne", () => {
   const texte = lisible(VISITEUR);
 
-  it("h1, puis le statut, les preuves, l'hébergement et l'invitation, dans cet ordre", () => {
-    expect(VISITEUR).toMatch(/<h1 /);
-    const ordre = ['data-testid="presentation-statut"', 'id="preuves"', 'id="hebergement"', 'id="suite-titre"'].map((m) =>
+  it("le statut, les preuves puis l'hébergement, dans cet ordre", () => {
+    const ordre = ['data-testid="presentation-statut"', 'id="preuves"', 'id="hebergement"'].map((m) =>
       VISITEUR.indexOf(m),
     );
     expect(ordre.every((i) => i > 0)).toBe(true);
@@ -147,20 +150,6 @@ describe("la présentation : courte, sans jargon interne", () => {
 
   it("aucun journal de chantier : ni quota, ni coût, ni coupure, ni service supprimé", () => {
     expect(texte).not.toMatch(/quota|offre gratuite|\$|octobre|supprimé le|aucune éprouvée/i);
-  });
-
-  it("une vitrine, pas un dossier : moins de 700 mots", () => {
-    expect(texte.split(/\s+/).length).toBeLessThan(700);
-  });
-
-  it("un lien vers le dossier technique ; des repères de test uniques pour chaque rangée d'actions", () => {
-    expect(VISITEUR).toMatch(/<a [^>]*href="\/presentation\/dossier"/);
-    for (const id of ["presentation-demo", "presentation-demo-top", "presentation-demo-fin", "presentation-login"]) {
-      expect(VISITEUR.split(`data-testid="${id}"`).length - 1, id).toBe(1);
-    }
-    const connecte = renderToStaticMarkup(<Landing user={ADMIN} />);
-    expect(connecte.split('data-testid="presentation-console"').length - 1).toBe(1);
-    expect(connecte).not.toContain("presentation-demo");
   });
 
   it("le pied de page garde l'attribution GeoIP et ne renvoie plus à des conditions de vente", () => {

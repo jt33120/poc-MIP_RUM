@@ -1,6 +1,6 @@
-// Le cadre commun de la présentation (/presentation), du dossier technique
-// (/presentation/dossier) et des composants open source (/presentation/open-source) :
-// la marque, l'en-tête, le pied de page.
+// Le cadre commun des pages publiques : la vitrine (/presentation), les pages de son
+// menu (Installation, À faire, Graphe technique) et les composants open source
+// (/presentation/open-source) — la marque, l'en-tête, le pied de page.
 //
 // Plusieurs pages, un seul cadre : un visiteur qui passe de la vitrine au dossier doit
 // sentir qu'il est resté au même endroit, et l'attribution de la base GeoIP (CC BY
@@ -13,6 +13,7 @@ import Link from "next/link";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { DATA_SOURCES } from "@/lib/legal";
+import { CHEMIN_GRAPHE } from "@/lib/vitrine-navigation";
 
 /** Marque MIP RUM — pouls sur carré orange + wordmark. */
 export function BrandMark() {
@@ -77,8 +78,8 @@ export function Pied() {
     <footer className="border-t border-line bg-panel/60 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-4 gap-y-2 px-6 py-5 text-xs text-ink-soft">
         <span>MIP RUM — preuve de concept</span>
-        <Link href="/presentation/dossier" className="hover:text-ink">
-          Dossier technique
+        <Link href={CHEMIN_GRAPHE} className="hover:text-ink">
+          Graphe technique
         </Link>
         {/* L'inventaire des composants tiers, pour qui veut les vérifier (29/09/2026). */}
         <Link href="/presentation/open-source" className="hover:text-ink">

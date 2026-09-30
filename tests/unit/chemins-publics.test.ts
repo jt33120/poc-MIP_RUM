@@ -6,10 +6,17 @@ import { describe, expect, it } from "vitest";
 import { estCheminPublic } from "../../apps/console/lib/chemins-publics";
 
 describe("estCheminPublic", () => {
-  it("ouvre la vitrine, son dossier technique et la confidentialité de l'extension", () => {
+  it("ouvre la vitrine, les pages de son menu et la confidentialité de l'extension", () => {
     expect(estCheminPublic("/presentation")).toBe(true);
-    expect(estCheminPublic("/presentation/dossier")).toBe(true);
-    expect(estCheminPublic("/presentation/archive")).toBe(true);
+    for (const p of [
+      "/presentation/installation",
+      "/presentation/installation/code-de-suivi",
+      "/presentation/installation/extension",
+      "/presentation/installation/serveur",
+      "/presentation/a-faire",
+      "/presentation/graphe-technique",
+    ])
+      expect(estCheminPublic(p), p).toBe(true);
     // L'entrée « S'inscrire » de la vitrine : par définition, avant tout compte.
     expect(estCheminPublic("/inscription")).toBe(true);
     // URL exigée par le Chrome Web Store : elle ne peut pas être derrière un login.
@@ -41,10 +48,13 @@ describe("estCheminPublic", () => {
   it("ne s'ouvre pas non plus sur une variante de la vitrine", () => {
     expect(estCheminPublic("/presentations")).toBe(false);
     expect(estCheminPublic("/presentation/secret")).toBe(false);
-    // Le dossier est ouvert par son chemin exact, pas par son préfixe.
-    expect(estCheminPublic("/presentation/dossier/secret")).toBe(false);
-    expect(estCheminPublic("/presentation/dossiers")).toBe(false);
-    expect(estCheminPublic("/presentation/archive/secret")).toBe(false);
+    // Les pages du menu sont ouvertes par leur chemin exact, pas par leur préfixe.
+    expect(estCheminPublic("/presentation/installation/secret")).toBe(false);
+    expect(estCheminPublic("/presentation/graphe-technique/secret")).toBe(false);
+    expect(estCheminPublic("/presentation/a-faires")).toBe(false);
+    // Les anciennes pages sont redirigées (next.config.mjs), plus servies.
+    expect(estCheminPublic("/presentation/dossier")).toBe(false);
+    expect(estCheminPublic("/presentation/archive")).toBe(false);
   });
 
   it("laisse privés les écrans de console et l'administration", () => {
