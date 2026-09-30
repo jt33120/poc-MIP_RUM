@@ -16,7 +16,7 @@ const RUM = { dot: "bg-perf", text: "text-perf" } as const;
 const NEUTRE = { dot: "bg-ink-faint", text: "text-ink-soft" } as const;
 export const DOMAINES = {
   perf: { label: "Performance", ...RUM },
-  robot: { label: "Robot et réel", ...RUM },
+  robot: { label: "Synthétique × RUM", ...RUM },
   usages: { label: "Usages", ...RUM },
   fiabilite: { label: "Fiabilité", ...RUM },
   explorer: { label: "Explorer", ...RUM },

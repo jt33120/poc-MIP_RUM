@@ -175,6 +175,8 @@ test("aucun débordement à 390, 768 et 1440 px sur les deux écrans", async ({ 
     await page.setViewportSize({ width: largeur, height: 900 });
     for (const url of [`/?app=${APP_RUPTURE}&period=24h`, `/forecast?app=${APP_RUPTURE}`]) {
       await page.goto(`${consoleUrl}${url}`, { waitUntil: "domcontentloaded" });
+      // Sur « / », la datation est dans la fenêtre du LCP (30/09/2026) : on l'ouvre.
+      if (url.startsWith("/?")) await page.getByTestId("vignette-LCP").click();
       await expect(page.getByTestId("datation-rupture").first()).toBeVisible();
       expect(await debordements(page), `${url} à ${largeur} px`).toEqual([]);
     }

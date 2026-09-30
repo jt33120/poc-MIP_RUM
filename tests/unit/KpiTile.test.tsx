@@ -387,3 +387,27 @@ describe("KpiTile — tuile compacte (rangée KPI de la vue d'ensemble)", () => 
     expect(html).toMatch(/before:content-\[(&#x27;|')●(&#x27;|')\]/);
   });
 });
+
+describe("case épurée du tableau de bord (30/09/2026)", async () => {
+  const { separerUnite } = await import("@/components/charts/KpiTile");
+  const { pasRond, sommetRobuste } = await import("@/components/charts/GrapheMesure");
+
+  it("sépare le nombre de son unité, espaces insécables comprises", () => {
+    expect(separerUnite("2,8 s")).toEqual({ nombre: "2,8", unite: "s" });
+    expect(separerUnite("88 ms")).toEqual({ nombre: "88", unite: "ms" });
+    expect(separerUnite("0 pour 100")).toEqual({ nombre: "0", unite: "pour 100" });
+    expect(separerUnite("0,000")).toEqual({ nombre: "0,000", unite: null });
+  });
+
+  it("gradue l'axe par pas ronds", () => {
+    expect(pasRond(10_000)).toBe(2500);
+    expect(pasRond(0.004)).toBe(0.001);
+    expect(pasRond(0)).toBe(1);
+  });
+
+  it("une tranche aberrante n'écrase pas l'échelle ; le seuil « mauvais » reste visible", () => {
+    const valeurs = [2000, 2400, 2600, 3000, 2200, 2800, 2500, 2100, 2300, 321_000];
+    expect(sommetRobuste(valeurs, 4000)).toBeLessThan(10_000);
+    expect(sommetRobuste([1000, 1200], 4000)).toBeGreaterThanOrEqual(4000);
+  });
+});

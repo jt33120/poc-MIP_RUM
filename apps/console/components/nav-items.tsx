@@ -1,7 +1,6 @@
 // Modèle de navigation partagé par la sidebar (catégories) et la barre de
 // sous-onglets (pages d'une même catégorie). Objectif : peu de titres de menu,
 // chaque catégorie regroupant ses pages sœurs. Couleur = domaine (cf. tailwind).
-import { estFermee } from "@/lib/capacites";
 import type { IconName } from "./icons";
 
 /**
@@ -61,18 +60,18 @@ export const CATEGORIES: NavCategory[] = [
       { href: "/mobile", label: "Mobile" },
     ],
   },
-  // Robot et réel : la promesse « synthétique + RUM unifiés », notre
+  // Synthétique × RUM : la promesse « synthétique + RUM unifiés », notre
   // différenciateur, était le 8ᵉ onglet d'une catégorie « Sessions ». Le tracing
   // et la carte suivent : ils répondent à « la lenteur vient-elle du back ? ».
+  // Recette du 30/09/2026 : « Robot et réel » ne disait pas qu'on CORRÈLE deux
+  // mesures ; les mots du métier (synthétique, RUM) le disent.
   {
     href: "/correlation",
-    label: "Robot et réel",
+    label: "Synthétique × RUM",
     icon: "compare",
     domain: "perf",
     children: [
-      // Le nom de l'écran (« Robot et réel ») : « Corrélation synthétique ↔ RUM » était
-      // du vocabulaire de fournisseur, et la seule entrée qui ne disait pas son titre.
-      { href: "/correlation", label: "Robot et réel" },
+      { href: "/correlation", label: "Corrélation" },
       { href: "/tracing", label: "Tracing" },
       { href: "/map", label: "Carte" },
     ],
@@ -123,21 +122,11 @@ export const CATEGORIES: NavCategory[] = [
       { href: "/dashboards", label: "Tableaux de bord" },
     ],
   },
-  // FERMÉ : ce n'est pas du RUM. rum_log porte le signal LOGS d'OpenTelemetry,
-  // alimenté par le SERVEUR — la console qui forwarde ses propres logs
-  // (lib/log-forward.ts) et l'agent OpenTelemetry officiel posé sur le serveur
-  // du client (OTEL_LOGS_EXPORTER=otlp). Le SDK navigateur n'émet aucun log : la colonne `source` prévoit
-  // 'sdk' et 'extension', rien ne produit ces valeurs. C'est de l'observabilité
-  // back-end corrélée au RUM par trace_id, pas une mesure de l'expérience vécue.
-  { href: "/logs", label: "Logs", icon: "logs", domain: "neutral", verrouille: estFermee("/logs") },
-  // Espace PARTENAIRE (sponsorisé xSOM) — supervision IA lue depuis xSOM AI Guard,
-  // distincte du RUM MIP (cf. ADR-0001). Fermée pour l'instant : l'entrée reste
-  // visible pour annoncer la capacité, mais ne mène nulle part.
-  { href: "/ai", label: "Supervision IA", icon: "ai", domain: "neutral", verrouille: estFermee("/ai") },
-  // « Installer » : poser MIP RUM sur l'application sélectionnée (code de suivi,
-  // extension, serveur), pas à pas, avec le test « ça arrive » en direct. Pour
-  // l'équipe du client : la fiche d'un client est réservée aux administrateurs.
-  { href: "/installer", label: "Installer", icon: "download", domain: "neutral" },
+  // Retirés du menu (recette du 30/09/2026), les pages restent à leur adresse :
+  //   · « Logs » et « Supervision IA », fermés (`lib/capacites.ts`) : une entrée
+  //     verrouillée ne menait nulle part ;
+  //   · « Installer » : l'installation fait partie de l'ouverture d'un projet
+  //     (/select/new, qui renvoie au guide /installer pour le détail).
   // « API et MCP » : les deux manières de sortir la donnée du portail. L'API REST
   // pour un front ou un partenaire, le serveur MCP pour un agent IA. Même socle
   // — le MCP n'est qu'un client de l'API v1 — donc une seule page.

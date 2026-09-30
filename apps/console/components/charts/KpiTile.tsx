@@ -28,6 +28,8 @@ import { InfoTip } from "../InfoTip";
 import { pluriel } from "@/lib/format";
 import { lireVital, texteVerdict } from "@/lib/vital-lecture";
 import { ValeurNoteeMip } from "../NoteMip";
+import { FicheMesure } from "./FicheMesure";
+import { ApercuFond, GrapheMesure } from "./GrapheMesure";
 
 export type SensMeilleur = "bas" | "haut" | "neutre";
 
@@ -72,6 +74,23 @@ const FORME_VERDICT: Record<keyof typeof RATING_LABEL, string> = {
   "needs-improvement": "before:mr-1 before:content-['▲']",
   poor: "before:mr-1 before:content-['■']",
 };
+
+/** Voyant du verdict établi d'une tuile épurée. */
+const POINT_VERDICT: Record<keyof typeof RATING_LABEL, string> = {
+  good: "bg-good",
+  "needs-improvement": "bg-warn",
+  poor: "bg-bad",
+};
+
+/**
+ * Sépare le nombre de son unité (« 2,6 s » → « 2,6 » + « s ») pour les dessiner à
+ * deux tailles. Pure, exportée pour les tests ; sans unité reconnue, tout reste nombre.
+ */
+export function separerUnite(texte: string): { nombre: string; unite: string | null } {
+  const m = /^(.*\d)[\s\u00a0\u202f](pour[\s\u00a0\u202f]100|%|ms|s|min|h|j|Ko|Mo|Go)$/.exec(texte);
+  // L'unité ressort avec une espace ordinaire : « pour 100 » se compare sans piège.
+  return m ? { nombre: m[1], unite: m[2].replace(/[\u00a0\u202f]/g, " ") } : { nombre: texte, unite: null };
+}
 
 function alerteVraie(valeur: number, a: AlerteTuile): boolean {
   if (a.si === ">") return valeur > a.valeur;
@@ -202,6 +221,12 @@ export function KpiTile({
   testid,
   approchee = false,
   compact = false,
+  epure = false,
+  source,
+  categorie,
+  libelleCase,
+  grapheDebuts,
+  titreAxeY,
   noteMip,
 }: {
   /** « LCP p75 », « Sessions commencées ». */
@@ -273,6 +298,24 @@ export function KpiTile({
    * — la tuile LCP empilait six lignes pour un chiffre (283 px).
    */
   compact?: boolean;
+  /**
+   * Case ÉPURÉE (recette du 30/09/2026, tableau de bord) : le libellé, la valeur et
+   * son unité, un voyant de verdict, la source en une étiquette — rien d'autre. Un
+   * clic ouvre la fenêtre de la mesure (`FicheMesure`) : graphique grand format aux
+   * axes chiffrés, verdict, intervalle, variation, effectif, méthode, source. Les
+   * MÊMES refus que les autres modes : seule la mise en page change.
+   */
+  epure?: boolean;
+  /** D'où vient la mesure (capteur, API du navigateur, table) : écrite dans la fiche. */
+  source?: string;
+  /** Étiquette courte de la source, en pied de case (« Navigateur · Core Web Vitals »). */
+  categorie?: string;
+  /** Libellé court de la case, quand `label` est trop long pour elle ; `label` reste lu. */
+  libelleCase?: string;
+  /** Début ISO de chaque point de `serie` : sans eux, pas de graphique grand format. */
+  grapheDebuts?: string[];
+  /** Titre de l'axe vertical du graphique grand format (grandeur et unité). */
+  titreAxeY?: string;
 }) {
   const connue = valeur != null && Number.isFinite(valeur);
   const faibleSous = couverture?.faibleSous ?? FAIBLE_SOUS_DEFAUT;
@@ -426,6 +469,96 @@ export function KpiTile({
       ? methode
       : undefined;
   const pied = compact ? [texteEffectif, echantillonFaible ? "échantillon faible" : null].filter(Boolean).join(" · ") : null;
+
+  if (epure) {
+    // « pour 100 » est un pourcentage : « 0 % » (recette du 30/09/2026). Le ratio peut
+    // dépasser 100 % (plusieurs erreurs sur une page) ; c'est écrit dans la méthode.
+    const brut = separerUnite(texteValeur);
+    const { nombre, unite } = brut.unite === "pour 100" ? { nombre: brut.nombre, unite: "%" } : brut;
+    const valeurAffichee = unite ? `${nombre} ${unite}` : nombre;
+    const lignes: [string, string][] = [
+      ["Verdict", verdict ? texteVerdict(verdict) : ""],
+      ["Intervalle", texteIntervalle ?? ""],
+      ["Variation", texteComparaison ?? ""],
+      ["Alerte", enAlerte ? (alerte?.regle ?? "") : ""],
+      ["Lecture", [!connue ? raisonNull : null, lecture].filter(Boolean).join(" · ")],
+      ["Effectif", [texteEffectif, echantillonFaible ? "échantillon faible" : null].filter(Boolean).join(" · ")],
+      ["Méthode", methode ?? ""],
+      ["Source", source ?? ""],
+    ].filter((l): l is [string, string] => l[1] !== "");
+    const couleurPoint = verdict?.kind === "etabli" ? POINT_VERDICT[verdict.rating] : null;
+    return (
+      <FicheMesure
+        titre={label}
+        ariaLabel={ariaLabel}
+        alerte={enAlerte}
+        fond={serie ? <ApercuFond valeurs={serie} /> : undefined}
+        case={
+          <>
+            <span className="flex min-w-0 items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-[11px] font-medium text-ink-soft">{libelleCase ?? label}</span>
+              {couleurPoint && <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${couleurPoint}`} />}
+            </span>
+            <span
+              className={`flex items-baseline gap-1 whitespace-nowrap tabular-nums tracking-tight ${enAlerte ? "text-bad-ink" : echantillonFaible ? "text-ink-soft" : "text-ink"}`}
+              data-testid={testid ?? "kpi-valeur"}
+            >
+              <span className="text-[26px] font-semibold leading-8">{nombre}</span>
+              {unite && <span className="text-sm font-medium text-ink-soft">{unite}</span>}
+            </span>
+            {categorie && <span className="truncate text-[10px] text-ink-faint">{categorie}</span>}
+            {/* Tout le reste, pour les lecteurs d'écran et les tests. */}
+            <span className="sr-only">
+              {verdict?.kind === "etabli" && <span data-testid="kpi-verdict">{RATING_LABEL[verdict.rating]}</span>}
+              {comparaison?.kind === "delta" && !deltaNonEtabli && <span>{texteComparaison}</span>}
+            </span>
+          </>
+        }
+      >
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="flex items-baseline gap-1 tabular-nums tracking-tight">
+            <span className="text-4xl font-semibold">{nombre}</span>
+            {unite && <span className="text-lg font-medium text-ink-soft">{unite}</span>}
+          </span>
+          {verdict?.kind === "etabli" && (
+            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${RATING_CLASS[verdict.rating]} ${FORME_VERDICT[verdict.rating]}`}>
+              {RATING_LABEL[verdict.rating]}
+            </span>
+          )}
+          {comparaison?.kind === "delta" && !deltaNonEtabli && (
+            <DeltaBadge pct={comparaison.pct} reference={comparaison.reference} sensMeilleur={sens} />
+          )}
+        </div>
+        {serie && grapheDebuts && (
+          <div className="mt-4">
+            <GrapheMesure
+              valeurs={serie}
+              debuts={grapheDebuts}
+              format={format}
+              titreY={titreAxeY ?? label}
+              seuils={vital ? THRESHOLDS[vital] : undefined}
+            />
+          </div>
+        )}
+        <dl className="mt-4 grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1.5 border-t border-line pt-3 text-xs leading-snug">
+          {lignes.map(([cle, texte]) => (
+            <div key={cle} className="contents">
+              <dt className="text-ink-faint">{cle}</dt>
+              <dd className="min-w-0 whitespace-pre-line text-ink-soft [overflow-wrap:anywhere]">{texte}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="sr-only">{secondaires}</div>
+        {href && (
+          <Link href={href} className="mt-4 inline-flex text-sm font-medium text-perf underline-offset-2 hover:underline">
+            Écran détaillé →
+          </Link>
+        )}
+        {/* La valeur telle qu'affichée, pour la cohérence case ↔ fenêtre. */}
+        <span className="sr-only">{valeurAffichee}</span>
+      </FicheMesure>
+    );
+  }
 
   return (
     <CadreTuile href={href} ariaLabel={ariaLabel} alerte={enAlerte} testId="kpi-tile" titre={infobulle} compact={compact}>

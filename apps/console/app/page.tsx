@@ -3,9 +3,10 @@ import { ECRANS } from "@mip/console-contract";
 import { Figure } from "@/components/charts/Figure";
 import { HealthHeatmap } from "@/components/charts/HealthHeatmap";
 import { KpiTile } from "@/components/charts/KpiTile";
+import { FicheMesure } from "@/components/charts/FicheMesure";
+import { HEALTH_CLASS } from "@/lib/health-libelles";
 import { ImpactTable } from "@/components/ImpactTable";
 import { InsightStrip } from "@/components/InsightStrip";
-import { PageHeader } from "@/components/PageHeader";
 import { PresetBar } from "@/components/PresetBar";
 import { ReleaseCompare, statsDeVersion, type ReleaseStats } from "@/components/ReleaseCompare";
 import { Methode } from "@/components/perf/Methode";
@@ -19,7 +20,7 @@ import {
 } from "@/components/vue-ensemble/SeriesVueEnsemble";
 import { OngletsHero } from "@/components/vue-ensemble/OngletsHero";
 import { LIBELLE_ANGLE_MORT, TuileAngleMort, type EtatAngleMort } from "@/components/vue-ensemble/AngleMort";
-import { BandeauR0 } from "@/components/vue-ensemble/BandeauR0";
+import { BandeauR0, type ProprietesBandeauR0 } from "@/components/vue-ensemble/BandeauR0";
 import { ConstatsDetectes, type EtatConstatsDetectes } from "@/components/vue-ensemble/ConstatsDetectes";
 import { HeatmapLatence } from "@/components/vue-ensemble/HeatmapLatence";
 import { construireHeatmap } from "@/lib/heatmap-latence";
@@ -86,7 +87,6 @@ import {
 } from "@/lib/vue-ensemble";
 
 /** La question de l'écran (P1) : le sous-titre de l'en-tête. */
-const QUESTION = "Les vrais visiteurs vont-ils bien sur cette période, et sinon, où et depuis quand ?";
 
 /** Sous ce nombre de mesures, un vital est « échantillon faible » (§ 3.12). */
 const VITAL_FAIBLE_SOUS = 100;
@@ -256,6 +256,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             titre: "Sessions commencées",
             props: {
               label: "Sessions commencées",
+              source: SOURCE_TRAFIC,
+              categorie: "Navigateur · trafic",
+              grapheDebuts: debutsSeaux.map((t) => new Date(t).toISOString()),
+              titreAxeY: "sessions commencées par tranche",
               valeur: engagement.data.sessions_started,
               format: "count",
               sensMeilleur: "neutre",
@@ -281,6 +285,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             titre: "Pages vues",
             props: {
               label: "Pages vues",
+              source: SOURCE_TRAFIC,
+              categorie: "Navigateur · trafic",
+              grapheDebuts: debutsSeaux.map((t) => new Date(t).toISOString()),
+              titreAxeY: "pages vues par tranche",
               valeur: stats.data.pageviews,
               format: "count",
               sensMeilleur: "neutre",
@@ -300,6 +308,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             titre: "Occurrences d'erreurs pour 100 pages vues",
             props: {
               label: "Occurrences d'erreurs pour 100 pages vues",
+              source: SOURCE_ERREURS,
+              categorie: "Navigateur · erreurs",
+              libelleCase: "Erreurs / 100 pages vues",
+              grapheDebuts: vues.ok ? vues.data.map((v) => v.bucket) : undefined,
+              titreAxeY: "erreurs pour 100 pages vues",
               valeur: ratioPour100(erreurs.data.navigateur, stats.data.pageviews),
               raisonNull: RAISON_AUCUNE_VUE,
               format: "pour100",
@@ -358,6 +371,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       titre,
       props: {
         label: titre,
+        source: SOURCE_VITAL[nom],
+        categorie: CATEGORIE_VITAL[nom],
+        grapheDebuts: !modeRelease && serieLue.ok ? serieLue.data.map((p) => p.bucket) : undefined,
+        titreAxeY: `${nom} au 75ᵉ centile${nom === "CLS" ? " (sans unité)" : ""}`,
         valeur: courant?.p75 ?? null,
         raisonNull: `aucune mesure ${nom} sur ${modeRelease && releases.ok ? `la release ${releases.relB}, ` : ""}${period.label}`,
         format,
@@ -683,9 +700,29 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const [vitauxB, vitauxA] = vitauxReleasesLus ?? [null, null];
   const lienRelease = (v: string) => lien("/", { release: v, cmp: null, rel_a: null, rel_b: null });
 
+  const constatBandeau =
+    etatDetectes.kind === "ok" && etatDetectes.cartes[0]
+      ? { titre: etatDetectes.cartes[0].titre, href: `#constat-detecte-${etatDetectes.cartes[0].id}` }
+      : constats.constats[0]
+        ? { titre: constats.constats[0].titre, href: constats.constats[0].href }
+        : null;
+  const nbConstatsBandeau = constats.constats.length + (etatDetectes.kind === "ok" ? etatDetectes.ouverts : 0);
+  const constatsPartielsBandeau = constats.echecs.length > 0 || etatDetectes.kind === "echec";
+  const deploiementBandeau: ProprietesBandeauR0["deploiement"] = !deploys.ok
+    ? "echec"
+    : deploys.data[0]
+      ? { version: deploys.data[0].version, ts: deploys.data[0].ts }
+      : null;
+  // Rien à signaler : aucun constat, aucune lecture en échec, aucun épisode détecté.
+  const constatsVides =
+    constats.constats.length === 0 &&
+    constats.echecs.length === 0 &&
+    (etatDetectes.kind === "absent" || (etatDetectes.kind === "ok" && etatDetectes.cartes.length === 0));
+
   return (
     <div className="animate-fade-up">
-      <PageHeader title="Vue d'ensemble" sub={QUESTION} help="rum" />
+      {/* L'onglet actif dit déjà « Vue d'ensemble » : le titre reste pour la structure. */}
+      <h1 className="sr-only">Vue d&apos;ensemble</h1>
       {/* Plage personnalisée (case de la heatmap, zoom) : dite dans les DEUX fuseaux
           (R-T) — « 15/07 09:00-10:00 Europe/Paris (07:00-08:00 UTC) ». */}
       {query.range.preset === null && (
@@ -728,21 +765,19 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {/* R0 (spec A2 § 5.2) — « ça va ? » en une ligne : score, le constat le plus
           prioritaire, le nombre de constats, le dernier déploiement. Aucune lecture de
           plus : tout vient des sections déjà lues ci-dessus. */}
+      {/* Rien à dire (aucun constat, aucun déploiement) : pas de bandeau (30/09/2026). */}
+      {(constatBandeau || nbConstatsBandeau > 0 || constatsPartielsBandeau || deploiementBandeau !== null) && (
       <BandeauR0
         sante={!health.ok ? "echec" : health.data.score == null || health.data.label == null ? null : { score: health.data.score, label: health.data.label }}
-        constat={
-          etatDetectes.kind === "ok" && etatDetectes.cartes[0]
-            ? { titre: etatDetectes.cartes[0].titre, href: `#constat-detecte-${etatDetectes.cartes[0].id}` }
-            : constats.constats[0]
-              ? { titre: constats.constats[0].titre, href: constats.constats[0].href }
-              : null
-        }
-        nbConstats={constats.constats.length + (etatDetectes.kind === "ok" ? etatDetectes.ouverts : 0)}
-        constatsPartiels={constats.echecs.length > 0 || etatDetectes.kind === "echec"}
-        deploiement={!deploys.ok ? "echec" : deploys.data[0] ? { version: deploys.data[0].version, ts: deploys.data[0].ts } : null}
+        constat={constatBandeau}
+        nbConstats={nbConstatsBandeau}
+        constatsPartiels={constatsPartielsBandeau}
+        deploiement={deploiementBandeau}
         hrefSante={blocs.sante ? "#sante" : undefined}
+        masquerSante={blocs.sante}
         hrefDeploiement={blocs.versions ? "#release-titre" : undefined}
       />
+      )}
 
       {/* Pourquoi les tuiles n'ont pas d'écart : dit en clair, UNE fois par raison,
           jamais un delta calculé sur une période à moitié mesurée (§ 3.2). */}
@@ -766,61 +801,94 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </div>
         )}
 
-      {/* R1 (spec A2 § 5.2) — les chiffres, sur UNE rangée dès 1280 px (grille de 12
-          colonnes, § 3.1) : la santé sur 4 colonnes ; sur 8, le trafic puis les Web
-          Vitals, empilés. La santé compacte (anneau, facteurs dessous) est aussi haute
-          que ces deux rangées de tuiles : côte à côte, le hero remonte d'environ 140 px
-          à 1440 × 900. Le trafic garde plus de 5/12 : ses tuiles portent des valeurs
-          « 2,4 pour 100 » qu'une colonne étroite ne loge pas (écart au § 5.1.1). Sous
-          1280 px, empilés dans l'ordre santé, trafic, Web Vitals. */}
+      {/* R1 — recette du 30/09/2026 : UNE grille régulière de cases égales, rangées
+          par source. La santé est la première case, sur deux lignes (5 colonnes × 2) ;
+          son score n'est plus écrit ailleurs. Une case = une valeur, son aperçu de
+          courbe en fond ; un clic ouvre sa fenêtre (graphique, détail, source). */}
       {(blocs.sante || blocs.trafic || blocs.vitals) && (
-        <div className="mb-4 grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-12 xl:gap-4">
-          {blocs.sante && (
-            <div id="sante" className={`min-w-0 scroll-mt-16 ${blocs.trafic || blocs.vitals ? "xl:col-span-4" : "xl:col-span-12"}`}>
-              <SectionErreur titre="Santé de la période">
-                {!health.ok ? (
-                  <EchecLecture titre="Santé de la période" />
-                ) : (
-                  <HealthBanner
-                    health={health.data}
-                    periodLabel={period.label}
-                    compact
-                    liens={{
-                      vitals: lien("/pages"),
-                      errors: lien("/errors"),
-                      stability: lien("/sessions"),
-                      anomalies: "#anomalies",
-                    }}
-                  />
-                )}
-              </SectionErreur>
-            </div>
-          )}
-          {(blocs.trafic || blocs.vitals) && (
-            <div className={`flex min-w-0 flex-col gap-3 xl:gap-4 ${blocs.sante ? "xl:col-span-8" : "xl:col-span-12"}`}>
-              {blocs.trafic && (
-                <SectionErreur titre="Trafic">
-                  <RangeeTuiles tuiles={tuilesTrafic} classes="grid-cols-2 sm:grid-cols-3" />
-                </SectionErreur>
-              )}
-              {/* Zone 3 — Web Vitals au p75, verdict et intervalle (P*.1), sparkline sur la
-                  bande « Bon ». Cinq de front à partir de 1440 px seulement : sur 8/12 à
-                  1280 px, une tuile n'aurait que ~90 px pour « 350 ms » en 28 px. */}
-              {blocs.vitals && (
-                <SectionErreur titre="Web Vitals">
-                  <div className="min-w-0">
-                    <RangeeTuiles tuiles={tuilesVitaux} classes="grid-cols-2 md:grid-cols-3 min-[1440px]:grid-cols-5" />
-                    {etatEchantillon && (
+        <SectionErreur titre="Mesures">
+          <div className="mb-4 min-w-0">
+            <div
+              className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 lg:grid-rows-2"
+              data-testid="grille-mesures"
+            >
+              {blocs.sante && (
+                <div id="sante" className="flex min-w-0 scroll-mt-16 flex-col lg:row-span-2">
+                  {!health.ok ? (
+                    <EchecLecture compact titre="Santé de la période" />
+                  ) : (
+                    <FicheMesure
+                      titre="Santé de la période"
+                      ariaLabel={
+                        health.data.score == null
+                          ? "Santé : score non calculable"
+                          : `Santé ${health.data.score} sur 100, ${health.data.label}`
+                      }
+                      testId="case-sante"
+                      case={
+                        <>
+                          <span className="flex min-w-0 items-center justify-between gap-2">
+                            <span className="text-[11px] font-medium text-ink-soft">Santé</span>
+                            {health.data.label && (
+                              <span className={`rounded-full border px-1.5 py-px text-[10px] font-semibold ${HEALTH_CLASS[health.data.label]}`}>
+                                {health.data.label}
+                              </span>
+                            )}
+                          </span>
+                          <span className="flex items-baseline gap-1 tabular-nums tracking-tight">
+                            <span className="text-5xl font-semibold leading-none text-ink">{health.data.score ?? "—"}</span>
+                            <span className="text-sm font-medium text-ink-soft">/ 100</span>
+                          </span>
+                          {/* Les quatre composantes, en barres : points obtenus sur le maximum. */}
+                          <span className="grid gap-1.5">
+                            {health.data.factors.map((f) => (
+                              <span key={f.key} className="grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-0.5 text-[10px] text-ink-soft">
+                                <span className="truncate">{f.label}</span>
+                                <span className="tabular-nums text-ink-faint">
+                                  {f.earned == null ? "—" : `${f.earned.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} / ${f.max}`}
+                                </span>
+                                <span className="col-span-2 h-1 overflow-hidden rounded-full bg-line/70">
+                                  <span
+                                    className="block h-full rounded-full bg-perf"
+                                    style={{ width: `${f.earned == null ? 0 : Math.round((f.earned / f.max) * 100)}%` }}
+                                  />
+                                </span>
+                              </span>
+                            ))}
+                          </span>
+                        </>
+                      }
+                    >
                       <div className="mt-3">
-                        <EtatSurface compact etat={etatEchantillon} />
+                        <HealthBanner
+                          health={health.data}
+                          periodLabel={period.label}
+                          compact
+                          liens={{
+                            vitals: lien("/pages"),
+                            errors: lien("/errors"),
+                            stability: lien("/sessions"),
+                            anomalies: "#anomalies",
+                          }}
+                        />
                       </div>
-                    )}
-                  </div>
-                </SectionErreur>
+                    </FicheMesure>
+                  )}
+                </div>
               )}
+              {[...(blocs.trafic ? tuilesTrafic : []), ...(blocs.vitals ? tuilesVitaux : [])].map((t) => (
+                <div key={t.cle} className="flex min-w-0 flex-col" data-testid={`tuile-${t.cle}`}>
+                  {"echec" in t ? <EchecLecture compact titre={t.titre} /> : <KpiTile {...t.props} compact epure />}
+                </div>
+              ))}
             </div>
-          )}
-        </div>
+            {blocs.vitals && etatEchantillon && (
+              <div className="mt-3">
+                <EtatSurface compact etat={etatEchantillon} />
+              </div>
+            )}
+          </div>
+        </SectionErreur>
       )}
 
       {/* R2 (spec A2 § 5.2) — « qu'est-ce qui a changé ? » : le HERO sur 8 colonnes et
@@ -829,7 +897,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           A1). Trois petits multiples, trois unités, trois échelles. */}
       <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-12">
         {blocs.hero && (
-          <div className="min-w-0 xl:col-span-8">
+          <div className={`min-w-0 ${constatsVides ? "xl:col-span-12" : "xl:col-span-8"}`}>
             <SectionErreur titre="Graphique principal">
               {/* Onglets du graphique principal (A2 § 6.1) : Web Vitals par défaut ;
                   Erreurs et Trafic tracent des comptes déjà lus pour la rangée Trafic
@@ -902,6 +970,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         {/* Constats automatiques à règle publiée, DÉPLIÉS à côté du hero qu'ils
             commentent : la colonne de 4 a la place de les montrer. Cible du lien
             « N constats » du bandeau R0. */}
+        {/* Recette du 30/09/2026 : rien à signaler, pas de colonne — le hero prend la
+            largeur. « Aucun constat » reste dit, une fois, dans le bandeau du haut. */}
+        {!constatsVides && (
         <div id="constats" className={`min-w-0 scroll-mt-16 ${blocs.hero ? "xl:col-span-4" : "xl:col-span-12"}`}>
           <SectionErreur titre="Constats">
             {constats.echecs.length > 0 && (
@@ -912,10 +983,14 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 />
               </div>
             )}
-            <ConstatsDetectes etat={etatDetectes} />
+            {/* Rien de détecté : pas de phrase « aucun épisode » (le compte le dit). */}
+            {(etatDetectes.kind === "echec" || (etatDetectes.kind === "ok" && etatDetectes.cartes.length > 0)) && (
+              <ConstatsDetectes etat={etatDetectes} />
+            )}
             <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut reglesEnInfobulle />
           </SectionErreur>
         </div>
+        )}
       </div>
 
       {/* R4 (spec A2 § 5.3) — la forme de l'expérience : la heatmap de latence du LCP. */}
@@ -1202,14 +1277,23 @@ function fusionnerNotes(notes: readonly string[]): string {
  * compactes (spec A2 § 4) : une ligne sous le chiffre, le détail en infobulle — la
  * tuile LCP empilait six lignes (283 px) et poussait le hero sous le pli.
  */
-function RangeeTuiles({ tuiles, classes }: { tuiles: Tuile[]; classes: string }) {
-  return (
-    <div className={`grid min-w-0 gap-3 ${classes}`}>
-      {tuiles.map((t) => (
-        <div key={t.cle} className="flex min-w-0 flex-col" data-testid={`tuile-${t.cle}`}>
-          {"echec" in t ? <EchecLecture compact titre={t.titre} /> : <KpiTile {...t.props} compact />}
-        </div>
-      ))}
-    </div>
-  );
-}
+/** Les sources écrites dans la fiche de chaque tuile : le capteur, l'API, la référence des seuils. */
+const SOURCE_TRAFIC =
+  "SDK MIP RUM dans la page : une session par visite, une page vue par chargement ou changement de route.";
+const SOURCE_ERREURS =
+  "SDK MIP RUM : événements error et unhandledrejection, échecs réseau et violations CSP, rapportés aux pages vues.";
+const CATEGORIE_VITAL: Record<VitalName, string> = {
+  LCP: "Navigateur · Core Web Vitals",
+  INP: "Navigateur · Core Web Vitals",
+  CLS: "Navigateur · Core Web Vitals",
+  FCP: "Navigateur · rendu",
+  TTFB: "Réseau et serveur",
+};
+const SEUILS_WEB_DEV = "Seuils : web.dev (Google), lus au 75ᵉ centile.";
+const SOURCE_VITAL: Record<VitalName, string> = {
+  LCP: `Navigateur, bibliothèque web-vitals 5.3 (Largest Contentful Paint, W3C). ${SEUILS_WEB_DEV}`,
+  INP: `Navigateur, bibliothèque web-vitals 5.3 (Event Timing, W3C). ${SEUILS_WEB_DEV}`,
+  CLS: `Navigateur, bibliothèque web-vitals 5.3 (Layout Instability, W3C). ${SEUILS_WEB_DEV}`,
+  FCP: `Navigateur, bibliothèque web-vitals 5.3 (Paint Timing, W3C). ${SEUILS_WEB_DEV}`,
+  TTFB: `Navigateur, bibliothèque web-vitals 5.3 (Navigation Timing, W3C) : réseau et temps de réponse du serveur. ${SEUILS_WEB_DEV}`,
+};

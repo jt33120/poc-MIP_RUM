@@ -13,6 +13,7 @@
 // synchronisé), JAMAIS un axe secondaire (P5) : la dégradation coïncide-t-elle
 // avec la charge ou avec des erreurs ? Chaque grandeur garde SON axe.
 import type { ReactNode } from "react";
+import { FicheMesure } from "@/components/charts/FicheMesure";
 import { Figure, type AlternativeTexte } from "@/components/charts/Figure";
 import { StackedBars } from "@/components/charts/StackedBars";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
@@ -174,67 +175,92 @@ export function HeroCwv({
   const seau = bucketLabel(commun.seauSecondes);
   return (
     <section className="mb-6 min-w-0" aria-labelledby="hero-cwv-titre" data-testid="hero-cwv">
-      <h2 id="hero-cwv-titre" className="mb-1 text-sm font-semibold text-ink">
+      {/* Recette du 30/09/2026 : côte à côte, des VIGNETTES — le titre et la courbe,
+          rien d'autre. Un clic ouvre le graphique en grand, avec sa légende chiffrée,
+          ses notes de lecture et son alternative textuelle. */}
+      <h2 id="hero-cwv-titre" className="sr-only">
         Core Web Vitals dans le temps
       </h2>
-      {/* Un bloc, pas un paragraphe : la lecture peut porter un repli « Méthode ». */}
-      <div className="mb-3 space-y-1 text-xs text-ink-soft">
-        {lecture}
-        {phrasePlage && (
-          <p className="min-w-0 [overflow-wrap:anywhere]" data-testid="plage-habituelle-etat" data-etat={phrasePlage.etat}>
-            {phrasePlage.texte}
-          </p>
-        )}
-      </div>
-      <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-3">
         {vitaux.map((l, i) => {
           const m = petitMultiple(l, mode, commun, mode.kind === "release" ? undefined : plages?.[l.vital]);
+          const courbe = (grand: boolean) =>
+            m.ok ? (
+              <ThresholdSeries
+                grille={commun.grille}
+                points={m.points}
+                series={m.series}
+                format={formatDuVital(l.vital)}
+                vital={l.vital}
+                bande={m.plage ? { basseCle: PLAGE_BAS, hauteCle: PLAGE_HAUT, libelle: LIBELLE_PLAGE } : undefined}
+                episodes={m.plage?.episodes}
+                seauSecondes={commun.seauSecondes}
+                fuseau={FUSEAU_AFFICHAGE}
+                zoomHref={grand ? commun.zoomHref : undefined}
+                debutPlage={commun.debutPlage}
+                annotations={commun.annotations.annotations}
+                annotationsIndisponibles={commun.annotations.indisponible ?? undefined}
+                legendeAnnotations={grand}
+                noteCollecte={grand}
+                apercu={!grand}
+                hauteur={grand ? 320 : 150}
+                ariaLabel={`${l.vital} p75 par tranche de ${seau}, ${commun.grille.length} tranches, 3 zones de seuil (Bon, À améliorer, Mauvais)${
+                  m.series.length > 1 ? `, comparé à ${m.series[1].libelle.toLowerCase()}` : ""
+                }`}
+              />
+            ) : null;
           return (
-            <Figure
+            <FicheMesure
               key={l.vital}
-              titre={`${l.vital} p75`}
-              aide={l.vital}
-              id={`hero-${l.vital}`}
-              explorer={l.explorer}
-              etat={m.etat}
-              meta={
+              titre={`${l.vital} p75 par tranche de ${seau}`}
+              ariaLabel={`${l.vital} p75 dans le temps : ouvrir le graphique`}
+              testId={`vignette-${l.vital}`}
+              case={
                 <>
-                  <span>p75 par tranche de {seau}</span>
-                  <span>{commun.grille.length} tranches</span>
-                  {m.ok && <span>{m.meta}</span>}
-                  <span>{commun.plage}</span>
+                  <span className="flex items-center justify-between text-[11px] font-medium text-ink-soft">
+                    <span>{l.vital} p75</span>
+                    <span className="text-ink-faint">{commun.grille.length} tranches de {seau}</span>
+                  </span>
+                  {/* La vignette ne se manipule pas : c'est la case entière qui s'ouvre. */}
+                  <span className="pointer-events-none mt-1 block min-w-0" inert>
+                    {m.ok ? courbe(false) : <span className="block py-10 text-center text-xs text-ink-soft">Aucune mesure</span>}
+                  </span>
                 </>
               }
-              alternative={m.ok ? m.alternative : undefined}
             >
-              {m.ok && (
-                <ThresholdSeries
-                  grille={commun.grille}
-                  points={m.points}
-                  series={m.series}
-                  format={formatDuVital(l.vital)}
-                  vital={l.vital}
-                  bande={m.plage ? { basseCle: PLAGE_BAS, hauteCle: PLAGE_HAUT, libelle: LIBELLE_PLAGE } : undefined}
-                  episodes={m.plage?.episodes}
-                  seauSecondes={commun.seauSecondes}
-                  fuseau={FUSEAU_AFFICHAGE}
-                  zoomHref={commun.zoomHref}
-                  debutPlage={commun.debutPlage}
-                  annotations={commun.annotations.annotations}
-                  annotationsIndisponibles={commun.annotations.indisponible ?? undefined}
-                  // Les déploiements sont les mêmes sur les trois : listés en liens sous le
-                  // premier seulement (un arrêt de tabulation chacun, pas trois).
-                  legendeAnnotations={i === 0}
-                  // « Premières données à HH:MM » : dite une fois, au-dessus du premier
-                  // petit multiple, pas trois fois de suite.
-                  noteCollecte={i === 0}
-                  hauteur={200}
-                  ariaLabel={`${l.vital} p75 par tranche de ${seau}, ${commun.grille.length} tranches, 3 zones de seuil (Bon, À améliorer, Mauvais)${
-                    m.series.length > 1 ? `, comparé à ${m.series[1].libelle.toLowerCase()}` : ""
-                  }`}
-                />
+              {/* Les notes valent pour les trois : écrites une fois, dans la fenêtre du LCP
+                  (un repère de test unique, pas trois copies). */}
+              {i === 0 && (
+              <div className="mt-3 space-y-1 text-xs text-ink-soft">
+                {lecture}
+                {phrasePlage && (
+                  <p className="min-w-0 [overflow-wrap:anywhere]" data-testid="plage-habituelle-etat" data-etat={phrasePlage.etat}>
+                    {phrasePlage.texte}
+                  </p>
+                )}
+              </div>
               )}
-            </Figure>
+              <div className="mt-3">
+                <Figure
+                  titre={`${l.vital} p75`}
+                  aide={l.vital}
+                  id={`hero-${l.vital}`}
+                  explorer={l.explorer}
+                  etat={m.etat}
+                  meta={
+                    <>
+                      <span>p75 par tranche de {seau}</span>
+                      <span>{commun.grille.length} tranches</span>
+                      {m.ok && <span>{m.meta}</span>}
+                      <span>{commun.plage}</span>
+                    </>
+                  }
+                  alternative={m.ok ? m.alternative : undefined}
+                >
+                  {courbe(true)}
+                </Figure>
+              </div>
+            </FicheMesure>
           );
         })}
       </div>

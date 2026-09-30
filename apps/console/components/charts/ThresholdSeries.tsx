@@ -738,6 +738,7 @@ export function ThresholdSeries({
   noteCollecte = true,
   fenetresCollecte,
   debutPlage,
+  apercu = false,
 }: {
   /** OBLIGATOIRE : débuts de seau attendus, ISO UTC (`bucketStarts`) ou jours « AAAA-MM-JJ ». */
   grille: string[];
@@ -811,6 +812,12 @@ export function ThresholdSeries({
    * creux, barre réduite à sa part, légende). Absent : le premier seau est entier.
    */
   debutPlage?: string;
+  /**
+   * Vignette (recette du 30/09/2026) : la courbe et ses axes, sans légende ni notes.
+   * La vignette s'ouvre en grand (`FicheMesure`) ; c'est là que la légende complète,
+   * chiffrée et cliquable, se lit.
+   */
+  apercu?: boolean;
 }) {
   const router = useRouter();
   const motifs = useIdSvg("en-cours");
@@ -1132,6 +1139,8 @@ export function ThresholdSeries({
         </ResponsiveContainer>
       </div>
 
+      {!apercu && (
+      <>
       <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft" data-testid="legende-serie">
         {tracees.map((s) => (
           <li key={s.cle} className="flex min-w-0 items-center gap-1.5" data-serie={s.cle}>
@@ -1211,6 +1220,8 @@ export function ThresholdSeries({
       <PointsIgnores n={prep.ignores} />
       {legendeAnnotations && (
         <LegendeAnnotations placees={placees} indisponibles={annotationsIndisponibles} fuseau={fuseau} />
+      )}
+      </>
       )}
     </div>
   );

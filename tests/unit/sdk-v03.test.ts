@@ -1,5 +1,8 @@
 // SDK v0.3 — replay (B2) : découpage en chunks, caps, dérivation d'endpoint,
-// échantillonnage, résolution de l'URL du bundle (logique pure, sans DOM).
+// échantillonnage, résolution de l'URL du bundle (logique pure, sans DOM), et la
+// reprise d'un chunk refusé « plus tard » (30/09/2026 : sous la barrière RGPD, le
+// collector répond 425 à un chunk arrivé avant l'ancre de sa session ; le transport
+// ignorait la réponse et perdait le chunk 0, l'instantané complet de la page).
 import { describe, expect, it } from "vitest";
 import {
   CHUNK_FLUSH_MS,
@@ -8,7 +11,9 @@ import {
   isReplaySampled,
   REPLAY_MAX_COMPRESSED_BYTES,
   REPLAY_MAX_MS,
+  REPLAY_TENTATIVES,
   ReplayBuffer,
+  posterAvecReprise,
   resolveReplayScriptUrl,
 } from "../../packages/rum-sdk/src/replay";
 
@@ -120,5 +125,53 @@ describe("ReplayBuffer — cap compressé cumulé (1 Mo)", () => {
     expect(buf.add({ type: 3 })).toBe(false);
     expect(buf.pending).toBe(0);
     expect(buf.take()).toBeNull();
+  });
+});
+
+function reponse(status: number, retryAfter?: string): Response {
+  return new Response(null, { status, headers: retryAfter ? { "retry-after": retryAfter } : {} });
+}
+
+/** Un envoi scripté : une réponse (ou une panne réseau) par appel. */
+function script(...issues: (Response | "reseau")[]) {
+  let appels = 0;
+  const envoyer = async () => {
+    const issue = issues[Math.min(appels++, issues.length - 1)];
+    if (issue === "reseau") throw new TypeError("Failed to fetch");
+    return issue;
+  };
+  return { envoyer, appels: () => appels };
+}
+
+describe("posterAvecReprise", () => {
+  it("reprend un 425 après le délai demandé, et réussit quand l'ancre est arrivée", async () => {
+    const attentes: number[] = [];
+    const s = script(reponse(425, "5"), reponse(200));
+    const ok = await posterAvecReprise(s.envoyer, async (ms) => void attentes.push(ms));
+    expect(ok).toBe(true);
+    expect(s.appels()).toBe(2);
+    expect(attentes).toEqual([5000]);
+  });
+
+  it("ne reprend pas un refus définitif (403, 410 session effacée, 413)", async () => {
+    for (const statut of [400, 403, 410, 413]) {
+      const s = script(reponse(statut));
+      expect(await posterAvecReprise(s.envoyer, async () => {})).toBe(false);
+      expect(s.appels(), String(statut)).toBe(1);
+    }
+  });
+
+  it("abandonne après un nombre borné de tentatives", async () => {
+    const s = script(reponse(425, "5"));
+    expect(await posterAvecReprise(s.envoyer, async () => {})).toBe(false);
+    expect(s.appels()).toBe(REPLAY_TENTATIVES);
+  });
+
+  it("reprend une panne réseau, sans en-tête, avec un délai croissant et plafonné", async () => {
+    const attentes: number[] = [];
+    const s = script("reseau", reponse(503), reponse(429, "3600"), reponse(200));
+    expect(await posterAvecReprise(s.envoyer, async (ms) => void attentes.push(ms))).toBe(true);
+    expect(attentes[0]).toBeLessThan(attentes[1]);
+    expect(Math.max(...attentes)).toBeLessThanOrEqual(10_000);
   });
 });

@@ -26,6 +26,8 @@ export interface ProprietesBandeauR0 {
   hrefSante?: string;
   /** Ancre de la comparaison de releases de l'écran, si la section est rendue. */
   hrefDeploiement?: string;
+  /** La santé a sa case dans la grille de l'écran (30/09/2026) : ne pas la redire ici. */
+  masquerSante?: boolean;
 }
 
 const LIEN = "rounded-sm text-perf-ink underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf dark:text-perf";
@@ -38,6 +40,7 @@ export function BandeauR0({
   deploiement,
   hrefSante,
   hrefDeploiement,
+  masquerSante = false,
 }: ProprietesBandeauR0) {
   const Score = hrefSante ? "a" : "span";
   return (
@@ -46,6 +49,8 @@ export function BandeauR0({
       data-testid="bandeau-r0"
       className="card mb-4 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2.5 text-sm xl:flex-nowrap"
     >
+      {!masquerSante && (
+        <>
       <Score
         href={hrefSante}
         className="flex shrink-0 items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
@@ -68,6 +73,8 @@ export function BandeauR0({
         )}
       </Score>
       <span aria-hidden className="hidden h-4 w-px shrink-0 bg-line sm:block" />
+        </>
+      )}
       {/* La phrase prend la place qui reste ; une ligne à 1440 px (le texte entier en
           infobulle), plusieurs à 390 px plutôt qu'un débordement. */}
       <p className="min-w-0 flex-1 basis-60 [overflow-wrap:anywhere] xl:truncate" data-testid="r0-phrase">

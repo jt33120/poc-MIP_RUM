@@ -79,9 +79,9 @@ import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 export const dynamic = "force-dynamic";
 
-// Le vocabulaire de l'écran est « robot » et « réel », celui du menu (recette du
-// 26/09/2026 : le titre disait « synthétique ↔ RUM », la catégorie « Robot et réel »).
-const TITRE = "Robot et réel";
+// Le titre est celui du menu (recette du 30/09/2026) : on CORRÈLE la mesure
+// synthétique (le robot) et le RUM (les visiteurs réels).
+const TITRE = "Corrélation synthétique × RUM";
 const H = 3_600_000;
 /** Couples listés au plus dans « Routes à trafic réel sans scénario robot » (P14). */
 const TOP_SANS_ROBOT = 10;

@@ -121,7 +121,9 @@ export function InsightStrip({
       <details open={ouvertParDefaut || undefined}>
         <summary className="cursor-pointer text-sm">
           <span className="font-semibold text-ink">Constats ({constats.length})</span>
-          <span className="text-ink-soft"> · {fenetre}</span>
+          {/* Les fenêtres de calcul : lues par les lecteurs d'écran, pas imprimées en tête
+              (recette du 30/09/2026 : du bruit au-dessus de ce qui compte). */}
+          <span className="sr-only"> · {fenetre}</span>
         </summary>
         <ul className="mt-2 flex flex-col divide-y divide-line/60">
           {constats.map((c, i) => (

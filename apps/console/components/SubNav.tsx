@@ -32,7 +32,8 @@ export function SubNav() {
   // Le nom de la catégorie à gauche des onglets redit un onglet du même nom
   // (« Explorer » : catégorie, onglet, surtitre et titre, recette du 26/09/2026) :
   // il n'est écrit que s'il dit autre chose que ses onglets.
-  const libelleUtile = !onglets.some((t) => t.label === cat.label);
+  // Recette du 30/09/2026 : plus du tout — la barre latérale allume déjà la catégorie.
+  const libelleUtile = false;
 
   return (
     <nav aria-label={`Onglets ${cat.label}`} className="relative border-b border-line bg-panel" data-testid="subnav">

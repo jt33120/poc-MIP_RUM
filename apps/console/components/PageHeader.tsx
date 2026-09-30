@@ -1,34 +1,33 @@
-// En-tête de page standard : titre + sous-titre descriptif + zone d'actions à droite.
+// En-tête de page standard : le titre, sa bulle d'aide, les actions à droite.
+//
+// Recette du 30/09/2026 : plus de surtitre ni de sous-titre. Le surtitre redisait la
+// catégorie que la barre latérale allume déjà (« Performance » deux fois à l'écran),
+// et la phrase-question sous le titre (« Les vrais visiteurs vont-ils bien… ») ne
+// disait rien qu'un chiffre ne dise mieux. `sub` et `domain` restent acceptés, sans
+// effet, pour ne pas réécrire les 47 écrans qui les passent.
 import { GlossaryTip } from "./GlossaryTip";
-import { SurtitreDomaine, type PageDomain } from "./SurtitreDomaine";
+import type { PageDomain } from "./SurtitreDomaine";
 import type { GlossaryId } from "@/lib/glossary";
 
 export type { PageDomain };
 
 export function PageHeader({
   title,
-  sub,
   help,
-  domain,
   children,
 }: {
   title: React.ReactNode;
-  /** Question à laquelle l'écran répond (P1). Attendu sur tout écran du périmètre :
-   *  il reste optionnel au typage tant que chaque écran n'est pas repris par son lot. */
+  /** Sans effet depuis le 30/09/2026 (voir l'en-tête du fichier). */
   sub?: React.ReactNode;
   /** Clé de glossaire : ajoute une bulle d'aide « ? » à côté du titre. */
   help?: GlossaryId;
-  /** Catégorie de navigation (surtitre et couleur, § 2.4) : `perf`, `robot`,
-   *  `usages`, `fiabilite`, `explorer`, `ai`, ou une zone hors RUM (`admin`,
-   *  `integrations`, `logs`). Absent : celle qui range la route courante
-   *  dans la navigation (`surtitreDe`), « perf » à défaut. */
+  /** Sans effet depuis le 30/09/2026 : la barre latérale dit la catégorie. */
   domain?: PageDomain;
   children?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-start gap-3">
+    <div className="mb-5 flex flex-wrap items-center gap-3">
       <div className="min-w-0">
-        <SurtitreDomaine domain={domain} titre={typeof title === "string" ? title : undefined} />
         {/* La bulle d'aide est la SŒUR du titre, pas son enfant : dans le h1, son
             texte faisait partie du nom du titre (« SatisfactionSatisfactionTechnique
             Ce que… » à la lecture d'écran, recette du 26/09/2026). */}
@@ -36,7 +35,6 @@ export function PageHeader({
           <h1 className="text-xl font-bold tracking-tight text-ink">{title}</h1>
           {help && <GlossaryTip id={help} />}
         </div>
-        {sub && <p className="mt-1 text-sm text-ink-soft">{sub}</p>}
       </div>
       {/* Les actions PASSENT À LA LIGNE plutôt que de déborder. `shrink-0` les
           gardait sur une seule ligne : une quatrième action (« Dupliquer », P6.5)
