@@ -46,6 +46,11 @@ interface Commun {
   zoomHref: string;
   annotations: AnnotationsFigure;
   plage: string;
+  /**
+   * Début de la plage (`query.range.from`) : le premier seau de la grille commence
+   * avant lui et n'en couvre qu'une partie ; les graphiques le marquent.
+   */
+  debutPlage?: string;
 }
 
 const somme = (valeurs: number[]) => valeurs.reduce((a, b) => a + b, 0);
@@ -205,6 +210,7 @@ export function HeroCwv({
                   seauSecondes={commun.seauSecondes}
                   fuseau={FUSEAU_AFFICHAGE}
                   zoomHref={commun.zoomHref}
+                  debutPlage={commun.debutPlage}
                   annotations={commun.annotations.annotations}
                   annotationsIndisponibles={commun.annotations.indisponible ?? undefined}
                   // Les déploiements sont les mêmes sur les trois : listés en liens sous le
@@ -288,7 +294,15 @@ export function ChargeErreursLcp({
     annotationsIndisponibles: commun.annotations.indisponible ?? undefined,
     legendeAnnotations: liste,
   });
-  const partage = { grille: commun.grille, seauSecondes: commun.seauSecondes, fuseau: FUSEAU_AFFICHAGE, zoomHref: commun.zoomHref, synchro, hauteur: 110 };
+  const partage = {
+    grille: commun.grille,
+    seauSecondes: commun.seauSecondes,
+    fuseau: FUSEAU_AFFICHAGE,
+    zoomHref: commun.zoomHref,
+    debutPlage: commun.debutPlage,
+    synchro,
+    hauteur: 110,
+  };
 
   return (
     <Figure

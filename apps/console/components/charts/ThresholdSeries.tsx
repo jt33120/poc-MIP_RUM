@@ -39,11 +39,13 @@ import {
   ComposedChart,
   Customized,
   Line,
+  Rectangle,
   ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
+  type RectangleProps,
 } from "recharts";
 import { largeurTexte, rangerEtiquettes } from "@/lib/etiquettes";
 import { formater, formatDuVital, type FormatId, type VitalName } from "@/lib/fmt-ids";
@@ -58,6 +60,7 @@ import {
   MAX_SERIES,
   SERIE_MARGES,
   bandesSeuils,
+  bordsDeGrille,
   collecteDesSeaux,
   echelleY,
   estJour,
@@ -67,19 +70,23 @@ import {
   hrefZoom,
   jourDans,
   libellePeriodeEnCours,
+  libellePremiereTranchePartielle,
   libelleSeau,
   libelleSeauComplet,
   nombreOuNull,
   phrasePeuDePoints,
   placerAnnotations,
+  portionDeBarre,
   preparerPoints,
   premiereDonneeTardive,
+  rognerBarre,
   tranchesMesurees,
   regrouperAnnotations,
   suitesDeSeaux,
   texteFenetreCollecte,
   type Annotation,
   type AnnotationPlacee,
+  type BordsGrille,
   type CollecteSeau,
   type FenetreCollecte,
   type LignePreparee,
@@ -282,6 +289,43 @@ export function useSeauEnCours(
   if (estJour(dernier)) return { enCours: jourDans(maintenant, fuseau) === dernier, maintenant };
   const debut = Date.parse(dernier);
   return { enCours: Number.isFinite(debut) && debut + seauSecondes * 1000 > maintenant, maintenant };
+}
+
+/**
+ * Les seaux du bord (`bordsDeGrille`) : premier seau que la plage ne couvre qu'en
+ * partie, dernier seau encore en cours. Lu après le montage, comme le seau en cours.
+ */
+export function useBordsDeGrille(
+  grille: string[],
+  seauSecondes: number,
+  fuseau: string,
+  debutPlage: string | undefined,
+  maintenant: number | null,
+): BordsGrille {
+  return useMemo(
+    () => bordsDeGrille(grille, seauSecondes, { debutPlage, maintenant, fuseau }),
+    [grille, seauSecondes, fuseau, debutPlage, maintenant],
+  );
+}
+
+/**
+ * Forme de barre (`shape` et `activeBar` de recharts) qui ne dessine que la portion
+ * RÉELLE des seaux du bord : le premier seau partiel garde sa fin, le seau en cours
+ * s'arrête à « maintenant ». Pleine largeur, la barre en cours promettait une heure
+ * qui n'a pas eu lieu, et le premier seau paraissait un creux de trafic.
+ */
+export function formeBarreAuxBords(bords: BordsGrille, n: number) {
+  function BarreAuxBords(brut: unknown) {
+    const props = (brut ?? {}) as RectangleProps & { index?: unknown };
+    const x = typeof props.x === "number" ? props.x : Number.NaN;
+    const largeur = typeof props.width === "number" ? props.width : Number.NaN;
+    const index = typeof props.index === "number" ? props.index : -1;
+    const portion = portionDeBarre(index, n, bords);
+    if (!portion || !Number.isFinite(x) || !Number.isFinite(largeur) || largeur <= 0) return <Rectangle {...props} />;
+    const r = rognerBarre(x, largeur, portion);
+    return <Rectangle {...props} x={r.x} width={r.largeur} />;
+  }
+  return BarreAuxBords;
 }
 
 /** Identifiant sûr pour `url(#…)` (useId de React produit des « : » ou des « « » »). */
@@ -573,6 +617,7 @@ function Infobulle({
   fuseau,
   dernierEnCours,
   dernier,
+  premierPartiel,
   liens,
   collecte,
   survole = true,
@@ -592,6 +637,8 @@ function Infobulle({
   fuseau: string;
   dernierEnCours: boolean;
   dernier: string | undefined;
+  /** Le premier seau et son libellé, quand la plage n'en couvre qu'une partie. */
+  premierPartiel?: { t: string; libelle: string } | null;
   liens?: Record<string, LienSeau>;
 }) {
   const ligne = payload?.[0]?.payload;
@@ -632,6 +679,7 @@ function Infobulle({
       {dernierEnCours && label === dernier && (
         <p className="text-ink-soft">{libellePeriodeEnCours(seauSecondes, estJour(label))}</p>
       )}
+      {premierPartiel && label === premierPartiel.t && <p className="text-ink-soft">{premierPartiel.libelle}</p>}
     </div>
   );
 }
@@ -689,6 +737,7 @@ export function ThresholdSeries({
   debutCollecte,
   noteCollecte = true,
   fenetresCollecte,
+  debutPlage,
 }: {
   /** OBLIGATOIRE : débuts de seau attendus, ISO UTC (`bucketStarts`) ou jours « AAAA-MM-JJ ». */
   grille: string[];
@@ -756,11 +805,18 @@ export function ThresholdSeries({
    * valeur `null` même pour un compte), un seau recoupé est voilé. Ajout du 29/09/2026.
    */
   fenetresCollecte?: readonly FenetreCollecte[];
+  /**
+   * Début de la plage (ISO UTC, `query.range.from`) : le premier seau de la grille
+   * commence AVANT lui, et n'en couvre qu'une partie. Il est alors marqué (point
+   * creux, barre réduite à sa part, légende). Absent : le premier seau est entier.
+   */
+  debutPlage?: string;
 }) {
   const router = useRouter();
   const motifs = useIdSvg("en-cours");
   const motifHorsCollecte = useIdSvg("hors-collecte");
   const { enCours, maintenant } = useSeauEnCours(grille, seauSecondes, fuseau);
+  const bords = useBordsDeGrille(grille, seauSecondes, fuseau, debutPlage, maintenant);
   const { collecte, fenetres: fenetresVisibles } = useCollecteDesSeaux(grille, seauSecondes, fuseau, fenetresCollecte, maintenant);
   const collecteParSeau = useMemo(() => new Map(grille.map((t, i) => [t, collecte[i] ?? null])), [grille, collecte]);
   const { tracees, ecartees } = useMemo(() => tracerSeries(series), [series]);
@@ -775,9 +831,14 @@ export function ThresholdSeries({
     return v.length > 0 ? v : tracees;
   }, [tracees, legende]);
   const prep = useMemo(
-    () => preparerPoints(grille, points, tracees, { faibleSous, seauEnCours: enCours, collecte }),
-    [grille, points, tracees, faibleSous, enCours, collecte],
+    () => preparerPoints(grille, points, tracees, { faibleSous, seauEnCours: enCours, premierPartiel: bords.premierPartiel !== null, collecte }),
+    [grille, points, tracees, faibleSous, enCours, bords.premierPartiel, collecte],
   );
+  const formeBarre = useMemo(() => formeBarreAuxBords(bords, grille.length), [bords, grille.length]);
+  const premierPartiel =
+    bords.premierPartiel !== null && debutPlage && grille[0] !== undefined
+      ? { t: grille[0], libelle: libellePremiereTranchePartielle(debutPlage, seauSecondes, fuseau) }
+      : null;
   const aDesBarres = tracees.some((s) => s.forme === "barres");
   // Une bande de verdict derrière des barres de comptes n'aurait pas de sens : un
   // compte n'a pas de seuil (R-S). Le plan l'interdit ; on ne la dessine pas.
@@ -979,6 +1040,7 @@ export function ThresholdSeries({
                   fuseau={fuseau}
                   dernierEnCours={enCours}
                   dernier={dernier}
+                  premierPartiel={premierPartiel}
                   liens={liensSeaux}
                   collecte={collecteParSeau}
                 />
@@ -1021,6 +1083,8 @@ export function ThresholdSeries({
                   name={s.libelle}
                   fill={s.couleur}
                   maxBarSize={32}
+                  shape={formeBarre}
+                  activeBar={formeBarre}
                   isAnimationActive={false}
                   hide={legende.aspect(s.cle) === "masquee"}
                   className={classeAspect(legende.aspect(s.cle))}
@@ -1122,6 +1186,12 @@ export function ThresholdSeries({
           <li className="flex items-center gap-1.5" data-testid="legende-seau-en-cours">
             {barres.length > 0 ? <PaveEnCours id={barres[0].id} /> : <PointCreuxLegende />}
             {periodeEnCours}
+          </li>
+        )}
+        {premierPartiel && (
+          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-premier-partiel">
+            <PointCreuxLegende />
+            <span className="min-w-0 [overflow-wrap:anywhere]">{premierPartiel.libelle}</span>
           </li>
         )}
         {prep.horsCollecte.length > 0 && (

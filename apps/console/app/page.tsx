@@ -558,6 +558,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     zoomHref: gabaritZoomEcran,
     annotations,
     plage: period.label,
+    debutPlage: query.range.from,
   };
   const serieDe = (nom: VitalName) => seriesVitaux[VITAUX.indexOf(nom)];
   // Heatmap de latence (A2 § 6.2) : lue sous les mêmes conditions que la plage (grille
