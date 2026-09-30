@@ -189,7 +189,8 @@ export function LongtasksView({
               mesure ne sont jamais actives ensemble sur un même navigateur : un blocage n&apos;est compté qu&apos;une
               fois ; elles restent séparées parce qu&apos;un parc mixte produit les deux. Des blocages concurrents de
               plusieurs visiteurs ne s&apos;additionnent pas en temps d&apos;attente vécu : aucun cumul n&apos;est donc
-              calculé.
+              calculé. Source : SDK MIP RUM — API Long Animation Frames (Chromium) et, à défaut, Long Tasks
+              (PerformanceObserver du navigateur).
             </>
           }
           alternative={

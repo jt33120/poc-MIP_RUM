@@ -121,7 +121,8 @@ export function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<Scrip
           incident, un script qui bloque 60 ms à chaque frappe est le problème — et c&apos;est le second qui décide de
           l&apos;INP. Un cumul de visiteurs différents n&apos;est le temps vécu de personne. La mesure des trames
           longues n&apos;existe que sur Chromium : les visiteurs Safari et Firefox n&apos;en produisent pas, et une
-          absence de ligne ne veut donc pas dire qu&apos;ils n&apos;attendent pas.
+          absence de ligne ne veut donc pas dire qu&apos;ils n&apos;attendent pas. Source : API Long Animation Frames
+          du navigateur (attribution des scripts), relevée par le SDK MIP RUM.
         </>
       }
       alternative={

@@ -818,7 +818,9 @@ function FigureNavigation({
       lecture={
         <>
           Le LCP n&apos;est mesuré qu&apos;au chargement : les changements de route SPA comptent des vues sans LCP.
-          Une vue sans type de navigation déclaré est comptée à part, jamais parmi les chargements.
+          Une vue sans type de navigation déclaré est comptée à part, jamais parmi les chargements. Source : SDK
+          MIP RUM — type de navigation de chaque vue (navigate, reload, back_forward de l&apos;API Navigation Timing ;
+          spa pour un changement de route).
         </>
       }
       alternative={{
@@ -920,7 +922,8 @@ function FigureTtfb({
         <span data-testid="ttfb-phrase">
           Chaque barre est le p75 d&apos;une phase mesurée à part ; leur somme n&apos;est pas le TTFB. La couleur
           suit la règle MIP de chaque phase, écrite au survol de sa barre et dans l&apos;alternative textuelle : un
-          ordre de grandeur de terrain, pas un seuil publié.
+          ordre de grandeur de terrain, pas un seuil publié. Source : SDK MIP RUM — phases lues dans
+          PerformanceNavigationTiming (API Navigation Timing du navigateur).
         </span>
       }
       alternative={{

@@ -512,7 +512,7 @@ function HeroActions({
               {route}
               {avecApp ? ` · ${row.app_id}` : ""}
             </span>
-            <span className="shrink-0">
+            <span className="sm:shrink-0">
               {[
                 pluriel(row.actions, "action"),
                 pluriel(row.sessions, "session"),
@@ -526,14 +526,14 @@ function HeroActions({
               <Link
                 href={sessions.href}
                 title={`Toutes les sessions passées par ${row.route}, qu’elles aient fait « ${nom} » ou non`}
-                className="shrink-0 rounded text-ink-soft underline-offset-2 hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                className="rounded text-ink-soft sm:shrink-0 underline-offset-2 hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
                 data-testid="actions-sessions-route"
               >
                 {LIEN_SESSIONS_ROUTE}
               </Link>
             ) : (
               // Route que la recherche exacte refuserait : le libellé reste, en texte, avec sa raison.
-              <span className="relative shrink-0 text-ink-soft" title={sessions.raison}>
+              <span className="relative text-ink-soft sm:shrink-0" title={sessions.raison}>
                 Sessions de la route non proposées<span className="sr-only"> — {sessions.raison}</span>
               </span>
             )}

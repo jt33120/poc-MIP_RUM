@@ -575,7 +575,7 @@ function SerieInp({
           <span>tranches de {seau}</span>
         </>
       }
-      lecture="L'INP p75 de chaque tranche, sur les bandes Bon / À améliorer / Mauvais de web.dev (seuils lus dans le code, jamais recopiés). Une tranche sans interaction mesurée est un trou, pas un zéro. Un clic sur une tranche zoome sur sa plage ; les traits verticaux sont les déploiements."
+      lecture={`L'INP p75 de chaque tranche, sur les bandes Bon / À améliorer / Mauvais de web.dev (seuils lus dans le code, jamais recopiés). Une tranche sans interaction mesurée est un trou, pas un zéro. Un clic sur une tranche zoome sur sa plage ; les traits verticaux sont les déploiements. Source : ${SOURCE_VITAL.INP}`}
       alternative={
         mesures > 0
           ? {
@@ -633,7 +633,7 @@ function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof
           <span>{Math.min(ETIQUETTES_INP, pts.length)} sélecteurs les plus lents étiquetés</span>
         </>
       }
-      lecture="Chaque point = un élément interactif : X = nombre d'interactions, Y = INP p75, couleur = verdict web.dev de l'INP. En haut à droite : fréquents ET lents, à corriger d'abord ; les cinq plus lents portent leur sélecteur. Les points ne sont pas cliquables : la cible n'est pas une dimension de filtre — la table sous le nuage porte les mêmes lignes, chiffrées."
+      lecture="Chaque point = un élément interactif : X = nombre d'interactions, Y = INP p75, couleur = verdict web.dev de l'INP. En haut à droite : fréquents ET lents, à corriger d'abord ; les cinq plus lents portent leur sélecteur. Les points ne sont pas cliquables : la cible n'est pas une dimension de filtre — la table sous le nuage porte les mêmes lignes, chiffrées. Source : SDK MIP RUM, bibliothèque web-vitals 5.3 (attribution de l'INP : l'élément cible de l'interaction)."
     >
       <ScatterPlot
         points={pts}
