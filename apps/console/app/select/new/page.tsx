@@ -23,10 +23,15 @@ import { ECRANS_SESSION } from "@mip/console-contract";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { OnboardingPoll } from "@/components/OnboardingPoll";
+import { CopierPourIA } from "@/components/installer/CopierPourIA";
+import { PastilleMarque, VisuelExtension, VisuelSdk } from "@/components/installer/Marques";
 import { CodeAvecSecret, FormulaireSecret, SecretAffiche, SecretFourni } from "@/components/secret/SecretUnique";
 import { BackendStep } from "@/components/wizard/BackendStep";
 import { WizardBadge } from "@/components/wizard/WizardStep";
-import { ZIP_EXTENSION } from "@/lib/extension-deploiement";
+import { ZIP_EXTENSION, strategieExtension, strategieNommage } from "@/lib/extension-deploiement";
+import { appelInit, codeNextAppRouter, codeNextPagesRouter, directivesCsp } from "@/lib/installer";
+import { promptExtension, promptSdk, promptServeur } from "@/lib/prompts-ia";
+import type { Marque } from "@/lib/logos-marques";
 import { ingestEndpoint, voieRecommandee } from "@/lib/ingest-endpoint";
 import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
 import { chargerNouveauSite } from "@/lib/chargeurs/projets";
@@ -67,12 +72,12 @@ const MODES = [
 
 /** Langages du serveur proposés à l'étape 1 : ceux des recettes, plus « autre ». */
 const SERVEURS = [
-  { value: "python", label: "Python" },
-  { value: "node", label: "Node.js" },
-  { value: "java", label: "Java" },
-  { value: "dotnet", label: ".NET" },
-  { value: "autre", label: "Autre" },
-] as const;
+  { value: "python", label: "Python", marque: "python" },
+  { value: "node", label: "Node.js", marque: "node" },
+  { value: "java", label: "Java", marque: "java" },
+  { value: "dotnet", label: ".NET", marque: "dotnet" },
+  { value: "autre", label: "Autre", marque: null },
+] as const satisfies readonly { value: string; label: string; marque: Marque | null }[];
 type Serveur = (typeof SERVEURS)[number]["value"];
 
 function serveurDe(v: unknown): Serveur | null {
@@ -89,9 +94,9 @@ export default async function AddSite({ searchParams }: { searchParams: Promise<
   if (ecran.etat === "introuvable") redirect("/select/new");
 
   return (
-    <main className="min-h-screen bg-panel px-4 py-8 sm:px-6">
+    <main className="min-h-screen bg-panel px-4 py-6 sm:px-6">
       <div className={`mx-auto w-full ${ecran.etat === "integration" ? "max-w-6xl" : "max-w-xl"}`}>
-        <header className="mb-8 flex items-center gap-3">
+        <header className="mb-6 flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-deep">
             <Icon paths={ICON_PATHS.activity} className="h-5 w-5 text-white" strokeWidth={2.4} />
           </span>
@@ -163,9 +168,12 @@ function CreateForm({ error }: { error: string | null }) {
                   defaultChecked={i === 0}
                   className="peer sr-only"
                 />
-                <div className="h-full rounded-xl border border-line p-3.5 transition hover:border-ink-faint/50 peer-checked:border-accent peer-checked:ring-2 peer-checked:ring-accent/20 peer-focus-visible:ring-2 peer-focus-visible:ring-perf">
-                  <span className="text-sm font-semibold text-ink">{m.title}</span>
-                  <p className="mt-1 text-xs leading-relaxed text-ink-soft">{m.desc}</p>
+                <div className="flex h-full items-start gap-3 rounded-xl border border-line p-3.5 transition hover:border-ink-faint/50 peer-checked:border-accent peer-checked:ring-2 peer-checked:ring-accent/20 peer-focus-visible:ring-2 peer-focus-visible:ring-perf">
+                  {m.value === "sdk" ? <VisuelSdk className="h-9 w-12" /> : <VisuelExtension />}
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-ink">{m.title}</span>
+                    <span className="mt-1 block text-xs leading-relaxed text-ink-soft">{m.desc}</span>
+                  </span>
                 </div>
               </label>
             ))}
@@ -178,10 +186,17 @@ function CreateForm({ error }: { error: string | null }) {
             Serveur <span className="font-normal text-ink-soft">(facultatif)</span>
           </legend>
           <div className="flex flex-wrap gap-2">
-            {[{ value: "", label: "Aucun" }, ...SERVEURS].map((o) => (
+            {[{ value: "", label: "Aucun", marque: null }, ...SERVEURS].map((o) => (
               <label key={o.value} className="cursor-pointer">
                 <input type="radio" name="serveur" value={o.value} defaultChecked={o.value === ""} className="peer sr-only" />
-                <span className="inline-block rounded-full border border-line px-3 py-1 text-xs font-medium text-ink-soft transition hover:border-ink-faint/50 peer-checked:border-accent peer-checked:bg-accent/10 peer-checked:text-ink peer-focus-visible:ring-2 peer-focus-visible:ring-perf">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-line py-1 pl-1 pr-3 text-xs font-medium text-ink-soft transition hover:border-ink-faint/50 peer-checked:border-accent peer-checked:bg-accent/10 peer-checked:text-ink peer-focus-visible:ring-2 peer-focus-visible:ring-perf">
+                  {o.marque ? (
+                    <PastilleMarque marque={o.marque} className="h-5 w-5 rounded-full" />
+                  ) : (
+                    <span aria-hidden className="grid h-5 w-5 place-items-center rounded-full bg-panel2 text-[10px] text-ink-soft">
+                      {o.value ? "…" : "–"}
+                    </span>
+                  )}
                   {o.label}
                 </span>
               </label>
@@ -265,10 +280,37 @@ async function Integration({
     appId,
     adresses: { traces: ingestEndpoint("traces", host), logs: ingestEndpoint("logs", host) },
   });
+  // « Copier pour mon IA de code » : un prompt par parcours, aux vraies valeurs du
+  // projet et SANS la clé (lib/prompts-ia.ts) — les mêmes constructeurs que /installer.
+  const base = { sdkUrl, endpoint, appId, clientId: null };
+  const init = appelInit(base);
+  const hotes = extensionDomains.map((d) => d.host);
+  const promptIA =
+    mode === "extension"
+      ? promptExtension({
+          nom: customer.name,
+          zip: ZIP_EXTENSION,
+          strategie: strategieExtension(hotes, process.env.EXTENSION_UPDATE_URL ?? null),
+          nommage: strategieNommage(),
+          hotes,
+        })
+      : promptSdk({
+          app: appId,
+          nom: customer.name,
+          origines: customer.allowed_origins,
+          snippet,
+          snippetConsent: buildSnippet({ ...base, withConsent: true, voie }),
+          codeAppRouter: codeNextAppRouter(sdkUrl, init),
+          codePagesRouter: codeNextPagesRouter(sdkUrl, init),
+          csp: directivesCsp(base),
+        });
+
   // Le langage choisi : sa seule recette (« autre » : le socle commun et les liens).
   const recettesChoisies = serveur
     ? { ...recettesServeur, agents: recettesServeur.agents.filter((a) => a.id === serveur) }
     : null;
+  const recetteChoisie = recettesChoisies?.agents[0] ?? null;
+  const marqueServeur = SERVEURS.find((x) => x.value === serveur)?.marque ?? null;
 
   // La clé n'est exigée que si la collecte ferme l'accès sans clé ; lu ici plutôt
   // qu'importé de lib/ingest.ts, qui tirerait la base dans cet écran (cliquet de la
@@ -295,23 +337,39 @@ async function Integration({
         </p>
       </div>
 
+      <p className="mt-1.5 text-sm text-ink-soft">
+        Suivez les étapes, ou confiez-les à votre IA de code : l&apos;étape « Ouvrir le site » passe au vert à la
+        première mesure.
+      </p>
+
       <SecretAffiche
         nom={nomCle}
         testid="one-time-key"
         testidValeur="generated-key"
-        className="mt-4 rounded-lg border border-warn/30 bg-warn/10 px-4 py-2.5 text-sm text-ink"
+        className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-4 py-2 text-sm text-ink"
         codeClassName="rounded bg-panel px-2 py-0.5 font-mono text-ink"
         prefixe="Clé d'API de"
         suffixe="(affichée une seule fois, déjà dans le code ci-dessous) :"
       />
 
-      <div className={`mt-5 grid gap-5 ${recettesChoisies ? "lg:grid-cols-3" : "lg:grid-cols-5"}`}>
+      <div className={`mt-4 grid gap-4 ${recettesChoisies ? "lg:grid-cols-3" : "lg:grid-cols-5"}`}>
         {/* 1 — poser le capteur */}
         <section className={`min-w-0 rounded-xl border border-line p-5 ${recettesChoisies ? "" : "lg:col-span-3"}`}>
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
-            <Etape n={1} />
-            {mode === "extension" ? "Installer l'extension" : "Coller ces balises dans le <head>"}
-          </h2>
+          <div className="flex items-center gap-3">
+            {mode === "extension" ? <VisuelExtension /> : <VisuelSdk className="h-9 w-12" />}
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <Etape n={1} />
+              {mode === "extension" ? "Installer l'extension" : "Poser le SDK dans le <head>"}
+            </h2>
+          </div>
+          <div className="mt-3 rounded-lg bg-accent/[0.07] px-3 py-2.5">
+            <CopierPourIA prompt={promptIA} testId={mode === "extension" ? "ia-extension" : "ia-snippet"} />
+            <p className="mt-1 text-[11px] text-ink-soft">
+              {mode === "extension"
+                ? "Le prompt explique le déploiement sur votre parc. Ou installez à la main, ci-dessous."
+                : "Le prompt trouve le bon fichier selon votre framework (HTML, Next.js…). Ou collez à la main, ci-dessous."}
+            </p>
+          </div>
           {mode === "extension" ? (
             <ExtensionConfig
               appId={appId}
@@ -321,11 +379,11 @@ async function Integration({
             />
           ) : (
             <>
-              <div className="mt-3">
+              <p className="mt-3 text-[11px] font-medium text-ink-soft">À la main, avant tout autre script :</p>
+              <div className="mt-1 max-h-44 overflow-y-auto">
                 <CodeAvecSecret nom={nomCle} code={snippet} repere={REPERE_CLE} rendu="copie" />
               </div>
               <p className="mt-2 text-xs leading-relaxed text-ink-soft" data-testid="cle-facultative">
-                Avant tout autre script.{" "}
                 {cleExigee
                   ? "La clé d'API est exigée par la collecte."
                   : "La clé d'API est facultative tant que la collecte ne l'exige pas : sans clé, retirez la ligne apiKey."}{" "}
@@ -371,11 +429,19 @@ async function Integration({
         {/* 2 — le serveur, quand un langage a été choisi */}
         {recettesChoisies && (
           <section className="min-w-0 rounded-xl border border-line p-5" data-testid="etape-serveur">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
-              <Etape n={2} />
-              Brancher le serveur
-            </h2>
-            <div className="mt-3 max-h-[26rem] overflow-y-auto">
+            <div className="flex items-center gap-3">
+              {marqueServeur && <PastilleMarque marque={marqueServeur} className="h-9 w-9" />}
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+                <Etape n={2} />
+                Brancher le serveur
+              </h2>
+            </div>
+            {recetteChoisie && (
+              <div className="mt-3 rounded-lg bg-accent/[0.07] px-3 py-2.5">
+                <CopierPourIA prompt={promptServeur(recetteChoisie, customer.name)} testId={`ia-serveur-${recetteChoisie.id}`} />
+              </div>
+            )}
+            <div className="mt-3 max-h-64 overflow-y-auto">
               <BackendStep recettes={recettesChoisies} nomSecret={nomCle} />
             </div>
           </section>
