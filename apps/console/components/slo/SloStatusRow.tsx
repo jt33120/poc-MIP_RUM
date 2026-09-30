@@ -23,7 +23,8 @@ import { formater } from "@/lib/fmt-ids";
 import type { SloRaw, SloStatusRow as SloStatusData } from "@/lib/queries-alerting";
 import { hrefCreerAlerte, metriqueEnClair } from "@/lib/slo-ecran";
 
-const TD = "px-3 py-2 align-top";
+// Lignes denses (recette du 30/09/2026) : 32 px environ, nombres alignés à droite.
+const TD = "px-3 py-1.5 align-middle";
 
 const VERDICT_BUDGET: Record<ReturnType<typeof statutBudget>, string> = {
   non_mesurable: "non mesurable",
@@ -57,24 +58,25 @@ export function SloRow({
       {/* Nom, app, métrique et route dans UNE cellule (recette du 26/09/2026) : à onze
           colonnes, « Alertes sur 7 j » et les actions restaient hors de l'écran même à
           1 440 px. La métrique passe en sous-ligne, l'état « désactivé » en étiquette. */}
-      <th scope="row" className={`${TD} sticky left-0 max-w-[18rem] bg-panel text-left font-normal`}>
-        <span className="block font-medium text-ink">
-          {raw.name}
+      <th scope="row" className={`${TD} sticky left-0 max-w-[22rem] bg-panel text-left font-normal`}>
+        <span className="flex min-w-0 items-baseline gap-1.5">
+          <span className="truncate font-medium text-ink">{raw.name}</span>
           {!raw.active && (
-            <span className="ml-1.5 rounded border border-line px-1 py-px text-[11px] font-normal text-ink-soft">désactivé</span>
+            <span className="shrink-0 rounded border border-line px-1 py-px text-[11px] font-normal text-ink-soft">désactivé</span>
           )}
         </span>
-        <span className="block text-xs text-ink-soft">{metriqueEnClair(raw.metric)}</span>
-        <span className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-ink-soft">
+        {/* La métrique en clair, l'app et la route sur UNE sous-ligne. */}
+        <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-[11px] text-ink-soft">
+          <span>{metriqueEnClair(raw.metric)}</span>
+          <span aria-hidden>·</span>
           <span className="chip-mono">{raw.app_id}</span>
           <span className="font-mono">{raw.route ?? "toutes routes"}</span>
         </span>
       </th>
       <td className={`${TD} whitespace-nowrap tabular-nums text-ink-soft`}>
-        {formater("pct", raw.objective)}
-        <span className="block text-xs">sur {raw.window_days} j</span>
+        {formater("pct", raw.objective)} <span className="text-xs">sur {raw.window_days} j</span>
       </td>
-      <td className={`${TD} tabular-nums`}>
+      <td className={`${TD} text-right tabular-nums`}>
         {!status ? (
           <span className="text-ink-soft">—</span>
         ) : status.attainment == null ? (
@@ -89,7 +91,7 @@ export function SloRow({
           formater("pct", status.attainment)
         )}
       </td>
-      <td className={`${TD} whitespace-nowrap tabular-nums`}>
+      <td className={`${TD} whitespace-nowrap text-right tabular-nums`}>
         {!status || statut === "non_mesurable" ? (
           <span className="text-ink-soft">—</span>
         ) : (
@@ -112,7 +114,7 @@ export function SloRow({
           </span>
         )}
       </td>
-      <td className={`${TD} tabular-nums`}>
+      <td className={`${TD} text-right tabular-nums`}>
         {alertes7j == null ? (
           <span className="text-ink-soft">—</span>
         ) : (
