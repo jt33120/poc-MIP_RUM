@@ -99,7 +99,7 @@ function DessinNavigateur() {
         <circle key={x} cx={x} cy="30" r="4" fill={["#ff5f57", "#febc2e", "#28c840"][i]} opacity=".85" />
       ))}
       <rect x="86" y="22" width="190" height="16" rx="8" fill="rgba(255,255,255,.07)" />
-      <text x="99" y="34" fontSize="9" fill="rgba(255,255,255,.5)" fontFamily="ui-monospace,monospace">
+      <text x="98" y="35" fontSize="9" fill="rgba(255,255,255,.5)" fontFamily="ui-monospace,monospace">
         boutique.exemple.fr
       </text>
       <rect x="40" y="64" width="120" height="12" rx="6" fill="rgba(255,255,255,.16)" />
