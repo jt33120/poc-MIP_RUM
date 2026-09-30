@@ -19,14 +19,17 @@ const liste = (brut: string) =>
   brut.split(",").map((s) => s.trim().replace(/^'|'$/g, "")).filter((s) => s && !(s in SUPPRIMEES));
 const trie = (l: readonly string[]) => [...l].sort();
 /**
- * Les tables accordées à `mip_console` APRÈS v93, par la migration qui les crée :
- * v93 ne peut pas les nommer. Chacune est vérifiée dans SA migration (droit et
+ * Les tables accordées à `mip_console` APRÈS v93, par la migration qui les accorde
+ * (celle qui les crée, ou une suivante : v104 pour celles de v101) — v93 ne peut pas
+ * les nommer. Chacune est vérifiée dans SA migration (droit et
  * policy), et retirée de la comparaison avec v93.
  */
 const APRES_V93: Record<string, { version: number; privileges: string[] }> = {
   collecte_fenetre: { version: 103, privileges: ["SELECT"] },
+  signal_detecte: { version: 104, privileges: ["SELECT"] },
   sonde_battement: { version: 103, privileges: ["SELECT"] },
   sonde_passage: { version: 103, privileges: ["SELECT"] },
+  vital_horaire: { version: 104, privileges: ["SELECT"] },
 };
 const sansApresV93 = <T>(o: Record<string, T>) => Object.fromEntries(Object.entries(o).filter(([t]) => !(t in APRES_V93)));
 
