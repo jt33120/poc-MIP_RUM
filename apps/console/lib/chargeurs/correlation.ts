@@ -25,6 +25,7 @@ import {
 import { paramReader, previousRange } from "../query-contract";
 import { dimensionSchema } from "../query-schema";
 import { lireComparaison } from "../view-state";
+import { sectionFenetresCollecte } from "./collecte";
 import { section, sansSection, type Chargeur } from "./commun";
 
 export const chargerCorrelation = (async (principal, sp) => {
@@ -64,11 +65,13 @@ export const chargerCorrelation = (async (principal, sp) => {
   const choisi =
     lireSerie(lecteur.get("serie"), options) ??
     serieParDefaut(options, { route: query.filters.route ?? null, anglesMorts: anglesMortsParRoute });
-  const [serie, seriePrec] = await Promise.all([
+  const [serie, seriePrec, fenetresCollecte] = await Promise.all([
     choisi && !robotAbsent ? section(() => correlationSeries(choisi.app_id, choisi.route, f)) : sansSection<CorrSeriesRow[]>([]),
     choisi && !robotAbsent && prev
       ? section(() => correlationSeries(choisi.app_id, choisi.route, fPrec))
       : sansSection<CorrSeriesRow[]>([]),
+    // Les hachures « non mesuré » de la série : lues avec elle, jamais sans elle.
+    choisi && !robotAbsent ? sectionFenetresCollecte(query) : Promise.resolve(null),
   ]);
 
   return {
@@ -91,5 +94,6 @@ export const chargerCorrelation = (async (principal, sp) => {
     choisi,
     serie,
     seriePrec,
+    fenetresCollecte,
   } as const;
 }) satisfies Chargeur<unknown>;

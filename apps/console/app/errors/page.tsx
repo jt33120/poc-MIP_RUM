@@ -538,6 +538,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
         <PanneauErreur
           groupe={ouvert}
           lecture={ecran.panneau.lecture}
+          fenetresCollecte={fenetresLues(ecran.fenetresCollecte)}
           range={range}
           label={label}
           bucketLabel={bucketLabel}

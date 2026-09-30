@@ -26,7 +26,7 @@ import type { SectionLue } from "@/lib/lecture";
 import { pointsMobileTemps, type CapabilityState } from "@/lib/mobile-capabilities";
 import type { MobileSerie } from "@/lib/queries-mobile";
 import { bucketLabel } from "@/lib/query-contract";
-import { grilleIso, libelleSeauComplet, type Annotation, type PointSerie } from "@/lib/series";
+import { grilleIso, libelleSeauComplet, type Annotation, type FenetreCollecte, type PointSerie } from "@/lib/series";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { pluriel } from "@/lib/format";
 
@@ -56,6 +56,7 @@ export function MobileDansLeTemps({
   annotationsIndisponibles,
   capaciteJs,
   explorer,
+  fenetresCollecte,
 }: {
   lecture: SectionLue<MobileSerie>;
   /** Débuts de seau attendus (`bucketStarts(query.range)`). */
@@ -72,6 +73,8 @@ export function MobileDansLeTemps({
   capaciteJs: CapabilityState;
   /** Explorer rejouant le panneau des sessions (`seg=v2:runtime:eq:react_native`) ; absent s'il ne s'y exprime pas. */
   explorer?: string;
+  /** Fenêtres hors collecte (`sectionFenetresCollecte`) : hachures « non mesuré » des deux panneaux, datées sous le premier. */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const id = "mobile-temps";
   if (!lecture.ok) return <Figure titre={TITRE_TEMPS} id={id} etat={{ kind: "erreur", titre: TITRE_TEMPS }} />;
@@ -107,7 +110,7 @@ export function MobileDansLeTemps({
   const dessinErreurs = !nonCollecte && totalOccurrences !== null && totalOccurrences > 0;
   const lignes: PointSerie[] = points.map((p) => ({ t: p.t, sessions: p.sessions, occurrences: nonCollecte ? null : p.occurrences }));
   const synchro = "mobile-temps";
-  const partage = { grille, seauSecondes, fuseau: FUSEAU_AFFICHAGE, zoomHref, synchro, hauteur: 120, annotations };
+  const partage = { grille, seauSecondes, fuseau: FUSEAU_AFFICHAGE, zoomHref, synchro, hauteur: 120, annotations, fenetresCollecte };
 
   return (
     <Figure
@@ -188,6 +191,7 @@ export function MobileDansLeTemps({
               format="count"
               annotationsIndisponibles={annotationsIndisponibles ?? undefined}
               legendeAnnotations
+              noteCollecte={false}
               ariaLabel={`${PANNEAU_ERREURS} par tranche de ${seau}, ${pluriel(grille.length, "tranche")}`}
             />
           )}

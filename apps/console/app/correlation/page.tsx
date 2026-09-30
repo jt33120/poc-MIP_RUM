@@ -73,7 +73,7 @@ import { hrefWithQuery, paramReader, previousRange, queryToSearchParams, rangeLa
 import { sessionsDeLaRoute } from "@/lib/breakdowns";
 import { EFFECTIF_MIN_HEURE } from "@/lib/queries-v2";
 import { RATING_LABEL, THRESHOLDS } from "@/lib/rating";
-import { alignerSeaux, libelleSeauComplet, type PointSerie, type SerieDef } from "@/lib/series";
+import { alignerSeaux, fenetresLues, libelleSeauComplet, type PointSerie, type SerieDef } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, lireComparaison, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
@@ -500,6 +500,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                     annotationsIndisponibles={annotationsAbsentes}
                     zoomHref={zoomHref}
                     hauteur={180}
+                    fenetresCollecte={fenetresLues(ecran.fenetresCollecte)}
                     ariaLabel={`LCP p75 réel par heure, ${libelleChoisi ?? ""}, ${plage}, 3 zones de seuil`}
                   />
                   <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">

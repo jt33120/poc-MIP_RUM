@@ -33,7 +33,7 @@ import type { LecturePanneauErreur } from "@/lib/chargeurs/panneau-erreur";
 import { fmtDate } from "@/lib/format";
 import type { ErrorGroupRef } from "@/lib/queries-errors";
 import { bucketStarts, type ResolvedRange } from "@/lib/query-contract";
-import { grilleIso } from "@/lib/series";
+import { grilleIso, type FenetreCollecte } from "@/lib/series";
 import type { Fil } from "@mip/console-contract";
 
 export function PanneauErreur({
@@ -47,6 +47,7 @@ export function PanneauErreur({
   precedentHref,
   suivantHref,
   hrefValeur,
+  fenetresCollecte,
 }: {
   groupe: ErrorGroupRef;
   /** Ce que le chargeur de l'écran a lu pour ce groupe, sur le fil. */
@@ -59,6 +60,8 @@ export function PanneauErreur({
   precedentHref?: string | null;
   suivantHref?: string | null;
   hrefValeur: (cle: "route" | "release" | "device", valeur: string) => string | null;
+  /** Fenêtres hors collecte lues par le chargeur de l'écran (même plage) : hachures « non mesuré » des occurrences. */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const { detail, part, releases, deploys } = lecture;
 
@@ -144,6 +147,7 @@ export function PanneauErreur({
             annotationsIndisponibles={
               deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement indisponibles"
             }
+            fenetresCollecte={fenetresCollecte}
           />
         </SectionErreur>
       </div>

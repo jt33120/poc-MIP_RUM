@@ -68,7 +68,7 @@ import {
   rangeLabel,
   type ResolvedRange,
 } from "@/lib/query-contract";
-import { grilleIso, libelleSeauComplet, type Annotation, type PointSerie, type SerieDef } from "@/lib/series";
+import { grilleIso, libelleSeauComplet, type Annotation, type FenetreCollecte, type PointSerie, type SerieDef } from "@/lib/series";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { AUTRES } from "@/lib/palette";
 
@@ -318,6 +318,7 @@ function serieDuResultat({
   annotationsIndisponibles,
   taille,
   format,
+  fenetresCollecte,
 }: {
   plan: ExplorerPlan;
   meta: ExplorerMeta;
@@ -328,6 +329,7 @@ function serieDuResultat({
   annotationsIndisponibles?: string;
   taille: "page" | "carte";
   format: FormatId;
+  fenetresCollecte?: readonly FenetreCollecte[];
 }): { dessin: ReactNode; alternative: AlternativeTexte } {
   const additive = estAdditive(plan.measure.aggregation);
   const avecGroupes = plan.groupBy.length > 0;
@@ -355,6 +357,7 @@ function serieDuResultat({
         fuseau={FUSEAU_AFFICHAGE}
         zoomHref={hrefs.zoom}
         hauteur={hauteur}
+        fenetresCollecte={fenetresCollecte}
         ariaLabel={ariaLabel}
       />
     );
@@ -403,6 +406,7 @@ function serieDuResultat({
         fuseau={FUSEAU_AFFICHAGE}
         zoomHref={hrefs.zoom}
         hauteur={hauteur}
+        fenetresCollecte={fenetresCollecte}
         ariaLabel={ariaLabel}
       />
     );
@@ -598,6 +602,7 @@ export function ResultatAnalyse({
   tri = "gravite",
   notes = [],
   id,
+  fenetresCollecte,
 }: {
   plan: ExplorerPlan;
   meta: ExplorerMeta;
@@ -621,6 +626,8 @@ export function ResultatAnalyse({
   notes?: string[];
   /** Ancre de la figure. */
   id?: string;
+  /** Fenêtres hors collecte (`sectionFenetresCollecte`) : une tranche interrompue de la série est hachurée « non mesuré ». */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const format = formatDeMesure(plan);
   const vital = vitalDeVerdict(plan);
@@ -783,7 +790,18 @@ export function ResultatAnalyse({
         etat = { kind: "vide", population: "ligne correspondant à la requête", plage };
         break;
       }
-      const serie = serieDuResultat({ plan, meta, data, precedent, hrefs, annotations, annotationsIndisponibles, taille, format });
+      const serie = serieDuResultat({
+        plan,
+        meta,
+        data,
+        precedent,
+        hrefs,
+        annotations,
+        annotationsIndisponibles,
+        taille,
+        format,
+        fenetresCollecte,
+      });
       corps = serie.dessin;
       alternative = serie.alternative;
       break;

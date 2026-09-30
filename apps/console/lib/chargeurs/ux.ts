@@ -11,6 +11,7 @@ import { listDeploys } from "../queries-deploys";
 import { frustrationParRoute, frustrationTotaux, inpOffenders, scriptsBloquants } from "../queries-frustration";
 import { paramReader } from "../query-contract";
 import { lireEtatDeVue } from "../view-state";
+import { sectionFenetresCollecte } from "./collecte";
 import { couvertureDesSources, section, type Chargeur } from "./commun";
 
 // Sources comparées à la période précédente (§ 3.2) : des signaux (comptes, additifs)
@@ -27,7 +28,7 @@ export const chargerUx = (async (principal, sp) => {
   const { etat: vue } = lireEtatDeVue("/ux", paramReader(sp));
   const prev = vue.cmp === "prev";
 
-  const [totaux, totauxPrec, routes, vitaux, vitauxPrec, serieInp, inp, scripts, deploys, couvSignaux, couvInp] =
+  const [totaux, totauxPrec, routes, vitaux, vitauxPrec, serieInp, inp, scripts, deploys, couvSignaux, couvInp, fenetresCollecte] =
     await Promise.all([
       section(() => frustrationTotaux(f)),
       prev ? section(() => frustrationTotaux(f, true)) : Promise.resolve(null),
@@ -40,6 +41,8 @@ export const chargerUx = (async (principal, sp) => {
       section(() => listDeploys(f, 20)),
       prev ? couvertureDesSources(query, SOURCES_SIGNAUX) : Promise.resolve(null),
       prev ? couvertureDesSources(query, SOURCES_INP) : Promise.resolve(null),
+      // Les hachures « non mesuré » de la série INP : une section à part.
+      sectionFenetresCollecte(query),
     ]);
   return {
     etat: "ok",
@@ -57,5 +60,6 @@ export const chargerUx = (async (principal, sp) => {
     deploys,
     couvSignaux,
     couvInp,
+    fenetresCollecte,
   } as const;
 }) satisfies Chargeur<unknown>;

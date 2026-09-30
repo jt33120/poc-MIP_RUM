@@ -85,6 +85,7 @@ import { PLAN_SESSIONS_COMMENCEES } from "@/lib/queries-sessions";
 import { bucketStarts } from "@/lib/query-contract";
 import { gabaritZoom } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { fenetresLues } from "@/lib/series";
 import { accord, fmtInstant, pluriel } from "@/lib/format";
 import { AUTRES } from "@/lib/palette";
 import { RangeeKpi } from "@/components/charts/RangeeKpi";
@@ -168,7 +169,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   const schemaLu = d.schema;
   const schema = schemaLu.ok ? schemaLu.data : undefined;
   const filtreRelease = query.filters.release !== undefined || query.filters.segments.some((c) => c.dimension === "release");
-  const { resume, parRelease, resumePrec, parReleasePrec, declarationsToutes, serieLue, deploysLus } = d;
+  const { resume, parRelease, resumePrec, parReleasePrec, declarationsToutes, serieLue, deploysLus, fenetresCollecte } = d;
   const couvSessions = d.couvSessions ?? undefined;
   const couvErreurs = d.couvErreurs ?? undefined;
 
@@ -629,6 +630,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             annotationsIndisponibles={deploiements.indisponible}
             capaciteJs={capaciteJs}
             explorer={lienExplorer.href ?? undefined}
+            fenetresCollecte={fenetresLues(fenetresCollecte)}
           />
         </SectionErreur>
       </div>

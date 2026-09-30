@@ -53,7 +53,7 @@ import { fmtDate } from "@/lib/format";
 import { chargerIssue } from "@/lib/chargeurs/issue";
 import { chargerEcran } from "@/lib/ecran";
 import { bucketStarts } from "@/lib/query-contract";
-import { grilleIso } from "@/lib/series";
+import { fenetresLues, grilleIso } from "@/lib/series";
 import { gabaritZoom } from "@/lib/view-state";
 import { type ErrorFilters } from "@/lib/queries-errors";
 
@@ -182,6 +182,7 @@ export default async function IssuePage({
               deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement indisponibles"
             }
             zoomHref={zoomHref}
+            fenetresCollecte={fenetresLues(d.fenetresCollecte)}
           />
         </SectionErreur>
       </div>

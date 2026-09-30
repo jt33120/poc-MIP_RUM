@@ -11,6 +11,7 @@ import { acquisition, acquisitionSerie } from "../queries-acquisition";
 import { samplingSessions } from "../queries-sessions";
 import { paramReader } from "../query-contract";
 import { lireComparaison } from "../view-state";
+import { sectionFenetresCollecte } from "./collecte";
 import { section, type Chargeur } from "./commun";
 
 const SOURCE_VUES: SourceComparaison = { table: "rum_pageview", colonneTemps: "started_at", additive: true };
@@ -22,7 +23,7 @@ export const chargerAcquisition = (async (principal, sp) => {
   const query = ecran.query;
   // Comparaison (F06, F53) : `cmp=prev` compare les tuiles à la période précédente.
   const prev = lireComparaison("/acquisition", paramReader(sp)).valeur.mode === "prev";
-  const [lecture, lecturePrev, serie, echantillonnage, couvertures] = await Promise.all([
+  const [lecture, lecturePrev, serie, echantillonnage, couvertures, fenetresCollecte] = await Promise.all([
     section(() => acquisition(f)),
     prev ? section(() => acquisition(f, PLAFOND_ACQUISITION, true)) : Promise.resolve(null),
     section(() => acquisitionSerie(f)),
@@ -30,6 +31,8 @@ export const chargerAcquisition = (async (principal, sp) => {
     prev
       ? Promise.all(sourcesSousFiltres(query, SOURCE_VUES).map((s) => couverturePrecedente(query, s)))
       : Promise.resolve<CouverturePrecedente[]>([]),
+    // Les hachures « non mesuré » de la série par canal : une section à part.
+    sectionFenetresCollecte(query),
   ]);
-  return { etat: "ok", query, label: ecran.label, bucketLabel: ecran.bucketLabel, prev, lecture, lecturePrev, serie, echantillonnage, couvertures } as const;
+  return { etat: "ok", query, label: ecran.label, bucketLabel: ecran.bucketLabel, prev, lecture, lecturePrev, serie, echantillonnage, couvertures, fenetresCollecte } as const;
 }) satisfies Chargeur<unknown>;
