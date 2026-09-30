@@ -334,8 +334,25 @@ function fichiersVitrine(): string[] {
     ...libs,
     "apps/console/components/AddClientCarousel.tsx",
     "apps/console/app/presentation/page.tsx",
-    "apps/console/app/presentation/dossier/page.tsx",
+    "apps/console/app/presentation/graphe-technique/page.tsx",
+    "apps/console/app/presentation/a-faire/page.tsx",
+    "apps/console/app/presentation/installation/page.tsx",
+    "apps/console/app/presentation/installation/[parcours]/page.tsx",
+    "apps/console/components/presentation/installation/OngletsInstallation.tsx",
+    "apps/console/components/presentation/installation/SchemaInstallation.tsx",
+    "apps/console/components/presentation/installation/SceneInstallation.tsx",
+    "apps/console/components/presentation/installation/TutorielInstallation.tsx",
+    "apps/console/lib/installation-faits.ts",
+    "apps/console/components/presentation/vitrine/NavVitrine.tsx",
+    "apps/console/components/presentation/vitrine/PageVitrine.tsx",
     "apps/console/lib/specs.ts",
+    // La cartographie du graphe technique (30/09/2026) : ses textes et ses données.
+    ...["base", "capteurs", "donnees", "lecture", "neon", "parcours", "qualite", "traitement", "types"].map(
+      (f) => `apps/console/lib/cartographie/${f}.ts`,
+    ),
+    ...["Cartographie", "CartographieChargee", "InventaireCarte", "PanneauElement", "noeuds"].map(
+      (f) => `apps/console/components/presentation/cartographie/${f}.tsx`,
+    ),
   ];
 }
 

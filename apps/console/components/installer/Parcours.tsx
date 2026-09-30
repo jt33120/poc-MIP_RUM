@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import { CopyBlock } from "@/components/CopyBlock";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ChecklistParcours, type EtapeChecklist } from "@/components/installer/ChecklistParcours";
+import { CopierPourIA } from "@/components/installer/CopierPourIA";
 import { EtatSondageEnDirect } from "@/components/installer/ParcoursInstallation";
 import { CodeAvecSecret } from "@/components/secret/SecretUnique";
 import { CadreEtat, EtatSurface } from "@/components/states/EtatSurface";
@@ -117,6 +118,23 @@ function EtatCle({ ctx }: { ctx: ContexteParcours }) {
   );
 }
 
+/**
+ * Le bandeau « Copier pour mon IA de code » en tête d'un parcours, quand la page en
+ * fournit le prompt (la console, où l'application est connue ; jamais la
+ * documentation publique, qui décrit sans installer).
+ */
+function BandeauIA({ children }: { children: ReactNode }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2.5" data-testid="bandeau-ia">
+      <p className="min-w-0 flex-1 text-xs leading-relaxed text-ink">
+        <strong className="font-semibold">Installation assistée :</strong> copiez un prompt qui explique à votre IA de code
+        quoi installer, où et avec quelles valeurs. La clé d&apos;API n&apos;y figure pas.
+      </p>
+      <div className="flex flex-wrap gap-2">{children}</div>
+    </div>
+  );
+}
+
 // ─── Code de suivi ───────────────────────────────────────────────────────────
 
 export function ParcoursSnippet({
@@ -128,6 +146,7 @@ export function ParcoursSnippet({
   injection,
   csp,
   parLaConsole = null,
+  promptIA = null,
 }: {
   ctx: ContexteParcours;
   snippet: string;
@@ -142,6 +161,8 @@ export function ParcoursSnippet({
    * `null` : la collecte passe par la console, un seul code.
    */
   parLaConsole?: { snippet: string; connectSrc: string } | null;
+  /** Le prompt « pour mon IA de code » (lib/prompts-ia.ts) ; `null` : pas de bandeau. */
+  promptIA?: string | null;
 }) {
   const fiche = `/admin/customers/${encodeURIComponent(ctx.app)}`;
   const etapes: EtapeChecklist[] = [
@@ -346,8 +367,15 @@ export function ParcoursSnippet({
   return (
     <ChecklistParcours
       parcours="snippet"
-      titre="Code de suivi — tous les visiteurs"
+      titre="SDK JavaScript — tous les visiteurs"
       etapes={etapes}
+      entete={
+        promptIA ? (
+          <BandeauIA>
+            <CopierPourIA prompt={promptIA} testId="ia-snippet" />
+          </BandeauIA>
+        ) : undefined
+      }
       avantVerification={
         <AvantVerification ctx={ctx} consigne="Gardez cet onglet ouvert : les cases passent au vert d'elles-mêmes, à mesure que les données arrivent." />
       }
@@ -367,10 +395,12 @@ export function ParcoursExtension({
   ctx,
   storeUrl,
   updateUrl,
+  promptIA = null,
 }: {
   ctx: ContexteParcours;
   storeUrl: string | null;
   updateUrl: string | null;
+  promptIA?: string | null;
 }) {
   const domaines = ctx.domainesExtension ?? [];
   const actifs = domaines.filter((d) => d.etat === "actif");
@@ -532,6 +562,11 @@ export function ParcoursExtension({
       etapes={etapes}
       entete={
         <div className="mb-4 grid gap-2">
+          {promptIA && (
+            <BandeauIA>
+              <CopierPourIA prompt={promptIA} testId="ia-extension" />
+            </BandeauIA>
+          )}
           {/* Sans clé, c'est le domaine enregistré qui ouvre la collecte : le client doit le lire avant l'étape 1. */}
           <CadreEtat ton="neutre" role="note" testId="regle-extension" etat="information">
             <strong className="font-semibold text-ink">À savoir : </strong>
@@ -552,7 +587,16 @@ export function ParcoursExtension({
 
 // ─── Serveur ─────────────────────────────────────────────────────────────────
 
-export function ParcoursServeur({ ctx, recettes }: { ctx: ContexteParcours; recettes: RecettesAgents }) {
+export function ParcoursServeur({
+  ctx,
+  recettes,
+  promptsIA = [],
+}: {
+  ctx: ContexteParcours;
+  recettes: RecettesAgents;
+  /** Un prompt par langage à recette dédiée (lib/prompts-ia.ts) ; vide : pas de bandeau. */
+  promptsIA?: readonly { id: string; langage: string; prompt: string }[];
+}) {
   const etapes: EtapeChecklist[] = [
     { id: "cle", groupe: "prerequis", titre: "Vous avez la clé d'API de l'application", corps: <EtatCle ctx={ctx} /> },
     {
@@ -620,10 +664,20 @@ export function ParcoursServeur({ ctx, recettes }: { ctx: ContexteParcours; rece
       titre="Serveur — la part serveur de chaque appel"
       etapes={etapes}
       entete={
+        <>
+          {promptsIA.length > 0 && (
+            <BandeauIA>
+              {promptsIA.map((p) => (
+                <CopierPourIA key={p.id} prompt={p.prompt} libelle={p.langage} testId={`ia-serveur-${p.id}`} />
+              ))}
+            </BandeauIA>
+          )}
         <p className="mb-4 text-xs leading-relaxed text-ink-soft">
-          Facultatif : sans lui, la mesure du navigateur fonctionne déjà. Rien à télécharger chez MIP : l&apos;agent
+          Recommandé : la mesure du navigateur fonctionne sans lui, mais avec lui chaque appel est suivi jusqu&apos;au
+          serveur, et sa lenteur localisée. Rien à télécharger chez MIP : l&apos;agent
           OpenTelemetry officiel de votre langage, réglé par quelques variables d&apos;environnement.
         </p>
+        </>
       }
       avantVerification={
         <AvantVerification ctx={ctx} consigne="Gardez cet onglet ouvert pendant que vous appelez l'API depuis le site." />

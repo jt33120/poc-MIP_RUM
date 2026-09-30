@@ -5,18 +5,14 @@
 //   - le sommaire mène aux TITRES des parties, qui acceptent le focus : suivre un
 //     lien y place le clavier (PS1) ;
 //   - la ligne de relevé ne dit que ce que calcule lib/couverture.ts, et prévient
-//     quand le relevé a vieilli (PS0) ;
-//   - un visiteur voit la démo (verrouillée sans DEMO_USER_APPS) et la connexion,
-//     un connecté voit « Ouvrir la console », et rien d'autre (PS0).
+//     quand le relevé a vieilli (PS0).
 // L'ordre des parties sur la page elle-même est la recette e2e TP1
 // (tests/e2e/presentation.spec.ts).
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Ancres } from "@/components/presentation/Ancres";
-import { Actions } from "@/components/presentation/Actions";
 import { Partie } from "@/components/presentation/Partie";
 import { RELEVE_PERIME_JOURS, Releve, relevePerime } from "@/components/presentation/Releve";
-import type { SessionUser } from "@/lib/auth";
 import { CAPACITES, RELEVE, compte } from "@/lib/couverture";
 import { PARTIES, idTitre } from "@/lib/presentation-parties";
 
@@ -61,7 +57,8 @@ describe("PS1 — le sommaire mène aux titres des parties", () => {
     // Recette du 26/09/2026 : à 390 px, « Le détail » tombait hors de l'écran sans
     // indice ; les liens passent désormais à la ligne, et la barre suit la lecture.
     expect(html).toMatch(/<ul class="flex flex-wrap /);
-    expect(html).toMatch(/<nav [^>]*class="sticky top-0 /);
+    // Sous la barre de navigation des pages publiques (NavVitrine, h-16).
+    expect(html).toMatch(/<nav [^>]*class="sticky top-16 /);
   });
 
   it("le titre d'une partie porte l'identifiant visé et accepte le focus ; la section s'y rattache", () => {
@@ -106,38 +103,5 @@ describe("PS0 — la ligne de relevé ne dit que ce que calcule le document de c
     for (const illisible of ["", "2026-09-23", "23/09/26", "demain"]) {
       expect(relevePerime(illisible, apresReleve(0)), illisible).toBe(true);
     }
-  });
-});
-
-describe("PS0 — les actions selon la session", () => {
-  const ADMIN: SessionUser = { email: "a@mip.test", role: "admin", apps: null };
-  afterEach(() => vi.unstubAllEnvs());
-
-  it("visiteur, sans DEMO_USER_APPS : la démo est verrouillée, pas un lien mort ; la connexion reste", () => {
-    vi.stubEnv("DEMO_USER_APPS", "");
-    const html = renderToStaticMarkup(<Actions user={null} />);
-    expect(html).toMatch(/<span aria-disabled="true" title="Démo bientôt disponible" data-testid="presentation-demo"/);
-    expect(html).not.toContain('href="/demo"');
-    expect(html).toMatch(/<a [^>]*href="\/login"[^>]*data-testid="presentation-login"|<a [^>]*data-testid="presentation-login"[^>]*href="\/login"/);
-    expect(html).not.toContain("presentation-console");
-  });
-
-  it("visiteur, avec DEMO_USER_APPS : la démo est un lien de navigation document", () => {
-    vi.stubEnv("DEMO_USER_APPS", "demo-app");
-    const html = renderToStaticMarkup(<Actions user={null} size="sm" />);
-    expect(html).toContain('<a href="/demo" data-testid="presentation-demo-top"');
-    expect(html).not.toContain("aria-disabled");
-  });
-
-  it("connecté : « Ouvrir la console », vers /, et ni démo ni connexion", () => {
-    vi.stubEnv("DEMO_USER_APPS", "demo-app");
-    for (const user of [ADMIN, { ...ADMIN, role: "viewer" as const }, { ...ADMIN, demo: true }]) {
-      const html = renderToStaticMarkup(<Actions user={user} />);
-      expect(html).toContain('<a href="/" data-testid="presentation-console"');
-      expect(texte(html)).toContain("Ouvrir la console");
-      expect(html).not.toContain("presentation-demo");
-      expect(html).not.toContain("presentation-login");
-    }
-    expect(renderToStaticMarkup(<Actions user={ADMIN} size="sm" />)).toContain('data-testid="presentation-console-top"');
   });
 });

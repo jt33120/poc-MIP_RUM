@@ -6,16 +6,16 @@
 
 | | Nombre | Atteignent la base |
 |---|---|---|
-| Écrans (`page.tsx`) | 57 | **47** |
+| Écrans (`page.tsx`) | 60 | **47** |
 | Fichiers d'actions serveur (`"use server"`) | 20 (56 actions) | **18** |
 | Actions déclarées dans un écran | 0 | — |
 | Routes (`route.ts`) | 45 | **37** |
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
 | Modules `lib/queries*.ts` | 48 (210 fonctions exportées) | — |
-| Sections `lire()` (appels) | 300 | — |
+| Sections `lire()` (appels) | 302 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 5 / 0 | — |
-| Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 52 | — |
+| Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 55 | — |
 | Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 45 | **45** / 47 |
 | Fichiers d'actions passés par une commande (`lib/commandes/`, C6 → C9) | 15 (51 commandes) | **15** / 18 |
 
@@ -72,7 +72,10 @@
 | `/` | C4 | **oui** | detections-accueil, overview | queries, breakdowns, collecte, deploys, detections, errors, events, explorer, grid, heatmap, mobile, sessions, tracing, v2 | 37 | — | oui |
 | `/pages` | C4 | **oui** | pages | queries, breakdowns, collecte, deploys, errors, events, explorer, longtasks, mobile, resources, sessions, tracing, v2 | 22 | route | oui |
 | `/paths` | C5 | **oui** | paths | queries, collecte, deploys, explorer, funnel, mobile, paths, sessions, tracing | 9 | — | oui |
-| `/presentation/dossier` | à classer | **oui** | — | planifie | — | — | oui |
+| `/presentation/a-faire` | à classer | non | — | — | — | — | oui |
+| `/presentation/graphe-technique` | à classer | **oui** | — | planifie | — | — | oui |
+| `/presentation/installation/[parcours]` | à classer | non | — | — | — | — | oui |
+| `/presentation/installation` | à classer | non | — | — | — | — | oui |
 | `/presentation/open-source` | à classer | non | — | — | — | — | oui |
 | `/presentation` | statique ou vitrine | non | — | — | — | — | oui |
 | `/retention` | C5 | **oui** | retention | cohorts, collecte, deploys, explorer, mobile, sessions, tracing | 3 | — | oui |
@@ -177,7 +180,7 @@
 | `components/errors/ErrorTriage.tsx` | `app/errors/[fingerprint]/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/explorer/ActionsVue.tsx` | `app/explorer/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/presentation/Annexe.tsx` | `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
-| `components/presentation/Dossier.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
+| `components/presentation/GrapheTechnique.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Specs.tsx` | `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/slo/SloStatusRow.tsx` | `app/alerts/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 

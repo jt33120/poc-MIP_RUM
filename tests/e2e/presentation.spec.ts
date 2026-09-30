@@ -1,12 +1,16 @@
 // E2E — la vitrine publique (plan § 8.5, recette TP1 à TP12).
 //
-// Depuis la recette du 26/09/2026, deux pages publiques : la PRÉSENTATION
-// (/presentation, deux ou trois écrans : promesse, statut daté, trois preuves,
-// hébergement, démo) et son DOSSIER TECHNIQUE (/presentation/dossier), en trois
-// parties (« Ce qu'il contient », « Ce qu'il sait faire », « Ce qui reste pour un
-// vrai outil de RUM ») puis le détail. Les garanties de l'ancienne page longue ont
-// suivi leur contenu vers le dossier. Visiteur non connecté sauf TP10 ; 1440 × 900
-// sauf mention (TP5 : 390, 768, 1440).
+// Depuis le 30/09/2026, les pages publiques partagent une barre de navigation
+// (`nav-vitrine`) : la VITRINE (/presentation : film, entrées, aperçu), puis trois
+// entrées de menu. INSTALLATION (/presentation/installation et une page par
+// parcours) ; À FAIRE (/presentation/a-faire : les hypothèses réductrices, « Ce qui
+// reste pour un vrai outil de RUM », les chantiers) ; GRAPHE TECHNIQUE
+// (/presentation/graphe-technique : le récit de l'ancienne vitrine — promesse,
+// statut, preuves, hébergement —, puis « Ce qu'il contient », « Ce qu'il sait
+// faire » et le détail). L'ancien dossier technique et l'archive de la vitrine sont
+// supprimés : leurs adresses redirigent vers le graphe, et leurs garanties ont suivi
+// leur contenu. Visiteur non connecté sauf TP10 ; 1440 × 900 sauf mention (TP5 :
+// 390, 768, 1440).
 //
 // CE QUE CE SPEC EXISTE POUR EMPÊCHER. Que la vitrine dise plus que le document de
 // couverture (docs/RUM_PARITY_STATUS.md) : ses chiffres sont lus dans
@@ -25,10 +29,12 @@ import { expect, test } from "@playwright/test";
 // l'URL complète. Un `goto("/presentation")` relatif est refusé par le navigateur
 // (« Cannot navigate to invalid URL ») — c'est ce qui faisait échouer tout ce fichier.
 const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
-/** Le dossier technique, où vivent les trois parties et le détail. */
-const dossierUrl = `${consoleUrl}/presentation/dossier`;
-/** La vitrine d'avant la refonte du 30/09/2026, archivée : ses tests la suivent là. */
-const archiveUrl = `${consoleUrl}/presentation/archive`;
+/** Le graphe technique : le récit de l'ancienne vitrine, deux parties et le détail. */
+const grapheUrl = `${consoleUrl}/presentation/graphe-technique`;
+/** La page À faire, où vit « Ce qui reste » depuis le 30/09/2026. */
+const aFaireUrl = `${consoleUrl}/presentation/a-faire`;
+/** Début des renvois vers un point de « Ce qui reste » (SaitFaire.tsx, lienDuPoint). */
+const RENVOI_RESTE = "/presentation/a-faire#reste-";
 
 /** Ce que la page doit afficher, relu dans l'extraction du document de couverture. */
 function couverture() {
@@ -52,30 +58,46 @@ function minuitUtc(date: string): number {
 /** Seuil au-delà duquel la ligne de relevé prévient (Releve.tsx, RELEVE_PERIME_JOURS). */
 const PERIME_JOURS = 30;
 
-const PARTIES = [
+/** Les parties du graphe technique, dans l'ordre ; « Ce qui reste » est passé à la page À faire. */
+const PARTIES_GRAPHE = [
   { id: "contient", titre: "Ce qu'il contient" },
   { id: "sait-faire", titre: "Ce qu'il sait faire" },
-  { id: "reste", titre: "Ce qui reste pour un vrai outil de RUM" },
 ] as const;
 
-test.describe("P**.2 — ossature : le dossier technique, trois parties", () => {
+/** Les titres h2 de la page À faire, dans l'ordre (AFaire.tsx). */
+const TITRES_A_FAIRE = ["Hypothèses réductrices", "Ce qui reste pour un vrai outil de RUM", "Chantiers d'exploitation"];
+
+test.describe("P**.2 — ossature : le graphe technique et la page À faire", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("TP1 — trois titres h2, dans l'ordre, chacun en tête de sa partie", async ({ page }) => {
-    await page.goto(dossierUrl);
+  test("TP1 — le graphe : ses parties en h2, dans l'ordre, chacune en tête de sa section ; plus de « Ce qui reste »", async ({
+    page,
+  }) => {
+    await page.goto(grapheUrl);
     const titres = (await page.locator("h2").allInnerTexts()).map((t) => t.trim());
-    const attendus: string[] = PARTIES.map((p) => p.titre);
+    const attendus: string[] = PARTIES_GRAPHE.map((p) => p.titre);
     expect(titres.filter((t) => attendus.includes(t))).toEqual(attendus);
-    for (const p of PARTIES) {
+    for (const p of PARTIES_GRAPHE) {
       const section = page.locator(`section#${p.id}`);
       await expect(section).toHaveCount(1);
       await expect(section.getByRole("heading", { level: 2, name: p.titre, exact: true })).toBeVisible();
     }
+    await expect(page.locator("section#reste")).toHaveCount(0);
+  });
+
+  test("TP1 — la page À faire : les hypothèses, « Ce qui reste », puis les chantiers", async ({ page }) => {
+    await page.goto(aFaireUrl);
+    const titres = (await page.locator("h2").allInnerTexts()).map((t) => t.trim());
+    expect(titres.filter((t) => TITRES_A_FAIRE.includes(t))).toEqual(TITRES_A_FAIRE);
+    const reste = page.locator("section#reste");
+    await expect(reste).toHaveCount(1);
+    await expect(reste.getByRole("heading", { level: 2, name: TITRES_A_FAIRE[1], exact: true })).toBeVisible();
+    expect(await page.getByTestId("hypothese").count(), "au moins une hypothèse réductrice").toBeGreaterThan(0);
   });
 
   test("TP2 — la ligne de relevé ne dit que ce que calcule le document de couverture", async ({ page }) => {
     const c = couverture();
-    await page.goto(dossierUrl);
+    await page.goto(grapheUrl);
     const releve = page.getByTestId("presentation-releve");
     await expect(releve).toContainText(`État relevé le ${c.releve} :`);
     await expect(releve).toContainText(
@@ -100,34 +122,109 @@ test.describe("P**.2 — ossature : le dossier technique, trois parties", () => 
     await expect(page.getByTestId("vitrine-connexion")).toHaveAttribute("href", "/login");
     await expect(page.getByTestId("vitrine-inscription")).toHaveAttribute("href", "/inscription");
     await expect(page.getByTestId("vitrine-console")).toHaveCount(0);
+    // La barre de navigation propose la connexion, pas la console ; démo fermée, pas de
+    // bouton « Démo » non plus.
+    await expect(page.getByTestId("nav-connexion")).toHaveAttribute("href", "/login");
+    await expect(page.getByTestId("nav-demo")).toHaveCount(0);
+    await expect(page.getByTestId("nav-console")).toHaveCount(0);
     // Démo fermée, la connexion pré-remplie redevient la connexion ordinaire, et le dit.
     await page.goto(`${consoleUrl}/login?demo=1`);
     await expect(page.getByTestId("login-demo-fermee")).toBeVisible();
     await expect(page.getByTestId("login-form")).toBeVisible();
     await expect(page.getByTestId("login-demo-form")).toHaveCount(0);
 
-    // L'archive garde ses trois rangées d'actions.
-    await page.goto(archiveUrl);
-    for (const id of ["presentation-demo", "presentation-demo-top", "presentation-demo-fin"]) {
-      await expect(page.getByTestId(id)).toHaveAttribute("aria-disabled", "true");
-    }
+    // Les pages du menu n'ont plus de rangées d'actions : la barre de navigation seule,
+    // et aucun lien mort vers la démo.
+    await page.goto(grapheUrl);
     await expect(page.locator('a[href="/demo"]')).toHaveCount(0);
-    await expect(page.getByTestId("presentation-login")).toHaveAttribute("href", "/login");
+    await expect(page.locator('a[href="/login?demo=1"]')).toHaveCount(0);
+    await expect(page.getByTestId("nav-connexion")).toHaveAttribute("href", "/login");
     // « Ouvrir la console » est l'action du connecté, pas celle du visiteur.
-    await expect(page.getByTestId("presentation-console")).toHaveCount(0);
+    await expect(page.getByTestId("nav-console")).toHaveCount(0);
   });
 
-  test("PS1 — chaque lien du sommaire mène au titre d'une partie", async ({ page }) => {
-    await page.goto(dossierUrl);
+  test("PS1 — chaque lien du sommaire du graphe mène au titre d'une partie, sans « Ce qui reste »", async ({ page }) => {
+    await page.goto(grapheUrl);
     const sommaire = page.getByRole("navigation", { name: "Sommaire de la présentation" });
     const liens = sommaire.getByRole("link");
-    await expect(liens).toHaveText(["Ce qu'il contient", "Ce qu'il sait faire", "Ce qui reste", "Le détail"]);
+    await expect(liens).toHaveText(["Ce qu'il contient", "Ce qu'il sait faire", "Le détail"]);
     for (const href of await liens.evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""))) {
       const cible = page.locator(href);
       await expect(cible, href).toHaveCount(1);
       await expect(cible, href).toHaveAttribute("tabindex", "-1");
       expect(await cible.evaluate((el) => el.tagName), href).toBe("H2");
     }
+  });
+
+  test("PS1 — le sommaire de la page À faire : chaque lien a sa cible", async ({ page }) => {
+    await page.goto(aFaireUrl);
+    const liens = page.getByRole("navigation", { name: "Sommaire de la page" }).getByRole("link");
+    await expect(liens).toHaveCount(3);
+    for (const href of await liens.evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""))) {
+      await expect(page.locator(href), href).toHaveCount(1);
+    }
+  });
+});
+
+// ─── Menu des pages publiques (30/09/2026) : anciennes adresses, barre de navigation
+
+test.describe("menu des pages publiques", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("l'ancien dossier technique et l'archive redirigent (308) vers le graphe technique", async ({ page }) => {
+    for (const ancien of ["/presentation/dossier", "/presentation/archive"]) {
+      const res = await page.request.get(`${consoleUrl}${ancien}`, { maxRedirects: 0 });
+      expect(res.status(), ancien).toBe(308);
+      expect(res.headers()["location"], ancien).toMatch(/\/presentation\/graphe-technique$/);
+      await page.goto(`${consoleUrl}${ancien}`);
+      await expect(page).toHaveURL(grapheUrl);
+      await expect(page.getByTestId("page-graphe")).toBeVisible();
+    }
+  });
+
+  test("la barre de navigation : le sous-menu mène aux trois parcours d'installation, puis À faire et le graphe", async ({
+    page,
+  }) => {
+    const parcours = [
+      ["snippet", "sdk-javascript"],
+      ["extension", "extension"],
+      ["serveur", "serveur"],
+    ] as const;
+    for (const [id, segment] of parcours) {
+      await page.goto(`${consoleUrl}/presentation`);
+      const nav = page.getByTestId("nav-vitrine");
+      // Au clavier : le bouton ouvre le sous-menu. Composant client : une touche
+      // partie avant l'hydratation serait perdue, on la rejoue.
+      const bouton = nav.getByRole("button", { name: "Les trois parcours d'installation" });
+      await expect(async () => {
+        await bouton.focus();
+        await page.keyboard.press("Enter");
+        await expect(nav.getByTestId(`nav-parcours-${id}`)).toBeVisible({ timeout: 1_000 });
+      }).toPass({ timeout: 15_000 });
+      await nav.getByTestId(`nav-parcours-${id}`).click();
+      await page.waitForURL(`**/presentation/installation/${segment}`, { timeout: 15_000 });
+      await expect(page.getByTestId(`page-parcours-${id}`)).toBeVisible();
+      await expect(page.getByTestId("nav-vitrine")).toBeVisible();
+    }
+
+    // Les sous-onglets d'Installation : la vue d'ensemble, puis chacun des trois parcours.
+    await page.goto(`${consoleUrl}/presentation/installation`);
+    const onglets = page.getByTestId("onglets-installation").getByRole("link");
+    expect(await onglets.evaluateAll((as) => as.map((a) => a.getAttribute("href")))).toEqual([
+      "/presentation/installation",
+      ...parcours.map(([, segment]) => `/presentation/installation/${segment}`),
+    ]);
+    await expect(page.getByTestId("onglet-apercu")).toHaveAttribute("aria-current", "page");
+
+    // Les deux autres entrées du menu, et le dépôt public, dans un nouvel onglet.
+    const nav = page.getByTestId("nav-vitrine");
+    await expect(nav.getByTestId("nav-github")).toHaveAttribute("href", "https://github.com/jt33120/poc-MIP_RUM");
+    await expect(nav.getByTestId("nav-github")).toHaveAttribute("target", "_blank");
+    await expect(nav.getByRole("link", { name: "À faire", exact: true })).toHaveAttribute("href", "/presentation/a-faire");
+    await expect(nav.getByRole("link", { name: "Graphe technique", exact: true })).toHaveAttribute(
+      "href",
+      "/presentation/graphe-technique",
+    );
   });
 });
 
@@ -145,7 +242,7 @@ test.describe("P**.3 — Partie 1 : ce qu'il contient", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("TP7 — la topologie est une image nommée, doublée d'une alternative textuelle", async ({ page }) => {
-    await page.goto(dossierUrl);
+    await page.goto(grapheUrl);
     const partie = page.locator("section#contient");
     const dessin = partie.getByRole("img", { name: /^Chemin de la mesure :/ });
     await expect(dessin).toBeVisible();
@@ -185,16 +282,20 @@ test.describe("P**.3 — Partie 1 : ce qu'il contient", () => {
       await page.click('button[type="submit"]');
       await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
 
+      // Connecté : la vitrine et sa barre proposent la console, plus la démo ni la connexion.
       await page.goto(`${consoleUrl}/presentation`);
       await expect(page.getByTestId("vitrine-console")).toBeVisible();
       await expect(page.getByTestId("vitrine-demo")).toHaveCount(0);
-      await page.goto(archiveUrl);
-      await expect(page.getByTestId("presentation-console")).toBeVisible();
-      await expect(page.getByTestId("presentation-demo")).toHaveCount(0);
+      await expect(page.getByTestId("nav-console")).toBeVisible();
+      await expect(page.getByTestId("nav-console")).toHaveAttribute("href", "/");
+      await expect(page.getByTestId("nav-github")).toBeVisible();
+      await expect(page.getByTestId("nav-connexion")).toHaveCount(0);
+      await expect(page.getByTestId("nav-demo")).toHaveCount(0);
 
-      // Le détail est au dossier technique : chaque écran listé y est un lien vers sa route.
-      await page.goto(dossierUrl);
-      await expect(page.getByTestId("presentation-console-top")).toBeVisible();
+      // Le détail est au graphe technique : chaque écran listé y est un lien vers sa route.
+      await page.goto(grapheUrl);
+      await expect(page.getByTestId("nav-console")).toBeVisible();
+      await expect(page.getByTestId("nav-connexion")).toHaveCount(0);
       const ecrans = page.getByTestId("ecrans-console");
       const nbEcrans = await ecrans.locator("li li").count();
       expect(nbEcrans).toBeGreaterThan(0);
@@ -216,7 +317,7 @@ test.describe("P**.3 — Partie 1 : ce qu'il contient", () => {
 
       // Un écran s'ouvre vraiment : navigation document, sans retour à la connexion.
       await liens.first().click();
-      await page.waitForURL((u) => u.pathname !== "/presentation/dossier", { timeout: 15_000 });
+      await page.waitForURL((u) => u.pathname !== "/presentation/graphe-technique", { timeout: 15_000 });
       expect(new URL(page.url()).pathname).not.toBe("/login");
     });
   });
@@ -259,7 +360,7 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
       .map((c) => c.id);
     const ids = cartesDuFichier();
 
-    await page.goto(dossierUrl);
+    await page.goto(grapheUrl);
     const partie = page.locator("section#sait-faire");
     const cartes = partie.getByTestId("capacite");
     await expect(cartes).toHaveCount(ids.length);
@@ -292,17 +393,27 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
     expect(vus).toContain("A4");
   });
 
-  test("renvoi — « (voir R3) » dans une limite mène au point de « Ce qui reste »", async ({ page }) => {
-    await page.goto(dossierUrl);
-    const liens = page.locator('section#sait-faire [data-testid="capacite-limite"] a[href^="#reste-"]');
-    expect(await liens.count(), "la limite A6 renvoie à R3").toBeGreaterThan(0);
-    for (const href of await liens.evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""))) {
-      await expect(page.locator(`section#reste ${href}`), href).toHaveCount(1);
+  test("renvoi — « (voir R3) » dans une limite mène au point de « Ce qui reste », sur la page À faire", async ({ page }) => {
+    await page.goto(grapheUrl);
+    const liens = page.locator(`section#sait-faire [data-testid="capacite-limite"] a[href^="${RENVOI_RESTE}"]`);
+    await expect(liens.first(), "la limite A6 renvoie à R3").toBeAttached();
+    // Plus aucun renvoi dans la page : « Ce qui reste » n'y est plus.
+    await expect(page.locator('section#sait-faire a[href^="#reste-"]')).toHaveCount(0);
+    const hrefs = await liens.evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""));
+
+    // Suivi pour de bon, le premier renvoi ouvre la page À faire sur son ancre…
+    await liens.first().click();
+    await page.waitForURL((u) => u.pathname === "/presentation/a-faire", { timeout: 15_000 });
+    expect(new URL(page.url()).hash).toBe(hrefs[0].slice(hrefs[0].indexOf("#")));
+
+    // … et chaque ancre visée y est un point de « Ce qui reste ».
+    for (const href of new Set(hrefs)) {
+      await expect(page.locator(`section#reste ${href.slice(href.indexOf("#"))}`), href).toHaveCount(1);
     }
   });
 
   test("TP4 — D12, retirée le 29/09/2026, n'apparaît pas dans « Ce qu'il sait faire » ; D14 y a sa carte", async ({ page }) => {
-    await page.goto(dossierUrl);
+    await page.goto(grapheUrl);
     const partie = page.locator("section#sait-faire");
     await expect(partie).toHaveCount(1);
     for (const id of ["D12", ...INERTES]) await expect(partie.locator(`[data-id="${id}"]`)).toHaveCount(0);
@@ -313,7 +424,7 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
   test("V-E — la barre de couverture : une case par capacité, des décomptes écrits", async ({ page }) => {
     const capacites = capacitesDuDocument();
     const deployees = capacites.filter((c) => c.verdict === "deploye_non_eprouve").length;
-    await page.goto(dossierUrl);
+    await page.goto(grapheUrl);
     const barre = page.locator("section#sait-faire").getByTestId("couverture-barre");
     const dessin = barre.locator('svg[role="img"]');
     await expect(dessin).toHaveAttribute("aria-label", new RegExp(` ${capacites.length} capacités, `));
@@ -324,9 +435,9 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
   });
 });
 
-// ─── P**.5 — Partie 3 : TP4 côté « Ce qui reste » ───────────────────────────────
+// ─── P**.5 — Partie 3 : TP4 côté « Ce qui reste », sur la page À faire depuis le 30/09/2026
 
-test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () => {
+test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM (page À faire)", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   /** Verdict de chaque ligne de capacité, relu dans l'extraction du document de couverture. */
@@ -339,7 +450,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
 
   test("TP4 — D14 (pour les sites des clients) a sa pastille dans « Ce qui reste » ; D12, retirée, n'en a plus", async ({ page }) => {
     const verdicts = verdictsDuDocument();
-    await page.goto(dossierUrl);
+    await page.goto(aFaireUrl);
     const reste = page.locator("section#reste");
     const pastille = reste.locator('[data-testid="reste-pastille"][data-id="D14"]');
     await expect(pastille).toHaveCount(1);
@@ -351,7 +462,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
   });
 
   test("neuf points dans l'ordre du plan, chacun avec ce qui manque, ce qui le débloque et qui décide", async ({ page }) => {
-    await page.goto(dossierUrl);
+    await page.goto(aFaireUrl);
     const points = page.locator('section#reste [data-testid="reste-point"]');
     await expect(points).toHaveCount(9);
     // R2 (la reprise de l'historique) est sorti le 28/09/2026 : fait ; R7 (les tickets)
@@ -377,7 +488,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
 
   test("chaque pastille est une ligne du document de couverture, avec son verdict", async ({ page }) => {
     const verdicts = verdictsDuDocument();
-    await page.goto(dossierUrl);
+    await page.goto(aFaireUrl);
     const lues = await page
       .locator('section#reste [data-testid="reste-pastille"]')
       .evaluateAll((els) => els.map((e) => [e.getAttribute("data-id") ?? "", e.getAttribute("data-verdict") ?? ""]));
@@ -405,7 +516,7 @@ test.describe("P**.6 — annexe et Specs", () => {
 
   test("TP11 — une famille par <details>, et toutes les capacités du document, dans son ordre", async ({ page }) => {
     const doc = extraction();
-    await page.goto(dossierUrl);
+    await page.goto(grapheUrl);
     const annexe = page.locator("section#detail");
     await expect(annexe).toContainText(`Le registre des capacités au ${doc.releve}`);
 
@@ -441,17 +552,27 @@ test.describe("P**.6 — annexe et Specs", () => {
     for (const cellule of await ligne.getByRole("cell").all()) await expect(cellule).not.toBeEmpty();
     const renvois = await annexe.getByTestId("annexe-capacite").locator("a").evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""));
     expect(renvois.length).toBe(doc.capacites.length);
-    for (const href of new Set(renvois)) await expect(page.locator(href), href).toHaveCount(1);
+    // Une carte est dans la page (#…) ; un point de « Ce qui reste » est sur la page À faire.
+    const distincts = [...new Set(renvois)];
+    const versAFaire = distincts.filter((h) => !h.startsWith("#"));
+    for (const href of versAFaire) expect(href, "renvoi hors de la page").toMatch(/^\/presentation\/a-faire#reste-/);
+    for (const href of distincts.filter((h) => h.startsWith("#"))) await expect(page.locator(href), href).toHaveCount(1);
 
     // Le Markdown du document est rendu : ni astérisques ni accents graves à l'écran.
     const brut = await annexe.getByTestId("annexe-couverture").evaluate((el) => el.textContent ?? "");
     expect(brut).not.toMatch(/\*\*|`/);
+
+    // Les renvois vers la page À faire y trouvent leur point.
+    await page.goto(aFaireUrl);
+    for (const href of versAFaire) {
+      await expect(page.locator(`section#reste ${href.slice(href.indexOf("#"))}`), href).toHaveCount(1);
+    }
   });
 
   test("PS11 — familles ouvertes : rien ne dépasse à 390, 768, 1440 px ; sous 1024 px, une ligne s'empile", async ({
     page,
   }) => {
-    await page.goto(dossierUrl);
+    await page.goto(grapheUrl);
     const annexe = page.locator("section#detail");
     const familles = annexe.getByTestId("annexe-famille");
     for (const bloc of await familles.all()) await bloc.locator("summary").click();
@@ -485,28 +606,27 @@ test.describe("P**.6 — annexe et Specs", () => {
     page,
   }) => {
     const doc = extraction();
-    await page.goto(dossierUrl);
+    await page.goto(grapheUrl);
     const sommaire = page.getByRole("navigation", { name: "Sommaire de la présentation" });
 
-    // 1. Tab depuis le haut de la page atteint le sommaire, par son premier lien.
+    // 1. Tab depuis le haut de la page atteint le sommaire, par son premier lien. Avant
+    //    lui : la barre de navigation et le récit de l'ancienne vitrine (liens, preuves).
     const dansSommaire = () => sommaire.evaluate((nav) => nav.contains(document.activeElement));
-    for (let i = 0; i < 30 && !(await dansSommaire()); i++) await page.keyboard.press("Tab");
+    for (let i = 0; i < 60 && !(await dansSommaire()); i++) await page.keyboard.press("Tab");
     await expect(sommaire.getByRole("link").first()).toBeFocused();
 
-    // 2. Tab jusqu'à « Ce qui reste », Entrée : le focus passe sur le titre de la partie.
-    const reste = sommaire.getByRole("link", { name: "Ce qui reste", exact: true });
-    for (let i = 0; i < 5 && !(await reste.evaluate((a) => a === document.activeElement)); i++) {
+    // 2. Tab jusqu'à « Le détail », Entrée : le focus passe sur le titre de la partie.
+    //    « Ce qui reste » n'est plus au sommaire : il vit dans la page À faire.
+    const detail = sommaire.getByRole("link", { name: "Le détail", exact: true });
+    for (let i = 0; i < 5 && !(await detail.evaluate((a) => a === document.activeElement)); i++) {
       await page.keyboard.press("Tab");
     }
-    await expect(reste).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(page.locator("#reste-titre")).toBeFocused();
-
-    // 3. Même geste vers « Le détail » ; de son titre, Tab parcourt les familles une à
-    //    une, et Entrée ouvre puis referme une famille.
-    await sommaire.getByRole("link", { name: "Le détail", exact: true }).focus();
+    await expect(detail).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.locator("#detail-titre")).toBeFocused();
+
+    // 3. De son titre, Tab parcourt les familles une à une, et Entrée ouvre puis
+    //    referme une famille.
     const familles = page.locator("section#detail").getByTestId("annexe-famille");
     for (let i = 0; i < doc.familles.length; i++) {
       await page.keyboard.press("Tab");
@@ -544,7 +664,7 @@ test.describe("P**.6 — annexe et Specs", () => {
       }
     }
     // L'onglet choisi ne passe pas par l'URL : l'adresse est restée celle de l'ancre.
-    await expect(page).toHaveURL(/\/presentation\/dossier#detail-titre$/);
+    await expect(page).toHaveURL(/\/presentation\/graphe-technique#detail-titre$/);
   });
 });
 
@@ -597,23 +717,36 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
     expect(fautes).toEqual([]);
   });
 
-  test("TP5 — la présentation archivée : rien ne dépasse à 390, 768 et 1440 px, et le premier écran d'un téléphone n'a qu'une rangée d'actions", async ({
-    page,
-  }) => {
-    const fautes: string[] = [];
+  test("TP5 — le graphe technique : la barre de navigation et les preuves suivent la largeur", async ({ page }) => {
     for (const largeur of LARGEURS_PSS8) {
       await page.setViewportSize({ width: largeur, height: 900 });
-      await page.goto(archiveUrl);
-      await page.evaluate(() =>
-        document.querySelectorAll("details").forEach((d) => {
-          d.open = true;
-        }),
-      );
-      for (const f of await debordementsPss8(page)) fautes.push(`${largeur} px — ${f}`);
-      // Recette du 26/09/2026 : à 390 px, les boutons de l'en-tête doublaient ceux du titre.
-      const enTete = page.getByTestId("presentation-login-top");
-      if (largeur === 390) await expect(enTete).toBeHidden();
-      else await expect(enTete).toBeVisible();
+      await page.goto(grapheUrl);
+      const nav = page.getByTestId("nav-vitrine");
+      const menu = nav.getByRole("button", { name: "Ouvrir le menu" });
+      // Le menu s'affiche à partir de 1024 px ; en dessous, il est derrière le bouton.
+      if (largeur < 1024) {
+        await expect(menu).toBeVisible();
+        await expect(nav.getByRole("link", { name: "Graphe technique", exact: true })).toHaveCount(0);
+      } else {
+        await expect(menu).toBeHidden();
+        await expect(nav.getByRole("link", { name: "Graphe technique", exact: true })).toBeVisible();
+      }
+      // Sous 640 px, les boutons de droite passent dans le panneau du menu : le premier
+      // écran d'un téléphone n'a qu'une rangée d'actions.
+      const connexion = page.getByTestId("nav-connexion");
+      if (largeur === 390) {
+        await expect(connexion).toBeHidden();
+        // Composant client : un clic parti avant l'hydratation serait perdu, on le rejoue.
+        const panneau = page.locator("#nav-panneau");
+        await expect(async () => {
+          if (!(await panneau.isVisible())) await nav.getByRole("button", { name: "Ouvrir le menu" }).click();
+          await expect(panneau).toBeVisible({ timeout: 1_000 });
+        }).toPass({ timeout: 15_000 });
+        await expect(panneau.getByRole("link", { name: "Se connecter", exact: true })).toHaveAttribute("href", "/login");
+        await expect(panneau.getByRole("link", { name: "À faire", exact: true })).toHaveAttribute("href", "/presentation/a-faire");
+      } else {
+        await expect(connexion).toBeVisible();
+      }
       // Contre-recette du 26/09/2026 : à 390 px, les preuves réduisaient une zone de
       // 700 à 1 140 px de capture à l'échelle 0,4 (texte de 5 px). Sous 640 px, des
       // cadres étroits, jamais réduits ni agrandis ; au-delà, la zone large.
@@ -628,16 +761,15 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
         for (const e of echelles) expect(e, "échelle d'une capture à 390 px").toBeGreaterThanOrEqual(0.9);
       }
     }
-    expect(fautes).toEqual([]);
   });
 
-  test("TP5 — le dossier : rien ne dépasse à 390, 768 et 1440 px, même tout déplié ; à 390 px, les cartes sur une colonne", async ({
+  test("TP5 — le graphe technique : rien ne dépasse à 390, 768 et 1440 px, même tout déplié ; à 390 px, les cartes sur une colonne", async ({
     page,
   }) => {
     const fautes: string[] = [];
     for (const largeur of LARGEURS_PSS8) {
       await page.setViewportSize({ width: largeur, height: 900 });
-      await page.goto(dossierUrl);
+      await page.goto(grapheUrl);
       // Les Specs arrivent sous <Suspense> : on mesure la page finie, pas son squelette.
       await expect(page.locator("#specs-infra")).toBeAttached();
       await expect(page.getByTestId("specs-chargement")).toHaveCount(0);
@@ -660,13 +792,61 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
       const capacites = page.locator("section#sait-faire").getByTestId("capacite");
       expect(await colonnes(capacites), `${largeur} px : cartes de capacité par rangée`).toBe(COLONNES_CAPACITES[largeur]);
       if (largeur === 390) {
-        const autres = [
-          ["écrans de la console", page.getByTestId("ecrans-categorie")],
+        const ecrans = page.getByTestId("ecrans-categorie");
+        expect(await ecrans.count(), "écrans de la console").toBeGreaterThan(0);
+        expect(await colonnes(ecrans), "390 px : écrans de la console sur une colonne").toBe(1);
+      }
+    }
+    expect(fautes).toEqual([]);
+  });
+
+  test("TP5 — la page À faire : rien ne dépasse à 390, 768 et 1440 px ; à 390 px, les cartes sur une colonne", async ({
+    page,
+  }) => {
+    const fautes: string[] = [];
+    for (const largeur of LARGEURS_PSS8) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(aFaireUrl);
+      await expect(page.locator("section#reste")).toBeVisible();
+      for (const f of await debordementsPss8(page)) fautes.push(`${largeur} px — ${f}`);
+      if (largeur === 390) {
+        const cartes = [
+          ["hypothèses réductrices", page.getByTestId("hypothese")],
           ["points de « Ce qui reste »", page.locator("section#reste").getByTestId("reste-point")],
         ] as const;
-        for (const [nom, cartes] of autres) {
-          expect(await cartes.count(), nom).toBeGreaterThan(0);
-          expect(await colonnes(cartes), `390 px : ${nom} sur une colonne`).toBe(1);
+        for (const [nom, lot] of cartes) {
+          expect(await lot.count(), nom).toBeGreaterThan(0);
+          expect(await colonnes(lot), `390 px : ${nom} sur une colonne`).toBe(1);
+        }
+      }
+    }
+    expect(fautes).toEqual([]);
+  });
+
+  test("TP5 — les pages des parcours : l'essentiel et le tutoriel, rien ne dépasse à 390, 768 et 1440 px, à chaque étape", async ({
+    page,
+  }) => {
+    const fautes: string[] = [];
+    for (const [id, segment] of [
+      ["snippet", "sdk-javascript"],
+      ["extension", "extension"],
+      ["serveur", "serveur"],
+    ] as const) {
+      for (const largeur of LARGEURS_PSS8) {
+        await page.setViewportSize({ width: largeur, height: 900 });
+        await page.goto(`${consoleUrl}/presentation/installation/${segment}`);
+        await expect(page.getByTestId(`page-parcours-${id}`)).toBeVisible();
+        await expect(page.getByTestId("faits-parcours").getByRole("listitem")).toHaveCount(4);
+        // La check-list détaillée vit dans la console : la page publique n'en a plus.
+        await expect(page.getByTestId("bandeau-ia")).toHaveCount(0);
+        for (const f of await debordementsPss8(page)) fautes.push(`${segment}, ${largeur} px, au chargement — ${f}`);
+        // Le tutoriel : chaque bouton d'étape y mène, et la scène suit.
+        const etapes = page.getByRole("navigation", { name: /^Étapes : / }).getByRole("button");
+        await expect(etapes).toHaveCount(5);
+        for (let k = 0; k < 5; k++) {
+          await etapes.nth(k).click();
+          await expect(etapes.nth(k)).toHaveAttribute("aria-current", "step");
+          for (const f of await debordementsPss8(page)) fautes.push(`${segment}, ${largeur} px, étape ${k + 1} — ${f}`);
         }
       }
     }
@@ -676,7 +856,7 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
   test("TP8 — une image dit ce qu'elle montre ou se tait ; la légende dit « jeu de démonstration », datée par le seul manifeste", async ({
     page,
   }) => {
-    await page.goto(archiveUrl);
+    await page.goto(grapheUrl);
     const images = await page.locator("img").evaluateAll((imgs) =>
       imgs.map((img) => ({
         src: img.getAttribute("src") ?? "",
@@ -686,11 +866,6 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
     );
     expect(images.length, "la capture de la console").toBeGreaterThan(0);
     for (const i of images) expect(i.alt !== "" || i.masquee, `${i.src} : ni alt ni aria-hidden`).toBe(true);
-
-    // Thème clair (celui du contexte) : la capture claire se voit, la sombre non. Chaque
-    // capture a deux cadres (étroit sous 640 px, large au-delà) : un seul se voit.
-    await expect(page.locator('img[src*="overview-light"]').filter({ visible: true })).toHaveCount(1);
-    await expect(page.locator('img[src*="overview-dark"]').filter({ visible: true })).toHaveCount(0);
 
     // Trois preuves, une légende (au pluriel depuis la recette du 26/09/2026).
     await expect(page.getByTestId("preuve")).toHaveCount(3);
@@ -706,19 +881,23 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
     );
   });
 
-  test.describe("TP8 — thème sombre émulé", () => {
-    test.use({ colorScheme: "dark" });
-
-    test("TP8 — la capture sombre est visible, la claire masquée", async ({ page }) => {
-      await page.goto(archiveUrl);
-      // Sans choix enregistré, le script anti-flash du layout suit prefers-color-scheme.
-      await expect(page.locator("html")).toHaveClass(/(^|\s)dark(\s|$)/);
-      await expect(page.locator('img[src*="overview-dark"]').filter({ visible: true })).toHaveCount(1);
-      await expect(page.locator('img[src*="overview-light"]').filter({ visible: true })).toHaveCount(0);
+  test("TP8 — thème clair ou sombre demandé, les pages du menu restent sombres : captures sombres visibles, claires masquées", async ({
+    page,
+  }) => {
+    // Depuis le 30/09/2026, le gabarit des pages du menu (PageVitrine.tsx) pose la classe
+    // `dark` lui-même, comme la vitrine : la préférence du système ne change plus rien.
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      await page.goto(grapheUrl);
+      // Le conteneur du gabarit, pas <html> : le script anti-flash n'y met `dark` qu'en thème sombre.
+      await expect(page.locator("div.dark").filter({ has: page.getByTestId("page-graphe") }), colorScheme).toHaveCount(1);
+      // Chaque capture a deux cadres (étroit sous 640 px, large au-delà) : un seul se voit.
+      await expect(page.locator('img[src*="overview-dark"]').filter({ visible: true }), colorScheme).toHaveCount(1);
+      await expect(page.locator('img[src*="overview-light"]').filter({ visible: true }), colorScheme).toHaveCount(0);
       // Le mobile a sa capture sombre (contre-recette du 26/09/2026) : plus d'image claire.
-      await expect(page.locator('img[src*="mobile-dark"]').filter({ visible: true })).toHaveCount(1);
-      await expect(page.locator('img[src*="mobile-light"]').filter({ visible: true })).toHaveCount(0);
-    });
+      await expect(page.locator('img[src*="mobile-dark"]').filter({ visible: true }), colorScheme).toHaveCount(1);
+      await expect(page.locator('img[src*="mobile-light"]').filter({ visible: true }), colorScheme).toHaveCount(0);
+    }
   });
 
   test("TP12 — mouvement réduit : les flèches du chemin de la mesure s'arrêtent, et rien d'autre ne bouge", async ({
@@ -732,9 +911,9 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
 
     // Témoin : sans préférence, les flèches dérivent (Capteurs.tsx, globals.css). Sans
     // lui, une classe renommée ferait passer le test à vide.
-    // Les flèches sont au dossier technique (Capteurs.tsx).
+    // Les flèches sont au graphe technique (Capteurs.tsx).
     await page.emulateMedia({ reducedMotion: "no-preference" });
-    await page.goto(dossierUrl);
+    await page.goto(grapheUrl);
     const libres = await etat();
     expect(libres.length, "des flèches dans le chemin de la mesure").toBeGreaterThan(0);
     for (const f of libres) {
@@ -744,7 +923,7 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
 
     // Mouvement réduit demandé : aucune animation sur les flèches…
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(dossierUrl);
+    await page.goto(grapheUrl);
     const reduites = await etat();
     expect(reduites.length).toBe(libres.length);
     for (const f of reduites) {
@@ -759,5 +938,73 @@ test.describe("P**.8 — recette de la page : largeurs, images, mouvement rédui
           .evaluate((m) => m.getAnimations({ subtree: true }).filter((a) => a.playState === "running").length),
       )
       .toBe(0);
+  });
+});
+
+// ─── Cartographie du graphe technique (30/09/2026) ─────────────────────────────
+//
+// Tout MIP RUM sur une carte qu'on explore (components/presentation/cartographie).
+// Ce que la carte DIT est confronté au dépôt par tests/unit/cartographie.test.ts ;
+// ici, qu'on puisse s'en servir : une fiche au clic, la recherche, un parcours, les
+// familles, le plein écran, et une version texte qui compte les mêmes éléments.
+
+test.describe("cartographie du graphe technique", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("la carte s'explore : fiche, voisins, recherche, parcours, familles, plein écran", async ({ page }) => {
+    await page.goto(grapheUrl);
+    const carte = page.getByTestId("cartographie");
+    const noeuds = carte.locator(".react-flow__node-element");
+    await expect(noeuds.first()).toBeVisible({ timeout: 60_000 });
+    const total = await noeuds.count();
+    expect(total, "des éléments sur la carte").toBeGreaterThan(60);
+    // La version texte, rendue côté serveur, compte les mêmes éléments.
+    await expect(page.getByTestId("carte-texte")).toContainText(`${total} éléments`);
+
+    // Un clic : la fiche, ses sources sur le dépôt public, et le reste estompé.
+    await carte.getByTestId("carte-element-collector").click();
+    const fiche = page.getByTestId("carte-panneau");
+    await expect(fiche.getByRole("heading", { name: "collector", exact: true })).toBeVisible();
+    await expect(fiche.locator('a[href^="https://github.com/jt33120/poc-MIP_RUM/blob/master/"]').first()).toBeVisible();
+    await expect(carte.locator('[data-eclairage="estompe"]').first()).toBeAttached();
+    // Un voisin de la fiche y mène.
+    await fiche.getByRole("button", { name: /Mesures brutes/ }).click();
+    await expect(fiche.getByRole("heading", { name: "Mesures brutes", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(fiche).toHaveCount(0);
+
+    // La recherche trouve une table dans son domaine.
+    await page.getByTestId("carte-recherche").fill("replay_chunk");
+    await expect(page.getByTestId("carte-resultats")).toContainText("Rejeu");
+    await page.keyboard.press("Enter");
+    await expect(fiche.getByRole("heading", { name: "Rejeu", exact: true })).toBeVisible();
+    await expect(fiche).toContainText("replay_chunk");
+    await page.keyboard.press("Escape");
+
+    // Un parcours guidé, étape par étape ; Échap le quitte.
+    await page.getByTestId("carte-parcours-mesure").click();
+    const etape = page.getByTestId("carte-etape");
+    await expect(etape).toContainText("étape 1 sur");
+    await page.getByTestId("carte-etape-suivante").click();
+    await expect(etape).toContainText("étape 2 sur");
+    await expect(carte.locator('[data-eclairage="avant"]').first()).toBeAttached();
+    await page.keyboard.press("Escape");
+    await expect(etape).toHaveCount(0);
+
+    // Masquer une famille retire ses éléments ; la remontrer les rend.
+    await page.getByTestId("carte-famille-securite").click();
+    await expect(page.getByTestId("carte-famille-securite")).toHaveAttribute("aria-pressed", "false");
+    await expect.poll(() => noeuds.count()).toBeLessThan(total);
+    await page.getByTestId("carte-famille-securite").click();
+    await expect.poll(() => noeuds.count()).toBe(total);
+
+    // Le plein écran couvre la fenêtre ; Échap en sort.
+    await page.getByTestId("carte-plein-ecran").click();
+    await expect(carte).toHaveAttribute("data-plein-ecran", "true");
+    const boite = await carte.boundingBox();
+    expect(boite?.width).toBe(1440);
+    expect(boite?.height).toBe(900);
+    await page.keyboard.press("Escape");
+    await expect(carte).not.toHaveAttribute("data-plein-ecran", "true");
   });
 });

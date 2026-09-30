@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
 import { CouvertureBarre } from "@/components/presentation/CouvertureBarre";
 import { EN_TETE_EKARA, POSITIONNEMENT, Positionnement } from "@/components/presentation/Positionnement";
 import { Reste } from "@/components/presentation/Reste";
-import { SaitFaire, ancreDuPoint } from "@/components/presentation/SaitFaire";
+import { SaitFaire, ancreDuPoint, lienDuPoint } from "@/components/presentation/SaitFaire";
 import { CAPACITES, RELEVE, SHA, VERDICT_LABEL, compte } from "@/lib/couverture";
 import { DEPLOYEES_INERTES, lireFichierCite } from "@/lib/couverture-controle";
 import { AUTRES, CATEGORIELLE, RATING_HEX } from "@/lib/palette";
@@ -137,7 +137,7 @@ describe("PS7 — les cartes rendues (pendant unitaire de TP3)", () => {
     const reste = renderToStaticMarkup(<Reste />);
     for (const id of renvois) {
       const titre = POINTS_RESTE.find((p) => p.id === id)!.titre;
-      expect(PARTIE).toMatch(new RegExp(`<a href="#${ancreDuPoint(id)}"[^>]*>${titre.replace(/'/g, "&#x27;")}</a>`));
+      expect(PARTIE).toMatch(new RegExp(`<a href="${lienDuPoint(id)}"[^>]*>${titre.replace(/'/g, "&#x27;")}</a>`));
       expect(reste, `${id} : ancre absente de Reste.tsx`).toContain(`id="${ancreDuPoint(id)}"`);
     }
     // Le texte lu nomme le point, jamais son code.

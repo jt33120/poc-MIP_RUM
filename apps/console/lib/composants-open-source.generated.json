@@ -1,7 +1,7 @@
 {
   "generePar": "node scripts/composants-open-source.mjs",
-  "releveLe": "29/09/2026",
-  "paquetsDuLockfile": 416,
+  "releveLe": "30/09/2026",
+  "paquetsDuLockfile": 430,
   "espaces": [
     {
       "chemin": ".",
@@ -122,6 +122,23 @@
       "version": "2.0.1",
       "licence": "MIT",
       "depot": "https://github.com/rrweb-io/rrweb",
+      "portee": "execution",
+      "utilisePar": [
+        {
+          "nom": "console"
+        }
+      ],
+      "sources": [
+        "apps/console/package.json"
+      ]
+    },
+    {
+      "categorie": "console",
+      "type": "npm",
+      "nom": "@xyflow/react",
+      "version": "12.12.0",
+      "licence": "MIT",
+      "depot": "https://github.com/xyflow/xyflow/tree/HEAD/packages/react",
       "portee": "execution",
       "utilisePar": [
         {
@@ -1683,6 +1700,23 @@
         "scripts/composants-open-source.externes.json"
       ],
       "attribution": "IP Geolocation by DB-IP"
+    },
+    {
+      "categorie": "donnees",
+      "type": "externe",
+      "nom": "Simple Icons",
+      "version": "13.21.0",
+      "licence": "CC0-1.0",
+      "depot": "https://github.com/simple-icons/simple-icons",
+      "role": "Logos des langages et des navigateurs du schéma d'installation de la vitrine, recopiés en tracés (apps/console/lib/logos-marques.ts).",
+      "utilisePar": [
+        {
+          "nom": "console"
+        }
+      ],
+      "sources": [
+        "scripts/composants-open-source.externes.json"
+      ]
     }
   ]
 }

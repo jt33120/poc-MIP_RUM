@@ -1,7 +1,7 @@
 // Page « Présentation » : la vitrine publique, UNE page pour tous (plan § 8.2, P**.2),
 // refondue le 30/09/2026 pour la démo — un film, deux entrées, un aperçu défilant
-// (components/presentation/Landing.tsx) ; le détail est dans le dossier technique
-// (/presentation/dossier), l'ancienne vitrine dans /presentation/archive.
+// (components/presentation/Landing.tsx) ; au-dessus, le menu des pages publiques
+// (Installation, À faire, Graphe technique : lib/vitrine-navigation.ts).
 //
 // Visiteur ou connecté, c'est le même composant : seule l'entrée proposée change
 // (« Ouvrir la console » au lieu de la démo et de la connexion). /presentation est un

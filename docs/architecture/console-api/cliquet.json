@@ -38,7 +38,7 @@
     "/mobile",
     "/pages",
     "/paths",
-    "/presentation/dossier",
+    "/presentation/graphe-technique",
     "/retention",
     "/select",
     "/select/new",
@@ -116,7 +116,7 @@
     "apps/console/components/errors/ErrorTriage.tsx",
     "apps/console/components/explorer/ActionsVue.tsx",
     "apps/console/components/presentation/Annexe.tsx",
-    "apps/console/components/presentation/Dossier.tsx",
+    "apps/console/components/presentation/GrapheTechnique.tsx",
     "apps/console/components/presentation/Specs.tsx",
     "apps/console/components/slo/SloStatusRow.tsx"
   ],

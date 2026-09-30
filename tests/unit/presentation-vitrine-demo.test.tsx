@@ -1,6 +1,6 @@
 // La vitrine refondue pour la démo (30/09/2026) : un film, deux entrées, un aperçu
-// défilant (components/presentation/Landing.tsx). L'ancienne vitrine est archivée et
-// garde ses tests (presentation-vitrine.test.tsx, sur LandingArchive).
+// défilant (components/presentation/Landing.tsx). Le texte de l'ancienne vitrine est
+// dans le graphe technique, et garde ses tests (presentation-vitrine.test.tsx).
 //
 // Ce que ces tests tiennent, en rendu SSR réel (`renderToStaticMarkup`) :
 //   - les entrées : le compte démo passe par la connexion pré-remplie, la connexion et
@@ -56,6 +56,8 @@ describe("le film d'accueil", () => {
     expect(compte(VISITEUR, "<h1 ")).toBe(1);
     expect(VISITEUR).toContain('id="vitrine-titre"');
     if (!FILM_ACCUEIL) expect(VISITEUR).not.toContain("<video");
+    // Le premier écran animé est toujours là : le film ne le recouvre qu’une fois lancé.
+    expect(VISITEUR).toContain("Voir ce que vivent");
   });
 
   it("le film monté est un fichier du dépôt, léger, avec son affiche ; muet, sans lecture automatique en HTML", () => {

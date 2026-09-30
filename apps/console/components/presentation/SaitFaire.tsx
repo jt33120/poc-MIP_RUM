@@ -29,6 +29,7 @@ import { Positionnement } from "@/components/presentation/Positionnement";
 import { VERDICT_LABEL } from "@/lib/couverture";
 import { POINTS_RESTE } from "@/lib/presentation-reste";
 import { CARTES, METHODE, verdictCarte, type CarteCapacite } from "@/lib/presentation-sait-faire";
+import { CHEMIN_A_FAIRE } from "@/lib/vitrine-navigation";
 
 /** Identifiant du titre d'une carte : le nom accessible de son `<article>`, et la cible du registre. */
 export const idCarte = (id: string) => `capacite-${id}`;
@@ -45,6 +46,9 @@ const VERDICT_COMMUN = "deploye_non_eprouve";
  */
 export const ancreDuPoint = (id: string) => `reste-${id}-titre`;
 
+/** Le lien vers ce titre : « Ce qui reste » vit dans la page À faire depuis le 30/09/2026. */
+export const lienDuPoint = (id: string) => `${CHEMIN_A_FAIRE}#${ancreDuPoint(id)}`;
+
 /**
  * Le texte d'une limite, ses renvois « (voir R…) » rendus en liens nommés par le titre
  * du point ; un point inconnu garde son texte d'origine plutôt que d'inventer un titre.
@@ -60,7 +64,7 @@ function avecRenvois(texte: string): ReactNode {
       <Fragment key={i}>
         (voir «{"\u00a0"}
         <a
-          href={`#${ancreDuPoint(m)}`}
+          href={lienDuPoint(m)}
           className="rounded-sm font-semibold text-ink underline decoration-line underline-offset-2 transition hover:decoration-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
         >
           {point.titre}
