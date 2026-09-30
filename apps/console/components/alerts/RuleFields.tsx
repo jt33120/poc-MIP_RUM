@@ -26,6 +26,7 @@ import {
 } from "@/lib/alertes-metriques";
 import type { AlertRuleRow } from "@/lib/queries-v2";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
+import { Methode as MethodeRepliee } from "@/components/perf/Methode";
 import { PHRASE_FENETRE } from "@/components/ReleaseCompare";
 
 /** Seuil par défaut de la régression de release (§ 3.2) : +20 %, comme `assessRegression`. */
@@ -257,7 +258,8 @@ export function RuleFields({
             {seuilPropose && (
               <p className="basis-full min-w-0 break-words text-[11px] text-ink-soft" data-testid="seuil-propose">
                 Seuil proposé : la borne « mauvais » de {metricLabel(selectedMetric)} — {origineSeuilPropose(selectedMetric)}.
-                À ajuster si vous changez de métrique.
+                {/* Le conseil suit la proposition pour un lecteur d'écran ; à l'écran, une ligne suffit. */}
+                <span className="sr-only"> À ajuster si vous changez de métrique.</span>
               </p>
             )}
           </div>
@@ -345,7 +347,9 @@ export function RuleFields({
           className={`${INPUT_CLASS} w-48`}
         />
       </Field>
-      <p className="w-full min-w-0 break-words text-xs text-ink-faint">
+      {/* La règle de chaque famille de métriques, repliée sous le formulaire (recette du
+          30/09/2026) : un paragraphe de six lignes précédait le bouton « Créer ». */}
+      <MethodeRepliee titre="Règles des métriques" className="w-full min-w-0 text-ink-faint">
         <strong>Logs en erreur</strong> et <strong>Événement personnalisé</strong> se cumulent sur la
         fenêtre — les heures inactives valent zéro pour l&apos;habitude. <strong>Issue</strong> somme les
         occurrences observées hors robots ; son habitude ne retient que les fenêtres où l&apos;issue était
@@ -353,7 +357,7 @@ export function RuleFields({
         <strong> tâches longues</strong>, <strong>ressources</strong>, <strong>appels API</strong> et les
         <strong> parts de sessions</strong> (clics rageurs, clics morts, erreurs navigateur) : seuil fixe
         seulement. Le débit se lit au 25ᵉ centile — bas est mauvais, d&apos;où le comparateur « &lt; ».
-      </p>
+      </MethodeRepliee>
     </>
   );
 }
