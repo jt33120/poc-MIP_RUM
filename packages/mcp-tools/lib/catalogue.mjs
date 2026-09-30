@@ -333,6 +333,22 @@ export const OUTILS = [
     params: ["app", "period", "limit"],
   },
   {
+    nom: "mip_rum_get_error_overrepresentation",
+    titre: "Valeurs sur-représentées d'un groupe d'erreurs",
+    resume: "Navigateur, système, appareil, pays ou release plus fréquents parmi les sessions touchées — test publié, ou refus chiffré.",
+    description:
+      "Répond à « cette erreur touche-t-elle surtout un navigateur, un système, un appareil, un pays ou une release ? » pour UN groupe " +
+      "d'erreurs (le `fingerprint` de mip_rum_list_errors ; passer aussi `app`). Compare, valeur par valeur, les sessions TOUCHÉES par le " +
+      "groupe aux sessions de l'app actives sur la période : test exact de Fisher unilatéral, correction de Benjamini-Hochberg sur toutes " +
+      "les valeurs testées. Une seule population, des sessions : une session à cinquante occurrences compte une fois. " +
+      "LIRE `data.analyse` D'ABORD : `ok: false` veut dire qu'aucun test n'a été tenté — `manque` dit ce qui manque (10 sessions touchées " +
+      "et 30 de base au moins) ; le dire tel quel, ce n'est PAS « aucune valeur particulière ». Avec `ok: true`, seules les valeurs de " +
+      "`retenues` sont établies ; chacune porte sa `phrase` (effectifs, parts, p ajusté, nombre de valeurs testées) : la reprendre. " +
+      "Une valeur retenue est une ASSOCIATION observée, jamais une cause. « Inconnu » est affiché, jamais testé.",
+    chemin: "/errors/{fingerprint}/overrepresentation",
+    params: [...FILTRES, "fingerprint"],
+  },
+  {
     nom: "mip_rum_query_explorer",
     titre: "Explorer générique",
     resume: "Composer une mesure bornée sur un jeu de données au choix, avec regroupements et représentation.",

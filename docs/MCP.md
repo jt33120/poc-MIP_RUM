@@ -37,7 +37,7 @@ Le dépôt a déjà payé le prix d'une règle d'accès écrite deux fois : il a
 **trois** implémentations de l'ingestion, et le serveur de développement
 acceptait une app sans clé là où la production la rejetait.
 
-**Lecture seule.** Dix-sept des dix-huit outils sont des `GET`. Le dix-huitième,
+**Lecture seule.** Dix-huit des dix-neuf outils sont des `GET`. Le dix-neuvième,
 `mip_rum_query_explorer`, poste son AST sur `POST /api/v1/explorer/query` — parce
 qu'une requête analytique ne tient pas dans une query string, **pas** parce qu'elle
 écrit : cette route n'écrit rien et s'authentifie exactement comme les `GET`.
@@ -119,7 +119,7 @@ même dénominateur que son numérateur.
 
 ---
 
-## 3. Les dix-huit outils
+## 3. Les dix-neuf outils
 
 Tous acceptent un `format` (`json` par défaut, ou `markdown`). Tous, sauf
 `mip_rum_list_apps` et `mip_rum_get_session`, portent les filtres communs `app`,
@@ -146,14 +146,16 @@ schéma : `mip_rum_get_trends` n'a pas de `period` (fenêtre fixe de 14 jours co
 | `mip_rum_get_health_grid` | `/health-grid` | « est-ce toujours le lundi matin ? » |
 | `mip_rum_get_trends` | `/trends` | « ça se dégrade ? depuis quand ? quand franchira-t-on le seuil ? » — ou ce qui manque pour le dire, en chiffres |
 | `mip_rum_list_detections` | `/detections` | « qu'est-ce qui sort de l'ordinaire, et par rapport à quelle plage habituelle ? » |
-| `mip_rum_query_explorer` | `POST /explorer/query` | « et cette mesure-là, découpée comme ça ? » — la question qu'aucun des dix-sept autres ne couvre |
+| `mip_rum_get_error_overrepresentation` | `/errors/{fingerprint}/overrepresentation` | « cette erreur touche-t-elle surtout un navigateur, un système, une release ? » — test publié, ou refus chiffré |
+| `mip_rum_query_explorer` | `POST /explorer/query` | « et cette mesure-là, découpée comme ça ? » — la question qu'aucun des dix-huit autres ne couvre |
 
-### `mip_rum_get_trends` et `mip_rum_list_detections` : la statistique des écrans, et ses refus
+### `mip_rum_get_trends`, `mip_rum_list_detections`, `mip_rum_get_error_overrepresentation` : la statistique des écrans, et ses refus
 
-Deux outils ajoutés le 30/09/2026, sur deux routes servies par le service `api`
+Trois outils ajoutés le 30/09/2026, sur trois routes servies par le service `api`
 seul (`docs/API_CONSOLE.md`). Ils rendent le calcul que la console fait pour ses
-écrans — le paquet `@mip/stats` pour les tendances, le travail `detections_horaires`
-du scheduler pour les épisodes — et non une statistique propre au serveur MCP.
+écrans — le paquet `@mip/stats` pour les tendances et la sur-représentation, le
+travail `detections_horaires` du scheduler pour les épisodes — et non une
+statistique propre au serveur MCP.
 
 Ce qu'un modèle doit en retenir est écrit dans leur description, parce qu'il ne le
 devinera pas :
@@ -167,7 +169,10 @@ devinera pas :
 - **Une date n'est pas une cause.** Rupture, épisode et déploiement coïncident sont
   des associations datées ; la phrase de l'écran (`phrase`) porte déjà la réserve.
 - **`etat: "absent"` n'est pas « rien à signaler »** : la détection n'existe pas
-  encore sur cette base.
+  encore sur cette base. De même, une sur-représentation refusée (`analyse.ok: false`,
+  moins de 10 sessions touchées) n'est pas « aucune valeur particulière ».
+- **Une valeur retenue est une association**, établie par un test publié (Fisher,
+  Benjamini-Hochberg, nombre de valeurs testées écrit) — jamais la cause de l'erreur.
 
 ### `mip_rum_mobile_summary` : ce qui n'est pas mesuré n'est pas zéro
 
@@ -194,7 +199,7 @@ capacité déclarée active dit ce que le SDK croit avoir installé, pas qu'un s
 
 ### `mip_rum_query_explorer` : composer une mesure, pas en choisir une
 
-Les dix-sept autres outils répondent chacun à une question fixée d'avance.
+Les dix-huit autres outils répondent chacun à une question fixée d'avance.
 L'Explorer laisse le modèle **composer** la sienne : quel jeu de données
 (`dataset`), quelle mesure (`measure`, sous la forme `champ:agrégation`), quel
 découpage (`group_by`, deux dimensions au plus) et sous quelle forme
@@ -251,8 +256,8 @@ transformation. La convention MCP recommande l'inverse ; ici la valeur du
 produit est l'exactitude d'un chiffre, et toute mise en forme est une occasion
 d'en perdre un.
 
-Le rendu `markdown` existe et reste **générique** : une fonction pour les dix-huit
-outils, pas dix-huit gabarits. Un gabarit oublié n'échoue pas — il affiche l'ancienne
+Le rendu `markdown` existe et reste **générique** : une fonction pour les dix-neuf
+outils, pas dix-neuf gabarits. Un gabarit oublié n'échoue pas — il affiche l'ancienne
 colonne comme si elle était toute la vérité.
 
 En JSON, ce que le serveur MCP a constaté est rangé à part, sous `_mcp`
@@ -389,7 +394,7 @@ Un `POST /mcp` sans `Authorization` doit répondre `401` avec un en-tête
 
 ## 7. Limites connues
 
-- **Dix-huit outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
+- **Dix-neuf outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
   exposé : SLO, alertes, tableaux de bord, replay, logs. Les ajouter passe
   par l'API d'abord, jamais par un accès direct depuis le serveur MCP.
 - **Pas de total sur les sessions.** L'API n'en fournit pas ; le serveur ne

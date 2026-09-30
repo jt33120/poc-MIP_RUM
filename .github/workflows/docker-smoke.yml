@@ -278,7 +278,7 @@ jobs:
             echo "::error::next ou jose dans l'image api"; exit 1
           fi
 
-      - name: "Référence mcp : 401 sans jeton, 18 outils avec"
+      - name: "Référence mcp : 401 sans jeton, 19 outils avec"
         if: matrix.service == 'mcp'
         run: |
           code=$(curl -s -o /tmp/out -w '%{http_code}' -X POST "http://localhost:${{ matrix.port }}/mcp" \
@@ -298,7 +298,7 @@ jobs:
           # de ce workflow doit rendre le même verdict que le runner.
           n=$(grep -o 'mip_rum_[a-z_]*' /tmp/tools.json | sort -u | wc -l | tr -d ' ')
           echo "outils exposés : $n"
-          test "$n" = "18"
+          test "$n" = "19"
 
       - name: "Référence console-api : 404 sans secret client, l'état de la plateforme avec, la poignée de main signée"
         if: matrix.service == 'console-api'

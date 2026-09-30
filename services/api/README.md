@@ -38,11 +38,12 @@ Les chemins sont **ceux de la console**, calculés depuis l'arborescence (`route
 
 ### Les routes servies par ce service seul
 
-Depuis le 30/09/2026, deux routes naissent directement dans l'état que les autres rejoindront à la
+Depuis le 30/09/2026, trois routes naissent directement dans l'état que les autres rejoindront à la
 décommission de la console (C12) : **`GET /api/v1/trends`** (tendances des cinq Core Web Vitals sur
-14 jours complets, rupture datée) et **`GET /api/v1/detections`** (épisodes hors de la plage
-habituelle). Elles servent le calcul partagé de la statistique (`packages/stats`, `@mip/stats`) — celui
-des écrans « Tendances » et Vue d'ensemble.
+14 jours complets, rupture datée), **`GET /api/v1/detections`** (épisodes hors de la plage
+habituelle) et **`GET /api/v1/errors/{fingerprint}/overrepresentation`** (valeurs de session
+sur-représentées parmi les sessions touchées par un groupe d'erreurs). Elles servent le calcul partagé
+de la statistique (`packages/stats`, `@mip/stats`) — celui des écrans « Tendances » et Vue d'ensemble.
 
 - La table `ROUTES_SERVICE_SEUL` (`routeur.mjs`) nomme, pour chaque chemin, l'implémentation que le
   build compile **à la place** du fichier de route de la console (`apps/console/lib/api/service/*.ts`).
@@ -53,7 +54,7 @@ des écrans « Tendances » et Vue d'ensemble.
   console y reçoit `401` ; un service injoignable, `503` avec `Retry-After`.
 - La garde du build refuse la transmission dans le bundle : le service se la transmettrait.
 - Le rôle `mip_api` lit pour elles `signal_detecte` et `deploy_marker` (migration v106, `AJOUTEES` de
-  la liste blanche).
+  la liste blanche) ; la sur-représentation ne lit que `rum_session` et `rum_error`, déjà accordées.
 - Le contrat de parité fait tourner l'implémentation en propriétaire et le service sous `mip_api`
   (même corps, même ETag), puis vérifie que la transmission de la console rend la réponse du service.
 

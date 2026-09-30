@@ -265,6 +265,30 @@ export function buildOpenApi(): Record<string, unknown> {
           },
         ),
       },
+      "/errors/{fingerprint}/overrepresentation": {
+        get: get(
+          "Valeurs de session sur-représentées parmi les sessions touchées par un groupe d'erreurs (Fisher unilatéral, Benjamini-Hochberg), ou refus chiffré",
+          "rum",
+          ref("Overrepresentation"),
+          {
+            jetonSeul: true,
+            params: [
+              { name: "fingerprint", in: "path", required: true, schema: { type: "string", minLength: 1, maxLength: 64 } },
+              ...commonFilters,
+            ],
+            extraResponses: {
+              "400": {
+                description:
+                  "fingerprint invalide, filtre que la population des sessions ne porte pas, ou fingerprint présent dans plusieurs apps du " +
+                  "périmètre sans `app` (le message liste les apps candidates)",
+                content: { "application/json": { schema: ref("Error") } },
+              },
+              "404": ref0("NotFound"),
+              "503": ref0("ReadServiceUnavailable"),
+            },
+          },
+        ),
+      },
       "/issues": {
         get: get(
           "Issues d'erreurs (regroupement v2) et groupes historiques non repris : impact, statut, couverture, échantillonnage",
@@ -755,6 +779,66 @@ export function buildOpenApi(): Record<string, unknown> {
             ),
           ],
         },
+        Overrepresentation: o(
+          {
+            groupe: o({ app: str, fingerprint: str }, ["app", "fingerprint"]),
+            population: str,
+            totaux: o(
+              { touches: { type: "integer", description: "sessions de la base touchées par le groupe" }, base: { type: "integer", description: "sessions de la base" } },
+              ["touches", "base"],
+            ),
+            dimensions: arr(
+              o(
+                {
+                  cle: { type: "string", enum: ["browser", "os", "device", "country", "release"] },
+                  libelle: str,
+                  valeurs: arr(
+                    o(
+                      {
+                        valeur: { type: "string", description: "« Inconnu » : valeur absente — affichée, jamais testée" },
+                        nTouches: int,
+                        nBase: int,
+                        test: nul(o({ pBrut: num, pAjuste: num, retenu: bool }, ["pBrut", "pAjuste", "retenu"])),
+                      },
+                      ["valeur", "nTouches", "nBase", "test"],
+                    ),
+                  ),
+                },
+                ["cle", "libelle", "valeurs"],
+              ),
+            ),
+            analyse: {
+              description:
+                "ok = false : aucun test tenté, `manque` dit ce qui manque en chiffres (10 sessions touchées et 30 de base au moins). " +
+                "ok = true : `testees` valeurs testées, `retenues` celles dont le p ajusté (Benjamini-Hochberg, 5 %) passe, chacune avec sa phrase.",
+              oneOf: [
+                o({ ok: { type: "boolean", enum: [false] }, raison: str, manque: ref("Manque") }, ["ok", "raison", "manque"]),
+                o(
+                  {
+                    ok: { type: "boolean", enum: [true] },
+                    testees: int,
+                    regle: str,
+                    retenues: arr(
+                      o(
+                        {
+                          cle: str,
+                          valeur: str,
+                          nTouches: int,
+                          nBase: int,
+                          test: o({ pBrut: num, pAjuste: num, retenu: bool }, ["pBrut", "pAjuste", "retenu"]),
+                          phrase: { type: "string", description: "effectifs, parts, test, p ajusté, nombre de valeurs testées ; réserve comprise" },
+                        },
+                        ["cle", "valeur", "nTouches", "nBase", "test", "phrase"],
+                      ),
+                    ),
+                  },
+                  ["ok", "testees", "regle", "retenues"],
+                ),
+              ],
+            },
+          },
+          ["groupe", "population", "totaux", "dimensions", "analyse"],
+        ),
         Detections: o(
           {
             etat: {

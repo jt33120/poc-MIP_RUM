@@ -32,6 +32,10 @@ export const POST_DE_LECTURE = Object.freeze(["/api/v1/explorer/query"]);
 export const ROUTES_SERVICE_SEUL = Object.freeze([
   Object.freeze({ chemin: "/api/v1/trends", module: "apps/console/lib/api/service/trends.ts" }),
   Object.freeze({ chemin: "/api/v1/detections", module: "apps/console/lib/api/service/detections.ts" }),
+  Object.freeze({
+    chemin: "/api/v1/errors/[fingerprint]/overrepresentation",
+    module: "apps/console/lib/api/service/surrepresentation.ts",
+  }),
 ]);
 const METHODES_LECTURE = new Set(["GET", "HEAD", "OPTIONS"]);
 

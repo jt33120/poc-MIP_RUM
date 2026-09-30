@@ -189,8 +189,10 @@ passer par `/api/v1/*` (jeton `CONSOLE_API_TOKENS@gip-plateforme`, cf. `docs/API
 - **Décomposition de latence front/back** → `GET /api/v1/tracing`
 - **Tendances des vitals** (pente et bruit sur 14 jours complets, échéance contre la borne « Bon »,
   rupture datée ou refus chiffré) → `GET /api/v1/trends` ; **épisodes hors de la plage habituelle**
-  (avec cette plage) → `GET /api/v1/detections`. Le calcul de l'écran « Tendances » (paquet
-  `@mip/stats`), servi par le service de lecture : au jeton seulement (depuis le 30/09/2026)
+  (avec cette plage) → `GET /api/v1/detections` ; **valeurs de session sur-représentées** parmi les
+  sessions touchées par un groupe d'erreurs → `GET /api/v1/errors/{fingerprint}/overrepresentation`. Le
+  calcul des écrans (paquet `@mip/stats`), servi par le service de lecture : au jeton seulement (depuis
+  le 30/09/2026)
 - **Détail IA** (coût par jour/route, appels récents, gouvernance) → **console xSOM AI
   Guard** : la supervision IA a quitté mip-rum (ADR-0001) ; `/api/v1/ai*` n'existe plus.
 

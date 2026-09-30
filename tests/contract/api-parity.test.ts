@@ -304,6 +304,9 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
     expect(id).toBeTruthy();
     for (const [chemin, init, attendu] of [
       [`/api/v1/errors/${fp}?app=${A}`, auth(), 200],
+      // Sessions et erreurs lues sous `mip_api` pour le test de sur-représentation.
+      [`/api/v1/errors/${fp}/overrepresentation?app=${A}&period=7d`, auth(), 200],
+      [`/api/v1/errors/${fp}/overrepresentation?app=${C}`, auth(), 403],
       [`/api/v1/sessions/pa-1?app=${A}`, auth(), 200],
       [`/api/v1/issues/${id}?app=${A}`, auth(), 200],
       [`/api/v1/issues/${id}/activity?app=${A}`, auth(), 200],
@@ -347,14 +350,19 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
   // la réponse du service à l'octet près ; à la session, 401 — le service ne
   // vérifie pas les sessions ; sans service joignable, 503, jamais une lecture locale.
   it("routes servies par le service seul : la console transmet, et rend ce que le service rend", async () => {
+    const erreurs = await appelerService(`/api/v1/errors?app=${A}`, auth());
+    const fp = (erreurs.corps as { data: { groups: { fingerprint: string }[] } }).data.groups[0]?.fingerprint ?? "";
     const precedente = process.env.CONSOLE_API_RELAY_URL;
     process.env.CONSOLE_API_RELAY_URL = base;
     try {
       for (const { chemin } of ROUTES_SERVICE_SEUL) {
         const route = await import(routeDeLaConsole(chemin));
-        const url = `https://mip-rum-console.vercel.app${chemin}?app=${A}`;
+        // Un segment dynamique reçoit une valeur réelle : la réponse comparée est un 200.
+        const reel = chemin.replace("[fingerprint]", encodeURIComponent(fp));
+        const url = `https://mip-rum-console.vercel.app${reel}?app=${A}`;
         const transmise = await route.GET(new Request(url, auth()));
-        const directe = await appelerService(`${chemin}?app=${A}`, auth());
+        const directe = await appelerService(`${reel}?app=${A}`, auth());
+        expect(directe.statut, reel).toBe(200);
         expect(transmise.status, chemin).toBe(directe.statut);
         expect(transmise.headers.get("etag"), chemin).toBe(directe.etag);
         expect(normaliser(await transmise.json()), chemin).toEqual(normaliser(directe.corps));

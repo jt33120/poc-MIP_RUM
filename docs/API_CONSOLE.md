@@ -154,15 +154,17 @@ autre. Sur une fenêtre glissante (`period`), une donnée inchangée revalide en
 
 ### 30/09/2026 — les statistiques des écrans, servies par l'API
 
-Deux routes de lecture s'ajoutent, sans rien changer aux autres : `GET /api/v1/trends` (tendances des
-cinq Core Web Vitals sur 14 jours complets, rupture datée) et `GET /api/v1/detections` (épisodes hors de
-la plage habituelle). Elles rendent le calcul que la console faisait au rendu de ses écrans, désormais dans
-un paquet partagé (`packages/stats`, `@mip/stats`) : l'écran « Tendances », la Vue d'ensemble et l'API
-appellent la même fonction. Les objets de calcul gardent le vocabulaire du paquet (clés en français,
+Trois routes de lecture s'ajoutent, sans rien changer aux autres : `GET /api/v1/trends` (tendances des
+cinq Core Web Vitals sur 14 jours complets, rupture datée), `GET /api/v1/detections` (épisodes hors de
+la plage habituelle) et `GET /api/v1/errors/{fingerprint}/overrepresentation` (valeurs de session
+sur-représentées parmi les sessions touchées par un groupe d'erreurs). Elles rendent le calcul que la
+console faisait au rendu de ses écrans — ou qu'elle tenait prêt sans l'afficher, pour la
+sur-représentation —, désormais dans un paquet partagé (`packages/stats`, `@mip/stats`) : l'écran
+« Tendances », la Vue d'ensemble et l'API appellent la même fonction. Les objets de calcul gardent le vocabulaire du paquet (clés en français,
 `camelCase`), comme l'`intervalle` des p75, déjà servi par `/overview` et désormais déclaré dans la spec
-OpenAPI (`VitalAgg.intervalle`). Le serveur MCP les expose en deux outils (`docs/MCP.md`).
+OpenAPI (`VitalAgg.intervalle`). Le serveur MCP les expose en trois outils (`docs/MCP.md`).
 
-Ces deux routes sont **servies par le service de lecture seul** (`api`, sur Railway) : la console les
+Ces trois routes sont **servies par le service de lecture seul** (`api`, sur Railway) : la console les
 transmet au jeton, sans chemin local — une route nouvelle n'ajoute aucune lecture de base à la console
 (cliquet de la console sans base). D'où deux différences avec les routes historiques : une **session** de
 la console n'y est pas acceptée (`401` `jeton_requis`), et un service injoignable rend `503`
@@ -380,6 +382,33 @@ vient d'ouvrir.
 - `400` `fingerprint invalide` (vide, plus de 64 caractères ou caractère de contrôle) ; `404` `groupe
   d'erreurs introuvable` si le groupe n'a aucune occurrence sur cette fenêtre avec ces filtres, ou pour une
   session viewer sans aucune app.
+
+### `GET /api/v1/errors/{fingerprint}/overrepresentation` — valeurs sur-représentées d'un groupe
+`data = { groupe: { app, fingerprint }, population, totaux: { touches, base }, dimensions[], analyse }`
+(effectifs lus par `apps/console/lib/queries-surrepresentation.ts`, réponse assemblée par
+`apps/console/lib/api/surrepresentation.ts`, schéma `Overrepresentation` de la spec OpenAPI). **Au jeton
+seulement**, servie par le service de lecture (implémentation : `apps/console/lib/api/service/surrepresentation.ts`) ;
+la console la transmet (`401` à une session, `503` si le service est injoignable).
+
+« Parmi les sessions touchées par ce groupe, une valeur de session est-elle plus fréquente qu'ailleurs ? »
+Le test publié de `@mip/stats/surrepresentation` : **Fisher exact unilatéral** par valeur, correction de
+**Benjamini-Hochberg** (fausses découvertes 5 %) sur toutes les valeurs testées de la réponse.
+
+- **Une seule population : des sessions.** La base : les sessions de l'app actives sur la période (dernière
+  activité dans la fenêtre), sous les filtres du contrat, robots exclus par défaut. Les touchées : celles de la
+  base qui portent au moins une occurrence du groupe sur la même période — une session à cinquante occurrences
+  compte une fois ; une occurrence sans session n'entre pas.
+- **Des dimensions de session** : `browser`, `os`, `device`, `country` (estimé), `release` (celle de la
+  session). Ni la route ni la release de l'occurrence : une session en porte plusieurs. 20 valeurs au plus par
+  dimension, les plus touchées d'abord. « Inconnu » est affiché, jamais testé.
+- **Refus avant volume** : moins de 10 sessions touchées ou de 30 sessions de base, `analyse.ok: false` et
+  `manque` (« 7 sessions touchées, 10 requises ») ; une valeur portée par moins de 3 sessions touchées n'est pas
+  testée (`test: null`).
+- `analyse.retenues` : les valeurs dont le p ajusté passe, de la plus significative à la moins, chacune avec sa
+  phrase (effectifs, parts, p ajusté, nombre de valeurs testées) et sa réserve : **une association observée,
+  pas une cause**.
+- Même résolution de l'empreinte que le détail : sans `app`, une empreinte présente dans plusieurs apps du
+  périmètre répond `400` avec les apps candidates ; `404` si le groupe n'a aucune occurrence sur la fenêtre.
 
 ### `GET /api/v1/issues` — issues d'erreurs
 `data = { issues: IssueEntry[], total, next_cursor, sampling: ErrorSampling, coverage: IssueCoverage }`
