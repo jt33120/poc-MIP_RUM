@@ -5,6 +5,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { InfoTip } from "@/components/InfoTip";
 import { ErrorTypeBadge } from "@/components/errors/ErrorBadges";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
 import { Sparkline } from "@/components/charts/Sparkline";
@@ -111,18 +112,29 @@ export function IssueList({
       <ErrorNotices sampling={sampling} enrichment={enrichment} />
       {apercu}
 
-      <h2 id="groupes-erreurs" className="mb-2 text-sm font-semibold text-ink">
-        Groupes ({total.toLocaleString("fr-FR")})
-      </h2>
-      <p className="mb-3 text-xs text-ink-soft">{SOUS_TITRE}</p>
+      {/* L'en-tête de la liste sur UNE rangée (recette du 30/09/2026) : titre, mode
+          d'emploi en bulle, filtres à droite — plus de sous-titre ni de carte de filtres. */}
+      <div className="mb-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+        <h2 id="groupes-erreurs" className="scroll-mt-4 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+          Groupes ({total.toLocaleString("fr-FR")})
+        </h2>
+        <div className="flex min-w-0 items-center gap-2 text-xs text-ink-soft" data-testid="ordre-liste">
+          <span className="sr-only">Ordre : à revoir, réapparitions, ouverts, résolus, ignorés, puis par impact.</span>
+          <InfoTip label="Comment lire cette liste" align="start">
+            {SOUS_TITRE} Ordre : à revoir, réapparitions, ouverts, résolus, ignorés, puis par impact. « À revoir » : les
+            anciennes signatures reprises portaient des statuts différents. « Regroupement approximatif » : aucune ligne
+            de code de l&apos;application n&apos;a pu identifier l&apos;erreur. Tous les compteurs portent sur {label}, sauf
+            « Première vue ». {noteTendances}
+          </InfoTip>
+        </div>
 
-      <form method="get" action="/errors" className="card mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Filtres des groupes">
+      <form method="get" action="/errors" className="flex min-w-0 flex-wrap items-end gap-2 sm:ml-auto" aria-label="Filtres des groupes">
         {cachees.map(([nom, valeur]) => (
           <input key={nom} type="hidden" name={nom} value={valeur} />
         ))}
-        <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+        <label className="flex flex-col gap-0.5 text-[11px] font-medium text-ink-soft">
           Statut
-          <select name="status" defaultValue={filtres.status ?? ""} className={INPUT_CLASS}>
+          <select name="status" defaultValue={filtres.status ?? ""} className={`${INPUT_CLASS} h-7 text-xs`}>
             <option value="">Tous</option>
             {ISSUE_STATUSES.map((status) => (
               <option key={status} value={status}>
@@ -131,9 +143,9 @@ export function IssueList({
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+        <label className="flex flex-col gap-0.5 text-[11px] font-medium text-ink-soft">
           Source
-          <select name="source" defaultValue={filtres.source ?? ""} className={INPUT_CLASS}>
+          <select name="source" defaultValue={filtres.source ?? ""} className={`${INPUT_CLASS} h-7 text-xs`}>
             <option value="">Toutes</option>
             {ERROR_SOURCES.map((source) => (
               <option key={source} value={source}>
@@ -142,63 +154,71 @@ export function IssueList({
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+        <label className="flex flex-col gap-0.5 text-[11px] font-medium text-ink-soft">
           Release exacte
-          <input name="release" defaultValue={filtres.release ?? ""} maxLength={200} placeholder="1.4.2" className={INPUT_CLASS} />
+          <input
+            name="release"
+            defaultValue={filtres.release ?? ""}
+            maxLength={200}
+            placeholder="1.4.2"
+            className={`${INPUT_CLASS} h-7 w-28 text-xs`}
+          />
         </label>
         <div className="flex items-end gap-2">
-          <button className="btn-accent" type="submit">
+          <button className="btn-ghost px-2 py-1" type="submit">
             Filtrer
           </button>
           {filtre && (
-            <Link href={errorsHref("/errors", f, f.app, vue)} className="btn-ghost">
+            <Link href={errorsHref("/errors", f, f.app, vue)} className="rounded text-xs font-medium text-brand hover:underline">
               Réinitialiser
             </Link>
           )}
         </div>
       </form>
+      </div>
 
       {coverage.occurrences_legacy > 0 && (
-        <p role="note" className="mb-6 rounded-lg border border-line bg-panel2 px-4 py-3 text-sm text-ink-soft" data-testid="issue-coverage">
-          {pluriel(coverage.occurrences_legacy, "occurrence reste", "occurrences restent")} dans d&apos;anciennes
-          signatures qu&apos;aucun groupe ne reprend seul : antérieures au regroupement actuel, d&apos;une application où il
-          n&apos;est pas actif, ou d&apos;une signature répartie sur plusieurs groupes.
+        // Une pastille chiffrée ; ce que sont ces anciennes signatures, en bulle.
+        <p
+          role="note"
+          className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-panel2 px-2.5 py-0.5 text-[11px] text-ink-soft"
+          data-testid="issue-coverage"
+        >
+          <span className="font-medium text-ink">
+            {pluriel(coverage.occurrences_legacy, "occurrence reste", "occurrences restent")} dans d&apos;anciennes
+            signatures
+          </span>
+          <span className="sr-only">
+            {" "}
+            qu&apos;aucun groupe ne reprend seul : antérieures au regroupement actuel, d&apos;une application où il
+            n&apos;est pas actif, ou d&apos;une signature répartie sur plusieurs groupes.
+          </span>
+          <InfoTip label="Anciennes signatures" align="start">
+            Qu&apos;aucun groupe ne reprend seul : antérieures au regroupement actuel, d&apos;une application où il
+            n&apos;est pas actif, ou d&apos;une signature répartie sur plusieurs groupes.
+          </InfoTip>
         </p>
       )}
 
-      {/* L'ordre de la liste, écrit (CP9) : il vivait dans la lecture de l'ancien hero. */}
-      <div className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="ordre-liste">
-        <p>Ordre : à revoir, réapparitions, ouverts, résolus, ignorés, puis par impact.</p>
-        <details className="mt-1">
-          <summary className="cursor-pointer rounded hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-            Comment lire cette liste
-          </summary>
-          <p className="mt-1">
-            « À revoir » : les anciennes signatures reprises portaient des statuts différents. « Regroupement
-            approximatif » : aucune ligne de code de l&apos;application n&apos;a pu identifier l&apos;erreur. Tous les
-            compteurs portent sur {label}, sauf « Première vue ». {noteTendances}
-          </p>
-        </details>
-      </div>
-
       {/* Sous 640 px, la table devient une pile de cartes (F19, § 5.3.1) : à 390 px,
-          occurrences et sessions se lisent sans défilement horizontal. */}
+          occurrences et sessions se lisent sans défilement horizontal. Au-dessus, un
+          tableau dense (§ 3.5), comme la liste historique. */}
       <div className="card relative min-w-0 sm:overflow-x-auto">
-        <table className="block w-full text-sm sm:table sm:min-w-table">
+        <table className="block w-full text-sm sm:table sm:min-w-[56rem]">
           <caption className="sr-only">
             Groupes d&apos;erreurs sur {label}, triés par statut puis par impact. {noteTendances}
           </caption>
           <thead className="hidden bg-panel2 sm:table-header-group">
             <tr>
-              <th scope="col" className="th">Groupe</th>
-              <th scope="col" className="th">Occurrences</th>
-              <th scope="col" className="th">Sessions</th>
-              <th scope="col" className="th">Visiteurs</th>
-              <th scope="col" className="th">Tendance · {label}</th>
-              <th scope="col" className="th">
-                Première vue <span className="font-normal text-ink-faint">(depuis toujours)</span>
+              <th scope="col" className="th px-3">Groupe</th>
+              <th scope="col" className="th whitespace-nowrap px-3 text-right">Occurrences</th>
+              <th scope="col" className="th whitespace-nowrap px-3 text-right">Sessions</th>
+              <th scope="col" className="th whitespace-nowrap px-3 text-right">Visiteurs</th>
+              <th scope="col" className="th whitespace-nowrap px-3">Tendance · {label}</th>
+              <th scope="col" className="th whitespace-nowrap px-3 text-right">
+                Première vue<span className="sr-only"> (depuis toujours)</span>
               </th>
-              <th scope="col" className="th">Dernière vue</th>
+              <th scope="col" className="th whitespace-nowrap px-3 text-right">Dernière vue</th>
             </tr>
           </thead>
           <tbody className="block sm:table-row-group">
@@ -207,7 +227,7 @@ export function IssueList({
             ))}
             {!issues.length && (
               <tr className="block sm:table-row">
-                <td colSpan={7} className="block px-4 py-8 text-center text-ink-faint sm:table-cell">
+                <td colSpan={7} className="block px-4 py-3 text-xs text-ink-soft sm:table-cell">
                   {curseur ? (
                     <Link href={issueListHref(f, filtres, limite)} className={ERROR_LINK}>
                       Aucune entrée à cette position — revenir au début de la liste
@@ -270,41 +290,44 @@ function IssueRow({
   const href = entry.kind === "issue" ? issueHref(entry, f) : errorGroupHref(entry, f);
   return (
     <tr
-      className={`block border-t border-line/60 px-4 py-3 align-top transition first:border-t-0 hover:bg-panel2/60 sm:table-row sm:p-0 ${
+      className={`block border-t border-line/60 px-4 py-2 align-top transition first:border-t-0 hover:bg-panel2/60 sm:table-row sm:p-0 ${
         attenuee ? "opacity-60" : ""
       }`}
       data-testid={entry.kind === "issue" ? `issue-entry-${entry.id}` : `legacy-entry-${entry.fingerprint}`}
       data-app-id={entry.app_id}
     >
       <td className={`block min-w-0 sm:max-w-md ${CELLULE_GROUPE}`}>
-        {/* Un seul lien par ligne : une tabulation par entrée au clavier. */}
-        <Link href={href} className="block rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-          <ErrorTypeBadge type={entry.error_type} />
-          <IssueStatusBadge status={entry.status} />
-          <ReappearedBadge reappeared={entry.reappeared} />
-          {entry.kind === "issue" ? (
-            <>
-              <IssueOriginBadge origin={entry.origin} />
-              {entry.grouping_basis === "low_confidence" && <GroupingBasisBadge basis={entry.grouping_basis} />}
-            </>
-          ) : (
-            <LegacyEntryBadge />
-          )}
-          <span className="break-words font-medium text-ink" title={entry.sample_message ?? ""}>
-            {message.slice(0, 120)}
+        {/* Un seul lien par ligne : une tabulation par entrée au clavier. Deux lignes
+            (recette du 30/09/2026) : pastilles et message coupé, puis l'identifiant. */}
+        <Link href={href} className="block min-w-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
+          <span className="flex min-w-0 flex-wrap items-center gap-y-0.5 sm:flex-nowrap">
+            <IssueStatusBadge status={entry.status} />
+            <ReappearedBadge reappeared={entry.reappeared} />
+            <ErrorTypeBadge type={entry.error_type} />
+            {entry.kind === "issue" ? (
+              <>
+                <IssueOriginBadge origin={entry.origin} />
+                {entry.grouping_basis === "low_confidence" && <GroupingBasisBadge basis={entry.grouping_basis} />}
+              </>
+            ) : (
+              <LegacyEntryBadge />
+            )}
+            <span className="min-w-0 truncate font-medium text-ink" title={entry.sample_message ?? ""}>
+              {message.slice(0, 120)}
+            </span>
           </span>
-          <span className="mt-0.5 block break-all font-mono text-xs text-ink-faint">
+          <span className="mt-0.5 block truncate font-mono text-[11px] text-ink-faint">
             {entry.kind === "issue" ? `groupe ${entry.id.slice(0, 8)}` : `signature ${entry.fingerprint}`} · {entry.app_id}
           </span>
         </Link>
       </td>
-      <CelluleGroupe libelle="Occurrences" className="sm:text-sm" testId="entry-occurrences">
+      <CelluleGroupe libelle="Occurrences" className="sm:text-right sm:text-sm" testId="entry-occurrences">
         <span className="font-bold tabular-nums text-ink">{entry.occurrences.toLocaleString("fr-FR")}</span>
       </CelluleGroupe>
-      <CelluleGroupe libelle="Sessions" className="sm:text-sm">
+      <CelluleGroupe libelle="Sessions" className="sm:text-right sm:text-sm">
         <span className="tabular-nums">{fmtCount(entry.sessions_affected)}</span>
       </CelluleGroupe>
-      <CelluleGroupe libelle="Visiteurs" className="sm:text-sm">
+      <CelluleGroupe libelle="Visiteurs" className="sm:text-right sm:text-sm">
         <span className="tabular-nums">{fmtCount(entry.visitors_affected)}</span>
       </CelluleGroupe>
       <CelluleGroupe libelle="Tendance">
@@ -314,10 +337,10 @@ function IssueRow({
           label={`${pluriel(entry.occurrences, "occurrence")} sur ${label}`}
         />
       </CelluleGroupe>
-      <CelluleGroupe libelle="Première vue" className="text-ink-soft sm:whitespace-nowrap">
+      <CelluleGroupe libelle="Première vue" className="text-ink-soft sm:whitespace-nowrap sm:text-right">
         {fmtDate(entry.first_seen)}
       </CelluleGroupe>
-      <CelluleGroupe libelle="Dernière vue" className="text-ink-soft sm:whitespace-nowrap">
+      <CelluleGroupe libelle="Dernière vue" className="text-ink-soft sm:whitespace-nowrap sm:text-right">
         {fmtDate(entry.last_seen)}
       </CelluleGroupe>
     </tr>
