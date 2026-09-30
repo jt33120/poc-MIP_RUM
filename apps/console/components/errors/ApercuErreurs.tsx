@@ -25,7 +25,7 @@ import { pluriel } from "@/lib/format";
 import type { SectionLue } from "@/lib/lecture";
 import { autresGroupes, libelleGroupeErreur, partTouchees } from "@/lib/perf-domain";
 import type { GroupeFrequent, PartSessionsTouchees, TotauxErreurs } from "@/lib/queries-errors";
-import { libelleSeauComplet, type Annotation, type PointSerie } from "@/lib/series";
+import { libelleSeauComplet, type Annotation, type FenetreCollecte, type PointSerie } from "@/lib/series";
 import { FAIBLE_SOUS_PROPORTION, ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
 
 // Nombre de groupes dessinés dans le hero : dans `lib/error-view.ts`, que le
@@ -222,6 +222,7 @@ export function HeroGroupesErreurs({
   annotations,
   annotationsIndisponibles,
   zoomHref,
+  fenetresCollecte,
 }: {
   plage: string;
   bucketLabel: string;
@@ -237,6 +238,8 @@ export function HeroGroupesErreurs({
   annotations: Annotation[];
   annotationsIndisponibles: string | null;
   zoomHref: string;
+  /** Fenêtres hors collecte (`sectionFenetresCollecte`) : un seau interrompu est hachuré « non mesuré », pas une barre à 0. */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const titre = "Occurrences dans le temps, par groupe";
   if (!totaux.ok || !top.ok) {
@@ -341,6 +344,7 @@ export function HeroGroupesErreurs({
           fuseau={FUSEAU_AFFICHAGE}
           zoomHref={zoomHref}
           hauteur={240}
+          fenetresCollecte={fenetresCollecte}
           ariaLabel={`Occurrences d'erreurs par tranche de ${bucketLabel} sur ${plage}, ${series.length} séries empilées`}
         />
       </Figure>

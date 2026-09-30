@@ -28,7 +28,7 @@ import { formater } from "@/lib/fmt-ids";
 import { fmtDate, fmtVital, pluriel } from "@/lib/format";
 import type { SectionLue } from "@/lib/lecture";
 import type { LongtaskBucket, LongtaskWorst } from "@/lib/queries-longtasks";
-import { alignerSeaux, isoSansMs, libelleSeauComplet, type Annotation } from "@/lib/series";
+import { alignerSeaux, isoSansMs, libelleSeauComplet, type Annotation, type FenetreCollecte } from "@/lib/series";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 
 /**
@@ -87,6 +87,7 @@ export function LongtasksView({
   zoomHref,
   annotations,
   annotationsIndisponibles,
+  fenetresCollecte,
   sessionHref,
   partie = "tout",
 }: {
@@ -109,6 +110,8 @@ export function LongtasksView({
   zoomHref?: string;
   annotations?: Annotation[];
   annotationsIndisponibles?: string;
+  /** Fenêtres hors collecte (`sectionFenetresCollecte`) : hachures « non mesuré » des deux panneaux. */
+  fenetresCollecte?: readonly FenetreCollecte[];
   /** Lien vers une session, filtres courants conservés. */
   sessionHref: (sessionId: string) => string;
 }) {
@@ -177,6 +180,7 @@ export function LongtasksView({
                   annotations={annotations}
                   legendeAnnotations={false}
                   synchro={SYNCHRO}
+                  fenetresCollecte={fenetresCollecte}
                   ariaLabel={`Blocages du fil principal par API de mesure, ${grilleIso.length} tranches de ${bucketLabel}`}
                 />
               </div>
@@ -195,6 +199,7 @@ export function LongtasksView({
                   annotationsIndisponibles={annotationsIndisponibles}
                   synchro={SYNCHRO}
                   noteCollecte={false}
+                  fenetresCollecte={fenetresCollecte}
                   ariaLabel={`p75 de la durée de blocage par tranche de ${bucketLabel}, ${grilleIso.length} tranches`}
                 />
               </div>

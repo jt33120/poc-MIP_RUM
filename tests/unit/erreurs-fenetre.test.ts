@@ -323,20 +323,29 @@ describe("le tri classe par impact sur la fenêtre, pas par volume cumulé", () 
 // ═══════════════ 4. L'écran n'annonce plus une fenêtre pour une autre ═════════
 
 describe("la tendance suit la période choisie", () => {
-  it("les seaux suivent la plage, alignés UTC, bornés par les seaux de from et de l'instant avant to", async () => {
+  it("les seaux suivent la plage (UTC sous 6 h, heure de Paris au-delà), bornés par les seaux de from et de l'instant avant to", async () => {
     for (const p of PERIODES) {
       const largeur = `interval '${seauEnSecondes(p)} seconds'`;
-      const origine = "timestamptz '2000-01-01 00:00:00+00'";
+      const local = seauEnSecondes(p) >= 21_600;
+      const origine = local ? "timestamp '2000-01-01 00:00:00'" : "timestamptz '2000-01-01 00:00:00+00'";
       const { liste, detail } = await instructions(p);
       const [, , tendance, series] = liste;
       for (const sql of [tendance, detail[1]]) {
-        expect(sansNumeros(sql), p).toContain(
-          `generate_series(date_bin(${largeur}, $?::timestamptz, ${origine}),`,
-        );
-        expect(sansNumeros(sql), p).toContain(`$?::timestamptz - interval '1 microsecond', ${largeur})`);
+        const s = sansNumeros(sql).replace(/\s+/g, " ");
+        if (local) {
+          expect(s, p).toContain(`generate_series(date_bin(${largeur}, $?::timestamptz at time zone 'Europe/Paris', ${origine}),`);
+          expect(s, p).toContain(`($?::timestamptz - interval '1 microsecond') at time zone 'Europe/Paris', ${largeur})`);
+        } else {
+          expect(s, p).toContain(`generate_series(date_bin(${largeur}, $?::timestamptz, ${origine}),`);
+          expect(s, p).toContain(`$?::timestamptz - interval '1 microsecond', ${largeur})`);
+        }
       }
       // Les séries par groupe tombent dans les MÊMES seaux que la tendance.
-      expect(series, p).toContain(`date_bin(${largeur}, ts, ${origine}) as bucket`);
+      expect(series, p).toContain(
+        local
+          ? `(date_bin(${largeur}, (ts) at time zone 'Europe/Paris', ${origine}) at time zone 'Europe/Paris') as bucket`
+          : `date_bin(${largeur}, ts, ${origine}) as bucket`,
+      );
       for (const sql of [tendance, series]) expect(sql, p).not.toContain("date_trunc(");
     }
   });

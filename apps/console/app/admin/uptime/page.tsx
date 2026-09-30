@@ -156,7 +156,12 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
                       )}
                     </td>
                     <td className="px-4 py-2 tabular-nums">
-                      {c.uptime_pct_24h == null ? (
+                      {c.uptime_inconnu ? (
+                        // Pendant une panne de collecte, « 100 % » serait faux : aucune vérification n'a eu lieu.
+                        <span className="text-ink-soft" title={c.uptime_inconnu} data-uptime-inconnu="">
+                          inconnu
+                        </span>
+                      ) : c.uptime_pct_24h == null ? (
                         <span className="text-ink-faint">—</span>
                       ) : (
                         <span className={c.uptime_pct_24h >= 99 ? "text-good-ink" : c.uptime_pct_24h >= 95 ? "text-warn-ink" : "text-bad-ink"}>
