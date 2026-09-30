@@ -103,7 +103,14 @@ async function login(page: Page) {
 }
 
 /** La série LCP du hero : la première ThresholdSeries à bandes LCP de la page. */
-const heroLcp = (page: Page) => page.locator('[data-testid="threshold-series"][data-vital="LCP"]').first();
+/**
+ * Le graphique LCP du hero en GRAND : depuis le 30/09/2026, la vue d'ensemble montre
+ * une vignette, qui s'ouvre (clic) sur le graphique complet, sa légende comprise.
+ */
+async function heroLcp(page: Page) {
+  await page.getByTestId("vignette-LCP").click();
+  return page.locator('#hero-LCP [data-testid="threshold-series"][data-vital="LCP"]');
+}
 
 /** Même helper que tests/e2e/composants.spec.ts (extrait vers helpers/ par F09). */
 async function debordements(page: Page): Promise<string[]> {
@@ -134,7 +141,7 @@ test("/ : bande « Bon » visible derrière le LCP p75, avec les données de dé
   // L'app de ce test (qui garantit des mesures sur 24 h) : sans `app`, `/` est le
   // sélecteur de projet, pas la vue d'ensemble.
   await page.goto(`${consoleUrl}/?app=${APP_ID}&period=24h`, { waitUntil: "domcontentloaded" });
-  const serie = heroLcp(page);
+  const serie = await heroLcp(page);
   // recharts dessine après hydratation.
   await expect(serie.locator(".recharts-surface").first()).toBeVisible({ timeout: 15_000 });
   await expect(serie.locator(".recharts-reference-area.bande-bon")).toBeVisible();
@@ -147,7 +154,7 @@ test("/ : bande « Bon » visible derrière le LCP p75, avec les données de dé
 test("/ : un seau sans mesure est un trou, la courbe se coupe", async ({ page }) => {
   await login(page);
   await page.goto(`${consoleUrl}/?app=${APP_ID}&period=24h`, { waitUntil: "domcontentloaded" });
-  const serie = heroLcp(page);
+  const serie = await heroLcp(page);
   await expect(serie.locator(".recharts-surface").first()).toBeVisible({ timeout: 15_000 });
   // 24 seaux d'une heure attendus (25 quand la fenêtre commence au milieu d'une heure).
   expect(Number(await serie.getAttribute("data-seaux"))).toBeGreaterThanOrEqual(24);
@@ -182,7 +189,7 @@ test("/ : aucun graphique à deux axes y ; « Charge, erreurs et LCP » en trois
 test("/ : un clic sur un seau zoome sur sa plage (from/to, plus de period)", async ({ page }) => {
   await login(page);
   await page.goto(`${consoleUrl}/?app=${APP_ID}&period=24h`, { waitUntil: "domcontentloaded" });
-  const surface = heroLcp(page).locator(".recharts-surface").first();
+  const surface = (await heroLcp(page)).locator(".recharts-surface").first();
   await expect(surface).toBeVisible({ timeout: 15_000 });
   // Le hero est sous le pli à 1280 × 720 : un clic à des coordonnées hors de la
   // fenêtre ne touche rien.
@@ -207,7 +214,8 @@ test("/ : aucun débordement à 390 et 1440 px", async ({ page }) => {
   for (const largeur of [390, 1440]) {
     await page.setViewportSize({ width: largeur, height: 900 });
     await page.goto(`${consoleUrl}/?app=${APP_ID}&period=24h`, { waitUntil: "domcontentloaded" });
-    await expect(heroLcp(page).locator(".recharts-surface").first()).toBeVisible({ timeout: 15_000 });
+    // La page telle qu'elle s'affiche : la vignette, fenêtre fermée.
+    await expect(page.locator('[data-testid="vignette-LCP"] .recharts-surface').first()).toBeVisible({ timeout: 15_000 });
     for (const faute of await debordements(page)) fautes.push(`/ @ ${largeur} px — ${faute}`);
   }
   expect(fautes).toEqual([]);
