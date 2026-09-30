@@ -1,6 +1,9 @@
 "use client";
 // ThresholdSeries — la série temporelle de la console (F04, plan § 3.10, § 4.2).
-// Client (recharts) : survol, zoom au clic, liens d'annotation.
+// Client (recharts) : survol, zoom au clic, liens d'annotation ; et, depuis la vague 2
+// de la refonte du monitoring (spec A2 § 5.4) : réticule partagé par toute la page,
+// pinceau (glisser = plage de la page) et légende chiffrée et cliquable
+// (`InteractionsSeries.tsx`).
 //
 // CE QU'ELLE GARANTIT, QUEL QUE SOIT L'APPELANT :
 //   - une GRILLE : chaque seau attendu a sa place sur l'axe x ; un seau absent est un
@@ -47,6 +50,7 @@ import { formater, formatDuVital, type FormatId, type VitalName } from "@/lib/fm
 import { accord, fmtHeure, fmtInstant, fmtJour } from "@/lib/format";
 import { FUSEAU_AFFICHAGE, nomFuseau } from "@/lib/fuseau-local";
 import { etiquettesGraduations } from "@/lib/graduations";
+import { SYNCHRO_PAGE } from "@/lib/interactions-series";
 import { styleDeRole } from "@/lib/palette";
 import { RATING_LABEL, rating2026 } from "@/lib/rating";
 import {
@@ -82,6 +86,18 @@ import {
   type PointSerie,
   type SerieDef,
 } from "@/lib/series";
+import {
+  BoutonLegende,
+  InfobulleCourte,
+  Reticule,
+  ValeurLegende,
+  classeAspect,
+  publierInstant,
+  useEtatLegende,
+  usePinceau,
+  useSurvol,
+  useSynchronisation,
+} from "./InteractionsSeries";
 
 // Le contrat du plan (§ 4.2) nomme ces exports sur ce composant. Un composant SERVEUR
 // qui a besoin de la VALEUR de `SERIE_MARGES` l'importe de `lib/series.ts` : exportée
@@ -526,6 +542,18 @@ export function NotePeuDePoints({ n, seauSecondes, jours }: { n: number; seauSec
   );
 }
 
+/** Pastille et libellé d'une série ; le libellé passe à la ligne, jamais tronqué (texte entier en infobulle). */
+function EntreeLegende({ s }: { s: SerieTracee }) {
+  return (
+    <>
+      {s.forme === "barres" ? <PaveLegende couleur={s.couleur} opacite={0.85} /> : <TraitLegende couleur={s.couleur} pointille={s.pointille} />}
+      <span className="min-w-0 break-words" title={s.libelleComplet ?? s.libelle}>
+        {s.libelle}
+      </span>
+    </>
+  );
+}
+
 // ─────────────────────────────── Infobulle ───────────────────────────────
 
 interface SerieTracee extends SerieDef {
@@ -547,10 +575,13 @@ function Infobulle({
   dernier,
   liens,
   collecte,
+  survole = true,
 }: {
   active?: boolean;
   label?: string;
   payload?: { payload?: LignePreparee }[];
+  /** Faux sur un graphique synchronisé que la souris ne survole pas : infobulle courte. */
+  survole?: boolean;
   /** État de collecte par seau, indexé par `t`. */
   collecte?: ReadonlyMap<string, CollecteSeau>;
   series: SerieTracee[];
@@ -565,6 +596,15 @@ function Infobulle({
 }) {
   const ligne = payload?.[0]?.payload;
   if (!active || !ligne || label === undefined) return null;
+  if (!survole) {
+    const premiere = series[0];
+    return (
+      <InfobulleCourte
+        heure={libelleSeau(label, seauSecondes, fuseau)}
+        valeur={premiere ? formater(format, nombreOuNull(ligne[premiere.cle])) : "—"}
+      />
+    );
+  }
   return (
     <div className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs text-ink shadow-sm">
       <p className="mb-1 font-medium">{liens?.[label]?.libelle ?? libelleSeauComplet(label, seauSecondes, fuseau)}</p>
@@ -643,7 +683,6 @@ export function ThresholdSeries({
   zoomHref,
   hauteur = 220,
   ariaLabel,
-  synchro,
   legendeAnnotations = true,
   liensSeaux,
   debutCollecte,
@@ -675,7 +714,11 @@ export function ThresholdSeries({
   /** Défaut 220. */
   hauteur?: number;
   ariaLabel: string;
-  /** Panneaux empilés : même valeur = survol synchronisé (recharts `syncId`). Ajout F04. */
+  /**
+   * Ajout F04, SANS EFFET depuis la vague 2 (spec A2 § 5.4) : toutes les séries de la
+   * page partagent le réticule (`SYNCHRO_PAGE`), synchronisées par instant et non plus
+   * par rang. Gardé pour les appelants existants.
+   */
   synchro?: string;
   /** Défaut true. Panneaux empilés : un seul panneau liste les annotations en liens (un arrêt de tabulation chacune). Ajout F04. */
   legendeAnnotations?: boolean;
@@ -714,6 +757,16 @@ export function ThresholdSeries({
   const { collecte, fenetres: fenetresVisibles } = useCollecteDesSeaux(grille, seauSecondes, fuseau, fenetresCollecte, maintenant);
   const collecteParSeau = useMemo(() => new Map(grille.map((t, i) => [t, collecte[i] ?? null])), [grille, collecte]);
   const { tracees, ecartees } = useMemo(() => tracerSeries(series), [series]);
+  const legende = useEtatLegende();
+  const { survole, entrer, sortir } = useSurvol();
+  const synchroniser = useSynchronisation(grille, seauSecondes, fuseau);
+  const pinceau = usePinceau({ grille, seauSecondes, gabarit: zoomHref });
+  // Les séries masquées (Alt-clic) sortent de l'échelle : on masque une série pour
+  // lire les autres, pas pour garder l'axe qu'elle imposait.
+  const visibles = useMemo(() => {
+    const v = tracees.filter((s) => legende.aspect(s.cle) !== "masquee");
+    return v.length > 0 ? v : tracees;
+  }, [tracees, legende]);
   const prep = useMemo(
     () => preparerPoints(grille, points, tracees, { faibleSous, seauEnCours: enCours, collecte }),
     [grille, points, tracees, faibleSous, enCours, collecte],
@@ -723,8 +776,8 @@ export function ThresholdSeries({
   // compte n'a pas de seuil (R-S). Le plan l'interdit ; on ne la dessine pas.
   const vitalEffectif = aDesBarres ? undefined : vital;
   const echelle = useMemo(
-    () => echelleY(prep.lignes, tracees, format, { vital: vitalEffectif, bande }),
-    [prep.lignes, tracees, format, vitalEffectif, bande],
+    () => echelleY(prep.lignes, visibles, format, { vital: vitalEffectif, bande }),
+    [prep.lignes, visibles, format, vitalEffectif, bande],
   );
   const haut = echelle.haut;
   const etiquetteY = useMemo(() => formateurGraduations(echelle.valeurs, format), [echelle.valeurs, format]);
@@ -798,13 +851,29 @@ export function ThresholdSeries({
           </defs>
         </svg>
       )}
-      <div role="img" aria-label={ariaLabel} className={zoomHref || liensSeaux ? "cursor-pointer" : undefined}>
+      <div
+        role="img"
+        aria-label={ariaLabel}
+        className={`select-none ${zoomHref || liensSeaux ? "cursor-pointer" : ""}`}
+        data-synchro={SYNCHRO_PAGE}
+        data-pinceau={pinceau.actif ? "" : undefined}
+        onMouseEnter={entrer}
+        onMouseLeave={sortir}
+      >
         <ResponsiveContainer width="100%" height={hauteur}>
           <ComposedChart
             data={donnees}
-            syncId={synchro}
+            syncId={SYNCHRO_PAGE}
+            syncMethod={synchroniser}
             margin={{ top: margeHaut, right: SERIE_MARGES.droite, bottom: 0, left: 0 }}
+            onMouseDown={pinceau.debuter}
+            onMouseMove={(etat) => {
+              publierInstant(typeof etat?.activeLabel === "string" ? etat.activeLabel : null);
+              pinceau.etendre(etat);
+            }}
             onClick={(etat) => {
+              // Le clic qui termine un pinceau (appliqué ou annulé par Échap) ne zoome pas.
+              if (pinceau.clicAbsorbe()) return;
               if (!etat || typeof etat.activeLabel !== "string") return;
               const lie = liensSeaux?.[etat.activeLabel];
               if (lie) {
@@ -877,11 +946,25 @@ export function ThresholdSeries({
               axisLine={false}
               tickFormatter={etiquetteY}
             />
+            {pinceau.trace && (
+              <ReferenceArea
+                x1={pinceau.trace.debut}
+                x2={pinceau.trace.fin}
+                className="zone-pinceau"
+                fill="rgb(var(--c-brand))"
+                fillOpacity={0.12}
+                stroke="rgb(var(--c-brand))"
+                strokeOpacity={0.6}
+                ifOverflow="hidden"
+              />
+            )}
             <Tooltip
               isAnimationActive={false}
+              cursor={<Reticule />}
               content={
                 <Infobulle
-                  series={tracees}
+                  survole={survole}
+                  series={visibles}
                   format={format}
                   vital={vitalEffectif}
                   bande={bande}
@@ -911,7 +994,16 @@ export function ThresholdSeries({
             {!aDesBarres && <Bar dataKey="__bandes" hide isAnimationActive={false} legendType="none" />}
             {tracees.map((s, rang) =>
               s.forme === "barres" ? (
-                <Bar key={s.cle} dataKey={s.cle} name={s.libelle} fill={s.couleur} maxBarSize={32} isAnimationActive={false}>
+                <Bar
+                  key={s.cle}
+                  dataKey={s.cle}
+                  name={s.libelle}
+                  fill={s.couleur}
+                  maxBarSize={32}
+                  isAnimationActive={false}
+                  hide={legende.aspect(s.cle) === "masquee"}
+                  className={classeAspect(legende.aspect(s.cle))}
+                >
                   {prep.lignes.map((_l, i) =>
                     i === indexEnCours ? (
                       // La barre en cours est PLEINE et hachurée, cernée de sa couleur :
@@ -934,6 +1026,8 @@ export function ThresholdSeries({
                   type="monotone"
                   dataKey={s.cle}
                   name={s.libelle}
+                  hide={legende.aspect(s.cle) === "masquee"}
+                  className={classeAspect(legende.aspect(s.cle))}
                   stroke={s.couleur}
                   strokeWidth={s.role === "principale" ? 2.5 : 2}
                   strokeDasharray={s.pointille ? "5 4" : undefined}
@@ -955,13 +1049,18 @@ export function ThresholdSeries({
 
       <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft" data-testid="legende-serie">
         {tracees.map((s) => (
-          <li key={s.cle} className="flex min-w-0 items-center gap-1.5">
-            {s.forme === "barres" ? <PaveLegende couleur={s.couleur} opacite={0.85} /> : <TraitLegende couleur={s.couleur} pointille={s.pointille} />}
-            {/* Le libellé passe à la ligne, jamais tronqué ; le texte entier (message
-                d'erreur abrégé par l'appelant) reste en infobulle. */}
-            <span className="min-w-0 break-words" title={s.libelleComplet ?? s.libelle}>
-              {s.libelle}
-            </span>
+          <li key={s.cle} className="flex min-w-0 items-center gap-1.5" data-serie={s.cle}>
+            {/* Légende chiffrée et cliquable (spec A2 § 5.4) : clic = isoler, Alt-clic =
+                masquer ; la valeur suit le seau survolé sur n'importe quel graphique de
+                la page, sinon la dernière connue. Une seule série : rien à isoler. */}
+            {tracees.length > 1 ? (
+              <BoutonLegende cle={s.cle} libelle={s.libelle} aspect={legende.aspect(s.cle)} onBasculer={legende.basculer}>
+                <EntreeLegende s={s} />
+              </BoutonLegende>
+            ) : (
+              <EntreeLegende s={s} />
+            )}
+            <ValeurLegende lignes={prep.lignes} cle={s.cle} grille={grille} seauSecondes={seauSecondes} fuseau={fuseau} format={format} />
           </li>
         ))}
         {bande && (

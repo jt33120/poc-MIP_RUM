@@ -279,15 +279,26 @@ export function GlobalFilters({
             testid="filter-chip-range"
             label={
               customReadable
-                ? // Le fuseau d'affichage est nommé une fois dans la barre ; seul un autre
-                  // fuseau (application réglée ailleurs) se dit ici.
+                ? // « Plage : 14:00–16:30 » (spec A2 § 5.4) : la puce que pose aussi le
+                  // pinceau d'un graphique. Le fuseau d'affichage est nommé une fois dans
+                  // la barre ; seul un autre fuseau (application réglée ailleurs) se dit ici.
                   timeZone === FUSEAU_AFFICHAGE
-                  ? rangeLabel({ from, to, preset: null, bucketSeconds: 0 }, timeZone)
-                  : `${rangeLabel({ from, to, preset: null, bucketSeconds: 0 }, timeZone)} (${nomFuseau(timeZone)})`
+                  ? `Plage : ${libellePlage(from, to, timeZone)}`
+                  : `Plage : ${libellePlage(from, to, timeZone)} (${nomFuseau(timeZone)})`
                 : "Plage personnalisée illisible"
             }
+            title={customReadable ? rangeLabel({ from, to, preset: null, bucketSeconds: 0 }, timeZone) : undefined}
             availability={customReadable ? customAvailability : { available: false, reason: "Plage illisible : retirez-la." }}
             removeLabel="Retirer la plage personnalisée"
+            action={
+              customReadable
+                ? {
+                    libelle: "Revenir à 24 h",
+                    testid: "filter-chip-range-revenir",
+                    onClick: () => choosePreset("24h"),
+                  }
+                : undefined
+            }
             onRemove={() => {
               setRangeDraft(null);
               navigate((next) => {
@@ -544,6 +555,23 @@ function DimensionDrawer({
   );
 }
 
+/**
+ * « 14:00–16:30 » pour une plage d'aujourd'hui, « 28/09 14:00–16:30 » pour un autre
+ * jour, « 28/09 22:00 – 29/09 02:00 » à cheval sur deux jours ; heures du fuseau
+ * d'affichage. La forme longue (« du … au … ») reste en infobulle de la puce.
+ */
+export function libellePlage(from: string, to: string, timeZone: string, maintenant: number = Date.now()): string {
+  const jour = new Intl.DateTimeFormat("fr-FR", { timeZone, day: "2-digit", month: "2-digit" });
+  const heure = new Intl.DateTimeFormat("fr-FR", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const a = new Date(from);
+  const b = new Date(to);
+  const ja = jour.format(a);
+  const jb = jour.format(b);
+  if (ja !== jb) return `${ja} ${heure.format(a)} – ${jb} ${heure.format(b)}`;
+  const aujourdhui = jour.format(new Date(maintenant));
+  return `${ja === aujourdhui ? "" : `${ja} `}${heure.format(a)}–${heure.format(b)}`;
+}
+
 /** Filtre actif supprimable ; barré avec sa raison quand l'écran ne sait pas l'appliquer. */
 export function Chip({
   label,
@@ -551,19 +579,25 @@ export function Chip({
   removeLabel,
   onRemove,
   testid,
+  title,
+  action,
 }: {
   label: string;
   availability: FilterAvailability;
   removeLabel: string;
   onRemove: () => void;
   testid: string;
+  /** Infobulle de la puce appliquée (forme longue du libellé). */
+  title?: string;
+  /** Geste en toutes lettres après le libellé (« · Revenir à 24 h »). */
+  action?: { libelle: string; onClick: () => void; testid: string };
 }) {
   const applied = availability.available;
   return (
     <span
       data-testid={testid}
       data-applied={applied}
-      title={applied ? undefined : availability.reason}
+      title={applied ? title : availability.reason}
       className={`flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${
         // Non appliqué : bordure pointillée et mention écrite, jamais barré (un filtre
         // barré se lit « retiré », alors qu'il reste dans l'URL et s'appliquera ailleurs).
@@ -571,6 +605,21 @@ export function Chip({
       }`}
     >
       <span className="truncate">{label}</span>
+      {action && applied && (
+        <>
+          <span aria-hidden className="shrink-0 opacity-60">
+            ·
+          </span>
+          <button
+            type="button"
+            onClick={action.onClick}
+            data-testid={action.testid}
+            className="shrink-0 whitespace-nowrap rounded underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+          >
+            {action.libelle}
+          </button>
+        </>
+      )}
       {!applied && (
         <span className="shrink-0 text-[10px] font-normal text-warn-ink">
           (non appliqué)<span className="sr-only"> sur cet écran : {availability.reason}</span>

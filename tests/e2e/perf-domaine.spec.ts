@@ -535,7 +535,8 @@ test.describe("F18 — Erreurs : KPI, hero, répartition", () => {
     expect(new Set(textes).size).toBe(textes.length);
     expect(textes).not.toContain("Error");
     expect(textes[0]).toContain("Échec du paiement, étape 1");
-    expect(textes.at(-1)).toBe("Autres groupes (somme)");
+    // Depuis la vague 2 (légende chiffrée), l'entrée porte aussi sa valeur courante.
+    expect(textes.at(-1)).toMatch(/^Autres groupes \(somme\)\s+[\d\s —]+$/);
     // Un groupe mène à son groupe ; « Autres » n'est pas un groupe, pas un lien. Depuis
     // F20 (§ 3.3 : « Groupe d'erreurs → panneau `panel=error:<empreinte>` »), il ouvre
     // SON PANNEAU sur l'écran ; la page du groupe est derrière « Ouvrir en page ».

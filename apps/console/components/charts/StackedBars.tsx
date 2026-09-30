@@ -12,6 +12,10 @@
 // ton de sévérité d'un motif. L'ancienne forme (`data`, `xKey`) reste acceptée
 // telle quelle : chaque écran passe à la nouvelle dans son propre lot, et F69 la
 // retire.
+//
+// VAGUE 2 DE LA REFONTE DU MONITORING (spec A2 § 5.4), nouvelle forme seulement :
+// réticule partagé par la page (bande du seau), pinceau (glisser = plage de la page),
+// légende chiffrée et cliquable (isoler, Alt-clic masquer) — `InteractionsSeries.tsx`.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, type MouseEvent } from "react";
@@ -22,6 +26,7 @@ import {
   Cell,
   Customized,
   Legend,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -29,6 +34,7 @@ import {
 } from "recharts";
 import { formater, type FormatId } from "@/lib/fmt-ids";
 import { graduationsY } from "@/lib/graduations";
+import { SYNCHRO_PAGE } from "@/lib/interactions-series";
 import { SEVERITE, categorie } from "@/lib/palette";
 import {
   MAX_SERIES,
@@ -69,6 +75,18 @@ import {
   useSeauEnCours,
   zonesHorsCollecte,
 } from "./ThresholdSeries";
+import {
+  BoutonLegende,
+  InfobulleCourte,
+  Reticule,
+  ValeurLegende,
+  classeAspect,
+  publierInstant,
+  useEtatLegende,
+  usePinceau,
+  useSurvol,
+  useSynchronisation,
+} from "./InteractionsSeries";
 
 // ─────────────────────────────── Ancienne forme ───────────────────────────────
 
@@ -122,7 +140,7 @@ interface FormeGrille {
   /** Défaut 220. */
   hauteur?: number;
   ariaLabel: string;
-  /** Panneaux empilés : même valeur = survol synchronisé (recharts `syncId`). Ajout F04. */
+  /** Ajout F04, SANS EFFET depuis la vague 2 : toute la page partage le réticule (voir `ThresholdSeries`). */
   synchro?: string;
   /** Défaut true. Panneaux empilés : un seul panneau liste les annotations en liens (un arrêt de tabulation chacune). Ajout F04. */
   legendeAnnotations?: boolean;
@@ -223,10 +241,13 @@ function InfobulleEmpilee({
   enCours,
   dernier,
   collecte,
+  survole = true,
 }: {
   active?: boolean;
   label?: string;
   payload?: { payload?: LignePreparee }[];
+  /** Faux sur un graphique synchronisé que la souris ne survole pas : infobulle courte (le total). */
+  survole?: boolean;
   series: SerieDessinee[];
   format: FormatId;
   seauSecondes: number;
@@ -241,6 +262,7 @@ function InfobulleEmpilee({
   // Des comptes s'additionnent : le total est une vraie mesure. Une valeur
   // inconnue le rend inconnu, jamais sous-estimé.
   const total = valeurs.some((v) => v === null) ? null : valeurs.reduce<number>((a, v) => a + (v ?? 0), 0);
+  if (!survole) return <InfobulleCourte heure={libelleSeau(label, seauSecondes, fuseau)} valeur={formater(format, total)} />;
   return (
     <div className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs text-ink shadow-sm">
       <p className="mb-1 font-medium">{libelleSeauComplet(label, seauSecondes, fuseau)}</p>
@@ -277,7 +299,6 @@ function BarresSurGrille({
   zoomHref,
   hauteur = 220,
   ariaLabel,
-  synchro,
   legendeAnnotations = true,
   debutCollecte,
   noteCollecte = true,
@@ -291,6 +312,15 @@ function BarresSurGrille({
   const { collecte, fenetres: fenetresVisibles } = useCollecteDesSeaux(grille, seauSecondes, fuseau, fenetresCollecte, maintenant);
   const collecteParSeau = useMemo(() => new Map(grille.map((t, i) => [t, collecte[i] ?? null])), [grille, collecte]);
   const { dessinees, ecartees } = useMemo(() => dessinerSeries(series, prefixe), [series, prefixe]);
+  const legende = useEtatLegende();
+  const { survole, entrer, sortir } = useSurvol();
+  const synchroniser = useSynchronisation(grille, seauSecondes, fuseau);
+  const pinceau = usePinceau({ grille, seauSecondes, gabarit: zoomHref });
+  // Masquer une série la retire de la pile ET de l'échelle (voir ThresholdSeries).
+  const visibles = useMemo(() => {
+    const v = dessinees.filter((s) => legende.aspect(s.cle) !== "masquee");
+    return v.length > 0 ? v : dessinees;
+  }, [dessinees, legende]);
   const prep = useMemo(
     () =>
       preparerPoints(
@@ -307,11 +337,11 @@ function BarresSurGrille({
     () =>
       echelleY(
         prep.lignes,
-        dessinees.map((s) => ({ cle: s.cle, libelle: s.libelle, role: "categorie" as const })),
+        visibles.map((s) => ({ cle: s.cle, libelle: s.libelle, role: "categorie" as const })),
         format,
         { empile: true },
       ),
-    [prep.lignes, dessinees, format],
+    [prep.lignes, visibles, format],
   );
   const haut = echelle.haut;
   const etiquetteY = useMemo(() => formateurGraduations(echelle.valeurs, format), [echelle.valeurs, format]);
@@ -350,13 +380,29 @@ function BarresSurGrille({
           {collecte.length > 0 && <MotifHorsCollecte id={motifHorsCollecte} />}
         </defs>
       </svg>
-      <div role="img" aria-label={ariaLabel} className={zoomHref ? "cursor-pointer" : undefined}>
+      <div
+        role="img"
+        aria-label={ariaLabel}
+        className={`select-none ${zoomHref ? "cursor-pointer" : ""}`}
+        data-synchro={SYNCHRO_PAGE}
+        data-pinceau={pinceau.actif ? "" : undefined}
+        onMouseEnter={entrer}
+        onMouseLeave={sortir}
+      >
         <ResponsiveContainer width="100%" height={hauteur}>
           <BarChart
             data={prep.lignes}
-            syncId={synchro}
+            syncId={SYNCHRO_PAGE}
+            syncMethod={synchroniser}
             margin={{ top: margeHauteAnnotations(placees.length), right: SERIE_MARGES.droite, bottom: 0, left: 0 }}
+            onMouseDown={pinceau.debuter}
+            onMouseMove={(etat) => {
+              publierInstant(typeof etat?.activeLabel === "string" ? etat.activeLabel : null);
+              pinceau.etendre(etat);
+            }}
             onClick={(etat) => {
+              // Le clic qui termine un pinceau (appliqué ou annulé par Échap) ne zoome pas.
+              if (pinceau.clicAbsorbe()) return;
               if (!zoomHref || !etat || typeof etat.activeLabel !== "string") return;
               const href = hrefZoom(zoomHref, etat.activeLabel, seauSecondes, maintenant ?? Date.now());
               if (href) router.push(href);
@@ -386,12 +432,25 @@ function BarresSurGrille({
               axisLine={false}
               tickFormatter={etiquetteY}
             />
+            {pinceau.trace && (
+              <ReferenceArea
+                x1={pinceau.trace.debut}
+                x2={pinceau.trace.fin}
+                className="zone-pinceau"
+                fill="rgb(var(--c-brand))"
+                fillOpacity={0.12}
+                stroke="rgb(var(--c-brand))"
+                strokeOpacity={0.6}
+                ifOverflow="hidden"
+              />
+            )}
             <Tooltip
               isAnimationActive={false}
-              cursor={{ fill: "rgb(var(--c-ink-faint))", fillOpacity: 0.12 }}
+              cursor={<Reticule />}
               content={
                 <InfobulleEmpilee
-                  series={dessinees}
+                  survole={survole}
+                  series={visibles}
                   format={format}
                   seauSecondes={seauSecondes}
                   fuseau={fuseau}
@@ -413,7 +472,8 @@ function BarresSurGrille({
                 maxBarSize={48}
                 radius={i === dessinees.length - 1 ? [3, 3, 0, 0] : undefined}
                 isAnimationActive={false}
-                className={s.href ? "cursor-pointer" : undefined}
+                hide={legende.aspect(s.cle) === "masquee"}
+                className={[s.href ? "cursor-pointer" : "", classeAspect(legende.aspect(s.cle)) ?? ""].join(" ").trim() || undefined}
                 onClick={
                   s.href
                     ? (_d: unknown, _i: number, e: MouseEvent) => {
@@ -445,22 +505,45 @@ function BarresSurGrille({
       </div>
 
       <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft" data-testid="legende-serie">
-        {dessinees.map((s) => (
-          <li key={s.cle} className="flex min-w-0 items-center gap-1.5">
-            <PaveMotif s={s} />
-            {/* Le libellé passe à la ligne, jamais tronqué ; le texte entier (message
-                d'erreur abrégé par l'appelant) reste en infobulle. */}
-            {s.href ? (
-              <Link href={s.href} title={s.libelleComplet ?? s.libelle} className="min-w-0 break-words text-perf underline-offset-2 hover:underline">
-                {s.libelle}
-              </Link>
-            ) : (
-              <span className="min-w-0 break-words" title={s.libelleComplet ?? s.libelle}>
-                {s.libelle}
-              </span>
-            )}
-          </li>
-        ))}
+        {dessinees.map((s) => {
+          // Légende chiffrée et cliquable (spec A2 § 5.4). Une série qui a sa
+          // destination (`href`) garde son libellé en LIEN : le bouton d'isolement est
+          // alors la pastille seule (un lien dans un bouton n'est pas permis).
+          const aspect = legende.aspect(s.cle);
+          const cliquable = dessinees.length > 1;
+          const libelle = s.href ? (
+            <Link href={s.href} title={s.libelleComplet ?? s.libelle} className="min-w-0 break-words text-perf underline-offset-2 hover:underline">
+              {s.libelle}
+            </Link>
+          ) : (
+            <span className="min-w-0 break-words" title={s.libelleComplet ?? s.libelle}>
+              {s.libelle}
+            </span>
+          );
+          return (
+            <li key={s.cle} className="flex min-w-0 items-center gap-1.5" data-serie={s.cle}>
+              {cliquable && s.href ? (
+                <>
+                  <BoutonLegende cle={s.cle} libelle={s.libelle} aspect={aspect} onBasculer={legende.basculer}>
+                    <PaveMotif s={s} />
+                  </BoutonLegende>
+                  {libelle}
+                </>
+              ) : cliquable ? (
+                <BoutonLegende cle={s.cle} libelle={s.libelle} aspect={aspect} onBasculer={legende.basculer}>
+                  <PaveMotif s={s} />
+                  {libelle}
+                </BoutonLegende>
+              ) : (
+                <>
+                  <PaveMotif s={s} />
+                  {libelle}
+                </>
+              )}
+              <ValeurLegende lignes={prep.lignes} cle={s.cle} grille={grille} seauSecondes={seauSecondes} fuseau={fuseau} format={format} />
+            </li>
+          );
+        })}
         {enCours && dessinees.length > 0 && (
           <li className="flex items-center gap-1.5" data-testid="legende-seau-en-cours">
             <PaveEnCours id={idEnCours(0)} />
