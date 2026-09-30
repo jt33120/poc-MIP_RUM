@@ -215,6 +215,9 @@ function EnTete({ role, stats, href }: { role: "A" | "B"; stats: ReleaseStats; h
 /** Teinte de la pastille d'un verdict affirmé (jeton de remplissage, suit le mode sombre). */
 const TEINTE_PASTILLE = { good: "text-good", "needs-improvement": "text-warn", poor: "text-bad" } as const;
 
+/** Libellés courts de la case : la colonne est étroite, la fenêtre écrit les longs. */
+const COURT: Record<string, string> = { sessions: "Sessions", lcp: "LCP", inp: "INP", cls: "CLS", erreurs: "En erreur" };
+
 /**
  * La case de la Vue d'ensemble : A, B et l'écart, une ligne par mesure lue ; une
  * release sans session l'écrit « — » (la fenêtre dit pourquoi). Le verdict de B n'est
@@ -227,11 +230,18 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
   const clsLu = a.cls_p75 !== undefined && b.cls_p75 !== undefined;
   const lignes = MESURES.filter((m) => m.cle !== "cls" || clsLu);
   const valeur = (m: Mesure, s: ReleaseStats) => (vide(s) && m.cle !== "sessions" ? "—" : formater(m.format, m.lire(s) ?? null));
+  const verdictB = (m: Mesure) => {
+    const vb = m.lire(b) ?? null;
+    return m.vital && vb != null && !vide(b) ? verdictRelease(m.vital, vb, b) : null;
+  };
   return (
     <FicheMesure
       titre={`Release ${b.release} face à ${a.release}`}
       ariaLabel={`Release ${b.release} face à ${a.release}, ${plage} : ${lignes
-        .map((m) => `${m.libelle} ${valeur(m, a)} puis ${valeur(m, b)}`)
+        .map((m) => {
+          const v = verdictB(m);
+          return `${m.libelle} ${valeur(m, a)} puis ${valeur(m, b)}${v ? ` (${texteVerdict(v)})` : ""}`;
+        })
         .join(", ")} — ouvrir la comparaison`}
       testId="vignette-release"
       case={
@@ -249,14 +259,18 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
               <span className="text-right text-[10px] text-ink-faint">B / A</span>
               {lignes.map((m) => {
                 const vb = m.lire(b) ?? null;
-                const verdict = m.vital && vb != null && !vide(b) ? verdictRelease(m.vital, vb, b) : null;
+                const verdict = verdictB(m);
                 return (
                   <span key={m.cle} className="contents">
-                    <span className="truncate text-ink-soft">{m.libelle}</span>
+                    <span className="truncate text-ink-soft" title={m.libelle}>
+                      {COURT[m.cle] ?? m.libelle}
+                    </span>
                     <span className="text-right text-ink-soft">{valeur(m, a)}</span>
                     <span className="flex items-baseline justify-end gap-1 font-semibold text-ink">
                       {verdict?.kind === "etabli" && (
-                        <i className={`text-[8px] not-italic ${TEINTE_PASTILLE[verdict.rating]}`}>{FORME_RATING[verdict.rating]}</i>
+                        <i aria-hidden="true" className={`text-[8px] not-italic ${TEINTE_PASTILLE[verdict.rating]}`}>
+                          {FORME_RATING[verdict.rating]}
+                        </i>
                       )}
                       {valeur(m, b)}
                     </span>

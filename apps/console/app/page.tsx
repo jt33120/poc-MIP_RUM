@@ -1161,7 +1161,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         {/* Recette du 30/09/2026 : rien à signaler, pas de colonne — le hero prend la
             largeur. « Aucun constat » reste dit, une fois, dans le bandeau du haut. */}
         {!constatsVides && (
-        <div id="constats" className={`min-w-0 scroll-mt-16 ${blocs.hero ? "xl:col-span-4" : "xl:col-span-12"}`}>
+        <div id="constats" className={`flex min-w-0 scroll-mt-16 flex-col ${blocs.hero ? "xl:col-span-4" : "xl:col-span-12"}`}>
           <SectionErreur titre="Constats">
             {constats.echecs.length > 0 && (
               <div className="mb-2">
@@ -1175,7 +1175,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             {(etatDetectes.kind === "echec" || (etatDetectes.kind === "ok" && etatDetectes.cartes.length > 0)) && (
               <ConstatsDetectes etat={etatDetectes} />
             )}
-            <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut reglesEnInfobulle />
+            <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut reglesEnInfobulle etire />
           </SectionErreur>
         </div>
         )}
@@ -1192,18 +1192,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <div key={v.cle} className="flex min-w-0 grow basis-52 flex-col [&>*]:grow" data-vignette={v.cle}>
               {v.noeud}
             </div>
-          ))}
-        </div>
-      )}
-      {/* Ce qui n'a rien à dessiner : UNE ligne grise pour tous (lecture vide, comparaison
-          impossible, capacité non collectée), jamais une grande boîte chacun. */}
-      {lignesSansCase.length > 0 && (
-        <div
-          className="card -mt-2 flex min-w-0 flex-wrap items-baseline gap-x-6 gap-y-1.5 px-4 py-2.5 text-xs text-ink-soft"
-          data-testid="lignes-sans-case"
-        >
-          {lignesSansCase.map((l) => (
-            <Fragment key={l.cle}>{l.noeud}</Fragment>
           ))}
         </div>
       )}
@@ -1302,6 +1290,20 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             )
           )}
         </SectionErreur>
+      )}
+
+      {/* Ce qui n'a rien à dessiner : UNE ligne grise pour tous (lecture vide, comparaison
+          impossible, capacité non collectée), jamais une grande boîte chacun — sous les
+          classements, pour laisser au-dessus du pli ce qui a des chiffres. */}
+      {lignesSansCase.length > 0 && (
+        <div
+          className="card flex min-w-0 flex-wrap items-baseline gap-x-6 gap-y-1.5 px-4 py-2.5 text-xs text-ink-soft"
+          data-testid="lignes-sans-case"
+        >
+          {lignesSansCase.map((l) => (
+            <Fragment key={l.cle}>{l.noeud}</Fragment>
+          ))}
+        </div>
       )}
 
       {/* Anomalies LCP (24 h) : la section existe toujours — zéro anomalie est une

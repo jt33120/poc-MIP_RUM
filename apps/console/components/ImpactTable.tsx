@@ -531,7 +531,10 @@ export function ImpactTable({
   const grille = `grid items-center gap-x-2 ${GRILLE_ETROITE} ${compact ? "" : `${palier.moyenne} ${palier.large}`}`;
   const celluleLarge = compact ? "hidden" : palier.cellule;
   const celluleMoyenne = compact ? "hidden" : CELLULE_MOYENNE;
-  const libelleValeur = doublon >= 0 ? colonnes[doublon] : `Valeur (${UNITE_LISIBLE[unitePilote] ?? unitePilote})`;
+  // L'en-tête de la valeur classée : la colonne qu'elle double (« LCP p75 »), sinon son
+  // unité en un mot (« Part », « Durée », « Appels »).
+  const unite = UNITE_LISIBLE[unitePilote] ?? unitePilote;
+  const libelleValeur = doublon >= 0 ? colonnes[doublon] : unite.charAt(0).toUpperCase() + unite.slice(1);
   const premiereColonne = libelleGroupe ?? (dimension ? LIBELLE_DIMENSION[dimension] : undefined) ?? "Segment";
   const fleche = (id: TriImpact) => (tri === id ? "↓ " : "");
 
