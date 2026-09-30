@@ -34,7 +34,7 @@ describe("protocole", () => {
 describe("requête directe (aucune signature)", () => {
   it("absente : mode direct, aucun pays, rien à retirer", () => {
     const bord = creerBordDeConfiance([ANCIEN]);
-    expect(bord.lire(req({ "content-type": "application/json" }))).toEqual({ mode: "direct", pays: null, forges: 0 });
+    expect(bord.lire(req({ "content-type": "application/json" }))).toEqual({ mode: "direct", pays: null, origine: null, forges: 0 });
   });
 
   it("les en-têtes pays de CDN sont IGNORÉS hors requête authentifiée", () => {
@@ -46,7 +46,7 @@ describe("requête directe (aucune signature)", () => {
   it("un pays de bord FORGÉ est ignoré, retiré, et compté", () => {
     const bord = creerBordDeConfiance([ANCIEN]);
     const r = req({ "x-mip-edge-country": "FR", "x-mip-edge-ip": "203.0.113.7", "x-forwarded-for": "1.2.3.4" });
-    expect(bord.lire(r)).toEqual({ mode: "direct", pays: null, forges: 2 });
+    expect(bord.lire(r)).toEqual({ mode: "direct", pays: null, origine: null, forges: 2 });
     expect(Object.keys(r.headers)).toEqual(["x-forwarded-for"]);
     expect(r.rawHeaders).toEqual(["x-forwarded-for", "1.2.3.4"]);
   });
@@ -62,7 +62,7 @@ describe("requête signée", () => {
   it("valide : mode relayé, le pays du relais", () => {
     const bord = creerBordDeConfiance([ANCIEN]);
     const r = req({ "x-mip-edge-auth": ANCIEN, "x-mip-edge-country": "FR" });
-    expect(bord.lire(r)).toEqual({ mode: "relaye", pays: "FR", forges: 0 });
+    expect(bord.lire(r)).toEqual({ mode: "relaye", pays: "FR", origine: null, forges: 0 });
     // Le secret lui-même ne survit pas à la lecture : aucun code en aval ne
     // peut le relire, le journaliser ou le recopier.
     expect(r.headers).toEqual({});
@@ -87,7 +87,7 @@ describe("requête signée", () => {
     const bord = creerBordDeConfiance([ANCIEN]);
     for (const faux of ["", "x", ANCIEN.slice(1), `${ANCIEN}x`, ANCIEN.toUpperCase()]) {
       const r = req({ "x-mip-edge-auth": faux, "x-mip-edge-country": "FR" });
-      expect(bord.lire(r), JSON.stringify(faux)).toEqual({ mode: "refuse", pays: null, forges: 2 });
+      expect(bord.lire(r), JSON.stringify(faux)).toEqual({ mode: "refuse", pays: null, origine: null, forges: 2 });
       expect(r.headers).toEqual({});
     }
   });
@@ -96,17 +96,45 @@ describe("requête signée", () => {
     const bord = creerBordDeConfiance([ANCIEN]);
     for (const pays of ["fr", "FRA", "F", "F1", " FR", "XX,YY", "🇫🇷"]) {
       const r = req({ "x-mip-edge-auth": ANCIEN, "x-mip-edge-country": pays, "x-vercel-ip-country": "BE" });
-      expect(bord.lire(r), pays).toEqual({ mode: "relaye", pays: null, forges: 0 });
+      expect(bord.lire(r), pays).toEqual({ mode: "relaye", pays: null, origine: null, forges: 0 });
     }
   });
 
-  it("l'adresse n'est JAMAIS transmise : le résultat ne porte qu'un mode et un pays", () => {
+  it("l'adresse n'est JAMAIS transmise : le résultat ne porte qu'un mode, un pays et l'origine de la page", () => {
     const bord = creerBordDeConfiance([ANCIEN]);
     const r = req({ "x-mip-edge-auth": ANCIEN, "x-mip-edge-country": "FR", "x-mip-edge-ip": "203.0.113.7" });
     const lu = bord.lire(r);
-    expect(Object.keys(lu).sort()).toEqual(["forges", "mode", "pays"]);
+    expect(Object.keys(lu).sort()).toEqual(["forges", "mode", "origine", "pays"]);
     expect(JSON.stringify(lu)).not.toContain("203.0.113.7");
     expect(r.headers).toEqual({});
+  });
+});
+
+// 30/09/2026 — l'origine de la page, qui autorise un lot de l'extension sans clé
+// (`autoriseParDomaine`, pg-ingest.mjs). Relayée, la requête vient de Vercel : seul
+// le relais signé peut dire quelle page l'a émise.
+describe("origine de la page (x-mip-edge-origin)", () => {
+  const ORIGINE = "https://app.client.fr";
+
+  it("signée : l'origine transmise par le relais est lue, puis retirée", () => {
+    const bord = creerBordDeConfiance([ANCIEN]);
+    const r = req({ "x-mip-edge-auth": ANCIEN, "x-mip-edge-origin": ORIGINE, origin: "https://console.exemple" });
+    expect(bord.lire(r)).toEqual({ mode: "relaye", pays: null, origine: ORIGINE, forges: 0 });
+    // L'`Origin` de la requête reste celle de l'appelant : le receveur ne la lit pas en mode relayé.
+    expect(r.headers).toEqual({ origin: "https://console.exemple" });
+  });
+
+  it("FORGÉE en direct : ignorée, retirée et comptée — un client ne se choisit pas un domaine enregistré par ce biais", () => {
+    const bord = creerBordDeConfiance([ANCIEN]);
+    const r = req({ "x-mip-edge-origin": ORIGINE });
+    expect(bord.lire(r)).toEqual({ mode: "direct", pays: null, origine: null, forges: 1 });
+    expect(r.headers).toEqual({});
+  });
+
+  it("signature fausse : aucune origine", () => {
+    const bord = creerBordDeConfiance([ANCIEN]);
+    const r = req({ "x-mip-edge-auth": "faux", "x-mip-edge-origin": ORIGINE });
+    expect(bord.lire(r)).toEqual({ mode: "refuse", pays: null, origine: null, forges: 2 });
   });
 });
 

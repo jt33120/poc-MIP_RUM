@@ -102,7 +102,7 @@ async function traiter(req: Request) {
     const secured = secureOtlpIdentities(payload, process.env.IDENTITY_HASH_SECRET);
     const rows = flattenOtlp(secured.payload, { maxSpans: MAX_SPANS_PER_REQUEST });
 
-    const blocked = await guardApps(rows.apiKeys, cors);
+    const blocked = await guardApps(rows.apiKeys, cors, req.headers.get("origin"));
     if (blocked) return blocked;
 
     // géo sans stocker d'IP : priorité mip.tz (posé par flattenOtlp), repli

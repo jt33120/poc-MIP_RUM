@@ -52,11 +52,11 @@
 //     DÉCRIVENT les octets transmis tels quels : sans eux, le collector lirait
 //     un lot protobuf ou compressé comme du JSON. Même décodeur des deux côtés,
 //     donc même statut (400, 413, 415) et mêmes lignes.
-// Plus deux en-têtes du bord de confiance (`mip-edge/1`) : `x-mip-edge-auth`
-// (le secret) et `x-mip-edge-country` (le pays que Vercel a résolu,
-// `x-vercel-ip-country`, s'il a la forme ^[A-Z]{2}$). LE PAYS, JAMAIS L'IP :
-// la phrase « aucune adresse IP n'est transmise ni stockée » de `lib/legal.ts`
-// reste vraie avec le relais.
+// Plus le bord de confiance (`mip-edge/1`) : `x-mip-edge-auth` (le secret),
+// `x-mip-edge-country` (le pays de Vercel, s'il a la forme ^[A-Z]{2}$) et, pour
+// traces et logs, `x-mip-edge-origin` (l'`Origin` de la page, qui autorise un lot
+// de l'extension sans clé, 30/09/2026). LE PAYS ET LE SITE, JAMAIS L'IP : « aucune
+// adresse IP n'est transmise ni stockée » (`lib/legal.ts`) reste vrai avec le relais.
 //
 // ═════════════════════════════ LA RÉPONSE, ET LE REPLI ═══════════════════════
 //
@@ -195,6 +195,14 @@ const ENTETES_PAR_SIGNAL: Partial<Record<Signal, readonly string[]>> = Object.fr
   extensionHeartbeat: ["content-type", "user-agent"],
   deploys: ["content-type", "authorization"],
 });
+
+/**
+ * Signaux dont le relais transmet l'`Origin` de la page (`x-mip-edge-origin`) :
+ * ceux dont les gardes du collector la lisent, pour un lot de l'extension sans
+ * clé (`autoriseParDomaine`, `pg-ingest.mjs`). Le rejeu ne porte pas le marqueur
+ * de l'extension, les routes machine n'ont pas de page : rien à leur transmettre.
+ */
+const SIGNAUX_ORIGINE: ReadonlySet<Signal> = new Set<Signal>(["traces", "logs"]);
 
 /** Chemins canoniques du collector (il accepte aussi les alias historiques). */
 export const CHEMINS: Readonly<Record<Signal, string>> = Object.freeze({
@@ -455,6 +463,11 @@ export function creerRelais(deps: {
         entetes.set("x-mip-edge-auth", config.secret);
         const pays = req.headers.get("x-vercel-ip-country");
         if (pays && PAYS.test(pays)) entetes.set("x-mip-edge-country", pays);
+        // Sous le préfixe du bord : le collector ne la lit que si la signature
+        // est bonne, et la retire sinon. Sa forme est jugée là-bas, en un seul
+        // endroit (`hoteDOrigine`) ; ici, seulement une borne de longueur.
+        const origine = req.headers.get("origin");
+        if (origine && origine.length <= 2048 && SIGNAUX_ORIGINE.has(signal)) entetes.set("x-mip-edge-origin", origine);
 
         let statut: number;
         let corpsReponse: ArrayBuffer;
