@@ -28,9 +28,9 @@ describe("activeCategory", () => {
     ["/errors/issues/42", "Performance"],
     // Route gardée derrière l'onglet interne d'« Interactions » : masquée, mais comptée.
     ["/actions", "Performance"],
-    ["/correlation", "Robot et réel"],
-    ["/tracing/0af7651916cd43dd8448eb211c80319c", "Robot et réel"],
-    ["/map", "Robot et réel"],
+    ["/correlation", "Synthétique × RUM"],
+    ["/tracing/0af7651916cd43dd8448eb211c80319c", "Synthétique × RUM"],
+    ["/map", "Synthétique × RUM"],
     ["/goals", "Usages"],
     ["/sessions/s-1", "Usages"],
     ["/retention", "Usages"],
@@ -56,16 +56,13 @@ describe("activeCategory", () => {
 });
 
 describe("CATEGORIES (§ 2.2)", () => {
-  it("cinq catégories ouvertes, dans l'ordre, puis les entrées hors périmètre inchangées", () => {
+  it("cinq catégories ouvertes, dans l'ordre, puis « API et MCP » (30/09/2026 : sans Logs, Supervision IA ni Installer)", () => {
     expect(CATEGORIES.map((c) => c.label)).toEqual([
       "Performance",
-      "Robot et réel",
+      "Synthétique × RUM",
       "Usages",
       "Fiabilité",
       "Explorer",
-      "Logs",
-      "Supervision IA",
-      "Installer",
       "API et MCP",
     ]);
     expect(ouvertes().map((c) => [c.href, c.icon])).toEqual([
@@ -103,7 +100,7 @@ describe("CATEGORIES (§ 2.2)", () => {
     expect(libelles["/goals"]).toBe("Conversions");
     expect(libelles["/forecast"]).toBe("Tendances");
     expect(libelles["/events"]).toBe("Journal");
-    expect(libelles["/correlation"]).toBe("Robot et réel");
+    expect(libelles["/correlation"]).toBe("Corrélation");
   });
 
   it("aucune route ne change d'adresse : chaque lien mène à une page existante", () => {

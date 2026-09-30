@@ -73,6 +73,22 @@ const FORME_VERDICT: Record<keyof typeof RATING_LABEL, string> = {
   poor: "before:mr-1 before:content-['■']",
 };
 
+/** Voyant du verdict établi d'une tuile épurée. */
+const POINT_VERDICT: Record<keyof typeof RATING_LABEL, string> = {
+  good: "bg-good",
+  "needs-improvement": "bg-warn",
+  poor: "bg-bad",
+};
+
+/**
+ * Sépare le nombre de son unité (« 2,6 s » → « 2,6 » + « s ») pour les dessiner à
+ * deux tailles. Pure, exportée pour les tests ; sans unité reconnue, tout reste nombre.
+ */
+export function separerUnite(texte: string): { nombre: string; unite: string | null } {
+  const m = /^(.*\d)[\s\u00a0\u202f](pour 100|%|ms|s|min|h|j|Ko|Mo|Go)$/.exec(texte);
+  return m ? { nombre: m[1], unite: m[2] } : { nombre: texte, unite: null };
+}
+
 function alerteVraie(valeur: number, a: AlerteTuile): boolean {
   if (a.si === ">") return valeur > a.valeur;
   if (a.si === ">=") return valeur >= a.valeur;
@@ -145,6 +161,7 @@ export function CadreTuile({
   testId,
   titre,
   compact = false,
+  epure = false,
   children,
 }: {
   href?: string;
@@ -155,9 +172,13 @@ export function CadreTuile({
   titre?: string;
   /** Tuile de rangée KPI (spec A2 § 3.1) : 12 px de marge, rayon 8 px, pas d'ombre la nuit. */
   compact?: boolean;
+  /** Tuile épurée (tableau de bord, 30/09/2026) : `group` porte la fiche de survol. */
+  epure?: boolean;
   children: ReactNode;
 }) {
-  const classes = compact
+  const classes = epure
+    ? `group relative flex h-full min-w-0 flex-col justify-between gap-1 rounded-xl border bg-panel px-3.5 py-3 transition hover:border-ink-faint/60 focus-within:border-ink-faint/60 ${alerte ? "border-bad/50" : "border-line"}`
+    : compact
     ? `relative flex h-full min-w-0 flex-col gap-0.5 rounded-lg border bg-panel p-3 shadow-card dark:shadow-none ${alerte ? "border-bad/50" : "border-line"}`
     : `card flex min-w-0 flex-col gap-1 p-4 ${alerte ? "border-bad/50" : ""}`;
   if (href) {
@@ -202,6 +223,8 @@ export function KpiTile({
   testid,
   approchee = false,
   compact = false,
+  epure = false,
+  source,
   noteMip,
 }: {
   /** « LCP p75 », « Sessions commencées ». */
@@ -273,6 +296,16 @@ export function KpiTile({
    * — la tuile LCP empilait six lignes pour un chiffre (283 px).
    */
   compact?: boolean;
+  /**
+   * Tuile ÉPURÉE (recette du 30/09/2026, tableau de bord) : le libellé, la valeur et
+   * son unité, un voyant de verdict — rien d'autre à l'écran. Tout ce que la tuile
+   * sait (verdict, intervalle, variation, effectif, méthode, source, tendance) passe
+   * dans une fiche qui s'ouvre au survol ou au focus, et reste lu par les lecteurs
+   * d'écran. Les MÊMES refus que les autres modes : seule la mise en page change.
+   */
+  epure?: boolean;
+  /** D'où vient la mesure (capteur, API du navigateur, table) : écrite dans la fiche. */
+  source?: string;
 }) {
   const connue = valeur != null && Number.isFinite(valeur);
   const faibleSous = couverture?.faibleSous ?? FAIBLE_SOUS_DEFAUT;
@@ -426,6 +459,73 @@ export function KpiTile({
       ? methode
       : undefined;
   const pied = compact ? [texteEffectif, echantillonFaible ? "échantillon faible" : null].filter(Boolean).join(" · ") : null;
+
+  if (epure) {
+    const { nombre, unite } = separerUnite(texteValeur);
+    const lignes: [string, string][] = [
+      ["Verdict", verdict ? texteVerdict(verdict) : ""],
+      ["Intervalle", texteIntervalle ?? ""],
+      ["Variation", texteComparaison ?? ""],
+      ["Alerte", enAlerte ? (alerte?.regle ?? "") : ""],
+      ["Lecture", [!connue ? raisonNull : null, lecture].filter(Boolean).join(" · ")],
+      ["Effectif", [texteEffectif, echantillonFaible ? "échantillon faible" : null].filter(Boolean).join(" · ")],
+      ["Méthode", methode ?? ""],
+      ["Source", source ?? ""],
+    ].filter((l): l is [string, string] => l[1] !== "");
+    const couleurPoint = verdict?.kind === "etabli" ? POINT_VERDICT[verdict.rating] : null;
+    return (
+      <CadreTuile href={href} ariaLabel={ariaLabel} alerte={enAlerte} testId="kpi-tile" epure>
+        <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-ink-soft">
+          {couleurPoint && <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${couleurPoint}`} />}
+          <span className="min-w-0 truncate">{label}</span>
+        </span>
+        <span
+          className={`flex items-baseline gap-1 whitespace-nowrap tabular-nums tracking-tight ${enAlerte ? "text-bad-ink" : echantillonFaible ? "text-ink-soft" : "text-ink"}`}
+          data-testid={testid ?? "kpi-valeur"}
+        >
+          <span className="text-[26px] font-semibold leading-8">{nombre}</span>
+          {unite && <span className="text-sm font-medium text-ink-soft">{unite}</span>}
+        </span>
+        {/* Tout le reste, pour les lecteurs d'écran et les tests. */}
+        <div className="sr-only">
+          {verdict?.kind === "etabli" && <span data-testid="kpi-verdict">{RATING_LABEL[verdict.rating]}</span>}
+          {comparaison?.kind === "delta" && !deltaNonEtabli && <span>{texteComparaison}</span>}
+          {secondaires}
+        </div>
+        {/* La fiche : au survol ou au focus, jamais dans le flux (la grille ne bouge pas). */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none invisible absolute left-0 top-full z-30 mt-1.5 w-72 max-w-[85vw] rounded-xl border border-line bg-panel p-3 text-left opacity-0 shadow-pop transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        >
+          <p className="text-xs font-semibold text-ink">
+            {label} · <span className="tabular-nums">{texteValeur}</span>
+          </p>
+          <dl className="mt-2 grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1 text-[11px] leading-snug">
+            {lignes.map(([cle, texte]) => (
+              <div key={cle} className="contents">
+                <dt className="text-ink-faint">{cle}</dt>
+                <dd className="min-w-0 whitespace-pre-line text-ink-soft [overflow-wrap:anywhere]">{texte}</dd>
+              </div>
+            ))}
+          </dl>
+          {serie && serie.length > 1 && (
+            <div className="mt-2 border-t border-line pt-2">
+              <Sparkline
+                valeurs={serie}
+                label={`${label}, évolution sur ${pluriel(serie.length, "tranche")}`}
+                seuils={vital ? THRESHOLDS[vital] : undefined}
+              />
+              <p className="mt-0.5 flex justify-between text-[10px] text-ink-faint">
+                <span>début de période</span>
+                <span>{pluriel(serie.length, "tranche")}</span>
+                <span>maintenant</span>
+              </p>
+            </div>
+          )}
+        </div>
+      </CadreTuile>
+    );
+  }
 
   return (
     <CadreTuile href={href} ariaLabel={ariaLabel} alerte={enAlerte} testId="kpi-tile" titre={infobulle} compact={compact}>
