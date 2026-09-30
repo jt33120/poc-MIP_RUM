@@ -34,11 +34,16 @@
 //   - une ligne chiffrée par tuile, la méthode derrière l'aide « ? » ; la population
 //     (des tentatives, pas des sessions) et la remarque sur le SDK mobile ne sont
 //     dites qu'une fois, dans la carte de définition.
+//
+// REFONTE DU 30/09/2026 (charte § 4 « Formulaires ») : quatre cases épurées ; le
+// classement (6 colonnes) À CÔTÉ des champs du formulaire choisi (6 colonnes) ; la
+// définition de l'abandon en repli d'une ligne, sous les cases. Plus aucune phrase
+// d'explication à l'écran : les règles sont dans les fenêtres des cases, les replis
+// « Méthode » et la définition — déplacées, jamais supprimées.
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
-import { HeroReading } from "@/components/SupervisionHero";
 import { Figure, MethodeRepliee as Methode } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RangeeKpi } from "@/components/charts/RangeeKpi";
@@ -56,6 +61,7 @@ import { chargerEcran } from "@/lib/ecran";
 import { couvertureDeTuile, gesteElargir, plafondAtteint, plageDansPhrase } from "@/lib/lecture-usages";
 import { SERIE } from "@/lib/palette";
 import { hrefWithQuery, previousRange } from "@/lib/query-contract";
+import { tronquerMilieu } from "@/components/Sankey";
 import { referencePrecedente } from "@/lib/sessions-kpi";
 import { ecartProportions } from "@mip/stats/incertitude";
 
@@ -85,6 +91,15 @@ const TEXTE_PLAFOND = `${formater(
  * friction.
  */
 const GARDE_MOBILE = `Le SDK React Native n'émet aucun événement de formulaire${NBSP}: une application mobile n'apparaît jamais ici, même si ses utilisateurs remplissent des formulaires.`;
+
+/** D'où viennent les chiffres de l'écran, écrit dans la fenêtre de chaque case. */
+const SOURCE_FORMULAIRES = "SDK navigateur (option « forms ») · événements form.submit et form.abandon, table rum_event";
+
+/**
+ * Au-delà, un nom de formulaire est coupé AU MILIEU à l'écran (son début et sa fin
+ * l'identifient) : un `action` de formulaire peut être une longue URL ou un script.
+ */
+const NOM_FORMULAIRE_MAX = 40;
 
 const TEXTE_VIDE_LECTURE = `Le SDK navigateur suit les formulaires par défaut (option « forms » active)${NBSP}: sans aucun événement, soit aucun formulaire n'a été entamé sur la période, soit aucune page instrumentée n'en contient.`;
 
@@ -169,7 +184,7 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
       {/* Fm2 — quatre tuiles sur une seule population : les tentatives. Une ligne
           chiffrée par tuile ; la méthode est derrière l'aide « ? » (`methode`). */}
       <SectionErreur titre="Chiffres clés">
-        <RangeeKpi couvertures={[couverturePrecedente]} className="mb-6 grid min-w-0 grid-cols-2 gap-4 lg:grid-cols-4">
+        <RangeeKpi couvertures={[couverturePrecedente]} className="mb-3 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
           <KpiTile
             label="Formulaires entamés"
             valeur={entames > 0 ? entames : null}
@@ -177,6 +192,8 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
             raisonNull={raisonNull}
             lecture={entames > 0 ? `${pluriel(soumissions, "soumission")} · ${pluriel(abandons, "abandon")}` : undefined}
             methode={`Une tentative entamée a touché au moins un champ${NBSP}; elle se termine par une soumission ou par un abandon. Un visiteur peut entamer plusieurs fois le même formulaire.`}
+            source={SOURCE_FORMULAIRES}
+            categorie="Formulaires · tentatives"
             {...comparer(precEntames)}
           />
           <KpiTile
@@ -185,6 +202,8 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
             format="count"
             raisonNull={raisonNull}
             methode="Tentatives terminées par l'envoi du formulaire (événement « submit » du navigateur)."
+            source={SOURCE_FORMULAIRES}
+            categorie="Formulaires · form.submit"
             {...comparer(precSoumissions)}
           />
           {/* Sans verdict coloré (S6, R-S) : aucun seuil publié n'existe pour une
@@ -200,6 +219,8 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
               faibleSous: SEUIL_ECHANTILLON_FAIBLE,
             }}
             methode={`Soumissions ÷ formulaires entamés. Aucun seuil publié n'existe pour la conversion d'un formulaire${NBSP}: le taux n'a pas de verdict coloré.`}
+            source={SOURCE_FORMULAIRES}
+            categorie="Formulaires · soumis ÷ entamés"
             {...comparer(precEntames ? (precSoumissions ?? 0) / precEntames : null)}
             ecart={
               precEntames && entames > 0 ? ecartProportions(soumissions, entames, precSoumissions ?? 0, precEntames) : undefined
@@ -218,6 +239,8 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
             }
             couverture={{ n: soumissions, unite: accord(soumissions, "soumission"), faibleSous: SEUIL_ECHANTILLON_FAIBLE }}
             methode={`Médiane du temps total des soumissions, jamais une moyenne${NBSP}: un abandon rapide raccourcirait le temps de remplissage sans que personne n'aille plus vite.`}
+            source={SOURCE_FORMULAIRES}
+            categorie="Formulaires · p50 des soumissions"
             {...comparer(precEvents ? precEvents.mediane : null)}
           />
         </RangeeKpi>
@@ -225,17 +248,57 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
 
       {/* Un plafond atteint rend les données PARTIELLES : c'est l'emploi de « Partiel ». */}
       {lecture.ok && plafondAtteint(nombreLus, PLAFOND_EVENEMENTS) && (
-        <div className="mb-6" data-testid="forms-plafond">
-          <EtatSurface etat={{ kind: "partiel", raison: TEXTE_PLAFOND }} />
+        <div className="mb-3" data-testid="forms-plafond">
+          <EtatSurface compact etat={{ kind: "partiel", raison: TEXTE_PLAFOND }} />
         </div>
       )}
 
       {/* Fm2b — S7, la probabilité d'inclusion de la population lue. */}
       <BandeauEchantillonnage lecture={echantillonnage} />
 
-      {/* Fm3 — le hero (6 colonnes) et la définition de l'abandon (6 colonnes). */}
-      <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-12">
-        <div className="min-w-0 lg:col-span-6">
+      {/* La définition de l'abandon, en repli d'une ligne : ce que comptent TOUS les
+          chiffres de l'écran (des tentatives, pas des sessions), ses déclencheurs, et le
+          SDK mobile qui n'émet rien — dits une seule fois. */}
+      <details className="card mb-3 px-3 py-2" data-testid="forms-definition">
+        <summary className="flex cursor-pointer select-none items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft hover:text-ink">
+          <span id="forms-definition-titre">Ce que nous appelons un abandon</span>
+          <span className="font-normal normal-case tracking-normal text-ink-faint">
+            tentatives, pas sessions · aucune valeur saisie collectée · SDK mobile non suivi
+          </span>
+        </summary>
+        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-relaxed text-ink-soft">
+          <li data-testid="forms-population">
+            Chaque chiffre de l&apos;écran compte des tentatives de formulaire (une soumission ou un abandon), pas des
+            sessions.
+          </li>
+          <li>
+            {"Un abandon est émis quand la page passe en arrière-plan avec un formulaire entamé et non soumis"} —
+            c&apos;est le seul déclencheur, il n&apos;y a pas de délai d&apos;inactivité.
+          </li>
+          <li>
+            {"Changer d'onglet puis revenir soumettre compte un abandon et pas la soumission"}&nbsp;: le compteur du
+            formulaire est vidé au moment de l&apos;abandon.
+          </li>
+          <li>
+            {"Un envoi sans événement submit (bouton géré en JavaScript) compte comme un abandon"}&nbsp;: le SDK
+            écoute l&apos;événement du navigateur, pas l&apos;intention.
+          </li>
+          <li>
+            Aucune valeur saisie n&apos;est collectée&nbsp;: seuls un identifiant de champ (nom, id ou type&nbsp;; un
+            mot de passe devient <code className="chip-mono">[password]</code>), des durées et des compteurs voyagent.
+          </li>
+          <li data-testid="forms-garde-mobile">{GARDE_MOBILE}</li>
+          <li>
+            Un taux d&apos;abandon élevé peut donc venir du parcours autant que de la manière de soumettre&nbsp;: avant
+            de conclure, vérifiez que le bouton d&apos;envoi déclenche bien un envoi de formulaire.
+          </li>
+        </ul>
+      </details>
+
+      {/* Fm3 — le classement (6 colonnes) à côté des champs du formulaire choisi (6 colonnes). */}
+      {/* Même bord bas pour les deux figures de la rangée (la figure prend la hauteur de sa cellule). */}
+      <div className="mb-4 grid min-w-0 gap-3 lg:grid-cols-12">
+        <div className="min-w-0 lg:col-span-6 lg:[&>section]:h-full">
           <SectionErreur titre="Formulaires classés par abandons">
             <Figure
               id="forms-classement"
@@ -265,11 +328,12 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
             >
               {forms.length > 0 && (
                 <>
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                  <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
                     <Legende items={[{ couleur: COULEUR_ABANDONS, libelle: "Abandons" }]} />
                     {forms.length > 1 && (
-                      <p className="text-xs text-ink-soft" data-testid="forms-indication">
-                        Cliquez sur un formulaire pour afficher ses champs ci-dessous.
+                      // Le geste se voit (ligne marquée « champs affichés ») ; la consigne est lue.
+                      <p className="sr-only" data-testid="forms-indication">
+                        Cliquez sur un formulaire pour afficher ses champs à côté.
                       </p>
                     )}
                   </div>
@@ -277,65 +341,30 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
                   <Methode>
                     Classement par nombre d&apos;abandons. Un formulaire entamé moins de {SEUIL_ECHANTILLON_FAIBLE} fois
                     ferme la liste, marqué «&nbsp;échantillon faible&nbsp;»&nbsp;: quelques abandons sur quelques
-                    tentatives ne se comparent pas à un volume.
+                    tentatives ne se comparent pas à un volume. Un clic sur un formulaire affiche ses champs. Source&nbsp;:
+                    événements form.* du SDK navigateur (table rum_event).
                   </Methode>
                 </>
               )}
             </Figure>
           </SectionErreur>
         </div>
-        <section
-          className="card flex min-w-0 flex-col p-4 sm:p-5 lg:col-span-6"
-          data-testid="forms-definition"
-          aria-labelledby="forms-definition-titre"
-        >
-          <h2 id="forms-definition-titre" className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-            Ce que nous appelons un abandon
-          </h2>
-          <ul className="mb-3 list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-ink-soft">
-            <li data-testid="forms-population">
-              Chaque chiffre de l&apos;écran compte des tentatives de formulaire (une soumission ou un abandon), pas des
-              sessions.
-            </li>
-            <li>
-              {"Un abandon est émis quand la page passe en arrière-plan avec un formulaire entamé et non soumis"} —
-              c&apos;est le seul déclencheur, il n&apos;y a pas de délai d&apos;inactivité.
-            </li>
-            <li>
-              {"Changer d'onglet puis revenir soumettre compte un abandon et pas la soumission"}&nbsp;: le compteur du
-              formulaire est vidé au moment de l&apos;abandon.
-            </li>
-            <li>
-              {"Un envoi sans événement submit (bouton géré en JavaScript) compte comme un abandon"}&nbsp;: le SDK
-              écoute l&apos;événement du navigateur, pas l&apos;intention.
-            </li>
-            <li>
-              Aucune valeur saisie n&apos;est collectée&nbsp;: seuls un identifiant de champ (nom, id ou type&nbsp;; un
-              mot de passe devient <code className="chip-mono">[password]</code>), des durées et des compteurs voyagent.
-            </li>
-            <li data-testid="forms-garde-mobile">{GARDE_MOBILE}</li>
-          </ul>
-          <HeroReading>
-            Un taux d&apos;abandon élevé peut donc venir du parcours autant que de la manière de soumettre&nbsp;: avant
-            de conclure, vérifiez que le bouton d&apos;envoi déclenche bien un envoi de formulaire.
-          </HeroReading>
-        </section>
-      </div>
 
-      {/* Fm4 — les champs du formulaire sélectionné, dans l'ordre de remplissage. */}
-      <div className="mb-6">
-        <SectionErreur titre="Champs dans l'ordre de remplissage">
-          <ChampsDuFormulaire
-            selectionne={selectionne}
-            ligne={ligneSelectionnee}
-            rapport={champs}
-            meta={meta}
-            dansPhrase={dansPhrase}
-            fenetre={fenetre}
-            lectureOk={lecture.ok}
-            aucunEvenement={aucunEvenement}
-          />
-        </SectionErreur>
+        {/* Fm4 — les champs du formulaire sélectionné, dans l'ordre de remplissage. */}
+        <div className="min-w-0 lg:col-span-6 lg:[&>section]:h-full">
+          <SectionErreur titre="Champs dans l'ordre de remplissage">
+            <ChampsDuFormulaire
+              selectionne={selectionne}
+              ligne={ligneSelectionnee}
+              rapport={champs}
+              meta={meta}
+              dansPhrase={dansPhrase}
+              fenetre={fenetre}
+              lectureOk={lecture.ok}
+              aucunEvenement={aucunEvenement}
+            />
+          </SectionErreur>
+        </div>
       </div>
 
       {/* Fm5 — « Abandons dans le temps » N'EST PAS RENDUE tant que B34 n'est pas livré :
@@ -398,32 +427,15 @@ function BarresFormulaires({
               aria-current={actif ? "true" : undefined}
               title={`${r.form} : ${pluriel(r.abandons, "abandon")}, ${detail}${r.faible ? ", échantillon faible" : ""}`}
               data-testid="forms-ligne"
-              className={`flex items-center gap-3 rounded-md border px-2 py-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
+              className={`flex items-center gap-2 rounded-md border px-2 py-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
                 actif ? "border-perf/50 bg-perf/5" : "border-transparent hover:bg-panel2"
               }`}
             >
               <span className="block w-[min(7rem,var(--rank-label))] shrink-0 text-xs sm:w-[var(--rank-label)]">
-                <span className="block truncate font-medium text-ink">{r.form}</span>
-                <span className="block text-[10px] leading-snug text-ink-faint">{detail}</span>
-                {(r.faible || actif) && (
-                  <span className="mt-0.5 flex flex-wrap gap-1">
-                    {r.faible && (
-                      <span
-                        className="rounded-full border border-warn/40 bg-warn/10 px-1.5 text-[10px] font-medium text-warn-ink"
-                        data-testid="forms-echantillon-faible"
-                      >
-                        échantillon faible
-                      </span>
-                    )}
-                    {actif && (
-                      <span className="rounded-full border border-perf/40 bg-perf/10 px-1.5 text-[10px] font-medium text-perf">
-                        champs affichés
-                      </span>
-                    )}
-                  </span>
-                )}
+                <span className="block truncate font-medium text-ink">{tronquerMilieu(r.form, NOM_FORMULAIRE_MAX)}</span>
+                <span className="block truncate text-[10px] leading-snug text-ink-faint">{detail}</span>
               </span>
-              <span className="relative block h-6 min-w-0 flex-1 overflow-hidden rounded bg-panel2">
+              <span className="relative block h-5 min-w-0 flex-1 overflow-hidden rounded bg-panel2">
                 <span className="block h-full rounded" style={{ width: `${largeur}%`, backgroundColor: COULEUR_ABANDONS }} />
                 <span className="absolute inset-y-0 right-2 flex items-center">
                   <span className="rounded bg-panel/90 px-1 text-xs font-semibold tabular-nums text-ink">
@@ -431,6 +443,24 @@ function BarresFormulaires({
                   </span>
                 </span>
               </span>
+              {/* Les marques à droite de la barre : la ligne garde une hauteur. */}
+              {(r.faible || actif) && (
+                <span className="flex shrink-0 flex-col items-end gap-0.5">
+                  {r.faible && (
+                    <span
+                      className="rounded-full border border-warn/40 bg-warn/10 px-1.5 text-[10px] font-medium leading-4 text-warn-ink"
+                      data-testid="forms-echantillon-faible"
+                    >
+                      échantillon faible
+                    </span>
+                  )}
+                  {actif && (
+                    <span className="rounded-full border border-perf/40 bg-perf/10 px-1.5 text-[10px] font-medium leading-4 text-perf">
+                      champs affichés →
+                    </span>
+                  )}
+                </span>
+              )}
             </Link>
           </li>
         );
@@ -463,7 +493,9 @@ function ChampsDuFormulaire({
   lectureOk: boolean;
   aucunEvenement: boolean;
 }) {
-  const titre = selectionne ? `Champs de ${selectionne} dans l'ordre de remplissage` : "Champs dans l'ordre de remplissage";
+  const titre = selectionne
+    ? `Champs de ${tronquerMilieu(selectionne, NOM_FORMULAIRE_MAX)} dans l'ordre de remplissage`
+    : "Champs dans l'ordre de remplissage";
   if (!lectureOk) return <Figure id="forms-champs" titre={titre} meta={meta()} etat={{ kind: "erreur", titre }} />;
   if (!rapport || !rapport.champs.length) {
     return (
@@ -556,7 +588,7 @@ function ChampsDuFormulaire({
             { couleur: COULEUR_AUTRES, libelle: "Autres tentatives" },
           ]}
         />
-        <div className="mt-3">
+        <div className="mt-2">
           <RankBar
             data={data}
             labelWidth="12rem"
@@ -564,12 +596,9 @@ function ChampsDuFormulaire({
             legende={`Champs de ${selectionne} dans l'ordre médian de première interaction, ${fenetre}`}
           />
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-ink-soft">
-          Les champs sont rangés dans l&apos;ordre où les visiteurs les remplissent&nbsp;; chaque barre vaut les tentatives
-          qui ont touché le champ.
-        </p>
         <Methode>
-          Ordre médian de première interaction, pas un tri par abandons&nbsp;: la place du champ dans le formulaire est
+          Les champs sont rangés dans l&apos;ordre où les visiteurs les remplissent&nbsp;; chaque barre vaut les tentatives
+          qui ont touché le champ. Ordre médian de première interaction, pas un tri par abandons&nbsp;: la place du champ dans le formulaire est
           l&apos;information. Ce n&apos;est pas un entonnoir&nbsp;: un champ peut être sauté, les barres ne décroissent
           donc pas forcément. p50 et p75&nbsp;: temps passé sur le champ par la moitié et par les trois quarts des
           tentatives. Retours&nbsp;: nombre moyen de retours sur le champ après l&apos;avoir quitté.
@@ -577,8 +606,8 @@ function ChampsDuFormulaire({
       </Figure>
       {/* Données PARTIELLES (abandons hors barres, liste tronquée) : l'emploi de « Partiel ». */}
       {notes.map((raison) => (
-        <div key={raison} className="mt-3" data-testid="forms-champs-note">
-          <EtatSurface etat={{ kind: "partiel", raison }} />
+        <div key={raison} className="mt-2" data-testid="forms-champs-note">
+          <EtatSurface compact etat={{ kind: "partiel", raison }} />
         </div>
       ))}
     </>
