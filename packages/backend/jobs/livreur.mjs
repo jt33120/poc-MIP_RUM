@@ -12,7 +12,9 @@
 // (`etapesLivraison`, `planifie.mjs`) :
 //   route_error_issue_notifications   l'outbox des issues → alert_event + livraisons
 //   dispatch_alerts                   webhooks signés, e-mails Resend
-// La réconciliation des livraisons héritées de pg_net tourne à l'heure.
+// puis, si les deux ont abouti, le battement (`sonde_battement`, une fois par
+// minute au plus). La réconciliation des livraisons héritées de pg_net tourne à
+// l'heure.
 //
 // PAS DE BAIL. Chaque étape réserve ses lignes par `for update skip locked` : deux
 // répliques, ou le scheduler et le notifier pendant la bascule, se partagent les
@@ -39,6 +41,23 @@ export const INTERVALLE_DEFAUT_MS = 15_000;
  * drainage d'un redéploiement (20 s) doit couvrir la passe en cours.
  */
 export const BUDGET_PASSE_MS = 10_000;
+/**
+ * Écart minimal entre deux battements écrits dans `sonde_battement` (v103). Le
+ * battement part DANS la passe, quand la base est déjà éveillée par elle : il ne
+ * coûte aucun réveil de Neon. Une passe toutes les 15 s n'en écrit qu'une sur
+ * quatre ; une passe alignée toutes les 15 min, à chaque fois.
+ */
+export const BATTEMENT_MIN_MS = 60_000;
+/** Le service, tel que la carte « Santé de la chaîne de mesure » le cherche (`SanteChaine.tsx`). */
+export const SERVICE_BATTEMENT = "notifier";
+
+/**
+ * L'upsert du battement : `dernier_ok` à l'heure de la BASE (celle que lit la
+ * console), jamais à celle du processus.
+ */
+export const SQL_BATTEMENT = `insert into sonde_battement (service, dernier_ok, detail)
+values ($1, now(), $2)
+on conflict (service) do update set dernier_ok = excluded.dernier_ok, detail = excluded.detail`;
 /**
  * Au-delà, une livraison `queued` ne partira pas toute seule : /ready le dit.
  * Deux intervalles au moins : sur la base gratuite, une livraison mise en file
@@ -72,7 +91,8 @@ export function erreurIntervalle(intervalleMs) {
 /**
  * @param {{ pool: { query: Function, connect: Function }, log: any, metrics?: any,
  *           dispatch?: typeof dispatchOnce, email?: object | null, secretSignature?: string | null,
- *           intervalleMs?: number, budgetMs?: number, maintenant?: () => number }} options
+ *           intervalleMs?: number, budgetMs?: number, battementMinMs?: number,
+ *           maintenant?: () => number }} options
  */
 export function creerLivreur({
   pool,
@@ -83,6 +103,7 @@ export function creerLivreur({
   secretSignature = null,
   intervalleMs = INTERVALLE_DEFAUT_MS,
   budgetMs = BUDGET_PASSE_MS,
+  battementMinMs = BATTEMENT_MIN_MS,
   maintenant = Date.now,
 }) {
   const demarrage = maintenant();
@@ -119,11 +140,41 @@ export function creerLivreur({
     return bilan;
   }
 
+  /** Instant (processus) du dernier battement TENTÉ ; `null` avant le premier. */
+  let battementA = null;
+
+  /**
+   * Le battement du notifier (`sonde_battement`, v103), lu par la carte « Santé de
+   * la chaîne de mesure » de `/admin/health` : le notifier n'a pas de bail, c'est
+   * sa seule trace en base. Écrit après une passe ABOUTIE seulement — `dernier_ok`
+   * dit la dernière passe qui a livré, et une passe en échec le laisse vieillir,
+   * c'est le signal. Au plus une fois par `battementMinMs`, compté depuis la
+   * dernière TENTATIVE : une table absente (v103 pas encore appliquée) ne se
+   * retente pas à chaque passe. Un échec ne fait jamais échouer la passe.
+   */
+  async function battre() {
+    const t = maintenant();
+    if (battementA !== null && t - battementA < battementMinMs) return false;
+    battementA = t;
+    try {
+      await pool.query({
+        text: SQL_BATTEMENT,
+        values: [SERVICE_BATTEMENT, `passe toutes les ${Math.round(intervalleMs / 1000)} s`],
+        query_timeout: 2_000,
+      });
+      return true;
+    } catch (err) {
+      log.warn?.("battement du notifier non écrit", { err: String(err) });
+      return false;
+    }
+  }
+
   /** Une passe de livraison. Ne lève pas : une étape en échec n'annule pas les suivantes. */
   async function passe() {
     const debut = maintenant();
     const l = etapesLivraison(pool, { log, dispatch: dispatchConfigure, echeance: debut + budgetMs });
     const bilan = await executerEtapes([l.route, l.dispatch], log, { job: "livraison" });
+    if (bilan.ok) await battre();
     return retenir("passe", debut, bilan);
   }
 

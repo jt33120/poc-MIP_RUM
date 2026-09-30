@@ -209,10 +209,15 @@ export function jugerEcriture(presence) {
  * @returns {"ok" | "degradee" | "interrompue" | null}
  */
 export function etatChaine({ emission, ecriture, chemin = null, c2 = null }) {
-  const chemins = [{ emission, ecriture }, ...(c2 ? [c2] : [])].filter((c) => c.emission != null && c.emission !== "saute");
+  const sondes = [{ emission, ecriture }, ...(c2 ? [c2] : [])];
+  const chemins = sondes.filter((c) => c.emission != null && c.emission !== "saute");
   if (!chemins.length) return null;
   const echoue = (c) => c.emission === "echec" || c.ecriture === "absent";
-  if (chemins.every(echoue)) return "interrompue";
+  // Un chemin sauté n'a rien prouvé, ni dans un sens ni dans l'autre : l'échec des
+  // seuls chemins restants ne suffit pas à dire la chaîne INTERROMPUE (relevé du
+  // 30/09/2026 : C1 sauté par le renouvellement de clé au démarrage, C2 en échec,
+  // et toute la plateforme hachurée comme coupée).
+  if (chemins.every(echoue)) return sondes.some((c) => c.emission === "saute") ? "degradee" : "interrompue";
   if (chemins.some(echoue)) return "degradee";
   if (chemins.some((c) => c.emission === "lent" || c.ecriture === "echec")) return "degradee";
   if (chemin === "local") return "degradee";

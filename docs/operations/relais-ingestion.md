@@ -140,8 +140,8 @@ update platform_flag set value = '0', updated_by = '<prénom>' where key = 'inge
   (413), sans appel réseau.
 - **En-têtes transmis, liste exacte :** `content-type`, `content-encoding`,
   `x-mip-session`, `x-mip-app`, `x-mip-seq`, `x-mip-key`, plus `authorization` pour les
-  source maps par jeton. S'y ajoutent `x-mip-edge-auth` (le secret) et `x-mip-edge-country`
-  (le pays résolu par Vercel, s'il vaut `^[A-Z]{2}$`).
+  source maps par jeton. S'y ajoutent `x-mip-edge-auth` (le secret), `x-mip-edge-country` (le pays
+  de Vercel, s'il vaut `^[A-Z]{2}$`) et, pour traces et logs, `x-mip-edge-origin` (l'`Origin` de la page, 30/09/2026).
 - **Jamais d'adresse IP** : ni `x-forwarded-for`, ni `x-real-ip`, ni
   `x-vercel-forwarded-for`, ni `forwarded`. La phrase « aucune adresse IP n'est transmise
   ni stockée » reste vraie.

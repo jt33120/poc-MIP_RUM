@@ -29,11 +29,12 @@ CSP fige `connect-src` (annexe C). Les agents serveur restent sur la console.
 3. Les domaines se modifient à tout moment depuis la fiche du client ; c'est pris en
    compte en 60 s au plus, sans redéploiement.
 
-**La clé, exigée.** L'IaC du collecteur l'exige depuis le 29/09/2026
-(`REQUIRE_API_KEY: "true"` dans `.railway/railway.ts`) : un lot sans clé ou avec une clé
-fausse est refusé en 403, que le navigateur écrive par la console (le relais rend le 403
-tel quel) ou directement au collecteur. Posez-la dans le snippet (`apiKey`) et côté
-serveur (`mip.api_key`).
+**La clé, honnêtement.** Depuis le 29/09/2026, la collecte l'exige
+(`REQUIRE_API_KEY: "true"` pour le `collector`, dans `.railway/railway.ts`) : un lot sans
+clé ou avec une clé fausse est refusé en 403, que le navigateur écrive par la console (le
+relais rend le 403 tel quel) ou directement au collecteur. Posez-la dans le snippet
+(`apiKey`) et côté serveur (`mip.api_key`). Seule exception, l'extension navigateur, qui
+n'a pas de clé : le domaine enregistré en tient lieu (§ 2, « L'extension »).
 
 La fiche du client ouvre ensuite un guide en cinq étapes : vérifier la configuration,
 poser le code de suivi, brancher le serveur, vérifier en direct, donner un accès au
@@ -98,6 +99,25 @@ CSP n'autorise que la console garde la console si son point de collecte est déc
 (`extension_scope.endpoint`, posé par l'équipe MIP).
 Installation et déploiement : `apps/extension/README.md`, `docs/DEPLOY_EXTENSION.md`.
 
+**Sans clé : le domaine enregistré en tient lieu** (depuis le 30/09/2026). L'extension
+n'embarque aucune clé : son code est public, aucun secret n'y tient. Quand la collecte exige
+une clé, un lot **sans clé** est accepté si et seulement si :
+
+1. tous ses spans portent `mip.collection_source = "extension"` (ce que pose le SDK injecté) ;
+2. l'origine de la page (en-tête `Origin`) est un domaine **actif** de
+   `/admin/extension-scope` pour cet `app_id` (nom d'hôte exact, port ignoré) ;
+3. l'application est active et non suspendue.
+
+Relayée par la console, l'origine de la page est transmise au collector sous la signature du
+relais (`x-mip-edge-origin`, lue seulement si la signature est bonne). Un lot qui porte une
+clé est jugé sur sa clé ; le snippet sans clé reste refusé, comme le rejeu et les logs
+(l'extension n'en envoie pas) ; la limite de débit par application s'applique comme au
+snippet. Ce n'est pas un affaiblissement : la clé d'un snippet se lit dans le code source
+de la page, et un domaine enregistré, qu'un en-tête `Origin` forgé suffit à usurper hors
+d'un navigateur, ne protège ni plus ni moins. La règle vit à un seul endroit,
+`createPgAuth` (`packages/backend/lib/pg-ingest.mjs`), pour la console comme pour le
+collector.
+
 ## 3. Serveur : l'agent OpenTelemetry officiel
 
 MIP ne fournit aucun capteur serveur : le service tourne sous l'agent OpenTelemetry
@@ -129,6 +149,7 @@ serveur de chaque appel.
 | Collecte directe : « Refused to connect », violation CSP | la CSP du site n'autorise pas le collecteur en `connect-src` | l'y ajouter (annexe C), ou prendre le code « par la console » de la fiche |
 | 403 `inactive app`, `ingestion suspended` | application désactivée ou suspendue | la réactiver (administration) |
 | 403 `invalid api key`, `app requires an API key` | la collecte exige une clé, absente ou fausse | poser la bonne clé (`apiKey`, ou `mip.api_key` côté serveur) |
+| 403 `extension origin not registered` | lot de l'extension, sans clé, dont la page n'est pas un domaine actif de l'application | enregistrer ou réactiver le nom d'hôte exact dans `/admin/extension-scope` (60 s) |
 | 429 | plus de 600 requêtes par minute pour l'application | attendre (`retry-after: 60`) ; le SDK rejoue ses lots plus tard. Si ça dure : une boucle d'émission, `flushIntervalMs` à allonger ; côté serveur, annexe J |
 | 413 | requête de plus de 2 Mo | réduire les lots (côté serveur : taille de lot de l'exportateur) |
 | 415 | ni JSON ni protobuf, ou gRPC | côté serveur : `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` |

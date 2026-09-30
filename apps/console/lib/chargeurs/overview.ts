@@ -47,6 +47,7 @@ import { retentionDays } from "../queries-explorer";
 import { lireComparaison } from "../view-state";
 import { ALERTES_PAR_EVENEMENT, releasesComparees, sansConditionRelease } from "../vue-ensemble";
 import { blocsDe, section, sansSection, type Chargeur } from "./commun";
+import { lireDetectionsAccueil } from "./detections-accueil";
 
 // Sources des deux rangées de tuiles comparées à la période précédente (§ 3.2).
 // « Sessions commencées » se date par `started_at` (R-P). Le ratio d'erreurs
@@ -114,6 +115,7 @@ export const chargerOverview = (async (principal, sp) => {
   // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8 règle 1) : une lecture en échec
   // devient `{ ok: false }`, et seule SA section le dit.
   const [
+    detections,
     vitals,
     vitalsPrev,
     stats,
@@ -144,6 +146,9 @@ export const chargerOverview = (async (principal, sp) => {
     couvTrafic,
     lcpQuotidienP7,
   ] = await Promise.all([
+    // Détections (vague 3b) : plage habituelle du hero, constats calculés, heatmap de
+    // latence — chacune sa section (`chargeurs/detections-accueil.ts`).
+    lireDetectionsAccueil(query, blocs.hero, comparaison.mode === "release"),
     blocs.vitals || blocs.decoupage ? section(() => vitalsP75(f)) : sansSection<VitalAgg[]>([]),
     blocs.vitals && prev ? section(() => vitalsP75(f, true)) : sansSection<VitalAgg[]>([]),
     section(() => overviewStats(f)),
@@ -277,6 +282,7 @@ export const chargerOverview = (async (principal, sp) => {
     couvVitaux,
     couvTrafic,
     lcpQuotidienP7,
+    detections,
     choix,
     releases,
     vitalsB,

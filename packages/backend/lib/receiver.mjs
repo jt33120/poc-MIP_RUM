@@ -354,6 +354,17 @@ export function creerReceveur(pool, opts = {}) {
   }
 
   /**
+   * L'origine de la PAGE, pour la règle de l'extension (`autoriseParDomaine`).
+   * Relayée : celle que le relais a transmise, sous sa signature — l'`Origin`
+   * de la requête serait celui de la console. Directe : l'`Origin` du
+   * navigateur. Signature fausse : aucune.
+   */
+  function origineDe(req, lu) {
+    if (lu.mode === "relaye") return lu.origine;
+    return lu.mode === "direct" ? entete(req, "origin") : null;
+  }
+
+  /**
    * Ce que `/health` dit du receveur, au-delà du statut : jamais un secret,
    * jamais une adresse, jamais un message d'erreur.
    */
@@ -397,15 +408,15 @@ export function creerReceveur(pool, opts = {}) {
    * 503 ; la requête abandonnée finit seule, bornée par le `query_timeout` du
    * pool, et n'écrit rien d'autre qu'un coup de compteur de débit.
    */
-  function gardes(apiKeys, entetes, echeance) {
+  function gardes(apiKeys, entetes, echeance, origine = null) {
     // Échéance déjà passée (corps arrivé lentement) : on ne lance rien.
     if (!(echeance > Date.now())) return Promise.reject(new ErreurEcheance());
-    return sousEcheance(gardesSansBorne(apiKeys, entetes), echeance);
+    return sousEcheance(gardesSansBorne(apiKeys, entetes, origine), echeance);
   }
 
-  async function gardesSansBorne(apiKeys, entetes) {
-    for (const { app_id, api_key } of apiKeys) {
-      const raison = await auth.checkApiKey(app_id, api_key);
+  async function gardesSansBorne(apiKeys, entetes, origine) {
+    for (const { app_id, api_key, extension } of apiKeys) {
+      const raison = await auth.checkApiKey(app_id, api_key, { extension: extension === true, origine });
       if (raison) {
         log.warn("rejected: api key", { app_id, reason: raison });
         return { statut: 403, corps: { error: raison }, entetes };
@@ -462,7 +473,7 @@ export function creerReceveur(pool, opts = {}) {
 
     if (estLogs) {
       const parsed = flattenOtlpLogs(payload, { maxLogs: MAX_SPANS_PER_REQUEST });
-      const refus = await gardes(parsed.apiKeys, entetes, echeance);
+      const refus = await gardes(parsed.apiKeys, entetes, echeance, origineDe(req, lu));
       if (refus) return repondre(res, refus.statut, refus.corps, refus.entetes);
       const ecrit = await sousBudget(echeance, (o) => writeLogs(pool, parsed.logs, parsed.errors, o), "logs");
       log.info("ingested logs", {
@@ -475,7 +486,7 @@ export function creerReceveur(pool, opts = {}) {
     }
 
     const rows = flattenOtlp(payload, { maxSpans: MAX_SPANS_PER_REQUEST });
-    const refus = await gardes(rows.apiKeys, entetes, echeance);
+    const refus = await gardes(rows.apiKeys, entetes, echeance, origineDe(req, lu));
     if (refus) return repondre(res, refus.statut, refus.corps, refus.entetes);
 
     // Géo SANS JAMAIS STOCKER D'IP. L'adresse ne vit que le temps de cet appel :

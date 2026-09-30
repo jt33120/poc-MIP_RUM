@@ -33,7 +33,7 @@ sequenceDiagram
   participant B as Neon
   N->>V: POST OTLP (même URL qu'avant : aucun client ne change)
   V->>V: tirage du pourcentage (platform_flag, cache 30 s), disjoncteur fermé ?
-  V->>C: corps OCTET POUR OCTET, en-têtes par liste exacte,<br/>x-mip-edge-auth (secret) + x-mip-edge-country (pays seul, JAMAIS l'IP) — délai 8 s
+  V->>C: corps OCTET POUR OCTET, en-têtes par liste exacte,<br/>x-mip-edge-auth (secret) + x-mip-edge-country (pays, JAMAIS l'IP) + x-mip-edge-origin (origine de la page) — délai 8 s
   C->>C: bord de confiance en temps constant ; identité hachée (HMAC, secret Railway seul)
   C->>B: même transaction qu'avant, sous une échéance DURE de 4 s
   B-->>C: commit

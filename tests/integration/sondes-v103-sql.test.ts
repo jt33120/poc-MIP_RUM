@@ -24,6 +24,8 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 // @ts-expect-error module JS partagé sans déclarations
 import { APP_CANARI, construireLotCanari, creerSondes } from "../../packages/backend/jobs/sondes.mjs";
+// @ts-expect-error module JS partagé sans déclarations
+import { SERVICE_BATTEMENT, SQL_BATTEMENT } from "../../packages/backend/jobs/livreur.mjs";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
@@ -448,6 +450,22 @@ function migrations(): string[] {
       await pool.query("delete from sonde_passage where passage_id = any($1::uuid[])", [[passage, ancien]]);
       await pool.query("delete from collecte_fenetre where cause like 'v103-carte %'");
       await pool.query("delete from sonde_battement where service = 'notifier'");
+    }
+  });
+
+  it("le battement du notifier (livreur) : un upsert sur la vraie table, une ligne par service, dernier_ok avancé", async () => {
+    const c = await pool.connect();
+    try {
+      await c.query("begin");
+      const valeurs = [SERVICE_BATTEMENT, "passe toutes les 900 s"];
+      await c.query(SQL_BATTEMENT, valeurs);
+      await c.query("update sonde_battement set dernier_ok = now() - interval '1 hour' where service = $1", [SERVICE_BATTEMENT]);
+      await c.query(SQL_BATTEMENT, valeurs);
+      const { rows } = await c.query("select service, detail, now() - dernier_ok < interval '1 minute' as frais from sonde_battement");
+      expect(rows).toEqual([{ service: "notifier", detail: "passe toutes les 900 s", frais: true }]);
+    } finally {
+      await c.query("rollback");
+      c.release();
     }
   });
 });
