@@ -195,14 +195,17 @@ describe("/forecast — tuiles contre le même jour J−7 (revue de F65)", () =>
 });
 
 describe("/forecast — vérité des libellés et des liens", () => {
-  it("fenêtre fixe dite avec ses dates ; ratio sans « % » ni « taux d'erreur » ; « ce n'est pas une prévision »", async () => {
+  // Recette du 30/09/2026 : le ratio « pour 100 pages vues » s'écrit « % » dans sa case
+  // (il peut dépasser 100 %) ; le libellé ne dit toujours pas « taux d'erreur ».
+  it("fenêtre fixe dite avec ses dates ; ratio écrit en %, jamais « taux d'erreur » ; « ce n'est pas une prévision »", async () => {
     dailyTraffic.mockResolvedValue(JOURS.map((day) => ({ day, pageviews: 20, errors: 30 })));
     dailyLcpSeries.mockResolvedValue(lcpDe(DERIVE));
     const html = await rendre();
     expect(html).toContain("14 jours complets, du 01/09 au 14/09, fuseau de l&#x27;app (heure de Paris)");
     expect(html).toContain("la journée en cours est exclue");
+    expect(html).toMatch(/>150\u00a0<span[^>]*>%<\/span>/);
+    // La valeur exacte reste lue par les lecteurs d'écran.
     expect(html).toContain("150\u00a0pour\u00a0100");
-    expect(html).not.toMatch(/150\s?%/);
     expect(html.toLowerCase()).not.toContain("taux d&#x27;erreur");
     expect(html).toContain("ce n&#x27;est pas une prévision");
     expect(html).not.toContain("Prévisions");

@@ -59,17 +59,26 @@ describe("nombres et pluriels à la française", () => {
 describe("KpiTile — la méthode derrière l'aide « ? »", () => {
   const base = { label: "Occurrences", valeur: 77, format: "count" as const };
 
+  // Le mode détaillé (`epure={false}`) ; la case épurée, par défaut depuis le
+  // 30/09/2026, range la méthode dans sa fenêtre (test suivant).
   it("tuile simple : la méthode vit dans la bulle, pas sous le chiffre", () => {
-    const html = renderToStaticMarkup(<KpiTile {...base} methode="somme des occurrences" />);
+    const html = renderToStaticMarkup(<KpiTile {...base} epure={false} methode="somme des occurrences" />);
     expect(html).toContain('aria-label="Méthode : Occurrences"');
     expect(html).toContain('role="tooltip"');
     expect(html).toContain('data-testid="kpi-methode"');
   });
 
   it("tuile-lien : pas de bouton dans le lien, la méthode passe dans l'infobulle native", () => {
-    const html = renderToStaticMarkup(<KpiTile {...base} methode="somme des occurrences" href="/errors" />);
+    const html = renderToStaticMarkup(<KpiTile {...base} epure={false} methode="somme des occurrences" href="/errors" />);
     expect(html).not.toContain("<button");
     expect(html).toContain('title="somme des occurrences"');
+  });
+
+  it("case épurée : la méthode est dans la fenêtre, jamais sous le chiffre", () => {
+    const html = renderToStaticMarkup(<KpiTile {...base} methode="somme des occurrences" href="/errors" />);
+    const [cas, fenetre] = html.split("<dialog");
+    expect(cas).not.toContain("somme des occurrences");
+    expect(fenetre).toMatch(/data-testid="kpi-methode"[^>]*>somme des occurrences</);
   });
 });
 

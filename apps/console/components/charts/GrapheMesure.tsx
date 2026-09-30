@@ -50,12 +50,15 @@ export function GrapheMesure({
   debuts,
   format,
   titreY,
-  titreX = "heure de Paris",
+  titreX,
   seuils,
 }: {
   valeurs: (number | null)[];
-  /** Début ISO de chaque tranche, aligné sur `valeurs`. */
-  debuts: string[];
+  /**
+   * Début ISO de chaque tranche, aligné sur `valeurs`. Absent (une tuile dont la
+   * série n'est pas datée) : l'axe du temps dit « début » et « maintenant », sans heure.
+   */
+  debuts?: string[];
   format: FormatId;
   /** Grandeur et unité de l'axe vertical : « LCP au 75ᵉ centile (ms) ». */
   titreY: string;
@@ -63,7 +66,8 @@ export function GrapheMesure({
   /** Seuils [bon, mauvais] (web.dev), tracés en pointillé. */
   seuils?: [number, number];
 }) {
-  const n = Math.min(valeurs.length, debuts.length);
+  const n = debuts ? Math.min(valeurs.length, debuts.length) : valeurs.length;
+  const titreAxeX = titreX ?? (debuts ? "heure de Paris" : "tranches de la période, de la plus ancienne à la plus récente");
   const mesurees = valeurs.slice(0, n).filter((v): v is number => v != null && Number.isFinite(v));
   if (n < 2 || mesurees.length < 2) {
     return <p className="py-8 text-center text-xs text-ink-soft">Moins de deux tranches mesurées : pas de courbe.</p>;
@@ -90,14 +94,15 @@ export function GrapheMesure({
   if (courant.length > 1) segments.push(courant.join(" "));
 
   const horsEchelle = mesurees.filter((v) => v > sommet);
-  const plusieursJours = Date.parse(debuts[n - 1]) - Date.parse(debuts[0]) > 36 * 3_600_000;
-  const reperesX = [0, Math.round((n - 1) / 4), Math.round((n - 1) / 2), Math.round((3 * (n - 1)) / 4), n - 1].filter(
-    (v, i, t) => t.indexOf(v) === i,
-  );
+  const plusieursJours = debuts ? Date.parse(debuts[n - 1]) - Date.parse(debuts[0]) > 36 * 3_600_000 : false;
+  const reperesX = (
+    debuts ? [0, Math.round((n - 1) / 4), Math.round((n - 1) / 2), Math.round((3 * (n - 1)) / 4), n - 1] : [0, n - 1]
+  ).filter((v, i, t) => t.indexOf(v) === i);
+  const libelleX = (i: number) => (debuts ? heure(debuts[i], plusieursJours) : i === 0 ? "début" : "maintenant");
 
   return (
     <figure className="m-0">
-    <svg viewBox={`0 0 ${L} ${H}`} className="h-auto w-full" role="img" aria-label={`${titreY} selon ${titreX}`}>
+    <svg viewBox={`0 0 ${L} ${H}`} className="h-auto w-full" role="img" aria-label={`${titreY} selon ${titreAxeX}`}>
       {/* Graduations horizontales et valeurs de l'axe vertical */}
       {graduations.map((g) => (
         <g key={g}>
@@ -133,7 +138,7 @@ export function GrapheMesure({
         <g key={i}>
           <line x1={x(i)} x2={x(i)} y1={M.haut + HAUT} y2={M.haut + HAUT + 4} className="stroke-ink-faint" />
           <text x={x(i)} y={M.haut + HAUT + 16} textAnchor="middle" className="fill-ink-soft text-[10px] tabular-nums">
-            {heure(debuts[i], plusieursJours)}
+            {libelleX(i)}
           </text>
         </g>
       ))}
@@ -152,7 +157,7 @@ export function GrapheMesure({
       )}
       {/* Titres des axes */}
       <text x={M.gauche + LARG / 2} y={H - 6} textAnchor="middle" className="fill-ink-soft text-[11px]">
-        {titreX}
+        {titreAxeX}
       </text>
       <text
         transform={`translate(14 ${M.haut + HAUT / 2}) rotate(-90)`}

@@ -25,7 +25,11 @@ const BASE: Props = {
   couverture: { n: 1240, unite: "mesures" },
 };
 
-const rendu = (props: Partial<Props> = {}) => renderToStaticMarkup(<KpiTile {...BASE} {...props} />);
+// Ces tests décrivent le mode DÉTAILLÉ (`epure={false}`) : depuis le 30/09/2026, le
+// mode par défaut est la case épurée, testée à part plus bas. Les deux tiennent les
+// mêmes refus ; seul l'affichage change.
+const rendu = (props: Partial<Props> = {}) => renderToStaticMarkup(<KpiTile {...BASE} epure={false} {...props} />);
+const renduEpure = (props: Partial<Props> = {}) => renderToStaticMarkup(<KpiTile {...BASE} {...props} />);
 const texte = (html: string) =>
   html
     .replace(/<[^>]+>/g, " ")
@@ -385,6 +389,46 @@ describe("KpiTile — tuile compacte (rangée KPI de la vue d'ensemble)", () => 
     const html = rendu({ compact: true, valeur: 2000, intervalle: { bas: 1900, haut: 2200, niveau: 0.95, methode: "quantile_normal" } });
     expect(html).toMatch(/data-testid="kpi-verdict"[^>]*>Bon</);
     expect(html).toMatch(/before:content-\[(&#x27;|')●(&#x27;|')\]/);
+  });
+});
+
+describe("case épurée — le mode par défaut (30/09/2026)", () => {
+  it("une case = un bouton qui ouvre sa fenêtre ; sans href, aucun lien", () => {
+    const html = renduEpure();
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).toContain("<dialog");
+    expect(html).not.toContain("<a ");
+  });
+
+  it("avec href : le seul lien est « Écran détaillé », dans la fenêtre", () => {
+    const html = renduEpure({ href: "/pages?vital=LCP" });
+    expect(html.match(/<a /g)).toHaveLength(1);
+    expect(html).toContain("Écran détaillé");
+  });
+
+  it("le repère de valeur porte le nombre, l'unité suit en plus petit", () => {
+    const html = renduEpure({ approchee: true, valeur: 93, precedent: undefined, reference: undefined });
+    // « ≈ » et le nombre ne se séparent jamais : espace insécable, comme avant l'unité.
+    expect(/data-testid="kpi-valeur"[^>]*>([^<]*)</.exec(html)?.[1]?.trim()).toBe("≈\u00a093");
+    expect(html).toMatch(/data-testid="kpi-valeur"[^>]*>≈\u00a093\u00a0<span[^>]*>ms<\/span>/);
+    expect(html).toMatch(/aria-label="LCP p75 environ 93\u00a0ms/);
+  });
+
+  it("tout le détail reste dans la page : intervalle, verdict, effectif, méthode", () => {
+    const html = renduEpure({
+      valeur: 2400,
+      intervalle: { bas: 2100, haut: 3000, niveau: 0.95, methode: "quantile_normal" },
+      methode: "p75 des mesures brutes",
+    });
+    expect(html).toContain('data-testid="kpi-intervalle"');
+    expect(html).toContain('data-testid="kpi-methode"');
+    expect(texte(html)).toContain("entre 2,1 s et 3,0 s (95 %)");
+  });
+
+  it("la courbe : un aperçu en fond de case, le grand format dans la fenêtre", () => {
+    const html = renduEpure({ serie: [2300, null, 2700, 2600] });
+    expect(html).toContain("fill-perf/[0.07]");
+    expect(html).toContain('role="img"');
   });
 });
 
