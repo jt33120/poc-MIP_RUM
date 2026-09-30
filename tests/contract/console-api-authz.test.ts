@@ -553,7 +553,11 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
     // Par profil : 9 opérations réelles (logout à part), 3 du banc à portée globale, 6 à trois cibles,
     // et chaque écran (portée `app`) sur ses trois cibles.
     expect(cases).toBeGreaterThanOrEqual(PROFILS.length * (9 + 3 + 6 * 3 + Object.keys(ECRANS).length * 3));
-  });
+    // Des centaines d'appels EN SÉRIE, chacun ses lectures réelles : les 5 s par défaut
+    // de Vitest ne tenaient plus (≈ 4 s en CI le 30/09/2026, avant que la vue
+    // d'ensemble ne lise aussi ses détections, v104). La durée n'est pas ce qui est
+    // vérifié ici ; une matrice qui dépasse 60 s, elle, dirait un vrai ralentissement.
+  }, 60_000);
 
   it("une vue d'une autre application est indiscernable d'une vue qui n'existe pas", async () => {
     const e = BANC.find((x) => x.operation.id === "banc.session.ressource")!;

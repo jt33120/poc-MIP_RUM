@@ -84,6 +84,9 @@ export const MIP_CONSOLE = Object.freeze({
     route_cardinality: L,
     rum_rollup_hourly: L,
     scheduler_lease: L,
+    // v104 : les détections (v101), lues par la vue d'ensemble (`chargerOverview`) :
+    // les constats détectés et la plage habituelle horaire du hero.
+    signal_detecte: L,
     // v103 : le journal des sondes et les battements, lus par la carte « Santé de
     // la chaîne de mesure » (`/admin/health`, `lib/queries-chaine.ts`).
     sonde_battement: L,
@@ -94,6 +97,7 @@ export const MIP_CONSOLE = Object.freeze({
     v_anomaly: L,
     v_log_anomaly: L,
     v_uptime_status: L,
+    vital_horaire: L,
     // L'effacement RGPD (C10) : les lignes d'une personne.
     ...Object.fromEntries(EFFACEES.map((t) => [t, LS])),
     ingest_raw: ["SELECT", "UPDATE", "DELETE"],

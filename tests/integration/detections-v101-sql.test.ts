@@ -171,12 +171,26 @@ function migrations(): string[] {
       { relname: "vital_horaire", relrowsecurity: true },
     ]);
     const { rows: pol } = await pool.query(
-      "select tablename, roles::text, qual from pg_policies where tablename in ('vital_horaire', 'signal_detecte') order by tablename",
+      "select tablename, policyname, roles::text, cmd, qual from pg_policies where tablename in ('vital_horaire', 'signal_detecte') order by tablename, policyname",
     );
+    // Deux familles, et rien d'autre : celle de `console_ro` (v101), bornée à la
+    // portée ; celle de `mip_console` (v104), en LECTURE seule — console-api borne
+    // sa lecture par la requête, comme sur toutes ses tables (v93).
     for (const p of pol) {
-      expect(p.roles).toBe("{console_ro}");
-      expect(p.qual).toContain("current_app_ids()");
+      if (p.policyname === "mip_console_acces") {
+        expect(p.roles).toBe("{mip_console}");
+        expect(p.cmd).toBe("SELECT");
+      } else {
+        expect(p.roles).toBe("{console_ro}");
+        expect(p.qual).toContain("current_app_ids()");
+      }
     }
+    const { rows: consoleApi } = await pool.query(
+      "select has_table_privilege('mip_console', 'vital_horaire', 'select') vs, has_table_privilege('mip_console', 'signal_detecte', 'select') ss, " +
+        "has_table_privilege('mip_console', 'vital_horaire', 'insert') vi, has_table_privilege('mip_console', 'signal_detecte', 'update') su " +
+        "where exists (select 1 from pg_roles where rolname = 'mip_console')",
+    );
+    for (const r of consoleApi) expect(r).toEqual({ vs: true, ss: true, vi: false, su: false });
     const c = await pool.connect();
     try {
       await c.query("begin");
