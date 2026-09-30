@@ -138,6 +138,8 @@ describe("/forecast — tendance et bruit (TE1, TE5)", () => {
     expect(attribut(html, "LCP p75 quotidien", "data-seaux")).toBe("14");
     expect(html).not.toContain("devrait franchir");
     expect(html).toContain("tendance non distinguable du bruit");
+    // La case de synthèse (30/09/2026) suit la même règle : aucune échéance « J+… » écrite.
+    expect(html).toMatch(/data-testid="synthese-valeur"[^>]*>Dans le bruit</);
   });
 
   it("dérive établie : projection sur 7 jours dans sa bande, échéance écrite", async () => {
@@ -148,6 +150,8 @@ describe("/forecast — tendance et bruit (TE1, TE5)", () => {
     expect(attribut(html, "LCP p75 quotidien", "data-bande")).toBe("1");
     expect(attribut(html, "LCP p75 quotidien", "data-seaux")).toBe("21");
     expect(html).toMatch(/LCP p75 devrait franchir 2,5.s vers J\+\d/);
+    // La case de synthèse porte la même échéance, en valeur courte.
+    expect(html).toMatch(/data-testid="synthese-valeur"[^>]*>J\+\d</);
   });
 
   it("moins de 7 jours d'au moins 30 mesures : aucune droite, raison chiffrée", async () => {

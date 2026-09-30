@@ -278,7 +278,9 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
   // Une valeur courte, la plus importante d'abord : ce qui est déjà franchi, puis ce qui
   // le sera dans l'horizon, puis l'état de la tendance. Les phrases de la synthèse (et la
   // date des premières tendances) sont dans la fenêtre de la case.
-  const etaEcrite = analyseLcp.eta;
+  // L'échéance qu'on a le droit d'écrire : la règle de `buildForecastNarrative` — une
+  // projection seulement si la pente dépasse le bruit ; un seuil déjà dépassé, toujours.
+  const etaEcrite = tLcp.etat === "significative" ? analyseLcp.eta : analyseLcp.eta === 0 ? 0 : null;
   const valeurSynthese = !lcpLu.ok
     ? "—"
     : etaEcrite === 0

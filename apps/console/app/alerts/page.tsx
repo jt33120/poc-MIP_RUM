@@ -85,7 +85,7 @@ const JOUR_SECONDES = 86_400;
 /** D'où viennent les chiffres des cases, écrit dans leur fenêtre. */
 const SOURCE_ALERTES = "Table alert_event : déclenchements écrits par l'évaluateur des règles, des SLO et des issues.";
 const SOURCE_LIVRAISONS =
-  "Tables alert_event et alert_delivery : une livraison compte quand le code 2xx est confirmé ou qu'elle est en attente.";
+  "Tables alert_event et alert_delivery : un déclenchement compte ici s'il n'a aucune livraison confirmée (2xx) ni en attente.";
 const SOURCE_REGLES = "Table alert_rule : état laissé par la dernière évaluation de chaque règle active.";
 
 export default async function Alerts({ searchParams }: { searchParams?: Promise<SearchParams> }) {
