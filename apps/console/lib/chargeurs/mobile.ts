@@ -19,6 +19,7 @@ import {
 } from "../queries-mobile";
 import { paramReader, previousRange, type AnalyticsQuery } from "../query-contract";
 import { lireComparaison } from "../view-state";
+import { sectionFenetresCollecte } from "./collecte";
 import { mapSection, section, sansSection, type Chargeur } from "./commun";
 
 /** Sessions de la cohorte : leur début de collecte est celui de la colonne `runtime` (v82). */
@@ -72,7 +73,7 @@ export const chargerMobile = (async (principal, sp) => {
   // seaux est la tuile, même si des sessions arrivent pendant la lecture (revue de
   // fin de vague 8). Chaque partie garde sa section : F02 tient toujours.
   const photo = mobileResumeEtSerie(f, schema);
-  const [resume, parRelease, resumePrec, parReleasePrec, couvSessions, couvErreurs, declarationsToutes, serieLue, deploysLus] =
+  const [resume, parRelease, resumePrec, parReleasePrec, couvSessions, couvErreurs, declarationsToutes, serieLue, deploysLus, fenetresCollecte] =
     await Promise.all([
       section(async () => valeurDe((await photo).resume)),
       section(() => mobileParRelease(f, RELEASES_AFFICHEES, schema)),
@@ -87,6 +88,8 @@ export const chargerMobile = (async (principal, sp) => {
       section(async () => valeurDe((await photo).serie)),
       // Les 20 derniers marqueurs du périmètre, chacun rattaché ou non à la cohorte (revue v8).
       section(() => mobileDeploiements(f, schema, 20)),
+      // Les hachures « non mesuré » de la série dans le temps : une section à part.
+      sectionFenetresCollecte(query),
     ]);
 
   // R5 (C9) : poser la RECETTE d'une capacité déclarée revient à l'administrateur de
@@ -110,5 +113,6 @@ export const chargerMobile = (async (principal, sp) => {
     declarationsToutes,
     serieLue,
     deploysLus,
+    fenetresCollecte,
   } as const;
 }) satisfies Chargeur<unknown>;

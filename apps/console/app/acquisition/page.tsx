@@ -65,7 +65,7 @@ import { chargerEcran } from "@/lib/ecran";
 import { couvertureDeTuile, gesteElargir, plafondAtteint, plageDansPhrase } from "@/lib/lecture-usages";
 import { categorie } from "@/lib/palette";
 import { hrefWithQuery, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
-import { libelleSeauComplet } from "@/lib/series";
+import { fenetresLues, libelleSeauComplet, type FenetreCollecte } from "@/lib/series";
 import { referencePrecedente } from "@/lib/sessions-kpi";
 import { ecartProportions } from "@/lib/stats/incertitude";
 import { gabaritZoom } from "@/lib/view-state";
@@ -126,7 +126,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
   const query = ecran.query;
   // Comparaison (F06, F53) : `cmp=prev` compare les tuiles à la période précédente,
   // seulement si celle-ci est COMPLÈTE (§ 3.2) ; défaut de l'écran : aucune.
-  const { prev, lecture, lecturePrev, serie, echantillonnage, couvertures } = ecran;
+  const { prev, lecture, lecturePrev, serie, echantillonnage, couvertures, fenetresCollecte } = ecran;
   const comparaison: Comparaison | null =
     prev && lecturePrev
       ? {
@@ -300,6 +300,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
           dansPhrase={dansPhrase}
           plafond={auPlafond}
           zoomHref={gabaritZoom(hrefWithQuery("/acquisition", query, { period: null, from: "{from}", to: "{to}" }), sp)}
+          fenetresCollecte={fenetresLues(fenetresCollecte)}
         />
       </SectionErreur>
     </div>
@@ -595,6 +596,7 @@ function SerieCanaux({
   dansPhrase,
   plafond,
   zoomHref,
+  fenetresCollecte,
 }: {
   serie: SectionLue<PointCanaux[]>;
   query: AnalyticsQuery;
@@ -602,6 +604,8 @@ function SerieCanaux({
   dansPhrase: string;
   plafond: boolean;
   zoomHref: string;
+  /** Fenêtres hors collecte (`sectionFenetresCollecte`) : un seau interrompu est hachuré « non mesuré », pas une barre à 0. */
+  fenetresCollecte?: readonly FenetreCollecte[];
 }) {
   const titre = "Canaux dans le temps";
   if (!serie.ok) return <Figure id="acquisition-serie" titre={titre} meta={meta} etat={{ kind: "erreur", titre }} />;
@@ -637,6 +641,7 @@ function SerieCanaux({
         seauSecondes={seau}
         fuseau={FUSEAU_AFFICHAGE}
         zoomHref={zoomHref}
+        fenetresCollecte={fenetresCollecte}
         ariaLabel={`Sessions entrées par canal, par tranche de temps, ${dansPhrase}`}
       />
     </Figure>

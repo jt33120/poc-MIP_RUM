@@ -33,6 +33,22 @@ export function sectionFenetresCollecte(query: AnalyticsQuery): Promise<Section<
 }
 
 /**
+ * Les fenêtres d'un graphique dont l'axe ne suit PAS la plage du filtre (quatorze
+ * jours de `/forecast`, trente de `/alerts`, vingt-quatre heures de `/logs`) : la
+ * plage lue est celle de l'axe, `duree` jusqu'à maintenant plus un jour de marge
+ * (un jour de l'axe se lit dans le fuseau de l'application). Le périmètre reste
+ * celui de la requête.
+ */
+export function sectionFenetresCollecteRecentes(
+  query: AnalyticsQuery,
+  dureeMs: number,
+  maintenant: number = Date.now(),
+): Promise<Section<FenetreCollecte[]>> {
+  const from = new Date(maintenant - dureeMs - 86_400_000).toISOString();
+  return section(() => lireFenetresCollecte({ from, to: new Date(maintenant).toISOString() }, query.scope.effectiveApps));
+}
+
+/**
  * Chargeur autonome : les fenêtres de la plage et du périmètre de l'URL. `chemin`
  * est l'écran qui l'appelle (ses capacités de filtrage décident du refus d'un filtre).
  */

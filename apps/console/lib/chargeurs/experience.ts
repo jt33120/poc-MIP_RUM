@@ -19,6 +19,7 @@ import {
 } from "../queries-experience";
 import { paramReader } from "../query-contract";
 import { lireComparaison } from "../view-state";
+import { sectionFenetresCollecte } from "./collecte";
 import { section, type Chargeur } from "./commun";
 
 const CHEMIN = "/experience";
@@ -34,7 +35,7 @@ export const chargerExperience = (async (principal, sp) => {
   const prev = lireComparaison(CHEMIN, paramReader(sp)).valeur.mode === "prev";
   const couvertures = (source: SourceComparaison) =>
     Promise.all(sourcesSousFiltres(q, source).map((s) => couverturePrecedente(q, s)));
-  const [stats, statsPrev, contexte, frustration, tendance, recents, parPage, lcpPages, deploys, couvPart, couvCompte] =
+  const [stats, statsPrev, contexte, frustration, tendance, recents, parPage, lcpPages, deploys, couvPart, couvCompte, fenetresCollecte] =
     await Promise.all([
       section(() => feedbackStats(f)),
       prev ? section(() => feedbackStats(f, true)) : Promise.resolve(null),
@@ -47,6 +48,8 @@ export const chargerExperience = (async (principal, sp) => {
       section(() => listDeploys(f, 20)),
       prev ? couvertures(SOURCE_PART) : Promise.resolve<CouverturePrecedente[]>([]),
       prev ? couvertures(SOURCE_COMPTE) : Promise.resolve<CouverturePrecedente[]>([]),
+      // Les hachures « non mesuré » de la tendance : une section à part, son échec n'emporte pas la série.
+      sectionFenetresCollecte(q),
     ]);
   return {
     etat: "ok",
@@ -64,5 +67,6 @@ export const chargerExperience = (async (principal, sp) => {
     deploys,
     couvPart,
     couvCompte,
+    fenetresCollecte,
   } as const;
 }) satisfies Chargeur<unknown>;

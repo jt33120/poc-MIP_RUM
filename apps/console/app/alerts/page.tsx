@@ -73,6 +73,7 @@ import {
 } from "@/lib/alertes-ecran";
 import { ackEventAction, createRuleAction, evaluateNowAction } from "./actions";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
+import { fenetresLues } from "@/lib/series";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +93,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
   // ne touche aucun chiffre, donc elle ne justifie pas un refus.
   const { etat: vue, ignores } = lireEtatDeVue("/alerts", lecteur, { estMetriqueAlerte: isAlertMetric });
 
-  const { admin, plateforme, regles, evenements, nonAcquittees, apps, canaux, parJour, declenchements, releaseDetectee } = ecran;
+  const { admin, plateforme, regles, evenements, nonAcquittees, apps, canaux, parJour, declenchements, releaseDetectee, fenetresCollecte } = ecran;
   const modeRelease: ModeRelease = !releaseDetectee.ok
     ? { disponible: false, raison: RAISON_DETECTION_RELEASE }
     : releaseDetectee.data
@@ -300,6 +301,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                 seauSecondes={JOUR_SECONDES}
                 fuseau={FUSEAU_AFFICHAGE}
                 hauteur={80}
+                fenetresCollecte={fenetresLues(fenetresCollecte)}
                 ariaLabel={`Déclenchements par jour sur ${JOURS_DECLENCHEMENTS} jours, empilés par sévérité`}
               />
               {!declenchements.ok ? (

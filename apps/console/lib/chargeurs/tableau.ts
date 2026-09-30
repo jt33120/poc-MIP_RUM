@@ -21,10 +21,14 @@ import { queryOf } from "../filters";
 import { analyserFiltres } from "../filtres-ecran";
 import { fuseauDe } from "../fuseau";
 import { registeredApps } from "../queries";
-import { paramReader } from "../query-contract";
+import { paramReader, previousRange } from "../query-contract";
 import { lireComparaison } from "../view-state";
 import { resolveWidgets } from "../widget-data";
+import { sectionFenetresCollecteRecentes } from "./collecte";
 import type { Chargeur } from "./commun";
+
+/** Les jours fixes du panneau de trafic (W-B7) : 13 complets et la journée en cours. */
+const JOURS_TRAFIC = 14;
 
 export const chargerTableau = (async (principal, sp, chemin) => {
   const id = Number(chemin.id);
@@ -42,9 +46,16 @@ export const chargerTableau = (async (principal, sp, chemin) => {
   const reglages = lireComparaison(`/dashboards/${dash.id}`, paramReader(sp));
   // Quatre lectures à la fois, dans l'ordre de la grille. Vingt-quatre cartes
   // lancées ensemble épuiseraient le pool de connexions.
-  const [data, apps] = await Promise.all([
-    resolveWidgets(dash.layout, { filters: f, timeZone, nowMs: Date.now(), comparaison: reglages.valeur.mode }),
+  const maintenant = Date.now();
+  const population = queryOf(f);
+  // Les hachures « non mesuré » des cartes, lues UNE fois pour tout le tableau : la
+  // plage couvre la période de l'écran ET la précédente (cartes d'analyse), et les
+  // quatorze jours fixes du trafic (W-B7) ; le périmètre est celui des cartes.
+  const dureeFenetres = Math.max(maintenant - Date.parse(previousRange(population.range).from), JOURS_TRAFIC * 86_400_000);
+  const [data, apps, fenetresCollecte] = await Promise.all([
+    resolveWidgets(dash.layout, { filters: f, timeZone, nowMs: maintenant, comparaison: reglages.valeur.mode }),
     registeredApps(),
+    sectionFenetresCollecteRecentes(population, dureeFenetres, maintenant),
   ]);
   // Le NOM de chaque app (« Mini-site de démo »), celui du sélecteur de projet :
   // l'en-tête, la barre de population et « Renommer » l'écrivaient par son
@@ -59,9 +70,10 @@ export const chargerTableau = (async (principal, sp, chemin) => {
     query: ecran.query,
     label: ecran.label,
     // La requête des CARTES (celle de l'écran intersectée avec l'app du tableau) : la population affichée.
-    population: queryOf(f),
+    population,
     timeZone,
     data,
+    fenetresCollecte,
     // Le sélecteur de « Renommer » : jamais une app hors du périmètre.
     apps: dashboardApps(apps, user).map((a) => a.app_id),
     droits: {

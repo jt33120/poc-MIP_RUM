@@ -54,7 +54,7 @@ import {
 } from "@/lib/forecast";
 import { liensDesJours } from "@/lib/forecast-liens";
 import { bornesJourLocal, nomFuseau } from "@/lib/fuseau-local";
-import { instantDe, jourDans } from "@/lib/series";
+import { fenetresLues, instantDe, jourDans } from "@/lib/series";
 import {
   JOURS_VALIDES_REQUIS_RUPTURE,
   MESURES_MIN_JOUR_RUPTURE,
@@ -139,6 +139,8 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
   const ecran = await chargerEcran(ECRANS.forecast, chargerForecast, await searchParams);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Tendances" problem={ecran.problem} />;
   const { query, fuseau, jours, traficLu, lcpLu, deploysLu, couvLcp, couvRatio, couvVues, peutEcrire } = ecran;
+  // Hachures « non mesuré » : un jour entièrement hors collecte n'est ni un zéro de vues ni un trou muet.
+  const fenetres = fenetresLues(ecran.fenetresCollecte);
 
   const dernier = jours.length - 1;
   const semainePrecedente = dernier - 7;
@@ -475,6 +477,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               bande={tLcp.etat === "significative" ? { basseCle: "bas", hauteCle: "haut", libelle: "± 1 écart type des résidus" } : undefined}
               seauSecondes={86_400}
               fuseau={fuseau}
+              fenetresCollecte={fenetres}
               liensSeaux={liensVue}
               ariaLabel={`LCP p75 quotidien sur ${GRID_DAYS} jours complets, droite ajustée${tLcp.etat === "significative" ? ` et projection à ${HORIZON_JOURS} jours` : ""}, 3 zones de seuil`}
             />
@@ -525,6 +528,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               faibleSous={MESURES_MIN_JOUR}
               seauSecondes={86_400}
               fuseau={fuseau}
+              fenetresCollecte={fenetres}
               liensSeaux={liensErreurs}
               hauteur={140}
               ariaLabel={`Occurrences d'erreurs pour 100 pages vues, par jour, ${GRID_DAYS} jours complets`}
@@ -570,6 +574,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               format="count"
               seauSecondes={86_400}
               fuseau={fuseau}
+              fenetresCollecte={fenetres}
               liensSeaux={liensVue}
               hauteur={140}
               ariaLabel={`Pages vues par jour sur ${GRID_DAYS} jours complets, repère du même jour de la semaine précédente`}

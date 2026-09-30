@@ -560,7 +560,14 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
           panneau ; il se place lui-même (`fixed`). */}
       {panneau !== null && ecran.panneau && (
         <SectionErreur titre={`Route ${panneau}`}>
-          <RoutePanel route={panneau} query={ecran.query} vital={vital} lecture={ecran.panneau.lecture} reglages={reglagesVue} />
+          <RoutePanel
+            route={panneau}
+            query={ecran.query}
+            vital={vital}
+            lecture={ecran.panneau.lecture}
+            reglages={reglagesVue}
+            fenetresCollecte={proprietesBlocages.fenetresCollecte}
+          />
         </SectionErreur>
       )}
     </div>
