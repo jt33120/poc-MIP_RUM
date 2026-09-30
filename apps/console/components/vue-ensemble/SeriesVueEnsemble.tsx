@@ -79,6 +79,13 @@ const somme = (valeurs: number[]) => valeurs.reduce((a, b) => a + b, 0);
 const ligneSeau = (t: string, seau: number) => libelleSeauComplet(t, seau, FUSEAU_AFFICHAGE);
 /** Hauteur d'un graphique dans la fenêtre d'une vignette. */
 const HAUTEUR_FENETRE = 300;
+/** Les sources écrites dans les grands formats (charte : chaque figure cite sa source). */
+const SOURCE_TRAFIC = "Source : SDK MIP RUM dans la page — une session par visite, une page vue par chargement ou changement de route.";
+const SOURCE_ERREURS =
+  "Source : SDK MIP RUM — événements error et unhandledrejection du navigateur, échecs réseau et violations CSP, rapportés aux pages vues de la tranche.";
+const SOURCE_CHARGE =
+  "Sources : SDK MIP RUM — pages vues (chargements et changements de route SPA), erreurs du navigateur, LCP (bibliothèque web-vitals, API Largest Contentful Paint) ; seuils web.dev (Google).";
+
 /** Le contexte d'une vignette : « 25 × 1 h ». */
 const tranches = (c: Commun) => `${c.grille.length} × ${bucketLabel(c.seauSecondes)}`;
 
@@ -440,7 +447,7 @@ export function HeroErreurs({
             <>
               Un taux, pas un compte : les occurrences de la tranche rapportées à ses pages vues, écrites en % ; plusieurs
               erreurs sur une même page vue le portent au-delà de 100 %. Une tranche sans page vue n&apos;a pas de taux (trou,
-              jamais 0).{note ? ` ${note}` : null}
+              jamais 0).{note ? ` ${note}` : null} {SOURCE_ERREURS}
             </>
           ),
           meta: meta("pour 100 pages vues"),
@@ -457,7 +464,8 @@ export function HeroErreurs({
           lecture: (
             <>
               Un compte d&apos;occurrences par tranche : une erreur répétée compte à chaque occurrence. Zéro occurrence ne prouve
-              pas l&apos;absence d&apos;erreur : seules les erreurs que le capteur voit sont comptées.{note ? ` ${note}` : null}
+              pas l&apos;absence d&apos;erreur : seules les erreurs que le capteur voit sont comptées.{note ? ` ${note}` : null}{" "}
+              {SOURCE_ERREURS}
             </>
           ),
           meta: meta("occurrences"),
@@ -520,7 +528,8 @@ export function HeroTrafic({
           resume: formater("count", totalVues),
           lecture: (
             <>
-              Chaque page vue compte dans sa tranche : chargement complet ou changement de route SPA.{note ? ` ${note}` : null}
+              Chaque page vue compte dans sa tranche : chargement complet ou changement de route SPA.{note ? ` ${note}` : null}{" "}
+              {SOURCE_TRAFIC}
             </>
           ),
           meta,
@@ -537,7 +546,7 @@ export function HeroTrafic({
           lecture: (
             <>
               Une session compte une fois, dans la tranche où elle commence ; ses pages vues comptent chacune dans leur
-              tranche.{note ? ` ${note}` : null}
+              tranche.{note ? ` ${note}` : null} {SOURCE_TRAFIC}
             </>
           ),
           meta,
@@ -645,7 +654,8 @@ export function ChargeErreursLcp({
             ? "La série grise pointillée du LCP est la période précédente, alignée tranche à tranche ; les comptes se comparent dans les cases de la grille."
             : mode.kind === "release"
               ? "La comparaison de releases se lit dans « Core Web Vitals dans le temps » ; ici, toute la population."
-              : null}
+              : null}{" "}
+          {SOURCE_CHARGE}
         </>
       }
       alternative={{
