@@ -77,6 +77,61 @@
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(5px); }
 }
+/* La barre de navigation des pages publiques (NavVitrine). Un soulignement orange
+   qui se trace depuis le centre au survol, et reste sous la page courante. */
+.nav-lien::after {
+  content: "";
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.2rem;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #fbbc64, #f89101);
+  transform: scaleX(0);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.nav-lien:hover::after,
+.nav-lien[data-actif="true"]::after { transform: scaleX(1); }
+/* Le sous-menu : il tombe en fondu, un liseré orange en tête, ses entrées en cascade ;
+   au survol d'une entrée, une barre orange monte à sa gauche sur un voile ambré. */
+.nav-sous {
+  opacity: 0;
+  transform: translate(-50%, -6px);
+  transition: opacity 0.2s ease, transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0.2s;
+}
+.nav-sous[data-ouvert="true"] { opacity: 1; transform: translate(-50%, 0); }
+.nav-sous-panneau::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #f89101, transparent);
+}
+.nav-sous-item {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.28s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition-delay: calc(var(--i, 0) * 45ms);
+}
+.nav-sous[data-ouvert="true"] .nav-sous-item { opacity: 1; transform: none; }
+.nav-sous-lien { transition: background-color 0.28s ease; }
+.nav-sous-lien::before {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: 3px;
+  background: #f89101;
+  transform: scaleY(0);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.nav-sous-lien:hover,
+.nav-sous-lien[data-actif="true"] { background: linear-gradient(90deg, rgba(248, 145, 1, 0.14), rgba(248, 145, 1, 0.02)); }
+.nav-sous-lien:hover::before,
+.nav-sous-lien[data-actif="true"]::before { transform: scaleY(1); }
 /* Les entrées montent au défilement : `--p` vient de SectionDefilee, `--i` décale
    chaque pièce d'un cran. Pas de transition : c'est le défilement qui anime. */
 .entrees-piece {
