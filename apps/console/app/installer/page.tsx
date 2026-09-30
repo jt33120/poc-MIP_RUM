@@ -14,6 +14,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { ChoixParcours } from "@/components/installer/ChoixParcours";
@@ -23,7 +24,7 @@ import { TableauxPersonnalisation } from "@/components/installer/TableauPersonna
 import { SecretFourni } from "@/components/secret/SecretUnique";
 import { CadreEtat, EtatSurface } from "@/components/states/EtatSurface";
 import { chargerInstaller } from "@/lib/chargeurs/installer";
-import { chargerComplementLocal } from "@/lib/ecran";
+import { chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { ingestEndpoint } from "@/lib/ingest-endpoint";
 import {
@@ -52,7 +53,7 @@ const parParcours = <T,>(f: (p: Parcours) => T) => Object.fromEntries(PARCOURS.m
 
 export default async function Installer({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const sp = (await searchParams) ?? {};
-  const ecran = await chargerComplementLocal(chargerInstaller, sp);
+  const ecran = await chargerEcran(ECRANS.installer, chargerInstaller, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   // Le middleware pose toujours `?app=` sur un écran de console ; sans lui, le choix du projet.
   if (ecran.etat === "sans_app") redirect("/select");

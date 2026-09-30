@@ -14,12 +14,8 @@
 // les liens vers la fiche (régénérer la clé, changer les domaines), dont les
 // commandes gardent leur propre règle.
 //
-// POURQUOI PAS ENCORE DANS LE CONTRAT. Un écran du contrat (`ECRANS`) doit avoir son
-// chargeur dans `services/console-api/ecrans.mjs` (le type de `@mip/console-api` et
-// `tests/unit/ecrans-operations.test.ts` l'exigent). Ce lot ne touche pas aux
-// services : la page appelle ce chargeur par `chargerComplementLocal`, avec la même
-// signature et la même sortie passée par JSON. Le jour où il rejoint le contrat,
-// seule la ligne d'appel de la page change.
+// DANS LE CONTRAT (`ECRANS.installer`), servi aussi par `services/console-api/ecrans.mjs` :
+// le jour où les écrans basculent vers console-api, cette page suit sans changer.
 import { paramReader, requestedAppOf, resolveScope } from "../query-contract";
 import type { FilterProblem } from "../filtres-ecran";
 import { configInstallation, sondeInstallation } from "../queries-customers";

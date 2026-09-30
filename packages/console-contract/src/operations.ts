@@ -225,6 +225,8 @@ export const ECRANS = Object.freeze({
   /** Capacité FERMÉE tant que `lib/capacites.ts` la liste : le chargeur ne lit rien et le dit. */
   logs: ecran("screens.logs", "/v1/screens/logs"),
   ai: ecran("screens.ai", "/v1/screens/ai"),
+  /** Le guide d'installation d'UNE application : sa configuration, ses domaines de l'extension, la sonde « ça arrive ». */
+  installer: ecran("screens.installer", "/v1/screens/installer"),
   // C6 — espace de travail : tableaux de bord, vues enregistrées.
   tableaux: ecran("screens.dashboards", "/v1/screens/dashboards"),
   /** Un tableau de bord et la donnée de ses cartes. Son identifiant ne donne aucun droit : le chargeur résout (propriétaire, périmètre). */

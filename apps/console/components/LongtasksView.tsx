@@ -15,6 +15,13 @@
 // annotations de déploiement (P9), même zoom au clic. Chaque panneau garde SON axe
 // y : un compte et une durée ne partagent jamais une échelle (P5).
 //
+// DURÉE NOTÉE, BLOCAGE NEUTRE (suite de la vague 4, 30/09/2026). Les règles MIP
+// `SEUILS_MIP.LONGTASK` et `.LOAF` portent sur la DURÉE p75 d'une tâche ou d'une
+// trame, pas sur son temps de blocage (`coalesce(blocking_ms, duration_ms)`). La
+// durée p75 de la période est donc écrite au-dessus des panneaux, par API, notée
+// par sa règle (`ValeurNoteeMip`, règle écrite à côté) ; le blocage — panneau du bas
+// et table des pires cas — reste sans couleur de verdict, et l'écran le dit.
+//
 // Rendu serveur : les deux panneaux sont des composants client aux props
 // sérialisables ; `sessionHref` (une fonction) reste de ce côté-ci.
 import Link from "next/link";
@@ -23,6 +30,7 @@ import { StackedBars } from "@/components/charts/StackedBars";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { Methode } from "@/components/perf/Methode";
+import { ValeurNoteeMip } from "@/components/NoteMip";
 import { TableDefilante } from "@/components/TableDefilante";
 import { formater } from "@/lib/fmt-ids";
 import { fmtDate, fmtVital, pluriel } from "@/lib/format";
@@ -45,6 +53,28 @@ const API_BLOCAGE = [
 
 /** L'API d'un blocage, en mots : le badge affichait la clé brute (« loaf »). */
 const LIBELLE_SOURCE: Record<string, string> = { loaf: "trame longue", longtask: "tâche longue" };
+
+/**
+ * Les API dont la durée a une règle MIP. Les lignes « inconnu » (avant la distinction
+ * des API) n'en ont pas : on ne sait pas laquelle des deux règles les note.
+ */
+const DUREES_NOTEES = [
+  { cle: "loaf", mesure: "LOAF", libelle: "Trames longues (LoAF)" },
+  { cle: "longtask", mesure: "LONGTASK", libelle: "Tâches longues" },
+] as const;
+
+/** Ce que l'écran dit du blocage : aucune règle MIP ne le vise. */
+export const PHRASE_BLOCAGE_NEUTRE = "Le temps de blocage n'a pas de règle MIP : il reste neutre.";
+
+/**
+ * Durée p75 de la période, par API, lue sur la série (`longtaskSeries` la répète sur
+ * chaque ligne). `null` : aucune mesure de cette API — jamais « 0 ms ».
+ */
+export function dureesP75(rows: readonly LongtaskBucket[]): { loaf: number | null; longtask: number | null } {
+  const nombre = (v: unknown) => (v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+  const premiere = rows[0];
+  return { loaf: nombre(premiere?.duree_p75_loaf), longtask: nombre(premiere?.duree_p75_longtask) };
+}
 
 /** Les deux panneaux se survolent ensemble (recharts `syncId`) : un seul par écran. */
 const SYNCHRO = "blocages-fil-principal";
@@ -120,6 +150,7 @@ export function LongtasksView({
   const grilleIso = grille.map(isoSansMs);
   const points = serie.ok ? pointsBlocages(serie.data, grille) : [];
   const total = points.reduce((s, p) => s + p.n, 0);
+  const durees = serie.ok ? dureesP75(serie.data) : { loaf: null, longtask: null };
 
   return (
     <section className="mb-6 min-w-0" data-testid={partie === "tout" ? "longtasks" : `longtasks-${partie}`}>
@@ -138,8 +169,9 @@ export function LongtasksView({
           }
           lecture={
             <>
-              En haut, les blocages comptés par API de mesure ; en bas, le p75 de leur durée, sans couleur de verdict
-              (aucun seuil publié). <strong>Aucun cumul de durées n&apos;est affiché</strong>.
+              La durée p75 de chaque API est notée par sa règle MIP, écrite à côté. En haut, les blocages comptés par
+              API de mesure ; en bas, le p75 de leur temps de blocage, sans couleur de verdict : le temps de blocage
+              n&apos;a pas de règle MIP. <strong>Aucun cumul de durées n&apos;est affiché</strong>.
             </>
           }
           alternative={
@@ -167,6 +199,33 @@ export function LongtasksView({
                 blocages concurrents de plusieurs visiteurs ne s&apos;additionnent pas en temps d&apos;attente vécu :
                 aucun cumul n&apos;est donc calculé.
               </Methode>
+              {/* `relative` : le libellé `sr-only` d'une note (position absolue) reste dans
+                  ce bloc, jamais placé par rapport à la page (piège 16). */}
+              <div className="relative min-w-0 rounded-md border border-line/60 px-3 py-2" data-testid="durees-p75">
+                <p className="text-[11px] font-medium text-ink-soft [overflow-wrap:anywhere]">
+                  Durée p75 sur {periodLabel}, par API de mesure
+                </p>
+                <dl className="mt-1 flex min-w-0 flex-col gap-1">
+                  {DUREES_NOTEES.map((d) => {
+                    const valeur = durees[d.cle];
+                    return (
+                      <div key={d.cle} className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <dt className="min-w-0 text-xs text-ink [overflow-wrap:anywhere]">{d.libelle}</dt>
+                        <dd className="min-w-0 [overflow-wrap:anywhere]">
+                          <ValeurNoteeMip
+                            mesure={d.mesure}
+                            valeur={valeur}
+                            texte={valeur == null ? "pas de mesure" : formater("ms", valeur)}
+                          />
+                        </dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+                <p className="mt-1 min-w-0 text-[11px] text-ink-faint [overflow-wrap:anywhere]" data-testid="blocage-neutre">
+                  {PHRASE_BLOCAGE_NEUTRE} Le panneau du bas et la table des pires blocages le montrent sans couleur.
+                </p>
+              </div>
               <div className="min-w-0">
                 <p className="mb-1 text-[11px] font-medium text-ink-soft">Blocages par API de mesure</p>
                 <StackedBars

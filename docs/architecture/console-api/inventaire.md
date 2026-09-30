@@ -59,7 +59,7 @@
 | `/forecast` | C4 | **oui** | forecast | collecte, deploys, explorer, grid | 3 | — | oui |
 | `/forms` | C5 | **oui** | forms | collecte, deploys, explorer, form-analytics, mobile, sessions, tracing | 3 | — | oui |
 | `/goals` | C5 | **oui** | goals | queries, accounts, alerting, collecte, dashboards, deploys, dsar, errors, events, explorer, extension-installs, extension-scope, frustration, goals, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, tracing, uptime, v2 | 4 | — | oui |
-| `/installer` | chargeur local, hors contrat | **oui** | installer | collecte, customers, deploys, explorer, extension-scope | 3 | — | non |
+| `/installer` | C5 | **oui** | installer | collecte, customers, deploys, explorer, extension-scope | 3 | — | non |
 | `/legal/cgu` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/cgv` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/confidentialite` | statique ou vitrine | non | — | — | — | — | oui |

@@ -30,7 +30,13 @@ import {
   secretsDeSignature,
   verifierSignature,
 } from "../../packages/backend/lib/net/signature-webhook.mjs";
-import { creerLivreur, INTERVALLE_DEFAUT_MS } from "../../packages/backend/jobs/livreur.mjs";
+import {
+  BATTEMENT_MIN_MS,
+  creerLivreur,
+  INTERVALLE_DEFAUT_MS,
+  SERVICE_BATTEMENT,
+  SQL_BATTEMENT,
+} from "../../packages/backend/jobs/livreur.mjs";
 import { travaux } from "../../packages/backend/jobs/planifie.mjs";
 import { createMetrics } from "../../packages/service-kit/metrics.mjs";
 
@@ -384,6 +390,94 @@ describe("livreur — la passe du notifier", () => {
     expect(Object.keys(bilan.resultats)).toContain("route_error_issue_notifications");
     const e = await livreur.etat();
     expect(e.passe).toMatchObject({ statut: "echec", etapes_en_echec: ["dispatch_alerts"], dernier_succes: succes });
+  });
+});
+
+describe("livreur — le battement du notifier (sonde_battement, v103)", () => {
+  /** Pool qui garde chaque requête, texte ET valeurs ; `battementEchoue` fait lever l'upsert. */
+  function poolBattement({ battementEchoue = false } = {}) {
+    const requetes: { text: string; values?: unknown[] }[] = [];
+    return {
+      requetes,
+      battements: () => requetes.filter((r) => r.text.includes("sonde_battement")),
+      query: vi.fn(async (q: string | { text: string; values?: unknown[] }) => {
+        const r = typeof q === "string" ? { text: q } : q;
+        requetes.push(r);
+        if (r.text.includes("sonde_battement") && battementEchoue) throw new Error('relation "sonde_battement" does not exist');
+        if (r.text.includes("to_regprocedure")) return { rows: [{ present: true }] };
+        return { rows: [{ result: 0 }] };
+      }),
+      connect: vi.fn(),
+    };
+  }
+
+  it("une passe aboutie écrit le battement : upsert du service « notifier », dernier_ok à l'heure de la base", async () => {
+    const pool = poolBattement();
+    await creerLivreur({ pool: pool as never, log: muet, dispatch: vi.fn(async () => ({})), maintenant: () => 0 }).passe();
+    expect(pool.battements()).toHaveLength(1);
+    const [b] = pool.battements();
+    expect(b.text).toBe(SQL_BATTEMENT);
+    expect(b.text).toMatch(/insert into sonde_battement \(service, dernier_ok, detail\)\s+values \(\$1, now\(\), \$2\)/);
+    expect(b.text).toMatch(/on conflict \(service\) do update set dernier_ok = excluded\.dernier_ok/);
+    expect(b.values?.[0]).toBe(SERVICE_BATTEMENT);
+    expect(SERVICE_BATTEMENT).toBe("notifier");
+    // `detail` est borné à 200 caractères par la table.
+    expect(String(b.values?.[1]).length).toBeLessThanOrEqual(200);
+    // Après les deux étapes de la passe, jamais avant : il atteste une passe qui a livré.
+    const i = pool.requetes.indexOf(b);
+    expect(pool.requetes.slice(0, i).some((r) => r.text.includes("route_error_issue_notifications"))).toBe(true);
+  });
+
+  it("au plus une fois par minute : une passe toutes les 15 s n'en écrit qu'une sur quatre", async () => {
+    const pool = poolBattement();
+    let t = 0;
+    const livreur = creerLivreur({ pool: pool as never, log: muet, dispatch: vi.fn(async () => ({})), maintenant: () => t });
+    for (let k = 0; k < 8; k++) {
+      await livreur.passe();
+      t += INTERVALLE_DEFAUT_MS;
+    }
+    expect(BATTEMENT_MIN_MS).toBe(60_000);
+    // Passes à 0, 15, 30, 45, 60, 75, 90, 105 s : battements à 0 et 60 s.
+    expect(pool.battements()).toHaveLength(2);
+  });
+
+  it("une passe alignée sur le tick (15 min) écrit à chaque passe, sans requête de plus que l'upsert", async () => {
+    const pool = poolBattement();
+    let t = 0;
+    const livreur = creerLivreur({ pool: pool as never, log: muet, dispatch: vi.fn(async () => ({})), intervalleMs: 900_000, maintenant: () => t });
+    await livreur.passe();
+    const parPasse = pool.requetes.length;
+    t += 900_000;
+    await livreur.passe();
+    expect(pool.battements()).toHaveLength(2);
+    expect(pool.requetes.length).toBe(2 * parPasse);
+  });
+
+  it("une passe en échec n'écrit pas : dernier_ok vieillit, c'est le signal", async () => {
+    const pool = poolBattement();
+    const dispatch = vi.fn(async () => {
+      throw new Error("boum");
+    });
+    const bilan = await creerLivreur({ pool: pool as never, log: muet, dispatch, maintenant: () => 0 }).passe();
+    expect(bilan.ok).toBe(false);
+    expect(pool.battements()).toHaveLength(0);
+  });
+
+  it("un battement raté (table absente) ne fait pas échouer la passe, et ne se retente pas avant une minute", async () => {
+    const pool = poolBattement({ battementEchoue: true });
+    const avertis: unknown[] = [];
+    let t = 0;
+    const livreur = creerLivreur({ pool: pool as never, log: { ...muet, warn: (...a: unknown[]) => avertis.push(a) }, dispatch: vi.fn(async () => ({})), maintenant: () => t });
+    const bilan = await livreur.passe();
+    expect(bilan.ok).toBe(true);
+    expect((await livreur.etat()).passe.statut).toBe("fait");
+    expect(avertis).toHaveLength(1);
+    t += INTERVALLE_DEFAUT_MS;
+    await livreur.passe();
+    expect(pool.battements()).toHaveLength(1);
+    t += BATTEMENT_MIN_MS;
+    await livreur.passe();
+    expect(pool.battements()).toHaveLength(2);
   });
 });
 

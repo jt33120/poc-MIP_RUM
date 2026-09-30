@@ -15,11 +15,11 @@ import { BandeauR0 } from "@/components/vue-ensemble/BandeauR0";
 import { ConstatsDetectes, type EtatConstatsDetectes } from "@/components/vue-ensemble/ConstatsDetectes";
 import { HeatmapLatence } from "@/components/vue-ensemble/HeatmapLatence";
 import { construireHeatmap } from "@/lib/heatmap-latence";
-import { chargerDetectionsAccueil, VITAL_HEATMAP } from "@/lib/chargeurs/detections-accueil";
+import { VITAL_HEATMAP } from "@/lib/chargeurs/detections-accueil";
 import { anomaliesSansDoublon, cartesConstats, plageDuHero, type PlageHero } from "@/lib/detections-ecran";
 import { blocsDe } from "@/lib/chargeurs/commun";
 import { chargerOverview, DECOUPAGE_LUS, VITAUX_HERO } from "@/lib/chargeurs/overview";
-import { avecBlocs, chargerComplementLocal, chargerEcran } from "@/lib/ecran";
+import { avecBlocs, chargerEcran } from "@/lib/ecran";
 import { TousEteints } from "@/components/TousEteints";
 import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
@@ -107,14 +107,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // Le chargeur (`lib/chargeurs/overview.ts`) lit tout ; la composition de l'écran
   // (cookie des blocs) lui est passée en paramètre — un bloc éteint ne coûte rien.
   const sp = await avecBlocs(await searchParams, "/");
-  // Les détections (plage habituelle, constats calculés) : un complément lu par la
-  // console seule tant que `mip_console` n'a pas de droits sur leurs tables (voir
-  // `chargeurs/detections-accueil.ts`), EN PARALLÈLE de l'écran.
-  const [ecran, detections] = await Promise.all([
-    chargerEcran(ECRANS.overview, chargerOverview, sp),
-    chargerComplementLocal(chargerDetectionsAccueil, sp),
-  ]);
+  const ecran = await chargerEcran(ECRANS.overview, chargerOverview, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Vue d'ensemble" problem={ecran.problem} />;
+  // Les détections (plage habituelle, constats calculés, heatmap de latence), lues
+  // par le chargeur de l'écran (`chargeurs/detections-accueil.ts`).
+  const detections = ecran.detections;
   const query = ecran.query;
   const period = { label: ecran.label, bucketLabel: ecran.bucketLabel };
 
@@ -415,10 +412,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   });
 
   // ─── Constats détectés par calcul (vague 3b, A2 § 7.6) ───
-  const constatsLus = detections.etat === "ok" ? detections.constats : null;
-  const constatsDetectes = constatsLus?.ok && constatsLus.data.etat === "ok" ? constatsLus.data.constats : [];
+  const constatsLus = detections.constats;
+  const constatsDetectes = constatsLus.ok && constatsLus.data.etat === "ok" ? constatsLus.data.constats : [];
   const etatDetectes: EtatConstatsDetectes =
-    !constatsLus || !constatsLus.ok
+    !constatsLus.ok
       ? { kind: "echec" }
       : constatsLus.data.etat === "absent"
         ? { kind: "absent" }
@@ -565,21 +562,18 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const serieDe = (nom: VitalName) => seriesVitaux[VITAUX.indexOf(nom)];
   // Heatmap de latence (A2 § 6.2) : lue sous les mêmes conditions que la plage (grille
   // horaire, population entière, une app) ; sinon absente, sans bruit.
-  const lectureHeatmap = detections.etat === "ok" ? detections.heatmap : null;
+  const lectureHeatmap = detections.heatmap;
   const heatmap =
     lectureHeatmap?.ok && lectureHeatmap.data.etat === "ok" ? construireHeatmap(VITAL_HEATMAP, grilleContrat, lectureHeatmap.data.lignes) : null;
   // La plage habituelle du hero (A2 § 6.1), vital par vital, ou la raison de son absence.
-  const plagesHero: Partial<Record<string, PlageHero>> | undefined =
-    detections.etat !== "ok"
-      ? undefined
-      : Object.fromEntries(
-          VITAUX_HERO.map((nom, i): [string, PlageHero] => [
-            nom,
-            detections.sansPlage !== null
-              ? { etat: "non_tracee", raison: detections.sansPlage }
-              : plageDuHero(detections.plages?.[i] ?? null, grilleContrat, query.range.bucketSeconds, constatsDetectes, nom),
-          ]),
-        );
+  const plagesHero: Partial<Record<string, PlageHero>> = Object.fromEntries(
+    VITAUX_HERO.map((nom, i): [string, PlageHero] => [
+      nom,
+      detections.sansPlage !== null
+        ? { etat: "non_tracee", raison: detections.sansPlage }
+        : plageDuHero(detections.plages?.[i] ?? null, grilleContrat, query.range.bucketSeconds, constatsDetectes, nom),
+    ]),
+  );
   /** Période précédente d'une série du hero : lue (ou en échec) en `cmp=prev`, sinon aucune. */
   const precedenteDe = (i: number): SectionLue<VitalSeriesPoint[]> | null => {
     if (modeSeries.kind !== "prev") return null;

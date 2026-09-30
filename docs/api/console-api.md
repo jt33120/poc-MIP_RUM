@@ -113,6 +113,7 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `screens.forecast` | `GET /v1/screens/forecast` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.forms` | `GET /v1/screens/forms` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.goals` | `GET /v1/screens/goals` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.installer` | `GET /v1/screens/installer` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.logs` | `GET /v1/screens/logs` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.map` | `GET /v1/screens/map` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.mobile` | `GET /v1/screens/mobile` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |

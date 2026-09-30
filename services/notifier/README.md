@@ -18,10 +18,12 @@
 
 | Boucle | Quand | Étapes |
 |---|---|---|
-| `livraison` | toutes les 15 s (`NOTIFIER_INTERVAL_MS`) — sur la base gratuite, toutes les 15 min alignées 45 s après le tick —, la première au démarrage | `route_error_issue_notifications` (outbox des issues → `alert_event` + livraisons), `dispatch_alerts` (webhooks, e-mails) |
+| `livraison` | toutes les 15 s (`NOTIFIER_INTERVAL_MS`) — sur la base gratuite, toutes les 15 min alignées 45 s après le tick —, la première au démarrage | `route_error_issue_notifications` (outbox des issues → `alert_event` + livraisons), `dispatch_alerts` (webhooks, e-mails), puis le battement si les deux ont abouti |
 | `reconciliation` | à HH:00:50 | `reconcile_alert_deliveries` (livraisons `sent` de l'ère pg_net) |
 
 Une passe n'entame plus de livraison au-delà de 10 s (`BUDGET_PASSE_MS`) : ce qui reste part 15 s plus tard, et le drainage d'un redéploiement couvre toujours la passe en cours.
+
+**Battement.** Le notifier n'a pas de bail : sa trace en base est une ligne de `sonde_battement` (`service = 'notifier'`, `dernier_ok` à l'heure de la base, migration-v103), écrite en upsert à la fin d'une passe **aboutie**, au plus une fois par minute (`BATTEMENT_MIN_MS`). La base est déjà éveillée par la passe : aucun réveil de plus. Une passe en échec ne l'écrit pas, et une écriture ratée ne fait pas échouer la passe. La carte « Santé de la chaîne de mesure » (`/admin/health`) l'affiche. Le rôle est le propriétaire : aucun droit à accorder.
 
 **Webhooks.** `POST` JSON (champ `text` lisible par Slack), par `safeFetch` : ni réseau privé, ni métadonnées cloud, ni boucle locale — une cible refusée est soldée `skipped`. Chaque envoi porte `x-mip-delivery-id` (le destinataire dédoublonne un rejeu) ; avec `WEBHOOK_SIGNING_SECRET`, aussi `x-mip-timestamp` et `x-mip-signature: sha256=HMAC(secret, "<timestamp>.<corps>")`. Vérification de référence : `verifierSignature`, `packages/backend/lib/net/signature-webhook.mjs` (écart d'horloge admis : 5 min).
 

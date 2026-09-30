@@ -127,9 +127,11 @@ describe("les verdicts", () => {
     expect(etatChaine({ ...ok, c2: { emission: "ok", ecriture: "absent" } })).toBe("degradee");
     expect(etatChaine({ emission: "echec", ecriture: "absent", c2: tombe })).toBe("interrompue");
     expect(etatChaine({ ...ok, c2: { emission: "lent", ecriture: "ok" } })).toBe("degradee");
-    // Un chemin sauté (clé renouvelée) ne compte pas : l'autre décide seul.
-    expect(etatChaine({ emission: "saute", ecriture: "saute", c2: tombe })).toBe("interrompue");
-    expect(etatChaine({ emission: "echec", ecriture: "absent", c2: { emission: "saute" } })).toBe("interrompue");
+    // Un chemin sauté (clé renouvelée) n'a rien prouvé : l'autre ne peut pas, seul,
+    // déclarer la chaîne coupée — au pire dégradée (relevé du 30/09/2026).
+    expect(etatChaine({ emission: "saute", ecriture: "saute", c2: tombe })).toBe("degradee");
+    expect(etatChaine({ emission: "echec", ecriture: "absent", c2: { emission: "saute" } })).toBe("degradee");
+    expect(etatChaine({ emission: "saute", ecriture: "saute", c2: ok })).toBe("ok");
     expect(etatChaine({ emission: "saute", c2: { emission: "saute" } })).toBeNull();
   });
 

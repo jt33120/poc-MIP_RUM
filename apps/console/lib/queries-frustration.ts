@@ -85,6 +85,12 @@ export interface ScriptBloquant {
   totalMs: number;
   /** La pire frame observée. */
   worstMs: number;
+  /**
+   * p75 de la DURÉE des trames du script (`duration_ms`), en millisecondes : la
+   * grandeur que note `SEUILS_MIP.LOAF`. Le blocage (`totalMs`, `worstMs`) n'a pas
+   * de règle MIP et reste neutre à l'écran.
+   */
+  dureeP75Ms: number | null;
   /** Routes (normalisées) où le blocage a eu lieu, les plus lourdes d'abord, 3 au plus. */
   routes: string[];
   /** Nombre de routes distinctes. */
@@ -115,6 +121,12 @@ export interface ScriptBloquant {
  * Ne rend QUE des lignes attribuées (`script_url is not null`) : une entrée
  * Long Tasks n'a pas de script, et l'afficher sous « (inconnu) » ferait une
  * première ligne écrasante qui n'apprend rien.
+ *
+ * Seules les trames longues (LoAF) portent une adresse de script
+ * (`packages/rum-sdk/src/loaf.ts`) : chaque ligne est donc une LoAF, et sa durée
+ * p75 (`dureeP75Ms`) se note par `SEUILS_MIP.LOAF`. Elle se calcule par couple
+ * script × fonction, toutes routes confondues (un p75 ne s'additionne pas d'une
+ * route à l'autre).
  */
 export async function scriptsBloquants(f: Filters): Promise<ScriptBloquant[]> {
   const sql = await sqlContext(f);
@@ -124,29 +136,40 @@ export async function scriptsBloquants(f: Filters): Promise<ScriptBloquant[]> {
        select case when l.script_url ~* '\\.[a-z0-9]{1,6}$' then l.script_url end as fichier,
               coalesce(nullif(l.script_function, ''), nullif(l.invoker, ''), '(anonyme)') as brut,
               l.route,
-              coalesce(l.blocking_ms, l.duration_ms) as ms
+              coalesce(l.blocking_ms, l.duration_ms) as ms,
+              l.duration_ms as duree
          from rum_longtask l
          ${sessionJoin("l", "s")}
         where l.script_url is not null${where}
-     ), g as (
+     ), tq as (
        select fichier,
               case when brut ~* '^[a-z][a-z0-9+.-]*://' then null else brut end as quoi,
-              route,
+              route, ms, duree
+         from t
+     ), g as (
+       select fichier, quoi, route,
               count(*)::int as n,
               sum(ms) as total,
               max(ms) as pire
-         from t
+         from tq
         group by 1, 2, 3
+     ), d as (
+       select fichier, quoi,
+              percentile_cont(0.75) within group (order by duree) as p75
+         from tq
+        group by 1, 2
      )
-     select fichier as url,
-            quoi,
-            sum(n)::int as n,
-            round(sum(total)::numeric)::float as "totalMs",
-            round(max(pire)::numeric)::float as "worstMs",
-            coalesce((array_agg(route order by total desc) filter (where route is not null))[1:3], '{}') as routes,
-            count(route)::int as "nbRoutes"
+     select g.fichier as url,
+            g.quoi,
+            sum(g.n)::int as n,
+            round(sum(g.total)::numeric)::float as "totalMs",
+            round(max(g.pire)::numeric)::float as "worstMs",
+            round(max(d.p75)::numeric)::float as "dureeP75Ms",
+            coalesce((array_agg(g.route order by g.total desc) filter (where g.route is not null))[1:3], '{}') as routes,
+            count(g.route)::int as "nbRoutes"
        from g
-      group by 1, 2
+       left join d on d.fichier is not distinct from g.fichier and d.quoi is not distinct from g.quoi
+      group by g.fichier, g.quoi
       order by "totalMs" desc
       limit 20`,
     sql.params,

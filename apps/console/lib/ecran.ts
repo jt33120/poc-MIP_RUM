@@ -239,19 +239,6 @@ export async function chargerEcran<R>(operation: OperationEcran, chargeur: Charg
   throw new ErreurConsoleApi(l.refus.code, l.refus.requestId, l.refus.message);
 }
 
-/**
- * Un COMPLÉMENT d'écran que console-api ne sert pas encore : son chargeur tourne dans
- * la console, avec le principal de la session, et sa sortie passe par JSON comme
- * celle d'un écran (même forme d'un chemin à l'autre le jour où il rejoint le
- * service). Réservé aux lectures dont les tables n'ont pas encore de droits pour
- * `mip_console` : les nommer dans le bundle de console-api ferait échouer la garde
- * C13 (`scripts/ci/verify-db-roles-console.mjs`) ; et à l'écran dont l'opération
- * attend encore sa ligne dans `services/console-api/ecrans.mjs` (`/installer`).
- */
-export async function chargerComplementLocal<R>(chargeur: Chargeur<R>, sp: ParametresEcran, chemin: CheminEcran = {}): Promise<Fil<R>> {
-  return versLeFil(await chargeur(await getUser(), sp, chemin));
-}
-
 /** La coquille du layout, par console-api ou par son chargeur local (`lib/coquille-ecran.ts`). */
 export const lireCoquille = ecrans.lireCoquille;
 

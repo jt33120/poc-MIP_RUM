@@ -274,10 +274,7 @@ const LOTS_ECRANS = [
   [/^\/(dashboards(\/.*)?|explorer\/views)$/, "C6 espace de travail"],
   [/^\/(actions|events|mobile|sessions(\/.*)?|explorer)$/, "C3"],
   [/^\/(|forecast|pages|ux|map|errors(\/.*)?|tracing(\/.*)?|correlation)$/, "C4"],
-  [/^\/(logs|acquisition|forms|retention|paths|experience|goals|ai)$/, "C5"],
-  // Son chargeur tourne dans la console (`chargerComplementLocal`) : son opération
-  // attend sa ligne dans `services/console-api/ecrans.mjs` pour rejoindre le contrat.
-  [/^\/installer$/, "chargeur local, hors contrat"],
+  [/^\/(logs|acquisition|forms|retention|paths|experience|goals|ai|installer)$/, "C5"],
 ];
 
 const CIBLES_ROUTES = [

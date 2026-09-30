@@ -428,6 +428,16 @@ type Console = Awaited<ReturnType<typeof consoleSur>>;
       for (const point of vides) expect(point.p75_ms).toBeNull();
     });
 
+    it("porte la durée p75 de la période par API, la même sur chaque seau, sans les lignes d'origine inconnue", async () => {
+      const serie = await lib.longtaskSeries(filtres(`app=${A}`));
+      // LoAF : 90 et 380 → 307,5 ; tâches longues : 120. Les 999 ms de B n'entrent pas,
+      // ni les 60 ms d'origine non distinguée (aucune règle ne les note).
+      for (const point of serie) {
+        expect(Number(point.duree_p75_loaf)).toBeCloseTo(307.5);
+        expect(Number(point.duree_p75_longtask)).toBeCloseTo(120);
+      }
+    });
+
     it("les pires blocages portent leur session, celle de la MÊME app", async () => {
       const pires = await lib.worstLongtasks(filtres(`app=${A}`), 3);
       expect(pires[0].blocking_ms).toBe(380);
