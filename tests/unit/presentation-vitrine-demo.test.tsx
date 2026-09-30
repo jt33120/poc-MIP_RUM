@@ -56,6 +56,8 @@ describe("le film d'accueil", () => {
     expect(compte(VISITEUR, "<h1 ")).toBe(1);
     expect(VISITEUR).toContain('id="vitrine-titre"');
     if (!FILM_ACCUEIL) expect(VISITEUR).not.toContain("<video");
+    // Le premier écran animé est toujours là : le film ne le recouvre qu’une fois lancé.
+    expect(VISITEUR).toContain("Voir ce que vivent");
   });
 
   it("le film monté est un fichier du dépôt, léger, avec son affiche ; muet, sans lecture automatique en HTML", () => {

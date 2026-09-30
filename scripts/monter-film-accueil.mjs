@@ -15,6 +15,10 @@
 // suit un acte du clip : l'écran du visiteur, les mesures qui s'en échappent, le tableau
 // de bord qui se construit, le tableau entier.
 //
+// Le son des clips suit l'image (fondu enchaîné entre clips, fondus d'entrée et de
+// sortie pour que la boucle ne claque pas) ; la vitrine le lance muet et ne l'ouvre
+// que sur un geste du visiteur.
+//
 // Requiert ffmpeg et le Chromium de Playwright (celui des tests E2E). Les titres sont
 // en police système (SF Pro sur macOS) : aucune police de plus dans le dépôt.
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
@@ -198,6 +202,23 @@ async function clipDeBase(sources, dossier) {
   return base;
 }
 
+/**
+ * La piste son : celle des clips (entrées `premiere`…), enchaînées au même fondu que
+ * l'image, ramenées à DUREE et adoucies aux deux bouts, là où la boucle recommence.
+ */
+function pisteSon(n, premiere) {
+  const filtres = [];
+  let courant = `${premiere}:a:0`;
+  for (let i = 1; i < n; i++) {
+    filtres.push(`[${courant}][${premiere + i}:a:0]acrossfade=d=${FONDU}[a${i}]`);
+    courant = `a${i}`;
+  }
+  filtres.push(
+    `[${courant}]atrim=0:${DUREE},asetpts=PTS-STARTPTS,afade=t=in:d=0.25,afade=t=out:st=${DUREE - 0.6}:d=0.6,loudnorm=I=-18:TP=-1.5[son]`,
+  );
+  return filtres;
+}
+
 function dureeDe(fichier) {
   return new Promise((ok, ko) => {
     const p = spawn("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", fichier]);
@@ -237,11 +258,13 @@ async function principal() {
     const filtre = [
       `[0:v:0]setpts=PTS-STARTPTS,eq=contrast=1.06:saturation=1.1,vignette=angle=PI/5[fond]`,
       `[fond][1:v]overlay=0:0:shortest=1,fade=t=out:st=${DUREE - 0.45}:d=0.45,format=yuv420p[film]`,
+      ...pisteSon(sources.length, 2),
     ].join(";");
     await ffmpeg([
-      "-i", base, "-framerate", String(IPS), "-i", join(images, "%04d.png"),
-      "-filter_complex", filtre, "-map", "[film]", "-t", String(DUREE),
-      "-c:v", "libx264", "-crf", "22", "-preset", "slow", "-movflags", "+faststart", "-map_metadata", "-1", SORTIE,
+      "-i", base, "-framerate", String(IPS), "-i", join(images, "%04d.png"), ...sources.flatMap((s) => ["-i", s]),
+      "-filter_complex", filtre, "-map", "[film]", "-map", "[son]", "-t", String(DUREE),
+      "-c:v", "libx264", "-crf", "22", "-preset", "slow", "-c:a", "aac", "-b:a", "128k",
+      "-movflags", "+faststart", "-map_metadata", "-1", SORTIE,
     ]);
     const affiche = SORTIE.replace(/\.mp4$/, ".jpg");
     await ffmpeg(["-ss", String(AFFICHE_A), "-i", SORTIE, "-frames:v", "1", "-q:v", "3", "-update", "1", affiche]);
