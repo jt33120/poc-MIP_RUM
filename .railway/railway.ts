@@ -132,6 +132,10 @@ const SURVEILLE_NOTIFIER = [
 const SURVEILLE_API = [
   "services/api/**", "apps/console/app/api/**", "apps/console/lib/**", "apps/console/types/**",
   "packages/backend/**", "packages/service-kit/**", "packages/mcp-tools/**",
+  // Les statistiques (tendances, détections, sur-représentation) que servent ses
+  // routes : un changement du paquet seul doit redéployer l'API, sinon elle diverge
+  // de la console.
+  "packages/stats/**",
   "pnpm-lock.yaml", "/pnpm-workspace.yaml", "/package.json", "/.dockerignore",
   "scripts/ci/deploy-fidele.mjs",
 ];
@@ -142,7 +146,7 @@ const SURVEILLE_API = [
 // écrans ni les composants — la garde du build les refuse.
 const SURVEILLE_CONSOLE_API = [
   "services/console-api/**", "packages/console-api/**", "packages/console-contract/**", "packages/service-kit/**",
-  "packages/backend/**", "apps/console/lib/**",
+  "packages/backend/**", "apps/console/lib/**", "packages/stats/**",
   "pnpm-lock.yaml", "/pnpm-workspace.yaml", "/package.json", "/.dockerignore",
   "scripts/ci/deploy-fidele.mjs",
 ];
