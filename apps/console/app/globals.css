@@ -1232,7 +1232,7 @@ body:has(#constats) [data-testid="r0-phrase"] { display: none; }
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
-[data-depot="vues"] [data-testid="preset-enregistrer"] { position: relative; padding: 0.25rem 0.375rem; }
+[data-depot="vues"] [data-testid="preset-enregistrer"] { position: relative; padding: 4px 6px; }
 
 /* Le titre d'un écran d'onglet : l'onglet allumé le dit déjà (« Pages » sous l'onglet
    Pages). Il reste aux lecteurs d'écran, comme celui de la Vue d'ensemble. Un titre qui
