@@ -539,17 +539,35 @@ export async function toggleAlertRuleActive(id: number, appId: string, active: b
 
 /**
  * Acquitte un événement de l'application `appId`. Un événement n'a d'application
- * que par ce qui l'a déclenché : sa règle, ou le SLO dont le burn l'a levé
- * (`check_slo_burn`, `rule_id` nul).
+ * que par ce qui l'a déclenché : sa règle, le SLO dont le burn l'a levé
+ * (`check_slo_burn`, `rule_id` nul), ou la notification d'issue qui l'a produit
+ * (v73) — sans cette dernière, une nouvelle issue ne s'acquittait pas, et
+ * l'escalade (v108) la relancerait jusqu'à son plafond sans qu'on puisse l'arrêter.
+ *
+ * Depuis migration-v108, l'acquittement garde son HEURE et son AUTEUR (`par`) :
+ * c'est ce qui arrête l'escalade et mesure le délai d'acquittement. Un second
+ * acquittement ne les réécrit pas — la première prise en charge fait foi. Sans
+ * v108 (la console précède sa migration), seul le booléen est posé, comme avant.
  */
-export async function acknowledgeAlertEvent(id: number, appId: string, client?: ClientEcriture): Promise<boolean> {
+export async function acknowledgeAlertEvent(id: number, appId: string, client?: ClientEcriture, par: string | null = null): Promise<boolean> {
+  const [schema] = client
+    ? (await client.query<{ v108: boolean }>("select to_regclass('public.alert_escalation_step') is not null as v108")).rows
+    : await q<{ v108: boolean }>("select to_regclass('public.alert_escalation_step') is not null as v108");
+  const horodate = schema?.v108 === true;
   const { rowCount } = await ecrire(
     client,
-    `update alert_event e set acknowledged = true
+    `update alert_event e set acknowledged = true${
+      horodate
+        ? `,
+            acknowledged_at = case when e.acknowledged then e.acknowledged_at else now() end,
+            acknowledged_by = case when e.acknowledged then e.acknowledged_by else $3::text end`
+        : ""
+    }
       where e.id = $1
         and (exists (select 1 from alert_rule r where r.id = e.rule_id and r.app_id = $2)
-             or exists (select 1 from slo s where s.id = e.slo_id and s.app_id = $2))`,
-    [id, appId],
+             or exists (select 1 from slo s where s.id = e.slo_id and s.app_id = $2)
+             or exists (select 1 from error_issue_notification n where n.alert_event_id = e.id and n.app_id = $2))`,
+    horodate ? [id, appId, par] : [id, appId],
   );
   return rowCount > 0;
 }

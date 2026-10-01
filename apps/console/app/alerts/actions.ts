@@ -126,3 +126,16 @@ export async function toggleChannelAction(fd: FormData): Promise<void> {
 export async function deleteChannelAction(fd: FormData): Promise<void> {
   suite(await executerCommande("supprimerCanal", { chemin: { id: champ(fd, "id") } }), "/alerts");
 }
+
+// ---------------------------------------------------------------------------
+// Escalade (section de la page /alerts, migration-v108)
+// ---------------------------------------------------------------------------
+
+/** Une étape d'escalade : ses champs ; une étape GLOBALE (sans application), la plateforme seule. */
+export async function createEscalationStepAction(fd: FormData): Promise<void> {
+  suite(await executerCommande("creerEtapeEscalade", { corps: champs(fd) }), "/alerts");
+}
+
+export async function deleteEscalationStepAction(fd: FormData): Promise<void> {
+  suite(await executerCommande("supprimerEtapeEscalade", { chemin: { id: champ(fd, "id") } }), "/alerts");
+}

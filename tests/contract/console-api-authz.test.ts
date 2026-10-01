@@ -120,6 +120,7 @@ const CHEMINS: Record<string, Record<string, string>> = {
   "slo.delete": { id: ABSENT },
   "channels.setActive": { id: ABSENT },
   "channels.delete": { id: ABSENT },
+  "alerts.deleteEscalationStep": { id: ABSENT },
   "uptime.setEnabled": { id: ABSENT },
   "uptime.delete": { id: ABSENT },
   // C9 — des identifiants qu'aucune ligne ne porte.
@@ -232,6 +233,8 @@ const CORPS: Record<string, unknown> = {
   "slo.setActive": { active: false },
   "channels.create": { app_id: A, kind: "webhook", target: "https://hooks.exemple.fr/authz", severity_min: "warning" },
   "channels.setActive": { active: false },
+  // Un canal qu'aucune ligne ne porte : la commande répond `invalide`, sans rien écrire.
+  "alerts.createEscalationStep": { app_id: A, severity_min: "warning", level: "1", delay_minutes: "15", channel_id: ABSENT },
   "uptime.create": { name: "authz", url: "https://exemple.fr/sante" },
   "uptime.setEnabled": { enabled: false },
   // C9 — des comptes et des lignes qu'aucune écriture ne trouve (`introuvable`), ou
@@ -822,6 +825,19 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
     expect(await appeler("supprimerCanal", "admin", { chemin: { id: String(global.id) } })).toEqual({ etat: "introuvable" });
     expect(await appeler("activerCanal", "plateforme", { chemin: { id: String(global.id) }, corps: { active: false } })).toEqual({ etat: "ok" });
     expect(await appeler("supprimerCanal", "plateforme", { chemin: { id: String(global.id) } })).toEqual({ etat: "ok" });
+    // L'escalade (v108) : une étape de l'app A vers un canal de A ; une étape globale,
+    // la plateforme seule, et jamais vers le canal d'une application.
+    // Le canal de A est posé en base : le journal de ce test attend des canaux GLOBAUX.
+    const { rows: [canalA] } = await pool.query<{ id: string }>(
+      "insert into notify_channel (app_id, kind, target, severity_min) values ($1, 'webhook', 'https://hooks.exemple.fr/authz-c8-escalade', 'warning') returning id",
+      [A],
+    );
+    const corpsEtape = (app_id: string) => ({ app_id, severity_min: "warning", level: "1", delay_minutes: "15", channel_id: canalA.id });
+    expect(await appeler("creerEtapeEscalade", "admin", { corps: corpsEtape("") })).toEqual({ etat: "hors_perimetre" });
+    expect(await appeler("creerEtapeEscalade", "plateforme", { corps: corpsEtape("") })).toMatchObject({ etat: "invalide" });
+    const etape = await appeler("creerEtapeEscalade", "admin", { corps: corpsEtape(A) });
+    expect(etape).toMatchObject({ etat: "cree" });
+    expect(await appeler("supprimerEtapeEscalade", "plateforme", { chemin: { id: String(etape.id) } })).toEqual({ etat: "ok" });
     const sonde = await appeler("creerSonde", "admin", { app: A, corps: { name: "C8", url: "https://exemple.fr/sante" } });
     expect(sonde).toMatchObject({ etat: "cree" });
     expect(await appeler("activerSonde", "admin", { app: A, chemin: { id: String(sonde.id) }, corps: { enabled: false } })).toEqual({ etat: "ok" });
@@ -888,6 +904,8 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
       "slo.create",
       "slo.set_active",
       "slo.delete",
+      "alert_escalation_step.create",
+      "alert_escalation_step.delete",
       "uptime_check.create",
       "uptime_check.set_enabled",
       "uptime_check.delete",

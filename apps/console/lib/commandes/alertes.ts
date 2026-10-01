@@ -27,6 +27,8 @@ import { ALERT_MODES, ALERT_SEVERITIES, CHANNEL_KINDS, RELEASE_METRICS, SEUIL_RE
 import { tx } from "../db";
 import { hasSqlControlCharacters } from "../error-issue-workflow";
 import { deleteChannel, deleteSlo, insertChannel, insertSlo, toggleChannel, toggleSlo, type ChannelInput, type SloInput } from "../queries-alerting";
+import { BORNES_ESCALADE } from "../escalade-ecran";
+import { deleteEtapeEscalade, escaladeDisponible, insertEtapeEscalade, type EtapeEscaladeInput } from "../queries-escalade";
 import {
   acknowledgeAlertEvent,
   ALERT_COMPARATORS,
@@ -223,11 +225,16 @@ export const activerRegle = commande(
     }),
 );
 
+/**
+ * Acquitte un déclenchement de l'application de la portée. Depuis migration-v108,
+ * l'heure et l'auteur sont gardés : c'est ce qui arrête l'escalade du déclenchement
+ * et mesure le délai d'acquittement.
+ */
 export const acquitterEvenement = commande(
   { regle: { auth: "admin", portee: "app", audit: "alert_event.acknowledge" }, chemin: CHEMIN_ID },
-  async ({ app, chemin, auditer }) =>
+  async ({ principal, app, chemin, auditer }) =>
     tx(async (c) => {
-      if (!(await acknowledgeAlertEvent(Number(chemin.id), app!, c))) return { etat: "introuvable" } as const;
+      if (!(await acknowledgeAlertEvent(Number(chemin.id), app!, c, principal.email))) return { etat: "introuvable" } as const;
       await auditer(c, detail({ id: chemin.id }));
       return { etat: "ok" } as const;
     }),
@@ -329,4 +336,95 @@ export const supprimerCanal = commande(
       await auditer(c, detail({ id: chemin.id }), canal.app_id);
       return { etat: "ok" } as const;
     }),
+);
+
+// ─── Escalade (migration-v108) ───────────────────────────────────────────────
+
+/** Un entier saisi, dans ses bornes ; `null` pour un champ vide ou absent. */
+function entierBorne(ch: Champs, nom: string, bornes: { min: number; max: number }, libelle: string): number | null {
+  const brut = texte(ch, nom);
+  if (brut === "") return null;
+  const n = /^\d{1,6}$/.test(brut) ? Number(brut) : Number.NaN;
+  if (!Number.isSafeInteger(n) || n < bornes.min || n > bornes.max) {
+    throw new Invalide(`${libelle} invalide : un entier de ${bornes.min} à ${bornes.max.toLocaleString("fr-FR")}`);
+  }
+  return n;
+}
+
+/**
+ * Une étape d'escalade, lue de son formulaire. Le niveau, le délai et le canal sont
+ * exigés ; la relance est facultative mais va par paire — une cadence sans plafond
+ * relancerait sans fin, un plafond sans cadence ne relancerait jamais : refusés en
+ * toutes lettres, jamais complétés en silence.
+ */
+export function etapeDesChamps(ch: Champs): Omit<EtapeEscaladeInput, "created_by"> {
+  const level = entierBorne(ch, "level", BORNES_ESCALADE.niveau, "niveau");
+  if (level === null) throw new Invalide("niveau requis");
+  const delay_minutes = entierBorne(ch, "delay_minutes", BORNES_ESCALADE.delai, "délai");
+  if (delay_minutes === null) throw new Invalide("délai requis (en minutes)");
+  const channel = texte(ch, "channel_id");
+  if (!MOTIF_ENTIER.test(channel)) throw new Invalide("canal requis");
+  const severity_min = lire(ch, "severity_min") ?? "warning";
+  if (!(ALERT_SEVERITIES as readonly string[]).includes(severity_min)) throw new Invalide(`sévérité invalide : ${severity_min}`);
+  const repeat_minutes = entierBorne(ch, "repeat_minutes", BORNES_ESCALADE.relance, "cadence de relance");
+  const repeat_max = entierBorne(ch, "repeat_max", BORNES_ESCALADE.plafond, "plafond de relance");
+  if (repeat_minutes !== null && repeat_max === null) throw new Invalide("plafond de relance requis avec une cadence de relance");
+  if (repeat_minutes === null && repeat_max !== null) throw new Invalide("cadence de relance requise avec un plafond");
+  const app_id = texte(ch, "app_id") || null;
+  return { app_id, severity_min, level, delay_minutes, channel_id: Number(channel), repeat_minutes, repeat_max };
+}
+
+/**
+ * Une étape d'une application du périmètre, ou GLOBALE (toutes les applications) —
+ * celle-ci réservée à l'administrateur de la plateforme, comme un canal global. Le
+ * canal visé doit être à la portée de l'étape : la requête d'insertion le vérifie.
+ */
+export const creerEtapeEscalade = commande(
+  { regle: { auth: "admin", portee: "globale", audit: "alert_escalation_step.create" }, corps: CHAMPS },
+  async ({ principal, corps, auditer }) => {
+    const e = lu(() => etapeDesChamps(corps));
+    if (!e.ok) return e.decision;
+    const app = e.valeur.app_id;
+    if (app === null ? principal.apps !== null : !dansLePerimetre(principal, app)) return { etat: "hors_perimetre" } as const;
+    if (!(await escaladeDisponible())) {
+      return { etat: "invalide", message: "escalade indisponible : la base n'enregistre pas encore les étapes" } as const;
+    }
+    const id = await tx(async (c) => {
+      const cree = await insertEtapeEscalade({ ...e.valeur, created_by: principal.email }, c);
+      if (cree === null) return null;
+      await auditer(
+        c,
+        detail({
+          id: cree,
+          niveau: e.valeur.level,
+          delai_min: e.valeur.delay_minutes,
+          canal: e.valeur.channel_id,
+          relance: e.valeur.repeat_minutes === null ? null : `${e.valeur.repeat_minutes} min × ${e.valeur.repeat_max}`,
+        }),
+        app,
+      );
+      return cree;
+    });
+    if (id === null) {
+      return {
+        etat: "invalide",
+        message: "canal introuvable, ou hors de la portée de l'étape : une étape globale n'envoie qu'à un canal global",
+      } as const;
+    }
+    return { etat: "cree", id } as const;
+  },
+);
+
+export const supprimerEtapeEscalade = commande(
+  { regle: { auth: "admin", portee: "globale", audit: "alert_escalation_step.delete" }, chemin: CHEMIN_ID },
+  async ({ principal, chemin, auditer }) => {
+    // Sans la table, il n'y a rien à supprimer : la même réponse qu'une étape absente.
+    if (!(await escaladeDisponible())) return { etat: "introuvable" } as const;
+    return tx(async (c) => {
+      const etape = await deleteEtapeEscalade(Number(chemin.id), principal.apps, c);
+      if (!etape) return { etat: "introuvable" } as const;
+      await auditer(c, detail({ id: chemin.id }), etape.app_id);
+      return { etat: "ok" } as const;
+    });
+  },
 );
