@@ -267,7 +267,9 @@ test("une plage personnalisée de 30 jours n'affiche aucun delta sur /, et dit p
   // toujours un écart. F11 : sur `/`, les tuiles sont des `KpiTile`, et leur référence
   // est DATÉE (« vs 24 h précédentes (… UTC) »).
   await page.goto(`${consoleUrl}/?app=${APP}&period=24h`, { waitUntil: "domcontentloaded" });
-  await expect(page.locator(ECART).first()).toBeVisible({ timeout: 15_000 });
+  // 30/09/2026 : la case ne montre que sa valeur ; l'écart est dans la page (lu par
+  // les lecteurs d'écran et dans la fenêtre de la case), pas affiché sur la case.
+  await expect(page.locator(ECART).first()).toBeAttached({ timeout: 15_000 });
   await expect(page.locator(ECART).first()).toContainText("vs 24 h précédentes");
 
   const to = new Date(Math.floor(Date.now() / 60_000) * 60_000 - 60_000);

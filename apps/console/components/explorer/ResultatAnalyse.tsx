@@ -840,14 +840,9 @@ export function ResultatAnalyse({
     );
   }
 
-  const lecture =
-    lectures.length || lectureVide ? (
-      <>
-        {lectureVide}
-        {lectureVide && lectures.length > 0 && " "}
-        {lectures.join(" ")}
-      </>
-    ) : undefined;
+  // L'état « population vide » est un ÉTAT, pas une phrase de lecture : il reste
+  // écrit sous le chiffre, hors du repli « Méthode » où vont les lectures (30/09/2026).
+  const lecture = lectures.length ? <>{lectures.join(" ")}</> : undefined;
 
   return (
     <div data-testid="resultat-analyse" data-forme={plan.visualization} data-vital={vital ?? undefined}>
@@ -860,6 +855,7 @@ export function ResultatAnalyse({
         lecture={lecture}
       >
         {corps}
+        {lectureVide && <p className="mt-2 text-xs text-ink-soft">{lectureVide}</p>}
       </Figure>
       {aPropos}
     </div>

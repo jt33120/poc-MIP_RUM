@@ -95,8 +95,9 @@ test("/ : chaque tuile Web Vital dit son intervalle, ou pourquoi il manque", asy
   for (const nom of AVEC_INTERVALLE) {
     const c = carte(page, nom);
     await expect(c.getByTestId("kpi-intervalle"), nom).toContainText(/entre .+ et .+ \(95 %\)/);
-    // Le lecteur d'écran annonce l'intervalle : il est dans le libellé du lien de la tuile.
-    await expect(c.locator("a").first(), nom).toHaveAttribute("aria-label", /entre .+ et .+ \(95 %\)/);
+    // Le lecteur d'écran annonce l'intervalle : il est dans le libellé de la case (un
+    // bouton qui ouvre sa fenêtre depuis le 30/09/2026).
+    await expect(c.getByTestId("kpi-tile"), nom).toHaveAttribute("aria-label", /entre .+ et .+ \(95 %\)/);
   }
 
   for (const nom of SANS_INTERVALLE) {

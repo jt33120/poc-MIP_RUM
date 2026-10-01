@@ -120,14 +120,15 @@ test.describe("F11 — Vue d'ensemble : santé, KPI, constats", () => {
     expect(surSessions.replace(/\s/g, "")).toBe(valeur);
   });
 
-  test("la tuile d'erreurs est un ratio « pour 100 », jamais un pourcentage", async ({ page }) => {
+  // Recette du 30/09/2026 : « pour 100 » s'écrit « % » dans la case (le ratio peut
+  // dépasser 100 %, c'est dit dans la méthode) ; le libellé complet reste lu.
+  test("la case d'erreurs est un ratio d'occurrences pour 100 pages vues, écrit en %", async ({ page }) => {
     await login(page);
     // `cmp=none` : pas d'écart relatif, dont le « % » est une variation, pas la valeur.
     await page.goto(`${ACCUEIL_F11}&cmp=none`, { waitUntil: "domcontentloaded" });
     const tuile = page.getByTestId("tuile-erreurs");
     await expect(tuile).toContainText("Occurrences d'erreurs pour 100 pages vues", { timeout: 15_000 });
-    await expect(tuile.getByTestId("kpi-valeur")).toContainText("pour");
-    await expect(tuile).not.toContainText("%");
+    await expect(tuile.getByTestId("kpi-valeur")).toContainText("%");
     // L'erreur backend (sans page vue) est écartée du numérateur, et comptée à part.
     await expect(tuile).toContainText("hors navigateur");
   });
@@ -253,7 +254,9 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
       await expect(serie).toHaveAttribute("data-vital", nom);
       await expect(serie.locator(".recharts-reference-area.bande-bon")).toBeVisible({ timeout: 15_000 });
     }
-    // Le déploiement de la fenêtre est un repère cliquable : il compare sa release à la précédente.
+    // Le déploiement de la fenêtre est un repère cliquable : il compare sa release à la
+    // précédente. Il se lit dans la fenêtre du LCP, qu'on ouvre depuis sa vignette.
+    await page.getByTestId("vignette-LCP").click();
     const annotation = page.locator("#hero-LCP").getByTestId("legende-annotations").getByRole("link", { name: /f12-1\.1/ });
     const href = new URL((await annotation.getAttribute("href"))!, consoleUrl);
     expect([href.searchParams.get("cmp"), href.searchParams.get("rel_b"), href.searchParams.get("rel_a")]).toEqual([
@@ -2333,7 +2336,13 @@ test.describe("F27 — Recette transverse du domaine performance", () => {
 
       // P5 — chaque graphique recharts est rendu (après hydratation), puis aucun n'a
       // deux axes y : deux grandeurs se lisent en panneaux empilés.
-      const graphiques = page.locator('[data-testid="threshold-series"], [data-testid="stacked-bars"], [data-testid="scatter-plot"]');
+      // Un graphique dans une fenêtre FERMÉE (grand format d'une vignette, 30/09/2026)
+      // n'a pas de taille : recharts ne le dessine qu'à l'ouverture. On relève ceux
+      // de la page telle qu'elle s'affiche.
+      const HORS_FENETRE = ":not(dialog:not([open]) *)";
+      const graphiques = page.locator(
+        ['[data-testid="threshold-series"]', '[data-testid="stacked-bars"]', '[data-testid="scatter-plot"]'].map((s) => s + HORS_FENETRE).join(", "),
+      );
       for (const graphique of await graphiques.all()) {
         await expect(graphique.locator(".recharts-wrapper").first()).toBeAttached({ timeout: 15_000 });
       }
@@ -2344,7 +2353,9 @@ test.describe("F27 — Recette transverse du domaine performance", () => {
 
       // P2 — une série d'un vital porte ses trois zones (bande « Bon » dessinée, trois
       // entrées de légende) ; une distribution, ses zones pleines en fond.
-      for (const serie of await page.locator('[data-testid="threshold-series"][data-vital]').all()) {
+      // Les vignettes (`apercu`) n'ont pas de légende : leurs zones sont dessinées, leur
+      // légende est dans la fenêtre. On relève les séries avec légende.
+      for (const serie of await page.locator(`[data-testid="threshold-series"][data-vital]:not([data-apercu])${HORS_FENETRE}`).all()) {
         const vital = await serie.getAttribute("data-vital");
         await expect(serie.locator(".recharts-reference-area.bande-bon").first(), `P2 : bande « Bon » de ${vital}`).toBeAttached({
           timeout: 15_000,

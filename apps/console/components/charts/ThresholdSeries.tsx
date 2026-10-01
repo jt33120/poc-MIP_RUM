@@ -909,6 +909,7 @@ export function ThresholdSeries({
       data-vital={vitalEffectif}
       data-seaux={grille.length}
       data-collecte-recente={premier !== null ? "" : undefined}
+      data-apercu={apercu ? "" : undefined}
     >
       {premier !== null && noteCollecte && (
         <NoteCollecteRecente grille={grille} premier={premier} seauSecondes={seauSecondes} debutCollecte={debutCollecte} />
