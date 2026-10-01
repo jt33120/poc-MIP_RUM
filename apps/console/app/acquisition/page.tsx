@@ -176,6 +176,9 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
   );
   // Élargir la fenêtre est le seul geste utile devant un vide (le canal n'est pas un filtre).
   const elargir = gesteElargir("/acquisition", query, Date.now());
+  // Des sessions lues, mais aucune venue d'un site externe : la figure des référents
+  // tient sur une ligne (une session sans aucune session se dit déjà dans les canaux).
+  const sansReferents = lecture.ok && lecture.data.total > 0 && lecture.data.referrers.length === 0;
 
   return (
     <div className="animate-fade-up">
@@ -229,9 +232,11 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
         </ul>
       </details>
 
-      {/* A3 — les canaux (6 colonnes) et les sites référents (6 colonnes), même bord bas. */}
+      {/* A3 — les canaux (6 colonnes) et les sites référents (6 colonnes), même bord bas.
+          Sans aucun site référent, les canaux prennent la largeur et l'absence tient sur
+          une ligne dessous : pas de demi-carte blanche. */}
       <div className="mb-4 grid min-w-0 gap-3 lg:grid-cols-12">
-        <div className="min-w-0 lg:col-span-6 lg:[&>section]:h-full">
+        <div className={`min-w-0 lg:[&>section]:h-full ${sansReferents ? "lg:col-span-12" : "lg:col-span-6"}`}>
           <SectionErreur titre="Sessions par canal d'entrée">
             <Figure
               id="acquisition-canaux"
@@ -250,7 +255,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
             </Figure>
           </SectionErreur>
         </div>
-        <div className="min-w-0 lg:col-span-6 lg:[&>section]:h-full">
+        <div className={`min-w-0 lg:[&>section]:h-full ${sansReferents ? "lg:col-span-12" : "lg:col-span-6"}`}>
           <SectionErreur titre="Sites référents">
             <Figure
               id="acquisition-referents"
@@ -258,8 +263,18 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
               meta={
                 meta(lecture.ok ? `${compte(lecture.data.referrers.length, "site affiché", "sites affichés")} (${TOP_REFERENTS} au plus)` : undefined)
               }
-              etat={!lecture.ok ? { kind: "erreur", titre: "Sites référents" } : undefined}
-              lecture="Part = sessions arrivées de ce site, sur toutes les sessions de la période (pas sur les seuls sites affichés) ; longueur relative au premier site. Source : référent de la première page vue, capteur navigateur."
+              etat={
+                !lecture.ok
+                  ? { kind: "erreur", titre: "Sites référents" }
+                  : sansReferents
+                    ? { kind: "vide", population: "site référent externe", masculin: true, plage: dansPhrase }
+                    : undefined
+              }
+              lecture={
+                sansReferents
+                  ? "Trafic direct ou interne seulement : aucune session n'est arrivée d'un moteur, d'un réseau social ou d'un autre site."
+                  : "Part = sessions arrivées de ce site, sur toutes les sessions de la période (pas sur les seuls sites affichés) ; longueur relative au premier site. Source : référent de la première page vue, capteur navigateur."
+              }
             >
               {lecture.ok && <BarresReferents rep={lecture.data} dansPhrase={dansPhrase} />}
             </Figure>

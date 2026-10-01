@@ -184,9 +184,10 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
       </SectionErreur>
 
       {/* G3 et G4 — le taux par objectif (6 colonnes) à côté de la conversion par appareil
-          (6 colonnes), au-dessus du pli, même bord bas. */}
+          (6 colonnes), au-dessus du pli, même bord bas. Sans objectif, une seule ligne sur
+          toute la largeur : il n'y a rien à découper par appareil. */}
       <div className="mb-4 grid min-w-0 gap-3 lg:grid-cols-12">
-      <div className="min-w-0 lg:col-span-6 lg:[&>section]:h-full">
+      <div className={`min-w-0 lg:[&>section]:h-full ${vide ? "lg:col-span-12" : "lg:col-span-6"}`}>
         <SectionErreur titre="Taux de conversion par objectif">
           <Figure
             id="conversions-taux"
@@ -213,6 +214,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
       </div>
 
       {/* G4 — petits multiples par appareil. */}
+      {!vide && (
       <div className="min-w-0 lg:col-span-6 lg:[&>section]:h-full">
         <SectionErreur titre="Conversion par appareil">
           <Figure
@@ -260,6 +262,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
           </Figure>
         </SectionErreur>
       </div>
+      )}
       </div>
 
       {/* G5 — la table des objectifs. */}
