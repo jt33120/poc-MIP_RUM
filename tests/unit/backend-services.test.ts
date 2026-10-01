@@ -193,10 +193,12 @@ describe("cadences et fonctions SQL appelées", () => {
     expect(bilan.ok).toBe(true);
     // Le routage des notifications d'issue suit check_alerts (un pic y part dans
     // l'outbox) et précède la livraison du même tick.
+    // L'escalade (v108) suit check_slo_burn : elle décide, comme lui.
     expect(Object.keys(bilan.resultats)).toEqual([
       "check_alerts",
       "route_error_issue_notifications",
       "check_slo_burn",
+      "escalate_alerts",
       "uptime",
       "dispatch_alerts",
       "reconcile_deliveries",

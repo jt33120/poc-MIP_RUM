@@ -594,6 +594,8 @@ suite("P8.1 — l'inventaire des tables ne se recopie pas à la main", () => {
       // Configuration d'exploitation — écart assumé, consigné dans v81.
       "slo", "goal", "notify_channel", "uptime_check", "read_tokens", "deploy_marker",
       "ai_briefing", "extension_scope", "extension_install_app",
+      // v108 : les étapes d'escalade, configuration du routage comme `notify_channel`.
+      "alert_escalation_step",
       // v103 : le battement attendu d'une app (route de santé, cadence) est de la
       // configuration de sonde, sans donnée personnelle — comme `uptime_check`.
       "sonde_attendue",
