@@ -139,12 +139,12 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
     famille: "capteur",
     zone: "capteurs",
     titre: "SDK web",
-    sousTitre: "mip-rum.js · 22,6 Ko gzip",
+    sousTitre: "mip-rum.js · 23 Ko gzip",
     resume:
       "Un seul fichier JavaScript posé dans le <head> : il mesure les Web Vitals, les erreurs, les sessions, les clics et les appels réseau, et les envoie par lots au format OpenTelemetry.",
     etiquettes: ["OTLP/HTTP JSON", "0 dépendance", "lots de 64"],
     faits: [
-      { texte: "22,6 Ko gzip, sous un budget de 35 Ko que chaque build fait respecter.", sources: [`${SDK}/build.mjs:52-62`, "apps/console/lib/sdk-poids.ts:17-27"] },
+      { texte: "23 Ko gzip, sous un budget de 35 Ko que chaque build fait respecter.", sources: [`${SDK}/build.mjs:52-62`, "apps/console/lib/sdk-poids.ts:17-27"] },
       {
         texte: "Envoi par lots de 64 spans toutes les 3 s, en fetch keepalive ; vidage quand la page passe en arrière-plan.",
         sources: [`${SDK}/src/otel.ts:27`, `${SDK}/src/otel.ts:131-139`, `${SDK}/src/otel.ts:253-271`],
