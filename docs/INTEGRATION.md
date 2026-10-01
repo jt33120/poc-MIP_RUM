@@ -241,11 +241,17 @@ API : `MIPRum.consent(bool)`, `track(nom, props)`, `setUser` / `clearUser`,
 
 ## Annexe B — Consentement et RGPD
 
-- **`requireConsent: true`** : rien ne part tant que l'outil de consentement n'a pas
-  appelé `MIPRum.consent(true)`, qui envoie alors ce qui attendait en mémoire.
+- **`requireConsent: true`** : rien ne part, et rien n'est lu ni écrit dans le stockage
+  local du navigateur, tant que l'outil de consentement n'a pas appelé
+  `MIPRum.consent(true)`. L'accord envoie ce qui attendait en mémoire (200 événements
+  au plus), écrit la session et le visiteur — ou reprend ceux d'une page déjà
+  consentie — et décide l'échantillonnage. À appeler à chaque page dès que l'outil
+  connaît le choix du visiteur : sans cet appel, la page reste en mémoire.
   `MIPRum.consent(false)` purge ce qui attendait (mémoire, file de rejeu, erreurs
-  compactées) et arrête la collecte. La fiche du client donne le snippet dans cette
-  version.
+  compactées), efface du stockage local `mip_rum_session`, `mip_rum_visitor`,
+  `mip_rum_sampling`, `mip_rum_seq` et `mip_rum_retry`, et arrête la collecte ; un
+  accord ultérieur repart d'un nouveau visiteur. La fiche du client donne le snippet
+  dans cette version.
 - **`honorDNT: true`** (défaut) : si le navigateur signale un refus (Do Not Track ou
   Global Privacy Control), aucune collecte. `false` est réservé aux applications qui
   recueillent elles-mêmes un consentement affirmatif et pilotent `consent()`.
@@ -253,9 +259,13 @@ API : `MIPRum.consent(bool)`, `track(nom, props)`, `setUser` / `clearUser`,
   laisse le texte ; `"inputs"` ne masque que les saisies (tout ce que l'écran affiche est
   alors enregistré). Un bloc marqué `.mip-rum-block` n'est jamais capturé.
 - **Formulaires** : identifiants de champ et durées seulement, jamais les valeurs.
-- **Sans cookie** : la session vit dans `localStorage` (30 min d'inactivité) ; le
-  visiteur est un tirage aléatoire, sans lien avec le terminal. Query strings et
-  fragments des URL sont retirés par le SDK, puis de nouveau par la collecte.
+- **Sans cookie** : la session vit dans `localStorage` (close après 30 min d'inactivité,
+  ou 4 h après son début même active) ; le visiteur est un tirage aléatoire, sans lien
+  avec le terminal. Query strings et fragments des URL sont retirés par le SDK, puis de
+  nouveau par la collecte.
+- **Navigation** : un retour arrière servi par le cache du navigateur (bfcache) compte
+  une page vue (`nav_type` = `bfcache`) ; une page prérendue n'est mesurée que si elle
+  est affichée (`nav_type` = `prerender`), un prérendu abandonné ne laisse rien.
 - **Rétention** : 30 jours par défaut, réglable par application.
 - **À la charge du client** : mentionner la mesure d'audience et de performance dans sa
   politique de confidentialité, et brancher `requireConsent` si sa CMP l'exige.

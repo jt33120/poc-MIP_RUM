@@ -1,7 +1,22 @@
+import { accesTerminalAutorise, CLE_SESSION, CLE_VISITEUR } from "./consent";
 import { marqueIdentite, type MarquesIdentite } from "./identite-session";
 
-const STORAGE_KEY = "mip_rum_session";
+const STORAGE_KEY = CLE_SESSION;
 const INACTIVITY_TTL_MS = 30 * 60 * 1000;
+
+// ─────────────────────────── La durée maximale ───────────────────────────────
+//
+// Finding 2.12 b de docs/AUDIT_RUM_EXTERNE.md. Seul le délai d'inactivité fermait
+// une session : un poste de supervision ou un affichage mural qui garde l'onglet
+// ouvert gardait LA MÊME session pendant des semaines, avec un début figé. Les
+// lectures bornées sur le début cessaient de la voir, celles bornées sur la
+// dernière activité la comptaient, et la purge de rétention ne la touchait jamais.
+//
+// Une session dure donc au plus 4 heures, même active (le standard des outils
+// d'analyse d'audience). Au-delà, l'événement suivant ouvre une session neuve,
+// avec le même visiteur : un poste mural compte une session toutes les 4 heures,
+// et c'est voulu.
+const SESSION_MAX_MS = 4 * 60 * 60 * 1000;
 
 // ─────────────────────────── L'identifiant de visiteur ────────────────────────
 //
@@ -34,11 +49,13 @@ const INACTIVITY_TTL_MS = 30 * 60 * 1000;
 // d'accepter `mip.user_hash` des SDK déjà posés chez des clients, et marque ces
 // sessions comme telles (`id_kind = 'device_class'`) — voir migration-v57.
 //
-// CE QUI N'EST PAS RÉGLÉ ICI. Cette clé est écrite dans le stockage local AVANT
-// la barrière de consentement, comme l'identifiant de session à côté d'elle.
-// C'est un défaut distinct (finding 1.11 de l'audit), qui porte désormais sur une
-// clé de plus. Il demande de réordonner l'initialisation et de purger au refus.
-const VISITOR_KEY = "mip_rum_visitor";
+// ET LE CONSENTEMENT (finding 1.11, réglé le 01/10/2026). Cette clé et celle de la
+// session étaient écrites AVANT la barrière de consentement, et survivaient au
+// refus. Désormais, tant que l'accès au terminal n'est pas autorisé
+// (`accesTerminalAutorise`, ./consent.ts), session et visiteur sont tirés en
+// mémoire, sans rien lire ni écrire ; l'accord les écrit, ou reprend ceux que le
+// stockage garde déjà ; un refus les efface.
+const VISITOR_KEY = CLE_VISITEUR;
 
 export interface Session {
   sessionId: string;
@@ -49,13 +66,29 @@ export interface Session {
    * persistées avec elle. Absentes : session anonyme jusqu'ici.
    */
   identites?: MarquesIdentite;
+  /** Début de la session (epoch ms) : la durée maximale se compte depuis lui. */
+  debut?: number;
+  /** Dernière activité (epoch ms) : le délai d'inactivité se compte depuis elle. */
+  derniere?: number;
+  /**
+   * Instant (epoch ms) à partir duquel la session ne se prolonge plus, même
+   * active : son début plus 4 heures. Absent, la session n'a pas de borne.
+   */
+  echeance?: number;
 }
 
 // Les marques d'identité (qui décident quand une identité métier ouvre une nouvelle
 // session) : ./identite-session.ts.
 
+/** Écrit la session — jamais sans accès au terminal (consentement attendu ou refusé). */
 function ecrire(session: Session): void {
-  const enregistrement: Record<string, unknown> = { sid: session.sessionId, last: Date.now() };
+  if (!accesTerminalAutorise()) return;
+  const maintenant = Date.now();
+  const enregistrement: Record<string, unknown> = {
+    sid: session.sessionId,
+    last: maintenant,
+    start: session.debut ?? maintenant,
+  };
   if (session.identites?.user) enregistrement.u = session.identites.user;
   if (session.identites?.account) enregistrement.a = session.identites.account;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(enregistrement));
@@ -72,24 +105,65 @@ function uuid(): string {
   return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`.slice(0, 32).padEnd(32, "0");
 }
 
-/** Stable session id with 30 min inactivity TTL, persisted in localStorage. */
-export function getOrCreateSession(): Session {
+function ouvrir(sessionId: string, visitorId: string, identites: MarquesIdentite, debut: number): Session {
+  return { sessionId, visitorId, identites, debut, derniere: debut, echeance: debut + SESSION_MAX_MS };
+}
+
+/** Une session en mémoire a-t-elle fini, par inactivité ou par durée ? Sans repère, non. */
+function echue(session: Session, maintenant: number): boolean {
+  return (
+    (session.derniere != null && maintenant - session.derniere >= INACTIVITY_TTL_MS) ||
+    (session.echeance != null && maintenant >= session.echeance)
+  );
+}
+
+/**
+ * La session à poursuivre : celle du stockage si elle a servi il y a moins de
+ * 30 minutes ET commencé il y a moins de 4 heures, sinon `candidate` si elle vaut
+ * encore, sinon une neuve.
+ *
+ * `candidate` est la session que la page a en mémoire. Deux appels en ont une :
+ * l'accord, qui écrit la session tirée en mémoire en attendant (les événements
+ * retenus gardent alors leur identifiant) ; et la restauration depuis le cache
+ * du navigateur, qui reprend la session de la page si elle n'a pas expiré
+ * pendant l'absence.
+ *
+ * Sans accès au terminal, rien n'est lu ni écrit : la session vit en mémoire.
+ */
+export function getOrCreateSession(candidate?: Session): Session {
   const now = Date.now();
-  let stored: { sid: string; last: number; u?: unknown; a?: unknown } | null = null;
+  const candidateValable = candidate != null && !echue(candidate, now);
+  if (!accesTerminalAutorise()) {
+    if (candidateValable) return candidate;
+    return ouvrir(uuid(), candidate?.visitorId ?? uuid(), { user: null, account: null }, now);
+  }
+  let stored: { sid?: unknown; last?: unknown; start?: unknown; u?: unknown; a?: unknown } | null = null;
   try {
     stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
   } catch {
     /* storage unavailable or corrupt -> new session */
   }
-  const reprise = stored !== null && typeof stored.sid === "string" && now - stored.last < INACTIVITY_TTL_MS;
-  const sid = reprise ? stored!.sid : uuid();
+  // Un enregistrement d'avant la durée maximale n'a pas de début : on le compte
+  // depuis maintenant. Un début dans le futur (horloge reculée) aussi.
+  const debutStocke = typeof stored?.start === "number" && stored.start <= now ? stored.start : now;
+  const reprise =
+    stored != null &&
+    typeof stored.sid === "string" &&
+    typeof stored.last === "number" &&
+    now - stored.last < INACTIVITY_TTL_MS &&
+    now - debutStocke < SESSION_MAX_MS;
   // Les marques d'identité ne valent que pour LEUR session : une session neuve est anonyme.
-  const marque = (v: unknown) => (reprise && typeof v === "string" ? v : null);
-  const session: Session = {
-    sessionId: sid,
-    visitorId: getOrCreateVisitor(),
-    identites: { user: marque(stored?.u), account: marque(stored?.a) },
-  };
+  const marque = (v: unknown) => (typeof v === "string" ? v : null);
+  const visiteur = getOrCreateVisitor(candidate?.visitorId);
+  let session: Session;
+  if (reprise) {
+    session = ouvrir(stored!.sid as string, visiteur, { user: marque(stored!.u), account: marque(stored!.a) }, debutStocke);
+  } else if (candidateValable) {
+    session = { ...candidate, visitorId: visiteur };
+  } else {
+    session = ouvrir(uuid(), visiteur, { user: null, account: null }, now);
+  }
+  session.derniere = now;
   try {
     ecrire(session);
   } catch {
@@ -99,15 +173,17 @@ export function getOrCreateSession(): Session {
 }
 
 /** Ouvre une nouvelle session technique en conservant le visiteur. Utilisé
- * quand l'identité métier change pour qu'une session ne mélange jamais A/B. */
+ * quand l'identité métier change pour qu'une session ne mélange jamais A/B, et
+ * quand la session atteint sa durée maximale. */
 export function rotateSession(visitorId: string, identites: { user: string | null; account: string | null } = { user: null, account: null }): Session {
   const sessionId = uuid();
   // Les identités en cours sont rattachées à la nouvelle session, marquées pour ELLE.
-  const session: Session = {
+  const session = ouvrir(
     sessionId,
     visitorId,
-    identites: { user: marqueIdentite(sessionId, "user", identites.user), account: marqueIdentite(sessionId, "account", identites.account) },
-  };
+    { user: marqueIdentite(sessionId, "user", identites.user), account: marqueIdentite(sessionId, "account", identites.account) },
+    Date.now(),
+  );
   try {
     ecrire(session);
   } catch {
@@ -128,8 +204,14 @@ export function rotateSession(visitorId: string, identites: { user: string | nul
  * la page : le visiteur est alors compté comme nouveau à chaque chargement. On
  * l'assume — l'alternative serait de le dériver du terminal, c'est-à-dire de
  * refaire exactement ce qu'on vient de retirer.
+ *
+ * `candidat` : l'identifiant tiré en mémoire avant l'accord. Il n'est écrit que si
+ * le stockage n'en garde pas déjà un — sinon celui du stockage prime, et le
+ * visiteur reste le même d'une visite à l'autre.
  */
-export function getOrCreateVisitor(): string {
+export function getOrCreateVisitor(candidat?: string): string {
+  const valable = (v: string | null | undefined): v is string => typeof v === "string" && v.length >= 16;
+  if (!accesTerminalAutorise()) return valable(candidat) ? candidat : uuid();
   let vid: string | null = null;
   try {
     vid = localStorage.getItem(VISITOR_KEY);
@@ -137,8 +219,8 @@ export function getOrCreateVisitor(): string {
     /* stockage indisponible : identifiant volatil, le temps de la page */
   }
   // Un identifiant corrompu ou tronqué ne se répare pas : on retire.
-  if (!vid || vid.length < 16) {
-    vid = uuid();
+  if (!valable(vid)) {
+    vid = valable(candidat) ? candidat : uuid();
     try {
       localStorage.setItem(VISITOR_KEY, vid);
     } catch {
@@ -159,6 +241,7 @@ export function forgetVisitor(): void {
 
 /** Refresh the inactivity window (called on each emitted event). */
 export function touchSession(session: Session): void {
+  session.derniere = Date.now();
   try {
     // Les marques d'identité voyagent avec la session : sans elles, la page suivante
     // prendrait la session pour anonyme.

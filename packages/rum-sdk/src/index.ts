@@ -1,7 +1,7 @@
 import { initApiSpans } from "./apispans";
 import { ActionTracker, actionAttrs, initAutomaticActions } from "./actions";
 import { createBreadcrumbTrail, initClickBreadcrumbs, MIP_UI_ATTR, type BreadcrumbTrail } from "./breadcrumbs";
-import { ConsentGate } from "./consent";
+import { autoriserAccesTerminal, ConsentGate, effacerTerminal, type BufferedEvent } from "./consent";
 import { currentRoute, initNavigation, scrubUrl } from "./context";
 import { initConsoleErrors, initCspErrors, initResourceErrors } from "./error-capture";
 import { initErrors, type Emit } from "./errors";
@@ -13,7 +13,7 @@ import { currentTraceId, discardPendingSpans, forceFlush, initOtel, newPageTrace
 import { flushReplayBoundary, isReplaySampled, startReplay } from "./replay";
 import { DEFAULT_SLOW_RESOURCE_MS, initResources } from "./resources";
 import { purgeRetryQueue, replayRetryQueue } from "./retry";
-import { createSampler, decideMode, loadMode, storeMode } from "./sampling";
+import { createSampler, decideMode, loadMode, storeMode, type SampleMode } from "./sampling";
 import { readPrivacySignals, signalsOptOut } from "./privacy";
 import { getOrCreateSession, rotateSession, touchSession, type Session } from "./session";
 import { decisionIdentite, marqueIdentite } from "./identite-session";
@@ -62,6 +62,15 @@ let errorStats: (() => ErrorCollectionStats) | null = null;
 let causalActions: ActionTracker | null = null;
 let collectionOrigin: (at?: number) => Record<string, string | number | boolean> = () => ({});
 let updateCollectionConsent: ((granted: boolean) => void) | null = null;
+// L'accord ouvre le terminal et rend ce que le tampon doit devenir (./consent.ts) ;
+// le refus le referme. Posés par init(), appelés par consent().
+let accorder: (() => ((tampon: readonly BufferedEvent[]) => readonly BufferedEvent[]) | undefined) | null = null;
+let refuser: (() => void) | null = null;
+// Page prérendue : init() attend son affichage. Un accord ou un refus donné
+// entre-temps (l'outil de consentement tourne, lui, dans le prérendu) est gardé
+// pour être appliqué au démarrage réel, sans quoi il serait perdu.
+let collecteDifferee = false;
+let consentementEnAttente: boolean | null = null;
 
 const COLLECTION_EPOCH = "mip.collection_epoch";
 const COLLECTION_ALLOWED = "mip.collection_allowed";
@@ -176,18 +185,86 @@ export function init(cfg: MIPRumConfig): void {
   ) {
     return;
   }
+  // PRÉRENDU (finding 2.5). Une page prérendue par le navigateur (Speculation
+  // Rules) exécute ses scripts sans être affichée, et peut ne l'être jamais. Y
+  // démarrer créait une session et une page vue pour une page que personne n'a
+  // vue — les volumes montaient, et les mesures d'une page jamais affichée
+  // entraient dans les percentiles. La collecte attend donc l'affichage
+  // (`prerenderingchange`) : un prérendu abandonné ne laisse rien, ni session, ni
+  // page vue, ni écriture sur le terminal.
+  if (typeof document !== "undefined" && (document as { prerendering?: boolean }).prerendering === true) {
+    if (!collecteDifferee) {
+      collecteDifferee = true;
+      document.addEventListener("prerenderingchange", () => init(cfg), { once: true });
+    }
+    return;
+  }
+  // CONSENTEMENT ET TERMINAL (finding 1.11). Avec `requireConsent`, rien n'est lu
+  // ni écrit dans le stockage local avant l'accord : la session et le visiteur
+  // sont tirés en mémoire, et le mode d'échantillonnage — qui se mémorise par
+  // session — n'est décidé qu'à l'accord (`accorder`, plus bas). D'ici là, tout va
+  // au tampon de consentement, qui ne fait partir aucune requête.
+  const accordAttendu = Boolean(cfg.requireConsent);
+  autoriserAccesTerminal(!accordAttendu);
+  let sessionEnMemoire = accordAttendu;
   // Échantillonnage intelligent (A1) : décision par session, persistée pour
   // rester stable au fil des pageviews/reloads. "off" => on ne collecte rien.
   session = reconcilierIdentites(getOrCreateSession());
-  const mode0 = loadMode(session.sessionId) ?? decideMode(cfg);
-  storeMode(session.sessionId, mode0);
-  if (mode0 === "off") {
-    session = null;
-    return;
+  let mode0: SampleMode = "full"; // en attente d'accord : provisoire, tout va au tampon
+  if (!accordAttendu) {
+    mode0 = loadMode(session.sessionId) ?? decideMode(cfg);
+    storeMode(session.sessionId, mode0);
+    if (mode0 === "off") {
+      session = null;
+      return;
+    }
   }
   initialized = true;
   // promotion "error-biased" -> "full" persistée (la session reste "full" après reload)
-  const sampler = createSampler(mode0, () => storeMode(session!.sessionId, "full"));
+  const promouvoir = () => storeMode(session!.sessionId, "full");
+  let sampler = createSampler(mode0, promouvoir);
+
+  /**
+   * La page passe à une autre session sans se recharger : durée maximale atteinte,
+   * ou retour depuis le cache du navigateur après expiration. Comme pour un
+   * changement d'identité : l'action en cours est close (ses effets tardifs
+   * restent dans l'ancienne session) et le rejeu vide son morceau courant. La
+   * session neuve garde le mode d'échantillonnage de la page, mémorisé pour elle
+   * — sans quoi la page suivante le tirerait de nouveau au sort.
+   */
+  const passerA = (nouvelle: Session): Session => {
+    const avant = session;
+    session = nouvelle;
+    if (avant && avant.sessionId !== nouvelle.sessionId) {
+      causalActions?.close();
+      flushReplayBoundary();
+      if (loadMode(nouvelle.sessionId) == null) storeMode(nouvelle.sessionId, sampler.mode ?? mode0);
+    }
+    return nouvelle;
+  };
+
+  // DURÉE MAXIMALE (finding 2.12 b). Une session ne se prolonge pas au-delà de
+  // son échéance (4 h après son début, ./session.ts), même si l'onglet ne se
+  // ferme jamais : l'événement suivant ouvre une session neuve, même visiteur.
+  const sessionCourante = (): Session => {
+    const s = session!;
+    if (s.echeance == null || Date.now() < s.echeance) return s;
+    return passerA(rotateSession(s.visitorId, identites));
+  };
+
+  // Identifiants tirés en mémoire avant l'accord, et ceux qui les remplacent
+  // quand l'accord reprend la session que le stockage gardait déjà. Un effet
+  // tardif (appel réseau, erreur compactée) peut encore porter l'ancien : il est
+  // réécrit à l'envoi, pour ne jamais faire naître une session fantôme.
+  const renommes = new Map<string, string>();
+  const renommer = (attrs: Record<string, unknown>): Record<string, unknown> => {
+    if (renommes.size === 0) return attrs;
+    for (const cle of ["mip.session_id", "mip.visitor_id"]) {
+      const v = attrs[cle];
+      if (typeof v === "string" && renommes.has(v)) attrs[cle] = renommes.get(v)!;
+    }
+    return attrs;
+  };
 
   const tracer = initOtel(cfg);
   // fuseau horaire (B1 : mapping tz -> geo_country à l'ingestion, zéro IP stockée)
@@ -249,7 +326,7 @@ export function init(cfg: MIPRumConfig): void {
     if (originAllowed === false || (typeof originEpoch === "number" && originEpoch !== collectionEpoch)) {
       return null;
     }
-    const current = session!;
+    const current = sessionCourante();
     touchSession(current);
     const envelope = eventContext.envelope();
     const snapshotted: Record<string, unknown> = {
@@ -284,7 +361,7 @@ export function init(cfg: MIPRumConfig): void {
   };
 
   const submitBase = (name: string, attrs: Record<string, unknown>, ts?: number): boolean => {
-    const outbound = { ...attrs };
+    const outbound = renommer({ ...attrs });
     delete outbound["mip.action_epoch"];
     return gate!.submit(name, outbound as Parameters<Emit>[1], realEmit, ts);
   };
@@ -505,6 +582,10 @@ export function init(cfg: MIPRumConfig): void {
   }
 
   initNavigation((navType) => {
+    // Retour depuis le cache du navigateur (finding 2.5) : la page a pu y dormir
+    // plus de 30 minutes, ou franchir les 4 heures. Comme un chargement, elle
+    // reprend la session si elle vaut encore, en ouvre une neuve sinon.
+    if (navType === "bfcache") passerA(reconcilierIdentites(getOrCreateSession(session!)));
     causalActions!.close();
     // nouvelle page vue = nouvelle trace W3C (E0) : ouverte AVANT le span
     // pageview pour qu'il en soit le premier span. Borne la taille des traces.
@@ -539,10 +620,63 @@ export function init(cfg: MIPRumConfig): void {
   };
 
   // session replay (B2) : échantillonné une fois à l'init, démarré seulement
-  // quand le consent est acquis (lazy-load du bundle séparé mip-rum-replay.js)
+  // quand le consent est acquis (lazy-load du bundle séparé mip-rum-replay.js).
+  // Une session que l'accord a fait tomber hors échantillon ne s'enregistre pas.
   replayArm = isReplaySampled(cfg.replay)
-    ? () => startReplay(cfg, () => session!.sessionId)
+    ? () => {
+        if (sampler.mode !== "off") startReplay(cfg, () => session!.sessionId);
+      }
     : null;
+
+  /**
+   * L'accord, quand la session vivait en mémoire. Le stockage s'ouvre ; on y
+   * reprend la session d'un visiteur qui a déjà consenti sur une page précédente
+   * (sinon chaque page serait une session, et chaque visiteur un nouveau), ou l'on
+   * y écrit celle de la mémoire. Le mode d'échantillonnage se décide alors pour
+   * cette session, et s'applique au tampon d'un bloc :
+   *   - « full » : tout part ;
+   *   - « error-biased » : tout part si le tampon porte une erreur — la session est
+   *     alors promue, et retenue entière ; rien sinon ;
+   *   - « off » : rien ne part, et la suite de la page non plus.
+   */
+  accorder = () => {
+    autoriserAccesTerminal(true);
+    if (!sessionEnMemoire) return undefined;
+    sessionEnMemoire = false;
+    const memoire = session!;
+    session = reconcilierIdentites(getOrCreateSession(memoire));
+    const mode = loadMode(session.sessionId) ?? decideMode(cfg);
+    storeMode(session.sessionId, mode);
+    sampler = createSampler(mode, promouvoir);
+    if (memoire.sessionId !== session.sessionId) renommes.set(memoire.sessionId, session.sessionId);
+    if (memoire.visitorId !== session.visitorId) renommes.set(memoire.visitorId, session.visitorId);
+    return (tampon) => {
+      let retenus: readonly BufferedEvent[] = [];
+      if (mode === "full") retenus = tampon;
+      else if (mode === "error-biased" && tampon.some((e) => e.name === "exception")) {
+        sampler.notifyError();
+        retenus = tampon;
+      }
+      // Une action dont la racine n'est pas partie ne doit plus recevoir d'effets.
+      if (retenus.length < tampon.length || renommes.size > 0) causalActions?.close();
+      return retenus.map((e) => ({ ...e, attrs: renommer({ ...e.attrs }) as BufferedEvent["attrs"] }));
+    };
+  };
+
+  /**
+   * Le refus : le terminal se referme, et ce que le SDK y avait posé est effacé
+   * (session, visiteur, mode d'échantillonnage, compteur de fil d'Ariane ; la file
+   * de rejeu, par `purgeRetryQueue`). Les identifiants effacés ne reviennent pas :
+   * la page continue avec une session tirée en mémoire, que seul un nouvel accord
+   * écrira — le visiteur y est alors un nouveau visiteur.
+   */
+  refuser = () => {
+    autoriserAccesTerminal(false);
+    effacerTerminal();
+    sessionEnMemoire = true;
+    renommes.clear();
+    session = getOrCreateSession();
+  };
 
   if (gate.granted) {
     replayRetry();
@@ -552,14 +686,28 @@ export function init(cfg: MIPRumConfig): void {
   // widget d'avis (opt-in) : chargé en lazy à la même origine que le SDK. Le
   // retour part par MIPRum.track('feedback') -> passe donc par le gate de consent.
   if (cfg.feedback) loadFeedbackWidget(cfg.feedback);
+
+  // Accord ou refus donné pendant le prérendu : appliqué maintenant.
+  if (consentementEnAttente !== null) {
+    const decision = consentementEnAttente;
+    consentementEnAttente = null;
+    consent(decision);
+  }
 }
 
 /**
  * Consent mode RGPD : MIPRum.consent(true) débloque la collecte et rejoue le
  * buffer mémoire (+ la file retry) ; consent(false) purge et désactive.
+ *
+ * Le terminal suit (finding 1.11) : l'accord écrit session, visiteur et mode
+ * d'échantillonnage dans le stockage local, le refus les en efface.
  */
 export function consent(granted: boolean): void {
-  if (!gate || !deliver) return; // init() non appelé ou session non échantillonnée
+  if (!gate || !deliver) {
+    // Page prérendue : init() attend l'affichage, la décision l'attend avec lui.
+    if (collecteDifferee && !initialized) consentementEnAttente = granted;
+    return; // init() non appelé ou session non échantillonnée
+  }
   updateCollectionConsent?.(granted);
   causalActions?.consent(granted);
   if (!granted) {
@@ -569,12 +717,13 @@ export function consent(granted: boolean): void {
     resetErrors?.();
     purgeRetryQueue();
     discardPendingSpans();
+    refuser?.();
   } else {
     // Les occurrences vues pendant une période explicitement refusée ne
     // doivent ni retarder ni grossir la première erreur post-réaccord.
     resetErrors?.();
   }
-  gate.set(granted, deliver);
+  gate.set(granted, deliver, granted ? accorder?.() : undefined);
   if (granted) {
     replayRetry?.();
     replayArm?.(); // replay en attente de consent : démarre maintenant

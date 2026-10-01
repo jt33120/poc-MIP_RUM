@@ -93,8 +93,9 @@ export function SnippetStep({
         <details className={BLOC}>
           <summary className={RESUME}>RGPD : le client a une bannière de consentement ?</summary>
           <p className={`mb-2 mt-2 ${TEXTE}`}>
-            Version <code>requireConsent</code> : rien ne part tant que l&apos;outil de consentement
-            n&apos;a pas appelé <code>MIPRum.consent(true)</code>.
+            Version <code>requireConsent</code> : rien ne part et rien ne s&apos;écrit dans le navigateur
+            tant que l&apos;outil de consentement n&apos;a pas appelé <code>MIPRum.consent(true)</code> ;{" "}
+            <code>MIPRum.consent(false)</code> efface les identifiants déjà posés.
           </p>
           <CopyBlock code={snippetConsent} />
         </details>

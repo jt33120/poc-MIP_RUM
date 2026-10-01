@@ -21,11 +21,18 @@
 //
 // Module pur + persistance résiliente : la décision (decideMode) et le
 // contrôleur (createSampler) sont testés unitairement sans navigateur.
+//
+// SOUS CONSENTEMENT (finding 1.11). Le mode est mémorisé dans le stockage local :
+// avec `requireConsent`, il ne peut donc être ni lu ni écrit avant l'accord. Le
+// SDK ne le décide alors qu'à l'accord, pour la session retenue, et l'applique au
+// tampon d'un bloc (index.ts) — c'est ce qui garde la décision stable d'une page
+// à l'autre pour un visiteur qui a déjà consenti.
+import { accesTerminalAutorise, CLE_ECHANTILLONNAGE } from "./consent";
 import type { MIPRumConfig } from "./types";
 
 export type SampleMode = "full" | "error-biased" | "off";
 
-const STORAGE_KEY = "mip_rum_sampling";
+const STORAGE_KEY = CLE_ECHANTILLONNAGE;
 
 const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
 const isMode = (m: unknown): m is SampleMode =>
@@ -83,6 +90,7 @@ export function createSampler(initial: SampleMode, onPromote?: () => void): Samp
 
 /** Mode déjà décidé pour cette session, ou null (storage indispo / autre session). */
 export function loadMode(sessionId: string): SampleMode | null {
+  if (!accesTerminalAutorise()) return null;
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
     if (raw && raw.sid === sessionId && isMode(raw.mode)) return raw.mode;
@@ -94,6 +102,7 @@ export function loadMode(sessionId: string): SampleMode | null {
 
 /** Mémorise le mode de la session (best-effort ; ignoré en navigation privée). */
 export function storeMode(sessionId: string, mode: SampleMode): void {
+  if (!accesTerminalAutorise()) return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ sid: sessionId, mode }));
   } catch {

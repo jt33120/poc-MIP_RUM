@@ -34,7 +34,8 @@ vi.mock("../../packages/rum-sdk/src/context", () => ({
   initNavigation: (callback: (kind: string) => void) => callback("navigate"),
 }));
 vi.mock("../../packages/rum-sdk/src/session", () => ({
-  getOrCreateSession: () => ({ sessionId: "sdk-public-session", visitorId: "visitor-public" }),
+  // Stockage vide : l'accord écrit la session que la page a en mémoire (`candidate`).
+  getOrCreateSession: (candidate?: unknown) => candidate ?? { sessionId: "sdk-public-session", visitorId: "visitor-public" },
   rotateSession: () => ({ sessionId: "sdk-rotated-session", visitorId: "visitor-public" }),
   touchSession: () => {},
 }));
