@@ -119,9 +119,17 @@ describe("VignetteRelease — la case", () => {
     expect(t).toMatch(/LCP 2,0 s (\S )?2,6 s \+30 % \+2,4 %/);
     expect(t).toMatch(/INP 180 ms (\S )?220 ms \+22,2 % —/);
     expect(t).toMatch(/En erreur 5,0 % 10,0 % \+5 pts \+0,2 pt/);
-    expect(t).toContain("à mix égal : couverture 87 % des sessions");
+    expect(t).toContain("à mix égal : couv. 87 % des sessions");
     // L'écran vocal entend la même chose.
     expect(html).toContain("à mix égal : LCP p75 +2,4");
+  });
+
+  it("case étroite : la colonne devient une ligne d'écarts (requête de conteneur, pas de débordement)", () => {
+    const html = caseSeule(STANDARD);
+    // La colonne ne s'affiche qu'à partir de 15 rem de case ; en dessous, la ligne la remplace.
+    expect(html).toContain("[@container_(min-width:15rem)]:block");
+    expect(html).toContain('data-testid="vignette-release-mix-ligne"');
+    expect(texte(html)).toMatch(/à mix égal : couv. 87 % des sessions LCP \+2,4 % INP — err\. \+0,2 pt/);
   });
 
   it("toutes les lignes tues : la case dit la première raison", () => {

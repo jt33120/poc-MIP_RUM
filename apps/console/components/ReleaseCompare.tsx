@@ -109,7 +109,7 @@ export const CLS_NON_LU = "non lue par cette comparaison";
 /** Libellé des lignes standardisées : un mix de trafic égalisé, pas une cause établie. */
 export const LIBELLE_MIX = "à mix égal";
 export const PHRASE_MIX =
-  "chaque strate route × appareil (route d'entrée × appareil pour les erreurs) pèse dans A et dans B ce qu'elle pèse dans les deux réunies ; l'écart restant ne tient plus au mix de routes et d'appareils, l'heure, le réseau et le public restent mêlés";
+  "chaque strate route × appareil (route d'entrée × appareil pour les erreurs) pèse dans A et dans B ce qu'elle pèse dans les deux réunies ; l'heure, le réseau et le public restent mêlés";
 
 /** Les mesures que la standardisation lit, par clé de ligne. */
 const CLES_MIX = { lcp: "lcp", inp: "inp", erreurs: "erreurs" } as const;
@@ -288,7 +288,7 @@ function LigneMix({ mesure, ligne }: { mesure: Mesure; ligne: LigneStandardisee 
   const unite = UNITE_MIX[mesure.cle as keyof typeof UNITE_MIX] ?? "unités";
   return (
     <tr className="border-b border-line/60 align-top" data-testid={`release-mix-${mesure.cle}`}>
-      <th scope="row" className="py-1.5 pr-3 pl-2 text-left text-[11px] font-normal text-ink-soft">
+      <th scope="row" className="whitespace-nowrap py-1.5 pr-3 pl-2 text-left text-[11px] font-normal text-ink-soft">
         <span className="sr-only">{mesure.libelle}, </span>
         <span aria-hidden="true">↳ </span>
         {LIBELLE_MIX}
@@ -334,7 +334,9 @@ const COURT: Record<string, string> = { sessions: "Sessions", lcp: "LCP", inp: "
  * À MIX ÉGAL (nuit du 01/10/2026) : une colonne de plus, l'écart B / A des mêmes mesures
  * à mix de trafic égal (« — » quand la ligne se tait), et sous la grille la couverture
  * en % des sessions, ou la raison du silence. Les valeurs standardisées sont dans la
- * fenêtre.
+ * fenêtre. La colonne exige 15 rem de case (mesuré : cinq colonnes ne tiennent pas dans
+ * une case de 208 px, celle d'une rangée de cinq vignettes) : plus étroite, la case la
+ * remplace par une ligne « LCP +5,8 % · INP … » sous la grille (requête de conteneur).
  */
 export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
   const { a, b, plage, standardise } = props;
@@ -359,6 +361,7 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
     return l === null || !l.ok;
   });
   const premiereRaison = lignes.map((m) => ligneMix(standardise, m.cle)).find((l) => l && !l.ok);
+  // Le pied : la raison du silence, ou la couverture en % des sessions.
   const piedMix = !standardise
     ? null
     : silence
@@ -366,8 +369,18 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
       : toutesTues && premiereRaison && !premiereRaison.ok
         ? `${LIBELLE_MIX} : ${premiereRaison.raison}`
         : couverture
-          ? `${LIBELLE_MIX} : couverture ${couverture}`
+          ? // « couv. » : la ligne entière tient dans une case de 208 px (mesuré), comme dans la fenêtre.
+            `${LIBELLE_MIX} : couv. ${couverture}`
           : null;
+  // Les mêmes écarts, en ligne, pour une case trop étroite pour la colonne ; rien à
+  // dire si toutes les lignes se taisent (le pied dit pourquoi).
+  const ecartsMixLigne =
+    standardise && !silence && !toutesTues
+      ? lignes.flatMap((m): [string, string][] => {
+          const e = ecartMix(m);
+          return e === null ? [] : [[m.cle === "erreurs" ? "err." : (COURT[m.cle] ?? m.libelle), e]];
+        })
+      : null;
   const ariaMix = standardise
     ? `, ${LIBELLE_MIX} : ${lignes
         .flatMap((m) => {
@@ -390,8 +403,9 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
         <>
           <EnteteVignette titre={`Release ${b.release} vs ${a.release}`} meta={plage} />
           <DessinVignette>
+            <span className="block min-w-0 [container-type:inline-size]">
             <span
-              className={`grid min-w-0 ${standardise ? "grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] gap-x-1.5" : "grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-x-2"} items-baseline gap-y-0.5 text-[11px] tabular-nums`}
+              className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-x-2 ${standardise ? "[@container_(min-width:15rem)]:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] [@container_(min-width:15rem)]:gap-x-1.5" : ""} items-baseline gap-y-0.5 text-[11px] tabular-nums`}
             >
               <span />
               <span className="truncate text-right text-[10px] text-ink-faint" title={a.release}>
@@ -402,7 +416,10 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
               </span>
               <span className="text-right text-[10px] text-ink-faint">B / A</span>
               {standardise && (
-                <span className="text-right text-[10px] text-ink-faint" data-testid="vignette-release-mix">
+                <span
+                  className="hidden text-right text-[10px] text-ink-faint [@container_(min-width:15rem)]:block"
+                  data-testid="vignette-release-mix"
+                >
                   {LIBELLE_MIX}
                 </span>
               )}
@@ -424,7 +441,9 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
                       {valeur(m, b)}
                     </span>
                     <span className="text-right text-ink">{ecrireEcart(m.lire(a) ?? null, vb, m.format)}</span>
-                    {standardise && <span className="text-right text-ink">{ecartMix(m) ?? ""}</span>}
+                    {standardise && (
+                      <span className="hidden text-right text-ink [@container_(min-width:15rem)]:block">{ecartMix(m) ?? ""}</span>
+                    )}
                   </span>
                 );
               })}
@@ -434,6 +453,20 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
                 {piedMix}
               </span>
             )}
+            {/* Case étroite : la colonne « à mix égal » devient une ligne, sous le pied qui la nomme. */}
+            {ecartsMixLigne && (
+              <span
+                className="flex flex-wrap gap-x-2 text-[10px] tabular-nums text-ink-soft [@container_(min-width:15rem)]:hidden"
+                data-testid="vignette-release-mix-ligne"
+              >
+                {ecartsMixLigne.map(([libelle, e]) => (
+                  <span key={libelle} className="whitespace-nowrap">
+                    {libelle} <span className="text-ink">{e}</span>
+                  </span>
+                ))}
+              </span>
+            )}
+            </span>
           </DessinVignette>
         </>
       }
