@@ -110,7 +110,12 @@ export function ReplaySynchro({
           <button type="button" className="btn-accent" onClick={() => setMonte(true)}>
             Lancer le rejeu
           </button>
-          <p className="mt-2 text-[11px] text-ink-soft">
+          {/* Le poids du geste, en pastille ; la raison (petit écran, tout l'enregistrement
+              téléchargé) est lue. */}
+          <span aria-hidden="true" className="ml-2 rounded-full bg-panel2 px-2 py-0.5 text-[11px] tabular-nums text-ink-soft">
+            ≤ 1 Mo
+          </span>
+          <p className="sr-only">
             Sur un petit écran, le lecteur ne se charge qu&apos;à votre demande : il télécharge tout l&apos;enregistrement
             (1 Mo compressé au plus).
           </p>
