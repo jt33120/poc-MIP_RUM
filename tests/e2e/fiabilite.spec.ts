@@ -750,7 +750,8 @@ test.describe("F64 — Écran Alertes", () => {
     await login(page);
     await page.goto(ecranF64(), { waitUntil: "domcontentloaded" });
     const formulaire = page.locator("#nouvelle-regle");
-    await formulaire.locator("summary").click();
+    // Son propre repli : le formulaire en porte un autre (« Règles des métriques »).
+    await formulaire.locator(":scope > summary").click();
     const seuil = formulaire.getByTestId("champs-seuil");
     const baseline = formulaire.getByTestId("champs-baseline");
     await expect(seuil).toBeVisible();
@@ -1286,7 +1287,7 @@ test.describe("F68 — Règle de régression de release", () => {
   const formulaireF68 = async (page: Page) => {
     const formulaire = page.locator("#nouvelle-regle");
     await expect(formulaire).toBeVisible();
-    if ((await formulaire.getAttribute("open")) === null) await formulaire.locator("summary").click();
+    if ((await formulaire.getAttribute("open")) === null) await formulaire.locator(":scope > summary").click();
     await expect(formulaire).toHaveAttribute("open", "");
     return formulaire;
   };

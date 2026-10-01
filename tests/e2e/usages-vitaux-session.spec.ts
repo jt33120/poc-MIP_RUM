@@ -159,6 +159,21 @@ test.describe("F46 — Détail de session : cascade et Web Vitals situés", () =
   const tuileLcp = (page: Page) =>
     page.getByTestId("vitaux-tuiles").locator('[data-testid="kpi-tile"][aria-label^="LCP · pire vue"]');
 
+  /**
+   * Le lien de la tuile LCP. Depuis le 30/09/2026, la tuile est un bouton qui ouvre sa
+   * fenêtre (`FicheMesure`), qu'elle désigne par `aria-controls` : le lien vers /pages vit
+   * dans la fenêtre. On l'ouvre comme un visiteur avant de le lire.
+   */
+  async function lienTuileLcp(page: Page): Promise<string | null> {
+    const tuile = tuileLcp(page);
+    const id = await tuile.getAttribute("aria-controls");
+    expect(id, "la tuile désigne sa fenêtre").toBeTruthy();
+    await tuile.click();
+    const fenetre = page.locator(`dialog[id="${id}"]`);
+    await expect(fenetre).toBeVisible();
+    return fenetre.getByRole("link", { name: /Écran détaillé/ }).getAttribute("href");
+  }
+
   test.beforeAll(async () => {
     motDePasse = await compteDedie(poolF46, EMAIL_F46);
     await semer();
@@ -189,7 +204,7 @@ test.describe("F46 — Détail de session : cascade et Web Vitals situés", () =
   test("le lien de la tuile porte la même fenêtre : app, route, vital, from, to", async ({ page }) => {
     await connexion(page);
     await page.goto(adresse(ANCIENNE, "&tab=vitals"), { waitUntil: "domcontentloaded" });
-    const href = await tuileLcp(page).getAttribute("href");
+    const href = await lienTuileLcp(page);
     expect(href).not.toBeNull();
     const lien = new URL(href!, consoleUrlF46);
     expect(lien.pathname).toBe("/pages");
@@ -206,7 +221,7 @@ test.describe("F46 — Détail de session : cascade et Web Vitals situés", () =
     await connexion(page);
     const avant = Date.now();
     await page.goto(adresse(RECENTE, "&tab=vitals"), { waitUntil: "domcontentloaded" });
-    const href = await tuileLcp(page).getAttribute("href");
+    const href = await lienTuileLcp(page);
     const to = Date.parse(new URL(href!, consoleUrlF46).searchParams.get("to")!);
     expect(to).toBeGreaterThanOrEqual(avant - 60_000);
     expect(to).toBeLessThanOrEqual(Date.now());
