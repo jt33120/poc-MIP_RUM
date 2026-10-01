@@ -193,9 +193,9 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
           toute la largeur : il n'y a rien à découper par appareil. */}
       {!vide && (
       <div className="mb-4 grid min-w-0 gap-3 lg:grid-cols-12">
-      <div className={`min-w-0 lg:[&>section]:h-full ${vide ? "lg:col-span-12" : "lg:col-span-6"}`}>
+      <div className={`min-w-0 ${vide ? "lg:col-span-12" : "lg:col-span-6"}`}>
         <SectionErreur titre="Taux de conversion par objectif">
-          <Figure
+          <Figure pleineHauteur
             id="conversions-taux"
             titre="Taux de conversion par objectif"
             meta={meta(rep ? `${sessions(rep.total)} au dénominateur` : undefined)}
@@ -221,9 +221,9 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
 
       {/* G4 — petits multiples par appareil. */}
       {!vide && (
-      <div className="min-w-0 lg:col-span-6 lg:[&>section]:h-full">
+      <div className="min-w-0 lg:col-span-6">
         <SectionErreur titre="Conversion par appareil">
-          <Figure
+          <Figure pleineHauteur
             id="conversions-appareils"
             titre="Conversion par appareil"
             meta={meta()}

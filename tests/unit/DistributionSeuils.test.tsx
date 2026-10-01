@@ -58,6 +58,28 @@ describe("DistributionSeuils", () => {
     expect(texte(html)).toContain("Percentiles non calculables");
   });
 
+  // Recette du 30/09/2026 : trois lignes de légende sous chaque histogramme ; les écrans
+  // la masquaient de l'extérieur (`[&_[data-testid=distribution-legende]]:sr-only`).
+  it("légende : repliée dans « Méthode » par défaut ; `lue` en sr-only ; `visible` en clair", () => {
+    const props = { vital: "LCP" as const, bacs, plafond: 6000, percentiles: { p50: 2100, p75: 2900, p95: 5200 }, n };
+    const defaut = renderToStaticMarkup(<DistributionSeuils {...props} />);
+    const methode = defaut.split('data-testid="distribution-methode"')[1] ?? "";
+    expect(defaut).toMatch(/<details[^>]*data-testid="distribution-methode"/);
+    expect(methode).toContain('data-testid="distribution-legende"');
+    expect(texte(methode)).toContain("Ce n'est pas un verdict");
+    const lue = renderToStaticMarkup(<DistributionSeuils {...props} legende="lue" />);
+    expect(lue).toMatch(/<p class="sr-only" data-testid="distribution-legende"/);
+    expect(lue).not.toContain("distribution-methode");
+    const visible = renderToStaticMarkup(<DistributionSeuils {...props} legende="visible" />);
+    expect(visible).toMatch(/<p class="mt-2 [^"]*" data-testid="distribution-legende"/);
+    expect(visible).not.toContain("distribution-methode");
+  });
+
+  it("percentiles null hors légende visible : « Percentiles non calculables » sur une ligne, visible", () => {
+    const html = renderToStaticMarkup(<DistributionSeuils vital="LCP" bacs={bacs} plafond={6000} percentiles={null} n={n} />);
+    expect(texte(html.split('data-testid="distribution-sans-percentiles"')[1] ?? "")).toMatch(/^\s*>?\s*Percentiles non calculables/);
+  });
+
   it("n = 0 : état vide, aucun dessin", () => {
     const html = renderToStaticMarkup(<DistributionSeuils vital="INP" bacs={[]} plafond={1000} percentiles={null} n={0} />);
     expect(html).not.toContain("<svg");

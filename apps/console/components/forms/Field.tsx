@@ -10,8 +10,13 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   return (
     // `min-w-0 max-w-full` : un `select` aux options longues (« Part des mesures LCP
     // notées Bon ») ne porte plus la page au-delà de 390 px ; il prend la largeur offerte.
+    // Le libellé dans son `span` : nu, son texte et celui des options d'une liste se
+    // lisaient comme un seul nœud (`textContent` du label, sélecteurs `:has-text`),
+    // et une règle de style posée sur le libellé touchait aussi le contrôle.
     <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs font-medium text-ink-soft">
-      {label}
+      <span className="min-w-0" data-libelle="">
+        {label}
+      </span>
       {children}
     </label>
   );

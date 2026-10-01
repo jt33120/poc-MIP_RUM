@@ -457,8 +457,8 @@ function HeroRoutes({
   return (
     // La liste défile dans sa carte à partir de 640 px (comme sur /pages) : 60 routes
     // faisaient un classement de 2 800 px de haut (recette du 30/09/2026).
-    <div className="min-w-0 sm:[&_ol]:max-h-[20rem] sm:[&_ol]:overflow-y-auto [&>section]:mb-0">
-      <ImpactTable
+    <div className="min-w-0 [&>section]:mb-0">
+      <ImpactTable hauteurMax="23.5rem"
         titre={`${titre} — part des sessions de la route avec au moins un ${type ? SIGNAL_SINGULIER[type] : "signal"}`}
         // Filtre de signal, méthode et journal dans la rangée du titre : plus de ligne
         // de pastilles au-dessus de la carte, ni de phrase sous elle.

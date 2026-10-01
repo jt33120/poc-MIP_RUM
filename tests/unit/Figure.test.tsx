@@ -47,6 +47,20 @@ describe("Figure — titre et zone graphique", () => {
     expect(html).toContain('id="routes"');
   });
 
+  // 01/10/2026 : les écrans alignaient deux figures voisines de l'extérieur
+  // (`[&>section]:h-full`), un sélecteur qui tombait dès qu'un enrobage s'intercalait.
+  it("pleineHauteur : la carte prend la hauteur de sa cellule, dessin ou ligne vide ; sinon non", () => {
+    const pleine = rendu(
+      <Figure titre="Courbe" id="c" pleineHauteur>
+        {DESSIN}
+      </Figure>,
+    );
+    expect(pleine).toMatch(/^<section id="c" class="card [^"]*\bh-full\b/);
+    const vide = rendu(<Figure titre="Courbe" id="c" pleineHauteur etat={{ kind: "vide", population: "sessions", plage: "24 h" }} />);
+    expect(vide).toMatch(/^<section id="c" class="card [^"]*\bh-full\b/);
+    expect(rendu(<Figure titre="Courbe" id="c">{DESSIN}</Figure>)).not.toContain("h-full");
+  });
+
   it("sans id, l'ancre dérive du titre (accents retirés)", () => {
     const html = rendu(<Figure titre="Éléments lents à l'INP">{DESSIN}</Figure>);
     expect(html).toContain('id="figure-elements-lents-a-l-inp"');

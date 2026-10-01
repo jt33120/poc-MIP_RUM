@@ -5,6 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SessionsTable } from "@/components/sessions/SessionsTable";
 import { PictoNavigateur, PictoSysteme, drapeauPays, marqueNavigateur, marqueSysteme } from "@/components/sessions/Pictos";
+import * as Commun from "@/components/Pictos";
+import { PictoSegment as PictoSegmentImpact } from "@/components/ImpactTable";
 import type { SessionRow } from "@/lib/queries";
 import type { LigneSessions } from "@/lib/sessions-priorite";
 
@@ -235,6 +237,26 @@ describe("Pictos — drapeaux et marques", () => {
     expect(edge).toContain(">e</text>");
     const windows = renderToStaticMarkup(<PictoSysteme nom="Windows" />);
     expect(windows).toContain(">W</text>");
+  });
+
+  // 01/10/2026 : les classements et les écrans Usages dessinaient chacun leurs logos ;
+  // un seul jeu (`components/Pictos.tsx`), les anciens modules le réexportent.
+  it("un seul jeu : les anciens modules réexportent `components/Pictos`", () => {
+    expect(PictoNavigateur).toBe(Commun.PictoNavigateur);
+    expect(drapeauPays).toBe(Commun.drapeauPays);
+    expect(PictoSegmentImpact).toBe(Commun.PictoSegment);
+  });
+
+  it("segment de classement : rien pour une route ou une release, « ? » pour Inconnu, jamais un <span>", () => {
+    expect(renderToStaticMarkup(<Commun.PictoSegment dimension="route" libelle="/a" />)).toBe("");
+    expect(renderToStaticMarkup(<Commun.PictoSegment dimension="release" libelle="1.4.0" />)).toBe("");
+    expect(renderToStaticMarkup(<Commun.PictoSegment dimension="browser" libelle="Inconnu" />)).toContain('stroke-dasharray="2 2"');
+    expect(renderToStaticMarkup(<Commun.PictoSegment dimension="country" libelle="fr" />)).toBe("");
+    for (const [dimension, libelle] of [["browser", "Firefox"], ["os", "Windows"], ["country", "FR"], ["device", "mobile"]]) {
+      const html = renderToStaticMarkup(<Commun.PictoSegment dimension={dimension} libelle={libelle} />);
+      expect(html).toMatch(/^<(svg|i) /);
+      expect(html).not.toContain("<span");
+    }
   });
 });
 

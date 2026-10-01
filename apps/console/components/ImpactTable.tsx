@@ -222,20 +222,24 @@ function texteMesure(m: ImpactMesure): string {
 
 /**
  * Base 100 % des barres (01/10/2026 : sur /pages, /dashboards/:id à 311,9 s, vue trois
- * fois, réduisait /select à un point). La base suit les lignes à effectif SUFFISANT :
- * une ligne « faible » ne fixe plus l'échelle des autres. Sur dix valeurs ou plus, le
- * sommet est robuste (`sommetRobuste`) : une aberration isolée ne tasse pas la colonne.
- * Ce qui dépasse la base est plafonné et marqué ▲. Sans ligne suffisante, toutes les
- * lignes comptent.
+ * fois, réduisait toutes les autres routes à un point). Le sommet est ROBUSTE
+ * (`sommetRobuste`, 90ᵉ centile × 1,25 quand le maximum le dépasse de moitié) : une
+ * aberration isolée ne tasse plus la colonne. Il ne descend jamais sous la plus grande
+ * ligne à effectif SUFFISANT : une mesure fiable n'est jamais plafonnée. Ce qui dépasse
+ * est plafonné et marqué ▲ ; la valeur écrite reste exacte.
+ *
+ * Pas « l'échelle des seules lignes fiables » (essai du 01/10/2026) : cinq routes
+ * fiables à 3 s plafonnaient d'un coup les vingt routes « faibles » au-dessus.
  */
 export function baseBarres(lignes: readonly Pick<ImpactLigne, "pilote" | "echantillonFaible">[]): number {
   const finies = (ls: readonly Pick<ImpactLigne, "pilote" | "echantillonFaible">[]) =>
     ls.map((l) => l.pilote).filter((p): p is number => p != null && Number.isFinite(p) && p > 0);
+  const toutes = finies(lignes);
+  if (toutes.length === 0) return 1;
   const fiables = finies(lignes.filter((l) => !l.echantillonFaible));
-  const source = fiables.length > 0 ? fiables : finies(lignes);
-  if (source.length === 0) return 1;
-  const sommet = source.length >= 10 ? sommetRobuste(source) : Math.max(...source);
-  return sommet > 0 ? sommet : 1;
+  // Sous trois valeurs, un « centile » n'a pas de sens : le maximum.
+  const sommet = toutes.length >= 3 ? sommetRobuste(toutes) : Math.max(...toutes);
+  return Math.max(sommet, ...fiables) || 1;
 }
 
 /**
@@ -801,8 +805,8 @@ export function ImpactTable({
               {avecFaible && <p>« faible » : échantillon sous le seuil de la dimension ; la ligne est rangée en fin et son verdict se lit avec prudence.</p>}
               {avecDepassement && (
                 <p data-testid="impact-echelle">
-                  Barres : 100 % = {pilote(max)}, échelle des lignes à effectif suffisant ; ▲ = valeur au-delà, barre plafonnée (la valeur
-                  écrite reste exacte).
+                  Barres : 100 % = {pilote(max)}, échelle robuste (90ᵉ centile × 1,25, jamais sous une ligne à effectif suffisant) ; ▲ =
+                  valeur au-delà, barre plafonnée (la valeur écrite reste exacte).
                 </p>
               )}
             </div>

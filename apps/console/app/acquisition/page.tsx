@@ -236,9 +236,9 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
           Sans aucun site référent, les canaux prennent la largeur et l'absence tient sur
           une ligne dessous : pas de demi-carte blanche. */}
       <div className="mb-4 grid min-w-0 gap-3 lg:grid-cols-12">
-        <div className={`min-w-0 lg:[&>section]:h-full ${sansReferents ? "lg:col-span-12" : "lg:col-span-6"}`}>
+        <div className={`min-w-0 ${sansReferents ? "lg:col-span-12" : "lg:col-span-6"}`}>
           <SectionErreur titre="Sessions par canal d'entrée">
-            <Figure
+            <Figure pleineHauteur
               id="acquisition-canaux"
               titre="Sessions par canal d'entrée"
               meta={meta(lecture.ok ? compte(lecture.data.total, "session", "sessions") : undefined)}
@@ -255,9 +255,9 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
             </Figure>
           </SectionErreur>
         </div>
-        <div className={`min-w-0 lg:[&>section]:h-full ${sansReferents ? "lg:col-span-12" : "lg:col-span-6"}`}>
+        <div className={`min-w-0 ${sansReferents ? "lg:col-span-12" : "lg:col-span-6"}`}>
           <SectionErreur titre="Sites référents">
-            <Figure
+            <Figure pleineHauteur
               id="acquisition-referents"
               titre="Sites référents"
               meta={

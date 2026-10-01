@@ -20,6 +20,11 @@
 // Une ligne peut être ACTIVE (`actif`) : celle dont le détail est affiché en dessous
 // (le formulaire dont on lit les champs, le canal ouvert) — marquée pour les yeux
 // ET pour le lecteur d'écran (`aria-current`).
+//
+// UN PICTOGRAMME DANS LE LIBELLÉ (01/10/2026) : `label` accepte un nœud (logo + nom,
+// drapeau + pays) ; `labelTexte` en donne alors la version texte, pour la bulle, la
+// clé et l'alternative. Le sous-texte (`sub`) tient sur UNE ligne, coupé, entier en
+// bulle : sur deux ou trois lignes, il faisait de chaque rangée un paragraphe.
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { TableAlternative } from "./Figure";
@@ -33,7 +38,10 @@ export interface RankSegment {
 }
 
 export interface RankDatum {
-  label: string;
+  /** Le libellé : du texte, ou un nœud (pictogramme + texte) avec `labelTexte`. */
+  label: ReactNode;
+  /** Le libellé en texte (bulle, alternative) quand `label` n'en est pas un. */
+  labelTexte?: string;
   /**
    * Valeur pilotant la largeur ET affichée à droite (sauf `display`). `null` :
    * non calculable — AUCUNE barre (une barre de longueur nulle se lirait « le
@@ -54,6 +62,12 @@ export interface RankDatum {
   title?: string;
   /** Ligne dont le détail est affiché : fond marqué et `aria-current`. */
   actif?: boolean;
+}
+
+/** Le libellé d'une ligne en texte : `labelTexte`, sinon `label` s'il en est un. */
+export function texteLibelle(d: Pick<RankDatum, "label" | "labelTexte">): string {
+  if (d.labelTexte != null) return d.labelTexte;
+  return typeof d.label === "string" || typeof d.label === "number" ? String(d.label) : "";
 }
 
 /** Le texte de valeur d'une ligne, tel qu'affiché à droite de la barre. */
@@ -101,13 +115,14 @@ export function RankBar({
         style={largeurLibelle}
       >
         {data.map((d, i) => {
+          const texte = texteLibelle(d);
           const w = d.value === null ? 0 : base > 0 ? Math.max(2, (d.value / base) * 100) : 0;
           // `block` + coupure au caractère : une route longue SANS espace sortait de sa
           // colonne de 7rem et portait la page à 725 px à 390 ; elle passe à la ligne.
           const coupe = "block min-w-0 [overflow-wrap:anywhere]";
           return (
             <div
-              key={`${d.label}-${i}`}
+              key={`${texte}-${i}`}
               className={`flex items-center gap-3 ${d.actif ? "-mx-1.5 rounded-md bg-perf/10 px-1.5 py-0.5 ring-1 ring-perf/40" : ""}`}
               title={d.title}
               role={avecLiens ? "listitem" : undefined}
@@ -126,11 +141,15 @@ export function RankBar({
                     {d.label}
                   </Link>
                 ) : (
-                  <span className={`${coupe} font-medium`} title={d.label}>
+                  <span className={`${coupe} font-medium`} title={texte || undefined}>
                     {d.label}
                   </span>
                 )}
-                {d.sub && <div className={`${coupe} text-[10px] text-ink-faint`}>{d.sub}</div>}
+                {d.sub && (
+                  <div className="truncate text-[10px] text-ink-faint" title={typeof d.sub === "string" ? d.sub : undefined}>
+                    {d.sub}
+                  </div>
+                )}
               </div>
               <div className={`relative h-6 min-w-0 flex-1 overflow-hidden rounded bg-panel2 ${barClassName}`}>
                 {d.segments ? (
@@ -171,7 +190,7 @@ export function RankBar({
             legende,
             colonnes: avecSous ? ["Libellé", "Valeur", "Détail"] : ["Libellé", "Valeur"],
             lignes: data.map((d) =>
-              avecSous ? [d.label, valeurAffichee(d), d.sub ?? null] : [d.label, valeurAffichee(d)],
+              avecSous ? [texteLibelle(d) || d.label, valeurAffichee(d), d.sub ?? null] : [texteLibelle(d) || d.label, valeurAffichee(d)],
             ),
           }}
         />

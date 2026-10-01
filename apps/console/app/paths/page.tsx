@@ -287,8 +287,8 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
         ).map((table) => (
           <SectionErreur key={table.id} titre={table.titre}>
             {/* Même bord bas pour les deux tables : la figure prend la hauteur de sa cellule. */}
-            <div className="min-w-0 md:[&>section]:h-full">
-            <Figure
+            <div className="min-w-0">
+            <Figure pleineHauteur
               id={table.id}
               titre={table.titre}
               meta={meta(

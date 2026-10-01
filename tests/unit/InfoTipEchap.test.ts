@@ -9,7 +9,7 @@
 // document sont des doubles bâtis sur l'`EventTarget` de Node, et les événements
 // portent seulement ce que l'îlot lit (`key`, `relatedTarget`).
 import { afterEach, describe, expect, it } from "vitest";
-import { brancherEchap } from "@/components/InfoTipEchap";
+import { brancherEchap, placerBulle } from "@/components/InfoTipEchap";
 
 class GroupeDouble extends EventTarget {
   readonly attributs = new Map<string, string>();
@@ -141,5 +141,30 @@ describe("InfoTipEchap — Échap, puis le passage suivant", () => {
     b.focaliser();
     b.echap();
     expect(b.groupe.ferme).toBe(false);
+  });
+});
+
+// Recette du 01/10/2026 : la bulle posée en `fixed` (coordonnées de fenêtre) n'est plus
+// rognée par un conteneur qui défile ; `placerBulle` la garde dans la fenêtre.
+describe("placerBulle — coordonnées de fenêtre", () => {
+  const vue = { largeur: 1280, hauteur: 800 };
+  const bulle = { largeur: 288, hauteur: 100 };
+  const cible = { left: 600, right: 616, top: 400, bottom: 416 };
+
+  it("dessous par défaut, centrée sur l'icône ; accrochée au bord demandé", () => {
+    expect(placerBulle(cible, bulle, vue, "bottom", "center")).toEqual({ x: 608 - 144, y: 424 });
+    expect(placerBulle(cible, bulle, vue, "bottom", "start").x).toBe(600);
+    expect(placerBulle(cible, bulle, vue, "bottom", "end").x).toBe(616 - 288);
+  });
+
+  it("au-dessus quand demandé ; retournée du côté où elle tient", () => {
+    expect(placerBulle(cible, bulle, vue, "top", "center").y).toBe(400 - 8 - 100);
+    expect(placerBulle({ left: 600, right: 616, top: 20, bottom: 36 }, bulle, vue, "top", "center").y).toBe(44);
+    expect(placerBulle({ left: 600, right: 616, top: 760, bottom: 776 }, bulle, vue, "bottom", "center").y).toBe(760 - 8 - 100);
+  });
+
+  it("jamais hors de la fenêtre : 8 px des bords", () => {
+    expect(placerBulle({ left: 2, right: 18, top: 400, bottom: 416 }, bulle, vue, "bottom", "end").x).toBe(8);
+    expect(placerBulle({ left: 1270, right: 1278, top: 400, bottom: 416 }, bulle, vue, "bottom", "start").x).toBe(1280 - 288 - 8);
   });
 });

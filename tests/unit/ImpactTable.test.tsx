@@ -3,7 +3,8 @@
 // dit pourquoi ; l'ordre « fourni » est écrit ; aucune ligne « Autres ».
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { decouperEcart, drapeau, ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
+import { baseBarres, decouperEcart, decouperReference, drapeau, ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
+import { Breakdown, OngletsDecoupage, type BreakdownItem } from "@/components/Breakdown";
 
 const texte = (html: string) =>
   html
@@ -334,5 +335,156 @@ describe("ImpactTable", () => {
     expect(texte(fourni)).toContain("Pas de ligne « Ensemble » : aucune part « toutes releases » n'est lue.");
     // L'ordre reçu est rendu tel quel.
     expect(fourni.indexOf("1.4.0")).toBeLessThan(fourni.indexOf("1.4.1"));
+  });
+
+  // Recette du 01/10/2026 (/pages) : /dashboards/:id à 311,9 s, vue trois fois, réduisait
+  // toutes les autres barres à un point.
+  it("barres : échelle robuste, une aberration « faible » plafonnée et marquée ▲, valeur exacte", () => {
+    const lignes = [
+      ...Array.from({ length: 9 }, (_v, i) => LIGNE(`/r${i}`, 2000 + i * 100, 400)),
+      LIGNE("/dashboards/:id", 311_900, 3, true),
+    ];
+    const base = baseBarres(lignes);
+    expect(base).toBeLessThan(10_000);
+    // Jamais sous une ligne à effectif suffisant : une mesure fiable n'est pas plafonnée.
+    expect(base).toBeGreaterThanOrEqual(2800);
+    const rendu = renderToStaticMarkup(<ImpactTable {...BASE} tri="gravite" reference={null} referenceRaison="—" lignes={lignes} />);
+    expect(rendu.match(/data-testid="impact-depasse"/g)).toHaveLength(1);
+    expect(rendu.match(/data-depasse=""/g)).toHaveLength(1);
+    expect(texte(rendu.split('data-testid="impact-echelle"')[1] ?? "")).toMatch(/▲ = valeur au-delà/);
+    // Une ligne fiable au-dessus du 90ᵉ centile garde sa barre entière.
+    expect(baseBarres([LIGNE("/a", 100, 400), LIGNE("/b", 120, 400), LIGNE("/c", 5000, 400)])).toBe(5000);
+    // Sans valeur : base 1 ; deux valeurs : le maximum.
+    expect(baseBarres([LIGNE("/a", null, 0)])).toBe(1);
+    expect(baseBarres([LIGNE("/a", 10, 400), LIGNE("/b", 900, 2, true)])).toBe(900);
+  });
+
+  it("aucun dépassement : ni ▲, ni phrase d'échelle", () => {
+    expect(html).not.toContain('data-testid="impact-depasse"');
+    expect(html).not.toContain('data-testid="impact-echelle"');
+  });
+
+  // Recette du 01/10/2026 (/ux) : « ANS RÉACTION », « NS TOUCHÉES » — des en-têtes rognés.
+  it("en-têtes chiffrés : deux lignes au plus, coupés entre les mots, texte entier en bulle", () => {
+    const long = renderToStaticMarkup(
+      <ImpactTable
+        {...BASE}
+        colonnes={["Clics sans réaction", "Sessions touchées"]}
+        colonnePilote={null}
+        tri="gravite"
+        reference={null}
+        referenceRaison="—"
+        lignes={[{ ...LIGNE("/a", 900, 40), mesures: [{ cle: "a", valeur: 1, affichage: "1 %" }, { cle: "b", valeur: 2, affichage: "2" }] }]}
+      />,
+    );
+    const entete = long.split('data-testid="impact-reference-absente"')[0].split('aria-hidden="true" class="grid').pop() ?? "";
+    for (const c of ["Clics sans réaction", "Sessions touchées", "Mesures LCP"]) {
+      expect(entete).toContain(`title="${c}"`);
+    }
+    expect(entete.match(/line-clamp-2/g)?.length).toBeGreaterThanOrEqual(4);
+    // Seule la première colonne (le nom du groupe) peut se couper : elle a la place restante.
+    expect(entete.match(/truncate/g) ?? []).toHaveLength(1);
+  });
+
+  it("ligne « Ensemble » : la valeur seule visible, sa précision en bulle et lue", () => {
+    expect(decouperReference("2,5 % (par route vue)")).toEqual({ valeur: "2,5 %", precision: "(par route vue)" });
+    const rendu = renderToStaticMarkup(
+      <ImpactTable
+        {...BASE}
+        colonnes={["LCP p75", "Taux"]}
+        colonnePilote="lcp"
+        tri="gravite"
+        reference={{ libelle: "Ensemble", valeurs: { pilote: "2,5 s", volume: "5 608", lcp: "2,5 s", taux: "2,5 % (par route vue)" } }}
+        lignes={[
+          { ...LIGNE("/a", 900, 40), mesures: [{ cle: "lcp", valeur: 900, affichage: "900 ms", vital: "LCP" }, { cle: "taux", valeur: 2, affichage: "2 %" }] },
+        ]}
+      />,
+    );
+    const ref = rendu.split('data-testid="impact-reference"')[1] ?? "";
+    expect(ref).toContain('title="2,5 % (par route vue)"');
+    expect(ref).toContain('<span class="min-w-0 truncate">2,5 %</span><span class="sr-only"> (par route vue)</span>');
+  });
+
+  it("hauteurMax : la liste défile dans la carte, en-tête et référence collés ; sans elle, rien", () => {
+    const rendu = renderToStaticMarkup(
+      <ImpactTable {...BASE} hauteurMax="20rem" tri="gravite" reference={null} referenceRaison="—" lignes={[LIGNE("/a", 900, 40)]} />,
+    );
+    expect(rendu).toContain("--impact-hauteur-max:20rem");
+    expect(rendu).toMatch(/class="sm:max-h-\[var\(--impact-hauteur-max\)\] sm:overflow-y-auto[^"]*" data-testid="impact-defilement"/);
+    expect(rendu).toContain("sm:sticky sm:top-0");
+    expect(html).not.toContain("impact-defilement");
+    expect(html).not.toContain("sm:sticky");
+  });
+
+  it("notice et troncature : dans « Méthode », jamais en paragraphe au-dessus des lignes", () => {
+    const rendu = renderToStaticMarkup(
+      <ImpactTable {...BASE} tronque groupes={40} tri="gravite" reference={null} referenceRaison="—" lignes={[LIGNE("/a", 900, 40)]} />,
+    );
+    const [avantLignes] = rendu.split('data-testid="impact-ligne"');
+    expect(texte(avantLignes)).not.toContain("Route normalisée.");
+    const methode = texte(rendu.split('data-testid="impact-methode"')[1] ?? "");
+    expect(methode).toContain("Route normalisée.");
+    expect(methode).toContain("groupes classés sur 40");
+  });
+});
+
+// Breakdown, voisin d'ImpactTable (mêmes onglets, même pied) — recette du 01/10/2026 :
+// sur /errors, quatre lignes de notice avant la première barre.
+describe("Breakdown — aucune phrase au-dessus des barres", () => {
+  const item = (key: string, value: number): BreakdownItem => ({
+    key,
+    label: key,
+    value,
+    display: `${value}`,
+    href: `/errors?navigateur=${key}`,
+    description: `Navigateur ${key}`,
+    cells: [],
+  });
+  const props = {
+    title: "Répartition des occurrences",
+    tabs: [],
+    items: [item("Chrome", 40), item("Firefox", 12)],
+    columns: [],
+    groups: 6,
+    truncated: true,
+    emptyLabel: "Aucune occurrence",
+    measureLabel: "Occurrences",
+  };
+
+  it("notice et précision : en bulle à côté du titre ET dans « Méthode », jamais avant les barres", () => {
+    const html = renderToStaticMarkup(<Breakdown {...props} notice="Navigateur lu sur l'agent utilisateur." precision="12 % sans agent." />);
+    const [avantBarres] = html.split('data-testid="breakdown-row"');
+    const titre = avantBarres.split("<h2")[1]?.split("</h2>")[0] ?? "";
+    expect(texte(titre)).toContain("Navigateur lu sur l'agent utilisateur.");
+    expect(titre).toContain('role="tooltip"');
+    expect(texte(avantBarres.replace(titre, ""))).not.toContain("Navigateur lu sur");
+    const methode = texte(html.split('data-testid="breakdown-methode"')[1] ?? "");
+    expect(methode).toContain("Navigateur lu sur l'agent utilisateur.");
+    expect(methode).toContain("12 % sans agent.");
+    expect(methode).toContain("6 groupes sur la fenêtre");
+  });
+
+  it("notice facultative : ni bulle ni paragraphe vide", () => {
+    const html = renderToStaticMarkup(<Breakdown {...props} truncated={false} />);
+    expect(html).not.toContain('role="tooltip"');
+    expect(html).not.toMatch(/<p[^>]*><\/p>/);
+    expect(html).not.toContain("breakdown-methode");
+  });
+
+  it("pleineHauteur : h-full sans marge basse ; sinon mb-6", () => {
+    expect(renderToStaticMarkup(<Breakdown {...props} pleineHauteur />)).toMatch(/^<section class="card p-4 h-full"/);
+    expect(renderToStaticMarkup(<Breakdown {...props} />)).toMatch(/^<section class="card p-4 mb-6"/);
+  });
+
+  it("OngletsDecoupage : `className` remplace la marge par défaut ; la raison d'un onglet grisé est lue", () => {
+    const onglets = [
+      { dimension: "browser", label: "Navigateur", available: true, reason: null, current: true, href: "/x" },
+      { dimension: "country", label: "Pays", available: false, reason: "GeoIP éteint", current: false, href: null },
+    ];
+    const defaut = renderToStaticMarkup(<OngletsDecoupage titre="Erreurs" onglets={onglets} />);
+    expect(defaut).toMatch(/^<nav [^>]*class="flex flex-wrap gap-1 mb-3"/);
+    const sans = renderToStaticMarkup(<OngletsDecoupage titre="Erreurs" onglets={onglets} className="min-w-0" />);
+    expect(sans).toMatch(/^<nav [^>]*class="flex flex-wrap gap-1 min-w-0"/);
+    expect(texte(sans)).toContain("indisponible : GeoIP éteint");
   });
 });

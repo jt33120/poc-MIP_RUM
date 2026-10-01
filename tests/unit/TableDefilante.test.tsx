@@ -42,6 +42,21 @@ describe("TableDefilante — rendu serveur", () => {
     expect(html.match(/^<div[^>]*>/)?.[0]).not.toContain("overflow-x-auto");
   });
 
+  // 01/10/2026 : les écrans bornaient leurs listes de l'extérieur (`[&_ol]:max-h-[…]`),
+  // et l'en-tête partait avec les lignes.
+  it("hauteurMax : la zone défile aussi en hauteur, l'en-tête reste collé ; sans elle, rien", () => {
+    const html = renderToStaticMarkup(<TableDefilante hauteurMax="20rem">{TABLE}</TableDefilante>);
+    const zone = html.match(/<div[^>]*role="region"[^>]*>/)?.[0] ?? "";
+    expect(zone).toContain("max-height:20rem");
+    expect(zone).toContain("overflow-y-auto");
+    expect(zone).toContain("overflow-x-auto");
+    expect(zone).toContain("[&amp;_thead]:sticky");
+    expect(zone).toContain("[&amp;_thead]:bg-panel");
+    const sans = renderToStaticMarkup(<TableDefilante>{TABLE}</TableDefilante>).match(/<div[^>]*role="region"[^>]*>/)?.[0] ?? "";
+    expect(sans).not.toContain("overflow-y-auto");
+    expect(sans).not.toContain("max-height");
+  });
+
   it("ni ombre ni consigne au rendu serveur : l'état se mesure après montage", () => {
     const html = renderToStaticMarkup(<TableDefilante>{TABLE}</TableDefilante>);
     expect(html).not.toContain("table-defilante-indice");
