@@ -1,0 +1,157 @@
+{
+  "capture": "01/10/2026",
+  "collecte": "services/collector/dev-server.mjs, REQUIRE_API_KEY=true, base Postgres locale migrée",
+  "socle": {
+    "OTEL_SERVICE_NAME": "factures-<langage>",
+    "OTEL_RESOURCE_ATTRIBUTES": "mip.app_id=r11-<langage>,mip.api_key=r11-<langage>-cle,deployment.environment.name=recette",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+    "OTEL_EXPORTER_OTLP_COMPRESSION": "gzip",
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://host.docker.internal:<relais>/<langage>/v1/traces",
+    "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://host.docker.internal:<relais>/<langage>/v1/logs",
+    "OTEL_METRICS_EXPORTER": "none"
+  },
+  "appels": {
+    "session": "r11-<langage>-session",
+    "tracestate": "mip=s:r11-<langage>-session",
+    "traceparent": "00-<trace>-<span parent>-01",
+    "traces": {
+      "go": {
+        "e11c0000000000000000000000010001": "GET /factures/42 → 200 (sous-appel HTTP GET /stock/42)",
+        "e11c0000000000000000000000010002": "POST /factures/42/payer → 500 (exception)",
+        "e11c0000000000000000000000010003": "GET /inconnue → 404"
+      },
+      "php": {
+        "e11c0000000000000000000000020001": "GET /factures/42 → 200 (requêtes SQL (PDO SQLite))",
+        "e11c0000000000000000000000020002": "POST /factures/42/payer → 500 (exception)",
+        "e11c0000000000000000000000020003": "GET /inconnue → 404"
+      },
+      "ruby": {
+        "e11c0000000000000000000000030001": "GET /factures/42 → 200 (sous-appel HTTP GET /stock/42)",
+        "e11c0000000000000000000000030002": "POST /factures/42/payer → 500 (exception)",
+        "e11c0000000000000000000000030003": "GET /inconnue → 404"
+      }
+    }
+  },
+  "langages": {
+    "go": {
+      "image": "golang:alpine (go1.27.1)",
+      "versions": {
+        "go.opentelemetry.io/otel": "1.46.0",
+        "go.opentelemetry.io/otel/sdk": "1.46.0",
+        "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp": "1.46.0",
+        "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp": "0.71.0"
+      },
+      "application": "net/http (ServeMux à motifs de Go 1.22+), otelhttp.NewHandler et otelhttp.NewTransport, propagateur W3C posé par otel.SetTextMapPropagator"
+    },
+    "php": {
+      "image": "php:8.4-cli (PHP 8.4.26)",
+      "versions": {
+        "extension opentelemetry (pecl)": "1.4.2",
+        "open-telemetry/sdk": "1.15.0",
+        "open-telemetry/api": "1.10.0",
+        "open-telemetry/exporter-otlp": "1.4.0",
+        "open-telemetry/opentelemetry-auto-slim": "1.5.0",
+        "open-telemetry/opentelemetry-auto-pdo": "0.5.0",
+        "open-telemetry/opentelemetry-auto-psr3": "0.3.0",
+        "slim/slim": "4.15.3",
+        "monolog/monolog": "3.12.1",
+        "symfony/http-client": "8.1.8"
+      },
+      "application": "Slim 4 sous php -S, PDO SQLite, Monolog ; OTEL_PHP_AUTOLOAD_ENABLED=true et OTEL_PHP_PSR3_MODE=export ; aucune ligne OpenTelemetry dans le code"
+    },
+    "ruby": {
+      "image": "ruby:3.4 (Ruby 3.4.11)",
+      "versions": {
+        "opentelemetry-sdk": "1.13.1",
+        "opentelemetry-api": "1.11.1",
+        "opentelemetry-exporter-otlp": "0.37.0",
+        "opentelemetry-instrumentation-all": "0.97.0",
+        "opentelemetry-instrumentation-rack": "0.31.2",
+        "opentelemetry-instrumentation-sinatra": "0.30.1",
+        "opentelemetry-instrumentation-net_http": "0.29.1",
+        "sinatra": "4.2.1",
+        "webrick": "1.9.2"
+      },
+      "application": "Sinatra 4 sous rackup + WEBrick, sous-appel Net::HTTP ; l'initialiseur de la doc officielle et at_exit { OpenTelemetry.tracer_provider.shutdown }"
+    }
+  },
+  "corps": [
+    {
+      "fichier": "go-1-traces.pb.gz",
+      "langage": "go",
+      "signal": "traces",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel OTLP Exporter Go/1.46.0",
+      "octets": 1536,
+      "sha256": "d4b94faf479881475f6f56abe6b5a6ed73679870a5f3a1e0efd2184e2d5b3a17",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "php-1-logs.pb.gz",
+      "langage": "php",
+      "signal": "logs",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel OTLP Exporter PHP/1.15.0",
+      "octets": 564,
+      "sha256": "a98c787c17e617779b1b911fefce43e91d1d0c47b5ddfea635b3ca7b35c3c910",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "php-2-traces.pb.gz",
+      "langage": "php",
+      "signal": "traces",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel OTLP Exporter PHP/1.15.0",
+      "octets": 1426,
+      "sha256": "6144f3d2ce203f664849b534e8341eeba148b04be679364d0dccc8cedfcd1e44",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "php-3-logs.pb.gz",
+      "langage": "php",
+      "signal": "logs",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel OTLP Exporter PHP/1.15.0",
+      "octets": 1265,
+      "sha256": "e85e1ea0fc9da1c83b506e004afbf99b0afd32a8f777fa73dcfeb6796f9ebe10",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "php-4-traces.pb.gz",
+      "langage": "php",
+      "signal": "traces",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel OTLP Exporter PHP/1.15.0",
+      "octets": 1371,
+      "sha256": "04ccac5f73388d0577eaf1b834b327836fa5f4c90c13c45782a5b305933ba4fe",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "php-5-traces.pb.gz",
+      "langage": "php",
+      "signal": "traces",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel OTLP Exporter PHP/1.15.0",
+      "octets": 880,
+      "sha256": "ef2205fef7dfdf7e6c0d853e77291f4a466aaad3549c6d224b7c05de2c42136c",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "ruby-1-traces.pb.gz",
+      "langage": "ruby",
+      "signal": "traces",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "Ruby, OTel-OTLP-Exporter-Ruby/0.37.0 Ruby/3.4.11 (aarch64-linux; ruby/3.4.11)",
+      "octets": 1793,
+      "sha256": "656887beab72bcc7831e2504017539974b4deb5b5946f68f0a016e9da7915684",
+      "statutALaCapture": 200
+    }
+  ]
+}
