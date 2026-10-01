@@ -174,11 +174,23 @@ test.describe("F45 — Détail de session : déroulé groupé par vue", () => {
   test("les tuiles ouvrent le Déroulé filtré sur leur nature", async ({ page }) => {
     await connexion(page);
     await page.goto(adresse(), { waitUntil: "domcontentloaded" });
-    // La tuile EST le lien (`CadreTuile`, F03) : l'attribut se lit sur elle.
-    const tuile = (libelle: string) =>
-      page.getByTestId("resume-session").locator(`[data-testid="kpi-tile"][aria-label^="${libelle}"]`);
-    await expect(tuile("Pages vues")).toHaveAttribute("href", /voir=vue/);
-    await expect(tuile("Signaux de frustration")).toHaveAttribute("href", /voir=frustration/);
+    // Depuis le 30/09/2026, la tuile est un bouton qui ouvre sa fenêtre (`FicheMesure`),
+    // qu'elle désigne par `aria-controls` : le lien vers le Déroulé filtré vit dans la
+    // fenêtre. On l'ouvre comme un visiteur, on lit le lien, on la referme (Échap).
+    const lienDeLaTuile = async (libelle: string) => {
+      const tuile = page.getByTestId("resume-session").locator(`[data-testid="kpi-tile"][aria-label^="${libelle}"]`);
+      const id = await tuile.getAttribute("aria-controls");
+      expect(id, `${libelle} : la tuile désigne sa fenêtre`).toBeTruthy();
+      await tuile.click();
+      const fenetre = page.locator(`dialog[id="${id}"]`);
+      await expect(fenetre).toBeVisible();
+      const href = await fenetre.getByRole("link", { name: /Écran détaillé/ }).getAttribute("href");
+      await page.keyboard.press("Escape");
+      await expect(fenetre).toBeHidden();
+      return href ?? "";
+    };
+    expect(await lienDeLaTuile("Pages vues")).toMatch(/voir=vue/);
+    expect(await lienDeLaTuile("Signaux de frustration")).toMatch(/voir=frustration/);
 
     await page.goto(adresse("&voir=frustration"), { waitUntil: "domcontentloaded" });
     // Le nom SDK de l'événement se lit en français (recette du 26/09/2026).

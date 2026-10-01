@@ -150,12 +150,18 @@ test("mobile : « Non collecté » au lieu de zéro, filtres, drill-down, clavie
   await expect(page.getByTestId("capacite-js_errors")).toContainText("Collecté");
   // Jamais vérifié : une déclaration n'est pas une recette.
   await expect(page.getByTestId("capacite-js_errors")).toContainText("Jamais");
-  // Le libellé de la carte ne dit PAS « crash-free » : il nomme les erreurs JS.
-  await expect(page.getByText("Sessions sans erreur JS")).toBeVisible();
+  // Le libellé de la carte ne dit PAS « crash-free » : il nomme les erreurs JS. Lu dans
+  // la case : depuis le 30/09/2026, sa fenêtre porte le même titre.
+  await expect(
+    page.getByTestId("mobile-taux-sans-erreur").getByTestId("kpi-tile").getByText("Sessions sans erreur JS", { exact: true }),
+  ).toBeVisible();
   await expect(page.locator("body")).not.toContainText("crash-free");
   await expect(page.locator("body")).not.toContainText("100 % sans crash");
-  // Et l'écran démonte explicitement la confusion, au lieu de l'ignorer.
-  await expect(page.getByText(/les crashes natifs ne sont pas collect/)).toBeVisible();
+  // Et l'écran démonte explicitement la confusion, au lieu de l'ignorer : depuis le
+  // 30/09/2026, la phrase est lue avec la case (écran vocal) et écrite dans sa fenêtre.
+  await expect(page.getByTestId("mobile-taux-sans-erreur").getByTestId("kpi-tile")).toContainText(
+    /les crashes natifs ne sont pas collect/,
+  );
 
   // ── 2. Les chiffres, sur la cohorte React Native seule ─────────────────────
   // F38 : les tuiles sont des `KpiTile` ; la valeur est `kpi-valeur`.
@@ -199,7 +205,8 @@ test("mobile : « Non collecté » au lieu de zéro, filtres, drill-down, clavie
   // Aucune session : le taux n'a pas de dénominateur, et l'écran le DIT — plutôt
   // que d'afficher « 100 % », qui se lirait comme une bonne nouvelle.
   await expect(valeur("mobile-taux-sans-erreur")).toHaveText("—");
-  await expect(page.getByTestId("mobile-taux-sans-erreur").getByText(/pas de d[ée]nominateur/)).toBeVisible();
+  // La raison du « — » est lue avec la case et écrite dans sa fenêtre (30/09/2026).
+  await expect(page.getByTestId("mobile-taux-sans-erreur").getByTestId("kpi-raison")).toContainText(/pas de d[ée]nominateur/);
   // Et les six capacités redeviennent « Inconnu » : aucune release de ce
   // périmètre n'a rien déclaré.
   await expect(page.getByTestId("capacite-js_errors")).toContainText("Inconnu");

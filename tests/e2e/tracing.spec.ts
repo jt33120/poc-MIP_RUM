@@ -214,8 +214,9 @@ test("console : /tracing affiche la corrélation et la timeline montre l'appel A
   await expect(page.getByTestId("back-routes")).toContainText("/api/demo/items/:item_id");
   await expect(page.getByTestId("api-calls")).toContainText("/api/demo/items/");
   // F60 : la couverture est la tuile « Appels suivis jusqu'au serveur » ; mesurée, jamais « — ».
-  // Par son libellé exact : la tuile « Durée p75 côté serveur » en parle aussi dans sa phrase.
-  const couverture = page.getByTestId("kpi-tile").filter({ has: page.getByText("Appels suivis jusqu'au serveur", { exact: true }) });
+  // Par son libellé complet, qui ouvre son nom accessible : depuis le 30/09/2026 la case
+  // n'affiche qu'un libellé court, et la tuile « Durée p75 côté serveur » en parle aussi.
+  const couverture = page.locator(`[data-testid="kpi-tile"][aria-label^="Appels suivis jusqu'au serveur "]`);
   await expect(couverture.getByTestId("kpi-valeur")).not.toHaveText("—");
 
   // dernière session de demo-app avec un appel API -> timeline

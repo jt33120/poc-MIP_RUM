@@ -312,6 +312,11 @@ test.describe("F32 — représentations du résultat", () => {
   test("cmp=prev : la valeur dit « vs » et la plage précédente en clair", async ({ page }) => {
     await login(page);
     await page.goto(`${baseF32}&period=24h&measure=rows:count&viz=value&cmp=prev&run=1`);
+    // Depuis le 30/09/2026, la case ne montre que la valeur et son unité : l'écart et sa
+    // référence sont dits à l'écran vocal par la case, et écrits dans sa fenêtre.
+    const tuile = page.locator("#explorer-resultat").getByTestId("kpi-tile");
+    await expect(tuile).toHaveAttribute("aria-label", /\+50 % vs 24 h précédentes/, { timeout: 15_000 });
+    await tuile.click();
     const delta = page.locator("#explorer-resultat").getByTestId("delta");
     await expect(delta).toBeVisible({ timeout: 15_000 });
     await expect(delta).toContainText(/vs 24 h précédentes \(\d\d\/\d\d \d\d:\d\d → \d\d\/\d\d \d\d:\d\d\)/);
