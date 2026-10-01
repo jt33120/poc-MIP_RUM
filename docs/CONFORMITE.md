@@ -56,9 +56,20 @@ dev-server/edge) → on ne dépend pas du seul client. Source maps **privées** 
 
 ## 3. RGPD *by design*
 - **Consentement** : `requireConsent` met le SDK en tampon mémoire jusqu'à `MIPRum.consent(true)` —
-  **côté réseau uniquement**. L'identifiant de session est aujourd'hui écrit dans le stockage local
-  *avant* la barrière de consentement, et n'est pas purgé au refus (finding 1.11 de l'audit) : à
-  corriger avant tout déploiement soumis à recueil de consentement.
+  côté réseau (aucune requête) **et côté terminal** (aucune lecture ni écriture du stockage local).
+  Session, visiteur et mode d'échantillonnage vivent en mémoire jusqu'à l'accord, qui les écrit, ou
+  reprend ceux d'une visite déjà consentie. Le widget d'avis chargé par le SDK (option `feedback`)
+  suit le même accord pour sa période de silence ; posé à la main, il ne le connaît pas.
+  `MIPRum.consent(false)` efface du stockage local `mip_rum_session`, `mip_rum_visitor`,
+  `mip_rum_sampling`, `mip_rum_seq`, la file de rejeu (`mip_rum_retry`) et la période de silence du
+  widget (`mip_rum_feedback_last:*`), et le SDK n'y écrit plus rien : un accord ultérieur repart d'un nouveau visiteur
+  (finding 1.11 de l'audit, traité le 01/10/2026 : `packages/rum-sdk/src/consent.ts`,
+  `tests/unit/sdk-consentement-stockage.test.ts`). Ce qui est déjà parti avant un refus tardif ne
+  s'efface que par une demande DSAR (ci-dessous) : il n'existe pas de route d'oubli appelée par le SDK.
+  Sans `requireConsent`, la mesure démarre dès le chargement, sans bandeau : c'est au client de
+  qualifier sa mesure d'audience.
+- **Page prérendue** : une page que le navigateur prépare sans l'afficher (Speculation Rules) ne
+  collecte rien, et n'écrit rien sur le terminal, tant qu'elle n'est pas affichée.
 - **Opt-out navigateur honoré** : `honorDNT` (défaut `true`) respecte **Do Not Track** et **Global Privacy Control** — signal présent → aucune collecte (0 session, 0 requête).
 - **DSAR** (`/admin/privacy`, admin only) : droit d'**accès/portabilité** (export JSON par `visitor_id`,
   une clé par table) et droit à l'**effacement** (suppression transactionnelle, enfants avant l'ancre

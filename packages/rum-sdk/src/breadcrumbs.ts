@@ -1,6 +1,7 @@
 // Breadcrumbs (LIMITES §1) : trail du parcours utilisateur — clics, navigations,
 // erreurs, événements custom. Span 'breadcrumb' avec type/label/seq, cap 50/page.
 import { makeCap, type PageCap } from "./caps";
+import { accesTerminalAutorise, CLE_SEQUENCE } from "./consent";
 import type { Emit } from "./errors";
 
 export const BREADCRUMB_CAP_PER_PAGE = 50;
@@ -8,7 +9,7 @@ export const BREADCRUMB_LABEL_MAX = 40;
 /** Longueur d'un libellé sur le fil ; l'ingestion applique la même borne après son scrub. */
 export const BREADCRUMB_WIRE_MAX = 120;
 export const MIP_UI_ATTR = "data-mip-rum-ui";
-const SEQ_KEY = "mip_rum_seq";
+const SEQ_KEY = CLE_SEQUENCE;
 
 export type BreadcrumbType = "click" | "nav" | "error" | "custom";
 
@@ -46,20 +47,33 @@ export function boundedWireLabel(label: string, max: number = BREADCRUMB_WIRE_MA
 /**
  * Compteur incrémental de session, persisté en localStorage (monotone : ne
  * redémarre pas à zéro au reload, l'ordre intra-session reste garanti).
+ *
+ * Le stockage n'est lu qu'au premier pas où l'accès au terminal est autorisé
+ * (finding 1.11) : avant l'accord, le compteur ne vit qu'en mémoire. La
+ * monotonie ne tient donc plus sous `requireConsent` : les fils tamponnés d'une
+ * deuxième page repartent de 1, sous ceux de la première. La console ne lit pas
+ * `seq` (relu le 01/10/2026) ; un futur tri par `seq` devra en tenir compte.
  */
 export function createSeq(key: string = SEQ_KEY): () => number {
   let seq = 0;
-  try {
-    seq = parseInt(localStorage.getItem(key) || "0", 10) || 0;
-  } catch {
-    /* mode privé : compteur en mémoire seulement */
-  }
+  let relu = false;
   return () => {
+    const acces = accesTerminalAutorise();
+    if (acces && !relu) {
+      relu = true;
+      try {
+        seq = Math.max(seq, parseInt(localStorage.getItem(key) || "0", 10) || 0);
+      } catch {
+        /* mode privé : compteur en mémoire seulement */
+      }
+    }
     seq += 1;
-    try {
-      localStorage.setItem(key, String(seq));
-    } catch {
-      /* ignore */
+    if (acces) {
+      try {
+        localStorage.setItem(key, String(seq));
+      } catch {
+        /* ignore */
+      }
     }
     return seq;
   };

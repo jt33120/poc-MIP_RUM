@@ -136,6 +136,9 @@
    * un widget qui disparaît pour de bon est une perte de mesure silencieuse.
    */
   function lastSentAt() {
+    // Chargé par le SDK (option `feedback`) : pas de stockage avant l'accord (on
+    // s'affiche alors, faute de lire le silence). Posé à la main : accord inconnu.
+    if (typeof cfg.stockageAutorise === "function" && !cfg.stockageAutorise()) return 0;
     try {
       var raw = window.localStorage.getItem(storeKey());
       if (!raw) return 0;
@@ -161,6 +164,7 @@
 
   /** Arme le silence. Appelé UNIQUEMENT après un envoi confirmé. */
   function rememberSent() {
+    if (typeof cfg.stockageAutorise === "function" && !cfg.stockageAutorise()) return;
     try {
       window.localStorage.setItem(storeKey(), String(Date.now()));
     } catch (_) {

@@ -50,7 +50,7 @@ export function promptSdk(e: EntreePromptSdk): string {
     "",
     `3. ${CLE} Pour une application construite, utilise la variable publique du bundler (par exemple \`NEXT_PUBLIC_MIP_RUM_API_KEY\` ou \`VITE_MIP_RUM_API_KEY\`) : cette clé finit de toute façon dans la page, elle identifie l'application et ne protège rien.`,
     `4. Si le projet définit une Content-Security-Policy (en-têtes dans la configuration du framework, balise <meta>, middleware ou serveur), ajoute sans rien retirer : \`${e.csp.scriptSrc}\` et \`${e.csp.connectSrc}\`. Le bloc d'initialisation est un script en ligne : si la CSP l'interdit, déplace-le dans un fichier JavaScript du site.`,
-    "5. Si le site a une bannière de consentement aux cookies, utilise plutôt cette variante, et appelle `MIPRum.consent(true)` à l'endroit où l'utilisateur accepte :",
+    "5. Si le site a une bannière de consentement aux cookies, utilise plutôt la variante ci-dessous. Appelle `MIPRum.consent(true)` à CHAQUE page dès que l'outil de consentement connaît l'accord du visiteur (au chargement s'il a déjà accepté, et au moment où il accepte), et `MIPRum.consent(false)` s'il refuse : sans cet appel, rien n'est envoyé. La variante :",
     bloc("html", e.snippetConsent),
     "",
     "## Ce que tu ne dois pas faire",

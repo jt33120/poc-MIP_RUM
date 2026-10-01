@@ -5,9 +5,66 @@ import type { AttrValue, Emit } from "./errors";
 
 export const CONSENT_BUFFER_CAP = 200;
 
+// ═══════════════════════ Le terminal, sous le même accord ═══════════════════════
+//
+// Finding 1.11 de docs/AUDIT_RUM_EXTERNE.md. La barrière ci-dessous ne retenait que
+// le RÉSEAU : l'identifiant de session, celui du visiteur et le mode
+// d'échantillonnage étaient écrits dans le stockage local AVANT elle, et
+// survivaient au refus. Or l'article 82 de la loi Informatique et Libertés vise
+// toute lecture ou écriture sur le terminal, stockage local compris.
+//
+// Désormais, avec `requireConsent`, aucun module du SDK ne lit ni n'écrit le
+// stockage local tant que l'accord manque : ils interrogent tous cet
+// interrupteur. Un refus le referme, et efface ce que le SDK avait posé.
+// Sans `requireConsent`, il reste ouvert du début à la fin : rien ne change.
+let accesTerminal = true;
+
+/** Le SDK peut-il lire ou écrire le stockage local du navigateur ? */
+export function accesTerminalAutorise(): boolean {
+  return accesTerminal;
+}
+
+export function autoriserAccesTerminal(autorise: boolean): void {
+  accesTerminal = autorise;
+}
+
+/**
+ * Tout ce que le SDK pose sur le terminal, hors file de rejeu (`retry.ts` la
+ * purge lui-même : ses clés sont lues par ses propres tests). Une clé ajoutée
+ * ailleurs sans figurer ici survivrait à un refus.
+ */
+export const CLE_SESSION = "mip_rum_session";
+export const CLE_VISITEUR = "mip_rum_visitor";
+export const CLE_ECHANTILLONNAGE = "mip_rum_sampling";
+export const CLE_SEQUENCE = "mip_rum_seq";
+export const CLES_TERMINAL = [CLE_SESSION, CLE_VISITEUR, CLE_ECHANTILLONNAGE, CLE_SEQUENCE] as const;
+/** Période de silence du widget d'avis, une clé par application (mip-rum-feedback.js). */
+export const PREFIXE_AVIS = "mip_rum_feedback_last:";
+
+/** Efface ce que le SDK et son widget d'avis ont posé sur le terminal (refus de consentement). */
+export function effacerTerminal(): void {
+  const cles: string[] = [...CLES_TERMINAL];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const cle = localStorage.key(i);
+      if (cle?.startsWith(PREFIXE_AVIS)) cles.push(cle);
+    }
+  } catch {
+    /* stockage sans énumération : les clés fixes suffisent */
+  }
+  for (const cle of cles) {
+    try {
+      localStorage.removeItem(cle);
+    } catch {
+      /* stockage indisponible : rien n'y a été écrit */
+    }
+  }
+}
+
 type ConsentState = "granted" | "pending" | "denied";
 
-interface BufferedEvent {
+/** Un événement retenu en attendant l'accord, tel qu'il sera rejoué. */
+export interface BufferedEvent {
   name: string;
   attrs: Record<string, AttrValue>;
   ts: number; // horodatage d'origine, réutilisé au rejeu
@@ -77,11 +134,21 @@ export class ConsentGate {
     return true;
   }
 
-  /** consent(true) : rejoue le buffer (timestamps d'origine) ; consent(false) : purge + désactive. */
-  set(granted: boolean, deliver: Emit): void {
+  /**
+   * consent(true) : rejoue le buffer (timestamps d'origine) ; consent(false) : purge + désactive.
+   *
+   * `retenir` voit le tampon entier avant le rejeu. Il sert aux décisions que
+   * l'accord seul permet de prendre — le mode d'échantillonnage, l'identifiant de
+   * session repris du stockage — et qui portent sur la page entière.
+   */
+  set(
+    granted: boolean,
+    deliver: Emit,
+    retenir?: (tampon: readonly BufferedEvent[]) => readonly BufferedEvent[],
+  ): void {
     if (granted) {
       this.state = "granted";
-      const pending = this.buffer;
+      const pending = retenir ? retenir(this.buffer) : this.buffer;
       this.buffer = [];
       for (const e of pending) deliver(e.name, e.attrs, e.ts);
     } else {

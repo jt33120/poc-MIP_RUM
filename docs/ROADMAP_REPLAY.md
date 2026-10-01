@@ -23,7 +23,7 @@ les causes possibles : session trop courte, signal DNT/GPC, consentement refusé
 | Étape | Techno | État |
 |---|---|---|
 | Capture navigateur | **rrweb**, bundle séparé chargé à la demande (`mip-rum-replay.js`, 56,7 Ko gzip mesurés le 26/09/2026) ; saisies toujours masquées (`maskAllInputs`), texte et médias masqués par défaut (`replayMask`, `all`), démasquage zone par zone depuis le 01/10/2026 (classe `mip-rum-unmask`, option `replayUnmask` ; par le `maskTextFn` de rrweb, qui n'a pas de sélecteur de démasquage), blocs `mip-rum-block` exclus ; plafonds 2 min / 1 Mo gzip | codé (`packages/rum-sdk/src/replay.ts`) |
-| Consentement | SDK `requireConsent` + `MIPRum.consent(true/false)` : collecte tamponnée en mémoire jusqu'à l'accord — **côté réseau seulement** : l'identifiant de session est écrit en stockage local avant l'accord ([CONFORMITE.md](CONFORMITE.md) § 3) | codé ; le bandeau du site suivi est décrit dans `docs/CONSENT_UTI.md`, document client hors dépôt |
+| Consentement | SDK `requireConsent` + `MIPRum.consent(true/false)` : collecte tamponnée en mémoire jusqu'à l'accord, le rejeu ne démarre qu'à l'accord ; rien n'est lu ni écrit en stockage local avant lui, et un refus efface les identifiants posés (depuis le 01/10/2026, [CONFORMITE.md](CONFORMITE.md) § 3). Un refus survenu après l'accord arrête l'enregistrement en cours et jette ce qui n'est pas encore parti ; un nouvel accord sur la même page ne le relance pas | codé ; le bandeau du site suivi est décrit dans `docs/CONSENT_UTI.md`, document client hors dépôt |
 | Échantillonnage | option `replay: true \| 0..1` du SDK, dans le snippet. La colonne `app_registry.replay_sample_rate` (migration-v03) existe, mais **aucun code ne la lit** | codé |
 | Transport | chunks **gzip** en POST vers `/api/ingest/v1/replay` de la console (Vercel), adresse dérivée de celle des traces ; le `collector` sert `/v1/replay`, mais il n'est pas créé | en service sur Vercel, base suspendue jusqu'au 01/10/2026 |
 | Stockage | `replay_chunk.body` en `bytea`, dans Postgres : décision d'y rester jusqu'à un seuil de sortie vers un stockage objet ([ADR-0009](architecture/adr/0009-blobs-en-postgres.md)) | en place |
@@ -32,7 +32,8 @@ les causes possibles : session trop courte, signal DNT/GPC, consentement refusé
 ## Étapes pour activer (le jour où on le veut)
 1. **Consentement front** sur le site suivi (bannière + `requireConsent: true`) — voir
    `docs/CONSENT_UTI.md`, document client hors dépôt ([DOCUMENTS-HORS-DEPOT.md](DOCUMENTS-HORS-DEPOT.md)).
-   Corriger d'abord l'écriture de l'identifiant de session avant l'accord ([CONFORMITE.md](CONFORMITE.md) § 3).
+   L'outil de consentement appelle `MIPRum.consent(true)` ou `consent(false)` à chaque page
+   ([INTEGRATION.md](INTEGRATION.md), annexe B).
 2. Snippet : `replay: 0.1` (10 % des sessions consenties). C'est le seul réglage qui active le rejeu.
 3. Surveiller le stockage : sur l'offre gratuite de Neon, la base est plafonnée à 0,5 Go, et le rejeu
    est ce qui la remplirait le premier ([ADR-0014](architecture/adr/0014-base-gratuite.md),

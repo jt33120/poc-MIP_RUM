@@ -351,8 +351,11 @@ const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 export async function posterAvecReprise(
   envoyer: () => Promise<Response>,
   attendre: (ms: number) => Promise<void> = dormir,
+  abandonne: () => boolean = () => false,
 ): Promise<boolean> {
   for (let tentative = 1; ; tentative++) {
+    // Un refus de consentement survenu pendant l'attente : le morceau ne part plus.
+    if (abandonne()) return false;
     let res: Response | null = null;
     try {
       res = await envoyer();
@@ -368,6 +371,7 @@ export async function posterAvecReprise(
 
 let started = false;
 let boundaryFlush: (() => void) | null = null;
+let arret: (() => void) | null = null;
 
 /** Vide le chunk courant avant une rotation d'identité/session. */
 export function flushReplayBoundary(): void {
@@ -379,10 +383,17 @@ export function flushReplayBoundary(): void {
  * échantillonnée ET le consent acquis). Masquage : `optionsMasquage` (saisies,
  * texte et médias par défaut ; zones `mip-rum-unmask` / `replayUnmask` en
  * clair). Caps : 2 min ou 1 Mo gzip cumulé.
+ *
+ * Rend l'arrêt à appeler au refus de consentement : l'enregistrement cesse, et
+ * ce qui n'est pas encore parti — morceau en cours, morceaux en file, reprises en
+ * attente — est jeté. Sans lui, rrweb enregistrait et postait jusqu'au plafond de
+ * 2 minutes après un `consent(false)`. Un accord ultérieur sur la même page ne
+ * relance pas l'enregistrement : il faudrait un nouvel instantané complet, que
+ * seul un chargement redonne.
  */
-export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string)): void {
-  if (started) return;
-  if (typeof CompressionStream === "undefined") return; // navigateur trop ancien
+export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string)): () => void {
+  if (started) return () => arret?.();
+  if (typeof CompressionStream === "undefined") return () => {}; // navigateur trop ancien
   started = true;
 
   const endpoint = deriveReplayEndpoint(cfg.endpoint, cfg.replayEndpoint);
@@ -404,13 +415,23 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string
     buffer.stopped = true;
   };
 
+  let refuse = false;
+  const arreter = () => {
+    refuse = true;
+    buffer.take(); // le morceau en cours ne partira pas
+    stop();
+  };
+  arret = arreter;
+
   const flush = () => {
+    if (refuse) return;
     const chunk = buffer.take();
     if (!chunk) return;
     // Capture la session AVANT d'enfiler la compression asynchrone. Une
     // rotation suivante ne peut donc pas rattacher l'ancien chunk au nouvel ID.
     const chunkSessionId = typeof sessionId === "function" ? sessionId() : sessionId;
     posting = posting.then(async () => {
+      if (refuse) return;
       try {
         const bytes = await gzip(JSON.stringify(chunk.events));
         const envoye = await posterAvecReprise(() => fetch(endpoint, {
@@ -428,7 +449,7 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string
           body: bytes,
           // keepalive (limite ~64 Ko) : le dernier chunk survit au pagehide
           keepalive: bytes.length < 60_000,
-        }));
+        }), dormir, () => refuse);
         // Seul un chunk accepté compte dans le plafond : un refus n'a rien stocké.
         if (envoye && buffer.addCompressed(bytes.length)) stop(); // cap 1 Mo gzip cumulé
       } catch {
@@ -465,4 +486,5 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string
       started = false; // bundle indisponible : replay off, le RUM continue
       boundaryFlush = null;
     });
+  return arreter;
 }

@@ -24,14 +24,40 @@ export function scrubUrl(url: string): string {
 }
 
 /**
- * Pageview initiale + patch History API (SPA) : pushState/replaceState/popstate.
+ * Type de la navigation initiale. Une page PRÉRENDUE puis affichée porte un
+ * `activationStart` positif : on la dit `prerender`, comme web-vitals le fait pour
+ * ses mesures (`webvital.navigation_type`) — ses temps de chargement se comptent
+ * depuis l'affichage, pas depuis la requête. Le prérendu jamais affiché, lui,
+ * n'émet rien du tout (index.ts diffère la collecte jusqu'à l'activation).
+ */
+export function typeNavigationInitiale(entree: PerformanceNavigationTiming | undefined): string {
+  const activation = (entree as { activationStart?: number } | undefined)?.activationStart;
+  if (typeof activation === "number" && activation > 0) return "prerender";
+  return entree?.type ?? "navigate";
+}
+
+/**
+ * Pageview initiale + patch History API (SPA) : pushState/replaceState/popstate,
+ * et retour depuis le cache avant/arrière du navigateur (bfcache).
  */
 export function initNavigation(onPageview: (navType: string) => void): void {
   route = normalizeRoute(location.pathname);
   const navEntry = performance.getEntriesByType?.(
     "navigation",
   )[0] as PerformanceNavigationTiming | undefined;
-  onPageview(navEntry?.type ?? "navigate");
+  onPageview(typeNavigationInitiale(navEntry));
+
+  // RESTAURATION DEPUIS LE BFCACHE (finding 2.5). La page revient telle qu'on l'a
+  // quittée, sans rechargement : le script ne se réexécute pas, et rien d'autre
+  // que `pageshow` (persisted) ne le dit. Sans page vue ici, les mesures que
+  // web-vitals rapporte après la restauration (LCP, CLS, INP remis à zéro)
+  // s'accrochaient à la trace de la visite précédente, et un retour arrière ne
+  // comptait pas comme une page vue. C'en est une : l'utilisateur voit la page.
+  addEventListener("pageshow", (event: Event) => {
+    if (!(event as PageTransitionEvent).persisted) return;
+    route = normalizeRoute(location.pathname);
+    onPageview("bfcache");
+  });
 
   const onRouteChange = () => {
     const next = normalizeRoute(location.pathname);

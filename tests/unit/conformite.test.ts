@@ -200,13 +200,25 @@ describe("affirmations que le code ne tient pas", () => {
     expect(DECLARE).not.toMatch(/Les mesures des clients, elles, passent toujours par la console/);
   });
 
-  it("ne présente pas le tampon de consentement comme couvrant le terminal", () => {
-    // `requireConsent` retient le RÉSEAU. L'identifiant de session est écrit dans
-    // le stockage local avant la barrière, et survit au refus.
+  it("dit que le tampon de consentement couvre le réseau ET le terminal, ce que le code tient", () => {
+    // Jusqu'au 01/10/2026, `requireConsent` ne retenait que le RÉSEAU : le dossier
+    // devait le dire, et ce test l'y obligeait. Le SDK retient désormais aussi le
+    // terminal (finding 1.11) ; le dossier peut l'affirmer parce que le code le
+    // fait — sondé ici, et prouvé par tests/unit/sdk-consentement-stockage.test.ts.
     // Le paragraphe, pas la ligne : la phrase court sur plusieurs lignes.
     const i = DECLARE.indexOf("requireConsent");
     expect(i, "le dossier ne parle plus de requireConsent").toBeGreaterThan(-1);
-    const paragraphe = DECLARE.slice(i).split("\n\n")[0];
+    const paragraphe = DECLARE.slice(i).split("\n- **")[0];
     expect(paragraphe).toMatch(/réseau/);
+    expect(paragraphe).toMatch(/terminal/);
+    for (const cle of ["mip_rum_session", "mip_rum_visitor", "mip_rum_sampling", "mip_rum_retry"]) {
+      expect(paragraphe, `le dossier ne dit pas que ${cle} est effacé au refus`).toContain(cle);
+    }
+    const sdk = (f: string) => readFileSync(join(__dirname, `../../packages/rum-sdk/src/${f}`), "utf8");
+    expect(sdk("session.ts")).not.toContain("CE QUI N'EST PAS RÉGLÉ ICI");
+    expect(sdk("index.ts")).toContain("autoriserAccesTerminal(!accordAttendu)");
+    for (const cle of ["mip_rum_session", "mip_rum_visitor", "mip_rum_sampling"]) {
+      expect(sdk("consent.ts"), `${cle} absente des clés effacées au refus`).toContain(`"${cle}"`);
+    }
   });
 });

@@ -53,7 +53,7 @@ export {
 } from "./sdk-poids";
 
 /** Version de l'extension, telle qu'elle est dans apps/extension/manifest.json. */
-export const EXT_VERSION = "0.4.3";
+export const EXT_VERSION = "0.5.0";
 /** Ses permissions, dans l'ordre du manifeste. */
 export const EXT_PERMISSIONS = ["scripting", "webNavigation", "storage", "activeTab"] as const;
 
@@ -311,7 +311,7 @@ export const MESURES: Mesure[] = [
     table: "rum_pageview",
     module: "packages/rum-sdk/src/index.ts",
     detail:
-      "Route normalisée (les identifiants deviennent :id, sinon chaque page produirait sa propre statistique), navigations SPA comprises — pushState, replaceState et retour arrière. La normalisation du SDK ne couvre que les entiers, les UUID et les hexadécimaux longs : depuis le 10/09/2026 chaque application peut ajouter ses propres règles, appliquées en base — donc quel que soit le chemin d'arrivée des mesures — et rejouables sur l'historique pour que la série d'une route ne se coupe pas en deux le jour où la règle est écrite. Au-delà de 2 000 routes distinctes par application, les routes inédites sont regroupées sous « (other) » et l'écran de santé interne le signale : la dimension cesse de croître, et la perte de détail est visible.",
+      "Route normalisée (les identifiants deviennent :id, sinon chaque page produirait sa propre statistique), navigations SPA comprises — pushState, replaceState et retour arrière. Depuis le SDK 0.5.0, un retour arrière servi par le cache du navigateur (bfcache) compte une page vue, avec sa propre trace, et une page prérendue n'est mesurée que si elle s'affiche : les pages vues montent un peu, d'autant que les visiteurs reviennent en arrière. La normalisation du SDK ne couvre que les entiers, les UUID et les hexadécimaux longs : depuis le 10/09/2026 chaque application peut ajouter ses propres règles, appliquées en base — donc quel que soit le chemin d'arrivée des mesures — et rejouables sur l'historique pour que la série d'une route ne se coupe pas en deux le jour où la règle est écrite. Au-delà de 2 000 routes distinctes par application, les routes inédites sont regroupées sous « (other) » et l'écran de santé interne le signale : la dimension cesse de croître, et la perte de détail est visible.",
   },
   {
     quoi: "Sessions pseudonymes",
@@ -319,7 +319,7 @@ export const MESURES: Mesure[] = [
     table: "rum_session",
     module: "packages/rum-sdk/src/index.ts",
     detail:
-      "Type d'appareil, navigateur déduit du user-agent, pays déduit du fuseau horaire — et à défaut de l'en-tête pays que pose le CDN, quand il y en a un devant. Pour les mesures envoyées directement au collecteur (celles de la console seule, depuis le 28/09/2026), le pays vient de l'adresse IP, lue dans une base IP→pays embarquée. Aucune adresse IP n'est stockée côté MIP ; « ni même résolue » serait faux, puisque c'est bien une résolution IP→pays que fait le CDN dans ce second cas. Le visiteur porte un identifiant tiré au hasard par le SDK, gardé dans le stockage local du navigateur : ni cookie, ni dérivation du terminal, effaçable par le visiteur. Les sessions antérieures au 09/09/2026, identifiées par une empreinte du terminal partagée par tout un parc homogène, restent marquées comme telles et sortent des comptes de personnes. Source de collecte (balise ou extension), version déployée, qualité du lien.",
+      "Type d'appareil, navigateur déduit du user-agent, pays déduit du fuseau horaire — et à défaut de l'en-tête pays que pose le CDN, quand il y en a un devant. Pour les mesures envoyées directement au collecteur (celles de la console seule, depuis le 28/09/2026), le pays vient de l'adresse IP, lue dans une base IP→pays embarquée. Aucune adresse IP n'est stockée côté MIP ; « ni même résolue » serait faux, puisque c'est bien une résolution IP→pays que fait le CDN dans ce second cas. Le visiteur porte un identifiant tiré au hasard par le SDK, gardé dans le stockage local du navigateur : ni cookie, ni dérivation du terminal, effaçable par le visiteur. Depuis le SDK 0.5.0 : quand le site exige le consentement, rien n'est écrit dans ce stockage avant l'accord, et un refus l'efface ; une session se ferme après 30 minutes d'inactivité, ou 4 heures après son début même active — un écran resté ouvert toute la journée compte plusieurs sessions. Les sessions antérieures au 09/09/2026, identifiées par une empreinte du terminal partagée par tout un parc homogène, restent marquées comme telles et sortent des comptes de personnes. Source de collecte (balise ou extension), version déployée, qualité du lien.",
   },
   {
     quoi: "Erreurs JavaScript",

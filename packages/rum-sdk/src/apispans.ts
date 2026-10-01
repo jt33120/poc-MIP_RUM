@@ -69,6 +69,12 @@ export interface ApiSpanOptions {
   /** Snapshot causal pris au DÉPART de l'appel, jamais à sa réponse. */
   action?: () => Record<string, string | number | boolean>;
   /**
+   * Faux : l'appel part tel quel, sans en-tête ni span. Une session que l'accord
+   * fait tomber hors échantillon n'injecte pas `traceparent` sur chaque requête —
+   * le serveur tracerait pour une session qui n'existe pas. Absent : toujours actif.
+   */
+  actif?: () => boolean;
+  /**
    * Erreurs réseau (`captureErrors.network`) ; absent = aucune. `report` reçoit
    * les attributs de l'exception et l'horodatage de DÉPART de l'appel, celui de
    * son span : l'attribution causale reste celle du départ.
@@ -169,7 +175,7 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
         const rawUrl =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         const target = resolveTarget(rawUrl, opts);
-        if (!target || !cap.take()) return orig.call(this, input as RequestInfo, init);
+        if (!target || opts.actif?.() === false || !cap.take()) return orig.call(this, input as RequestInfo, init);
 
         const method = (
           init?.method ?? (input instanceof Request ? input.method : "GET")
@@ -226,7 +232,7 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
       try {
         const meta = this.__mip;
         const target = meta ? resolveTarget(meta.url, opts) : null;
-        if (meta && target && cap.take()) {
+        if (meta && target && opts.actif?.() !== false && cap.take()) {
           const traceId = opts.traceId?.() ?? randHex(16);
           const spanId = randHex(8);
           this.setRequestHeader("traceparent", traceparent(traceId, spanId));

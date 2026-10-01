@@ -23,7 +23,11 @@ import {
 } from "./retry";
 import type { MIPRumConfig } from "./types";
 
-const SDK_VERSION = "0.4.0";
+// Suit packages/rum-sdk/package.json (vérifié par tests/unit/specs.test.ts) : elle
+// restait à 0.4.0 pendant que le paquet passait 0.4.3, et un changement de
+// comportement (sessions de 4 h, consentement sur le terminal, bfcache : 0.5.0)
+// ne se distinguait pas dans ce que le SDK émet.
+const SDK_VERSION = "0.5.0";
 const MAX_BATCH = 64; // même plafond que l'ancien BatchSpanProcessor
 
 /** Interface minimale d'un span (sous-ensemble de l'API OTel réellement utilisé). */
