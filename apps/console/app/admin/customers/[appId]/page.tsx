@@ -3,25 +3,36 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { ConfirmationDanger } from "@/components/ConfirmationDanger";
+import { CopyBlock } from "@/components/CopyBlock";
+import { InfoTip } from "@/components/InfoTip";
 import { entreGuillemets } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
 import { FormulaireSecret, SecretAffiche, SecretFourni } from "@/components/secret/SecretUnique";
 import { BackendStep } from "@/components/wizard/BackendStep";
-import { SnippetStep } from "@/components/wizard/SnippetStep";
-import { WizardBadge, WizardStep } from "@/components/wizard/WizardStep";
+import { WizardBadge } from "@/components/wizard/WizardStep";
 import { chargerClient } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { ingestEndpoint, voieRecommandee } from "@/lib/ingest-endpoint";
-import { buildInjectionArtifacts, buildSnippet, deriveStatus } from "@/lib/onboarding";
+import { buildSnippet, deriveStatus } from "@/lib/onboarding";
 import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
 import { fmtDate } from "@/lib/format";
 import { cleDe } from "@/lib/secret-remis";
+import { BOUTON_LIGNE_DANGER, Erreur, LIBELLE_CHAMP, Panneau, Pastille } from "../../_ui/kit";
 import { rotateKeyAction, updateOriginsAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-/** Fiche d'une application cliente et son guide d'intégration pas à pas, vérifié en direct. */
+// Refonte du 01/10/2026 (grammaire `app/admin/_ui`) : la fiche n'est plus un guide en
+// cinq étapes de dix paragraphes. Le guide complet — placement selon la pile, CSP,
+// consentement, injection sans toucher au code, recettes serveur — est `/installer`,
+// lisible par l'équipe du client ; la fiche garde ce que seul l'administrateur fait
+// (domaines, clé), l'état de l'intégration, le code à copier, et y renvoie. Chaque
+// explication passe dans la bulle « ? » de son panneau.
+
+const LIEN = "font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf";
+
+/** Fiche d'une application cliente : sa configuration, l'arrivée de ses données, son code de suivi. */
 export default async function CustomerWizard({
   params,
   searchParams,
@@ -51,6 +62,9 @@ export default async function CustomerWizard({
   const endpoint = ingestEndpoint("traces", host, voie);
   const endpointConsole = ingestEndpoint("traces", host);
 
+  // Le code de suivi porte le REPÈRE de la clé, jamais la clé remise : il se recopie
+  // dans un ticket, un courriel, un dépôt. La clé, affichée une fois en tête, se colle
+  // à la main.
   const snippet = buildSnippet({
     sdkUrl,
     endpoint,
@@ -59,28 +73,10 @@ export default async function CustomerWizard({
     withConsent: false,
     voie,
   });
-  const snippetConsent = buildSnippet({
-    sdkUrl,
-    endpoint,
-    appId,
-    clientId: customer.client_id,
-    withConsent: true,
-    voie,
-  });
-  const parLaConsole =
+  const snippetConsole =
     voie === "directe"
-      ? {
-          endpoint: endpointConsole,
-          snippet: buildSnippet({ sdkUrl, endpoint: endpointConsole, appId, clientId: customer.client_id, withConsent: false }),
-        }
+      ? buildSnippet({ sdkUrl, endpoint: endpointConsole, appId, clientId: customer.client_id, withConsent: false })
       : null;
-  // v0.6 : configs d'injection zéro-touch (le client ne modifie pas son code)
-  const injection = buildInjectionArtifacts({
-    sdkUrl,
-    endpoint,
-    appId,
-    clientId: customer.client_id,
-  });
 
   // Recettes serveur (tracing navigateur → serveur) : les agents OpenTelemetry
   // officiels, préremplis avec l'app_id et les adresses complètes de collecte.
@@ -91,44 +87,56 @@ export default async function CustomerWizard({
     adresses: { traces: endpointConsole, logs: ingestEndpoint("logs", host) },
   });
 
-  const etape = "flex items-center justify-between gap-3 rounded-lg border border-line bg-panel2/60 px-3 py-2";
+  const installer = `/installer?app=${encodeURIComponent(appId)}`;
+  const parApp = (chemin: string) => `${chemin}?app=${encodeURIComponent(appId)}`;
+  const verifications = [
+    { cle: "snippet", libelle: "Premières Web Vitals", detail: "code de suivi posé", etat: status.snippet, valeur: probe.first_metric_at ? fmtDate(probe.first_metric_at) : "en attente" },
+    { cle: "trafic", libelle: "Sessions sur 24 h", detail: "trafic récent", etat: status.traffic, valeur: probe.sessions_24h ? probe.sessions_24h.toLocaleString("fr-FR") : "aucune" },
+    { cle: "front", libelle: "Appels d'API suivis", detail: "depuis le navigateur", etat: status.tracingFront, valeur: probe.first_front_span_at ? fmtDate(probe.first_front_span_at) : "en attente" },
+    { cle: "back", libelle: "Temps serveur reçus", detail: "serveur branché", etat: status.tracingBack, valeur: probe.first_back_span_at ? fmtDate(probe.first_back_span_at) : "en attente" },
+  ] as const;
+  const faites = verifications.filter((v) => v.etat === "done").length;
 
   // Jetons du thème partout (recette du 26/09/2026) : les `bg-white` / `slate` /
   // `blue` écrits en dur rendaient le champ des domaines illisible en sombre.
   // `SecretFourni` : la clé remise est lue UNE fois pour tout l'écran — le bandeau
-  // et les recettes serveur de l'étape 3, qui la portent à la place de leur repère.
-  // Sans lui, le premier composant à la lire la retirerait aux autres.
+  // et les recettes serveur, qui la portent à la place de leur repère. Sans lui, le
+  // premier composant à la lire la retirerait aux autres.
   return (
     <SecretFourni nom={cleDe(appId)}>
-      <div className="min-w-0 max-w-4xl animate-fade-up">
-        <PageHeader
-          title={customer.name}
-          sub={
-            <>
-              <code className="chip-mono">{appId}</code>
-              {customer.client_id && <> · client {customer.client_id}</>} · créée le{" "}
-              {fmtDate(customer.created_at)}
-              {customer.created_by && <> par {customer.created_by}</>} ·{" "}
-              <Link href="/admin/customers" className="text-brand hover:underline">
-                ← toutes les applications
-              </Link>
-            </>
-          }
-        >
-          <span
-            className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              status.live ? "bg-good/10 text-good-ink" : "bg-warn/10 text-warn-ink"
-            }`}
-            data-testid="live-badge"
-          >
-            {status.live ? "Données reçues" : "Intégration en cours"}
+      <div className="min-w-0 animate-fade-up">
+        <PageHeader title={customer.name}>
+          <span data-testid="live-badge">
+            <Pastille ton={status.live ? "bon" : "attention"}>{status.live ? "Données reçues" : "Intégration en cours"}</Pastille>
           </span>
           {/* La même installation, écrite pour l'équipe du client et lisible par elle
               (cette fiche est réservée aux administrateurs). */}
-          <Link href={`/installer?app=${encodeURIComponent(appId)}`} className="btn-ghost" data-testid="lien-installer">
-            Guide d&apos;installation pour le client →
+          <Link href={installer} className="btn-ghost" data-testid="lien-installer" title="Guide d'installation pour le client : pile, CSP, consentement, extension, serveur">
+            Guide d&apos;installation →
+          </Link>
+          {/* Donner un accès au client : un compte en lecture seule, limité à cette
+              application — tableaux de bord, sessions, erreurs, traces, rien d'autre. */}
+          <Link
+            href={`/admin/users?app=${encodeURIComponent(appId)}`}
+            className="btn-ghost"
+            title={`Un compte en lecture seule, limité à ${appId}, n'en voit que les données : tableaux de bord, sessions, erreurs, traces — rien d'autre.`}
+          >
+            Compte en lecture seule →
           </Link>
         </PageHeader>
+
+        {/* L'identité de l'application, sur une ligne (l'ancien sous-titre). */}
+        <p className="-mt-3 mb-4 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-soft" data-testid="fiche-identite">
+          <code className="chip-mono">{appId}</code>
+          {customer.client_id && <span>client {customer.client_id}</span>}
+          <span>
+            créée le {fmtDate(customer.created_at)}
+            {customer.created_by && <> par {customer.created_by}</>}
+          </span>
+          <Link href="/admin/customers" className={LIEN}>
+            ← toutes les applications
+          </Link>
+        </p>
 
         {/* La clé d'API (création de l'application ou rotation) : rendue au formulaire
             par l'action, remise ici, affichée une seule fois (C9c). */}
@@ -136,131 +144,178 @@ export default async function CustomerWizard({
           nom={cleDe(appId)}
           testid="one-time-key"
           testidValeur="generated-key"
-          className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
+          className="mb-4 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn-ink"
           codeClassName="break-all rounded bg-panel px-2 py-0.5 font-mono text-ink"
           prefixe="Clé d'API de"
           suffixe="(affichée une seule fois : copiez-la maintenant dans le code de suivi et la configuration du site) :"
         />
 
-        <div className="grid gap-5">
-          <WizardStep n={1} title="Vérifier la configuration">
-            <div className="grid gap-3 text-sm">
-              {erreurDomaines && (
-                <p role="alert" className="rounded-lg border border-bad/30 bg-bad/10 px-3 py-2 text-xs text-bad-ink">
-                  Domaines non enregistrés : chacun doit être une adresse http(s) complète (ex. https://app.exemple.fr), et
-                  il en faut au moins un.
-                </p>
-              )}
-              <form action={updateOriginsAction} className="flex flex-wrap items-end gap-3">
+        {erreurDomaines && (
+          <Erreur>
+            Domaines non enregistrés : chacun doit être une adresse http(s) complète (ex. https://app.exemple.fr), et il en faut
+            au moins un.
+          </Erreur>
+        )}
+
+        <div className="mb-4 grid min-w-0 items-stretch gap-2 lg:grid-cols-2">
+          <Panneau
+            titre="Configuration"
+            className="h-full"
+            aide={
+              <>
+                Les domaines autorisés à envoyer des mesures : modifiables à tout moment, pris en compte en moins
+                d&apos;une minute ; le navigateur bloque tout autre site (CORS). La clé d&apos;API identifie
+                l&apos;application : depuis le 29/09/2026, la collecte refuse toute mesure sans clé. Régénérer la clé coupe
+                aussitôt l&apos;ancienne, sur le site comme sur le serveur.
+              </>
+            }
+          >
+            <div className="grid gap-2 px-3 py-2.5">
+              <form action={updateOriginsAction} className="flex min-w-0 flex-wrap items-end gap-2">
                 <input type="hidden" name="app_id" value={appId} />
-                <label className="min-w-0 grow text-xs font-medium text-ink-soft">
-                  Domaines autorisés à envoyer des mesures (modifiables à tout moment, pris en compte en moins d&apos;une minute)
+                <label className={`${LIBELLE_CHAMP} grow`}>
+                  Domaines autorisés
                   <input
                     name="origins"
                     type="text"
                     defaultValue={customer.allowed_origins.join(", ")}
-                    className="field mt-1 block w-full font-mono"
+                    className="field block w-full py-1 font-mono text-xs"
                   />
                 </label>
-                <button type="submit" className="btn-ghost">
+                <button type="submit" className="btn-ghost py-1.5 text-xs">
                   Mettre à jour
                 </button>
               </form>
               {/* Régénérer invalide la clé posée chez le client : confirmé, et laissé
-                  ici plutôt qu'en bas de page — la nouvelle clé s'affiche en tête.
-                  Sans clé (intégration ancienne), rien ne se coupe : en générer une
-                  part d'un clic, et le code de suivi ci-dessous, qui en attend une,
-                  dit enfin vrai (recette du 26/09/2026). */}
-              <FormulaireSecret action={rotateKeyAction}>
+                  ici plutôt qu'en bas de page — la nouvelle clé s'affiche en tête. Sans
+                  clé (intégration ancienne), en générer une part d'un clic. */}
+              <FormulaireSecret action={rotateKeyAction} className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
                 <input type="hidden" name="app_id" value={appId} />
+                <span className="text-[11px] font-medium text-ink-soft">Clé d&apos;API</span>
                 {customer.has_key ? (
-                  <ConfirmationDanger
-                    libelle="Régénérer la clé d’API"
-                    question={`Régénérer la clé d’API de ${entreGuillemets(customer.name)}\u00a0?`}
-                    consequence="L’ancienne clé cessera aussitôt de fonctionner : il faudra poser la nouvelle, affichée une seule fois, sur le site du client."
-                    confirmer="Régénérer la clé"
-                    enCours="Régénération…"
-                    testid="regenerer-cle"
-                  />
+                  <>
+                    <Pastille ton="bon">posée</Pastille>
+                    <ConfirmationDanger
+                      libelle="Régénérer la clé d’API"
+                      question={`Régénérer la clé d’API de ${entreGuillemets(customer.name)} ?`}
+                      consequence="L’ancienne clé cessera aussitôt de fonctionner : il faudra poser la nouvelle, affichée une seule fois, sur le site du client."
+                      confirmer="Régénérer la clé"
+                      enCours="Régénération…"
+                      classeDeclencheur={BOUTON_LIGNE_DANGER}
+                      testid="regenerer-cle"
+                    />
+                  </>
                 ) : (
-                  <div className="flex flex-wrap items-center gap-3" data-testid="sans-cle">
-                    <p className="text-xs text-ink-soft">
-                      Cette application n&apos;a pas encore de clé d&apos;API : le code de suivi ci-dessous en attend une.
-                    </p>
-                    <button type="submit" className="btn-accent">
+                  <span className="inline-flex flex-wrap items-center gap-2" data-testid="sans-cle">
+                    <Pastille ton="mauvais">aucune</Pastille>
+                    <span className="sr-only">Cette application n&apos;a pas encore de clé d&apos;API : le code de suivi en attend une.</span>
+                    <button type="submit" className="btn-accent py-1 text-xs">
                       Générer une clé d&apos;API
                     </button>
-                  </div>
+                  </span>
                 )}
               </FormulaireSecret>
             </div>
-          </WizardStep>
+          </Panneau>
 
-          <WizardStep n={2} title="Poser le code de suivi sur le site du client (navigateur)">
-            <SnippetStep
-              snippet={snippet}
-              snippetConsent={snippetConsent}
-              sdkUrl={sdkUrl}
-              endpoint={endpoint}
-              injection={injection}
-              parLaConsole={parLaConsole}
-            />
-          </WizardStep>
-
-          <WizardStep n={3} title="Brancher le serveur (facultatif : suivre un appel du navigateur jusqu’au serveur)">
-            <BackendStep recettes={recettesServeur} nomSecret={cleDe(appId)} />
-          </WizardStep>
-
-          <WizardStep n={4} title="Vérifier que les données arrivent (en direct)">
-            <p className="mb-3 text-xs text-ink-soft">
-              Cette liste se met à jour toute seule, toutes les 5 secondes. Ouvrez le site du client dans
-              un autre onglet : les cases passent au vert à mesure que les données arrivent.
-            </p>
-            <div className="grid gap-2" data-testid="onboarding-checklist">
-              <div className={etape}>
-                <span className="text-sm text-ink">Premières Web Vitals reçues (code de suivi posé)</span>
-                <WizardBadge state={status.snippet}>
-                  {probe.first_metric_at ? fmtDate(probe.first_metric_at) : "en attente"}
-                </WizardBadge>
-              </div>
-              <div className={etape}>
-                <span className="text-sm text-ink">Sessions sur les dernières 24 h</span>
-                <WizardBadge state={status.traffic}>
-                  {probe.sessions_24h ? probe.sessions_24h.toLocaleString("fr-FR") : "aucune"}
-                </WizardBadge>
-              </div>
-              <div className={etape}>
-                <span className="text-sm text-ink">Appels d&apos;API suivis depuis le navigateur</span>
-                <WizardBadge state={status.tracingFront}>
-                  {probe.first_front_span_at ? fmtDate(probe.first_front_span_at) : "en attente"}
-                </WizardBadge>
-              </div>
-              <div className={etape}>
-                <span className="text-sm text-ink">Temps serveur reçus (serveur branché, étape 3)</span>
-                <WizardBadge state={status.tracingBack}>
-                  {probe.first_back_span_at ? fmtDate(probe.first_back_span_at) : "en attente"}
-                </WizardBadge>
-              </div>
-            </div>
+          <Panneau
+            titre="Arrivée des données"
+            compte={`${faites}/${verifications.length}`}
+            className="h-full"
+            aide={
+              <>
+                Relue à chaque rafraîchissement du direct (toutes les 5 secondes). Ouvrez le site du client dans un autre
+                onglet : les lignes passent au vert à mesure que les données arrivent. Les temps serveur demandent le
+                serveur branché (recettes ci-dessous).
+              </>
+            }
+          >
+            <ul className="divide-y divide-line/60" data-testid="onboarding-checklist">
+              {verifications.map((v) => (
+                <li key={v.cle} className="flex min-h-[2rem] min-w-0 items-center justify-between gap-3 px-3 py-1">
+                  <span className="min-w-0 text-sm text-ink">
+                    {v.libelle} <span className="text-[11px] text-ink-faint">· {v.detail}</span>
+                  </span>
+                  <WizardBadge state={v.etat}>{v.valeur}</WizardBadge>
+                </li>
+              ))}
+            </ul>
             {status.live && (
-              <p className="mt-3 text-xs text-good-ink">
-                Les données arrivent : la Vue d&apos;ensemble, les Sessions et le Tracing montrent cette
-                application (choisissez <code className="chip-mono">{appId}</code> dans le sélecteur
-                d&apos;application).
+              <p className="flex min-w-0 flex-wrap items-center gap-x-2 border-t border-line px-3 py-1.5 text-xs text-good-ink">
+                <span aria-hidden>✓</span>
+                <span>Visible dans</span>
+                <Link href={parApp("/")} className={LIEN}>Vue d&apos;ensemble</Link>
+                <Link href={parApp("/sessions")} className={LIEN}>Sessions</Link>
+                <Link href={parApp("/tracing")} className={LIEN}>Tracing</Link>
               </p>
             )}
-          </WizardStep>
-
-          <WizardStep n={5} title="Donner un accès au client (facultatif)">
-            <p className="mb-3 text-xs text-ink-soft">
-              Un compte en <strong className="text-ink">lecture seule</strong>, limité à cette application, n&apos;en
-              voit que les données : tableaux de bord, sessions, erreurs, traces — rien d&apos;autre.
-            </p>
-            <Link href={`/admin/users?app=${encodeURIComponent(appId)}`} className="btn-accent inline-block">
-              Créer un compte en lecture seule pour {appId} →
-            </Link>
-          </WizardStep>
+          </Panneau>
         </div>
+
+        <Panneau
+          titre="Code de suivi · navigateur"
+          className="mb-4"
+          aide={
+            <>
+              Deux balises en tête du <code>&lt;head&gt;</code>, avant tout autre script : Web Vitals, erreurs, sessions et
+              appels réseau sont ensuite mesurés sans autre code. Remplacez <code>COLLE_ICI_LA_CLE_API</code> par la clé ;
+              sans clé, ou avec une clé fausse, chaque envoi est refusé (403). Posée dans la page, la clé est lisible par tout
+              visiteur : elle identifie l&apos;application, elle ne protège rien.
+              {snippetConsole && (
+                <>
+                  {" "}Ce code envoie directement au collecteur, qui déduit le pays de l&apos;adresse IP sans la conserver ; le
+                  site doit alors autoriser <code>connect-src {new URL(endpoint).origin}</code> s&apos;il a une CSP.
+                </>
+              )}
+            </>
+          }
+          actions={
+            <Link href={`${installer}#snippet`} className={`${LIEN} text-xs`}>
+              Next.js, CSP, consentement, sans toucher au code →
+            </Link>
+          }
+        >
+          <div className="grid min-w-0 gap-2 px-3 py-2.5">
+            <CopyBlock code={snippet} />
+            {snippetConsole && (
+              <details className="min-w-0 text-xs" data-testid="voie-console">
+                <summary className="cursor-pointer select-none font-medium text-ink-soft hover:text-ink">
+                  CSP qui fige <code>connect-src</code> : le code par la console
+                </summary>
+                <div className="mt-2">
+                  <CopyBlock code={snippetConsole} />
+                </div>
+              </details>
+            )}
+          </div>
+        </Panneau>
+
+        <Panneau
+          titre="Serveur · facultatif"
+          aide={
+            <>
+              Suivre un appel du navigateur jusqu&apos;au serveur. Rien à télécharger chez MIP : l&apos;agent OpenTelemetry
+              officiel du langage du serveur, réglé par quelques variables d&apos;environnement. Sans cette étape, la mesure
+              côté navigateur fonctionne déjà.
+            </>
+          }
+          actions={
+            <Link href={`${installer}#serveur`} className={`${LIEN} text-xs`}>
+              Parcours serveur pas à pas →
+            </Link>
+          }
+        >
+          {/* Les recettes des agents, repliées : l'administrateur les ouvre pour les
+              transmettre ; elles portent la clé remise à la place du repère. */}
+          <details className="min-w-0 px-3 py-2 text-xs">
+            <summary className="cursor-pointer select-none font-medium text-ink-soft hover:text-ink">
+              Recettes des agents OpenTelemetry (Python, Node.js, Java, .NET, autres)
+            </summary>
+            <div className="mt-2">
+              <BackendStep recettes={recettesServeur} nomSecret={cleDe(appId)} />
+            </div>
+          </details>
+        </Panneau>
       </div>
     </SecretFourni>
   );

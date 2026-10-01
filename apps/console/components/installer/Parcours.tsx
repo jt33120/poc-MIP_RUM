@@ -10,9 +10,10 @@
 // (code de suivi), échappé (Worker Cloudflare) ou nu (variables OTEL_*) — une clé
 // `mip_` suivie d'hexadécimal n'a rien à échapper.
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { CopyBlock } from "@/components/CopyBlock";
 import { ICON_PATHS, Icon } from "@/components/icons";
+import { InfoTip } from "@/components/InfoTip";
 import { ChecklistParcours, type EtapeChecklist } from "@/components/installer/ChecklistParcours";
 import { CopierPourIA } from "@/components/installer/CopierPourIA";
 import { EtatSondageEnDirect } from "@/components/installer/ParcoursInstallation";
@@ -58,6 +59,25 @@ function Code({ ctx, code }: { ctx: ContexteParcours; code: string }) {
   return <CodeAvecSecret nom={ctx.nomSecret} code={code} repere={REPERE_CLE_API} rendu="copie" guillemets={false} />;
 }
 
+/**
+ * Une ligne courte à l'écran, la phrase entière dans la bulle « ? » (refonte du
+ * 01/10/2026 : 249 mots au-dessus du pli, un paragraphe par étape). La bulle reste
+ * dans le HTML : rien de ce qui était dit ne disparaît, il s'ouvre au survol ou au
+ * clavier.
+ */
+function Ligne({ children, aide, libelle = "En savoir plus", testId }: { children: ReactNode; aide?: ReactNode; libelle?: string; testId?: string }) {
+  return (
+    <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1" data-testid={testId}>
+      <span className="min-w-0">{children}</span>
+      {aide && (
+        <InfoTip label={libelle} align="start">
+          {aide}
+        </InfoTip>
+      )}
+    </p>
+  );
+}
+
 /** Ce que l'administrateur fait, ou à qui le client le demande. */
 function Administrateur({ ctx, href, action, demande }: { ctx: ContexteParcours; href: string; action: string; demande: string }) {
   return ctx.administrable ? (
@@ -94,26 +114,37 @@ function EtatCle({ ctx }: { ctx: ContexteParcours }) {
   return (
     <div className="grid gap-2">
       {ctx.aUneCle ? (
-        <p>
-          Une clé existe pour <code className="chip-mono">{ctx.app}</code>. Elle vous a été remise une seule fois, à la
-          création de l&apos;application ou à sa dernière régénération : MIP n&apos;en garde qu&apos;une empreinte et ne
-          peut pas la réafficher.
-        </p>
+        <Ligne
+          aide={
+            <>
+              Elle vous a été remise une seule fois, à la création de l&apos;application ou à sa dernière régénération : MIP
+              n&apos;en garde qu&apos;une empreinte et ne peut pas la réafficher.
+            </>
+          }
+        >
+          Une clé existe pour <code className="chip-mono">{ctx.app}</code> — non réaffichable.
+        </Ligne>
       ) : (
         <CadreEtat ton="attention" role="note" compact>
           Aucune clé pour l&apos;instant : depuis le 29/09/2026, la collecte refuse toute mesure sans clé.
         </CadreEtat>
       )}
-      <p>
-        Perdue ou absente ? Une nouvelle clé se génère depuis la fiche de l&apos;application ; l&apos;ancienne cesse
-        aussitôt de fonctionner, sur le site comme sur le serveur.{" "}
+      <Ligne
+        aide={
+          <>
+            Une nouvelle clé se génère depuis la fiche de l&apos;application ; l&apos;ancienne cesse aussitôt de
+            fonctionner, sur le site comme sur le serveur.
+          </>
+        }
+      >
+        Perdue ou absente ?{" "}
         <Administrateur
           ctx={ctx}
           href={fiche}
           action={ctx.aUneCle ? "Régénérer la clé sur la fiche" : "Générer la clé sur la fiche"}
           demande="Demandez-la à votre administrateur MIP."
         />
-      </p>
+      </Ligne>
     </div>
   );
 }
@@ -126,10 +157,14 @@ function EtatCle({ ctx }: { ctx: ContexteParcours }) {
 function BandeauIA({ children }: { children: ReactNode }) {
   return (
     <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2.5" data-testid="bandeau-ia">
-      <p className="min-w-0 flex-1 text-xs leading-relaxed text-ink">
-        <strong className="font-semibold">Installation assistée :</strong> copiez un prompt qui explique à votre IA de code
-        quoi installer, où et avec quelles valeurs. La clé d&apos;API n&apos;y figure pas.
-      </p>
+      <div className="min-w-0 flex-1 text-xs text-ink">
+        <Ligne
+          libelle="Installation assistée"
+          aide="Un prompt qui explique à votre IA de code quoi installer, où et avec quelles valeurs. La clé d'API n'y figure pas."
+        >
+          <strong className="font-semibold">Installation assistée</strong> par votre IA de code
+        </Ligne>
+      </div>
       <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );
@@ -183,7 +218,6 @@ export function ParcoursSnippet({
               La collecte de cette application est suspendue : ses mesures sont refusées jusqu&apos;à sa reprise.
             </CadreEtat>
           )}
-          <p>Seuls ces domaines peuvent envoyer des mesures ; le navigateur bloque tout autre site (CORS).</p>
           {ctx.origines.length ? (
             <ul className="flex flex-wrap gap-1.5">
               {ctx.origines.map((o) => (
@@ -201,10 +235,17 @@ export function ParcoursSnippet({
               Aucun domaine déclaré : toutes les mesures seront refusées.
             </CadreEtat>
           )}
-          <p>
-            Un domaine à ajouter (préproduction, nouveau site) ? C&apos;est pris en compte en moins d&apos;une minute.{" "}
+          <Ligne
+            aide={
+              <>
+                Seuls ces domaines peuvent envoyer des mesures ; le navigateur bloque tout autre site (CORS). Un domaine à
+                ajouter (préproduction, nouveau site) est pris en compte en moins d&apos;une minute.
+              </>
+            }
+          >
+            Un domaine à ajouter ?{" "}
             <Administrateur ctx={ctx} href={fiche} action="Modifier les domaines sur la fiche" demande="Demandez-le à votre administrateur MIP." />
-          </p>
+          </Ligne>
         </div>
       ),
     },
@@ -215,26 +256,28 @@ export function ParcoursSnippet({
       titre: "Copier le code de suivi",
       corps: (
         <div className="grid gap-2">
-          <p>
-            Déjà rempli pour <code className="chip-mono">{ctx.app}</code> : adresse du script, adresse de collecte,
-            identifiant. Web Vitals, erreurs, sessions et appels réseau sont ensuite mesurés sans autre code.
-          </p>
+          <Ligne
+            aide="Adresse du script, adresse de collecte, identifiant : tout est déjà rempli. Web Vitals, erreurs, sessions et appels réseau sont ensuite mesurés sans autre code."
+          >
+            Prérempli pour <code className="chip-mono">{ctx.app}</code>
+          </Ligne>
           <Code ctx={ctx} code={snippet} />
           {parLaConsole && (
             <>
-              <p data-testid="voie-directe">
-                Ce code envoie directement au collecteur de MIP : le pays des visiteurs vient de leur adresse IP, qui
-                n&apos;est jamais gardée.
-              </p>
+              <Ligne
+                testId="voie-directe"
+                aide="Ce code envoie directement au collecteur de MIP : le pays des visiteurs vient de leur adresse IP, qui n'est jamais gardée."
+              >
+                Collecte directe : pays par l&apos;adresse IP, jamais gardée
+              </Ligne>
               <details className="rounded-lg border border-line bg-panel2/60 px-3 py-2" data-testid="voie-console">
                 <summary className="cursor-pointer text-ink">
                   Votre CSP ne peut pas autoriser le collecteur ? Le code par la console
                 </summary>
                 <div className="mt-2 grid gap-2">
-                  <p>
-                    Il envoie à la console, qui relaie au collecteur sans l&apos;adresse IP : le pays est alors estimé
-                    (fuseau horaire), ou inconnu.
-                  </p>
+                  <Ligne aide="Il envoie à la console, qui relaie au collecteur sans l'adresse IP : le pays est alors estimé (fuseau horaire), ou inconnu.">
+                    Pays estimé (fuseau horaire), ou inconnu
+                  </Ligne>
                   <Code ctx={ctx} code={parLaConsole.snippet} />
                 </div>
               </details>
@@ -248,10 +291,9 @@ export function ParcoursSnippet({
       groupe: "installation",
       titre: `Remplacer ${REPERE_CLE_API} par votre clé`,
       corps: (
-        <p>
-          Dans la ligne <code>apiKey</code>. Sans clé, ou avec une clé fausse, chaque envoi est refusé (erreur 403). Posée
-          dans la page, la clé est lisible par tout visiteur : elle identifie l&apos;application, elle ne protège rien.
-        </p>
+        <Ligne aide="Sans clé, ou avec une clé fausse, chaque envoi est refusé (erreur 403). Posée dans la page, la clé est lisible par tout visiteur : elle identifie l'application, elle ne protège rien.">
+          Ligne <code>apiKey</code> · sans clé : refus 403
+        </Ligne>
       ),
     },
     {
@@ -270,10 +312,9 @@ export function ParcoursSnippet({
           <details className={BLOC}>
             <summary className={RESUME}>Next.js (App Router)</summary>
             <div className="mt-2 grid gap-2">
-              <p>
-                Dans le layout racine. Deux balises ordinaires : le script en ligne s&apos;exécute après le chargement du
-                premier, dans l&apos;ordre du document.
-              </p>
+              <Ligne aide="Deux balises ordinaires : le script en ligne s'exécute après le chargement du premier, dans l'ordre du document.">
+                Dans le layout racine
+              </Ligne>
               <Code ctx={ctx} code={codeAppRouter} />
             </div>
           </details>
@@ -286,21 +327,18 @@ export function ParcoursSnippet({
           <details className={BLOC}>
             <summary className={RESUME}>CMS ou gestionnaire de balises</summary>
             <div className="mt-2 grid gap-2">
-              <p>
-                Un tag « HTML personnalisé » déclenché sur toutes les pages (dans Google Tag Manager : « Initialization -
-                All Pages »). Chargé plus tard, il peut manquer les toutes premières mesures, et il ne corrige pas la CSP
-                (étape suivante).
-              </p>
+              <Ligne aide="Chargé plus tard, il peut manquer les toutes premières mesures, et il ne corrige pas la CSP (étape suivante).">
+                Tag « HTML personnalisé » sur toutes les pages (Google Tag Manager : « Initialization - All Pages »)
+              </Ligne>
               <Code ctx={ctx} code={injection.gtm} />
             </div>
           </details>
           <details className={BLOC}>
             <summary className={RESUME}>Sans toucher au code du site</summary>
             <div className="mt-2 grid gap-3">
-              <p>
-                Logiciel du marché, application gérée par un tiers : les deux balises se posent depuis
-                l&apos;infrastructure.
-              </p>
+              <Ligne aide="Logiciel du marché, application gérée par un tiers : les deux balises se posent depuis l'infrastructure.">
+                Les deux balises posées depuis l&apos;infrastructure
+              </Ligne>
               <div className="grid gap-1">
                 <p className="font-semibold text-ink">Cloudflare Worker — injecte les balises et assouplit la CSP</p>
                 <Code ctx={ctx} code={injection.worker} />
@@ -320,19 +358,25 @@ export function ParcoursSnippet({
       titre: "Autoriser MIP dans la politique de sécurité (CSP) du site, s'il en a une",
       corps: (
         <div className="grid gap-2" data-testid="csp">
-          <p>Ajoutez ces deux origines aux directives existantes, sans remplacer la politique du site :</p>
+          <Ligne
+            libelle="Script en ligne et CSP"
+            aide={
+              <>
+                Le bloc d&apos;initialisation est un script en ligne : la CSP doit l&apos;autoriser (un nonce, ou
+                &apos;unsafe-inline&apos;), sinon placez <code>MIPRum.init(…)</code> dans un fichier JavaScript du site.
+                Autre possibilité : héberger <code>mip-rum.js</code> sur le domaine du site ; le rejeu charge alors{" "}
+                <code>mip-rum-replay.js</code> depuis la même origine, à poser à côté.
+              </>
+            }
+          >
+            Ajoutées aux directives existantes, sans remplacer la politique du site
+          </Ligne>
           <CopyBlock code={`${csp.scriptSrc}\n${csp.connectSrc}`} />
           {parLaConsole && (
             <p>
-              Avec le code par la console, la collecte vise la console : <code>{parLaConsole.connectSrc}</code>.
+              Code par la console : <code>{parLaConsole.connectSrc}</code>
             </p>
           )}
-          <p>
-            Le bloc d&apos;initialisation est un script en ligne : la CSP doit l&apos;autoriser (un nonce, ou
-            &apos;unsafe-inline&apos;), sinon placez <code>MIPRum.init(…)</code> dans un fichier JavaScript du site.
-            Autre possibilité : héberger <code>mip-rum.js</code> sur le domaine du site ; le rejeu charge alors{" "}
-            <code>mip-rum-replay.js</code> depuis la même origine, à poser à côté.
-          </p>
         </div>
       ),
     },
@@ -343,10 +387,16 @@ export function ParcoursSnippet({
       facultatif: true,
       corps: (
         <div className="grid gap-2">
-          <p>
-            Avec <code>requireConsent</code>, rien ne part tant que votre outil de consentement n&apos;a pas appelé{" "}
-            <code>MIPRum.consent(true)</code>. Cette version remplace celle de l&apos;étape 3.
-          </p>
+          <Ligne
+            aide={
+              <>
+                Avec <code>requireConsent</code>, rien ne part tant que votre outil de consentement n&apos;a pas appelé{" "}
+                <code>MIPRum.consent(true)</code>.
+              </>
+            }
+          >
+            Remplace le code de l&apos;étape 3 · attend <code>MIPRum.consent(true)</code>
+          </Ligne>
           <Code ctx={ctx} code={snippetConsent} />
         </div>
       ),
@@ -356,10 +406,9 @@ export function ParcoursSnippet({
       groupe: "installation",
       titre: "Mettre en ligne, puis ouvrir le site et naviguer",
       corps: (
-        <p>
-          Changez de page, cliquez : les mesures partent au fil de l&apos;eau et au départ de l&apos;onglet. INP et CLS
-          n&apos;arrivent qu&apos;une fois la page masquée ou quittée.
-        </p>
+        <Ligne aide="Les mesures partent au fil de l'eau et au départ de l'onglet. INP et CLS n'arrivent qu'une fois la page masquée ou quittée.">
+          Changez de page, cliquez · INP et CLS à la sortie de la page
+        </Ligne>
       ),
     },
     ...etapesSonde(ctx),
@@ -371,7 +420,8 @@ export function ParcoursSnippet({
       etapes={etapes}
       entete={
         promptIA ? (
-          <BandeauIA>
+          // Une clé : voir l'en-tête du parcours de l'extension.
+          <BandeauIA key="entete">
             <CopierPourIA prompt={promptIA} testId="ia-snippet" />
           </BandeauIA>
         ) : undefined
@@ -384,6 +434,7 @@ export function ParcoursSnippet({
 }
 
 // ─── Extension ───────────────────────────────────────────────────────────────
+
 
 const ETAT_DOMAINE: Record<DomaineExtension["etat"], { libelle: string; ton: string }> = {
   actif: { libelle: "observé", ton: "border-good/30 bg-good/10 text-good-ink" },
@@ -435,16 +486,14 @@ export function ParcoursExtension({
               Aucun domaine enregistré : l&apos;extension n&apos;observera rien pour cette application.
             </CadreEtat>
           )}
-          <p>
-            L&apos;extension n&apos;observe que les domaines enregistrés, jamais les autres ; l&apos;enregistrement ajoute
-            aussi le domaine à ceux qui peuvent envoyer des mesures.{" "}
+          <Ligne aide="L'extension n'observe que les domaines enregistrés, jamais les autres ; l'enregistrement ajoute aussi le domaine à ceux qui peuvent envoyer des mesures.">
             <Administrateur
               ctx={ctx}
               href="/admin/extension-scope"
               action="Enregistrer un domaine"
               demande="Pour en enregistrer un, demandez-le à votre administrateur MIP."
             />
-          </p>
+          </Ligne>
         </div>
       ),
     },
@@ -461,7 +510,7 @@ export function ParcoursExtension({
                 Ajouter à Chrome →
               </a>
             ) : (
-              <>
+              <div className="grid gap-2">
                 <a
                   href={ZIP_EXTENSION}
                   download
@@ -484,33 +533,41 @@ export function ParcoursExtension({
                   </li>
                   <li>Épinglez l&apos;icône MIP RUM dans la barre d&apos;outils, pour l&apos;avoir sous la main.</li>
                 </ol>
-              </>
+              </div>
             )}
           </div>
           <div className="grid gap-2">
-            <p className="font-semibold text-ink">Tout un parc géré (service informatique)</p>
-            <p>
-              Poussez cette stratégie <code className="chip-mono">ExtensionSettings</code> (GPO, Microsoft Intune ou
-              Google Admin ; Chrome et Edge) : elle installe l&apos;extension d&apos;office et accorde d&apos;avance
-              l&apos;accès aux domaines. L&apos;employé n&apos;a rien à faire.
-            </p>
+            <Ligne
+              aide="Elle installe l'extension d'office et accorde d'avance l'accès aux domaines (GPO, Microsoft Intune ou Google Admin ; Chrome et Edge). L'employé n'a rien à faire."
+            >
+              <span className="font-semibold text-ink">Tout un parc géré</span> · stratégie{" "}
+              <code className="chip-mono">ExtensionSettings</code>
+            </Ligne>
             <CopyBlock code={strategieExtension(hotes, updateUrl)} />
-            <p>
-              {updateUrl ? (
-                <>
-                  <code>update_url</code> pointe vers l&apos;hébergement du paquet signé.
-                </>
-              ) : (
-                <>
-                  Remplacez <code>update_url</code> par l&apos;adresse où votre service informatique héberge le paquet
-                  signé (<code>.crx</code>) et son fichier <code>update.xml</code>. Le paquet signé est préparé par MIP,
-                  qui détient sa clé de signature.
-                </>
-              )}{" "}
+            <Ligne
+              libelle="Le paquet signé"
+              aide={
+                updateUrl ? (
+                  <>
+                    <code>update_url</code> pointe vers l&apos;hébergement du paquet signé.
+                  </>
+                ) : (
+                  <>
+                    Remplacez <code>update_url</code> par l&apos;adresse où votre service informatique héberge le paquet
+                    signé (<code>.crx</code>) et son fichier <code>update.xml</code>. Le paquet signé est préparé par MIP,
+                    qui détient sa clé de signature.
+                  </>
+                )
+              }
+            >
+              <span>
+                <code>update_url</code> {updateUrl ? ": paquet signé hébergé" : "à remplacer"}
+              </span>{" "}
+              ·{" "}
               <a href={DOC_DEPLOIEMENT_EXTENSION} target="_blank" rel="noopener noreferrer" className={LIEN}>
                 Empaquetage et mise à jour →
               </a>
-            </p>
+            </Ligne>
           </div>
         </div>
       ),
@@ -522,17 +579,14 @@ export function ParcoursExtension({
       facultatif: true,
       corps: (
         <div className="grid gap-2">
-          <p>
-            Sans cette seconde stratégie, chaque poste apparaît sous un identifiant anonyme. Le libellé vient de votre
-            outil d&apos;administration : MIP ne le fabrique jamais.
-          </p>
+          <Ligne aide="Sans cette seconde stratégie, chaque poste apparaît sous un identifiant anonyme. Le libellé vient de votre outil d'administration : MIP ne le fabrique jamais.">
+            Sinon, un identifiant anonyme par poste
+          </Ligne>
           <CopyBlock code={strategieNommage()} />
-          <p>
-            Remplacez <code className="chip-mono">{"${machine_name}"}</code> par la variable de votre outil :{" "}
-            <code className="chip-mono">%COMPUTERNAME%</code> (GPO, Intune), <code className="chip-mono">$COMPUTERNAME</code>{" "}
-            (Jamf). Un nom de machine reste un inventaire de parc ; un nom de personne en fait un traitement de données
-            personnelles, à déclarer comme tel.
-          </p>
+          <Ligne aide="Un nom de machine reste un inventaire de parc ; un nom de personne en fait un traitement de données personnelles, à déclarer comme tel.">
+            <code className="chip-mono">{"${machine_name}"}</code> → <code className="chip-mono">%COMPUTERNAME%</code> (GPO,
+            Intune), <code className="chip-mono">$COMPUTERNAME</code> (Jamf)
+          </Ligne>
         </div>
       ),
     },
@@ -541,11 +595,9 @@ export function ParcoursExtension({
       groupe: "installation",
       titre: "Autoriser le site d'un clic, sur chaque poste",
       corps: (
-        <p>
-          Sur le site enregistré, cliquez l&apos;icône MIP RUM, puis « Activer sur ce domaine », et acceptez la demande du
-          navigateur. Le menu affiche ensuite « MIP RUM observe ce domaine. ». Inutile sur un parc dont la stratégie a déjà
-          accordé l&apos;accès.
-        </p>
+        <Ligne aide="Le menu affiche ensuite « MIP RUM observe ce domaine. ». Inutile sur un parc dont la stratégie a déjà accordé l'accès.">
+          Icône MIP RUM → « Activer sur ce domaine » → accepter la demande du navigateur
+        </Ligne>
       ),
     },
     {
@@ -561,7 +613,11 @@ export function ParcoursExtension({
       titre="Extension navigateur — les postes équipés"
       etapes={etapes}
       entete={
-        <div className="mb-4 grid gap-2">
+        // UNE CLÉ, volontairement. `VueChecklist` (client) range cet en-tête parmi ses
+        // enfants ; transmis par le serveur, il n'y portait pas la marque « enfant fixe »
+        // du JSX, et React avertissait « Each child in a list should have a unique key »
+        // (/installer, recette du 01/10/2026 ; la pile du panneau de Next désigne ce div).
+        <div key="entete" className="mb-4 grid gap-2">
           {promptIA && (
             <BandeauIA>
               <CopierPourIA prompt={promptIA} testId="ia-extension" />
@@ -570,12 +626,12 @@ export function ParcoursExtension({
           {/* Sans clé, c'est le domaine enregistré qui ouvre la collecte : le client doit le lire avant l'étape 1. */}
           <CadreEtat ton="neutre" role="note" testId="regle-extension" etat="information">
             <strong className="font-semibold text-ink">À savoir : </strong>
-            {REGLE_EXTENSION_SANS_CLE}
+            {REGLE_EXTENSION_SANS_CLE}{" "}
+            <InfoTip label="Ce que l'extension mesure" align="start">
+              L&apos;extension injecte le même code de suivi, sans toucher au site, mais seulement dans les navigateurs où
+              elle est installée : jamais l&apos;ensemble des visiteurs.
+            </InfoTip>
           </CadreEtat>
-          <p className="text-xs leading-relaxed text-ink-soft">
-            L&apos;extension injecte le même code de suivi, sans toucher au site, mais seulement dans les navigateurs où
-            elle est installée : jamais l&apos;ensemble des visiteurs.
-          </p>
         </div>
       }
       avantVerification={
@@ -604,10 +660,9 @@ export function ParcoursServeur({
       groupe: "prerequis",
       titre: "Le code de suivi est posé sur le site",
       corps: (
-        <p>
-          C&apos;est lui qui ajoute l&apos;en-tête <code>traceparent</code> aux appels du navigateur : sans lui, les temps
-          serveur arrivent, mais aucun appel n&apos;est relié à sa part serveur.
-        </p>
+        <Ligne aide="Sans lui, les temps serveur arrivent, mais aucun appel n'est relié à sa part serveur.">
+          Il ajoute l&apos;en-tête <code>traceparent</code> aux appels du navigateur
+        </Ligne>
       ),
     },
     {
@@ -621,18 +676,25 @@ export function ParcoursServeur({
       groupe: "installation",
       titre: "Poser la clé dans mip.api_key, et adapter le nom du service",
       corps: (
-        <p>
-          Remplacez le repère <code>{REPERE_CLE_API}</code> par la clé ; elle reste côté serveur. Le nom du service (
-          <code>OTEL_SERVICE_NAME</code>, prérempli à <code className="chip-mono">{nomDeService(ctx.app)}</code>) est celui
-          qu&apos;affichera le Tracing.
-        </p>
+        <Ligne
+          aide={
+            <>
+              Remplacez le repère <code>{REPERE_CLE_API}</code> par la clé ; elle reste côté serveur. Le nom du service est
+              celui qu&apos;affichera le Tracing.
+            </>
+          }
+        >
+          <code>OTEL_SERVICE_NAME</code> = <code className="chip-mono">{nomDeService(ctx.app)}</code>
+        </Ligne>
       ),
     },
     {
       id: "lancer",
       groupe: "installation",
       titre: "Relancer l'application sous l'agent",
-      corps: <p>La dernière ligne de la recette. Aucun changement de code : l&apos;agent instrumente le serveur au démarrage.</p>,
+      corps: (
+        <Ligne aide="Aucun changement de code : l'agent instrumente le serveur au démarrage.">La dernière ligne de la recette</Ligne>
+      ),
     },
     {
       id: "cors",
@@ -641,12 +703,11 @@ export function ParcoursServeur({
       facultatif: true,
       corps: (
         <div className="grid gap-2">
-          <p>Sans cela, le navigateur bloque l&apos;appel. Côté API, en réponse au préflight :</p>
+          <Ligne aide="Sans cela, le navigateur bloque l'appel.">Côté API, en réponse au préflight</Ligne>
           <CopyBlock code="Access-Control-Allow-Headers: traceparent, tracestate" />
-          <p>
-            Côté code de suivi, ajoutez l&apos;origine de l&apos;API à l&apos;option <code>trace</code> : par défaut, seuls les
-            appels vers l&apos;origine du site portent l&apos;en-tête.
-          </p>
+          <Ligne aide="Par défaut, seuls les appels vers l'origine du site portent l'en-tête.">
+            Côté code de suivi, l&apos;origine de l&apos;API dans l&apos;option <code>trace</code>
+          </Ligne>
           <CopyBlock code={`trace: ["https://api.exemple.fr"],`} />
         </div>
       ),
@@ -664,7 +725,8 @@ export function ParcoursServeur({
       titre="Serveur — la part serveur de chaque appel"
       etapes={etapes}
       entete={
-        <>
+        // Une clé : voir l'en-tête du parcours de l'extension.
+        <Fragment key="entete">
           {promptsIA.length > 0 && (
             <BandeauIA>
               {promptsIA.map((p) => (
@@ -672,12 +734,15 @@ export function ParcoursServeur({
               ))}
             </BandeauIA>
           )}
-        <p className="mb-4 text-xs leading-relaxed text-ink-soft">
-          Recommandé : la mesure du navigateur fonctionne sans lui, mais avec lui chaque appel est suivi jusqu&apos;au
-          serveur, et sa lenteur localisée. Rien à télécharger chez MIP : l&apos;agent
-          OpenTelemetry officiel de votre langage, réglé par quelques variables d&apos;environnement.
-        </p>
-        </>
+          <div className="mb-4 text-xs text-ink-soft">
+            <Ligne
+              libelle="Pourquoi brancher le serveur"
+              aide="La mesure du navigateur fonctionne sans lui, mais avec lui chaque appel est suivi jusqu'au serveur, et sa lenteur localisée. Rien à télécharger chez MIP : l'agent OpenTelemetry officiel de votre langage, réglé par quelques variables d'environnement."
+            >
+              Recommandé · l&apos;agent OpenTelemetry officiel de votre langage
+            </Ligne>
+          </div>
+        </Fragment>
       }
       avantVerification={
         <AvantVerification ctx={ctx} consigne="Gardez cet onglet ouvert pendant que vous appelez l'API depuis le site." />

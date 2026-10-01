@@ -28,12 +28,14 @@ import { PresetBar } from "@/components/PresetBar";
 import { LongtasksView } from "@/components/LongtasksView";
 import { ResourcesView } from "@/components/ResourcesView";
 import { DistributionSeuils, alternativeDistribution, bacsDeHistogramme } from "@/components/charts/DistributionSeuils";
+import { CartePages, type ElementCarte } from "@/components/charts/CartePages";
 import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { SelecteurVital } from "@/components/perf/SelecteurVital";
 import { CATEGORIE_VITAL, SOURCE_TRAFIC, SOURCE_VITAL } from "@/components/perf/sources";
 import { texteSeuils } from "@/lib/rating";
+import { lireVital } from "@/lib/vital-lecture";
 import { InfoTip } from "@/components/InfoTip";
 import { RoutePanel } from "@/components/perf/RoutePanel";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
@@ -78,7 +80,7 @@ import {
   type VitalPercentiles,
   type VuesParNavType,
 } from "@/lib/queries";
-import { VITALS_BREAKDOWN_DATASETS } from "@/lib/queries-breakdowns";
+import { VITALS_BREAKDOWN_DATASETS, type VitalsBreakdownRow } from "@/lib/queries-breakdowns";
 import { fenetresLues } from "@/lib/series";
 import { ecartP75, type IntervalleP75 } from "@mip/stats/incertitude";
 import { ecrirePanel, ecrireVue, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue, lireTri } from "@/lib/view-state";
@@ -471,6 +473,19 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
         </section>
       </SectionErreur>
 
+      {/* La carte des pages (recette du 01/10/2026, « une image plutôt que du texte ») :
+          où va le trafic, et où il souffre, d'un coup d'œil. Elle lit ce que l'écran a
+          déjà lu — les pages vues par route, et les p75 du découpage. */}
+      <SectionErreur titre="Carte des pages">
+        <CarteRoutes
+          vital={vital}
+          navigation={navigation}
+          decoupe={decoupe.ok && decoupe.data ? decoupe.data.rows : null}
+          plage={period.label}
+          lien={panneauRoute}
+        />
+      </SectionErreur>
+
       <SectionErreur titre={`Routes classées par ${vital}`}>
         <div id={ANCRE_HERO} className="scroll-mt-4">
           {!classement.disponible ? (
@@ -732,6 +747,118 @@ function FigureDistribution({
         Voir les mesures dans l&apos;Explorer (ordonnées par date)
       </Link>
     </Figure>
+  );
+}
+
+/**
+ * Routes dessinées sur la carte : au-delà, les rectangles n'ont plus la place d'un
+ * libellé ; le reste se regroupe en un rectangle gris « +N routes », sans lien.
+ */
+const CARTE_ROUTES_MAX = 30;
+
+/**
+ * La carte des routes (`CartePages`) : surface = pages vues de la route (lecture
+ * « vues par type de navigation », par volume), couleur = verdict ÉTABLI du p75 du
+ * vital choisi, par la règle des tuiles et du classement (`lireVital` : l'intervalle à
+ * 95 % tient dans une seule zone). Sinon gris : effectif faible, intervalle à cheval
+ * sur un seuil, route absente du découpage, ou vital que le découpage ne lit pas
+ * (FCP, TTFB). Chaque rectangle ouvre le panneau de sa route, comme une ligne du
+ * classement.
+ *
+ * Deux dessins du même SVG : large et bas (≥ 640 px), étroit et haut (390 px) — un
+ * SVG à rapport fixe, posé en 5 : 1 sur un téléphone, n'y laisserait aucun libellé.
+ */
+function CarteRoutes({
+  vital,
+  navigation,
+  decoupe,
+  plage,
+  lien,
+}: {
+  vital: VitalName;
+  navigation: SectionLue<VuesParNavType[]>;
+  /** `null` : découpage en échec ou vide — la carte reste, toute grise. */
+  decoupe: readonly VitalsBreakdownRow[] | null;
+  plage: string;
+  lien: (route: string | null) => string;
+}) {
+  const titre = "Carte des routes";
+  if (!navigation.ok) return <Figure titre={titre} id="carte-routes" etat={{ kind: "erreur", titre }} />;
+  if (navigation.data.length === 0) {
+    return <Figure titre={titre} id="carte-routes" etat={{ kind: "vide", population: "page vue", plage }} />;
+  }
+  const classe = classementParRoute(vital);
+  const fmt = formatDuVital(vital);
+  const parRoute = new Map((decoupe ?? []).map((r) => [r.valeur, r] as const));
+  const total = (l: VuesParNavType) => l.chargements + l.spa + l.inconnu;
+  const montrees = navigation.data.slice(0, CARTE_ROUTES_MAX);
+  const reste = navigation.data.slice(CARTE_ROUTES_MAX);
+  const elements: ElementCarte[] = montrees.map((l) => {
+    const r = parRoute.get(l.route);
+    const mesure =
+      classe.disponible && r
+        ? classe.vital === "LCP"
+          ? { p75: r.lcp_p75, n: r.lcp_n, intervalle: r.lcp_intervalle }
+          : classe.vital === "INP"
+            ? { p75: r.inp_p75, n: r.inp_n, intervalle: r.inp_intervalle }
+            : { p75: r.cls_p75, n: r.cls_n, intervalle: r.cls_intervalle }
+        : null;
+    const verdict = mesure && mesure.p75 != null ? lireVital(vital, mesure.p75, mesure.n, mesure.intervalle).verdict : null;
+    return {
+      cle: l.route ?? " inconnu",
+      libelle: groupLabel(l.route),
+      volume: total(l),
+      texteValeur: formater(fmt, mesure?.p75 ?? null),
+      verdict: verdict?.kind === "etabli" ? verdict.rating : null,
+      href: lien(l.route),
+    };
+  });
+  if (reste.length > 0) {
+    elements.push({
+      cle: " autres",
+      libelle: `+${reste.length.toLocaleString("fr-FR")} routes`,
+      volume: reste.reduce((s, l) => s + total(l), 0),
+      texteValeur: "—",
+      verdict: null,
+    });
+  }
+  const vues = navigation.data.reduce((s, l) => s + total(l), 0);
+  const colorees = elements.filter((e) => e.verdict !== null).length;
+  return (
+    <section
+      id="carte-routes"
+      aria-labelledby="carte-routes-titre"
+      className="card mb-4 min-w-0 scroll-mt-4 p-3"
+      data-vital={vital}
+      data-testid="carte-routes"
+    >
+      <div className="mb-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <h2 id="carte-routes-titre" className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+          {titre}
+        </h2>
+        <span className="text-[11px] tabular-nums text-ink-faint">
+          {pluriel(navigation.data.length, "route")} · {formater("count", vues)} vues · {colorees}/{elements.length} avec verdict · {plage}
+        </span>
+        {!classe.disponible && (
+          <span className="text-[11px] text-ink-faint" data-testid="carte-sans-verdict">
+            {vital} non découpé par route : gris
+          </span>
+        )}
+        <InfoTip label="Méthode : carte des routes" align="end" className="ml-auto">
+          Surface : pages vues de chaque route sur {plage} ({CARTE_ROUTES_MAX} routes au plus, les suivantes regroupées).
+          Couleur : verdict du p75 {vital} quand son intervalle à 95 % tient dans une seule zone ({texteSeuils(vital)}) —
+          la règle des cases et du classement ; gris sinon (effectif faible, intervalle à cheval sur un seuil, pas de
+          mesure{classe.disponible ? "" : `, ou ${vital} que le découpage par route ne lit pas`}). Un clic ouvre le panneau
+          de la route. Sources : {SOURCE_TRAFIC} ; {SOURCE_VITAL[vital]}.
+        </InfoTip>
+      </div>
+      <div className="hidden sm:block">
+        <CartePages elements={elements} mesure={`${vital} p75`} largeur={1200} hauteur={230} />
+      </div>
+      <div className="sm:hidden">
+        <CartePages elements={elements} mesure={`${vital} p75`} largeur={360} hauteur={330} />
+      </div>
+    </section>
   );
 }
 
