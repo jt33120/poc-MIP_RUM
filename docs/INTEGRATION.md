@@ -196,7 +196,7 @@ curl -s https://mip-rum-console.vercel.app/api/ingest/v1/traces \
 | `slowResourceMs` | 300 | seuil d'une ressource lente |
 | `requireConsent`, `honorDNT` | `false`, `true` | consentement et refus du navigateur (annexe B) |
 | `beforeSend` | — | dernier filtre des attributs de chaque span ; `null` jette le span |
-| `replay`, `replayMask`, `replayEndpoint` | `false`, `"all"` | rejeu de session : `true` ou un taux 0..1 ; masquage |
+| `replay`, `replayMask`, `replayUnmask`, `replayEndpoint` | `false`, `"all"`, aucune zone | rejeu de session : `true` ou un taux 0..1 ; masquage ; zones démasquées (annexe B) |
 | `trace` | `true` | `traceparent` sur la même origine ; une liste ajoute d'autres origines |
 | `captureErrors` | — | voies d'erreurs opt-in (annexe D) |
 | `frustration`, `forms` | `true`, `true` | clics rageurs et morts ; formulaires champ par champ, sans les valeurs |
@@ -252,6 +252,19 @@ API : `MIPRum.consent(bool)`, `track(nom, props)`, `setUser` / `clearUser`,
 - **Rejeu** : `replayMask: "all"` (défaut) masque saisies, texte et médias ; `"media"`
   laisse le texte ; `"inputs"` ne masque que les saisies (tout ce que l'écran affiche est
   alors enregistré). Un bloc marqué `.mip-rum-block` n'est jamais capturé.
+- **Démasquer une zone du rejeu** : sous `"all"` et `"media"`, un élément de classe
+  `.mip-rum-unmask`, ou visé par l'option `replayUnmask` (un sélecteur CSS, par exemple
+  `"#tableau-commandes, [data-rejeu-clair]"`), est enregistré en clair avec ses
+  descendants : leur texte, et leurs médias, qui ne sont plus remplacés par un cadre.
+  Démasquer, c'est enregistrer en clair : un choix du client, responsable de traitement,
+  à réserver à ce qui ne porte pas de donnée personnelle (menus, libellés, tableaux de
+  référence). Ce qui reste masqué dans une zone démasquée : les saisies (valeur d'un
+  `input`, `textarea`, `select`, texte d'un `contenteditable`) et les blocs
+  `.mip-rum-block`, qui l'emportent toujours. Un sélecteur que le navigateur refuse est
+  ignoré, avec un avertissement en console (`[mip-rum] replayUnmask ignoré`). Sur un
+  navigateur sans `:is()` (avant 2021), le texte se démasque, les médias restent
+  bloqués. Le démasquage ne traverse ni un shadow DOM ni une iframe : leur contenu reste
+  masqué, sauf zone posée à l'intérieur.
 - **Formulaires** : identifiants de champ et durées seulement, jamais les valeurs.
 - **Sans cookie** : la session vit dans `localStorage` (30 min d'inactivité) ; le
   visiteur est un tirage aléatoire, sans lien avec le terminal. Query strings et

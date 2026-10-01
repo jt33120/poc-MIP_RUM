@@ -22,7 +22,7 @@ les causes possibles : session trop courte, signal DNT/GPC, consentement refusé
 
 | Étape | Techno | État |
 |---|---|---|
-| Capture navigateur | **rrweb**, bundle séparé chargé à la demande (`mip-rum-replay.js`, 56,7 Ko gzip mesurés le 26/09/2026) ; saisies toujours masquées (`maskAllInputs`), texte et médias masqués par défaut (`replayMask`, `all`), blocs `mip-rum-block` exclus ; plafonds 2 min / 1 Mo gzip | codé (`packages/rum-sdk/src/replay.ts`) |
+| Capture navigateur | **rrweb**, bundle séparé chargé à la demande (`mip-rum-replay.js`, 56,7 Ko gzip mesurés le 26/09/2026) ; saisies toujours masquées (`maskAllInputs`), texte et médias masqués par défaut (`replayMask`, `all`), démasquage zone par zone depuis le 01/10/2026 (classe `mip-rum-unmask`, option `replayUnmask` ; par le `maskTextFn` de rrweb, qui n'a pas de sélecteur de démasquage), blocs `mip-rum-block` exclus ; plafonds 2 min / 1 Mo gzip | codé (`packages/rum-sdk/src/replay.ts`) |
 | Consentement | SDK `requireConsent` + `MIPRum.consent(true/false)` : collecte tamponnée en mémoire jusqu'à l'accord — **côté réseau seulement** : l'identifiant de session est écrit en stockage local avant l'accord ([CONFORMITE.md](CONFORMITE.md) § 3) | codé ; le bandeau du site suivi est décrit dans `docs/CONSENT_UTI.md`, document client hors dépôt |
 | Échantillonnage | option `replay: true \| 0..1` du SDK, dans le snippet. La colonne `app_registry.replay_sample_rate` (migration-v03) existe, mais **aucun code ne la lit** | codé |
 | Transport | chunks **gzip** en POST vers `/api/ingest/v1/replay` de la console (Vercel), adresse dérivée de celle des traces ; le `collector` sert `/v1/replay`, mais il n'est pas créé | en service sur Vercel, base suspendue jusqu'au 01/10/2026 |
@@ -37,7 +37,9 @@ les causes possibles : session trop courte, signal DNT/GPC, consentement refusé
 3. Surveiller le stockage : sur l'offre gratuite de Neon, la base est plafonnée à 0,5 Go, et le rejeu
    est ce qui la remplirait le premier ([ADR-0014](architecture/adr/0014-base-gratuite.md),
    [ADR-0009](architecture/adr/0009-blobs-en-postgres.md) pour le seuil de sortie).
-4. Contrôles RGPD : masquage vérifié, rétention, **effacement sur demande** (`erase_session`).
+4. Contrôles RGPD : masquage vérifié — et, si le site démasque des zones (`mip-rum-unmask`,
+   `replayUnmask`), chacune relue : ce qu'elle affiche part en clair —, rétention,
+   **effacement sur demande** (`erase_session`).
 
 ## Coût / impact
 - Bundle rrweb chargé **à la demande** (uniquement sessions échantillonnées + consenties) → coût
