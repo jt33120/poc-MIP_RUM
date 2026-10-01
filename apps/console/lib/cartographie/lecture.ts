@@ -306,12 +306,12 @@ export const ELEMENTS_RAILWAY_LECTURE: readonly Element[] = [
     famille: "service",
     zone: "railway",
     titre: "console-api",
-    sousTitre: "le backend de la console · 115 opérations",
+    sousTitre: "le backend de la console · 117 opérations",
     resume:
       "Le service que seul le serveur de la console appelle : identité, sessions, inscription, et à terme tous les écrans et toutes les écritures. Il sert déjà la connexion.",
-    etiquettes: ["115 opérations", "sessions révocables"],
+    etiquettes: ["117 opérations", "sessions révocables"],
     faits: [
-      { texte: "115 opérations : exploitation, identité (dont l'inscription), 48 écrans et 55 commandes.", sources: ["packages/console-api/src/table.ts", "docs/api/console-api.md"] },
+      { texte: "117 opérations : exploitation, identité (dont l'inscription), 48 écrans et 57 commandes.", sources: ["packages/console-api/src/table.ts", "docs/api/console-api.md"] },
       {
         texte: "Chaque opération déclare son accès, sa portée, la démo et l'audit ; une écriture sans audit empêche le démarrage.",
         sources: ["packages/console-api/src/politique.ts:15-77", "packages/console-api/src/politique.ts:110-154"],

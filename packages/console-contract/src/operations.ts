@@ -403,6 +403,11 @@ export const COMMANDES = Object.freeze({
   creerCanal: commande("channels.create", "POST", "/v1/notify-channels"),
   activerCanal: commande<{ id: string }>("channels.setActive", "PUT", "/v1/notify-channels/{id}/active"),
   supprimerCanal: commande<{ id: string }>("channels.delete", "DELETE", "/v1/notify-channels/{id}"),
+  // L'escalade (migration-v108) : une étape vise un canal, au niveau et au délai
+  // qu'elle porte ; elle se crée ou se supprime, jamais ne se modifie (on la recrée).
+  // Une étape globale, comme un canal global : l'administrateur de la plateforme.
+  creerEtapeEscalade: commande("alerts.createEscalationStep", "POST", "/v1/alert-escalation-steps"),
+  supprimerEtapeEscalade: commande<{ id: string }>("alerts.deleteEscalationStep", "DELETE", "/v1/alert-escalation-steps/{id}"),
   creerSonde: commande("uptime.create", "POST", "/v1/uptime-checks"),
   activerSonde: commande<{ id: string }>("uptime.setEnabled", "PUT", "/v1/uptime-checks/{id}/enabled"),
   supprimerSonde: commande<{ id: string }>("uptime.delete", "DELETE", "/v1/uptime-checks/{id}"),

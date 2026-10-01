@@ -107,6 +107,9 @@ export const MIP_CONSOLE = Object.freeze({
     analytics_rollup_invalidation: LIM,
     // Le plan de contrôle : les commandes (C6 → C10).
     alert_event: ["SELECT", "UPDATE"],
+    // v108 : les étapes d'escalade, lues par l'écran, créées et supprimées par
+    // `creerEtapeEscalade` et `supprimerEtapeEscalade` — jamais modifiées.
+    alert_escalation_step: ["SELECT", "INSERT", "DELETE"],
     alert_rule: LIM,
     analytics_saved_view: TOUT,
     app_registry: LIM,
