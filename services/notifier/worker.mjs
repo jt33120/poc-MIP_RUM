@@ -5,7 +5,7 @@
 // processus (configuration, arrêt propre, pool, sondes, boucles) dans
 // `@mip/service-kit`.
 //
-//   livraison        toutes les 15 s (NOTIFIER_INTERVAL_MS)   outbox → webhooks, e-mails
+//   livraison        toutes les 15 s (NOTIFIER_INTERVAL_MS)   veille du tick, outbox → webhooks, e-mails
 //   reconciliation   toutes les heures                         livraisons `sent` de l'ère pg_net
 //
 // LE SEUL DÉTENTEUR DES SECRETS SORTANTS : la clé Resend, le secret de signature
