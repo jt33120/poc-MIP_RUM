@@ -169,10 +169,14 @@ test("onboarding : créer un client -> clé one-shot -> snippet -> données reç
   // 5. la checklist passe au vert (snippet + trafic => live)
   await page.goto(`http://localhost:3000/admin/customers/${APP_ID}`);
   await expect(page.getByTestId("live-badge")).toContainText("Données reçues");
-  const checklist = page.getByTestId("onboarding-checklist");
-  await expect(checklist).toContainText("Premières Web Vitals reçues");
+  // La ligne « Premières Web Vitals » passe à « fait » : depuis la grammaire
+  // d'administration (01/10/2026), son libellé ne dit plus « reçues », son état le dit.
+  const premieresVitals = page.getByTestId("onboarding-checklist").getByRole("listitem").filter({ hasText: "Premières Web Vitals" });
+  const etat = premieresVitals.locator("[data-etat]");
+  await expect(etat).toHaveAttribute("data-etat", "done");
   // L'état « fait » se lit par une icône et un mot, plus par un émoji (recette du 26/09/2026).
-  await expect(checklist.locator('[data-etat="done"]').first()).toBeVisible();
+  await expect(etat).toBeVisible();
+  await expect(etat).toContainText("Fait");
 });
 
 test("onboarding : lien « accès client » préremplit le compte en lecture seule", async ({ page }) => {
