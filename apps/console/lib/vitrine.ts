@@ -17,6 +17,18 @@ export const FILM_ACCUEIL: { mp4: string; affiche: string } | null = {
   affiche: "/vitrine/film-accueil.jpg",
 };
 
+/**
+ * Le film de présentation : le produit, ce qui le distingue et sa stack, en une minute
+ * et demie. Il s'ouvre en grand depuis le premier écran (FilmPresentation.tsx), ou
+ * directement par /presentation#film. Comment il est fait et d'où vient chaque
+ * affirmation : docs/product/film-presentation.md. `null` : pas de bouton.
+ */
+export const FILM_PRESENTATION: { mp4: string; affiche: string; duree: string } | null = {
+  mp4: "/vitrine/film-presentation.mp4",
+  affiche: "/vitrine/film-presentation.jpg",
+  duree: "1 min 29",
+};
+
 /** Les écrans de la scène animée de l'aperçu (components/presentation/vitrine/SceneConsole.tsx). */
 export type VueScene = "sante" | "pages" | "erreurs" | "session" | "tracing" | "assistant";
 
