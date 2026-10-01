@@ -479,7 +479,13 @@ function ResultatJournal({
               format="count"
               lecture={total === 0 ? "Aucun événement ne correspond à ces filtres." : undefined}
               methode="Compté au même instant que la liste, les facettes et le volume : les quatre concordent."
-
+              // La série du volume (même lecture, même population) : aperçu en fond, graphique
+              // daté dans la fenêtre — seulement quand le total est un compte (jamais un 0 par défaut).
+              {...(totalConnu && enrichi && points.length > 1
+                ? { serie: points.map((p) => p.n), grapheDebuts: grille, titreAxeY: `événements par tranche de ${bucketLabel}` }
+                : {})}
+              source="SDK MIP RUM : événements personnalisés de l'application et signaux du capteur, journal des événements."
+              categorie="Journal"
             />
           </div>
         </div>
