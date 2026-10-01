@@ -165,7 +165,9 @@ function Partage({ vue }: { vue: ResourcesVue }) {
               {PARTY_LABELS[party]}
             </span>
             <span className="relative h-4 min-w-0 overflow-hidden rounded bg-panel2">
-              <span aria-hidden="true" className="absolute inset-y-0 left-0 rounded bg-accent/70" style={{ width: `${Math.max(2, part)}%` }} />
+              {/* Remplissage à 40 % : le compte s'écrit PAR-DESSUS la barre ; à 70 %, en sombre,
+                  il tombait à 3,3:1 (axe, 01/10/2026). */}
+              <span aria-hidden="true" className="absolute inset-y-0 left-0 rounded bg-accent/40" style={{ width: `${Math.max(2, part)}%` }} />
               <span className="absolute inset-y-0 right-1.5 flex items-center text-[11px] font-semibold tabular-nums text-ink">
                 {ligne.n.toLocaleString("fr-FR")} · {part.toFixed(0)} %
               </span>
