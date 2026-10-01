@@ -138,11 +138,13 @@ export function VersionsTable({
         </table>
       </TableDefilante>
       {/* La limite est dite SOUS le tableau, pas ailleurs : c'est là qu'on lit
-          l'écart, donc là qu'il faut savoir ce qu'il mélange. */}
-      <p className="mt-2 text-xs leading-relaxed text-ink-faint">
-        Sur {periodLabel}, sans normalisation : deux versions qui n&apos;ont pas tourné aux mêmes
-        heures sont jugées sur des publics différents. L&apos;écart mêle donc le code et le
-        contexte — à lire comme un signal, pas comme une mesure d&apos;impact.
+          l'écart, donc là qu'il faut savoir ce qu'il mélange. Ce tableau reste BRUT ;
+          la standardisation (route × appareil) ne porte que sur A et B, au-dessus. */}
+      <p className="mt-2 text-xs leading-relaxed text-ink-faint" data-testid="versions-brut">
+        Valeurs brutes sur {periodLabel}, sans normalisation : deux versions qui n&apos;ont pas tourné
+        aux mêmes heures sont jugées sur des publics différents, et l&apos;écart mêle le code et le
+        contexte. Pour les deux releases comparées, les lignes « à mix égal » ci-dessus égalisent le
+        mix de routes et d&apos;appareils.
       </p>
       <p className="mt-1 text-xs leading-relaxed text-ink-faint" data-testid="versions-source">
         {source === "occurrence" ? (

@@ -4,7 +4,7 @@
 import type { Element, Lien } from "./types";
 
 /** Les fichiers de chaque suite, recomptés par le test : une suite qui grandit le fait échouer. */
-export const FICHIERS_DE_TESTS = { unit: 427, integration: 68, contract: 5, e2e: 56 } as const;
+export const FICHIERS_DE_TESTS = { unit: 429, integration: 69, contract: 5, e2e: 56 } as const;
 
 const WF = ".github/workflows";
 

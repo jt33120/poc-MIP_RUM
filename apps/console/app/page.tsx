@@ -218,6 +218,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     seriesRelease,
     releasesLues,
     vitauxReleasesLus,
+    standardise,
     activite,
     retentionJours,
   } = ecran;
@@ -855,6 +856,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 source={release.source}
                 regleChoix={release.regle}
                 hrefs={release.hrefs}
+                // À mix de trafic égal : la lecture, ou son échec (dit dans la case et la fenêtre).
+                standardise={standardise.ok ? (standardise.data ?? undefined) : "echec"}
                 toutesLesVersions={
                   versionsFenetre.ok ? <VersionsTable comparaison={versionsFenetre.data} periodLabel={period.label} /> : undefined
                 }

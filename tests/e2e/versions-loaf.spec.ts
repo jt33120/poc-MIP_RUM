@@ -158,6 +158,12 @@ test("comparaison par version : les deux releases, leur LCP et leur taux d'erreu
   const vignette = page.getByTestId("vignette-release");
   await expect(vignette).toBeVisible({ timeout: 15_000 });
   await vignette.click();
+  // « À mix égal » (01/10/2026) : la lecture par strate S'EXÉCUTE (sinon « lecture en
+  // échec »), et sous le seuil — 6 mesures de 1.5.0 dans l'unique strate « / × desktop »,
+  // 10 requises —, la ligne se tait et dit pourquoi.
+  await expect(page.getByTestId("release-mix-lcp")).toContainText(
+    "non calculée : aucune strate route × appareil commune aux deux releases",
+  );
   const repli = page.getByText("Toutes les versions", { exact: true });
   await repli.first().click();
   const section = page.getByTestId("versions-table");
