@@ -1,20 +1,19 @@
 import Link from "next/link";
+import { Fragment, type ReactNode } from "react";
 import { ECRANS } from "@mip/console-contract";
-import { Figure } from "@/components/charts/Figure";
-import { HealthHeatmap } from "@/components/charts/HealthHeatmap";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { FicheMesure } from "@/components/charts/FicheMesure";
 import { HEALTH_CLASS } from "@/lib/health-libelles";
 import { ImpactTable } from "@/components/ImpactTable";
 import { InsightStrip } from "@/components/InsightStrip";
 import { PresetBar } from "@/components/PresetBar";
-import { ReleaseCompare, statsDeVersion, type ReleaseStats } from "@/components/ReleaseCompare";
+import { statsDeVersion, VignetteRelease, type ReleaseStats } from "@/components/ReleaseCompare";
 import { Methode } from "@/components/perf/Methode";
 import {
-  ChargeErreursLcp,
   HeroCwv,
   HeroErreurs,
   HeroTrafic,
+  VignetteCharge,
   type AnnotationsFigure,
   type ModeSeries,
 } from "@/components/vue-ensemble/SeriesVueEnsemble";
@@ -22,7 +21,9 @@ import { OngletsHero } from "@/components/vue-ensemble/OngletsHero";
 import { LIBELLE_ANGLE_MORT, TuileAngleMort, type EtatAngleMort } from "@/components/vue-ensemble/AngleMort";
 import { BandeauR0, type ProprietesBandeauR0 } from "@/components/vue-ensemble/BandeauR0";
 import { ConstatsDetectes, type EtatConstatsDetectes } from "@/components/vue-ensemble/ConstatsDetectes";
-import { HeatmapLatence } from "@/components/vue-ensemble/HeatmapLatence";
+import { heatmapAffichee, VignetteHeatmapLatence } from "@/components/vue-ensemble/HeatmapLatence";
+import { CarteHistorique, VignetteHistorique } from "@/components/vue-ensemble/Historique";
+import { LigneSansCase } from "@/components/vue-ensemble/Vignette";
 import { construireHeatmap } from "@/lib/heatmap-latence";
 import { VITAL_HEATMAP } from "@/lib/chargeurs/detections-accueil";
 import { anomaliesSansDoublon, cartesConstats, plageDuHero, type PlageHero } from "@/lib/detections-ecran";
@@ -666,7 +667,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     ? {
         libelle: "Ensemble (toute la population filtrée)",
         valeurs: {
-          pilote: `${vitalClasse} p75 ${formater(formatDuVital(vitalClasse), ensembleVital.p75)}`,
+          // La colonne dit déjà « LCP p75 » : la cellule porte la valeur seule.
+          pilote: formater(formatDuVital(vitalClasse), ensembleVital.p75),
           volume: formater("count", ensembleVital.n),
           lcp: formater("ms", byName.LCP?.p75 ?? null),
           inp: formater("ms", byName.INP?.p75 ?? null),
@@ -719,14 +721,199 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     constats.echecs.length === 0 &&
     (etatDetectes.kind === "absent" || (etatDetectes.kind === "ok" && etatDetectes.cartes.length === 0));
 
+  // ─── Rangée « formes » (recette du 30/09/2026) : des vignettes de même hauteur ───
+  // Charge et erreurs, heatmap de latence, historique 14 jours, release, angle mort :
+  // chacune est une case qui s'ouvre en grand. Ce qui n'a rien à montrer (lecture vide,
+  // comparaison impossible, robot absent) ne prend pas de case : quelques mots dans
+  // UNE ligne grise, sous la rangée. Une lecture en échec garde son bloc (« Réessayer »).
+  const heatmapVue = heatmap ? heatmapAffichee(heatmap) : null;
+  const joursHistorique = joursLocaux(GRID_DAYS, fuseau);
+  const hrefsHeures = { tout: hrefWith(null), ouvrees: hrefWith("business") };
+  const vignettes: { cle: string; noeud: ReactNode }[] = [];
+  const lignesSansCase: { cle: string; titre: string; noeud: ReactNode }[] = [];
+  const blocsEnEchec: { cle: string; noeud: ReactNode }[] = [];
+  if (blocs.charge) {
+    vignettes.push({
+      cle: "charge",
+      noeud: (
+        <SectionErreur titre="Charge, erreurs et LCP">
+          <VignetteCharge
+            {...communSeries}
+            mode={modeSeries}
+            lcpP75={vitals.ok ? (byName.LCP?.p75 ?? null) : null}
+            lectures={{
+              vues: vues,
+              erreurs: serieErreurs.ok && serieErreurs.data ? { ok: true, data: serieErreurs.data } : { ok: false },
+              lcp: serieDe("LCP"),
+              lcpPrecedent: precedenteDe(0),
+            }}
+          />
+        </SectionErreur>
+      ),
+    });
+  }
+  if (blocs.hero && lectureHeatmap && !lectureHeatmap.ok) {
+    blocsEnEchec.push({ cle: "heatmap", noeud: <EchecLecture compact titre="Heatmap de latence" /> });
+  } else if (blocs.hero && heatmap) {
+    if (heatmapVue) {
+      vignettes.push({
+        cle: "heatmap",
+        noeud: (
+          <SectionErreur titre="Heatmap de latence">
+            <VignetteHeatmapLatence heatmap={heatmapVue} plage={period.label} />
+          </SectionErreur>
+        ),
+      });
+    } else {
+      lignesSansCase.push({
+        cle: "heatmap",
+        titre: "Heatmap de latence",
+        noeud: (
+          <LigneSansCase
+            id="heatmap-latence"
+            titre="Heatmap de latence"
+            texte={`aucune mesure ${heatmap.vital} agrégée par heure sur ${period.label}`}
+          />
+        ),
+      });
+    }
+  }
+  if (blocs.historique) {
+    if (grid.ok && grid.data.length > 0) {
+      vignettes.push({
+        cle: "historique",
+        noeud: (
+          <SectionErreur titre="Historique 14 jours">
+            <VignetteHistorique
+              jours={joursHistorique}
+              cellules={grid.data}
+              fuseau={fuseau}
+              zoomHref={gabaritZoomEcran}
+              ouvrees={businessHours}
+              hrefs={hrefsHeures}
+            />
+          </SectionErreur>
+        ),
+      });
+    } else if (grid.ok) {
+      lignesSansCase.push({
+        cle: "historique",
+        titre: "Historique 14 jours",
+        noeud: (
+          <LigneSansCase id="historique" titre={`Historique ${GRID_DAYS} jours`} texte={`aucune mesure Web Vitals sur les ${GRID_DAYS} derniers jours`}>
+            <span className="sr-only" data-testid="historique-fenetre">
+              {" "}
+              ({GRID_DAYS} jours fixes, indépendants de la période ; le jour en cours est incomplet)
+            </span>
+          </LigneSansCase>
+        ),
+      });
+    } else {
+      blocsEnEchec.push({
+        cle: "historique",
+        noeud: (
+          <CarteHistorique
+            jours={joursHistorique}
+            lecture={null}
+            fuseau={fuseau}
+            zoomHref={gabaritZoomEcran}
+            ouvrees={businessHours}
+            hrefs={hrefsHeures}
+          />
+        ),
+      });
+    }
+  }
+  if (blocs.versions) {
+    // Sans releases à comparer : leur liste illisible est une panne, pas « moins de deux ».
+    const release =
+      releases.ok && lueB?.ok && lueA?.ok
+        ? {
+            a: statsRelease(releases.relA, lueA.data, vitauxA),
+            b: statsRelease(releases.relB, lueB.data, vitauxB),
+            source: lueB.data.source,
+            regle: releases.regle,
+            hrefs: { a: lienRelease(releases.relA), b: lienRelease(releases.relB) },
+          }
+        : null;
+    if (release) {
+      vignettes.push({
+        cle: "release",
+        noeud: (
+          <SectionErreur titre="Nouvelle release face à la précédente">
+            {/* La zone et son titre restent : cibles du bandeau (« Dernier déploiement ») et des e2e. */}
+            <section className="flex h-full min-w-0 flex-col [&>button]:grow" aria-labelledby="release-titre" data-testid="zone-release">
+              <h2 id="release-titre" className="sr-only">
+                Nouvelle release face à la précédente
+              </h2>
+              <VignetteRelease
+                a={release.a}
+                b={release.b}
+                plage={period.label}
+                source={release.source}
+                regleChoix={release.regle}
+                hrefs={release.hrefs}
+                toutesLesVersions={
+                  versionsFenetre.ok ? <VersionsTable comparaison={versionsFenetre.data} periodLabel={period.label} /> : undefined
+                }
+              />
+            </section>
+          </SectionErreur>
+        ),
+      });
+    } else if (!releases.ok && versionsFenetre.ok) {
+      lignesSansCase.push({
+        cle: "release",
+        titre: "Nouvelle release face à la précédente",
+        noeud: (
+          <LigneSansCase
+            testId="zone-release"
+            titreId="release-titre"
+            titre="Nouvelle release face à la précédente"
+            texteTestId="release-indisponible"
+            texte={`comparaison désactivée : ${releases.raison}`}
+          />
+        ),
+      });
+    } else {
+      blocsEnEchec.push({
+        cle: "release",
+        noeud: (
+          <section className="min-w-0" aria-labelledby="release-titre" data-testid="zone-release">
+            <h2 id="release-titre" className="sr-only">
+              Nouvelle release face à la précédente
+            </h2>
+            <EchecLecture compact titre="Nouvelle release face à la précédente" />
+          </section>
+        ),
+      });
+    }
+  }
+  if (etatAngle) {
+    const tuile = (enLigne: boolean) => (
+      <SectionErreur titre={LIBELLE_ANGLE_MORT}>
+        <TuileAngleMort
+          etat={etatAngle}
+          href={`${lien("/correlation")}#angles-morts`}
+          regle={regleAngleMort(THRESHOLDS.LCP[0])}
+          plage={period.label}
+          enLigne={enLigne}
+        />
+      </SectionErreur>
+    );
+    if (etatAngle.kind === "ok") vignettes.push({ cle: "angle", noeud: tuile(false) });
+    else if (etatAngle.kind === "echec") blocsEnEchec.push({ cle: "angle", noeud: tuile(false) });
+    else lignesSansCase.push({ cle: "angle", titre: LIBELLE_ANGLE_MORT, noeud: tuile(true) });
+  }
+
   return (
-    <div className="animate-fade-up">
+    <div className="animate-fade-up flex min-w-0 flex-col gap-4">
       {/* L'onglet actif dit déjà « Vue d'ensemble » : le titre reste pour la structure. */}
       <h1 className="sr-only">Vue d&apos;ensemble</h1>
       {/* Plage personnalisée (case de la heatmap, zoom) : dite dans les DEUX fuseaux
           (R-T) — « 15/07 09:00-10:00 Europe/Paris (07:00-08:00 UTC) ». */}
       {query.range.preset === null && (
-        <p role="note" data-testid="plage-deux-fuseaux" className="-mt-2 mb-4 text-xs text-ink-soft">
+        <p role="note" data-testid="plage-deux-fuseaux" className="-mb-2 text-xs text-ink-soft">
           Plage lue : {libelleDeuxFuseaux(query.range.from, query.range.to, fuseau)}
         </p>
       )}
@@ -734,7 +921,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {sansVisite && query.scope.requestedApp && (
         <div
           data-testid="onboarding-nudge"
-          className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm"
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm"
         >
           <div className="min-w-0 flex-1 basis-64 space-y-1 text-ink">
             <p>
@@ -758,7 +945,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       )}
 
       {/* Zone 1 — vues préréglées (P13) : une vue ne change que la population. */}
-      <div className="mb-4 min-w-0">
+      <div className="min-w-0">
         <PresetBar vues={vuesPrereglees} actif={null} />
       </div>
 
@@ -783,7 +970,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           jamais un delta calculé sur une période à moitié mesurée (§ 3.2). */}
       {(blocs.vitals || blocs.trafic) &&
         (notesComparaison.length > 0 || precedenteIllisible || comparaison.mode === "release") && (
-          <div role="note" data-testid="note-comparaison" className="mb-4 space-y-1 text-xs text-ink-soft">
+          <div role="note" data-testid="note-comparaison" className="-my-1 space-y-1 text-xs text-ink-soft">
             {/* UN bandeau, même quand les deux rangées ont chacune leur raison (recette du
                 26/09/2026 : deux phrases presque identiques l'une sous l'autre). */}
             {notesComparaison.length > 0 && <p>Aucun écart affiché — {fusionnerNotes(notesComparaison)}.</p>}
@@ -807,7 +994,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           courbe en fond ; un clic ouvre sa fenêtre (graphique, détail, source). */}
       {(blocs.sante || blocs.trafic || blocs.vitals) && (
         <SectionErreur titre="Mesures">
-          <div className="mb-4 min-w-0">
+          <div className="min-w-0">
             <div
               className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 lg:grid-rows-2"
               data-testid="grille-mesures"
@@ -883,7 +1070,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               ))}
             </div>
             {blocs.vitals && etatEchantillon && (
-              <div className="mt-3">
+              <div className="mt-2">
                 <EtatSurface compact etat={etatEchantillon} />
               </div>
             )}
@@ -893,9 +1080,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
       {/* R2 (spec A2 § 5.2) — « qu'est-ce qui a changé ? » : le HERO sur 8 colonnes et
           les constats sur 4, côte à côte dès 1280 px ; empilés en dessous, le hero
-          d'abord (il commençait à y = 1 242 à 1440 px, derrière les constats : audit
-          A1). Trois petits multiples, trois unités, trois échelles. */}
-      <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-12">
+          d'abord. Trois vignettes par onglet, de même hauteur : changer d'onglet ne fait
+          pas sauter la page. */}
+      {(blocs.hero || !constatsVides) && (
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-12">
         {blocs.hero && (
           <div className={`min-w-0 ${constatsVides ? "xl:col-span-12" : "xl:col-span-8"}`}>
             <SectionErreur titre="Graphique principal">
@@ -973,7 +1161,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         {/* Recette du 30/09/2026 : rien à signaler, pas de colonne — le hero prend la
             largeur. « Aucun constat » reste dit, une fois, dans le bandeau du haut. */}
         {!constatsVides && (
-        <div id="constats" className={`min-w-0 scroll-mt-16 ${blocs.hero ? "xl:col-span-4" : "xl:col-span-12"}`}>
+        <div id="constats" className={`flex min-w-0 scroll-mt-16 flex-col ${blocs.hero ? "xl:relative xl:col-span-4" : "xl:col-span-12"}`}>
+          {/* À côté du graphique principal, la colonne ne dépasse pas SA hauteur : au-delà,
+              les constats défilent dans la colonne, la rangée ne s'allonge pas. La carte n'est
+              pas étirée : un constat seul dans une grande carte blanche se lisait « vide »
+              (audit du 01/10/2026 : contenu sur 32 % de la carte). */}
+          <div className={`flex min-w-0 grow flex-col ${blocs.hero ? "xl:absolute xl:inset-0 xl:overflow-y-auto" : ""}`}>
           <SectionErreur titre="Constats">
             {constats.echecs.length > 0 && (
               <div className="mb-2">
@@ -989,88 +1182,72 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             )}
             <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} ouvertParDefaut reglesEnInfobulle />
           </SectionErreur>
+          </div>
         </div>
         )}
       </div>
-
-      {/* R4 (spec A2 § 5.3) — la forme de l'expérience : la heatmap de latence du LCP. */}
-      {blocs.hero && (heatmap || (lectureHeatmap && !lectureHeatmap.ok)) && (
-        <div className="mb-6 min-w-0">
-          <SectionErreur titre="Heatmap de latence">
-            {heatmap ? <HeatmapLatence heatmap={heatmap} plage={period.label} /> : <EchecLecture titre="Heatmap de latence" />}
-          </SectionErreur>
-        </div>
       )}
 
-      {/* Zone 6 — la dégradation coïncide-t-elle avec la charge ou avec des erreurs ?
-          Trois panneaux empilés, un axe chacun (P5) — 8/12 ; à côté, 4/12, les heures
-          où le robot dit « ok » et les visiteurs attendaient (angle mort). */}
-      {(blocs.charge || etatAngle) && (
-        <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-12">
-          {blocs.charge && (
-            <div className={`min-w-0 ${etatAngle ? "xl:col-span-8" : "xl:col-span-12"}`}>
-              <SectionErreur titre="Charge, erreurs et LCP">
-                <ChargeErreursLcp
-                  {...communSeries}
-                  mode={modeSeries}
-                  lectures={{
-                    vues: vues,
-                    erreurs:
-                      serieErreurs.ok && serieErreurs.data ? { ok: true, data: serieErreurs.data } : { ok: false },
-                    lcp: serieDe("LCP"),
-                    lcpPrecedent: precedenteDe(0),
-                  }}
-                />
-              </SectionErreur>
+      {/* R3 — les formes et les confrontations, en VIGNETTES de même hauteur (recette du
+          30/09/2026) : charge et erreurs, heatmap de latence, historique 14 jours,
+          release face à la précédente, angle mort. Une rangée qui ne se remplit pas
+          étire ses cases (jamais de demi-rangée vide). */}
+      {vignettes.length > 0 && (
+        <div className="flex min-w-0 flex-wrap gap-2" data-testid="rangee-formes">
+          {vignettes.map((v) => (
+            <div key={v.cle} className="flex min-w-0 grow basis-52 flex-col [&>*]:grow" data-vignette={v.cle}>
+              {v.noeud}
             </div>
-          )}
-          {etatAngle && (
-            <div className={`min-w-0 ${blocs.charge ? "xl:col-span-4" : "xl:col-span-12"}`}>
-              <SectionErreur titre={LIBELLE_ANGLE_MORT}>
-                <TuileAngleMort
-                  etat={etatAngle}
-                  href={`${lien("/correlation")}#angles-morts`}
-                  regle={regleAngleMort(THRESHOLDS.LCP[0])}
-                  plage={period.label}
-                />
-              </SectionErreur>
+          ))}
+        </div>
+      )}
+      {/* Une lecture en échec, elle, garde son bloc et son bouton « Réessayer ». */}
+      {blocsEnEchec.length > 0 && (
+        <div className="-mt-2 grid min-w-0 grid-cols-1 gap-2 lg:grid-cols-2" data-testid="blocs-en-echec">
+          {blocsEnEchec.map((l) => (
+            <div key={l.cle} className="min-w-0">
+              {l.noeud}
             </div>
-          )}
+          ))}
         </div>
       )}
 
       {/* Zone 7 — segments classés par GRAVITÉ (P3, IP-Label « top offenders ») :
           p75 du vital choisi, écart à l'ensemble, échantillon faible en fin. Une
-          route ouvre son panneau sur `/pages`, une autre dimension `/pages` filtré. */}
-      {/* « Segments classés », pas « les plus dégradés » : la liste compte aussi des
-          segments MEILLEURS que l'ensemble (recette du 26/09/2026), rangés après. */}
+          route ouvre son panneau sur `/pages`, une autre dimension `/pages` filtré.
+          « Segments classés », pas « les plus dégradés » : la liste compte aussi des
+          segments MEILLEURS que l'ensemble (recette du 26/09/2026), rangés après.
+          Un TABLEAU CLASSÉ dense (charte § 3.5) : dix lignes, puis « Voir les N autres ». */}
       {decoupage && (
         <SectionErreur titre="Segments classés">
-          {triLu.ignore && (
-            <p role="note" className="mb-2 text-xs text-ink-soft" data-testid="impact-avertissement">
-              {triLu.ignore}
-            </p>
-          )}
-          {noteVital && (
-            <p role="note" className="mb-2 text-xs text-ink-soft" data-testid="impact-vital-refuse">
-              {noteVital}
-            </p>
+          {(triLu.ignore || noteVital) && (
+            <div className="-mb-2 space-y-1">
+              {triLu.ignore && (
+                <p role="note" className="text-xs text-ink-soft" data-testid="impact-avertissement">
+                  {triLu.ignore}
+                </p>
+              )}
+              {noteVital && (
+                <p role="note" className="text-xs text-ink-soft" data-testid="impact-vital-refuse">
+                  {noteVital}
+                </p>
+              )}
+            </div>
           )}
           {!decoupe.ok ? (
-            <div className="mb-6">
-              <EchecLecture titre="Segments classés" />
-            </div>
+            <EchecLecture titre="Segments classés" />
           ) : (
             decoupe.data &&
             segments && (
               <ImpactTable
                 titre="Segments classés"
+                dimension={decoupage}
                 // « Vital », et non « Classé par » : le vital et l'ordre (gravité, volume)
                 // sont DEUX réglages, rangés dans la même rangée de la table — deux
                 // sélecteurs « classer par » l'un au-dessus de l'autre se confondaient.
                 commandes={
                   <nav aria-label="Vital qui classe les segments" className="flex flex-wrap items-center gap-1 text-xs">
-                    <span className="text-ink-soft">Vital :</span>
+                    <span className="text-ink-soft">Vital</span>
                     {VITAUX_DECOUPES.map((v) => (
                       <Link
                         key={v}
@@ -1078,6 +1255,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                         scroll={false}
                         aria-current={v === vitalClasse ? "true" : undefined}
                         data-testid={`impact-vital-${v}`}
+                        aria-label={`${v} p75`}
                         className={`rounded-md border px-2 py-0.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
                           // TEXTE en `perf-ink` sur la teinte `bg-perf/10` (4,5:1 en clair, F01).
                           v === vitalClasse
@@ -1085,7 +1263,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                             : "border-line text-ink-soft hover:text-ink"
                         }`}
                       >
-                        {v} p75
+                        {v}
                       </Link>
                     ))}
                   </nav>
@@ -1120,115 +1298,22 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </SectionErreur>
       )}
 
-      {/* Zone 8 — la dernière release face à la précédente, même fenêtre (§ 3.2). La
-          règle de choix est écrite ; sous deux releases, la comparaison se tait et dit
-          pourquoi. */}
-      {blocs.versions && (
-        <section className="mb-6 min-w-0" aria-labelledby="release-titre" data-testid="zone-release">
-          <h2 id="release-titre" className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-            Nouvelle release face à la précédente
-          </h2>
-          <SectionErreur titre="Nouvelle release face à la précédente">
-            {!releases.ok ? (
-              // Sans releases à comparer : leur liste illisible est une panne, pas « moins de deux ».
-              !versionsFenetre.ok ? (
-                <EchecLecture titre="Nouvelle release face à la précédente" />
-              ) : (
-                <div className="card p-4" data-testid="release-indisponible">
-                  <EtatSurface compact etat={{ kind: "partiel", raison: `comparaison désactivée : ${releases.raison}` }} />
-                </div>
-              )
-            ) : !lueB?.ok || !lueA?.ok ? (
-              <EchecLecture titre="Nouvelle release face à la précédente" />
-            ) : (
-              <ReleaseCompare
-                a={statsRelease(releases.relA, lueA.data, vitauxA)}
-                b={statsRelease(releases.relB, lueB.data, vitauxB)}
-                plage={period.label}
-                source={lueB.data.source}
-                regleChoix={releases.regle}
-                hrefs={{ a: lienRelease(releases.relA), b: lienRelease(releases.relB) }}
-                toutesLesVersions={
-                  versionsFenetre.ok ? <VersionsTable comparaison={versionsFenetre.data} periodLabel={period.label} /> : undefined
-                }
-              />
-            )}
-          </SectionErreur>
-        </section>
-      )}
-
-      {/* Zone 9 — historique 14 jours fixes, jour × heure dans le fuseau de l'app,
-          échelle SÉQUENTIELLE (90 % et 50 % ne sont pas des seuils publiés : R-S). Une
-          case ouvre son heure en instants UTC. Rendu seulement si le bloc est allumé. */}
-      {blocs.historique && (
-        <div className="mb-6 min-w-0">
-          <SectionErreur titre="Historique 14 jours">
-            <Figure
-              titre={`Historique ${GRID_DAYS} jours`}
-              aide="healthGrid"
-              id="historique"
-              etat={
-                !grid.ok
-                  ? { kind: "erreur", titre: `Historique ${GRID_DAYS} jours` }
-                  : grid.data.length === 0
-                    ? { kind: "vide", population: "mesure Web Vitals", plage: `les ${GRID_DAYS} derniers jours` }
-                    : undefined
-              }
-              meta={
-                <>
-                  <span data-testid="historique-fenetre">
-                    {GRID_DAYS} jours fixes, indépendants de la période ; le jour en cours est incomplet
-                  </span>
-                  <span>une case = une heure, fuseau de l&apos;app ({nomFuseau(fuseau)})</span>
-                  <span>légende : % de mesures Bon, pondéré (LCP ×2)</span>
-                </>
-              }
-              lecture={
-                // Une phrase de lecture, pas deux (audit A1 T5 : 1 553 mots sur cet écran).
-                businessHours
-                  ? "Lun–Ven, 8 h–19 h. Plus foncé : plus de mesures « Bon » (une seule teinte, sans verdict)."
-                  : "Case vide : aucune visite sur ce créneau. Plus foncé : plus de mesures « Bon » (une seule teinte, sans verdict)."
-              }
-            >
-              {/* Heures ouvrées (Lun–Ven, 8 h–19 h) : les créneaux où l'on attend du trafic. */}
-              <div className="mb-3 flex w-fit gap-0.5 rounded-lg border border-line bg-panel2 p-0.5">
-                <Link
-                  href={hrefWith(null)}
-                  scroll={false}
-                  aria-current={!businessHours ? "true" : undefined}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                    !businessHours ? "bg-panel text-ink shadow-sm ring-1 ring-line" : "text-ink-soft hover:text-ink"
-                  }`}
-                >
-                  24 h/24
-                </Link>
-                <Link
-                  href={hrefWith("business")}
-                  scroll={false}
-                  aria-current={businessHours ? "true" : undefined}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                    businessHours ? "bg-panel text-ink shadow-sm ring-1 ring-line" : "text-ink-soft hover:text-ink"
-                  }`}
-                >
-                  Heures ouvrées
-                </Link>
-              </div>
-              {grid.ok && (
-                <HealthHeatmap
-                  jours={joursLocaux(GRID_DAYS, fuseau)}
-                  cellules={grid.data}
-                  fuseau={fuseau}
-                  zoomHref={gabaritZoomEcran}
-                  businessOnly={businessHours}
-                />
-              )}
-            </Figure>
-          </SectionErreur>
+      {/* Ce qui n'a rien à dessiner : UNE ligne grise pour tous (lecture vide, comparaison
+          impossible, capacité non collectée), jamais une grande boîte chacun — sous les
+          classements, pour laisser au-dessus du pli ce qui a des chiffres. */}
+      {lignesSansCase.length > 0 && (
+        <div
+          className="card flex min-w-0 flex-wrap items-baseline gap-x-6 gap-y-1.5 px-4 py-2.5 text-xs text-ink-soft"
+          data-testid="lignes-sans-case"
+        >
+          {lignesSansCase.map((l) => (
+            <Fragment key={l.cle}>{l.noeud}</Fragment>
+          ))}
         </div>
       )}
 
       {/* Anomalies LCP (24 h) : la section existe toujours — zéro anomalie est une
-          information (P6). Cible du badge du bandeau de santé. */}
+          information (P6), sur une ligne repliée. Cible du badge du bandeau de santé. */}
       {blocs.anomalies && (
         <SectionErreur titre="Anomalies">
           {health.ok ? (
@@ -1248,9 +1333,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               }}
             />
           ) : (
-            <div className="mb-6">
-              <EchecLecture titre="Anomalies" />
-            </div>
+            <EchecLecture titre="Anomalies" />
           )}
         </SectionErreur>
       )}

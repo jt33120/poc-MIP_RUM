@@ -169,6 +169,8 @@ test("/ : un seau sans mesure est un trou, la courbe se coupe", async ({ page })
 test("/ : aucun graphique à deux axes y ; « Charge, erreurs et LCP » en trois panneaux sur la même grille", async ({ page }) => {
   await login(page);
   await page.goto(`${consoleUrl}/?app=${APP_ID}&period=24h`, { waitUntil: "domcontentloaded" });
+  // 30/09/2026 : sur la page, un panneau compact ; les trois graphiques s'ouvrent en grand.
+  await page.getByTestId("vignette-charge").click();
   const charge = page.locator("#charge-erreurs-lcp");
   await expect(charge.locator('[data-testid="panneau-lcp"] .recharts-wrapper')).toHaveCount(1, { timeout: 15_000 });
   // Les erreurs de ce jeu n'ont pas de source déclarée : hors du panneau « navigateur »

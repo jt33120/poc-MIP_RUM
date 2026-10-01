@@ -17,6 +17,12 @@
 // sont rendus par le serveur ; le choix n'affiche que le sien, en CSS (`:has`), sans
 // JavaScript ni relecture. Chaque dessin garde les seuils web.dev de SON vital
 // (`lib/rating.ts`). Sans `:has`, le vital par défaut reste affiché.
+//
+// SUR LA PAGE, UNE VIGNETTE (recette du 30/09/2026 : « heatmap vide en grande
+// boîte », « trop de légendes »). La Vue d'ensemble montre le dessin réduit, sans
+// légende ; un clic ouvre la carte entière — sélecteur, légende chiffrée, méthode,
+// alternative. Sans aucune mesure, pas de vignette : l'écran le dit sur une ligne.
+import { FicheMesure } from "@/components/charts/FicheMesure";
 import { Figure, TableAlternative, type AlternativeTexte } from "@/components/charts/Figure";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { formater } from "@/lib/fmt-ids";
@@ -25,8 +31,11 @@ import { positionLog, TRANCHES, MESURES_MIN_COLONNE, type Heatmap } from "@/lib/
 import { PALIERS_SEQUENTIELLE_JETONS, RATING_JETON, SERIE, sequentielleJeton } from "@/lib/palette";
 import { THRESHOLDS } from "@/lib/rating";
 import { libelleSeau, libelleSeauComplet } from "@/lib/series";
+import { DessinVignette, EnteteVignette } from "./Vignette";
 
 const HAUTEUR = 180;
+/** Hauteur du dessin réduit d'une vignette. */
+const HAUTEUR_APERCU = 84;
 const pct = (p: number) => `${Math.round(p * 100)} %`;
 const totalDe = (h: Heatmap) => h.colonnes.reduce((s, c) => s + c.n, 0);
 
@@ -54,6 +63,10 @@ const LECTURE_COMMUNE = (
   </>
 );
 
+/** La source des mesures, écrite dans la carte (charte : chaque figure cite sa source). */
+const SOURCE =
+  "Source : SDK MIP RUM dans la page (bibliothèque web-vitals, API Performance du navigateur), histogrammes horaires agrégés par le serveur ; seuils web.dev (Google).";
+
 export function HeatmapLatence({ heatmap, plage }: { heatmap: Heatmap; plage: string }) {
   const choix = heatmap.choix && heatmap.choix.length > 1 ? heatmap.choix : null;
   if (!choix) return <HeatmapUnVital heatmap={heatmap} plage={plage} />;
@@ -73,7 +86,7 @@ export function HeatmapLatence({ heatmap, plage }: { heatmap: Heatmap; plage: st
         }
         lecture={
           <>
-            {LECTURE_COMMUNE} Le CLS n&apos;est pas proposé : c&apos;est un score sans unité, pas une durée.
+            {LECTURE_COMMUNE} Le CLS n&apos;est pas proposé : c&apos;est un score sans unité, pas une durée. {SOURCE}
           </>
         }
       >
@@ -148,11 +161,56 @@ function HeatmapUnVital({ heatmap, plage }: { heatmap: Heatmap; plage: string })
           <span>{plage}</span>
         </>
       }
-      lecture={LECTURE_COMMUNE}
+      lecture={
+        <>
+          {LECTURE_COMMUNE} {SOURCE}
+        </>
+      }
       alternative={alternativeDe(heatmap)}
     >
       <DessinHeatmap heatmap={heatmap} testId="heatmap-latence" />
     </Figure>
+  );
+}
+
+/**
+ * La heatmap à montrer en vignette : celle du vital demandé s'il a des mesures, sinon
+ * la première du choix qui en a ; `null` si aucune n'en a (l'écran le dit sur une
+ * ligne). Son vital devient celui que la carte ouvre coché.
+ */
+export function heatmapAffichee(heatmap: Heatmap): Heatmap | null {
+  const candidates = heatmap.choix && heatmap.choix.length > 1 ? [heatmap, ...heatmap.choix] : [heatmap];
+  const h = candidates.find((c) => totalDe(c) > 0);
+  return h ? { ...h, choix: heatmap.choix } : null;
+}
+
+/**
+ * La vignette de la Vue d'ensemble : le dessin réduit du vital affiché, sans légende ;
+ * la carte entière (sélecteur, légende, méthode, alternative) dans sa fenêtre.
+ */
+export function VignetteHeatmapLatence({ heatmap, plage }: { heatmap: Heatmap; plage: string }) {
+  const total = totalDe(heatmap);
+  return (
+    <FicheMesure
+      titre={`Heatmap de latence ${heatmap.vital}, ${plage}`}
+      ariaLabel={`Heatmap de latence ${heatmap.vital} : ${heatmap.colonnes.length} heures, ${formater("count", total)} mesures — ouvrir la carte`}
+      testId="vignette-heatmap-latence"
+      case={
+        <>
+          <EnteteVignette
+            titre={`Heatmap de latence · ${heatmap.vital}`}
+            meta={`${heatmap.colonnes.length} h · ${formater("count", total)} mes.`}
+          />
+          <DessinVignette>
+            <DessinHeatmap heatmap={heatmap} testId="heatmap-latence-apercu" apercu />
+          </DessinVignette>
+        </>
+      }
+    >
+      <div className="mt-3">
+        <HeatmapLatence heatmap={heatmap} plage={plage} />
+      </div>
+    </FicheMesure>
   );
 }
 
@@ -178,11 +236,16 @@ function alternativeDe(heatmap: Heatmap): AlternativeTexte {
   };
 }
 
-/** Le dessin d'un vital : la grille colorée, la p75, les seuils web.dev DE CE VITAL, la légende. */
-function DessinHeatmap({ heatmap, testId }: { heatmap: Heatmap; testId: string }) {
+/**
+ * Le dessin d'un vital : la grille colorée, la p75, les seuils web.dev DE CE VITAL, la
+ * légende. `apercu` : le dessin réduit d'une vignette — deux graduations par axe, ni
+ * légende ni infobulle (elles sont dans la carte ouverte).
+ */
+function DessinHeatmap({ heatmap, testId, apercu = false }: { heatmap: Heatmap; testId: string; apercu?: boolean }) {
   const { bornes, colonnes, partMax, vital } = heatmap;
   const nCol = colonnes.length;
   const seuils = THRESHOLDS[vital] ?? null;
+  const hauteur = apercu ? HAUTEUR_APERCU : HAUTEUR;
   const yDe = (v: number) => TRANCHES * (1 - positionLog(v, bornes));
   const p75 = colonnes.map((c, i) => (c.p75 == null ? null : `${i + 0.5},${yDe(c.p75)}`));
   // La polyligne s'interrompt sur une heure sans mesure : jamais de trait qui la traverse.
@@ -191,17 +254,26 @@ function DessinHeatmap({ heatmap, testId }: { heatmap: Heatmap; testId: string }
     if (pt == null) segments.push([]);
     else segments[segments.length - 1].push(pt);
   }
-  const etiquettesY = [0, 6, 12, 18, 24].map((k) => ({ k, texte: formater("ms", bornes[k]) }));
-  const etiquettesX = nCol > 0 ? [...new Set([0, Math.floor((nCol - 1) / 2), nCol - 1])] : [];
-  // Un motif par dessin : quatre dessins dans la page ne partagent pas un identifiant.
-  const motif = `heatmap-hachures-${vital}`;
+  const etiquettesY = (apercu ? [0, 24] : [0, 6, 12, 18, 24]).map((k) => ({ k, texte: formater("ms", bornes[k]) }));
+  const etiquettesX = nCol > 0 ? [...new Set(apercu ? [0, nCol - 1] : [0, Math.floor((nCol - 1) / 2), nCol - 1])] : [];
+  // Un motif par dessin : les dessins de la page (vignette, carte, quatre vitaux) ne
+  // partagent pas un identifiant.
+  const motif = `heatmap-hachures-${vital}${apercu ? "-apercu" : ""}`;
 
   return (
     <>
       <div className="flex min-w-0 gap-1" data-testid={testId}>
-        <div className="relative w-12 shrink-0 text-[10px] tabular-nums text-ink-soft" style={{ height: HAUTEUR }} aria-hidden="true">
+        <div
+          className={`relative shrink-0 text-[10px] tabular-nums text-ink-soft ${apercu ? "w-10" : "w-12"}`}
+          style={{ height: hauteur }}
+          aria-hidden="true"
+        >
           {etiquettesY.map(({ k, texte }) => (
-            <span key={k} className="absolute right-1 translate-y-1/2 whitespace-nowrap" style={{ bottom: `${(k / TRANCHES) * 100}%` }}>
+            <span
+              key={k}
+              className={`absolute right-1 whitespace-nowrap ${k === 0 && apercu ? "" : "translate-y-1/2"}`}
+              style={{ bottom: `${(k / TRANCHES) * 100}%` }}
+            >
               {texte}
             </span>
           ))}
@@ -211,9 +283,14 @@ function DessinHeatmap({ heatmap, testId }: { heatmap: Heatmap; testId: string }
             viewBox={`0 0 ${Math.max(nCol, 1)} ${TRANCHES}`}
             preserveAspectRatio="none"
             width="100%"
-            height={HAUTEUR}
-            role="img"
-            aria-label={`Heatmap de latence ${vital} : ${nCol} heures, ${TRANCHES} tranches logarithmiques de ${formater("ms", bornes[0])} à ${formater("ms", bornes[TRANCHES])}, part des mesures de chaque heure`}
+            height={hauteur}
+            role={apercu ? undefined : "img"}
+            aria-hidden={apercu ? true : undefined}
+            aria-label={
+              apercu
+                ? undefined
+                : `Heatmap de latence ${vital} : ${nCol} heures, ${TRANCHES} tranches logarithmiques de ${formater("ms", bornes[0])} à ${formater("ms", bornes[TRANCHES])}, part des mesures de chaque heure`
+            }
             className="block rounded-sm bg-panel"
           >
             <defs>
@@ -225,7 +302,9 @@ function DessinHeatmap({ heatmap, testId }: { heatmap: Heatmap; testId: string }
               c.parts.map((p, k) =>
                 p == null ? null : (
                   <rect key={`${i}-${k}`} x={i} y={TRANCHES - 1 - k} width={1} height={1} fill={sequentielleJeton(partMax > 0 ? p / partMax : 0)}>
-                    <title>{`${libelleSeauComplet(c.t, 3600, FUSEAU_AFFICHAGE)} · ${trancheDeK(bornes, k)} · ${pct(p)} des mesures (${formater("count", c.n)})`}</title>
+                    {!apercu && (
+                      <title>{`${libelleSeauComplet(c.t, 3600, FUSEAU_AFFICHAGE)} · ${trancheDeK(bornes, k)} · ${pct(p)} des mesures (${formater("count", c.n)})`}</title>
+                    )}
                   </rect>
                 ),
               ),
@@ -262,26 +341,28 @@ function DessinHeatmap({ heatmap, testId }: { heatmap: Heatmap; testId: string }
           </div>
         </div>
       </div>
-      <ul className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft" data-testid="legende-heatmap">
-        <li className="flex items-center gap-1.5">
-          <span>0 %</span>
-          <span className="flex" aria-hidden="true">
-            {PALIERS_SEQUENTIELLE_JETONS.map((c) => (
-              <span key={c} className="inline-block h-2.5 w-4" style={{ background: c }} />
-            ))}
-          </span>
-          <span>{pct(partMax)} des mesures de l&apos;heure</span>
-        </li>
-        <li className="flex items-center gap-1.5">
-          <span className="inline-block h-0.5 w-4" style={{ background: SERIE.principale }} aria-hidden="true" />
-          p75 de l&apos;heure
-        </li>
-        {seuils && (
-          <li className="flex min-w-0 items-center gap-1.5 [overflow-wrap:anywhere]">
-            seuils web.dev du {vital} : {formater("ms", seuils[0])} et {formater("ms", seuils[1])} (tirets)
+      {!apercu && (
+        <ul className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft" data-testid="legende-heatmap">
+          <li className="flex items-center gap-1.5">
+            <span>0 %</span>
+            <span className="flex" aria-hidden="true">
+              {PALIERS_SEQUENTIELLE_JETONS.map((c) => (
+                <span key={c} className="inline-block h-2.5 w-4" style={{ background: c }} />
+              ))}
+            </span>
+            <span>{pct(partMax)} des mesures de l&apos;heure</span>
           </li>
-        )}
-      </ul>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-0.5 w-4" style={{ background: SERIE.principale }} aria-hidden="true" />
+            p75 de l&apos;heure
+          </li>
+          {seuils && (
+            <li className="flex min-w-0 items-center gap-1.5 [overflow-wrap:anywhere]">
+              seuils web.dev du {vital} : {formater("ms", seuils[0])} et {formater("ms", seuils[1])} (tirets)
+            </li>
+          )}
+        </ul>
+      )}
     </>
   );
 }
