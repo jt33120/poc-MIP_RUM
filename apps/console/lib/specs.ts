@@ -375,7 +375,7 @@ export const MESURES: Mesure[] = [
     table: "rum_span",
     module: "packages/rum-sdk/src/apispans.ts",
     detail:
-      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un arbre enraciné. Elle n'est pas encore une chronologie — un span part avec un début et une fin sur la même milliseconde, et la durée réelle ne voyage que dans un attribut propre à MIP. Un seul saut : du navigateur au serveur, pas d'un serveur à l'autre.",
+      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un arbre enraciné. Chaque appel y a sa durée réelle — son span s'ouvre au départ de la requête et se ferme à la réponse — et les attributs HTTP stables d'OpenTelemetry (http.request.method, url.full, http.response.status_code, error.type d'un appel en échec) à côté des anciens. La page vue racine reste un instant. Un seul saut : du navigateur au serveur, pas d'un serveur à l'autre.",
   },
   // Côté serveur, aucun capteur maison depuis le 29/09/2026 : l'émetteur est
   // l'agent OpenTelemetry officiel du langage du client, hors de ce dépôt. Le
@@ -448,19 +448,16 @@ export interface AngleMort {
 
 export const ANGLES_MORTS: AngleMort[] = [
   {
-    label: "Conventions sémantiques OpenTelemetry",
-    // Ce qui reste de l'ancienne ligne « Spans OTLP plats », une fois les champs
-    // natifs (parentSpanId, kind, status) émis et la trace enracinée sur la page
-    // vue : la STRUCTURE est standard, le VOCABULAIRE ne l'est pas encore.
-    //
-    // La phrase « un backend tiers affichera donc le waterfall correctement » a
-    // été RETIRÉE d'ici le 09/09/2026 : elle était fausse. Un waterfall se
-    // dessine avec des durées, et nos spans n'en portent pas — cette limite-là
-    // vit maintenant dans le critère « Format sur le fil », où elle est prose et
-    // n'a pas à se falsifier par un marqueur d'absence.
+    label: "Conventions sémantiques OpenTelemetry du SDK React Native",
+    // Ce qui reste de l'ancienne ligne « Spans OTLP plats », puis de la ligne
+    // « Conventions sémantiques OpenTelemetry » : le SDK WEB a rejoint le
+    // vocabulaire standard le 01/10/2026 — attributs HTTP stables, erreur portée
+    // en événement « exception » (packages/rum-sdk/src/otel.ts), et des appels
+    // qui durent (realEmit, packages/rum-sdk/src/index.ts). Le SDK React Native
+    // n'a pas suivi : c'est lui que le marqueur surveille désormais.
     raison:
-      "Les spans sont standard dans leur structure — parenté, nature, issue — mais pas dans leur vocabulaire. Une erreur est émise comme un span nommé « exception » là où OpenTelemetry attend un événement porté par le span concerné, et les attributs HTTP suivent l'ancienne convention http.method / http.url, dépréciée au profit de http.request.method / url.full. Un backend tiers ne comptera donc pas nos erreurs comme des erreurs.",
-    marqueur: ["packages/rum-sdk/src", "http.request.method"],
+      "Le SDK web suit les conventions HTTP stables (http.request.method, url.full, http.response.status_code) et porte chaque erreur dans un événement « exception ». Le SDK React Native n'a pas suivi : ses appels réseau gardent l'ancienne convention http.method / http.url, et ses erreurs ne portent que leur statut d'erreur — un backend tiers les compte, sans en lire le type ni le message à l'endroit standard.",
+    marqueur: ["packages/rum-mobile/src", "http.request.method"],
   },
 ];
 

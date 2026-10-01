@@ -1,5 +1,6 @@
 import { initApiSpans } from "./apispans";
 import { ActionTracker, actionAttrs, initAutomaticActions } from "./actions";
+import { classeAppareil } from "./appareil";
 import { createBreadcrumbTrail, initClickBreadcrumbs, MIP_UI_ATTR, type BreadcrumbTrail } from "./breadcrumbs";
 import { ConsentGate } from "./consent";
 import { currentRoute, initNavigation, scrubUrl } from "./context";
@@ -192,14 +193,21 @@ export function init(cfg: MIPRumConfig): void {
   const tracer = initOtel(cfg);
   // fuseau horaire (B1 : mapping tz -> geo_country à l'ingestion, zéro IP stockée)
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // Classe d'appareil, lue une fois : ni l'user-agent ni l'écran tactile ne
+  // changent pendant la page (finding 2.13, ./appareil.ts).
+  const appareil = classeAppareil(navigator.userAgent, navigator.maxTouchPoints ?? 0);
 
-  // émission réelle : crée le span OTel (ts optionnel = rejeu consent/retry)
+  // émission réelle : crée le span OTel (ts optionnel = rejeu consent/retry).
+  // Un appel réseau DURE : son span s'ouvre au départ de la requête et se ferme
+  // à sa réponse, `http.duration_ms` plus tard (finding 1.4). Il se fermait à
+  // son ouverture, et un backend tiers dessinait une cascade plate. Les autres
+  // signaux restent des instants.
   const realEmit: Emit = (name, attrs, ts) => {
-    const span =
-      ts != null ? tracer.startSpan(name, { startTime: ts }) : tracer.startSpan(name);
+    const debut = ts ?? Date.now();
+    const duree = name === "http.client" ? attrs["http.duration_ms"] : 0;
+    const span = tracer.startSpan(name, { startTime: debut });
     span.setAttributes(attrs as Record<string, string | number>);
-    if (ts != null) span.end(ts);
-    else span.end();
+    span.end(typeof duree === "number" && duree > 0 ? debut + duree : debut);
     // INP/CLS finals arrivent pendant le passage en hidden : flush immédiat
     // pour que le beacon parte avant l'unload
     if (document.visibilityState === "hidden") forceFlush().catch(() => {});
@@ -257,7 +265,7 @@ export function init(cfg: MIPRumConfig): void {
       "mip.visitor_id": current.visitorId,
       "mip.route": currentRoute(),
       "mip.tz": tz,
-      "mip.device_type": /mobile|tablet/i.test(navigator.userAgent) ? "mobile" : "desktop",
+      "mip.device_type": appareil,
       "mip.collection_source": cfg.collectionSource === "extension" ? "extension" : "sdk",
       ...(envelope.context ? { "mip.context": envelope.context } : {}),
       ...(envelope.userId ? { "mip.identity.user_id": envelope.userId } : {}),
