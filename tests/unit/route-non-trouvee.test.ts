@@ -116,6 +116,23 @@ describe("ingestion — une requête qu'aucune route n'a servie n'invente pas de
     expect(flattenOtlp(lot([ancien]), { now: NOW }).spans[0].route).toBe(ROUTE_NON_TROUVEE);
   });
 
+  // Limite écrite dans docs/capteurs-serveur.md § 3 (Go) et § 4 : `otelhttp` 0.71.0 n'écrit
+  // jamais `http.route`, sa route n'est que dans le nom du span. Le nom n'est pas cru en
+  // 404/405 (cas ci-dessus) : un 404 métier sur une route que le ServeMux a résolue perd
+  // donc sa route. Le jour où le motif du nom compte comme route résolue, ce cas change,
+  // et la doc avec lui.
+  it("Go (`otelhttp`) : un 404 ou un 405 sur une route résolue perd sa route, un 500 la garde", () => {
+    const go = (statut: number) => {
+      const span = agentOfficiel(statut, {}, "GET /factures/{id}");
+      span.attributes = span.attributes.map((a) => (a.key === "url.path" ? kv("url.path", "/factures/42") : a));
+      return flattenOtlp(lot([span]), { now: NOW }).spans[0].route;
+    };
+    expect(go(404)).toBe(ROUTE_NON_TROUVEE);
+    expect(go(405)).toBe(ROUTE_NON_TROUVEE);
+    expect(go(500)).toBe("/factures/:id");
+    expect(go(200)).toBe("/factures/:id");
+  });
+
   it("agent officiel : 404 avec `http.route` → route normalisée gardée", () => {
     const rows = flattenOtlp(lot([agentOfficiel(404, { "http.route": "/commandes/<int:commande_id>" })]), { now: NOW });
     expect(rows.spans[0].route).toBe("/commandes/:commande_id");
