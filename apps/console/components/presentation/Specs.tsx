@@ -124,8 +124,8 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
     // ni le texte de la page, ni la valeur d'un champ, ni les octets d'une image
     // ne survivent à l'enregistrement au niveau par défaut. Le niveau se règle
     // par application (`replayMask`), mais son DÉFAUT est le plus protecteur —
-    // un masquage qu'il faut penser à activer n'en est pas un.
-    reel: "Saisies, texte et médias masqués par défaut ; blocs marqués jamais capturés",
+    // un masquage qu'il faut penser à activer n'en est pas un. Démasquage : rejeu-demasquage.spec.ts.
+    reel: "Saisies, texte et médias masqués par défaut ; démasquage zone par zone, champs natifs et contenteditable toujours masqués ; blocs marqués jamais capturés",
     s: "atteint",
   },
   {

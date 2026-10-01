@@ -66,6 +66,28 @@ export interface MIPRumConfig {
    */
   replayMask?: "all" | "media" | "inputs";
   /**
+   * Zones que le rejeu DÉMASQUE, sous `"all"` et `"media"` : un sélecteur CSS
+   * (`"#tableau-commandes, [data-rejeu-clair]"`), qui s'ajoute à la classe
+   * réservée `.mip-rum-unmask`. Le texte d'une zone démasquée et de ses
+   * descendants est enregistré en clair ; ses médias ne sont plus remplacés par
+   * un cadre. Défaut : aucune zone, tout reste masqué.
+   *
+   * Le plancher ne bouge pas : dans la zone, les champs natifs (`input`,
+   * `textarea`, `select`), le texte d'un `contenteditable` et une page en
+   * `designMode` restent masqués, et `.mip-rum-block` l'emporte toujours. Un
+   * widget de saisie maison (valeur affichée dans des `div`, éditeur de code,
+   * code à usage unique en cases) écrit du texte ordinaire : le marquer
+   * `.mip-rum-block`. Un sélecteur refusé par le navigateur, ou inopérant
+   * (pseudo-élément, commentaire), est ignoré avec un avertissement en console.
+   * Sur un navigateur d'avant 2021 (sans `:is()`), le texte se démasque mais les
+   * médias restent bloqués.
+   *
+   * Démasquer, c'est enregistrer en clair : un choix du responsable de
+   * traitement, à faire zone par zone, sur ce qui ne porte pas de donnée
+   * personnelle.
+   */
+  replayUnmask?: string;
+  /**
    * Tracing distribué (v0.4) : false = off ; true (défaut) = propagation
    * traceparent sur les appels same-origin ; string[] = origins SUPPLÉMENTAIRES
    * (ex. 'https://api.exemple.fr') en plus du same-origin.

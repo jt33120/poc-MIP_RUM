@@ -196,7 +196,7 @@ curl -s https://mip-rum-console.vercel.app/api/ingest/v1/traces \
 | `slowResourceMs` | 300 | seuil d'une ressource lente |
 | `requireConsent`, `honorDNT` | `false`, `true` | consentement et refus du navigateur (annexe B) |
 | `beforeSend` | — | dernier filtre des attributs de chaque span ; `null` jette le span |
-| `replay`, `replayMask`, `replayEndpoint` | `false`, `"all"` | rejeu de session : `true` ou un taux 0..1 ; masquage |
+| `replay`, `replayMask`, `replayUnmask`, `replayEndpoint` | `false`, `"all"`, aucune zone | rejeu de session : `true` ou un taux 0..1 ; masquage ; zones démasquées (annexe B) |
 | `trace` | `true` | `traceparent` sur la même origine ; une liste ajoute d'autres origines |
 | `captureErrors` | — | voies d'erreurs opt-in (annexe D) |
 | `frustration`, `forms` | `true`, `true` | clics rageurs et morts ; formulaires champ par champ, sans les valeurs |
@@ -252,6 +252,27 @@ API : `MIPRum.consent(bool)`, `track(nom, props)`, `setUser` / `clearUser`,
 - **Rejeu** : `replayMask: "all"` (défaut) masque saisies, texte et médias ; `"media"`
   laisse le texte ; `"inputs"` ne masque que les saisies (tout ce que l'écran affiche est
   alors enregistré). Un bloc marqué `.mip-rum-block` n'est jamais capturé.
+- **Démasquer une zone du rejeu** : sous `"all"` et `"media"`, un élément de classe
+  `.mip-rum-unmask`, ou visé par l'option `replayUnmask` (un sélecteur CSS, par exemple
+  `"#tableau-commandes, [data-rejeu-clair]"`), est enregistré en clair avec ses
+  descendants : leur texte, et leurs médias, qui ne sont plus remplacés par un cadre.
+  Démasquer, c'est enregistrer en clair : un choix du client, responsable de traitement,
+  à réserver à ce qui ne porte pas de donnée personnelle (menus, libellés, tableaux de
+  référence). Ce qui reste masqué dans une zone démasquée : les champs natifs (valeur
+  d'un `input`, `textarea`, `select` et texte de ses options), le texte d'un
+  `contenteditable` ou d'une page en `designMode`, et les blocs `.mip-rum-block`, qui
+  l'emportent toujours. Un widget de saisie maison (valeur choisie affichée dans des
+  `div`, éditeur de code, code à usage unique en cases) écrit du texte ordinaire : dans
+  une zone démasquée, il part en clair s'il n'est pas marqué `.mip-rum-block`. Cacher
+  une partie d'une zone (« montre ce tableau, cache cette colonne ») ne se fait que par
+  bloc : `.mip-rum-block` la remplace par un cadre vide de même taille ; rien ne la
+  remasque en `*` à l'intérieur de la zone (la classe `rr-mask` de rrweb y est sans
+  effet). Un sélecteur que le navigateur refuse, ou qu'il accepte sans qu'il puisse
+  viser un élément (pseudo-élément `::before`, commentaire `/*`), est ignoré, avec un
+  avertissement en console (`[mip-rum] replayUnmask ignoré`). Sur un navigateur sans
+  `:is()` (avant 2021), le texte se démasque, les médias restent bloqués. Le démasquage
+  ne traverse ni un shadow DOM ni une iframe : leur contenu reste masqué, sauf zone
+  posée à l'intérieur.
 - **Formulaires** : identifiants de champ et durées seulement, jamais les valeurs.
 - **Sans cookie** : la session vit dans `localStorage` (30 min d'inactivité) ; le
   visiteur est un tirage aléatoire, sans lien avec le terminal. Query strings et
@@ -374,7 +395,7 @@ vieux : c'est ce qu'un redémarrage emporterait.
 
 ## Annexe H — Poids et impact sur la page
 
-- `mip-rum.js` : **22,6 Ko gzip** (64,7 Ko brut, build du 29/09/2026), sous le budget de
+- `mip-rum.js` : **23,2 Ko gzip** (66,2 Ko brut, build du 01/10/2026), sous le budget de
   35 Ko gzip que `packages/rum-sdk/build.mjs` fait respecter. Le rejeu est un second
   fichier (`mip-rum-replay.js`, 56,7 Ko gzip), chargé seulement si `replay` est allumé.
 - Envoi par lots (toutes les `flushIntervalMs`), vidés par `sendBeacon` quand la page
