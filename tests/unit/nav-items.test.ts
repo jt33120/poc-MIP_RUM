@@ -36,12 +36,15 @@ describe("activeCategory", () => {
     ["/goals", "Usages"],
     ["/sessions/s-1", "Usages"],
     ["/retention", "Usages"],
-    ["/forecast", "Fiabilité"],
+    // Recette du 01/10/2026 : Tendances sous Performance ; Explorer hors menu (la loupe),
+    // Journal et Tableaux de bord dans « Données ».
+    ["/forecast", "Performance"],
     ["/alerts", "Fiabilité"],
-    ["/events", "Explorer"],
-    ["/explorer/views", "Explorer"],
-    ["/dashboards", "Explorer"],
-    ["/dashboards/abc", "Explorer"],
+    ["/events", "Données"],
+    ["/explorer", "Données"],
+    ["/explorer/views", "Données"],
+    ["/dashboards", "Données"],
+    ["/dashboards/abc", "Données"],
   ])("%s → %s", (chemin, categorie) => {
     expect(activeCategory(chemin)?.label).toBe(categorie);
   });
@@ -64,7 +67,7 @@ describe("CATEGORIES (§ 2.2)", () => {
       "Synthétique × RUM",
       "Usages",
       "Fiabilité",
-      "Explorer",
+      "Données",
       "API et MCP",
     ]);
     expect(ouvertes().map((c) => [c.href, c.icon])).toEqual([
@@ -72,13 +75,15 @@ describe("CATEGORIES (§ 2.2)", () => {
       ["/correlation", "compare"],
       ["/sessions", "users"],
       ["/slo", "target"],
-      ["/explorer", "compass"],
+      ["/events", "compass"],
     ]);
   });
 
-  it("aucune barre de sous-onglets ne dépasse six entrées, ni n'en a moins de trois", () => {
+  // Deux au moins (01/10/2026) : Fiabilité (SLO, Alertes) et Données (Journal, Tableaux
+  // de bord) ont perdu Tendances et Explorer ; une barre d'un seul onglet ne servirait à rien.
+  it("aucune barre de sous-onglets ne dépasse six entrées, ni n'en a moins de deux", () => {
     for (const c of ouvertes()) {
-      expect(sousOnglets(c).length, c.label).toBeGreaterThanOrEqual(3);
+      expect(sousOnglets(c).length, c.label).toBeGreaterThanOrEqual(2);
       expect(sousOnglets(c).length, c.label).toBeLessThanOrEqual(6);
     }
   });
@@ -99,6 +104,7 @@ describe("CATEGORIES (§ 2.2)", () => {
       // Recette du 30/09/2026 : seul le SDK React Native, non publié, l'alimente ;
       // aucun projet n'est mobile. Hors menu, l'adresse reste.
       ["/mobile", "Mobile", true, true],
+      ["/forecast", "Tendances", true, false],
     ]);
     const libelles = Object.fromEntries(ouvertes().flatMap((c) => c.children!.map((l) => [l.href, l.label])));
     expect(libelles["/goals"]).toBe("Conversions");
@@ -135,7 +141,7 @@ describe("sousOnglets et ongletActif", () => {
 
   it("SubNav ne rend pas les liens sousOnglet: false ni horsMenu", () => {
     expect(sousOnglets(perf).map((l) => l.href)).not.toContain("/actions");
-    expect(sousOnglets(perf).map((l) => l.href)).toEqual(["/", "/pages", "/errors", "/ux", "/experience"]);
+    expect(sousOnglets(perf).map((l) => l.href)).toEqual(["/", "/pages", "/errors", "/ux", "/experience", "/forecast"]);
   });
 
   it("un lien masqué allume l'onglet visible qui le précède", () => {
@@ -157,7 +163,7 @@ describe("sousOnglets et ongletActif", () => {
 
   it("aucune autre entrée n'est hors menu", () => {
     const horsMenu = CATEGORIES.flatMap((c) => (c.children ?? []).filter((l) => l.horsMenu).map((l) => l.href));
-    expect(horsMenu).toEqual(["/mobile"]);
+    expect(horsMenu).toEqual(["/mobile", "/explorer"]);
   });
 });
 
@@ -169,7 +175,7 @@ describe("domaineDe (surtitre de PageHeader, § 2.4)", () => {
     ["/tracing/abc", "robot"],
     ["/sessions/abc", "usages"],
     ["/goals", "usages"],
-    ["/forecast", "fiabilite"],
+    ["/forecast", "perf"],
     ["/explorer/views", "explorer"],
     ["/dashboards/abc", "explorer"],
     ["/events", "explorer"],
@@ -240,7 +246,8 @@ describe("ADMINISTRATION — le bloc de la sidebar", () => {
     expect(ongletExact("/")?.label).toBe("Vue d'ensemble");
     expect(ongletExact("/pages")?.label).toBe("Pages");
     expect(ongletExact("/alerts")?.label).toBe("Alertes");
-    expect(ongletExact("/explorer")?.label).toBe("Explorer");
+    // Explorer, hors menu depuis le 01/10/2026 : aucun onglet ne le nomme, son titre reste écrit.
+    expect(ongletExact("/explorer")).toBeUndefined();
     // Onglet interne : l'écran porte son propre onglet (« Interactions · Actions »).
     expect(ongletExact("/actions")?.href).toBe("/actions");
     // Une sous-page dit ce que l'onglet ne dit pas (la trace, le tableau) : titre écrit.

@@ -161,6 +161,8 @@ const NAVIGATION = [
       ["/errors", "Erreurs"],
       ["/ux", "Interactions"],
       ["/experience", "Satisfaction"],
+      // Tendances sous Performance depuis le 01/10/2026 (dérive des Web Vitals).
+      ["/forecast", "Tendances"],
       // « Mobile » hors menu depuis le 30/09/2026 (SDK React Native non publié,
       // aucun projet mobile) : sa route reste, vérifiée plus bas.
     ],
@@ -192,14 +194,13 @@ const NAVIGATION = [
     onglets: [
       ["/slo", "SLO"],
       ["/alerts", "Alertes"],
-      ["/forecast", "Tendances"],
     ],
   },
   {
-    categorie: "Explorer",
-    landing: "/explorer",
+    // Explorer hors menu depuis le 01/10/2026 : on y entre par la loupe de la barre du haut.
+    categorie: "Données",
+    landing: "/events",
     onglets: [
-      ["/explorer", "Explorer"],
       ["/events", "Journal"],
       ["/dashboards", "Tableaux de bord"],
     ],
@@ -207,7 +208,7 @@ const NAVIGATION = [
 ] as const;
 
 /** Routes du périmètre (§ 2.3), /actions comprise : gardée, sans onglet propre ; /mobile aussi : hors menu, adresse gardée. */
-const ROUTES: string[] = [...NAVIGATION.flatMap((c) => c.onglets.map(([href]) => href)), "/actions", "/mobile", "/explorer/views"];
+const ROUTES: string[] = [...NAVIGATION.flatMap((c) => c.onglets.map(([href]) => href)), "/actions", "/mobile", "/explorer", "/explorer/views"];
 
 /** Un écran rendu : un titre, et pas la page d'erreur de Next. */
 async function ecranRendu(page: Page, chemin: string) {

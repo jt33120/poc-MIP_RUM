@@ -68,6 +68,10 @@ export const CATEGORIES: NavCategory[] = [
       // ne menait qu'à un écran vide. La page reste à son adresse, prête pour le
       // premier projet mobile.
       { href: "/mobile", label: "Mobile", horsMenu: true },
+      // Tendances (recette du 01/10/2026) : la dérive des Web Vitals sur 14 jours est
+      // une question de PERFORMANCE, pas de fiabilité ; l'adresse ne change pas.
+      // Ajustement linéaire sur 14 points quotidiens : une tendance, pas une prévision.
+      { href: "/forecast", label: "Tendances" },
     ],
   },
   // Synthétique × RUM : la promesse « synthétique + RUM unifiés », notre
@@ -110,26 +114,24 @@ export const CATEGORIES: NavCategory[] = [
     children: [
       { href: "/slo", label: "SLO" },
       { href: "/alerts", label: "Alertes" },
-      // Ajustement linéaire sur 14 points quotidiens : une tendance, pas une
-      // prévision.
-      { href: "/forecast", label: "Tendances" },
     ],
   },
   {
-    href: "/explorer",
-    label: "Explorer",
+    href: "/events",
+    label: "Données",
     icon: "compass",
     domain: "perf",
     children: [
-      // Explorer générique (P6.4) : la même fenêtre et les mêmes filtres que les
-      // écrans voisins, mais la mesure se compose au lieu d'être prédéfinie. C'est
-      // la destination commune de « Ouvrir dans l'Explorer » de chaque figure.
-      { href: "/explorer", label: "Explorer" },
       // Journal filtrable (liste + facettes + tendance) : il sert l'exploration.
       { href: "/events", label: "Journal" },
       // Un tableau est une composition de requêtes de l'Explorer (widgets v2 =
       // AST Explorer, lib/dashboards.ts) : il vit à côté d'elles, pas des alertes.
       { href: "/dashboards", label: "Tableaux de bord" },
+      // Explorer générique (P6.4) : la mesure se compose au lieu d'être prédéfinie.
+      // Hors menu depuis la recette du 01/10/2026 : on y entre par la loupe de la
+      // barre du haut (`components/Loupe.tsx`) et par « Ouvrir dans l'Explorer » de
+      // chaque figure ; l'adresse ne change pas.
+      { href: "/explorer", label: "Explorer", horsMenu: true },
     ],
   },
   // Retirés du menu (recette du 30/09/2026), les pages restent à leur adresse :
@@ -191,7 +193,7 @@ export const DOMAINE_DE_CATEGORIE = {
   "/correlation": "robot",
   "/sessions": "usages",
   "/slo": "fiabilite",
-  "/explorer": "explorer",
+  "/events": "explorer",
 } as const satisfies Record<string, string>;
 export type DomaineRum = (typeof DOMAINE_DE_CATEGORIE)[keyof typeof DOMAINE_DE_CATEGORIE];
 
