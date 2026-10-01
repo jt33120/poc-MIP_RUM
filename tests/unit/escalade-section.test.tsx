@@ -103,13 +103,23 @@ describe("EscaladeSection", () => {
     expect(t).toContain("N1 après 15 min");
     expect(t).toContain("3 envois · 30 j");
     expect(t).toContain("0 envoi · 30 j");
-    expect(t).toContain("un déclenchement de l'application boutique, de sévérité avertissement ou plus, encore non acquitté 15 min après son déclenchement");
+    expect(t).toContain(
+      "un incident de l'application boutique, de sévérité avertissement ou plus, encore non acquitté 15 min après son premier déclenchement",
+    );
     expect(t).toContain("par ops@exemple.fr");
+  });
+
+  it("l'auteur d'une étape est une adresse de compte : jamais montrée à un lecteur ni à une démonstration", () => {
+    const html = rendre({ admin: false, global: false });
+    expect(html).not.toContain("ops@exemple.fr");
+    expect(html).not.toContain("plateforme@exemple.fr");
   });
 
   it("le grain du planificateur, la cadence lue, en tête de section et dans le détail", () => {
     const t = texte(rendre({ cadenceMin: 30 }));
-    expect(t).toContain("3 étapes · vérifiée à chaque passage du planificateur, toutes les 30 min : un délai plus court part au passage suivant · s'arrête à l'acquittement");
+    expect(t).toContain(
+      "3 étapes · vérifiée à chaque passage du planificateur, toutes les 30 min : chaque délai part au premier passage qui suit son échéance · s'arrête à l'acquittement",
+    );
   });
 
   it("un canal désactivé se voit sur la ligne ; une relance muette sous un niveau plus haut aussi", () => {
@@ -117,9 +127,11 @@ describe("EscaladeSection", () => {
     const t = texte(html);
     expect(t).toContain("canal désactivé");
     expect(t).toContain("— désactivé : rien ne part");
-    // Le niveau 2 de « boutique » relance, mais le niveau 3 global peut passer après.
-    expect(t).toContain("relance à 30 min d'intervalle, 4 fois au plus, muette : le niveau 3 peut passer après");
+    // Le niveau 2 de « boutique » vise un canal désactivé : sa relance ne part pas.
+    expect(t).toContain("relance à 30 min d'intervalle, 4 fois au plus, muette : son canal est désactivé");
     expect(html).toMatch(/line-through[^>]*>relance 30\s*min × 4/);
+    // L'état en mots, lisible sans le trait ni le title.
+    expect(t).toMatch(/relance 30\s*min × 4 · muette/);
     // Le niveau 3 global : dernier niveau, sa relance est active.
     expect(t).toContain("relance à 1 h d'intervalle, 2 fois au plus");
   });
@@ -146,9 +158,13 @@ describe("EscaladeSection", () => {
 
   it("aucune étape : une ligne qui dit l'effet, et le geste pour un administrateur", () => {
     const admin = texte(rendre({ etapes: [] }));
-    expect(admin).toContain("Aucune étape : un déclenchement non acquitté n'est envoyé qu'une fois. + Créer une étape");
+    expect(admin).toContain("Aucune étape : un déclenchement non acquitté ne monte d'aucun niveau. + Créer une étape");
     const lecteur = texte(rendre({ etapes: [], admin: false, global: false }));
-    expect(lecteur).toContain("Aucune étape d'escalade : un déclenchement non acquitté n'est envoyé qu'une fois. Demandez à un administrateur d'en créer une.");
+    expect(lecteur).toContain(
+      "Aucune étape d'escalade : un déclenchement non acquitté ne monte d'aucun niveau. Demandez à un administrateur d'en créer une.",
+    );
+    // L'ancienne phrase était fausse : une règle franchie relève un déclenchement à chaque fenêtre.
+    expect(admin + lecteur).not.toContain("n'est envoyé qu'une fois");
   });
 
   it("aucun canal actif : pas de formulaire, le lien vers les canaux", () => {
@@ -156,6 +172,14 @@ describe("EscaladeSection", () => {
     expect(html).not.toContain('data-testid="form-etape"');
     expect(texte(html)).toContain("Une étape envoie vers un canal actif : aucun n'existe. Ajouter un canal");
     expect(html).toContain('href="#canaux"');
+  });
+
+  it("un refus de création revient en une ligne, formulaire ouvert", () => {
+    const html = rendre({ refus: "le canal choisi n'est pas à la portée de l'étape." });
+    expect(html).toContain('data-testid="escalade-refus"');
+    expect(texte(html)).toContain("Étape non créée — le canal choisi n'est pas à la portée de l'étape.");
+    expect(html).toMatch(/<details[^>]*id="nouvelle-etape"[^>]*open=""/);
+    expect(rendre()).not.toContain('data-testid="escalade-refus"');
   });
 
   it("une base sans v108 : une ligne, sans formulaire ni nom de table", () => {

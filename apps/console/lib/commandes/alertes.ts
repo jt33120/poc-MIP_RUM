@@ -227,8 +227,10 @@ export const activerRegle = commande(
 
 /**
  * Acquitte un déclenchement de l'application de la portée. Depuis migration-v108,
- * l'heure et l'auteur sont gardés : c'est ce qui arrête l'escalade du déclenchement
- * et mesure le délai d'acquittement.
+ * l'heure et l'auteur sont gardés, et le geste vaut pour l'incident : les autres
+ * déclenchements ouverts de la même source (règle, SLO, issue) sont acquittés avec
+ * lui (`acknowledgeAlertEvent`). C'est ce qui arrête l'escalade de l'incident et
+ * mesure le délai d'acquittement.
  */
 export const acquitterEvenement = commande(
   { regle: { auth: "admin", portee: "app", audit: "alert_event.acknowledge" }, chemin: CHEMIN_ID },
@@ -406,8 +408,10 @@ export const creerEtapeEscalade = commande(
       return cree;
     });
     if (id === null) {
+      // `code` : la server action le relit pour revenir sur la page avec le motif.
       return {
         etat: "invalide",
+        code: "canal_hors_portee",
         message: "canal introuvable, ou hors de la portée de l'étape : une étape globale n'envoie qu'à un canal global",
       } as const;
     }

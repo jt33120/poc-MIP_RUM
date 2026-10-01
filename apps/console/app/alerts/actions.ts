@@ -131,9 +131,19 @@ export async function deleteChannelAction(fd: FormData): Promise<void> {
 // Escalade (section de la page /alerts, migration-v108)
 // ---------------------------------------------------------------------------
 
-/** Une étape d'escalade : ses champs ; une étape GLOBALE (sans application), la plateforme seule. */
+/**
+ * Une étape d'escalade : ses champs ; une étape GLOBALE (sans application), la plateforme seule.
+ * Le formulaire propose tous les canaux actifs, quelle que soit l'application choisie :
+ * un canal hors de la portée de l'étape revient sur la page avec son CODE, que la
+ * section traduit, plutôt que l'écran d'erreur générique de Next en production.
+ */
 export async function createEscalationStepAction(fd: FormData): Promise<void> {
-  suite(await executerCommande("creerEtapeEscalade", { corps: champs(fd) }), "/alerts");
+  const r = await executerCommande("creerEtapeEscalade", { corps: champs(fd) });
+  if (r.ok && (r.data as { code?: string }).code === "canal_hors_portee") {
+    redirect("/alerts?etape_refusee=canal#escalade");
+    return;
+  }
+  suite(r, "/alerts");
 }
 
 export async function deleteEscalationStepAction(fd: FormData): Promise<void> {

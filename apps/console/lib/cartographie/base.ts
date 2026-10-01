@@ -104,8 +104,9 @@ export const DOMAINES: readonly Domaine[] = [
       { texte: "Une règle : un seuil, un écart à l'habitude, ou une régression de release.", sources: [`${SQL}/migration-v02.sql:62`] },
       { texte: "Les alertes déclenchées se purgent à 30 jours.", sources: [`${SQL}/migration-v02.sql:75`] },
       {
-        texte: "Une alerte non acquittée s'escalade par niveaux, au passage du scheduler ; l'acquittement garde son heure.",
-        sources: [`${SQL}/migration-v108.sql:56`, `${SQL}/migration-v108.sql:151`],
+        texte:
+          "Un incident non acquitté (règle, SLO ou issue) s'escalade par niveaux selon les étapes réglées, au passage du scheduler ; l'acquittement garde son heure.",
+        sources: [`${SQL}/migration-v108.sql:86`, `${SQL}/migration-v108.sql:197`],
       },
     ],
     tables: [

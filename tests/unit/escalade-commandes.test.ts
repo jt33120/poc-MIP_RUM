@@ -20,7 +20,7 @@ const client = {
   query: vi.fn(async (texte: string, valeurs?: unknown[]) => {
     simul.requetes.push({ texte, valeurs });
     if (texte.includes("to_regclass('public.alert_escalation_step')")) return { rows: [{ v108: simul.v108 }], rowCount: 1 };
-    if (texte.startsWith("update alert_event")) return { rows: [], rowCount: 1 };
+    if (texte.includes("update alert_event")) return { rows: [], rowCount: 1 };
     return { rows: [], rowCount: 1 };
   }),
 };
@@ -44,6 +44,7 @@ vi.mock("@/lib/queries-escalade", async (original) => ({
 const { COMMANDES_CONSOLE } = await import("@/lib/commandes");
 const { etapeDesChamps } = await import("@/lib/commandes/alertes");
 const { createEscalationStepAction, deleteEscalationStepAction, ackEventAction } = await import("@/app/alerts/actions");
+const { redirect } = await import("next/navigation");
 
 const PLATEFORME = { email: "plateforme@mip", role: "admin" as const, apps: null };
 const ADMIN_A = { email: "admin-a@mip", role: "admin" as const, apps: ["app-a"] };
@@ -135,7 +136,7 @@ describe("creerEtapeEscalade", () => {
   it("un canal introuvable ou hors de la portée de l'étape : refusé, rien au journal", async () => {
     simul.insertEtapeEscalade.mockResolvedValue(null);
     const r = await creer(ADMIN_A, CHAMPS);
-    expect(r).toMatchObject({ etat: "invalide", message: expect.stringContaining("canal introuvable") });
+    expect(r).toMatchObject({ etat: "invalide", code: "canal_hors_portee", message: expect.stringContaining("canal introuvable") });
     expect(audits()).toEqual([]);
   });
 
@@ -186,6 +187,23 @@ describe("les server actions de la section « Escalade »", () => {
     expect(simul.insertEtapeEscalade).not.toHaveBeenCalled();
   });
 
+  it("créer : un canal hors de la portée de l'étape revient sur la section avec son code, pas l'écran d'erreur", async () => {
+    simul.insertEtapeEscalade.mockResolvedValue(null);
+    // La destination : dans le `digest` de NEXT_REDIRECT, ou, si le mock de
+    // `next/navigation` s'applique au module de l'action, son dernier appel.
+    let destination: string | null = null;
+    try {
+      await createEscalationStepAction(formulaire(CHAMPS));
+      const appels = vi.mocked(redirect).mock.calls;
+      destination = appels.length ? String(appels[appels.length - 1][0]) : null;
+    } catch (e) {
+      const digest = (e as { digest?: unknown }).digest;
+      if (typeof digest !== "string" || !digest.startsWith("NEXT_REDIRECT")) throw e;
+      destination = digest.split(";")[2] ?? null;
+    }
+    expect(destination).toBe("/alerts?etape_refusee=canal#escalade");
+  });
+
   it("créer : un refus de saisie remonte en toutes lettres", async () => {
     await expect(createEscalationStepAction(formulaire({ ...CHAMPS, repeat_minutes: "60" }))).rejects.toThrow("plafond de relance requis");
   });
@@ -198,7 +216,7 @@ describe("les server actions de la section « Escalade »", () => {
 });
 
 describe("acquitter garde l'heure et l'auteur (v108)", () => {
-  const update = () => simul.requetes.find((r) => r.texte.startsWith("update alert_event"))!;
+  const update = () => simul.requetes.find((r) => r.texte.includes("update alert_event"))!;
 
   it("avec v108 : heure et auteur posés une seule fois, l'application cherchée par règle, SLO ou issue", async () => {
     await ackEventAction(formulaire({ id: "55", app: "app-a" }));
@@ -207,6 +225,15 @@ describe("acquitter garde l'heure et l'auteur (v108)", () => {
     expect(u.texte).toContain("acknowledged_at = case when e.acknowledged then e.acknowledged_at else now() end");
     expect(u.texte).toContain("acknowledged_by = case when e.acknowledged then e.acknowledged_by else $3::text end");
     expect(u.texte).toContain("from error_issue_notification n where n.alert_event_id = e.id and n.app_id = $2");
+  });
+
+  it("avec v108 : le geste vaut pour l'incident — les déclenchements OUVERTS de la même règle, du même SLO ou de la même issue", async () => {
+    await ackEventAction(formulaire({ id: "57", app: "app-a" }));
+    const texte = update().texte.replace(/\s+/g, " ");
+    expect(texte).toContain("where e.id = c.id or (not e.acknowledged and case");
+    expect(texte).toContain("when c.rule_id is not null then e.rule_id = c.rule_id");
+    expect(texte).toContain("when c.slo_id is not null then e.rule_id is null and e.slo_id = c.slo_id");
+    expect(texte).toContain("n.app_id = $2 and n.issue_id = c.issue_id");
   });
 
   it("sans v108 (la console précède sa migration) : le booléen seul, comme avant", async () => {

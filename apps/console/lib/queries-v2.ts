@@ -548,26 +548,60 @@ export async function toggleAlertRuleActive(id: number, appId: string, active: b
  * c'est ce qui arrête l'escalade et mesure le délai d'acquittement. Un second
  * acquittement ne les réécrit pas — la première prise en charge fait foi. Sans
  * v108 (la console précède sa migration), seul le booléen est posé, comme avant.
+ *
+ * Avec v108, le geste vaut pour l'INCIDENT : les autres déclenchements encore
+ * ouverts de la même source — la même règle, le même SLO, ou la même issue pour une
+ * notification sans règle — sont acquittés avec lui, à la même heure, par le même
+ * auteur. Une règle qui reste franchie lève un déclenchement par fenêtre ;
+ * `escalate_alerts` les escalade ensemble, depuis le premier : acquitter la seule
+ * ligne du dessus laisserait l'incident s'escalader (migration-v108, en-tête).
  */
 export async function acknowledgeAlertEvent(id: number, appId: string, client?: ClientEcriture, par: string | null = null): Promise<boolean> {
   const [schema] = client
     ? (await client.query<{ v108: boolean }>("select to_regclass('public.alert_escalation_step') is not null as v108")).rows
     : await q<{ v108: boolean }>("select to_regclass('public.alert_escalation_step') is not null as v108");
   const horodate = schema?.v108 === true;
+  if (!horodate) {
+    const { rowCount } = await ecrire(
+      client,
+      `update alert_event e set acknowledged = true
+        where e.id = $1
+          and (exists (select 1 from alert_rule r where r.id = e.rule_id and r.app_id = $2)
+               or exists (select 1 from slo s where s.id = e.slo_id and s.app_id = $2)
+               or exists (select 1 from error_issue_notification n where n.alert_event_id = e.id and n.app_id = $2))`,
+      [id, appId],
+    );
+    return rowCount > 0;
+  }
+  // La cible est cherchée dans l'application de la demande ; ses sœurs ont sa source,
+  // donc son application. La source suit l'ordre de `escalate_alerts` : règle, SLO, issue.
   const { rowCount } = await ecrire(
     client,
-    `update alert_event e set acknowledged = true${
-      horodate
-        ? `,
+    `with cible as (
+       select e.id, e.rule_id, e.slo_id,
+              (select n.issue_id from error_issue_notification n where n.alert_event_id = e.id limit 1) as issue_id
+         from alert_event e
+        where e.id = $1
+          and (exists (select 1 from alert_rule r where r.id = e.rule_id and r.app_id = $2)
+               or exists (select 1 from slo s where s.id = e.slo_id and s.app_id = $2)
+               or exists (select 1 from error_issue_notification n where n.alert_event_id = e.id and n.app_id = $2))
+     )
+     update alert_event e set acknowledged = true,
             acknowledged_at = case when e.acknowledged then e.acknowledged_at else now() end,
-            acknowledged_by = case when e.acknowledged then e.acknowledged_by else $3::text end`
-        : ""
-    }
-      where e.id = $1
-        and (exists (select 1 from alert_rule r where r.id = e.rule_id and r.app_id = $2)
-             or exists (select 1 from slo s where s.id = e.slo_id and s.app_id = $2)
-             or exists (select 1 from error_issue_notification n where n.alert_event_id = e.id and n.app_id = $2))`,
-    horodate ? [id, appId, par] : [id, appId],
+            acknowledged_by = case when e.acknowledged then e.acknowledged_by else $3::text end
+       from cible c
+      where e.id = c.id
+         or (not e.acknowledged
+             and case
+                   when c.rule_id is not null then e.rule_id = c.rule_id
+                   when c.slo_id is not null then e.rule_id is null and e.slo_id = c.slo_id
+                   when c.issue_id is not null then
+                     e.rule_id is null and e.slo_id is null
+                     and exists (select 1 from error_issue_notification n
+                                  where n.alert_event_id = e.id and n.app_id = $2 and n.issue_id = c.issue_id)
+                   else false
+                 end)`,
+    [id, appId, par],
   );
   return rowCount > 0;
 }

@@ -91,14 +91,14 @@ export const HYPOTHESES: readonly Hypothese[] = [
     id: "H8",
     titre: "Des alertes par webhook, Slack ou e-mail d'essai",
     aujourdhui:
-      "Les alertes partent vers un webhook ou Slack ; l'e-mail passe par un domaine d'envoi d'essai, qui ne sert que des destinataires déclarés. Une alerte non acquittée s'escalade par niveaux et relance, au passage des travaux planifiés, jusqu'à ce qu'on l'acquitte. Pas de SMS, pas de rotation ni d'outil d'astreinte.",
+      "Les alertes partent vers un webhook ou Slack ; l'e-mail passe par un domaine d'envoi d'essai, qui ne sert que des destinataires déclarés. Les étapes d'escalade réglées sur l'écran Alertes renvoient un incident non acquitté (règle, SLO ou issue) par niveaux et relancent au passage des travaux planifiés, jusqu'au plafond de chaque étape et 7 jours au plus ; sans étape créée, rien ne s'escalade. Pas de SMS, pas de rotation ni d'outil d'astreinte.",
     pourquoi: "Une seule équipe reçoit les alertes pendant le POC.",
     production: "Un domaine d'envoi vérifié, une signature propre à chaque canal, et le branchement sur l'astreinte de MIP.",
     sources: [
       ".railway/railway.ts:399-405",
       "services/notifier/README.md:32,59",
       "docs/ALERTING.md:60-74",
-      "packages/db/sql/migration-v108.sql:79,151",
+      "packages/db/sql/migration-v108.sql:34,109,197",
     ],
   },
   {

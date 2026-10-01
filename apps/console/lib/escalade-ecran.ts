@@ -5,10 +5,12 @@
 //
 // CE QUE L'ÉCRAN N'AFFIRME PAS.
 //   - Un délai d'étape n'est pas une promesse à la minute : l'escalade se décide au
-//     passage du planificateur. Un délai de 5 min part au passage qui suit son
-//     échéance — jusqu'à une cadence plus tard. L'écran écrit la cadence lue.
+//     passage du planificateur. Tout délai part au premier passage qui suit son
+//     échéance — jusqu'à une cadence plus tard. L'écran écrit la cadence lue. Une
+//     relance plus rapprochée que la cadence part au rythme des passages.
 //   - Une relance n'est active que sur le DERNIER niveau qui s'applique à un
-//     déclenchement : une étape plus haute dans la même portée la fait taire.
+//     incident : une étape plus haute dans la même portée la fait taire, sauf si
+//     son canal est désactivé (elle n'envoie rien, `escalate_alerts` l'ignore).
 //   - Le délai d'acquittement d'un déclenchement né avant l'horodatage n'existe pas :
 //     « acquittée », sans heure, plutôt qu'une heure inventée.
 import { fmtHeure, fmtJour, pluriel } from "./format";
@@ -40,10 +42,10 @@ export function dureeMinutes(minutes: number): string {
   return h === 0 ? `${j} j` : `${j} j ${h} h`;
 }
 
-/** Ce qu'une étape fait, en une phrase de grain : « contrôlée à chaque passage, toutes les 15 min ». */
+/** Ce qu'une étape fait, en une phrase de grain : « vérifiée à chaque passage, toutes les 15 min ». */
 export function grainDuTick(cadenceMin: number | null): string {
   const c = cadenceMin ?? CADENCE_TICK_DEFAUT_MIN;
-  return `vérifiée à chaque passage du planificateur, toutes les ${c} min : un délai plus court part au passage suivant`;
+  return `vérifiée à chaque passage du planificateur, toutes les ${c} min : chaque délai part au premier passage qui suit son échéance`;
 }
 
 /** L'étape, telle que la section la lit (la ligne de `listEtapesEscalade`, après le fil JSON). */
@@ -55,24 +57,39 @@ export interface EtapeAffichee {
   delay_minutes: number;
   repeat_minutes: number | null;
   repeat_max: number | null;
+  /** Le canal visé est-il actif ? Absent : supposé actif. */
+  canal_actif?: boolean;
 }
 
 /**
  * La relance d'une étape, en mots. Elle ne joue que si l'étape est le DERNIER niveau
- * qui s'applique au déclenchement (`escalate_alerts`) : une étape de niveau plus haut
+ * qui s'applique à l'incident (`escalate_alerts`) : une étape de niveau plus haut
  * dans une portée qui recouvre la sienne la fait taire — toujours pour une étape
  * d'application, pour les applications concernées seulement quand l'étape est
- * globale. La sévérité n'est pas prise en compte ici : la phrase dit « peut ».
+ * globale. Une étape dont le canal est désactivé n'envoie rien : elle ne relance
+ * pas, et ne fait taire personne. La sévérité n'est pas prise en compte ici : la
+ * phrase dit « peut ». Une cadence plus courte que celle du planificateur
+ * (`cadenceTickMin`) part au rythme des passages : la phrase le dit.
  */
 export function relanceDeLEtape(
   e: EtapeAffichee,
   etapes: readonly EtapeAffichee[],
+  cadenceTickMin: number | null = null,
 ): { texte: string; etat: "aucune" | "active" | "inactive" | "partielle" } {
   if (e.repeat_minutes == null || e.repeat_max == null) return { texte: "sans relance", etat: "aucune" };
+  const rythme =
+    cadenceTickMin != null && e.repeat_minutes < cadenceTickMin
+      ? `, une par passage du planificateur (${dureeMinutes(cadenceTickMin)})`
+      : "";
   // « à 1 h d'intervalle » : « toutes les 1 h » ne se dit pas.
-  const cadence = `à ${dureeMinutes(e.repeat_minutes)} d'intervalle, ${pluriel(e.repeat_max, "fois", "fois")} au plus`;
+  const cadence = `à ${dureeMinutes(e.repeat_minutes)} d'intervalle, ${pluriel(e.repeat_max, "fois", "fois")} au plus${rythme}`;
+  if (e.canal_actif === false) return { texte: `relance ${cadence}, muette : son canal est désactivé`, etat: "inactive" };
   const plusHautes = etapes.filter(
-    (o) => o.id !== e.id && o.level > e.level && (o.app_id === null || e.app_id === null || o.app_id === e.app_id),
+    (o) =>
+      o.id !== e.id &&
+      o.level > e.level &&
+      o.canal_actif !== false &&
+      (o.app_id === null || e.app_id === null || o.app_id === e.app_id),
   );
   if (plusHautes.length === 0) return { texte: `relance ${cadence}`, etat: "active" };
   const memePortee = plusHautes.filter((o) => o.app_id === e.app_id || o.app_id === null);

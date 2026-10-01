@@ -4,8 +4,15 @@
 //
 //   · qu'un déclenchement NON ACQUITTÉ reçoit une livraison de niveau 1 à son
 //     délai, puis de niveau 2 au sien, jamais avant, jamais deux fois ; que le
-//     dernier niveau relance à sa cadence jusqu'au plafond ; et que l'acquittement
-//     arrête TOUT — y compris l'envoi déjà en file, que le livreur solde ;
+//     dernier niveau relance à sa cadence jusqu'au plafond, rang après rang, même
+//     quand la cadence est plus courte que le tick ; et que l'acquittement arrête
+//     TOUT — y compris l'envoi déjà en file, que le livreur solde ;
+//   · qu'une règle qui reste franchie — un déclenchement par fenêtre — fait UN
+//     incident, escaladé une fois, et qu'acquitter l'un de ses déclenchements
+//     depuis la console les acquitte tous ; qu'un écart de plus de 24 h ouvre un
+//     nouvel incident ;
+//   · qu'un dernier niveau dont le canal est éteint ne fait pas taire la relance
+//     du niveau d'en dessous ;
 //   · que l'escalade ne déborde pas : ni sur un déclenchement antérieur à l'étape,
 //     ni sous la sévérité de l'étape, ni vers un canal éteint ou d'une autre
 //     application, ni sur une alerte sans application (qu'on ne peut pas acquitter) ;
@@ -29,13 +36,24 @@ const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 /** Préfixe de ce fichier : le nettoyage ne touche rien d'autre. */
 const APP = "v108-escalade";
 const AUTRE = "v108-escalade-autre";
+/** Une troisième application, aux étapes propres : la relance rapide et le niveau éteint. */
+const RAPIDE = "v108-escalade-rapide";
 const HOOK_N1 = "https://hooks.v108.example.test/niveau-1";
 const HOOK_N2 = "https://hooks.v108.example.test/niveau-2";
 const HOOK_AUTRE = "https://hooks.v108.example.test/autre-app";
 const HOOK_ETEINT = "https://hooks.v108.example.test/eteint";
+const HOOK_RAPIDE = "https://hooks.v108.example.test/rapide";
+const HOOK_RAPIDE_ETEINT = "https://hooks.v108.example.test/rapide-eteint";
 /** L'instant de référence des déclenchements : les échéances se comptent depuis lui. */
 const T0 = new Date("2026-09-30T08:00:00Z");
 const min = (n: number) => new Date(T0.getTime() + n * 60_000).toISOString();
+/**
+ * Les cas d'incident jouent leur horloge à part, 10, 20, 30… jours après T0 : les
+ * déclenchements des autres cas y ont plus de 8 jours et n'entrent plus dans aucun
+ * incident, et ceux-ci sont dans le futur des autres cas — chacun ne compte que ses
+ * propres envois.
+ */
+const JOUR = 24 * 60;
 
 function migrations(): string[] {
   const version = (f: string) => Number(f.match(/\d+/)![0]);
@@ -47,25 +65,46 @@ function migrations(): string[] {
 
 (url ? describe : describe.skip)("v108 — escalate_alerts et le livreur sur PostgreSQL", () => {
   const pool = new pg.Pool(url ? { connectionString: url, max: 4 } : {});
-  const ids: { regle: number; canalN1: number; canalN2: number; canalAutre: number; canalEteint: number } = {
-    regle: 0,
+  const ids: { canalN1: number; canalN2: number; canalAutre: number; canalEteint: number } = {
     canalN1: 0,
     canalN2: 0,
     canalAutre: 0,
     canalEteint: 0,
   };
+  /** `acknowledgeAlertEvent` de la console, branchée sur cette base : le geste du bouton « Acquitter ». */
+  let consoleV2: typeof import("../../apps/console/lib/queries-v2") | null = null;
+  let consolePool: { end: () => Promise<void> } | null = null;
 
   async function nettoyer() {
     await pool.query("delete from alert_event where message like 'v108-%'");
-    await pool.query("delete from alert_rule where app_id in ($1, $2)", [APP, AUTRE]);
+    await pool.query("delete from alert_rule where app_id in ($1, $2, $3)", [APP, AUTRE, RAPIDE]);
     await pool.query("delete from notify_channel where target like 'https://hooks.v108.example.test/%'");
   }
 
-  /** Un déclenchement de la règle de l'app, à T0 + `aMin` minutes. */
-  async function declencher(message: string, { aMin = 0, severity = "warning", regle = ids.regle as number | null } = {}) {
+  /**
+   * Une règle de l'app, inactive : `check_alerts` d'un autre fichier ne l'évalue pas.
+   * Chaque règle est une SOURCE : ses déclenchements ouverts font un même incident.
+   */
+  async function nouvelleRegle(app = APP) {
+    const { rows: [{ id }] } = await pool.query<{ id: string }>(
+      "insert into alert_rule (app_id, metric, comparator, threshold, window_minutes, active) values ($1, 'LCP', '>', 2500, 15, false) returning id",
+      [app],
+    );
+    return Number(id);
+  }
+
+  /**
+   * Un déclenchement à T0 + `aMin` minutes. Sans `regle`, une règle neuve : il est
+   * seul dans son incident. `regle: null` : sans règle, ni SLO, ni issue.
+   */
+  async function declencher(
+    message: string,
+    { aMin = 0, severity = "warning", regle }: { aMin?: number; severity?: string; regle?: number | null } = {},
+  ) {
+    const source = regle === undefined ? await nouvelleRegle() : regle;
     const { rows: [{ id }] } = await pool.query<{ id: string }>(
       "insert into alert_event (rule_id, fired_at, value, message, severity) values ($1, $2, 1, $3, $4) returning id",
-      [regle, min(aMin), message, severity],
+      [source, min(aMin), message, severity],
     );
     return Number(id);
   }
@@ -106,17 +145,9 @@ function migrations(): string[] {
   beforeAll(async () => {
     for (const fichier of migrations()) await pool.query(readFileSync(fichier, "utf8"));
     await nettoyer();
-    for (const app of [APP, AUTRE]) {
+    for (const app of [APP, AUTRE, RAPIDE]) {
       await pool.query("insert into app_registry (app_id, name) values ($1, $1) on conflict (app_id) do nothing", [app]);
     }
-    ids.regle = Number(
-      (
-        await pool.query<{ id: string }>(
-          "insert into alert_rule (app_id, metric, comparator, threshold, window_minutes, active) values ($1, 'LCP', '>', 2500, 15, false) returning id",
-          [APP],
-        )
-      ).rows[0].id,
-    );
     // Les canaux d'escalade sont réglés à `critical` : le routage NOMINAL d'une alerte
     // `warning` ne les sert pas, seule l'étape le fait — ce qui est compté ici.
     ids.canalN1 = await canal(APP, HOOK_N1);
@@ -129,11 +160,22 @@ function migrations(): string[] {
     // d'une autre application.
     await etape({ app: APP, niveau: 1, delai: 5, canal: ids.canalEteint });
     await etape({ app: null, niveau: 1, delai: 0, canal: ids.canalAutre });
+    // RAPIDE : un niveau 1 qui relance toutes les 5 min, plus vite que le tick de
+    // 15 min, et un niveau 2 vers un canal éteint — qui n'envoie rien, et ne doit
+    // pas faire taire la relance du niveau 1.
+    await etape({ app: RAPIDE, niveau: 1, delai: 0, canal: await canal(RAPIDE, HOOK_RAPIDE), relance: [5, 3] });
+    await etape({ app: RAPIDE, niveau: 2, delai: 10, canal: await canal(RAPIDE, HOOK_RAPIDE_ETEINT, false) });
+
+    delete (globalThis as { pgPool?: unknown }).pgPool;
+    process.env.DATABASE_URL = url;
+    consoleV2 = await import("../../apps/console/lib/queries-v2");
+    consolePool = (await import("../../apps/console/lib/db")).pool;
   }, 300_000);
 
   afterAll(async () => {
     await nettoyer();
-    await pool.query("delete from app_registry where app_id in ($1, $2)", [APP, AUTRE]);
+    await pool.query("delete from app_registry where app_id in ($1, $2, $3)", [APP, AUTRE, RAPIDE]);
+    await consolePool?.end();
     await pool.end();
   });
 
@@ -178,7 +220,7 @@ function migrations(): string[] {
     expect((await envois(ev)).map((e) => e.niveau)).toEqual([1]);
   });
 
-  it("un tick manqué ne rattrape pas les relances sautées, et le premier envoi d'un niveau précède ses relances", async () => {
+  it("un tick manqué retarde les relances sans en sauter : une par passage, rangs consécutifs ; le premier envoi d'un niveau d'abord", async () => {
     const ev = await declencher("v108-escalade-rattrapage");
     // Le scheduler revient 2 h après : niveau 1 et niveau 2 partent, rang 0 chacun.
     expect(await escalader(120)).toBe(2);
@@ -186,14 +228,17 @@ function migrations(): string[] {
       [1, 0],
       [2, 0],
     ]);
-    // Au passage suivant, la relance due la plus récente (plafonnée à 2), une seule.
+    // Les deux relances sont dues : la première au passage suivant, la seconde au
+    // passage d'après — jamais « Relance 2 » sans « Relance 1 ».
     expect(await escalader(135)).toBe(1);
+    expect(await escalader(150)).toBe(1);
+    expect(await escalader(300)).toBe(0);
     expect((await envois(ev)).map((e) => [e.niveau, e.relance])).toEqual([
       [1, 0],
       [2, 0],
+      [2, 1],
       [2, 2],
     ]);
-    expect(await escalader(300)).toBe(0);
   });
 
   it("aucune escalade hors de son périmètre : sévérité, antériorité, alerte sans application, 7 jours", async () => {
@@ -288,6 +333,98 @@ function migrations(): string[] {
       [ev],
     );
     expect(r).toEqual({ acquittement_horodate: true, delai_s: 720, acknowledged_by: "ops@example.test" });
+  });
+
+  it("une règle franchie 2 h, un déclenchement par fenêtre de 15 min : UN incident, escaladé une fois, sur son premier déclenchement", async () => {
+    const debut = 10 * JOUR;
+    const regle = await nouvelleRegle();
+    const declenchements: number[] = [];
+    let envoyes = 0;
+    // Le tick de production : toutes les 15 min, `check_alerts` lève un déclenchement
+    // par fenêtre tant que la règle est franchie et non acquittée, puis l'escalade passe.
+    for (let t = 0; t <= 120; t += 15) {
+      if (t <= 105) declenchements.push(await declencher(`v108-escalade-incident-${t}`, { aMin: debut + t, regle }));
+      envoyes += await escalader(debut + t);
+    }
+    expect(declenchements).toHaveLength(8);
+    // Niveau 1 au tick de 15 min, niveau 2 à 30, relances 1 et 2 à 60 et 75 : quatre
+    // envois, pas un jeu par déclenchement.
+    expect(envoyes).toBe(4);
+    expect((await envois(declenchements[0])).map((e) => [e.niveau, e.relance])).toEqual([
+      [1, 0],
+      [2, 0],
+      [2, 1],
+      [2, 2],
+    ]);
+    for (const ev of declenchements.slice(1)) expect(await envois(ev), String(ev)).toEqual([]);
+  });
+
+  it("acquitter un déclenchement depuis la console acquitte ceux de sa source et arrête l'incident ; la rechute suivante en ouvre un autre", async () => {
+    const debut = 20 * JOUR;
+    const regle = await nouvelleRegle();
+    const premier = await declencher("v108-escalade-ack-0", { aMin: debut, regle });
+    expect(await escalader(debut + 15)).toBe(1);
+    const second = await declencher("v108-escalade-ack-15", { aMin: debut + 15, regle });
+    const troisieme = await declencher("v108-escalade-ack-30", { aMin: debut + 30, regle });
+    const autreSource = await declencher("v108-escalade-ack-autre", { aMin: debut + 30 });
+
+    // Le bouton « Acquitter » de la ligne la plus récente.
+    const client = await pool.connect();
+    try {
+      expect(await consoleV2!.acknowledgeAlertEvent(troisieme, APP, client, "ops@example.test")).toBe(true);
+    } finally {
+      client.release();
+    }
+    const { rows } = await pool.query<{ id: string; acknowledged: boolean; par: string | null; meme_heure: boolean | null }>(
+      `select id, acknowledged, acknowledged_by as par,
+              acknowledged_at = (select acknowledged_at from alert_event where id = $2) as meme_heure
+         from alert_event where id = any($1::bigint[]) order by id`,
+      [[premier, second, troisieme, autreSource], troisieme],
+    );
+    expect(rows.map((r) => [Number(r.id), r.acknowledged, r.par, r.meme_heure])).toEqual([
+      [premier, true, "ops@example.test", true],
+      [second, true, "ops@example.test", true],
+      [troisieme, true, "ops@example.test", true],
+      // Une autre règle : un autre incident, que ce geste ne touche pas.
+      [autreSource, false, null, null],
+    ]);
+
+    // Plus rien pour cet incident, même quand le niveau 2 aurait dû partir.
+    await escalader(debut + 45);
+    expect((await envois(premier)).map((e) => e.niveau)).toEqual([1]);
+    expect(await envois(troisieme)).toEqual([]);
+
+    // La règle reste franchie : le déclenchement suivant ouvre un nouvel incident,
+    // escaladé depuis son propre début.
+    const rechute = await declencher("v108-escalade-ack-rechute", { aMin: debut + 45, regle });
+    await escalader(debut + 60);
+    expect((await envois(rechute)).map((e) => [e.niveau, e.relance])).toEqual([[1, 0]]);
+  });
+
+  it("plus de 24 h entre deux déclenchements ouverts d'une même source : deux incidents, la rechute s'escalade", async () => {
+    const debut = 30 * JOUR;
+    const regle = await nouvelleRegle();
+    const oublie = await declencher("v108-escalade-oublie", { aMin: debut, regle });
+    expect(await escalader(debut + 6)).toBe(1);
+    // Deux jours plus tard, l'oublié est toujours ouvert ; la règle rechute.
+    const rechute = await declencher("v108-escalade-rechute-2j", { aMin: debut + 2 * JOUR, regle });
+    expect(await escalader(debut + 2 * JOUR + 6)).toBe(1);
+    expect((await envois(rechute)).map((e) => [e.niveau, e.relance])).toEqual([[1, 0]]);
+    // L'incident oublié n'est plus escaladé : seul le dernier incident d'une source compte.
+    expect((await envois(oublie)).map((e) => e.niveau)).toEqual([1]);
+  });
+
+  it("une relance plus rapide que le tick : toutes partent, une par passage ; un dernier niveau éteint ne la fait pas taire", async () => {
+    const debut = 40 * JOUR;
+    const ev = await declencher("v108-escalade-rapide", { aMin: debut, regle: await nouvelleRegle(RAPIDE) });
+    // Niveau 1 à 0 min, relance toutes les 5 min, 3 fois ; le tick passe toutes les 15 min.
+    for (const t of [0, 15, 30, 45, 60, 75]) await escalader(debut + t);
+    expect((await envois(ev)).map((e) => [e.target, e.niveau, e.relance])).toEqual([
+      [HOOK_RAPIDE, 1, 0],
+      [HOOK_RAPIDE, 1, 1],
+      [HOOK_RAPIDE, 1, 2],
+      [HOOK_RAPIDE, 1, 3],
+    ]);
   });
 
   it("rejouer v108 ne change rien : ni colonne, ni étape, ni défaut", async () => {

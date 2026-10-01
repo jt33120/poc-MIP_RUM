@@ -13,13 +13,23 @@
 //
 // LE GRAIN EST LE PASSAGE DU PLANIFICATEUR, écrit en tête de section avec la
 // cadence lue : un délai de 5 min ne part pas à 5 min, il part au passage qui suit.
+//
+// L'AUTEUR D'UNE ÉTAPE est une adresse de compte : montrée à l'administrateur
+// seulement, jamais à un lecteur ni à une session de démonstration.
 import { Fragment } from "react";
 import { ConfirmationDanger } from "@/components/ConfirmationDanger";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
 import type { Fil } from "@mip/console-contract";
 import { ALERT_SEVERITIES } from "@/lib/alerting";
 import { libelleSeverite } from "@/lib/alertes-metriques";
-import { BORNES_ESCALADE, dureeMinutes, etapesParPortee, grainDuTick, relanceDeLEtape } from "@/lib/escalade-ecran";
+import {
+  BORNES_ESCALADE,
+  CADENCE_TICK_DEFAUT_MIN,
+  dureeMinutes,
+  etapesParPortee,
+  grainDuTick,
+  relanceDeLEtape,
+} from "@/lib/escalade-ecran";
 import { entreGuillemets, fmtInstant, pluriel } from "@/lib/format";
 import type { EtapeEscaladeRow } from "@/lib/queries-escalade";
 import { SeverityBadge } from "./SeverityBadge";
@@ -46,6 +56,7 @@ export function EscaladeSection({
   admin = false,
   global = admin,
   cadenceMin,
+  refus = null,
   creer,
   supprimer,
 }: {
@@ -61,6 +72,8 @@ export function EscaladeSection({
   global?: boolean;
   /** Cadence publiée du planificateur, en minutes ; `null` : non publiée. */
   cadenceMin: number | null;
+  /** Le motif d'une création refusée (relu par la page d'un code, jamais affiché brut). */
+  refus?: string | null;
   creer: (fd: FormData) => Promise<void>;
   supprimer: (fd: FormData) => Promise<void>;
 }) {
@@ -82,12 +95,22 @@ export function EscaladeSection({
         )}
       </div>
       <p className="sr-only">
-        Si un déclenchement reste non acquitté, chaque étape l&apos;envoie de nouveau, à son délai, vers son canal : un
-        niveau de plus à chaque étape. Le dernier niveau peut relancer à intervalle fixe, un nombre limité de fois.
-        L&apos;envoi immédiat aux canaux reste celui du routage ; l&apos;escalade s&apos;y ajoute. Seuls les déclenchements
-        d&apos;une règle, d&apos;un objectif de service ou d&apos;une issue s&apos;escaladent : ce sont ceux qu&apos;on peut
-        acquitter.
+        Si un incident reste non acquitté, chaque étape l&apos;envoie de nouveau, à son délai compté depuis son premier
+        déclenchement, vers son canal : un niveau de plus à chaque étape. Un incident, ce sont les déclenchements ouverts
+        d&apos;une même règle, d&apos;un même objectif de service ou d&apos;une même issue ; en acquitter un les acquitte
+        tous. Le dernier niveau peut relancer à intervalle fixe, un nombre limité de fois. L&apos;envoi immédiat aux
+        canaux reste celui du routage ; l&apos;escalade s&apos;y ajoute. Seuls les déclenchements d&apos;une règle,
+        d&apos;un objectif de service ou d&apos;une issue s&apos;escaladent : ce sont ceux qu&apos;on peut acquitter.
       </p>
+      {refus && (
+        <p
+          role="alert"
+          className="mb-2 rounded-lg border border-bad/30 bg-bad/10 px-3 py-2 text-xs font-medium text-bad-ink"
+          data-testid="escalade-refus"
+        >
+          Étape non créée — {refus}
+        </p>
+      )}
 
       {!disponible ? (
         <p className="card flex items-center gap-1.5 px-3 py-2 text-xs text-ink-soft" role="status" data-testid="escalade-indisponible">
@@ -118,20 +141,20 @@ export function EscaladeSection({
               <span aria-hidden className="text-ink-faint">
                 ⊘
               </span>
-              Aucune étape d&apos;escalade : un déclenchement non acquitté n&apos;est envoyé qu&apos;une fois. Demandez à un
+              Aucune étape d&apos;escalade : un déclenchement non acquitté ne monte d&apos;aucun niveau. Demandez à un
               administrateur d&apos;en créer une.
             </p>
           )}
 
           {admin && (
-            <details className={`card min-w-0 ${etapes.length > 0 ? "mt-2" : ""}`} id="nouvelle-etape">
+            <details className={`card min-w-0 ${etapes.length > 0 ? "mt-2" : ""}`} id="nouvelle-etape" open={refus ? true : undefined}>
               <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-ink-soft transition hover:text-ink">
                 {etapes.length === 0 ? (
                   <span className="inline-flex flex-wrap items-center gap-x-2" data-testid="escalade-vide">
                     <span aria-hidden className="text-ink-faint">
                       ⊘
                     </span>
-                    <span className="font-normal">Aucune étape : un déclenchement non acquitté n&apos;est envoyé qu&apos;une fois.</span>
+                    <span className="font-normal">Aucune étape : un déclenchement non acquitté ne monte d&apos;aucun niveau.</span>
                     <span className="text-brand">+ Créer une étape</span>
                   </span>
                 ) : (
@@ -221,8 +244,10 @@ export function EscaladeSection({
                     Créer
                   </button>
                   <p className="w-full text-[11px] text-ink-faint">
-                    La relance ne joue que sur le dernier niveau qui s&apos;applique ; une étape vaut pour les déclenchements
-                    nés après sa création.
+                    Délais comptés depuis le premier déclenchement de l&apos;incident ; la relance ne joue que sur le dernier
+                    niveau qui s&apos;applique ; une étape vaut pour les incidents ouverts après sa création. Le canal doit
+                    être global ou de l&apos;application choisie ; sa sévérité minimale ne filtre pas l&apos;escalade. Une
+                    règle désactivée garde ses déclenchements ouverts : ils s&apos;escaladent jusqu&apos;à leur acquittement.
                   </p>
                 </form>
               )}
@@ -247,7 +272,8 @@ function LigneEtape({
   cadenceMin: number | null;
   supprimer: (fd: FormData) => Promise<void>;
 }) {
-  const relance = relanceDeLEtape(e, etapes);
+  // Cadence non publiée : celle de la production, comme `grainDuTick`.
+  const relance = relanceDeLEtape(e, etapes, cadenceMin ?? CADENCE_TICK_DEFAUT_MIN);
   const portee = e.app_id === null ? "de toute application" : `de l'application ${e.app_id}`;
   return (
     <details className="group min-w-0" data-testid={`etape-${e.id}`}>
@@ -272,14 +298,21 @@ function LigneEtape({
           </span>
         )}
         {relance.etat !== "aucune" && (
-          <span
-            className={`text-[11px] ${relance.etat === "inactive" ? "text-ink-faint line-through" : "text-ink-soft"}`}
-            title={relance.texte}
-          >
-            relance {dureeMinutes(e.repeat_minutes ?? 0)} × {e.repeat_max}
+          <span className={`text-[11px] ${relance.etat === "inactive" ? "text-ink-faint" : "text-ink-soft"}`} title={relance.texte}>
+            <span className={relance.etat === "inactive" ? "line-through" : undefined}>
+              relance {dureeMinutes(e.repeat_minutes ?? 0)} × {e.repeat_max}
+            </span>
+            {/* L'état en mots, pas seulement barré : un lecteur d'écran ne lit ni le trait ni le title. */}
+            {relance.etat === "inactive" && " · muette"}
+            {relance.etat === "partielle" && " · partielle"}
           </span>
         )}
-        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-ink-faint" title="Envois mis en file par cette étape, relances comprises">
+        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-ink-faint" title={
+            e.app_id === null
+              ? "Envois mis en file par cette étape sur 30 jours, relances comprises, pour les applications du périmètre lu"
+              : "Envois mis en file par cette étape sur 30 jours, relances comprises"
+          }
+        >
           {pluriel(e.envois_30j, "envoi")} · 30 j
         </span>
       </summary>
@@ -287,8 +320,8 @@ function LigneEtape({
         <dl className="grid w-full min-w-0 grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 sm:w-auto sm:flex-1">
           <dt className="text-ink-faint">Déclenche</dt>
           <dd className="min-w-0">
-            un déclenchement {portee}, de sévérité {libelleSeverite(e.severity_min).toLowerCase()} ou plus, encore non acquitté{" "}
-            {dureeMinutes(e.delay_minutes)} après son déclenchement
+            un incident {portee}, de sévérité {libelleSeverite(e.severity_min).toLowerCase()} ou plus, encore non acquitté{" "}
+            {dureeMinutes(e.delay_minutes)} après son premier déclenchement
           </dd>
           <dt className="text-ink-faint">Envoie</dt>
           <dd className="min-w-0 break-all font-mono text-[11px]">
@@ -302,7 +335,7 @@ function LigneEtape({
           <dt className="text-ink-faint">Créée</dt>
           <dd className="min-w-0">
             le {fmtInstant(e.created_at)}
-            {e.created_by ? ` par ${e.created_by}` : ""} · vaut pour les déclenchements nés depuis
+            {admin && e.created_by ? ` par ${e.created_by}` : ""} · vaut pour les incidents ouverts depuis
           </dd>
         </dl>
         {admin && (
@@ -312,7 +345,7 @@ function LigneEtape({
               libelle="Supprimer"
               libelleAccessible={`Supprimer l'étape de niveau ${e.level} vers ${e.canal_target}`}
               question={`Supprimer l'étape de niveau ${e.level} vers ${entreGuillemets(e.canal_target)} ?`}
-              consequence="Les déclenchements non acquittés ne seront plus envoyés à ce niveau ; les envois déjà partis restent dans l'historique."
+              consequence="Les incidents non acquittés ne seront plus envoyés à ce niveau ; les envois déjà partis restent dans l'historique."
               confirmer="Supprimer l'étape"
               enCours="Suppression…"
               flottant

@@ -54,19 +54,36 @@ export interface LectureEtapes {
 /**
  * Les étapes globales (toutes les applications) et celles des applications du
  * périmètre, comme les canaux (`listChannels`) : par portée, niveau, délai.
+ *
+ * Les envois d'une étape GLOBALE vont aux incidents de toutes les applications :
+ * pour un périmètre restreint, seuls ceux de ses applications sont comptés — le
+ * nombre ne dit rien de l'activité des autres. L'application d'un envoi est celle
+ * de son déclenchement : règle, SLO, puis notification d'issue.
  */
 export async function listEtapesEscalade(f: FiltersLike): Promise<LectureEtapes> {
   if (!(await escaladeDisponible())) return { disponible: false, etapes: [] };
   const { params, bind } = binder();
+  const query = queryOf(f);
+  const apps = query.scope.effectiveApps;
+  const envoisDansLePerimetre =
+    apps === null
+      ? ""
+      : ` and (st.app_id is not null or exists (
+             select 1 from alert_event e
+              where e.id = d.alert_event_id
+                and coalesce((select r.app_id from alert_rule r where r.id = e.rule_id),
+                             (select s.app_id from slo s where s.id = e.slo_id),
+                             (select n.app_id from error_issue_notification n where n.alert_event_id = e.id limit 1))
+                    = any(${bind(apps)}::text[])))`;
   const etapes = await q<EtapeEscaladeRow>(
     `select st.id::int as id, st.app_id, st.severity_min, st.level::int as level, st.delay_minutes,
             st.channel_id::int as channel_id, st.repeat_minutes, st.repeat_max, st.created_at, st.created_by,
             c.kind as canal_kind, c.target as canal_target, c.active as canal_actif,
             (select count(*) from alert_delivery d
-              where d.escalation_step_id = st.id and d.attempted_at >= now() - interval '30 days')::int as envois_30j
+              where d.escalation_step_id = st.id and d.attempted_at >= now() - interval '30 days'${envoisDansLePerimetre})::int as envois_30j
        from alert_escalation_step st
        join notify_channel c on c.id = st.channel_id
-      where st.app_id is null or (true${compileScope(queryOf(f), "st.app_id", bind)})
+      where st.app_id is null or (true${compileScope(query, "st.app_id", bind)})
       order by st.app_id nulls first, st.level, st.delay_minutes, st.id`,
     params,
   );

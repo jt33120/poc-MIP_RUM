@@ -40,7 +40,7 @@ describe("les bornes d'une étape sont celles de la base", () => {
     expect(sql).toContain(`repeat_max between ${BORNES_ESCALADE.plafond.min} and ${BORNES_ESCALADE.plafond.max}`);
     // Le délai plafond est l'horizon de la fonction : au-delà, un déclenchement n'escalade plus.
     expect(BORNES_ESCALADE.delai.max).toBe(7 * 24 * 60);
-    expect(sql).toContain("e.fired_at >= p_maintenant - interval '7 days'");
+    expect(sql).toContain("i.fired_at >= p_maintenant - interval '7 days'");
   });
 });
 
@@ -61,7 +61,7 @@ describe("le grain du planificateur", () => {
   it("écrit la cadence lue, et celle de la production quand elle n'est pas publiée", () => {
     expect(sansInsecable(grainDuTick(5))).toContain("toutes les 5 min");
     expect(sansInsecable(grainDuTick(null))).toContain(`toutes les ${CADENCE_TICK_DEFAUT_MIN} min`);
-    expect(grainDuTick(15)).toContain("un délai plus court part au passage suivant");
+    expect(grainDuTick(15)).toContain("chaque délai part au premier passage qui suit son échéance");
   });
 });
 
@@ -90,6 +90,30 @@ describe("la relance d'une étape", () => {
     const r = relanceDeLEtape(globale, [globale, etape({ id: 2, level: 2, app_id: "boutique" })]);
     expect(r.etat).toBe("partielle");
     expect(r.texte).toContain("sauf pour l'application boutique");
+  });
+});
+
+describe("la relance, le canal et le tick (relecture du 01/10/2026)", () => {
+  it("son propre canal désactivé : muette, et le dit", () => {
+    const n2 = etape({ id: 2, level: 2, repeat_minutes: 60, repeat_max: 4, canal_actif: false });
+    expect(relanceDeLEtape(n2, [etape({ id: 1, level: 1 }), n2])).toEqual({
+      texte: expect.stringContaining("muette : son canal est désactivé"),
+      etat: "inactive",
+    });
+  });
+
+  it("un niveau plus haut dont le canal est désactivé ne la fait pas taire : il n'envoie rien", () => {
+    const n1 = etape({ id: 1, level: 1, repeat_minutes: 30, repeat_max: 2 });
+    expect(relanceDeLEtape(n1, [n1, etape({ id: 2, level: 2, canal_actif: false })]).etat).toBe("active");
+  });
+
+  it("une cadence plus courte que le tick : une par passage, et la phrase le dit ; sinon rien de plus", () => {
+    const rapide = etape({ id: 1, level: 1, repeat_minutes: 5, repeat_max: 3 });
+    expect(sansInsecable(relanceDeLEtape(rapide, [rapide], 15).texte)).toBe(
+      "relance à 5 min d'intervalle, 3 fois au plus, une par passage du planificateur (15 min)",
+    );
+    const lente = etape({ id: 2, level: 1, repeat_minutes: 60, repeat_max: 3 });
+    expect(sansInsecable(relanceDeLEtape(lente, [lente], 15).texte)).toBe("relance à 1 h d'intervalle, 3 fois au plus");
   });
 });
 

@@ -79,7 +79,7 @@ sequenceDiagram
   participant D as Destinataire
   S->>B: check_alerts(), check_slo_burn(), escalate_alerts(), sondes uptime
   B->>B: alert_event + route_alert() → une livraison « queued » par canal éligible
-  B->>B: escalate_alerts() → une livraison « queued » par niveau échu d'un déclenchement non acquitté (v108)
+  B->>B: escalate_alerts() → une livraison « queued » par niveau échu d'un incident non acquitté (v108)
   Note over S,L: base gratuite : tick à :00, :15, :30, :45 — notifier 45 s après
   L->>B: route_error_issue_notifications() (outbox des issues)
   L->>B: réserve une livraison (for update skip locked)
@@ -92,7 +92,7 @@ sequenceDiagram
 ```
 
 - **Qui décide, qui livre.** Le scheduler **décide** (règles, SLO, uptime) et met en file ; le notifier **livre**. Tant que `SCHEDULER_DELIVERY` vaut `on` (son défaut), le tick livre aussi ; le notifier le remplace dans le même apply qui pose `off`. Au 26/09, cet apply n'a pas eu lieu : le notifier n'existe pas, c'est le tick qui livre.
-- **L'escalade** (migration-v108) : à chaque tick, après `check_slo_burn`, `escalate_alerts()` ajoute une livraison par niveau échu de chaque déclenchement non acquitté, puis les relances du dernier niveau ; l'acquittement (heure et auteur gardés) arrête tout. Le grain est le tick. Détail : `docs/ALERTING.md`, pilier 5.
+- **L'escalade** (migration-v108) : à chaque tick, après `check_slo_burn`, `escalate_alerts()` ajoute une livraison par niveau échu de chaque incident non acquitté — les déclenchements ouverts d'une même règle, d'un même SLO ou d'une même issue, à moins de 24 h l'un de l'autre, escaladés une fois depuis le premier —, puis les relances du dernier niveau, une par tick au plus ; l'acquittement (heure et auteur gardés, étendu par la console aux déclenchements ouverts de la même source) arrête tout. Le grain est le tick. Détail : `docs/ALERTING.md`, pilier 5.
 - **Les nouvelles erreurs** n'attendent pas le scheduler : l'ingestion écrit une notification dans l'outbox des issues (`error_issue_notification`) à la seconde, et c'est la passe du notifier qui la route vers `route_alert`.
 - **Aucun double envoi** : chaque livraison est réservée ligne par ligne et marquée dans sa transaction ; deux livreurs (le scheduler et le notifier pendant la bascule, deux répliques) se partagent les lignes. Un rejeu après une réponse perdue porte le même `x-mip-delivery-id` (webhook) ou la même clé d'idempotence (Resend).
 - **Rien ne sort vers le réseau privé** : chaque webhook passe par `safe-fetch` (IP littérales, réseaux privés, `*.railway.internal`, métadonnées cloud refusés) ; une cible refusée est soldée `skipped`, jamais rejouée.

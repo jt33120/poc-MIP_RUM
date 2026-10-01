@@ -75,7 +75,15 @@ export const chargerAlertes = (async (principal, sp) => {
     // l'axe, pas la plage de l'écran (qui ne s'y applique pas).
     sectionFenetresCollecteRecentes(ecran.query, JOURS_DECLENCHEMENTS * 86_400_000),
   ]);
-  const [escalade, mtta, suivi, cadenceTick] = await lecturesEscalade;
+  const [escaladeLue, mtta, suiviLu, cadenceTick] = await lecturesEscalade;
+  // L'auteur d'une étape et celui d'un acquittement sont des adresses de compte :
+  // elles ne quittent le chargeur que pour un administrateur — ni un lecteur ni une
+  // session de démonstration ne les reçoit, pas même dans la charge de la page.
+  const escalade =
+    admin || !escaladeLue.ok
+      ? escaladeLue
+      : { ...escaladeLue, data: { ...escaladeLue.data, etapes: escaladeLue.data.etapes.map((e) => ({ ...e, created_by: null })) } };
+  const suivi = admin || !suiviLu.ok ? suiviLu : { ...suiviLu, data: suiviLu.data.map((s) => ({ ...s, acknowledged_by: null })) };
   return {
     etat: "ok",
     query: ecran.query,

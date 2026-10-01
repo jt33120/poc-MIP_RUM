@@ -98,6 +98,12 @@ const SOURCE_LIVRAISONS =
 const SOURCE_REGLES = "Table alert_rule : état laissé par la dernière évaluation de chaque règle active.";
 const SOURCE_MTTA =
   "Table alert_event : heure d'acquittement moins heure de déclenchement, médiane sur les déclenchements nés après l'horodatage des acquittements.";
+/** Ce que fait le bouton « Acquitter » depuis v108 (`acknowledgeAlertEvent`) : l'incident, pas la seule ligne. */
+const ACQUITTER_INCIDENT = "acquitte aussi les déclenchements ouverts de la même règle, du même SLO ou de la même issue";
+/** Le refus d'une étape d'escalade, par son code (`createEscalationStepAction`) : jamais le paramètre affiché tel quel. */
+const REFUS_ETAPE: Record<string, string> = {
+  canal: "le canal choisi n'est pas à la portée de l'étape : une étape d'application envoie vers un canal de cette application ou global, une étape globale vers un canal global.",
+};
 
 export default async function Alerts({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const sp = (await searchParams) ?? {};
@@ -141,6 +147,10 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
   const suiviParEvenement = new Map((suivi.ok ? suivi.data : []).map((s) => [s.id, s]));
   const mttaTuile = tuileMtta(mtta.ok ? mtta.data : null, JOURS_DECLENCHEMENTS);
   const cadenceMin = cadenceTick.ok ? cadenceTick.data : null;
+  // v108 lue : l'acquittement vaut pour l'incident (les déclenchements ouverts de la source).
+  const escaladeLue = escalade.ok && escalade.data.disponible;
+  const etapeRefuseeRaw = Array.isArray(sp.etape_refusee) ? sp.etape_refusee[0] : sp.etape_refusee;
+  const etapeRefusee = etapeRefuseeRaw != null ? (REFUS_ETAPE[etapeRefuseeRaw] ?? "refus de la commande.") : null;
 
   const firedRaw = Array.isArray(sp.fired) ? sp.fired[0] : sp.fired;
   const fired = firedRaw != null && /^\d+$/.test(firedRaw) ? Number(firedRaw) : null;
@@ -521,9 +531,11 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                           <span
                             className="rounded bg-panel2 px-1.5 tabular-nums text-ink-faint"
                             data-testid={`acquittement-${e.id}`}
+                            // L'auteur est une adresse de compte : pour l'administrateur seulement,
+                            // jamais pour un lecteur ni une session de démonstration (V9).
                             title={
                               acquittement
-                                ? `${acquittement}${escaladeEvt?.acknowledged_by ? ` · par ${escaladeEvt.acknowledged_by}` : ""}`
+                                ? `${acquittement}${admin && escaladeEvt?.acknowledged_by ? ` · par ${escaladeEvt.acknowledged_by}` : ""}`
                                 : "Acquittée avant l'horodatage des acquittements : l'heure n'est pas connue"
                             }
                           >
@@ -533,8 +545,14 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                           <form action={ackEventAction} className="ml-auto">
                             <input type="hidden" name="id" value={e.id} />
                             <input type="hidden" name="app" value={e.app_id} />
-                            <button type="submit" data-testid={`ack-${e.id}`} className="btn-ghost px-2 py-0.5 text-[11px]">
+                            <button
+                              type="submit"
+                              data-testid={`ack-${e.id}`}
+                              className="btn-ghost px-2 py-0.5 text-[11px]"
+                              title={escaladeLue ? ACQUITTER_INCIDENT : undefined}
+                            >
                               Acquitter
+                              {escaladeLue && <span className="sr-only"> — {ACQUITTER_INCIDENT}</span>}
                             </button>
                           </form>
                         ) : null}
@@ -684,6 +702,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
           admin={admin}
           global={plateforme}
           cadenceMin={cadenceMin}
+          refus={admin ? etapeRefusee : null}
           creer={createEscalationStepAction}
           supprimer={deleteEscalationStepAction}
         />
