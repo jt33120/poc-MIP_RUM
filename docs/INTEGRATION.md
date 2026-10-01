@@ -250,10 +250,20 @@ API : `MIPRum.consent(bool)`, `track(nom, props)`, `setUser` / `clearUser`,
   `MIPRum.consent(false)` purge ce qui attendait (mémoire, file de rejeu, erreurs
   compactées), efface du stockage local `mip_rum_session`, `mip_rum_visitor`,
   `mip_rum_sampling`, `mip_rum_seq`, `mip_rum_retry` et la période de silence du widget
-  d'avis (`mip_rum_feedback_last:*`), et arrête la collecte ; un accord ultérieur repart
-  d'un nouveau visiteur. Le widget d'avis suit l'accord s'il est chargé par l'option
-  `feedback` du SDK, pas s'il est posé à la main. La fiche du client donne le snippet
-  dans cette version.
+  d'avis (`mip_rum_feedback_last:*`), arrête l'enregistrement du rejeu en cours (rien de
+  ce qui n'est pas encore parti ne part) et arrête la collecte ; un accord ultérieur
+  repart d'un nouveau visiteur, et un rejeu arrêté ne reprend qu'au chargement suivant.
+  Le widget d'avis suit l'accord s'il est chargé par l'option `feedback` du SDK, pas
+  s'il est posé à la main. La fiche du client donne le snippet dans cette version.
+- **Limites du refus** : il vaut pour la page où il est donné. Un autre onglet du même
+  site, déjà consenti, réécrit `mip_rum_session` à son événement suivant (et
+  `mip_rum_visitor` quand sa session expire), et une page restaurée depuis le cache du
+  navigateur (bfcache) après un refus donné ailleurs réécrit session et visiteur, tant
+  que l'outil de consentement n'y appelle pas `consent(false)` à son tour. Les requêtes
+  parties avant l'accord portent, dans
+  `tracestate`, l'identifiant de session tiré en mémoire : si l'accord reprend une
+  session déjà ouverte, leurs spans serveur ne sont pas rattachés à la session (la trace
+  les relie toujours au parcours).
 - **`honorDNT: true`** (défaut) : si le navigateur signale un refus (Do Not Track ou
   Global Privacy Control), aucune collecte. `false` est réservé aux applications qui
   recueillent elles-mêmes un consentement affirmatif et pilotent `consent()`.
@@ -331,7 +341,10 @@ de MIP. `console.error(err)` suivi de `throw err` ne fait qu'un incident.
 
 `sampleRate` garde une part des sessions en entier ; par défaut (`keepOnError`), une
 session hors échantillon n'envoie que ses erreurs, et passe en collecte complète à la
-première. Ne pas l'abaisser sans raison de volume : la console repondère sessions, pages
+première. Avec `requireConsent`, le tirage se fait à l'accord, sur ce qui attendait en
+mémoire : si une erreur s'y trouve, tout part, y compris ce qui la précède — sans
+`requireConsent`, seuls la première erreur, l'action qui l'a déclenchée et ce qui suit
+partent. Les deux populations ne se mélangent donc pas sans précaution. Ne pas l'abaisser sans raison de volume : la console repondère sessions, pages
 vues, taux d'erreur et percentiles LCP et INP par la probabilité d'inclusion de chaque
 session, et le dit (`sampling_notice` dans l'API), mais les visiteurs uniques, la
 moyenne de chargement et les signaux de frustration ne se redressent pas : extrapoler un
@@ -386,7 +399,7 @@ vieux : c'est ce qu'un redémarrage emporterait.
 
 ## Annexe H — Poids et impact sur la page
 
-- `mip-rum.js` : **23,6 Ko gzip** (67,6 Ko brut, build du 01/10/2026), sous le budget de
+- `mip-rum.js` : **23,7 Ko gzip** (67,8 Ko brut, build du 01/10/2026), sous le budget de
   35 Ko gzip que `packages/rum-sdk/build.mjs` fait respecter. Le rejeu est un second
   fichier (`mip-rum-replay.js`, 56,7 Ko gzip), chargé seulement si `replay` est allumé.
 - Envoi par lots (toutes les `flushIntervalMs`), vidés par `sendBeacon` quand la page

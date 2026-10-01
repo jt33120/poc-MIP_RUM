@@ -948,8 +948,9 @@ function FigureNavigation({
           Le LCP n&apos;est mesuré qu&apos;au chargement : les changements de route SPA comptent des vues sans LCP.
           Une vue sans type de navigation déclaré est comptée à part, jamais parmi les chargements. Source : SDK
           MIP RUM — type de navigation de chaque vue (navigate, reload, back_forward de l&apos;API Navigation Timing ;
-          spa pour un changement de route ; depuis le 01/10/2026, bfcache pour un retour servi par le cache du
-          navigateur et prerender pour une page prérendue puis affichée, tous deux parmi les chargements).
+          spa pour un changement de route ; depuis le SDK 0.5.0, bfcache pour un retour servi par le cache du
+          navigateur et prerender pour une page prérendue puis affichée, tous deux parmi les chargements). Le
+          LCP de quelques millisecondes d&apos;un retour bfcache n&apos;est pas encore exclu des percentiles.
         </>
       }
       alternative={{
