@@ -44,58 +44,59 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
   return (
     <div className="animate-fade-up">
       <PageHeader title="Vues enregistrées" sub={QUESTION}>
+        <span className="text-[11px] text-ink-faint">personnelles · {SAVED_VIEW_MAX_PER_APP} au plus par application</span>
         <Link href="/explorer" className="btn-ghost">
           ← Explorer
         </Link>
       </PageHeader>
-      {/* Une phrase : l'ancien paragraphe mêlait droits, fenêtre et plafond (recette 26/09). */}
-      <p className="-mt-4 mb-6 text-xs text-ink-soft">
+      {/* La règle des vues en pastille dans l'en-tête ; la phrase pour un lecteur d'écran (recette du 30/09/2026). */}
+      <p className="sr-only">
         Vos analyses de l’Explorer, gardées pour les relancer : elles restent personnelles, {SAVED_VIEW_MAX_PER_APP} au
         plus par application.
       </p>
 
       {sp.conflit === "1" && (
-        <p role="alert" data-testid="vues-conflit" className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
+        <p role="alert" data-testid="vues-conflit" className="mb-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-soft">
           Cette vue a changé depuis son affichage : rien n’a été écrit. La liste ci-dessous est à jour.
         </p>
       )}
       {sp.refus === "1" && (
-        <p role="alert" data-testid="vues-refus" className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
+        <p role="alert" data-testid="vues-refus" className="mb-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-soft">
           Opération refusée : une vue enregistrée n’est modifiable que par son propriétaire, dans une application de
           son périmètre. Rien n’a été écrit.
         </p>
       )}
       {sp.plafond === "1" && (
-        <p role="alert" data-testid="vues-plafond" className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
+        <p role="alert" data-testid="vues-plafond" className="mb-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-soft">
           Plafond atteint : {SAVED_VIEW_MAX_PER_APP} vues enregistrées par application. En supprimer avant d’en
           ajouter.
         </p>
       )}
 
       {/* W-V1 : les analyses fournies — des liens, qui ne lisent rien avant le clic. */}
-      <section aria-labelledby="modeles-fournis-titre" data-testid="vues-modeles" className="card mb-6 min-w-0 p-4">
+      <section aria-labelledby="modeles-fournis-titre" data-testid="vues-modeles" className="card mb-4 min-w-0 p-3">
         {/* Plus de badge « fourni » : il redisait le titre (recette du 26/09/2026). */}
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 id="modeles-fournis-titre" className="text-sm font-semibold text-ink">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h2 id="modeles-fournis-titre" className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
             Modèles fournis
           </h2>
-          <span className="min-w-0 basis-full text-xs text-ink-soft sm:basis-auto">
+          <span className="min-w-0 text-[11px] text-ink-faint">
             Prêts à l’emploi : chacun s’ouvre exécuté dans l’Explorer.
           </span>
         </div>
         <ModelesDepart modeles={modeles} compact />
       </section>
 
-      <h2 className="mb-2 text-sm font-semibold text-ink">Mes vues</h2>
+      <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Mes vues</h2>
 
       {result.kind === "unavailable" && (
-        <p role="status" data-testid="vues-indisponibles" className="card px-4 py-8 text-center text-sm text-ink-soft">
+        <p role="status" data-testid="vues-indisponibles" className="card px-3 py-2 text-xs text-ink-soft">
           Les vues enregistrées ne sont pas encore disponibles sur cette installation. L’Explorer reste utilisable, et
           ses analyses restent partageables par leur adresse.
         </p>
       )}
       {result.kind === "forbidden" && (
-        <p role="alert" className="card px-4 py-8 text-center text-sm text-ink-soft">
+        <p role="alert" className="card px-3 py-2 text-xs text-ink-soft">
           {result.error}
         </p>
       )}
@@ -105,8 +106,14 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
       {/* L'état vide porte le geste qu'il décrit : le seul lien vers l'Explorer était
           « ← Explorer », en haut à droite (recette du 26/09/2026). */}
       {result.kind === "ok" && !result.value.length && (
-        <div role="status" className="card flex flex-col items-center gap-3 px-4 py-8 text-center text-sm text-ink-soft">
-          <p>Aucune vue enregistrée. Composez une analyse dans l’Explorer, puis enregistrez-la comme vue.</p>
+        // Une ligne et son geste (recette du 30/09/2026), plus une grande boîte centrée.
+        <div role="status" className="card flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 text-xs text-ink-soft">
+          <p className="flex items-center gap-1.5">
+            <span aria-hidden className="text-ink-faint">
+              ⊘
+            </span>
+            Aucune vue enregistrée. Composez une analyse dans l’Explorer, puis enregistrez-la comme vue.
+          </p>
           {!demo && (
             <Link href="/explorer" className="btn-accent" data-testid="vues-composer">
               Composer une analyse

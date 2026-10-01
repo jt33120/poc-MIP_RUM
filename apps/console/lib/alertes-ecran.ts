@@ -251,6 +251,46 @@ export function pistesDeDeclenchements(
   );
 }
 
+/** Ce que la ligne d'une règle dit de ses déclenchements sur la fenêtre de la frise. */
+export interface DeclenchementsDeRegle {
+  /** Instant ISO du plus récent ; `null` : aucun sur la fenêtre. */
+  dernier: string | null;
+  /** Un compte par jour de la grille (du plus ancien au plus récent). */
+  parJour: number[];
+}
+
+/**
+ * Les déclenchements de chaque RÈGLE, jour par jour, sur la grille des barres (recette
+ * du 30/09/2026 : « règle en une ligne, dernier déclenchement »). Lu dans les lignes
+ * DÉJÀ lues pour la frise (`alertFirings`) : aucune lecture de plus, et les deux ne
+ * peuvent pas se contredire. Une ligne hors de la grille (plus ancienne que son
+ * premier jour) compte pour le dernier déclenchement, pas pour les barres.
+ * Clé : l'identifiant de la règle, en texte (celui de `source_id`).
+ */
+export function declenchementsParRegle(
+  lignes: readonly Pick<AlertFiringRow, "source" | "source_id" | "fired_at">[],
+  grille: readonly string[],
+): Map<string, DeclenchementsDeRegle> {
+  const debuts = grille.map((t) => Date.parse(t));
+  const resultat = new Map<string, DeclenchementsDeRegle>();
+  for (const l of lignes) {
+    if (l.source !== "regle") continue;
+    const ms = new Date(l.fired_at).getTime();
+    if (!Number.isFinite(ms)) continue;
+    const r = resultat.get(l.source_id) ?? { dernier: null, parJour: debuts.map(() => 0) };
+    if (r.dernier === null || ms > Date.parse(r.dernier)) r.dernier = new Date(ms).toISOString();
+    // Le jour de la grille qui contient l'instant : le dernier début qui le précède.
+    for (let i = debuts.length - 1; i >= 0; i--) {
+      if (ms >= debuts[i]) {
+        if (ms < debuts[i] + 86_400_000) r.parJour[i] += 1;
+        break;
+      }
+    }
+    resultat.set(l.source_id, r);
+  }
+  return resultat;
+}
+
 /** « LCP (ms) · /checkout » : la règle nommée comme la frise la nomme (`alertFirings`). */
 export function libelleDeRegle(r: Pick<AlertRuleRow, "metric" | "route">): string {
   return `${metricLabel(r.metric)}${r.route ? ` · ${r.route}` : ""}`;

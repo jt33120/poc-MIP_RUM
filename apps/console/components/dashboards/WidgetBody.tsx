@@ -85,7 +85,15 @@ export function WidgetBody({
     !data.trafic?.grille.length &&
     data.total === undefined;
   if (vide) {
-    return <p className="py-6 text-center text-sm text-ink-faint">aucune donnée</p>;
+    // Une ligne, pictogramme en tête (recette du 30/09/2026) : pas une grande case vide.
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-ink-soft">
+        <span aria-hidden className="text-ink-faint">
+          ⊘
+        </span>
+        aucune donnée
+      </p>
+    );
   }
 
   return (
@@ -275,7 +283,16 @@ function ClassementRoutes({ routes, query }: { routes: WidgetRoutes; query: Anal
  * raison — une ligne plate se lirait « stable ».
  */
 function ListeErreurs({ lignes, query }: { lignes: WidgetErreur[]; query: AnalyticsQuery }) {
-  if (!lignes.length) return <p className="py-6 text-center text-sm text-ink-faint">aucune erreur sur la fenêtre</p>;
+  if (!lignes.length) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-ink-soft">
+        <span aria-hidden className="text-ink-faint">
+          ⊘
+        </span>
+        aucune erreur sur la fenêtre
+      </p>
+    );
+  }
   return (
     <ul className="flex flex-col gap-2" data-testid="widget-erreurs">
       {lignes.map((l) => (

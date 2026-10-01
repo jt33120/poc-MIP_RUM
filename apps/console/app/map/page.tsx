@@ -66,6 +66,7 @@ import { ecrirePanel, gabaritZoom, lireEtatDeVue, ligneIgnoree } from "@/lib/vie
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { pluriel } from "@/lib/format";
 import { CheminCoupable } from "@/components/map/CheminCoupable";
+import { Methode as MethodeRepliee } from "@/components/perf/Methode";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,10 @@ const PLAFOND_NOEUDS = 40;
 
 /** La population de l'écran, nommée dans chaque méta (S1). */
 const POPULATION = "appels instrumentés de la fenêtre";
+
+/** D'où viennent les chiffres des cases, écrit dans leur fenêtre. */
+const SOURCE_CARTE =
+  "Traces OpenTelemetry : appels navigateur du SDK MIP RUM et segments serveur de l'agent officiel du langage, rattachés par identifiant de trace.";
 
 // Santé inconnue : pastille CREUSE et neutre, pas une quatrième couleur de verdict.
 const DOT: Record<Health, string> = {
@@ -176,11 +181,12 @@ export default async function ExperienceMapPage({
   const plage = ecran.label;
   const zoom = gabaritZoom(hrefWithQuery("/map", query, { period: null, from: "{from}", to: "{to}" }), sp);
 
-  const meta = (extra?: string) => (
+  const meta = (extra?: string, source?: string) => (
     <>
       {extra && <span>{extra}</span>}
       <span>Population : {POPULATION}</span>
       <span>{plage}</span>
+      {source && <span>source : {source}</span>}
     </>
   );
 
@@ -206,9 +212,11 @@ export default async function ExperienceMapPage({
       {/* M2 — quatre chiffres clés. */}
       <SectionErreur titre="Chiffres clés">
         {noeuds.ok ? (
-          <div className="mb-6 grid min-w-0 grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="mb-4 grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
             <KpiTile
               label="Routes cartographiées"
+              categorie="Navigateur et serveur"
+              source={SOURCE_CARTE}
               valeur={lignes.length}
               format="count"
               lecture={
@@ -219,6 +227,9 @@ export default async function ExperienceMapPage({
             />
             <KpiTile
               label="Appels navigateur suivis jusqu'au serveur"
+              libelleCase="Suivis jusqu'au serveur"
+              categorie="Navigateur → serveur"
+              source={SOURCE_CARTE}
               valeur={partCorrelee}
               format="pct"
               raisonNull={
@@ -234,6 +245,8 @@ export default async function ExperienceMapPage({
             />
             <KpiTile
               label="Services à risque"
+              categorie="Serveur · tendance"
+              source={SOURCE_CARTE}
               valeur={risques.conclues.services > 0 ? risques.services : null}
               raisonNull="non conclu : aucune tendance mesurable, la première moitié de la plage ne porte pas d'appel à comparer"
               format="count"
@@ -252,7 +265,7 @@ export default async function ExperienceMapPage({
             />
           </div>
         ) : (
-          <div className="mb-6">
+          <div className="mb-4">
             <EchecLecture titre="Chiffres clés" />
           </div>
         )}
@@ -262,7 +275,7 @@ export default async function ExperienceMapPage({
       <BandeauEchantillonnage lecture={echantillonnage} />
 
       {/* M3 — le hero : le graphe pages → services. */}
-      <div className="mb-6">
+      <div className="mb-4">
         <SectionErreur titre="Pages → services">
           <Figure
             id="carte-graphe"
@@ -271,6 +284,7 @@ export default async function ExperienceMapPage({
               noeuds.ok
                 ? `${formater("count", layout.nodes.length)} nœuds · ${formater("count", layout.edges.length)} liens`
                 : undefined,
+              "traces OpenTelemetry (navigateur et serveur)",
             )}
             etat={
               !noeuds.ok || !aretes.ok
@@ -361,7 +375,7 @@ export default async function ExperienceMapPage({
             groupes={lignes.length}
           />
         ) : (
-          <div className="mb-6">
+          <div className="mb-4">
             <EchecLecture titre="Services classés" />
           </div>
         )}
@@ -423,7 +437,10 @@ function libelleNoeud(colonne: GNode[], id: string): string {
 function TableLiens({ carte }: { carte: ReturnType<typeof carteAffichee> }) {
   if (carte.edges.length === 0) {
     return (
-      <p className="py-4 text-center text-sm text-ink-soft">
+      <p className="flex items-center gap-1.5 text-xs text-ink-soft">
+        <span aria-hidden className="text-ink-faint">
+          ⊘
+        </span>
         Aucun lien page → service : les nœuds sont lus, mais aucune réponse serveur n&apos;a été rattachée à un appel.
       </p>
     );
@@ -531,12 +548,14 @@ function ServicesClasses({
         volumeLibelle="Appels"
         groupes={groupes}
         tronque={groupes >= PLAFOND_NOEUDS}
-        notice={`Un nœud = une page (côté navigateur) ou une route serveur, sur la fenêtre. Classement par latence p75 ; sous ${SEUIL_ECHANTILLON_FAIBLE} appels, la ligne passe en fin de liste (${pluriel(
-          faibles,
-          "ligne concernée",
-          "lignes concernées",
-        )}). Tendance : moitié récente contre moitié ancienne de la plage, rien sous le seuil anti-bruit.`}
+        notice={`Latence p75 ; sous ${SEUIL_ECHANTILLON_FAIBLE} appels, en fin de liste (${pluriel(faibles, "ligne", "lignes")}).`}
       />
+      {/* La règle entière du classement, repliée sous la table (recette du 30/09/2026). */}
+      <MethodeRepliee className="-mt-4 mb-4">
+        Un nœud = une page (côté navigateur) ou une route serveur, sur la fenêtre. Classement par latence p75 ; sous{" "}
+        {SEUIL_ECHANTILLON_FAIBLE} appels, la ligne passe en fin de liste ({pluriel(faibles, "ligne concernée", "lignes concernées")}).
+        Tendance : moitié récente contre moitié ancienne de la plage, rien sous le seuil anti-bruit.
+      </MethodeRepliee>
     </div>
   );
 }
@@ -561,7 +580,7 @@ function TablePages({ pages, query }: { pages: { route: string; sessions: number
             const verdict = p.lcp_p75 == null ? null : rating2026("LCP", p.lcp_p75);
             return (
               <tr key={`${p.route}|${i}`} className="border-t border-line/60">
-                <td className="px-4 py-2">
+                <td className="px-3 py-1.5">
                   <Link
                     href={hrefWithQuery("/pages", query, { route: p.route })}
                     className="inline-flex min-w-0 items-center gap-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
@@ -573,8 +592,8 @@ function TablePages({ pages, query }: { pages: { route: string; sessions: number
                     <CheminCoupable chemin={p.route} />
                   </Link>
                 </td>
-                <td className="px-4 py-2 text-right font-semibold tabular-nums">{formater("count", p.sessions)}</td>
-                <td className="px-4 py-2 text-right tabular-nums">
+                <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{formater("count", p.sessions)}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">
                   {verdict ? (
                     <span className="inline-flex items-center gap-1">
                       <span className={`rounded border px-1 py-px font-medium ${RATING_CLASS[verdict]}`}>
@@ -678,8 +697,9 @@ function PanneauNoeud({
       onglets={onglets.length > 0 ? onglets : undefined}
     >
       <div className="space-y-4">
-        <p className="text-xs text-ink-soft">
-          Plage de l&apos;écran : {plage}. Le panneau n&apos;a pas de fenêtre de temps propre.
+        <p className="text-[11px] text-ink-faint">
+          Plage de l&apos;écran : {plage}
+          <span className="sr-only">. Le panneau n&apos;a pas de fenêtre de temps propre.</span>
         </p>
 
         <section>

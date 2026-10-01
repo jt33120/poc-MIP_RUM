@@ -27,6 +27,7 @@ import { RankBar } from "@/components/charts/RankBar";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { CadreEtat, EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { Methode as MethodeRepliee } from "@/components/perf/Methode";
 import { TableDefilante } from "@/components/TableDefilante";
 import { DeployPanel } from "@/components/tracing/DeployPanel";
 import { SlowRow } from "@/components/tracing/SlowRow";
@@ -53,6 +54,11 @@ export const dynamic = "force-dynamic";
 
 /** Au-delà, `apiCallsDecomposition` tronque (`limit 50`) : la table le dit. */
 const APPELS_MAX = 50;
+
+/** D'où viennent les chiffres des cases, écrit dans leur fenêtre. */
+const SOURCE_APPELS = "SDK MIP RUM : appels fetch et XMLHttpRequest vus du navigateur (durée, statut), un segment par appel.";
+const SOURCE_TRACES =
+  "Traces OpenTelemetry : segment serveur rattaché à l'appel navigateur par son identifiant de trace (agent officiel du langage).";
 
 // Période précédente (`cmp=prev`) : un compte d'appels est sensible au retard
 // d'ingestion, une durée ou une part ne l'est pas (§ 3.2, règle 3).
@@ -84,11 +90,19 @@ function lienEcran(sp: SearchParams, extra: Record<string, string | null> = {}, 
   return `/tracing${qs ? `?${qs}` : ""}${fragment}`;
 }
 
-/** « Aucun appel… » : `EtatSurface{vide}` accorde au féminin (« Aucune … »), un appel est masculin. */
+/**
+ * « Aucun appel… » en UNE ligne (recette du 30/09/2026), pictogramme en tête, dans le
+ * panneau qui garde sa place. Le texte est écrit ici : « Aucun » s'accorde au masculin.
+ */
 function Vide({ children }: { children: ReactNode }) {
   return (
-    <CadreEtat ton="neutre" role="status" testId="etat-vide" etat="vide" className="text-center">
-      <p>{children}</p>
+    <CadreEtat ton="neutre" role="status" testId="etat-vide" etat="vide" enLigne>
+      <p className="flex items-center gap-1.5">
+        <span aria-hidden className="text-ink-faint">
+          ⊘
+        </span>
+        <span>{children}</span>
+      </p>
     </CadreEtat>
   );
 }
@@ -110,8 +124,8 @@ function SectionTable({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="card mb-6 min-w-0 scroll-mt-20 p-4 sm:p-5" data-testid={`section-${id}`}>
-      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+    <section id={id} className="card mb-4 min-w-0 scroll-mt-20 p-3 sm:p-4" data-testid={`section-${id}`}>
+      <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
         <h2 className="min-w-0 break-words text-[11px] font-semibold uppercase tracking-wider text-ink-soft">{titre}</h2>
         {explorer && (
           <Link href={explorer} className="ml-auto shrink-0 text-xs text-perf underline-offset-2 hover:underline">
@@ -119,9 +133,14 @@ function SectionTable({
           </Link>
         )}
       </div>
-      {meta && <div className="mb-3 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-soft">{meta}</div>}
+      {/* La méta en petit, comme sous le titre d'une figure ; la lecture repliée en « Méthode ». */}
+      {meta && <div className="mb-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-ink-faint">{meta}</div>}
       {children}
-      {lecture && <p className="mt-3 text-xs leading-relaxed text-ink-soft">{lecture}</p>}
+      {lecture && (
+        <MethodeRepliee className="mt-2">
+          <p>{lecture}</p>
+        </MethodeRepliee>
+      )}
     </section>
   );
 }
@@ -234,6 +253,15 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
     query,
   );
   const appelsLus = serie.ok ? serie.data.reduce((s, x) => s + x.n, 0) : 0;
+  // L'aperçu en fond de case et le graphique de sa fenêtre (recette du 30/09/2026) : la
+  // série DÉJÀ lue pour « Latence des appels dans le temps », même population que la
+  // case, tranche par tranche, avec ses débuts pour un axe du temps daté.
+  const serieDe = (valeur: (p: { n: number; front_p75: number | null; back_p75: number | null }) => number | null, titreAxeY: string) =>
+    serie.ok && serie.data.length > 1
+      ? { serie: serie.data.map(valeur), grapheDebuts: serie.data.map((x) => x.t), titreAxeY }
+      : {};
+  // Échelle commune des mini-cascades : la trace la plus longue du tableau.
+  const maxLentes = lentes.ok ? Math.max(0, ...lentes.data.map((t) => t.front_ms ?? 0)) : 0;
 
   return (
     <div className="animate-fade-up">
@@ -251,16 +279,20 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
       ))}
 
       {/* 2 — Chiffres clés : débit, couverture, durée, erreurs (RED). */}
-      <section aria-label="Chiffres clés des appels API" className="mb-6">
+      <section aria-label="Chiffres clés des appels API" className="mb-4">
         {!c ? (
           <EchecLecture titre="Chiffres clés des appels API" />
         ) : (
           <RangeeKpi
             couvertures={[couvT(couvAppels, p?.total ?? null), couvT(couvDurees, p?.total ?? null)]}
-            className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5"
+            className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5"
           >
             <KpiTile
               label="Appels API vus du navigateur"
+              libelleCase="Appels API"
+              {...serieDe((x) => x.n, "appels API par tranche")}
+              categorie="Navigateur · appels"
+              source={SOURCE_APPELS}
               valeur={c.total}
               format="count"
               sensMeilleur="neutre"
@@ -271,6 +303,9 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
             />
             <KpiTile
               label="Appels suivis jusqu'au serveur"
+              libelleCase="Suivis jusqu'au serveur"
+              categorie="Navigateur → serveur"
+              source={SOURCE_TRACES}
               valeur={part(c.correlated, c.total)}
               format="pct"
               raisonNull="aucun appel API sur la plage"
@@ -279,6 +314,10 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
             />
             <KpiTile
               label="Durée p75 vue du navigateur"
+              libelleCase="Durée p75 · navigateur"
+              {...serieDe((x) => x.front_p75, "durée p75 vue du navigateur")}
+              categorie="Navigateur · appels"
+              source={SOURCE_APPELS}
               valeur={c.front_p75}
               format="ms"
               sensMeilleur="bas"
@@ -294,6 +333,10 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
             />
             <KpiTile
               label="Durée p75 côté serveur (appels suivis)"
+              libelleCase="Durée p75 · serveur"
+              {...serieDe((x) => x.back_p75, "durée p75 serveur, appels suivis")}
+              categorie="Serveur · appels suivis"
+              source={SOURCE_TRACES}
               valeur={c.back_p75}
               format="ms"
               sensMeilleur="bas"
@@ -309,6 +352,8 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
             />
             <KpiTile
               label="Appels en échec"
+              categorie="Navigateur · appels"
+              source={SOURCE_APPELS}
               valeur={part(c.err, c.total)}
               format="pct"
               sensMeilleur="bas"
@@ -340,8 +385,9 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
       </section>
 
       {/* 3 — Hero : classement (3/5) et série (2/5), côte à côte à partir de 1280 px. */}
-      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-5">
-        <div className="min-w-0 xl:col-span-3">
+      <div className="mb-4 grid grid-cols-1 gap-2 xl:grid-cols-5">
+        {/* Les deux figures prennent la hauteur de la rangée : bords bas alignés. */}
+        <div className="min-w-0 xl:col-span-3 xl:[&>section]:h-full">
           <SectionErreur titre="Appels API les plus lents">
             <Figure
               titre="Appels API les plus lents, et la part médiane du serveur"
@@ -350,7 +396,9 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
               etat={
                 !appels.ok
                   ? { kind: "erreur", titre: "Appels API les plus lents" }
-                  : undefined
+                  : hero.lignes.length === 0
+                    ? { kind: "vide", population: "appel API instrumenté", masculin: true, plage }
+                    : undefined
               }
               meta={
                 appels.ok && hero.lignes.length > 0 ? (
@@ -396,12 +444,18 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
           </SectionErreur>
         </div>
 
-        <div className="min-w-0 xl:col-span-2">
+        <div className="min-w-0 xl:col-span-2 xl:[&>section]:h-full">
           <SectionErreur titre="Latence des appels dans le temps">
             <Figure
               titre="Latence des appels dans le temps"
               id="latence-appels"
-              etat={!serie.ok ? { kind: "erreur", titre: "Latence des appels dans le temps" } : undefined}
+              etat={
+                !serie.ok
+                  ? { kind: "erreur", titre: "Latence des appels dans le temps" }
+                  : appelsLus === 0
+                    ? { kind: "vide", population: "appel API instrumenté", masculin: true, plage }
+                    : undefined
+              }
               explorer={planSerie.ok ? explorerHref(query, planSerie.value) : undefined}
               meta={
                 serie.ok ? (
@@ -485,24 +539,28 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                 <tr>
                   <th scope="col" className="th sticky left-0 z-10 whitespace-nowrap bg-panel2">Heure</th>
                   <th scope="col" className="th">Appel</th>
-                  <th scope="col" className="th">Statut</th>
-                  <th scope="col" className="th">Navigateur</th>
-                  <th scope="col" className="th">Serveur</th>
-                  <th scope="col" className="th">Trajet</th>
+                  <th scope="col" className="th text-right">Statut</th>
+                  <th scope="col" className="th">
+                    Serveur <span aria-hidden className="inline-block h-2 w-2 rounded-sm bg-ink-soft align-middle" /> puis trajet{" "}
+                    <span aria-hidden className="inline-block h-2 w-2 rounded-sm bg-ink-faint/50 align-middle" />
+                  </th>
+                  <th scope="col" className="th text-right">Navigateur</th>
+                  <th scope="col" className="th text-right">Serveur</th>
+                  <th scope="col" className="th text-right">Trajet</th>
                   <th scope="col" className="th">Session</th>
                 </tr>
               </thead>
               <tbody className="block sm:table-row-group">
                 {tracesParAppel(lentes.data, appel ? Infinity : TRACES_PAR_APPEL).map((l) =>
                   l.kind === "trace" ? (
-                    <SlowRow key={l.trace.span_id} t={l.trace} query={query} />
+                    <SlowRow key={l.trace.span_id} t={l.trace} query={query} maxMs={maxLentes} />
                   ) : (
                     <tr
                       key={`reste-${l.appel.method} ${l.appel.url}`}
                       className="block border-t border-line/60 sm:table-row"
                       data-testid="traces-repliees"
                     >
-                      <td colSpan={7} className="block px-4 py-2 text-xs text-ink-soft sm:table-cell">
+                      <td colSpan={8} className="block px-3 py-1.5 text-xs text-ink-soft sm:table-cell">
                         {/* Le reste est compté sur TOUTE la plage (`traces_appel`, lu en SQL), plus
                             seulement parmi les 20 lues. */}
                         {l.n === 1 ? "Une autre trace" : `${formater("count", l.n)} autres traces`} de{" "}
@@ -581,17 +639,17 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
               <thead className="bg-panel2">
                 <tr>
                   <th scope="col" className="th sticky left-0 z-10 bg-panel2">Route serveur</th>
-                  <th scope="col" className="th">Appels</th>
-                  <th scope="col" className="th">p75</th>
-                  <th scope="col" className="th">p95</th>
-                  <th scope="col" className="th">Erreurs 5xx</th>
-                  <th scope="col" className="th">Taux 5xx</th>
+                  <th scope="col" className="th text-right">Appels</th>
+                  <th scope="col" className="th text-right">p75</th>
+                  <th scope="col" className="th text-right">p95</th>
+                  <th scope="col" className="th text-right">Erreurs 5xx</th>
+                  <th scope="col" className="th text-right">Taux 5xx</th>
                 </tr>
               </thead>
               <tbody>
                 {routes.data.map((r) => (
                   <tr key={r.route} className="border-t border-line/60">
-                    <th scope="row" className="sticky left-0 z-10 max-w-[16rem] bg-panel px-4 py-3 text-left font-mono text-xs font-normal">
+                    <th scope="row" className="sticky left-0 z-10 max-w-[16rem] bg-panel px-3 py-1.5 text-left font-mono text-xs font-normal">
                       {r.route !== "—" && planRoutes.ok ? (
                         <Link
                           href={explorerHref(query, planRoutes.value, { route: r.route })}
@@ -604,11 +662,11 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                         <span className="block truncate text-ink">{r.route}</span>
                       )}
                     </th>
-                    <td className="px-4 py-3 tabular-nums">{formater("count", r.n)}</td>
-                    <td className="px-4 py-3 font-semibold tabular-nums">{formater("ms", r.p75)}</td>
-                    <td className="px-4 py-3 tabular-nums">{formater("ms", r.p95)}</td>
-                    <td className="px-4 py-3 tabular-nums">{formater("count", r.err)}</td>
-                    <td className="px-4 py-3 tabular-nums">{formater("pct", r.n > 0 ? r.err / r.n : null)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{formater("count", r.n)}</td>
+                    <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{formater("ms", r.p75)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{formater("ms", r.p95)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{formater("count", r.err)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{formater("pct", r.n > 0 ? r.err / r.n : null)}</td>
                   </tr>
                 ))}
               </tbody>

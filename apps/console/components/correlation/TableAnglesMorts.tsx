@@ -35,8 +35,9 @@ export interface LigneAngleMort {
   liens: { heure: string; sessions: LienSessionsRoute; pages: string };
 }
 
-const TH = "whitespace-nowrap px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-soft";
-const TD = "px-3 py-2 align-top";
+// Lignes denses (recette du 30/09/2026) : une trentaine de pixels, alignées au milieu.
+const TH = "whitespace-nowrap px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-soft";
+const TD = "px-3 py-1.5 align-middle";
 
 export function TableAnglesMorts({ lignes, avecApp }: { lignes: LigneAngleMort[]; avecApp: boolean }) {
   return (

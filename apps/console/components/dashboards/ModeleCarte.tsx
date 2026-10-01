@@ -19,11 +19,11 @@ import { cloneTemplateAction } from "@/app/dashboards/actions";
 
 function Sections({ sections }: { sections: { titre: string; cartes: string[] }[] }) {
   return (
-    <ul className="flex flex-col gap-2">
+    <ul className="flex flex-col gap-1">
       {sections.map((s) => (
         <li key={s.titre} className="min-w-0">
-          <p className="break-words text-xs font-medium text-ink">{s.titre}</p>
-          <p className="break-words text-xs text-ink-soft">{s.cartes.join(" · ")}</p>
+          <p className="break-words text-[11px] font-medium text-ink">{s.titre}</p>
+          <p className="break-words text-[11px] leading-snug text-ink-soft">{s.cartes.join(" · ")}</p>
         </li>
       ))}
     </ul>
@@ -68,7 +68,7 @@ export function ModeleCarte({
       data-testid="modele-carte"
       data-modele={cle}
       aria-labelledby={`modele-${cle}-titre`}
-      className="card flex min-w-0 flex-col gap-3 p-4"
+      className="card flex h-full min-w-0 flex-col gap-2 p-3"
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
@@ -79,7 +79,7 @@ export function ModeleCarte({
             {nbCartes} cartes
           </span>
         </div>
-        <p className="mt-1 break-words text-xs text-ink-soft">{question}</p>
+        <p className="mt-0.5 break-words text-[11px] text-ink-soft">{question}</p>
       </div>
 
       <div className="hidden sm:block">

@@ -28,6 +28,7 @@ import {
   severiteConnue,
   titreEvenement,
   totalDeclenchements,
+  declenchementsParRegle,
 } from "../../apps/console/lib/alertes-ecran";
 import type { AlertFiringRow, AlertRuleRow } from "../../apps/console/lib/queries-v2";
 
@@ -400,5 +401,33 @@ describe("F68 — réglage d'une règle de release", () => {
 
   it("garde les décimales de la hausse : +12,5 % n'est pas +13 %", () => {
     expect(reglageDeRegle(regle({ mode: "release", threshold: 12.5 }))).toContain("+12,5 % ou plus");
+  });
+});
+
+// Recette du 30/09/2026 — une règle en une ligne dit son dernier déclenchement et ses
+// trente jours en micro-barres, tirés des lignes DÉJÀ lues pour la frise.
+describe("déclenchements par règle (ligne de règle)", () => {
+  const grille = ["2026-09-28T00:00:00Z", "2026-09-29T00:00:00Z", "2026-09-30T00:00:00Z"];
+  const ligne = (source: "regle" | "slo" | "issue", source_id: string, fired_at: string) => ({ source, source_id, fired_at });
+
+  it("compte par jour de la grille, retient le plus récent, ignore les SLO et les issues", () => {
+    const m = declenchementsParRegle(
+      [
+        ligne("regle", "7", "2026-09-28T10:00:00Z"),
+        ligne("regle", "7", "2026-09-30T23:59:00Z"),
+        ligne("regle", "7", "2026-09-30T01:00:00Z"),
+        ligne("slo", "7", "2026-09-29T10:00:00Z"),
+        ligne("regle", "9", "2026-09-29T00:00:00Z"),
+      ],
+      grille,
+    );
+    expect(m.get("7")).toEqual({ dernier: "2026-09-30T23:59:00.000Z", parJour: [1, 0, 2] });
+    expect(m.get("9")).toEqual({ dernier: "2026-09-29T00:00:00.000Z", parJour: [0, 1, 0] });
+    expect(m.has("8")).toBe(false);
+  });
+
+  it("un déclenchement avant la grille compte comme dernier, pas dans les barres ; un instant illisible est ignoré", () => {
+    const m = declenchementsParRegle([ligne("regle", "7", "2026-09-20T10:00:00Z"), ligne("regle", "7", "pas une date")], grille);
+    expect(m.get("7")).toEqual({ dernier: "2026-09-20T10:00:00.000Z", parJour: [0, 0, 0] });
   });
 });

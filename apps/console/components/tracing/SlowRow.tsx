@@ -7,12 +7,16 @@
 //
 // La couleur du statut est une sévérité (échec : statut ≥ 400, ou 0 = coupure
 // réseau, requête annulée), jamais un verdict « vert » : un 200 n'a pas de seuil.
+//
+// UNE CASCADE PAR LIGNE (recette du 30/09/2026). Une barre, longue comme la durée vue
+// du navigateur sur une échelle commune au tableau, coupée en SERVEUR puis TRAJET —
+// les deux durées de CETTE trace, jamais des percentiles soustraits. Sans jumeau
+// serveur, la barre reste d'un seul tenant, hachurée : la part serveur est inconnue.
 import Link from "next/link";
 import type { SlowTrace } from "@/lib/queries-tracing";
 import { hrefWithQuery, type AnalyticsQuery } from "@/lib/query-contract";
 import { formater } from "@/lib/fmt-ids";
 import { fmtInstant } from "@/lib/format";
-
 
 /** Instant de l'appel en millisecondes epoch : le `at` du rejeu (`app/sessions/[id]/page.tsx`). */
 export function instantAppelMs(ts: Date | string): number {
@@ -24,9 +28,36 @@ export function appelEnEchec(statut: number | null): boolean {
   return (statut ?? 0) >= 400 || (statut ?? 0) === 0;
 }
 
-/** Cellule chiffrée : une carte sous 640 px (libellé écrit devant), une cellule au-delà. */
+/** Cellule chiffrée : une carte sous 640 px (libellé écrit devant), une cellule dense au-delà. */
 const CHIFFRE =
-  "mr-4 mt-1 inline-flex items-baseline gap-1 text-xs tabular-nums sm:mr-0 sm:mt-0 sm:table-cell sm:px-4 sm:py-3 sm:text-sm";
+  "mr-4 mt-1 inline-flex items-baseline gap-1 text-xs tabular-nums sm:mr-0 sm:mt-0 sm:table-cell sm:px-3 sm:py-1.5 sm:text-right sm:text-[13px]";
+
+/** Hachures en CSS : la teinte vient de `currentColor`. */
+const HACHURES = "repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 5px)";
+
+/**
+ * La mini-cascade d'une trace : serveur puis trajet, sur l'échelle commune `maxMs`.
+ * Décorative (`aria-hidden`) : les trois durées sont écrites dans leurs colonnes.
+ */
+export function MiniCascade({ t, maxMs }: { t: Pick<SlowTrace, "front_ms" | "back_ms" | "network_ms">; maxMs: number }) {
+  const total = t.front_ms ?? 0;
+  const largeur = maxMs > 0 ? Math.max(2, (total / maxMs) * 100) : 0;
+  const serveur = t.back_ms != null && total > 0 ? Math.min(100, (t.back_ms / total) * 100) : null;
+  return (
+    <span aria-hidden className="relative block h-2 w-full min-w-[6rem] rounded-sm bg-panel2" data-testid="mini-cascade">
+      <span className="absolute inset-y-0 left-0 flex overflow-hidden rounded-sm" style={{ width: `${largeur}%` }}>
+        {serveur == null ? (
+          <span className="h-full w-full text-ink-faint" style={{ backgroundImage: HACHURES }} />
+        ) : (
+          <>
+            <span className="h-full bg-ink-soft" style={{ width: `${serveur}%` }} />
+            <span className="h-full flex-1 bg-ink-faint/50" />
+          </>
+        )}
+      </span>
+    </span>
+  );
+}
 
 /**
  * Ligne détaillant une trace lente ; les filtres suivent ses liens.
@@ -36,19 +67,19 @@ const CHIFFRE =
  * restaient hors champ, derrière un défilement. Sous 640 px, chaque trace devient une
  * carte : heure et appel, puis les trois durées libellées, puis la session et son rejeu.
  */
-export function SlowRow({ t, query }: { t: SlowTrace; query: AnalyticsQuery }) {
+export function SlowRow({ t, query, maxMs }: { t: SlowTrace; query: AnalyticsQuery; maxMs?: number }) {
   const echec = appelEnEchec(t.front_status);
   const at = instantAppelMs(t.ts);
   return (
     <tr
-      className="block border-t border-line/60 px-4 py-3 transition hover:bg-panel2/60 sm:table-row sm:p-0"
+      className="block border-t border-line/60 px-3 py-2 transition hover:bg-panel2/60 sm:table-row sm:p-0"
       data-testid="trace-lente"
       data-appel={`${t.method} ${t.url}`}
     >
-      <td className="block text-xs tabular-nums text-ink-soft sm:sticky sm:left-0 sm:table-cell sm:bg-panel sm:px-4 sm:py-3">
+      <td className="block text-xs tabular-nums text-ink-soft sm:sticky sm:left-0 sm:table-cell sm:bg-panel sm:px-3 sm:py-1.5">
         {fmtInstant(t.ts, { secondes: true, sansA: true })}
       </td>
-      <td className="mt-1 block min-w-0 font-mono text-xs sm:mt-0 sm:table-cell sm:max-w-[18rem] sm:px-4 sm:py-3">
+      <td className="mt-1 block min-w-0 font-mono text-xs sm:mt-0 sm:table-cell sm:max-w-[18rem] sm:px-3 sm:py-1.5">
         {/* `span=` : une trace de page vue porte tous ses appels (E0) ; le détail
             résume CELUI-CI (latence, route, instant du rejeu), pas le premier venu. */}
         <Link
@@ -70,6 +101,11 @@ export function SlowRow({ t, query }: { t: SlowTrace; query: AnalyticsQuery }) {
           {t.front_status || "réseau"}
         </span>
       </td>
+      {maxMs !== undefined && (
+        <td className="mt-2 block w-full sm:mt-0 sm:table-cell sm:w-40 sm:px-3 sm:py-1.5">
+          <MiniCascade t={t} maxMs={maxMs} />
+        </td>
+      )}
       <td className={`${CHIFFRE} font-semibold`}>
         <span className="font-normal text-ink-soft sm:hidden">Navigateur</span>
         {formater("ms", t.front_ms)}
@@ -82,9 +118,9 @@ export function SlowRow({ t, query }: { t: SlowTrace; query: AnalyticsQuery }) {
         <span className="text-ink-soft sm:hidden">Trajet</span>
         {t.network_ms == null ? <span className="text-ink-soft">—</span> : formater("ms", t.network_ms)}
       </td>
-      <td className="mt-2 block text-xs sm:mt-0 sm:table-cell sm:px-4 sm:py-3">
+      <td className="mt-2 block text-xs sm:mt-0 sm:table-cell sm:px-3 sm:py-1.5">
         {t.session_id ? (
-          <span className="flex flex-wrap gap-x-3 gap-y-0.5 sm:flex-col">
+          <span className="flex flex-wrap gap-x-3 gap-y-0.5">
             <Link href={hrefWithQuery(`/sessions/${encodeURIComponent(t.session_id)}`, query)} className="font-mono text-brand hover:underline">
               <span className="text-ink-soft sm:hidden">Session </span>
               {t.session_id.slice(0, 8)}…

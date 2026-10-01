@@ -158,18 +158,14 @@ export default async function TraceDetail({
 
   return (
     <div className="animate-fade-up">
-      <PageHeader
-        title="Détail de la trace"
-        domain="robot"
-        sub="Pour cet appel, où est passé le temps, segment par segment, et qu'a vécu le visiteur à ce moment ?"
-      >
+      <PageHeader title="Détail de la trace" domain="robot">
         <Link href={retour} className="btn-ghost">
           ← Tracing
         </Link>
       </PageHeader>
 
       {/* TD1 — identité de l'appel : des puces, pas une mesure agrégée. */}
-      <section aria-label="Identité de l'appel" className="mb-5 flex flex-col gap-3">
+      <section aria-label="Identité de l'appel" className="mb-3 flex flex-col gap-2">
         <CopierTrace traceId={traceId} />
         <dl className="flex flex-wrap gap-1.5" data-testid="trace-puces">
           {front && (
@@ -216,14 +212,20 @@ export default async function TraceDetail({
         </dl>
 
         {fronts.length > 1 && !designe && (
-          <p role="note" className="text-xs text-ink-soft" data-testid="trace-plusieurs-appels">
-            Cette trace est celle d&apos;une page vue : elle porte {fronts.length} appels navigateur. Le premier est
-            résumé ci-dessus ; un clic sur un segment de la chronologie résume son appel.
+          // Une pastille ; la phrase entière pour un lecteur d'écran (recette du 30/09/2026).
+          <p role="note" className="text-[11px] text-ink-soft" data-testid="trace-plusieurs-appels">
+            <span aria-hidden className="rounded-full bg-panel2 px-2 py-0.5">
+              {fronts.length} appels navigateur · le premier est résumé · un clic sur un segment résume le sien
+            </span>
+            <span className="sr-only">
+              Cette trace est celle d&apos;une page vue : elle porte {fronts.length} appels navigateur. Le premier est
+              résumé ci-dessus ; un clic sur un segment de la chronologie résume son appel.
+            </span>
           </p>
         )}
 
         {/* TD3 — rejeu à l'instant de l'appel. */}
-        <p className="text-sm" data-testid="trace-rejeu">
+        <p className="text-xs" data-testid="trace-rejeu">
           {!sessionSpan?.session_id ? (
             <span className="text-ink-soft">Appel sans session (hors navigateur) : pas de rejeu.</span>
           ) : session && !session.ok ? (
@@ -245,13 +247,14 @@ export default async function TraceDetail({
       </section>
 
       {/* Bandeaux d'état. */}
-      <div className="mb-5 flex flex-col gap-3">
+      <div className="mb-3 flex flex-col gap-2">
         {!hasBackend && (
           <EtatSurface
             etat={{
               kind: "non_collecte",
               manque: "aucun span serveur reçu pour cette trace : déployez le middleware MIP ou un agent OpenTelemetry",
             }}
+            compact
           />
         )}
         {spanState && (
@@ -259,7 +262,7 @@ export default async function TraceDetail({
             role="status"
             data-testid="trace-span-state"
             data-span-state={spanState}
-            className={`rounded-lg border px-4 py-3 text-sm ${
+            className={`rounded-lg border px-3 py-2 text-xs ${
               spanState === "found" ? "border-perf/40 bg-perf/10 text-ink" : "border-warn/40 bg-warn/10 text-ink-soft"
             }`}
           >
@@ -295,16 +298,21 @@ export default async function TraceDetail({
       </Figure>
 
       {/* TD4 — erreurs JS qui portent cet identifiant de trace. */}
-      <section id="erreurs-liees" className="card mt-6 min-w-0 p-4 sm:p-5" data-testid="erreurs-liees">
+      <section id="erreurs-liees" className="card mt-3 min-w-0 p-3 sm:p-4" data-testid="erreurs-liees">
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Erreurs liées à cette trace</h2>
         {!erreurs.ok ? (
           <EchecLecture titre="Erreurs liées à cette trace" />
         ) : erreurs.data.length === 0 ? (
-          <p className="text-sm text-ink-soft">Aucune erreur JS ne porte cet identifiant de trace.</p>
+          <p className="flex items-center gap-1.5 text-xs text-ink-soft">
+            <span aria-hidden className="text-ink-faint">
+              ⊘
+            </span>
+            Aucune erreur JS ne porte cet identifiant de trace.
+          </p>
         ) : (
           <ul className="flex flex-col divide-y divide-line/60">
             {erreurs.data.map((e) => (
-              <li key={`${e.app_id}-${e.fingerprint}`} className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-sm">
+              <li key={`${e.app_id}-${e.fingerprint}`} className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 py-1.5 text-[13px]">
                 <Link
                   href={`/errors/${encodeURIComponent(e.fingerprint)}?app=${encodeURIComponent(e.app_id)}`}
                   className="min-w-0 max-w-full flex-1 truncate font-medium text-ink hover:text-brand hover:underline"
@@ -329,7 +337,7 @@ export default async function TraceDetail({
       </section>
 
       {/* TD5 — table des segments : les lignes de la cascade, avec statut et app. */}
-      <section className="card mt-6 min-w-0 p-4 sm:p-5" data-testid="table-segments">
+      <section className="card mt-3 min-w-0 p-3 sm:p-4" data-testid="table-segments">
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Segments</h2>
         {/* Défilement signalé. La zone de TableDefilante reste `relative` : la légende
             est `sr-only`, donc en position ABSOLUE ; sans ancêtre positionné, elle se
@@ -342,25 +350,25 @@ export default async function TraceDetail({
               <tr>
                 <th scope="col" className="th sticky left-0 z-10 bg-panel2">Segment</th>
                 <th scope="col" className="th">Piste</th>
-                <th scope="col" className="th">Début</th>
-                <th scope="col" className="th">Durée</th>
-                <th scope="col" className="th">Statut</th>
+                <th scope="col" className="th text-right">Début</th>
+                <th scope="col" className="th text-right">Durée</th>
+                <th scope="col" className="th text-right">Statut</th>
                 <th scope="col" className="th">App</th>
               </tr>
             </thead>
             <tbody>
               {spans.map((s, i) => (
                 <tr key={s.span_id} className="border-t border-line/60">
-                  <th scope="row" className="sticky left-0 z-10 max-w-[14rem] bg-panel px-4 py-2 text-left font-normal">
+                  <th scope="row" className="sticky left-0 z-10 max-w-[14rem] bg-panel px-3 py-1.5 text-left font-normal">
                     <span className="block truncate" title={libelleSegment(s)}>
                       {libelleSegment(s)}
                     </span>
                   </th>
-                  <td className="whitespace-nowrap px-4 py-2 text-ink-soft">{tierLabel(s)}</td>
-                  <td className="px-4 py-2 tabular-nums">+{texteDuree(starts[i] - t0)}</td>
-                  <td className="px-4 py-2 tabular-nums">{texteDuree(s.duration_ms)}</td>
-                  <td className="px-4 py-2 tabular-nums">{s.status_code ?? "—"}</td>
-                  <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-ink-soft">{s.app_id}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-ink-soft">{tierLabel(s)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">+{texteDuree(starts[i] - t0)}</td>
+                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{texteDuree(s.duration_ms)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{s.status_code ?? "—"}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-ink-soft">{s.app_id}</td>
                 </tr>
               ))}
             </tbody>
