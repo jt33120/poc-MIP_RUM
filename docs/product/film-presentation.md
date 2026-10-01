@@ -1,21 +1,14 @@
 # Le film de présentation de la vitrine
 
 État au 01/10/2026. Le film dure 1 min 29, en 1920 × 1080 à 30 images/s, avec une
-musique. On l'ouvre en grand depuis le premier écran de `/presentation` : c'est le bouton « Voir le film »
-(`apps/console/components/presentation/vitrine/FilmPresentation.tsx`). L'adresse
-`/presentation#film` l'ouvre directement. Il est déclaré dans `FILM_PRESENTATION`
-(`apps/console/lib/vitrine.ts`).
+musique. Il est déclaré dans `FILM_ACCUEIL` (`apps/console/lib/vitrine.ts`) et joué par
+`apps/console/components/presentation/vitrine/FilmAccueil.tsx`.
 
-Le film d'accueil (`FILM_ACCUEIL`, `scripts/monter-film-accueil.mjs`) n'est pas
-remplacé. Les deux films n'ont pas le même rôle :
-
-- **Le film d'accueil** est un fond muet de 15 s qui tourne en boucle. L'en-tête en
-  recouvre le haut (environ 240 px sur 1080) et l'invitation « Entrer » le bas
-  (environ 230 px).
-- **Le film de présentation** porte un schéma, des chiffres et des phrases à lire dans
-  l'ordre. Il lui faut tout le cadre, des commandes et le choix du visiteur. Il ne
-  pèse rien tant qu'on ne l'ouvre pas : la vidéo n'est montée qu'à l'ouverture de la
-  fenêtre (test `tests/unit/presentation-vitrine-demo.test.tsx`).
+**Depuis le 01/10/2026, ce film est aussi le film d'accueil** (`FILM_ACCUEIL`) : il
+tourne en fond du premier écran, muet et en boucle, avec les commandes lecture et son.
+Le premier clip de 15 s (`scripts/monter-film-accueil.mjs`) est retiré, et le bouton
+« Voir le film » aussi (`FILM_PRESENTATION = null`) : un seul film. Quand il joue, les
+voiles du haut et du bas se réduisent pour laisser lisibles ses titres et ses chiffres.
 
 ## Comment il est fait
 

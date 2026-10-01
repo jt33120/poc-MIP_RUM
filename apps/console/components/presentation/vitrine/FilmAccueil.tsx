@@ -186,8 +186,9 @@ export function FilmAccueil({
         </video>
       )}
       {/* Voiles : la marque lisible en haut, et un fondu vers la section suivante en bas. */}
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-40 bg-gradient-to-b from-[#040a1c]/80 to-transparent" />
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-48 bg-gradient-to-t from-[#040a1c] to-transparent" />
+      {/* Film lancé : voiles réduits, ses titres (haut) et ses chiffres (bas) restent lisibles. */}
+      <div aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 -z-10 bg-gradient-to-b from-[#040a1c]/80 to-transparent transition-all duration-700 ${filmVisible ? "h-16" : "h-40"}`} />
+      <div aria-hidden className={`pointer-events-none absolute inset-x-0 bottom-0 -z-10 bg-gradient-to-t from-[#040a1c] to-transparent transition-all duration-700 ${filmVisible ? "h-20" : "h-48"}`} />
 
       {/* La place de la barre de navigation, qui flotte au-dessus du film (NavVitrine). */}
       <div aria-hidden className="h-16 shrink-0" />

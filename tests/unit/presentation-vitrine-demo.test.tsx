@@ -66,7 +66,7 @@ describe("le film d'accueil", () => {
     for (const f of [FILM_ACCUEIL.mp4, FILM_ACCUEIL.affiche]) {
       expect(existsSync(join(RACINE, "apps/console/public", f)), f).toBe(true);
     }
-    expect(statSync(join(RACINE, "apps/console/public", FILM_ACCUEIL.mp4)).size).toBeLessThanOrEqual(8_000_000);
+    expect(statSync(join(RACINE, "apps/console/public", FILM_ACCUEIL.mp4)).size).toBeLessThanOrEqual(15_000_000);
     const video = /<video [^>]*>/.exec(VISITEUR)?.[0] ?? "";
     expect(video).toContain("muted");
     expect(video).toContain(`poster="${FILM_ACCUEIL.affiche}"`);
