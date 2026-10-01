@@ -14,6 +14,7 @@ import {
   debutsFrise,
   depuis,
   duree,
+  libelleEtage,
   libelleLatences,
   libelleResultat,
   libelleSource,
@@ -173,7 +174,7 @@ export function SanteChaine({
                       {f.etat === "interrompue" ? "Interrompue" : "Dégradée"}
                     </span>{" "}
                     {f.portee === "*" ? "plateforme" : f.portee}
-                    {f.etage !== "chaine" && <> ({f.etage})</>} · du {date(f.debut)} {f.fin ? <>au {date(f.fin)}</> : <>— en cours</>} ·{" "}
+                    {f.etage !== "chaine" && <> ({libelleEtage(f.etage)})</>} · du {date(f.debut)} {f.fin ? <>au {date(f.fin)}</> : <>— en cours</>} ·{" "}
                     {duree(f.debut, f.fin, maintenant)} · {libelleSource(f.source)}
                   </>
                 );

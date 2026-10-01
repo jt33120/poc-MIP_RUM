@@ -218,3 +218,17 @@ sql_json() { curl -sS --fail-with-body "https://$HOTE/sql" -H "Neon-Connection-S
 | 24/09/2026 | toute la production en échec : collecte en 500, travaux planifiés, écrans | quota de calcul Neon dépassé (110 / 100 CU-h), tick toutes les 5 min | `conso-neon.mjs` (projection du mois) ; cadence ralentie depuis ([ADR-0014](../architecture/adr/0014-base-gratuite.md)) |
 | 23/09/2026 | deux sondes uptime « en panne » | des fixtures `ex.invalid` restées actives | le relevé P0 |
 | 17 → 23/09/2026 | ingestion crue morte pendant des jours | aucune lecture du dernier événement par application | `releve-p0.mjs`, ligne « Dernier événement par application » |
+
+## 10. La veille de l'ordonnanceur : « Travaux planifiés muets »
+
+Le notifier lit, à chaque passe, le dernier tick **abouti** du scheduler (`scheduler_lease`, ligne `tick`) et sa cadence publiée (`platform_flag.scheduler_tick_min`). Au-delà de **2 × cadence + 5 min** sans tick abouti (35 min au quart d'heure), il ouvre une fenêtre `ordonnanceur` dans le registre (`collecte_fenetre`) et lève **une** alerte `critical` vers les canaux globaux : « [MIP RUM] Travaux planifiés muets : aucun tick abouti depuis N min… ». Pendant ce temps, ni règle d'alerte, ni SLO, ni sonde de disponibilité, ni canari n'est évalué ; la collecte, elle, continue. Détail : [README du notifier, « Veille de l'ordonnanceur »](../../services/notifier/README.md).
+
+| Question | Commande ou écran |
+|---|---|
+| L'épisode est-il en cours ? | `/admin/health`, « Fenêtres hors collecte » : « Interrompue plateforme (travaux planifiés) — en cours » ; ou `select debut, fin, cause, preuve, alerte_event_id from collecte_fenetre where portee = '*' and etage = 'ordonnanceur' order by debut desc limit 5;` |
+| Que voit le notifier ? | `/ready` du notifier, champ `veille_ordonnanceur` (décision, dernier tick, silence, seuil) ; journal : `travaux planifiés muets — alerte levée` |
+| Pourquoi le scheduler se tait-il ? | `railway logs --service scheduler --lines 200` : `travail terminé` du tick avec `ok: false` (étape en échec : pas de battement), `migrations` en échec au pré-déploiement, ou rien (processus arrêté) ; `railway deployment list --service scheduler` |
+
+**Rétablir.** Selon la cause : redéployer le scheduler (`railway redeploy --service scheduler --from-source` s'il faut rejouer le pré-déploiement), ou rejouer un tick à la main (§ 4). Au premier tick abouti, la passe suivante du notifier ferme la fenêtre, datée de ce tick ; aucune alerte de retour ne part.
+
+**Ce qu'elle ne voit pas.** La panne du notifier lui-même (plus rien n'est livré, ni l'alerte de la veille), celle de la base ou de tout Railway : la sonde externe (§ 1) et l'astreinte de MIP restent nécessaires. Sans canal global (`notify_channel` sans application), l'alerte n'est lue que dans `/alerts`.

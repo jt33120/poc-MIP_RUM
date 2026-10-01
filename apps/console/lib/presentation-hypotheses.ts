@@ -100,10 +100,15 @@ export const HYPOTHESES: readonly Hypothese[] = [
     id: "H9",
     titre: "Une supervision de la supervision minimale",
     aujourdhui:
-      "Une sonde externe vérifie toutes les 15 minutes que le service répond, et prévient par e-mail les personnes qui suivent le dépôt. Les travaux planifiés et les notifications ne sont pas sondés de l'extérieur.",
+      "Une sonde externe vérifie toutes les 15 minutes que le service répond, et prévient par e-mail les personnes qui suivent le dépôt. Le service des notifications alerte quand les travaux planifiés se taisent, au-delà de deux passages manqués ; lui-même n'est suivi que par son battement, affiché dans la console.",
     pourquoi: "Une panne de quelques heures ne prive aucun client pendant le POC.",
-    production: "Une supervision reliée à l'astreinte, et un signal qui alerte quand les travaux planifiés se taisent.",
-    sources: [".github/workflows/sonde-externe.yml:1-22", "docs/architecture/overview.md:116,131"],
+    production: "Une supervision reliée à l'astreinte, qui surveille aussi le service des notifications.",
+    sources: [
+      ".github/workflows/sonde-externe.yml:1-22",
+      "packages/backend/jobs/veille-ordonnanceur.mjs:16-23,41-42",
+      "services/notifier/README.md:26,28",
+      "docs/architecture/overview.md:116,131",
+    ],
   },
   {
     id: "H10",
