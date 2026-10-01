@@ -9,25 +9,19 @@
  * fixe, montrée avant la lecture et à qui a demandé moins de mouvement). `null` tant
  * qu'il n'est pas monté : la vitrine montre alors son titre en texte, sur un fond animé.
  */
-// Monté le 30/09/2026 par scripts/monter-film-accueil.mjs sur un clip Grok de 15 s
-// fourni par l'utilisateur (hors dépôt) : un visiteur navigue sur une boutique, les
-// mesures montent de l'écran et deviennent un tableau de bord.
+// Depuis le 01/10/2026, c'est le film de présentation (1 min 29, Remotion : le produit,
+// ce qui le distingue, sa stack ; docs/product/film-presentation.md) qui tourne en fond,
+// muet, en boucle : l'utilisateur a retiré le premier clip de 15 s, jugé trop court.
 export const FILM_ACCUEIL: { mp4: string; affiche: string } | null = {
-  mp4: "/vitrine/film-accueil.mp4",
-  affiche: "/vitrine/film-accueil.jpg",
+  mp4: "/vitrine/film-presentation.mp4",
+  affiche: "/vitrine/film-presentation.jpg",
 };
 
 /**
- * Le film de présentation : le produit, ce qui le distingue et sa stack, en une minute
- * et demie. Il s'ouvre en grand depuis le premier écran (FilmPresentation.tsx), ou
- * directement par /presentation#film. Comment il est fait et d'où vient chaque
- * affirmation : docs/product/film-presentation.md. `null` : pas de bouton.
+ * Un second film, ouvert en grand par un bouton du premier écran (FilmPresentation.tsx).
+ * `null` : pas de bouton — le film de présentation est désormais le film d'accueil.
  */
-export const FILM_PRESENTATION: { mp4: string; affiche: string; duree: string } | null = {
-  mp4: "/vitrine/film-presentation.mp4",
-  affiche: "/vitrine/film-presentation.jpg",
-  duree: "1 min 29",
-};
+export const FILM_PRESENTATION: { mp4: string; affiche: string; duree: string } | null = null;
 
 /** Les écrans de la scène animée de l'aperçu (components/presentation/vitrine/SceneConsole.tsx). */
 export type VueScene = "sante" | "pages" | "erreurs" | "session" | "tracing" | "assistant";
