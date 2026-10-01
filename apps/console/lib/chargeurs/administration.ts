@@ -179,7 +179,7 @@ export const chargerClient = (async (principal, _sp, chemin) => {
 }) satisfies Chargeur<unknown>;
 
 /**
- * Les jetons de lecture (`/admin/read-tokens`), les applications où en créer, et
+ * Les jetons d'accès (`/admin/read-tokens`), les applications où en créer, et
  * si la base porte leur échéance : l'écran ne propose une durée de validité que si
  * elle sera tenue.
  */

@@ -224,10 +224,12 @@ modification ni redistribution.
 
 ## 7. Sous-traitants (registre)
 > Registre tenu dans `apps/console/lib/legal.ts` (`SUBPROCESSORS`) — ce tableau en est le reflet,
-> et le test le vérifie. **Mistral et Anthropic en sont sortis le 09/09/2026**, dans la même
-> modification que la suppression de l'assistant IA interne : les routes qui les appelaient
-> n'existent plus, aucune donnée ne part vers un fournisseur de modèle. Déclarer un sous-traitant
-> qui ne traite rien est aussi faux que d'en omettre un qui traite.
+> et le test le vérifie. **Anthropic en est sorti le 09/09/2026**, dans la même modification que
+> la suppression de l'assistant IA interne : aucune donnée ne part plus vers lui. **Mistral AI,
+> sorti le même jour, y revient le 30/09/2026** avec l'assistant du tableau de bord : il ne reçoit
+> une donnée que lorsque l'assistant est configuré (clé posée sur Vercel) et qu'un utilisateur de
+> la console l'interroge. Déclarer un sous-traitant qui ne traite rien est aussi faux que d'en
+> omettre un qui traite.
 
 | Sous-traitant | Rôle | Localisation | Donnée |
 |---|---|---|---|
@@ -235,6 +237,7 @@ modification ni redistribution.
 | Vercel Inc. | hébergement de la console ; réception des mesures et relais vers le collecteur | fonctions serveur en UE (Francfort, `fra1`) — société de droit américain | **télémétrie RUM en transit**, relayée telle quelle avec le **code pays seul** : la console ne conserve ni ne transmet l'adresse IP ; **en traitement** (scrub, identité retirée, écriture en base) pour la part non relayée et en repli si le collecteur est indisponible ; pas de stockage RUM |
 | Railway Corp. | collecteur (`collector`) : réception des mesures relayées et de celles que les navigateurs lui envoient directement (collecte directe : la console elle-même, et les sites dont le code de suivi vise le collecteur) ; pseudonymisation, écriture en base ; travaux planifiés, API de lecture v1 (machines, sur jeton), backend de la console (`console-api`), serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | **télémétrie RUM en traitement** : code pays seul pour les mesures relayées ; pour celles reçues directement du navigateur, **adresse IP lue le temps de la requête** pour en déduire le pays, jamais conservée (§3.2) ; scrub, identité hachée (HMAC, secret posé sur Railway seul), écriture en base ; lecture des agrégats (travaux planifiés), réponses de l'API v1 et du MCP aux porteurs de jeton, sans écriture (rôle `mip_api`) ; comptes et sessions de la console, écrans, écritures et demandes RGPD (`console-api`, rôles `mip_identity` et `mip_console`), l'adresse d'un utilisateur de la console, ou d'un visiteur qui s'inscrit, réduite à une empreinte HMAC dans les compteurs de débit de connexion et d'inscription, effacée après 24 h d'inactivité ; pas de stockage RUM |
 | Resend, Inc. | envoi des alertes e-mail, appelé par le service `notifier` (Railway) | États-Unis — société de droit américain ; région d'envoi non choisie tant que l'expéditeur est le domaine de test `resend.dev`, `eu-west-1` (Irlande) à retenir en vérifiant le domaine | adresse du destinataire (un opérateur) et texte de l'alerte (application, mesure, valeur) ; aucune donnée d'utilisateur final |
+| Mistral AI | assistant du tableau de bord : rédaction des réponses à partir des chiffres agrégés affichés à l'utilisateur de la console | UE — société de droit français ; garanties de l'accord de traitement à vérifier lors de la relecture juridique | la question de l'utilisateur et le condensé des chiffres **agrégés** de la Vue d'ensemble (santé, cases, constats, routes normalisées), messages d'erreur masqués ; **uniquement quand l'assistant est configuré et qu'un utilisateur l'interroge** ; jamais d'identifiant de visiteur ni d'adresse IP |
 
 ## 8. Trajectoire de certification (gap analysis)
 | Cible | En place | Reste à faire |

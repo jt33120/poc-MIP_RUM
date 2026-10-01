@@ -1,6 +1,6 @@
 // Jetons de CI (P5.4, C11) — gestion admin.
 //
-// Distincts des jetons de lecture (`read_tokens`, CONSOLE_API_TOKENS) : UN
+// Distincts des jetons d'accès (`read_tokens`, CONSOLE_API_TOKENS) : UN
 // privilège par jeton — `sourcemaps:write` (upload de source maps) ou, depuis
 // migration-v92, `deploys:write` (marqueur de déploiement) —, une app, une date
 // d'expiration. Le secret n'est

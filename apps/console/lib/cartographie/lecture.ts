@@ -228,13 +228,13 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
     id: "s-jetons",
     famille: "securite",
     zone: "vercel",
-    titre: "Jetons de lecture",
+    titre: "Jetons d'accès",
     sousTitre: "lecture seule, par application",
     resume:
       "Les machines lisent avec un jeton : il ne donne qu'une lecture, éventuellement limitée à certaines applications, et ne se stocke jamais en clair.",
     etiquettes: ["SHA-256", "échéance", "CORS en liste"],
     faits: [
-      { texte: "Jetons de lecture mrk_ stockés en SHA-256, avec une échéance de 1 à 365 jours.", sources: [`${CONSOLE}/lib/read-tokens.ts:1-14`] },
+      { texte: "Jetons d'accès mrk_ stockés en SHA-256, avec une échéance de 1 à 365 jours.", sources: [`${CONSOLE}/lib/read-tokens.ts:1-14`] },
       { texte: "Jetons machine de l'API v1 : lecture seule, comparés à temps constant.", sources: [`${CONSOLE}/lib/api/auth.ts`] },
       { texte: "Jetons de CI des source maps : secret en SHA-256, 90 jours au plus.", sources: ["packages/backend/lib/sourcemap-upload.mjs"] },
       { texte: "CORS de l'API v1 en liste blanche.", sources: [`${CONSOLE}/lib/api/cors.ts:1-34`] },

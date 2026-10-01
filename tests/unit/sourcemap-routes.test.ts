@@ -1,7 +1,7 @@
 // P5.4 — routes console des source maps : QUI peut écrire, et par quel port.
 //
 // POST /api/sourcemaps accepte un jeton dédié OU une session admin avec l'Origin
-// de la console ; jamais un jeton de lecture, jamais une session viewer ou démo.
+// de la console ; jamais un jeton d'accès, jamais une session viewer ou démo.
 // Les lectures et écritures en base sont simulées ; le contrat d'upload RÉEL
 // (bornes, validation) s'exécute, et l'écriture est prouvée sur PostgreSQL
 // ailleurs. Les jetons de CI s'administrent depuis C9 par leurs commandes
@@ -110,7 +110,7 @@ describe("garde admin des routes API", () => {
 describe("POST /api/sourcemaps — port console", () => {
   const corps = { appId: "app-a", release: "2.3.1", maps: [{ filename: "main.js", content: MAP }] };
 
-  it("un jeton de lecture CONSOLE_API_TOKENS n'écrit jamais : 401, sans toucher la base", async () => {
+  it("un jeton d'accès CONSOLE_API_TOKENS n'écrit jamais : 401, sans toucher la base", async () => {
     // Vérificateur RÉEL : c'est lui qui doit refuser le format, pas la simulation.
     const reel = await vi.importActual<typeof import("../../packages/backend/lib/sourcemap-upload.mjs")>(
       "../../packages/backend/lib/sourcemap-upload.mjs",
@@ -201,7 +201,7 @@ describe("POST /api/sourcemaps — port console", () => {
 });
 
 describe("GET /api/sourcemaps — releases et manifeste (admin)", () => {
-  it("refuse jeton de lecture, viewer et démo ; exige appId", async () => {
+  it("refuse jeton d'accès, viewer et démo ; exige appId", async () => {
     expect((await LISTE_MAPS(requete("/api/sourcemaps?appId=app-a", { bearer: "tok" }))).status).toBe(401);
     expect((await LISTE_MAPS(requete("/api/sourcemaps?appId=app-a", { cookie: viewer }))).status).toBe(403);
     expect((await LISTE_MAPS(requete("/api/sourcemaps?appId=app-a", { cookie: demo }))).status).toBe(403);

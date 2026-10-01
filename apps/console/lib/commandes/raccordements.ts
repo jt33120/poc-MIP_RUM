@@ -1,4 +1,4 @@
-// CE QUI RACCORDE UNE APPLICATION AU RESTE (C9) — jetons de lecture, jetons de CI
+// CE QUI RACCORDE UNE APPLICATION AU RESTE (C9) — jetons d'accès, jetons de CI
 // des source maps, domaines de l'extension navigateur, inventaire des postes,
 // recette d'une capacité mobile. (Les connecteurs de tickets sont retirés depuis
 // le 29/09/2026.)
@@ -10,7 +10,7 @@
 // mobile, un constat d'opérateur sur le parc — revient à l'administrateur de la
 // PLATEFORME.
 //
-// Un secret (jeton de lecture, jeton de CI) est généré ici, stocké haché, et RENDU
+// Un secret (jeton d'accès, jeton de CI) est généré ici, stocké haché, et RENDU
 // UNE FOIS par la décision de la commande : jamais dans l'audit, jamais relu.
 import { booleen, chaine, facultatif, nulle, objet, parmi } from "@mip/console-contract";
 import { MOBILE_CAPABILITIES } from "@mip/backend/shared/mobile-capabilities.mjs";
@@ -26,14 +26,14 @@ import { commande, MOTIF_ENTIER } from "./commun";
 const CHEMIN_ID = objet({ id: chaine({ max: 18, motif: MOTIF_ENTIER, description: "identifiant entier" }) });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// ─── Jetons de lecture (API `/api/rum/summary`) ──────────────────────────────
+// ─── Jetons d'accès (API `/api/rum/summary`) ──────────────────────────────
 
 export const creerJetonLecture = commande(
   {
     regle: { auth: "admin", portee: "app", audit: "read_token.create" },
     corps: objet({
       label: chaine({ min: 0, max: 200 }),
-      // Recette du 26/09/2026 : un jeton de lecture a une échéance, comme un jeton
+      // Recette du 26/09/2026 : un jeton d'accès a une échéance, comme un jeton
       // de CI. Absente, la durée par défaut (90 jours) : jamais « sans fin » à la création.
       expiresInDays: facultatif(chaine({ max: 3, motif: /^[0-9]{1,3}$/ })),
     }),

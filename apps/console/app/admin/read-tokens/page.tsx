@@ -24,12 +24,8 @@ const ERREURS: Record<string, string> = {
 const JOUR = 86_400_000;
 const SOURCE = "Jetons d'accès enregistrés par la console (seule leur empreinte est conservée)";
 
-/**
- * Le nom de la zone défilante du tableau, lu par l'e2e des tableaux défilants
- * (`tests/e2e/tableaux-defilants.spec.ts`, « Jetons de lecture ») : il suivra le
- * renommage quand ce test le suivra — jusque-là, le garder évite de casser la CI.
- */
-const REGION_JETONS = "Jetons de lecture";
+/** Le nom de la zone défilante du tableau, lu par l'e2e des tableaux défilants. */
+const REGION_JETONS = "Jetons d'accès";
 
 /**
  * Les jetons d'accès (administrateurs) : générer, suivre l'échéance, révoquer.

@@ -125,8 +125,8 @@ describe("jetons d'upload dédiés", () => {
 
   it.each([
     ["absent", null],
-    ["jeton de lecture CONSOLE_API_TOKENS", "Bearer tok"],
-    ["jeton de lecture UTI", "Bearer mrk_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefg"],
+    ["jeton d'accès CONSOLE_API_TOKENS", "Bearer tok"],
+    ["jeton d'accès UTI", "Bearer mrk_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefg"],
     ["majuscules", `Bearer msu_${"A".repeat(32)}_${"a".repeat(64)}`],
     ["sans schéma Bearer", `msu_${"a".repeat(32)}_${"a".repeat(64)}`],
     ["secret tronqué", `Bearer msu_${"a".repeat(32)}_${"a".repeat(63)}`],

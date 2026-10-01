@@ -1,4 +1,4 @@
-// Jetons de lecture. Fonctions PURES (hash, fenêtre, validité) + génération.
+// Jetons d'accès. Fonctions PURES (hash, fenêtre, validité) + génération.
 // Le token en clair n'est JAMAIS stocké : on persiste son sha256 hex ; l'auth
 // re-hashe le token présenté et compare par égalité indexée.
 import { createHash, randomBytes } from "node:crypto";
@@ -28,9 +28,9 @@ export function parseWindow(raw: string | null | undefined): { key: SummaryWindo
 }
 
 /**
- * Durées de validité proposées à la création d'un jeton de lecture, en jours.
+ * Durées de validité proposées à la création d'un jeton d'accès, en jours.
  *
- * POURQUOI UNE ÉCHÉANCE. Un jeton de lecture sans fin reste valable tant que
+ * POURQUOI UNE ÉCHÉANCE. Un jeton d'accès sans fin reste valable tant que
  * personne ne pense à le révoquer — chez un partenaire qui a changé d'outil, dans
  * un script oublié. Les jetons de CI des source maps en ont une (1 à 90 jours) ;
  * ceux de lecture n'en avaient pas (recette du 26/09/2026).

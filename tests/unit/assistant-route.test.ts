@@ -113,12 +113,27 @@ describe("POST /api/assistant", () => {
     expect(appelsSortants).not.toHaveBeenCalled();
   });
 
-  it("clé posée mais Mistral AI pas encore déclaré aux sous-traitants : toujours par règles, aucun appel", async () => {
+  // Mistral AI est déclaré au registre depuis le 01/10/2026 : clé posée, la route
+  // l'interroge. Le cas « clé posée, fournisseur non déclaré » (aucun appel) est
+  // couvert par assistant-mistral.test.ts, registre injecté.
+  it("clé posée : la route interroge Mistral AI et rend sa réponse citée", async () => {
+    process.env.MISTRAL_API_KEY = "cle-de-test";
+    appelsSortants.mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: "Santé 72 / 100 [F1]." } }] }), { status: 200 }),
+    );
+    const corps = await (await POST(requete({ question: QUESTION, digest }))).json();
+    expect(appelsSortants).toHaveBeenCalledTimes(1);
+    expect(String(appelsSortants.mock.calls[0][0])).toBe("https://api.mistral.ai/v1/chat/completions");
+    expect(corps.mode).not.toBe("regles");
+    expect(corps.citations.length).toBeGreaterThan(0);
+  });
+
+  it("clé posée mais modèle injoignable : réponse par règles, qui le dit", async () => {
     process.env.MISTRAL_API_KEY = "cle-de-test";
     const corps = await (await POST(requete({ question: QUESTION, digest }))).json();
+    expect(appelsSortants).toHaveBeenCalledTimes(1);
     expect(corps.mode).toBe("regles");
-    expect(corps.avertissement).toMatch(/pas encore déclaré au registre des sous-traitants/);
-    expect(appelsSortants).not.toHaveBeenCalled();
+    expect(corps.avertissement).toMatch(/Le modèle n'a pas répondu/);
   });
 });
 

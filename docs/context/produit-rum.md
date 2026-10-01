@@ -79,7 +79,7 @@ par la route de la console `POST /api/ingest/v1/traces` (Vercel,
 détail de session avec rejeu, cascade de traces, erreurs et groupement par
 empreinte, corrélation, carte, prévision, objectifs, SLO, alertes, tableaux de bord,
 et une console d'administration complète (clients, usage, santé, confidentialité,
-jetons de lecture, audit).
+jetons d'accès, audit).
 
 ### 2.4 API de lecture
 

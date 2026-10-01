@@ -1,6 +1,6 @@
 # Inventaire de la console, pour la piste C
 
-> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-09-30, sur `HEAD`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
+> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-10-01, sur `HEAD`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
 
 ## En chiffres
 
@@ -9,7 +9,7 @@
 | Écrans (`page.tsx`) | 60 | **47** |
 | Fichiers d'actions serveur (`"use server"`) | 20 (56 actions) | **18** |
 | Actions déclarées dans un écran | 0 | — |
-| Routes (`route.ts`) | 45 | **37** |
+| Routes (`route.ts`) | 46 | **37** |
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
 | Modules `lib/queries*.ts` | 48 (210 fonctions exportées) | — |
@@ -122,6 +122,7 @@
 | Route | Méthodes | Authentification | Base | Destination |
 |---|---|---|---|---|
 | `/admin/privacy/export` | GET | — | **oui** | console-api (C10 RGPD) |
+| `/api/assistant` | POST | session | non | à classer |
 | `/api/auth/oidc/callback` | GET | émet la session | **oui** | console-api (C1 identité) |
 | `/api/auth/oidc/login` | GET | — | non | console-api (C1 identité) |
 | `/api/dashboards/[id]/export` | GET | — | **oui** | console-api (C6) |

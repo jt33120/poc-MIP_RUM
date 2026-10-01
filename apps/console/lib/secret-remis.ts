@@ -1,5 +1,5 @@
 // C9c — CE QU'UNE SERVER ACTION REND À SON FORMULAIRE QUAND SA COMMANDE A GÉNÉRÉ UN
-// SECRET (mot de passe, clé d'ingestion, jeton de lecture). Le formulaire
+// SECRET (mot de passe, clé d'ingestion, jeton d'accès). Le formulaire
 // (`components/secret/SecretUnique.tsx`) le remet à l'écran, qui l'affiche une fois.
 // Module neutre : l'action (serveur) et le formulaire (client) en partagent le type.
 
