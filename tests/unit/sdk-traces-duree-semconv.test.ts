@@ -27,6 +27,7 @@ vi.mock("../../packages/rum-sdk/src/session", () => ({
   getOrCreateSession: () => ({ sessionId: "sess-traces", visitorId: "visiteur-traces" }),
   rotateSession: () => ({ sessionId: "sess-traces-2", visitorId: "visiteur-traces" }),
   touchSession: () => {},
+  echue: () => false,
 }));
 vi.mock("../../packages/rum-sdk/src/privacy", () => ({ readPrivacySignals: () => ({}), signalsOptOut: () => false }));
 vi.mock("../../packages/rum-sdk/src/sampling", () => ({

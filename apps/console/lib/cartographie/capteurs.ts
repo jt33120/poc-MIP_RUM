@@ -49,7 +49,7 @@ export const ELEMENTS_CLIENT: readonly Element[] = [
     faits: [
       {
         texte: "DNT et GPC sont respectés par défaut : un navigateur qui refuse n'envoie rien.",
-        sources: [`${SDK}/src/index.ts:188-198`, `${SDK}/src/privacy.ts:33-36`],
+        sources: [`${SDK}/src/index.ts:189-199`, `${SDK}/src/privacy.ts:33-36`],
       },
       {
         texte: "Les frames d'animation longues (LoAF) ne se mesurent que sur Chromium.",
@@ -125,13 +125,13 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
       "Avant tout envoi : les refus du navigateur respectés, le consentement sur option, les URL sans requête ni fragment, un filtre par événement, et un rejeu masqué par défaut.",
     etiquettes: ["DNT · GPC", "consentement", "beforeSend"],
     faits: [
-      { texte: "DNT et GPC respectés par défaut : rien n'est collecté.", sources: [`${SDK}/src/index.ts:188-198`] },
+      { texte: "DNT et GPC respectés par défaut : rien n'est collecté.", sources: [`${SDK}/src/index.ts:189-199`] },
       { texte: "Consentement sur option : 200 événements gardés en mémoire, rejoués à l'accord, purgés au refus.", sources: [`${SDK}/src/consent.ts:6`] },
       {
         texte: "Avant l'accord, rien n'est lu ni écrit dans le stockage local ; un refus efface session, visiteur, échantillonnage et file de rejeu.",
-        sources: [`${SDK}/src/consent.ts:20-62`, `${SDK}/src/index.ts:219`],
+        sources: [`${SDK}/src/consent.ts:20-62`, `${SDK}/src/index.ts:220`],
       },
-      { texte: "Une page prérendue ne collecte rien tant qu'elle n'est pas affichée.", sources: [`${SDK}/src/index.ts:206-212`] },
+      { texte: "Une page prérendue ne collecte rien tant qu'elle n'est pas affichée.", sources: [`${SDK}/src/index.ts:207-213`] },
       { texte: "Requêtes et fragments retirés de toutes les URL.", sources: [`${SDK}/src/context.ts:22-24`] },
       { texte: "Rejeu : texte masqué, médias bloqués, saisies masquées par défaut.", sources: [`${SDK}/src/replay.ts:201-211`] },
     ],
@@ -143,25 +143,25 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
     famille: "capteur",
     zone: "capteurs",
     titre: "SDK web",
-    sousTitre: "mip-rum.js · 23,7 Ko gzip",
+    sousTitre: "mip-rum.js · 24,8 Ko gzip",
     resume:
       "Un seul fichier JavaScript posé dans le <head> : il mesure les Web Vitals, les erreurs, les sessions, les clics et les appels réseau, et les envoie par lots au format OpenTelemetry.",
     etiquettes: ["OTLP/HTTP JSON", "0 dépendance", "lots de 64"],
     faits: [
-      { texte: "23,7 Ko gzip, sous un budget de 35 Ko que chaque build fait respecter.", sources: [`${SDK}/build.mjs:52-62`, "apps/console/lib/sdk-poids.ts:17-27"] },
+      { texte: "24,8 Ko gzip, sous un budget de 35 Ko que chaque build fait respecter.", sources: [`${SDK}/build.mjs:52-62`, "apps/console/lib/sdk-poids.ts:17-27"] },
       {
         texte: "Envoi par lots de 64 spans toutes les 3 s, en fetch keepalive ; vidage quand la page passe en arrière-plan.",
-        sources: [`${SDK}/src/otel.ts:30`, `${SDK}/src/otel.ts:187-195`, `${SDK}/src/otel.ts:309-327`],
+        sources: [`${SDK}/src/otel.ts:34`, `${SDK}/src/otel.ts:191-199`, `${SDK}/src/otel.ts:313-331`],
       },
       {
         texte: "Hors ligne, une file bornée (100 spans, 50 Ko) rejoue les envois refusés pour surcharge.",
-        sources: [`${SDK}/src/retry.ts:50`, `${SDK}/src/retry.ts:124-127`],
+        sources: [`${SDK}/src/retry.ts:52`, `${SDK}/src/retry.ts:126-129`],
       },
       {
         texte: "Requêtes et fragments retirés des URL ; beforeSend filtre ou jette chaque span.",
         sources: [`${SDK}/src/context.ts:22-24`, "packages/rum-core/src/before-send.ts:21-30"],
       },
-      { texte: "Consentement sur option : tant qu'il manque, rien ne part ni ne s'écrit dans le navigateur (200 événements gardés en mémoire).", sources: [`${SDK}/src/consent.ts:6`, `${SDK}/src/consent.ts:115-116`, `${SDK}/src/index.ts:219`] },
+      { texte: "Consentement sur option : tant qu'il manque, rien ne part ni ne s'écrit dans le navigateur (200 événements gardés en mémoire).", sources: [`${SDK}/src/consent.ts:6`, `${SDK}/src/consent.ts:115-116`, `${SDK}/src/index.ts:220`] },
     ],
     x: 1500,
     y: 520,
@@ -185,7 +185,7 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
       { texte: "Arrêt après 2 minutes ou 1 Mo compressé ; un morceau part toutes les 10 s.", sources: [`${SDK}/src/replay.ts:11-13`] },
       {
         texte: "Il démarre dès l'initialisation si le site n'exige pas le consentement.",
-        sources: [`${SDK}/src/index.ts:651-655`, `${SDK}/src/index.ts:707-710`],
+        sources: [`${SDK}/src/index.ts:659-663`, `${SDK}/src/index.ts:715-718`],
       },
     ],
     x: 1840,
@@ -197,12 +197,12 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
     famille: "capteur",
     zone: "capteurs",
     titre: "Widget d'avis",
-    sousTitre: "mip-rum-feedback.js · 8,2 Ko gzip",
+    sousTitre: "mip-rum-feedback.js · 8,3 Ko gzip",
     resume: "Un bouton « Votre avis ? » : une note de 1 à 5 et un commentaire, envoyés comme un événement métier.",
     statut: "option",
     etiquettes: ["note 1 à 5", "silence 60 jours"],
     faits: [
-      { texte: "Commentaire tronqué à 500 caractères, envoyé par MIPRum.track(\"feedback\").", sources: ["apps/console/public/mip-rum-feedback.js:192-199"] },
+      { texte: "Commentaire tronqué à 500 caractères, envoyé par MIPRum.track(\"feedback\").", sources: ["apps/console/public/mip-rum-feedback.js:196-203"] },
       { texte: "Après un envoi, 60 jours de silence par application.", sources: ["apps/console/public/mip-rum-feedback.js:100-108"] },
     ],
     x: 2160,
@@ -270,7 +270,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
       "La part serveur de chaque appel : sa durée, ses requêtes SQL et ses appels sortants, rattachée à la session du navigateur par l'en-tête traceparent.",
     etiquettes: ["/v1/traces", "protobuf ou JSON"],
     faits: [
-      { texte: "Un span SERVER se rattache à la session par l'en-tête tracestate que pose le SDK.", sources: [`${SDK}/src/apispans.ts:88-90`, "packages/backend/shared/otlp.mjs"] },
+      { texte: "Un span SERVER se rattache à la session par l'en-tête tracestate que pose le SDK.", sources: [`${SDK}/src/apispans.ts:94-96`, "packages/backend/shared/otlp.mjs"] },
       { texte: "2 Mo et 20 000 spans au plus par requête.", sources: ["packages/backend/shared/limits.mjs:10-13"] },
     ],
     ...mesure(0),
@@ -305,7 +305,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
       { texte: "Le visiteur est un UUID aléatoire, sans empreinte du poste.", sources: [`${SDK}/src/session.ts:220-239`] },
       {
         texte: "Un retour arrière servi par le cache du navigateur compte une page vue ; une page prérendue, seulement si elle s'affiche.",
-        sources: [`${SDK}/src/context.ts:56-60`, `${SDK}/src/index.ts:206-212`],
+        sources: [`${SDK}/src/context.ts:56-60`, `${SDK}/src/index.ts:207-213`],
       },
       { texte: "Les nombres et identifiants des routes deviennent :id.", sources: [`${SDK}/src/context.ts:4-15`] },
     ],
@@ -351,10 +351,10 @@ export const ELEMENTS_MESURES: readonly Element[] = [
       "Chaque appel fetch ou XHR de la page vers son domaine, chronométré, et marqué d'un identifiant de trace que le serveur reprend.",
     etiquettes: ["fetch · XHR", "100 par page"],
     faits: [
-      { texte: "fetch et XMLHttpRequest instrumentés : méthode, adresse sans requête, statut, durée.", sources: [`${SDK}/src/apispans.ts:146-164`] },
+      { texte: "fetch et XMLHttpRequest instrumentés : méthode, adresse sans requête, statut, durée.", sources: [`${SDK}/src/apispans.ts:152-170`] },
       {
         texte: "traceparent ajouté vers la même origine et les domaines déclarés, jamais vers la collecte.",
-        sources: [`${SDK}/src/apispans.ts:88-108`],
+        sources: [`${SDK}/src/apispans.ts:94-114`],
       },
     ],
     ...mesure(5),
@@ -383,7 +383,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
     etiquettes: [`≥ ${TEXTE_SEUIL_COLLECTE_RESSOURCE}`, "LoAF d'abord"],
     faits: [
       { texte: `Une ressource compte si elle dure ${TEXTE_SEUIL_COLLECTE_RESSOURCE} ou plus, ou bloque le rendu.`, sources: [`${SDK}/src/resources.ts:8`, `${SDK}/src/resources.ts:26-28`] },
-      { texte: "LoAF quand le navigateur le permet, les tâches longues sinon, jamais les deux.", sources: [`${SDK}/src/index.ts:478`] },
+      { texte: "LoAF quand le navigateur le permet, les tâches longues sinon, jamais les deux.", sources: [`${SDK}/src/index.ts:486`] },
     ],
     ...mesure(7),
   },
@@ -412,7 +412,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
     resume: "Ce que l'application déclare elle-même : événements, vues, temps, drapeaux de fonctionnalité, identité et avis.",
     etiquettes: ["MIPRum.track", "identité hachée"],
     faits: [
-      { texte: "track(nom, props) émet un événement track.<nom>.", sources: [`${SDK}/src/index.ts:767-789`] },
+      { texte: "track(nom, props) émet un événement track.<nom>.", sources: [`${SDK}/src/index.ts:775-797`] },
       { texte: "L'identifiant d'utilisateur est remplacé par un HMAC-SHA256 à la collecte.", sources: ["packages/db/sql/migration-v66.sql:64", "packages/backend/lib/identity-hash.mjs"] },
     ],
     ...mesure(9),

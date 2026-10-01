@@ -420,7 +420,7 @@ vieux : c'est ce qu'un redémarrage emporterait.
 
 ## Annexe H — Poids et impact sur la page
 
-- `mip-rum.js` : **23,7 Ko gzip** (67,8 Ko brut, build du 01/10/2026), sous le budget de
+- `mip-rum.js` : **24,8 Ko gzip** (70,3 Ko brut, build du 02/10/2026), sous le budget de
   35 Ko gzip que `packages/rum-sdk/build.mjs` fait respecter. Le rejeu est un second
   fichier (`mip-rum-replay.js`, 56,7 Ko gzip), chargé seulement si `replay` est allumé.
 - Envoi par lots (toutes les `flushIntervalMs`), vidés par `sendBeacon` quand la page

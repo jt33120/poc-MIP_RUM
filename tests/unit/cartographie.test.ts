@@ -136,7 +136,7 @@ describe("les sources citées existent", () => {
     const ANCRES: Record<string, string[]> = {
       "packages/rum-sdk/src/replay.ts:201-211": ["function optionsMasquage", "maskAllInputs: true", 'maskTextSelector: "*"'],
       "packages/rum-sdk/src/replay.ts:11-13": ["REPLAY_MAX_MS = 120_000", "REPLAY_MAX_COMPRESSED_BYTES = 1024 * 1024", "CHUNK_FLUSH_MS = 10_000"],
-      "packages/rum-sdk/src/replay.ts:418-427": ['"x-mip-session"', '"x-mip-app"', '"x-mip-seq"', '"x-mip-key"'],
+      "packages/rum-sdk/src/replay.ts:439-448": ['"x-mip-session"', '"x-mip-app"', '"x-mip-seq"', '"x-mip-key"'],
       "packages/rum-sdk/src/types.ts:156-170": ["interface CaptureErrorsConfig", "console?:", "resources?:", "csp?:", "network?:"],
     };
     const citees = new Set(CARTOGRAPHIE.elements.flatMap((e) => e.faits.flatMap((f) => f.sources)));

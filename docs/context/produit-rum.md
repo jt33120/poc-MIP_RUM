@@ -144,7 +144,7 @@ promesse « OTel-native, donc réversible et corrélable ».
 
 *Corrigé le 29/07/2026 (commit `b950a898`, E0) : un `traceId` par page vue,
 partagé par tous les spans de la page, et le span d'appel API propage son
-`spanId` dans `traceparent` (`packages/rum-sdk/src/otel.ts:54-66`).*
+`spanId` dans `traceparent` (`packages/rum-sdk/src/otel.ts:61-73`).*
 
 **③ Les seuils Core Web Vitals ne sont pas ceux de web.dev.** Trois fichiers portent
 la même valeur erronée pour le LCP — `packages/rum-sdk/src/vitals.ts`,
