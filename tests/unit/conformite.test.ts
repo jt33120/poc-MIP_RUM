@@ -23,7 +23,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DATA_SOURCES, HOSTS, SUBPROCESSORS } from "../../apps/console/lib/legal";
+import { fournisseurDeclare, URL_MISTRAL } from "../../apps/console/lib/assistant/mistral";
+import { DATA_SOURCES, HOSTS, SOUS_TRAITANT_ASSISTANT, SUBPROCESSORS } from "../../apps/console/lib/legal";
 
 const DOC = readFileSync(join(__dirname, "../../docs/CONFORMITE.md"), "utf8");
 
@@ -57,10 +58,29 @@ describe("registre des sous-traitants — le reflet de lib/legal.ts", () => {
 
   it("ne déclare AUCUN fournisseur que le code ne connaît plus", () => {
     // Déclarer un sous-traitant qui ne traite rien est aussi faux que d'en
-    // omettre un qui traite. Mistral et Anthropic sont sortis le 09/09/2026
-    // avec la suppression de l'assistant IA ; Supabase avec la migration Neon.
-    for (const mort of ["Supabase", "Mistral", "Anthropic"])
+    // omettre un qui traite. Anthropic est sorti le 09/09/2026 avec la
+    // suppression de l'ancien assistant IA ; Supabase avec la migration Neon.
+    // Mistral, sorti le même 09/09, revient le 30/09/2026 avec l'assistant du
+    // tableau de bord : il n'est vivant que déclaré dans SUBPROCESSORS — et
+    // l'assistant ne l'appelle pas tant qu'il ne l'est pas (test suivant).
+    const mistralDeclare = SUBPROCESSORS.some((s) => s.name === SOUS_TRAITANT_ASSISTANT.name);
+    for (const mort of ["Supabase", "Anthropic", ...(mistralDeclare ? [] : ["Mistral"])])
       expect(registre.join("\n"), mort).not.toContain(mort);
+  });
+
+  it("l'assistant n'appelle le modèle que si son fournisseur est déclaré", () => {
+    // La clé posée sur Vercel ne suffit pas à faire sortir une donnée : le
+    // fournisseur doit être dans SUBPROCESSORS (donc, par le premier test, dans le
+    // registre ci-dessus). C'est `fournisseurDeclare` qui garde l'appel.
+    expect(SOUS_TRAITANT_ASSISTANT.name).toBe("Mistral AI");
+    expect(new URL(URL_MISTRAL).hostname).toBe("api.mistral.ai");
+    expect(fournisseurDeclare()).toBe(SUBPROCESSORS.some((s) => s.name === SOUS_TRAITANT_ASSISTANT.name));
+    expect(fournisseurDeclare([])).toBe(false);
+    expect(fournisseurDeclare([...SUBPROCESSORS, SOUS_TRAITANT_ASSISTANT])).toBe(true);
+    // La déclaration préparée dit ce que le code envoie, et rien de plus.
+    expect(SOUS_TRAITANT_ASSISTANT.societe).toBe("Société de droit français");
+    expect(SOUS_TRAITANT_ASSISTANT.note).toMatch(/jamais d'identifiant de visiteur ni d'adresse IP/);
+    expect(SOUS_TRAITANT_ASSISTANT.note).toMatch(/configuré et qu'un utilisateur l'interroge/);
   });
 
   it("compte autant de lignes que le code a de sous-traitants", () => {

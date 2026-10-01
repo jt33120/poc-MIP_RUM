@@ -1137,3 +1137,29 @@
   .carte-etape { left: 0.5rem; bottom: 0.5rem; width: calc(100% - 1rem); }
   .carte-mini { display: none; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Assistant — le volet IA de la Vue d'ensemble (30/09/2026).           */
+/* Une source cliquée surligne son chiffre sur la page pendant 2,5 s :  */
+/* un anneau orange (la série principale, lisible dans les deux thèmes) */
+/* et trois pulsations ; sous prefers-reduced-motion, l'anneau reste    */
+/* immobile. À partir de 1 440 px, le volet ouvert (400 px) pousse la   */
+/* page au lieu de la recouvrir : un chiffre surligné n'est jamais      */
+/* caché dessous (components/assistant/Assistant.tsx).                  */
+/* ------------------------------------------------------------------ */
+.assistant-surlignage {
+  outline: 2px solid rgb(var(--c-serie));
+  outline-offset: 3px;
+  border-radius: 0.75rem;
+  animation: assistant-pulsation 0.8s ease-out 3;
+}
+@keyframes assistant-pulsation {
+  from { box-shadow: 0 0 0 0 rgb(var(--c-serie) / 0.45); }
+  to   { box-shadow: 0 0 0 12px rgb(var(--c-serie) / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .assistant-surlignage { animation: none; box-shadow: 0 0 0 4px rgb(var(--c-serie) / 0.3); }
+}
+@media (min-width: 1440px) {
+  html[data-assistant="ouvert"] body { padding-right: 25rem; }
+}

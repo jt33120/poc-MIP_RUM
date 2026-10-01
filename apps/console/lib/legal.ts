@@ -164,14 +164,21 @@ const CCT = "Clauses contractuelles types de la Commission européenne";
  * « domaine de test ») vivent dans les commentaires ci-dessous et dans
  * docs/CONFORMITE.md, jamais dans une phrase servie au public.
  *
- * MISTRAL AI ET ANTHROPIC EN SONT SORTIS le 09/09/2026, dans la même modification
- * que la suppression de l'assistant IA interne. Ils y figuraient parce que
- * `app/api/{ask,briefing,assist}/route.ts` les appelaient réellement ; ces routes
- * n'existent plus, aucune donnée ne part donc plus vers un fournisseur de modèle.
- * Les laisser aurait été le symétrique exact du défaut que cet en-tête met en
- * garde : déclarer un sous-traitant qui ne traite rien est aussi faux que d'en
- * omettre un qui traite. Le transfert hors UE qu'impliquait le second disparaît
- * avec eux.
+ * ANTHROPIC EN EST SORTI le 09/09/2026, dans la même modification que la
+ * suppression de l'assistant IA interne, et Mistral AI avec lui : ils y figuraient
+ * parce que `app/api/{ask,briefing,assist}/route.ts` les appelaient réellement. Les
+ * laisser aurait été le symétrique exact du défaut que cet en-tête met en garde :
+ * déclarer un sous-traitant qui ne traite rien est aussi faux que d'en omettre un
+ * qui traite. Le transfert hors UE qu'impliquait Anthropic a disparu avec lui.
+ *
+ * MISTRAL AI Y REVIENT le 30/09/2026, pour l'assistant du tableau de bord
+ * (`app/api/assistant/route.ts`) : quand l'assistant est configuré et qu'un
+ * utilisateur l'interroge, le condensé des chiffres de la Vue d'ensemble part vers
+ * le modèle — une nouvelle sortie de données vers un tiers. Sa déclaration est
+ * `SOUS_TRAITANT_ASSISTANT`, ci-dessous. Elle n'entre dans `SUBPROCESSORS` qu'avec
+ * sa ligne du registre de docs/CONFORMITE.md § 7 (le test de conformité compare les
+ * deux) ; d'ici là, l'assistant n'appelle PAS le modèle, même clé posée
+ * (`fournisseurDeclare`, `lib/assistant/mistral.ts`), et répond par règles.
  */
 export const SUBPROCESSORS: SousTraitant[] = [
   {
@@ -285,6 +292,31 @@ export const SUBPROCESSORS: SousTraitant[] = [
     garanties: CCT,
   },
 ];
+
+/**
+ * MISTRAL AI (30/09/2026) — le modèle de l'assistant du tableau de bord. Ce qui part :
+ * la question de l'utilisateur de la console et le condensé des chiffres AGRÉGÉS de
+ * la Vue d'ensemble (santé, cases, constats, routes normalisées) ; jamais un
+ * identifiant de visiteur ni une adresse IP, et les messages d'erreur cités y sont
+ * masqués (`lib/assistant/masque.ts`). Société de droit français, traitement dans
+ * l'UE : aucun transfert hors UE à encadrer, mais l'accord de traitement reste À
+ * VÉRIFIER lors de la relecture juridique, comme les CCT des autres fournisseurs.
+ *
+ * À AJOUTER À `SUBPROCESSORS` dans la même modification que sa ligne du registre de
+ * docs/CONFORMITE.md § 7 (voir l'en-tête de `SUBPROCESSORS`) : c'est ce geste, et non
+ * la clé posée sur Vercel, qui ouvre l'appel au modèle.
+ */
+export const SOUS_TRAITANT_ASSISTANT: SousTraitant = {
+  name: "Mistral AI",
+  role: "Assistant du tableau de bord : rédaction des réponses à partir des chiffres agrégés affichés à l'utilisateur de la console.",
+  societe: "Société de droit français",
+  traitement: "Traitement dans l'Union européenne",
+  region: null,
+  garanties: "Traitement dans l'UE ; garanties de l'accord de traitement à vérifier lors de la relecture juridique",
+  note:
+    "Uniquement quand l'assistant est configuré et qu'un utilisateur l'interroge ; agrégats du tableau de bord, " +
+    "jamais d'identifiant de visiteur ni d'adresse IP.",
+};
 
 /**
  * Le pays des mesures (« Pays estimé : … ») — VÉRIFIÉ dans le code le 28/09/2026 avant d'être écrit.

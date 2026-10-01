@@ -86,6 +86,8 @@ import {
   ongletHeroDe,
   type VitalDecoupe,
 } from "@/lib/vue-ensemble";
+// Assistant — le volet IA de l'écran et la construction de son condensé.
+import { Assistant, construireDigestVueEnsemble } from "@/components/assistant";
 
 /** La question de l'écran (P1) : le sous-titre de l'en-tête. */
 
@@ -906,10 +908,45 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     else lignesSansCase.push({ cle: "angle", titre: LIBELLE_ANGLE_MORT, noeud: tuile(true) });
   }
 
+  // ─── Assistant — le condensé de ce que l'écran vient de lire, pour le volet IA ───
+  // Aucune requête de plus : seulement les valeurs lues ci-dessus, et seulement ce que
+  // l'écran affiche (un bloc éteint n'y entre pas). Chaque fait vise son repère ici.
+  const digestAssistant = construireDigestVueEnsemble({
+    app: query.scope.requestedApp,
+    periode: period.label,
+    sansVisite: sansVisite ? { titre: sansVisite.titre, detail: sansVisite.detail } : null,
+    deploiement: deploiementBandeau,
+    sante: blocs.sante ? (health.ok ? health.data : "echec") : null,
+    cases: [...(blocs.trafic ? tuilesTrafic : []), ...(blocs.vitals ? tuilesVitaux : [])],
+    series: blocs.hero ? VITAUX_HERO.map((nom) => ({ vital: nom, lu: serieDe(nom) })) : null,
+    datation: blocs.hero ? { phrase: phraseDatationP7, datable: datationP7.ok, rupture: datationP7.ok ? datationP7.rupture : null } : null,
+    constats: { liste: constats.constats, echecs: constats.echecs, detectes: etatDetectes, affiches: !constatsVides },
+    anomalies:
+      blocs.anomalies && health.ok
+        ? { lignes: health.data.anomalies, filtrees: health.data.factors.some((x) => x.key === "anomalies" && x.raisonNull === "sous filtre") }
+        : null,
+    segments:
+      decoupage && decoupe.ok && decoupe.data && segments
+        ? { dimension: decoupage, vital: vitalClasse, lignes: segments.lignes, ensemble: ensembleVital?.p75 ?? null, groupes: decoupe.data.groups }
+        : null,
+    release:
+      blocs.versions && releases.ok && lueA?.ok && lueB?.ok
+        ? { a: statsRelease(releases.relA, lueA.data, vitauxA), b: statsRelease(releases.relB, lueB.data, vitauxB), regle: releases.regle }
+        : null,
+    historique: blocs.historique && grid.ok ? grid.data : null,
+    angleMort: etatAngle,
+    latence: blocs.hero ? heatmap : null,
+    charge: blocs.charge
+      ? { vues: vues.ok ? vues.data : null, erreurs: serieErreurs.ok && serieErreurs.data ? serieErreurs.data.points : null }
+      : null,
+  });
+
   return (
     <div className="animate-fade-up flex min-w-0 flex-col gap-4">
       {/* L'onglet actif dit déjà « Vue d'ensemble » : le titre reste pour la structure. */}
       <h1 className="sr-only">Vue d&apos;ensemble</h1>
+      {/* Assistant — le bouton en haut à droite de l'écran, et son volet à droite. */}
+      <Assistant digest={digestAssistant} />
       {/* Plage personnalisée (case de la heatmap, zoom) : dite dans les DEUX fuseaux
           (R-T) — « 15/07 09:00-10:00 Europe/Paris (07:00-08:00 UTC) ». */}
       {query.range.preset === null && (
