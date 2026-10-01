@@ -33,6 +33,7 @@ import { chargerTableau } from "@/lib/chargeurs/tableau";
 import { chargerEcran } from "@/lib/ecran";
 import { hrefWithQuery, queryToSearchParams } from "@/lib/query-contract";
 import type { WidgetData } from "@/lib/widget-data";
+import { estAdditive } from "@/lib/analytics-schema";
 import { fenetresLues, type FenetreCollecte } from "@/lib/series";
 import {
   addWidgetAction,
@@ -58,11 +59,15 @@ export const dynamic = "force-dynamic";
 /**
  * Une carte occupe-t-elle toute la largeur de sa rangée (§ 5.25.3) ? Une série et
  * un journal, oui : un axe de temps ou une table de colonnes comprimés dans un
- * tiers de page cessent d'être lisibles. Une valeur ou un classement tiennent dans
- * une case. La règle se lit sur la DONNÉE rendue, pas sur un champ enregistré.
+ * tiers de page cessent d'être lisibles. Une valeur ou un classement en barres tiennent
+ * dans une case. Un classement NON additif (p75, moyenne : la table d'impact) aussi a
+ * besoin de la rangée (recette du 30/09/2026) : dans une demi-page, chacune de ses
+ * lignes passait sur quatre lignes, 1 057 px pour dix routes à côté d'une carte de
+ * 361 px. La règle se lit sur la DONNÉE rendue, pas sur un champ enregistré.
  */
 function pleineLargeur(data: Fil<WidgetData> | undefined): boolean {
-  return data?.kind === "timeseries" || data?.kind === "table";
+  if (data?.kind === "timeseries" || data?.kind === "table") return true;
+  return data?.kind === "toplist" && data.analyse !== undefined && !estAdditive(data.analyse.plan.measure.aggregation);
 }
 
 /** Ce que chaque carte de la grille reçoit, quel que soit son groupe. */
@@ -279,7 +284,8 @@ export default async function D({
       <p className="-mt-3 mb-2 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-soft" data-testid="tableau-perimetre">
         <span className="rounded-full bg-panel2 px-2 py-0.5">Application : {scope}</span>
         <span className="rounded-full bg-panel2 px-2 py-0.5">Propriétaire : {ecran.proprietaire}</span>
-        <span className="rounded-full bg-panel2 px-2 py-0.5">{ecran.label}</span>
+        {/* La plage lue est écrite juste dessous, par la barre de population. */}
+        <span className="sr-only">{ecran.label}</span>
       </p>
       <PopulationBar puces={puces} plage={rangeLabel(populationQuery.range, timeZone)} fuseau={FUSEAU_AFFICHAGE} />
 
