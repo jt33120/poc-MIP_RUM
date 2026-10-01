@@ -17,10 +17,14 @@
 // tick abouti, les travaux planifiés sont tenus pour arrêtés (`planReconstitution`
 // et `sonde_reconstituer_uptime` pour le passé, la carte « Santé de la chaîne de
 // mesure » pour le présent). Un tick manqué — un redéploiement, un bail tenu par
-// l'instance sortante, des migrations au pré-déploiement — ne suffit pas ; deux de
-// suite, si. La cadence est celle que le scheduler PUBLIE
-// (`platform_flag.scheduler_tick_min`) ; non publiée, celle d'un déploiement sans
-// réglage (`TICK_DEFAUT_MIN`, 15 min), et l'alerte le dit.
+// l'instance sortante, des migrations au pré-déploiement — ne suffit pas. Deux non
+// plus, en production : tick et passes au quart d'heure, la passe qui suit le
+// deuxième tick manqué voit 30 min 45 s de silence, moins la durée du dernier tick :
+// sous les 35 min. L'alerte part à la passe qui suit le TROISIÈME, vers 46 min après
+// le dernier tick abouti (vers 35 min avec des passes de 15 s, non alignées). La
+// cadence est celle que le scheduler PUBLIE (`platform_flag.scheduler_tick_min`) ;
+// non publiée, celle d'un déploiement sans réglage (`TICK_DEFAUT_MIN`, 15 min), et
+// l'alerte le dit.
 //
 // UN ÉPISODE = UNE FENÊTRE = UNE ALERTE. Le silence ouvre une fenêtre du registre
 // (`collecte_fenetre`, portée `'*'`, étage `ordonnanceur`, état `interrompue`), datée
@@ -34,12 +38,21 @@
 // HORS DE LA COLLECTE. L'étage `ordonnanceur` n'est lu ni par les graphiques
 // (`etage = 'chaine'`, `apps/console/lib/queries-collecte.ts`) ni par
 // `check_alerts` (« hors collecte », migration-v105) : la collecte ne passe pas par
-// le scheduler, une mesure reçue pendant le silence est une vraie mesure. Ce qui
-// s'arrête, ce sont les décisions : alertes, SLO, sondes de disponibilité, canari.
-// La carte de `/admin/health` liste la fenêtre avec les autres.
+// le scheduler, et la fenêtre de la veille ne retire aucune mesure. Ce qui s'arrête,
+// ce sont les décisions : alertes, SLO, sondes de disponibilité, canari. La carte de
+// `/admin/health` la liste avec les autres, étiquetée « travaux planifiés, pas la
+// collecte ». MAIS au premier tick revenu, le scheduler reconstitue son propre
+// silence en fenêtre `interrompue` de la chaîne (`planReconstitution`, `sondes.mjs`,
+// source `reconstitution`) : sans canari, la collecte n'y est pas prouvée. Celle-là
+// est hachurée sur les graphiques, et `check_alerts` ne calcule aucune règle dont la
+// fenêtre d'évaluation la recoupe. Le même épisode figure alors deux fois sur la carte.
 //
 // CE QU'ELLE NE COUVRE PAS. La panne du notifier lui-même (plus personne ne livre),
 // celle de la base, ni celle de tout Railway : l'astreinte de MIP reste à brancher.
+// Ni l'heure exacte d'un scheduler mort EN PLEIN tick : son bail n'est pas rendu, et
+// l'échéance (prise + `DUREES.tick`, 10 min) tient lieu de dernier battement
+// (`bail.mjs`, « limite connue ») : la fenêtre en est datée, l'alerte part jusqu'à
+// 10 min plus tard, et sa preuve le dit.
 import { TICKS_ADMIS_MIN, TICK_DEFAUT_MIN } from "./cadence.mjs";
 
 /** L'étage du registre que la veille tient. */
@@ -48,7 +61,7 @@ export const ETAGE_VEILLE = "ordonnanceur";
 export const MARGE_SILENCE_MIN = 5;
 /** Écart minimal entre deux veilles, compté depuis la dernière tentative. */
 export const VEILLE_MIN_MS = 60_000;
-/** Sans tick, plus aucune alerte n'est évaluée : la plus haute sévérité. */
+/** Sans tick abouti, plus rien ne garantit que les alertes soient évaluées : la plus haute sévérité. */
 export const SEVERITE_VEILLE = "critical";
 /** SQLSTATE d'un schéma incomplet (v87 ou v103 absentes) : la veille attend, sans bruit de pile. */
 const SCHEMA_INCOMPLET = new Set(["42P01", "42703", "42883"]);
@@ -114,10 +127,10 @@ export function textesVeille({ dernierTick, silenceMin, seuilMin, cadenceMin, ca
   const message =
     `Travaux planifiés muets : aucun tick abouti depuis ${silenceMin} min ` +
     `(dernier le ${dateUtc(dernierTick)} UTC, ${cadence}, seuil ${seuilMin} min). ` +
-    "Alertes, SLO, sondes de disponibilité et canari ne sont plus évalués.";
+    "Le tick ne tourne plus ou échoue : alertes, SLO, sondes de disponibilité et canari ne sont plus garantis.";
   return {
     cause: `travaux planifiés muets : aucun tick abouti au-delà de ${seuilMin} min`.slice(0, 120),
-    preuve: `dernier tick abouti le ${dateUtc(dernierTick)} UTC (scheduler_lease) ; ${cadence} ; seuil 2 × ${cadenceMin} + ${MARGE_SILENCE_MIN} = ${seuilMin} min ; constaté par le notifier`.slice(0, 300),
+    preuve: `dernier battement du tick le ${dateUtc(dernierTick)} UTC (scheduler_lease : fin du dernier tick abouti, ou échéance d'un bail abandonné en plein tick) ; ${cadence} ; seuil 2 × ${cadenceMin} + ${MARGE_SILENCE_MIN} = ${seuilMin} min ; constaté par le notifier`.slice(0, 300),
     message,
   };
 }

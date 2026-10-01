@@ -199,7 +199,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
     faits: [
       {
         texte: "Une passe toutes les 15 minutes, 45 s après le tick ; pas de LISTEN/NOTIFY, qui ne traverse pas le pooler de Neon.",
-        sources: [`${BACK}/jobs/livreur.mjs:37-81`, "docs/architecture/adr/0014-base-gratuite.md:38"],
+        sources: [`${BACK}/jobs/livreur.mjs:45-89`, "docs/architecture/adr/0014-base-gratuite.md:38"],
       },
       { texte: "Réservation en SKIP LOCKED : un même envoi ne part jamais deux fois.", sources: [`${BACK}/lib/dispatch-alerts.mjs:142-162`] },
       { texte: "Cinq tentatives au plus, avec un recul qui double à chaque fois.", sources: [`${BACK}/lib/dispatch-alerts.mjs:118-134`] },

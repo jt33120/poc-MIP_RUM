@@ -94,7 +94,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
       "Les alertes partent vers un webhook ou Slack ; l'e-mail passe par un domaine d'envoi d'essai, qui ne sert que des destinataires déclarés. Pas de SMS, pas d'outil d'astreinte.",
     pourquoi: "Une seule équipe reçoit les alertes pendant le POC.",
     production: "Un domaine d'envoi vérifié, une signature propre à chaque canal, et le branchement sur l'astreinte de MIP.",
-    sources: [".railway/railway.ts:399-405", "services/notifier/README.md:32,59", "docs/ALERTING.md:60-74"],
+    sources: [".railway/railway.ts:399-405", "services/notifier/README.md:34,61", "docs/ALERTING.md:60-74"],
   },
   {
     id: "H9",
@@ -105,7 +105,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     production: "Une supervision reliée à l'astreinte, qui surveille aussi le service des notifications.",
     sources: [
       ".github/workflows/sonde-externe.yml:1-22",
-      "packages/backend/jobs/veille-ordonnanceur.mjs:16-23,41-42",
+      "packages/backend/jobs/veille-ordonnanceur.mjs:16-27,50-51",
       "services/notifier/README.md:26,28",
       "docs/architecture/overview.md:116,131",
     ],
@@ -196,7 +196,7 @@ export const CHANTIERS: readonly Chantier[] = [
     id: "X6",
     titre: "Des notifications de production",
     texte: "Vérifier le domaine d'envoi des e-mails, et signer chaque canal avec son propre secret.",
-    sources: ["docs/ALERTING.md:70-73", "services/notifier/README.md:59"],
+    sources: ["docs/ALERTING.md:70-73", "services/notifier/README.md:61"],
   },
   {
     id: "X7",

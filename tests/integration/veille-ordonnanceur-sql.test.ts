@@ -131,7 +131,8 @@ function migrations(): string[] {
       expect(await v.veiller()).toMatchObject({ action: "rien", seuil_min: 35, cadence_publiee: true });
       expect(await fenetres(c)).toEqual([]);
 
-      // 45 min : deux ticks manqués. La fenêtre s'ouvre, datée du dernier tick abouti.
+      // 45 min : sur la grille du quart d'heure, la passe qui suit le troisième tick
+      // manqué (la deuxième n'en voit que 30). La fenêtre s'ouvre, datée du dernier tick abouti.
       await tick(c, 45 * 60);
       const ouverture = await v.veiller();
       expect(ouverture).toMatchObject({ action: "ouvrir", silence_min: 45 });
@@ -256,8 +257,10 @@ function migrations(): string[] {
       await decor(c);
       await tick(c, 45 * 60);
       expect((await veille(poolTx).veiller()).action).toBe("ouvrir");
-      // Une mesure reçue pendant le silence du scheduler est une vraie mesure : le
-      // collector l'a écrite lui-même. LCP de 5 000 ms, seuil de 2 500.
+      // La fenêtre de la veille ne retire aucune mesure : le collector l'a écrite
+      // lui-même. (Au premier tick revenu, `planReconstitution` posera, elle, une
+      // fenêtre de la chaîne sur le silence : ce n'est pas l'objet de ce cas.)
+      // LCP de 5 000 ms, seuil de 2 500.
       await c.query("insert into rum_session (session_id, app_id) values ($1, $2)", [`${APP}-s0`, APP]);
       await c.query(
         "insert into rum_metric (span_id, session_id, app_id, route, name, value, ts) values ('veille-m-1', $1, $2, '/', 'LCP', 5000, now() - interval '5 minutes')",

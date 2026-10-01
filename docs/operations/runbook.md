@@ -221,7 +221,7 @@ sql_json() { curl -sS --fail-with-body "https://$HOTE/sql" -H "Neon-Connection-S
 
 ## 10. La veille de l'ordonnanceur : « Travaux planifiés muets »
 
-Le notifier lit, à chaque passe, le dernier tick **abouti** du scheduler (`scheduler_lease`, ligne `tick`) et sa cadence publiée (`platform_flag.scheduler_tick_min`). Au-delà de **2 × cadence + 5 min** sans tick abouti (35 min au quart d'heure), il ouvre une fenêtre `ordonnanceur` dans le registre (`collecte_fenetre`) et lève **une** alerte `critical` vers les canaux globaux : « [MIP RUM] Travaux planifiés muets : aucun tick abouti depuis N min… ». Pendant ce temps, ni règle d'alerte, ni SLO, ni sonde de disponibilité, ni canari n'est évalué ; la collecte, elle, continue. Détail : [README du notifier, « Veille de l'ordonnanceur »](../../services/notifier/README.md).
+Le notifier lit, à chaque passe, le dernier tick **abouti** du scheduler (`scheduler_lease`, ligne `tick`) et sa cadence publiée (`platform_flag.scheduler_tick_min`). Au-delà de **2 × cadence + 5 min** sans tick abouti (35 min au quart d'heure, franchi à la passe qui suit le troisième tick manqué : alerte vers 46 min après le dernier tick abouti), il ouvre une fenêtre `ordonnanceur` dans le registre (`collecte_fenetre`) et lève **une** alerte `critical` vers les canaux globaux : « [MIP RUM] Travaux planifiés muets : aucun tick abouti depuis N min… ». Pendant ce temps, ni règle d'alerte, ni SLO, ni sonde de disponibilité, ni canari n'est évalué ; la collecte, elle, continue. Détail : [README du notifier, « Veille de l'ordonnanceur »](../../services/notifier/README.md).
 
 | Question | Commande ou écran |
 |---|---|

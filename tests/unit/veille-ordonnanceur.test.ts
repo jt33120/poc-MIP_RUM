@@ -5,7 +5,8 @@
 // CE QUE CES TESTS EXISTENT POUR EMPÊCHER.
 //   - Une fausse alerte au premier tick manqué : un redéploiement du scheduler, un
 //     bail tenu par l'instance sortante, des migrations au pré-déploiement en font
-//     sauter un sans que rien ne soit cassé. Deux de suite, si.
+//     sauter un sans que rien ne soit cassé. Au quart d'heure, l'alerte part au
+//     troisième de suite (le seuil, 35 min, n'est franchi qu'à cette passe-là).
 //   - Une alerte par passe pendant tout l'épisode, au lieu d'une seule.
 //   - Une fenêtre jamais refermée au retour du tick, ou refermée pendant un tick
 //     encore en cours (rien n'est encore prouvé).
@@ -101,8 +102,10 @@ describe("veille de l'ordonnanceur — la décision", () => {
     expect(decisionVeille({ ...base, cadenceMin: 5, bail: bail(16) }).action).toBe("ouvrir");
   });
 
-  it("sur la grille de 15 min, passes 45 s après le tick : l'alerte part au DEUXIÈME tick manqué, pas au premier", () => {
-    // Le dernier tick abouti finit à 08:00:20 ; le scheduler s'arrête.
+  it("sur la grille de 15 min, passes 45 s après le tick : l'alerte part au TROISIÈME tick manqué, vers 46 min", () => {
+    // Le dernier tick abouti finit à 08:00:20 ; le scheduler s'arrête. Ticks manqués :
+    // 08:15, 08:30, 08:45. À 08:30:45 (deux manqués), 30 min 25 s de silence : sous
+    // les 35 min. À 08:45:45 (trois manqués), 45 min 25 s : l'alerte part.
     const bailFige = { expiresAt: a("2026-10-01T08:00:20Z") };
     const passes = ["08:15:45", "08:30:45", "08:45:45", "09:00:45"].map((h) => a(`2026-10-01T${h}Z`));
     let ouverte: { id: number; debut: string; alerte: number | null } | null = null;
@@ -113,6 +116,9 @@ describe("veille de l'ordonnanceur — la décision", () => {
       if (d.action === "ouvrir") ouverte = { id: 1, debut: bailFige.expiresAt.toISOString(), alerte: 99 };
     }
     expect(actions).toEqual(["rien", "rien", "ouvrir", "rien"]);
+    // Le seuil franchi à la passe du deuxième tick manqué exigerait un silence de plus
+    // de 35 min à 08:30:45 : il n'y en a que 30.
+    expect(decisionVeille({ maintenant: passes[1], bail: bailFige, cadenceMin: 15, ouverte: null }).silenceMin).toBe(30);
     // Le tick revient à 09:15 : la passe de 09:15:45 ferme.
     const retour = decisionVeille({ maintenant: a("2026-10-01T09:15:45Z"), bail: { expiresAt: a("2026-10-01T09:15:18Z") }, cadenceMin: 15, ouverte });
     expect(retour.action).toBe("fermer");
@@ -127,10 +133,19 @@ describe("veille de l'ordonnanceur — les textes", () => {
     expect(t.preuve.length).toBeLessThanOrEqual(300);
     expect(t.message).toBe(
       "Travaux planifiés muets : aucun tick abouti depuis 48 min (dernier le 01/10/2026 08:12 UTC, tick de 15 min, seuil 35 min). " +
-        "Alertes, SLO, sondes de disponibilité et canari ne sont plus évalués.",
+        "Le tick ne tourne plus ou échoue : alertes, SLO, sondes de disponibilité et canari ne sont plus garantis.",
     );
     expect(t.preuve).toContain("seuil 2 × 15 + 5 = 35 min");
     expect(t.preuve).toContain("constaté par le notifier");
+    // Un scheduler mort en plein tick laisse l'échéance de son bail, pas un battement : la preuve le dit.
+    expect(t.preuve).toContain("ou échéance d'un bail abandonné en plein tick");
+  });
+
+  it("la preuve la plus longue (cadence non publiée) tient dans la table, sans être coupée", () => {
+    const d = decisionVeille({ maintenant: a("2026-10-01T09:00:00Z"), bail: { expiresAt: a("2026-10-01T08:12:00Z") }, cadenceMin: null, ouverte: null });
+    const t = textesVeille(d);
+    expect(t.preuve.length).toBeLessThanOrEqual(300);
+    expect(t.preuve.endsWith("constaté par le notifier")).toBe(true);
   });
 });
 
@@ -286,8 +301,8 @@ describe("veille de l'ordonnanceur — dans la passe du notifier", () => {
 });
 
 describe("veille de l'ordonnanceur — à l'écran", () => {
-  it("la carte de /admin/health nomme l'étage : « travaux planifiés », les autres tels quels", () => {
-    expect(libelleEtage(ETAGE_VEILLE)).toBe("travaux planifiés");
+  it("la carte de /admin/health nomme l'étage, sous « Fenêtres hors collecte » : « travaux planifiés, pas la collecte », les autres tels quels", () => {
+    expect(libelleEtage(ETAGE_VEILLE)).toBe("travaux planifiés, pas la collecte");
     expect(libelleEtage("silence")).toBe("silence");
   });
 });

@@ -184,7 +184,10 @@ export function creerLivreur({
   async function passe() {
     const debut = maintenant();
     // Avant la livraison : l'alerte d'un tick muet part dans CETTE passe. Jamais
-    // bloquante (elle ne lève pas), et comptée dans l'échéance de la passe.
+    // bloquante (elle ne lève pas), et comptée dans l'échéance de la passe : le
+    // drainage d'un redéploiement (20 s) doit couvrir la passe entière. Au pire,
+    // une base lente à l'ouverture d'un épisode (4 requêtes à 2 s), elle en prend
+    // 8 s sur 10 ; une livraison non entamée attend la passe suivante.
     await veilleOrdonnanceur?.veiller();
     const l = etapesLivraison(pool, { log, dispatch: dispatchConfigure, echeance: debut + budgetMs });
     const bilan = await executerEtapes([l.route, l.dispatch], log, { job: "livraison" });

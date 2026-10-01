@@ -134,9 +134,11 @@ export function libelleSource(source: FenetreRegistre["source"]): string {
 /**
  * L'étage d'une fenêtre autre que la synthèse (`chaine`), entre parenthèses sur sa
  * ligne. `ordonnanceur` : les travaux planifiés se sont tus, constaté par le
- * notifier (`packages/backend/jobs/veille-ordonnanceur.mjs`).
+ * notifier (`packages/backend/jobs/veille-ordonnanceur.mjs`). La liste s'intitule
+ * « Fenêtres hors collecte » : le libellé dit que celle-ci n'en est pas une, la
+ * collecte ne passant pas par le scheduler.
  */
-const LIBELLES_ETAGE: Record<string, string> = { ordonnanceur: "travaux planifiés" };
+const LIBELLES_ETAGE: Record<string, string> = { ordonnanceur: "travaux planifiés, pas la collecte" };
 
 export function libelleEtage(etage: string): string {
   return LIBELLES_ETAGE[etage] ?? etage;
