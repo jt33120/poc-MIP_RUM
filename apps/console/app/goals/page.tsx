@@ -159,6 +159,10 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
         </div>
       )}
 
+      {/* Rien de créé (recette du 01/10/2026) : pas de cases à 0 ni de table vide, la
+          ligne d'absence seule, puis la création (gestion). */}
+      {vide && <div className="mb-4">{vide}</div>}
+      {!vide && (
       <SectionErreur titre="Chiffres clés">
         {rep ? (
           <TuilesConversions
@@ -182,10 +186,12 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
           </div>
         )}
       </SectionErreur>
+      )}
 
       {/* G3 et G4 — le taux par objectif (6 colonnes) à côté de la conversion par appareil
           (6 colonnes), au-dessus du pli, même bord bas. Sans objectif, une seule ligne sur
           toute la largeur : il n'y a rien à découper par appareil. */}
+      {!vide && (
       <div className="mb-4 grid min-w-0 gap-3 lg:grid-cols-12">
       <div className={`min-w-0 lg:[&>section]:h-full ${vide ? "lg:col-span-12" : "lg:col-span-6"}`}>
         <SectionErreur titre="Taux de conversion par objectif">
@@ -264,8 +270,10 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
       </div>
       )}
       </div>
+      )}
 
       {/* G5 — la table des objectifs. */}
+      {!vide && (
       <div className="mb-6" id="objectifs">
         <SectionErreur titre="Objectifs">
           {rep ? (
@@ -275,6 +283,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
           )}
         </SectionErreur>
       </div>
+      )}
 
       {/* G6 — gestion (admin) : section non rendue pour un viewer (V9). */}
       {isAdmin && (

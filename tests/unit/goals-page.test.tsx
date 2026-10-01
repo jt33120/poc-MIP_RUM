@@ -187,6 +187,9 @@ describe("/goals — hero et table", () => {
     expect(texte(admin)).toContain("Aucun objectif actif sur ce périmètre.");
     expect(admin).toContain('href="#gerer-objectifs"');
     expect(admin).toContain('data-testid="create-goal"');
+    // Rien de créé : ni cases à 0, ni table vide (recette du 01/10/2026).
+    expect(admin).not.toContain('data-testid="kpi-tile"');
+    expect(admin).not.toContain('id="objectifs"');
     expect(listGoals).toHaveBeenCalledWith(["a"]); // gestion : les apps effectives, jamais `app` seule
     listGoals.mockClear();
     simul.user = { email: "v@mip", role: "viewer", apps: ["a"] };
@@ -239,7 +242,11 @@ describe("/goals — tuile « Meilleur taux » (revue F66)", () => {
 
 describe("/goals — lectures", () => {
   it("cmp=prev : le dénominateur se compare à la période précédente nommée", async () => {
-    goalConversions.mockImplementation(async (_f: unknown, shift?: boolean) => ({ total: shift ? 100 : 150, rows: [] }));
+    // Un objectif au moins : sans objectif, l'écran n'a plus de cases (rien de créé, 01/10/2026).
+    goalConversions.mockImplementation(async (_f: unknown, shift?: boolean) => ({
+      total: shift ? 100 : 150,
+      rows: [objectif(1, "Merci", 30, shift ? 100 : 150)],
+    }));
     const t = texte(await rendre({ app: "a", cmp: "prev" }));
     expect(t).toMatch(/\+50 % vs période précédente \(du /);
   });

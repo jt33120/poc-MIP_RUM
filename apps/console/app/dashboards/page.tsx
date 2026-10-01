@@ -89,8 +89,9 @@ export default async function Dashboards({
             <span className="text-[11px] tabular-nums text-ink-faint">{pluriel(dashboards.length, "tableau", "tableaux")}</span>
           )}
         </div>
-        {dashboards.length === 0 ? (
+        {dashboards.length === 0 && peutCreer ? null : dashboards.length === 0 ? (
           // Liste vide : une ligne, sans en-têtes de tableau à faire défiler (recette du 30/09/2026).
+          // Qui peut créer la lit dans le résumé de la création, juste dessous (01/10/2026).
           <p role="status" className="card mb-2 flex items-center gap-1.5 px-3 py-2 text-xs text-ink-soft">
             <span aria-hidden className="text-ink-faint">
               ⊘
@@ -153,8 +154,17 @@ export default async function Dashboards({
         {/* ----- W-D3 : création d'un tableau vide, juste sous la liste (elle était
             repliée tout en bas, après les modèles) ----- */}
         {peutCreer ? (
-          <details className="card" open={!dashboards.length || (refus !== undefined && refus.champ !== "modele")}>
+          <details className="card" open={refus !== undefined && refus.champ !== "modele"}>
             <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-accent transition hover:text-ink">
+              {dashboards.length === 0 && (
+                // Rien de créé : l'absence et le geste sur la même ligne (recette du 01/10/2026).
+                <span role="status" className="mr-2 font-normal text-ink-soft" data-testid="tableaux-rien-cree">
+                  <span aria-hidden className="mr-1.5 text-ink-faint">
+                    ⊘
+                  </span>
+                  Aucun tableau de bord créé dans ce périmètre ·
+                </span>
+              )}
               + Nouveau tableau de bord
             </summary>
             <form

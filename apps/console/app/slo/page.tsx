@@ -74,6 +74,9 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
   const alertes = declenchements.ok && declenchements.data ? alertesParSlo(declenchements.data.lignes) : null;
   const listeSlo = slos.ok ? slos.data : [];
   const kpi = (n: number | undefined) => (comptes ? (n ?? null) : null);
+  // Rien de créé (recette du 01/10/2026) : aucun SLO déclaré, lectures réussies. Pas de
+  // cases à 0 ni de figures vides : une ligne, qui est aussi le geste de création.
+  const rienCree = slos.ok && listeSlo.length === 0 && statuts.ok;
   // Ce que la fenêtre d'une case dit de son SLO, au-delà de la barre.
   const infos = new Map<string, InfoSlo>(
     (statuts.ok ? statuts.data : []).map((s) => [
@@ -95,7 +98,16 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
       <PageHeader title={TITRE} domain="fiabilite" />
       <FiltersNotAppliedNote note={ecran.notApplied} />
 
-      {blocs.budget && (
+      {rienCree && !(admin && blocs.creation) && (
+        <p className="card mb-4 flex items-center gap-1.5 px-3 py-2 text-xs text-ink-soft" role="status" data-testid="slo-rien-cree">
+          <span aria-hidden className="text-ink-faint">
+            ⊘
+          </span>
+          Aucun SLO créé sur ce périmètre.{admin ? "" : " Demandez à un administrateur d'en déclarer un."}
+        </p>
+      )}
+
+      {blocs.budget && !rienCree && (
         <>
           {/* ── Zone 2 : KPI (SL1, SL2, SL2b, SL2c), quatre cases de même gabarit. ── */}
           <SectionErreur titre="Chiffres clés des SLO">
@@ -212,7 +224,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
       )}
 
       {/* ── Zone 5 : définitions et état (SL5), une ligne par SLO. ── */}
-      {blocs.liste && (
+      {blocs.liste && !rienCree && (
         <div className="mb-4">
           <SectionErreur titre="Définitions et état">
             <Figure
@@ -300,9 +312,19 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
 
       {/* ── Zone 6 : création (SL6), administrateurs seulement, repliée dès qu'un SLO existe. ── */}
       {blocs.creation && admin && (
-        <details id="nouveau-slo" className="card mb-4" open={listeSlo.length === 0}>
+        <details id="nouveau-slo" className="card mb-4" open={!rienCree && listeSlo.length === 0}>
           <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-ink-soft transition hover:text-ink">
-            + Nouvel SLO
+            {rienCree ? (
+              <span className="inline-flex flex-wrap items-center gap-x-2" data-testid="slo-rien-cree">
+                <span aria-hidden className="text-ink-faint">
+                  ⊘
+                </span>
+                <span className="font-normal">Aucun SLO créé sur ce périmètre.</span>
+                <span className="text-brand">+ Créer un SLO</span>
+              </span>
+            ) : (
+              "+ Nouvel SLO"
+            )}
           </summary>
           {!apps.ok ? (
             <div className="border-t border-line p-3">

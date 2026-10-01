@@ -151,6 +151,11 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
   // « À traiter » prend le tiers droit de la rangée quand il a des lignes ; vide, il
   // tient sur une ligne sous la figure (pas de colonne qui ne dit rien).
   const cote = evenements.ok && flux.length > 0 && !figureVide;
+  // Rien de créé (recette du 01/10/2026 : « tout afficher », mais pas des cases à 0) :
+  // aucune règle, aucun déclenchement sur 30 jours, lectures réussies. L'écran dit
+  // l'absence en UNE ligne, qui est aussi le geste de création ; les canaux restent.
+  const rienCree =
+    regles.ok && listeRegles.length === 0 && evenements.ok && listeEvenements.length === 0 && parJour.ok && total30j === 0;
 
   return (
     <div className="animate-fade-up">
@@ -233,6 +238,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
       )}
 
       {/* ── Zone 4 : les cinq chiffres clés (A1, A2, A3, A4, A4b), cases de même gabarit. ── */}
+      {!rienCree && (
       <SectionErreur titre="Chiffres clés des alertes">
         <div className="mb-4 grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-5" data-testid="kpi-alertes">
           <KpiTile
@@ -294,9 +300,11 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
           />
         </div>
       </SectionErreur>
+      )}
 
       {/* ── Zone 5 : les déclenchements des 30 derniers jours (barres AU-DESSUS de la
              frise par source, même axe) et, à droite, ce qu'il reste à traiter. ── */}
+      {!rienCree && (
       <div className={`mb-4 grid min-w-0 gap-2 ${cote ? "xl:grid-cols-12" : ""}`}>
         {/* La figure prend la hauteur de la rangée : ses bords bas s'alignent sur la liste. */}
         <div className={`min-w-0 ${cote ? "xl:col-span-8 xl:[&>section]:h-full" : ""}`}>
@@ -502,8 +510,18 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
           )}
         </section>
       </div>
+      )}
 
       {/* ── Zone 7 : les règles, une ligne chacune, puis leur création. ── */}
+      {rienCree && !admin && (
+        <p id="regles" className="card mb-4 flex items-center gap-1.5 px-3 py-2 text-xs text-ink-soft" role="status" data-testid="alertes-rien-cree">
+          <span aria-hidden className="text-ink-faint">
+            ⊘
+          </span>
+          Aucune règle d&apos;alerte créée sur ce périmètre. Demandez à un administrateur d&apos;en créer une.
+        </p>
+      )}
+      {!rienCree && (
       <section id="regles" aria-labelledby="regles-titre" className="mb-4 min-w-0 scroll-mt-20">
         <div className="mb-2 flex flex-wrap items-baseline gap-x-3">
           <h2 id="regles-titre" className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
@@ -556,11 +574,22 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
           </div>
         )}
       </section>
+      )}
 
       {admin && (
-        <details id="nouvelle-regle" className="card mb-4 min-w-0" open={!listeRegles.length || defaultIssue !== undefined || preRemplissage}>
+        <details id="nouvelle-regle" className="card mb-4 min-w-0" open={(!rienCree && !listeRegles.length) || defaultIssue !== undefined || preRemplissage}>
           <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-ink-soft transition hover:text-ink">
-            + Nouvelle règle
+            {rienCree ? (
+              <span className="inline-flex flex-wrap items-center gap-x-2" data-testid="alertes-rien-cree">
+                <span aria-hidden className="text-ink-faint">
+                  ⊘
+                </span>
+                <span className="font-normal">Aucune règle d&apos;alerte créée sur ce périmètre.</span>
+                <span className="text-brand">+ Créer une alerte</span>
+              </span>
+            ) : (
+              "+ Nouvelle règle"
+            )}
           </summary>
           {!apps.ok ? (
             <div className="border-t border-line p-3">
