@@ -134,7 +134,8 @@ export function InsightStrip({
         </summary>
         <ul className="mt-2 flex flex-col divide-y divide-line/60">
           {constats.map((c, i) => (
-            <li key={`${c.type}-${i}`} className="min-w-0 py-2" data-testid="constat">
+            // 13 px : un constat se lit comme une ligne de liste, pas comme un titre (recette du 01/10/2026).
+            <li key={`${c.type}-${i}`} className="min-w-0 py-1.5 text-[13px] leading-snug" data-testid="constat">
               <span className="mr-2 inline-block rounded border border-line px-1.5 py-px text-[11px] font-medium text-ink-soft">
                 {LIBELLE_TYPE[c.type]}
               </span>
