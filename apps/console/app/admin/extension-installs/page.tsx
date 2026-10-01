@@ -20,7 +20,7 @@ import { chargerPostes } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { compareVersions, displayName, fleetVersion, freshness, type Freshness } from "@/lib/extension-installs";
 import { fmtInstant, pluriel } from "@/lib/format";
-import { BOUTON_LIGNE, LIGNE, LigneVide, Moment, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TH, type TonPastille } from "../_ui/kit";
+import { ARRONDI_BAS, BOUTON_LIGNE, LIGNE, LigneVide, Moment, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TH, type TonPastille } from "../_ui/kit";
 import { forgetInstallAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -129,7 +129,7 @@ export default async function ExtensionInstalls() {
           </LigneVide>
         ) : (
           // Sept colonnes, dont l'action « Retirer » en dernier : défilement signalé.
-          <TableDefilante label="Postes équipés">
+          <TableDefilante label="Postes équipés" className={ARRONDI_BAS}>
             <table className="w-full text-sm">
               <thead className="bg-panel2">
                 <tr>

@@ -20,6 +20,8 @@ export const TD = "px-3 py-1.5 align-middle";
 export const TD_NUM = `${TD} text-right tabular-nums`;
 /** Ligne de tableau : survol teinté, séparateur fin. */
 export const LIGNE = "transition hover:bg-panel2/60";
+/** Le cadre d'un tableau rangé en bas d'un `Panneau` : il épouse les coins arrondis du panneau. */
+export const ARRONDI_BAS = "rounded-b-xl";
 /** Un identifiant en chasse fixe dans une cellule (application, version) : 16 px de haut, la ligne reste à 32 px. */
 export const PUCE_ID = "chip-mono whitespace-nowrap py-0 text-[11px] leading-4";
 /** Bouton d'action de ligne : 22 px de haut, la ligne du tableau reste à 32-34 px. */
@@ -36,6 +38,10 @@ export const LIBELLE_CHAMP = "flex min-w-0 max-w-full flex-col gap-1 text-[11px]
  * droite ; puis son contenu, bord à bord (un tableau touche les bords du panneau).
  * Pas de `section` nommée : le tableau porte déjà la région nommée
  * (`TableDefilante`), et deux régions du même nom se confondraient.
+ *
+ * Pas d'`overflow-hidden` sur le cadre : il rognait la bulle « ? » de l'en-tête d'un
+ * panneau court (une ligne vide). Le tableau, dernier enfant, arrondit lui-même ses
+ * coins bas (`ARRONDI_BAS`).
  */
 export function Panneau({
   titre,
@@ -63,7 +69,7 @@ export function Panneau({
   className?: string;
 }) {
   return (
-    <div id={id} data-testid={testId} className={`card min-w-0 overflow-hidden ${className}`}>
+    <div id={id} data-testid={testId} className={`card min-w-0 ${className}`}>
       <div className="flex min-h-[2.5rem] flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line px-3 py-1.5">
         <h2 className="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-soft">
           <span className="min-w-0 truncate">{titre}</span>
@@ -80,7 +86,7 @@ export function Panneau({
         )}
         {actions && <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">{actions}</div>}
       </div>
-      {barre && <div className="border-b border-line bg-panel2/30 px-3 py-2">{barre}</div>}
+      {barre && <div className="border-b border-line bg-panel2/30 px-3 py-2 last:rounded-b-xl last:border-b-0">{barre}</div>}
       {children}
     </div>
   );
@@ -186,6 +192,27 @@ export function Moment({ date, maintenant, vide = "—" }: { date: Date | string
       {ilYa(ms, maintenant)}
       <span className="sr-only"> ({exact})</span>
     </time>
+  );
+}
+
+/**
+ * Une explication repliée DANS le flux : là où une bulle serait rognée (la cellule
+ * d'un tableau qui défile), le repli s'ouvre sur place et allonge la ligne.
+ */
+export function Repli({ libelle, children }: { libelle: string; children: ReactNode }) {
+  return (
+    <details className="min-w-0 text-xs">
+      <summary
+        aria-label={libelle}
+        title={libelle}
+        className="inline-flex cursor-pointer select-none list-none items-center rounded-full text-ink-faint hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf [&::-webkit-details-marker]:hidden"
+      >
+        <span aria-hidden className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-line text-[10px] font-semibold leading-none">
+          ?
+        </span>
+      </summary>
+      <div className="mt-1 max-w-[28rem] leading-relaxed text-ink-soft">{children}</div>
+    </details>
   );
 }
 

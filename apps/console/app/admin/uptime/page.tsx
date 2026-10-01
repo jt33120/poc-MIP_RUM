@@ -11,7 +11,7 @@ import type { SearchParams } from "@/lib/filters";
 import { fmtLatency, fmtNombre, pluriel } from "@/lib/format";
 import { CADENCE_TICK_MIN } from "@/lib/etat-latence";
 import { Fenetre } from "../_ui/Fenetre";
-import { Barre, BOUTON_LIGNE, BOUTON_LIGNE_DANGER, Erreur, LIBELLE_CHAMP, LIGNE, LigneVide, Moment, Panneau, Pastille, RangeeCases, TD, TD_NUM, TH, TH_NUM, type TonPastille } from "../_ui/kit";
+import { ARRONDI_BAS, Barre, BOUTON_LIGNE, BOUTON_LIGNE_DANGER, Erreur, LIBELLE_CHAMP, LIGNE, LigneVide, Moment, Panneau, Pastille, RangeeCases, TD, TD_NUM, TH, TH_NUM, type TonPastille } from "../_ui/kit";
 import { createUptimeCheckAction, deleteUptimeCheckAction, toggleUptimeCheckAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -158,7 +158,7 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
         ) : (
           // Défilant et signalé : `overflow-hidden` coupait « Dernière sonde » et les
           // actions à 390 px (recette 26/09).
-          <TableDefilante label="Sondes">
+          <TableDefilante label="Sondes" className={ARRONDI_BAS}>
             <table className="w-full text-sm">
               <thead className="bg-panel2">
                 <tr>

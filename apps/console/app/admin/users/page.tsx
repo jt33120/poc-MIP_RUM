@@ -10,7 +10,7 @@ import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { Fenetre } from "../_ui/Fenetre";
 import { FiltreLignes } from "../_ui/FiltreLignes";
-import { BOUTON_LIGNE, BOUTON_LIGNE_DANGER, Erreur, LIBELLE_CHAMP, LIGNE, LigneVide, Moment, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TH } from "../_ui/kit";
+import { ARRONDI_BAS, BOUTON_LIGNE, BOUTON_LIGNE_DANGER, Erreur, LIBELLE_CHAMP, LIGNE, LigneVide, Moment, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TH } from "../_ui/kit";
 import { createUserAction, resetPasswordAction, toggleUserAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -149,7 +149,7 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
       >
         {/* Défilant et signalé : `overflow-hidden` coupait « Dernière connexion » et les
             actions — impossible de désactiver ou de réinitialiser un compte à 390 px. */}
-        <TableDefilante label="Utilisateurs">
+        <TableDefilante label="Utilisateurs" className={ARRONDI_BAS}>
           {users.length ? (
             <table className="w-full text-sm">
               <thead className="bg-panel2">

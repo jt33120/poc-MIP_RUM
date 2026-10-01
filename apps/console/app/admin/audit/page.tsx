@@ -9,7 +9,7 @@ import type { SearchParams } from "@/lib/filters";
 import { fmtInstant } from "@/lib/format";
 import { FUSEAU_AFFICHAGE, nomFuseau } from "@/lib/fuseau-local";
 import { FiltreLignes } from "../_ui/FiltreLignes";
-import { LIGNE, LigneVide, Panneau, TD, TH } from "../_ui/kit";
+import { ARRONDI_BAS, LIGNE, LigneVide, Panneau, TD, TH } from "../_ui/kit";
 import { natureAction, type NatureAction } from "./nature";
 
 export const dynamic = "force-dynamic";
@@ -116,7 +116,7 @@ export default async function AdminAudit({ searchParams }: { searchParams: Promi
       >
         {/* Défilant et signalé : à 390 px, `overflow-hidden` coupait la colonne
             Détail sans aucun moyen de l'atteindre (recette 26/09). */}
-        <TableDefilante label="Journal d'audit">
+        <TableDefilante label="Journal d'audit" className={ARRONDI_BAS}>
           {rows.length ? (
             <table className="w-full text-sm" data-testid="audit-table">
               <thead className="bg-panel2">

@@ -6,7 +6,7 @@ import { KpiTile } from "@/components/charts/KpiTile";
 import { chargerDomaines } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
-import { BOUTON_LIGNE, BOUTON_LIGNE_DANGER, Erreur, LIBELLE_CHAMP, LIGNE, LigneVide, Moment, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TH } from "../_ui/kit";
+import { ARRONDI_BAS, BOUTON_LIGNE, BOUTON_LIGNE_DANGER, Erreur, LIBELLE_CHAMP, LIGNE, LigneVide, Moment, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TH } from "../_ui/kit";
 import { createExtensionScopeAction, toggleExtensionScopeAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -93,7 +93,7 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
       >
         {/* Défilant et signalé : `overflow-hidden` coupait Statut et Actions à 390 px. La
             zone existe aussi sans domaine : c'est elle que désignent les tests. */}
-        <TableDefilante label="Domaines enregistrés">
+        <TableDefilante label="Domaines enregistrés" className={ARRONDI_BAS}>
           {scopes.length ? (
             <table className="w-full text-sm">
               <thead className="bg-panel2">
@@ -134,9 +134,9 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
               </tbody>
             </table>
           ) : (
-            <LigneVide testId="domaines-vide" aide="Sans domaine enregistré et actif, l'extension n'observe rien : c'est le comportement voulu.">
-              Aucun domaine : l&apos;extension n&apos;observe aucun site.
-            </LigneVide>
+            // Sans bulle ici : dans la zone qui défile, elle serait rognée ; la règle
+            // (« un domaine absent n'est jamais observé ») est dans la bulle du panneau.
+            <LigneVide testId="domaines-vide">Aucun domaine : l&apos;extension n&apos;observe aucun site.</LigneVide>
           )}
         </TableDefilante>
       </Panneau>

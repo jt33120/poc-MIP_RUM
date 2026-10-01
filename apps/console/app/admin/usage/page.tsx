@@ -7,7 +7,7 @@ import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { fmtInstant, fmtJour } from "@/lib/format";
 import type { EtatComptage, TenantUsageRow } from "@/lib/queries-usage";
 import { quotaView } from "@/lib/usage";
-import { Barre, LIGNE, LigneVide, NombreBarre, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TD_NUM, TH, TH_NUM } from "../_ui/kit";
+import { ARRONDI_BAS, Barre, LIGNE, LigneVide, NombreBarre, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TD_NUM, TH, TH_NUM } from "../_ui/kit";
 
 /** Un compteur du mois : « — » sans comptage, jamais un zéro inventé. */
 function compteur(v: number | null): string {
@@ -95,7 +95,7 @@ export default async function Usage() {
       >
         {/* Défilant et signalé : `overflow-hidden` rendait « Erreurs » et « Quota
             mensuel » invisibles et inatteignables à 390 px (recette 26/09). */}
-        <TableDefilante label="Consommation par application">
+        <TableDefilante label="Consommation par application" className={ARRONDI_BAS}>
           {rows.length ? (
             <table className="w-full text-sm">
               <thead className="bg-panel2">

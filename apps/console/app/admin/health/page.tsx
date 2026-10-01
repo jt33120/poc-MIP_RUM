@@ -12,7 +12,7 @@ import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { verdictSante, FILE_ATTENTION, RETARD_CONSO_ATTENTION_H, RETARD_CONSO_INCIDENT_H, type VerdictSante } from "@/lib/health-verdict";
 import { dogfoodingEndpoint, ingestEndpoint, ingestEndpointDirect, origineCollecteurDogfooding } from "@/lib/ingest-endpoint";
 import type { HealthSnapshot } from "@/lib/metrics-format";
-import { Panneau, Pastille, TD, TH, type TonPastille } from "../_ui/kit";
+import { Panneau, Pastille, Repli, TD, TH, type TonPastille } from "../_ui/kit";
 
 export const dynamic = "force-dynamic";
 
@@ -114,7 +114,7 @@ export default async function Health() {
         className={`mt-4 scroll-mt-20 ${memeHote ? "" : "border-warn/50"}`}
         aide="Les adresses où partent les mesures : celles de la console elle-même, et celles remises aux clients. Une adresse qui ne pointe pas cet hôte fait émettre dans le vide, sans erreur visible."
       >
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-b-xl">
           <table className="w-full text-sm">
             <thead className="bg-panel2">
               <tr>
@@ -290,14 +290,14 @@ function LigneAdresse({
     <tr className="align-top">
       <td className={`${TD} text-xs font-medium text-ink`}>{flux}</td>
       <td className={`${TD} min-w-[14rem]`}>{url ? <Adresse url={url} /> : <span className="text-xs text-ink-faint">—</span>}</td>
+      {/* Un repli plutôt qu'une bulle : dans le tableau qui défile, une bulle serait rognée. */}
       <td className={TD} data-testid={testId}>
-        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className="flex min-w-0 flex-wrap items-start gap-1.5">
           <Pastille ton={ton}>{etat}</Pastille>
-          <InfoTip label={`Explication : ${flux}`} align="end">
-            {explication}
-          </InfoTip>
-          <span className="sr-only">{explication}</span>
-          {technique && <DetailTechnique>{technique}</DetailTechnique>}
+          <Repli libelle={`Explication : ${flux}`}>
+            <p>{explication}</p>
+            {technique && <p className="mt-1 text-ink-faint">{technique}</p>}
+          </Repli>
         </span>
       </td>
     </tr>

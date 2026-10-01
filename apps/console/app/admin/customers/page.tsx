@@ -9,7 +9,7 @@ import { TableDefilante } from "@/components/TableDefilante";
 import { chargerClients } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
-import { BOUTON_LIGNE, BOUTON_LIGNE_DANGER, Erreur, LIBELLE_CHAMP, LIGNE, LigneVide, Moment, NombreBarre, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TD_NUM, TH, TH_NUM } from "../_ui/kit";
+import { ARRONDI_BAS, BOUTON_LIGNE, BOUTON_LIGNE_DANGER, Erreur, LIBELLE_CHAMP, LIGNE, LigneVide, Moment, NombreBarre, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TD_NUM, TH, TH_NUM } from "../_ui/kit";
 import { versMs } from "../_ui/temps";
 import { createCustomerAction, toggleAppAction } from "./actions";
 
@@ -152,7 +152,7 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
       >
         {/* Défilant et signalé : à 390 px, `overflow-hidden` rendait Statut, Clé API,
             Sessions et les actions (Guide, Désactiver) inaccessibles (recette 26/09). */}
-        <TableDefilante label="Applications">
+        <TableDefilante label="Applications" className={ARRONDI_BAS}>
           {customers.length ? (
             <table className="w-full text-sm">
               <thead className="bg-panel2">

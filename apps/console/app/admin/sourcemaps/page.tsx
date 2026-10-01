@@ -15,7 +15,7 @@ import { pluriel } from "@/lib/format";
 import type { ReleaseManifest, SourcemapFileStatus, SourcemapRelease } from "@/lib/queries-sourcemap";
 import type { SourcemapToken } from "@/lib/queries-sourcemap-tokens";
 import { Fenetre } from "../_ui/Fenetre";
-import { Barre, Erreur, LIGNE, LigneVide, Moment, NombreBarre, Panneau, Pastille, RangeeCases, TD, TD_NUM, TH, TH_NUM, type TonPastille } from "../_ui/kit";
+import { ARRONDI_BAS, Barre, Erreur, LIGNE, LigneVide, Moment, NombreBarre, Panneau, Pastille, RangeeCases, TD, TD_NUM, TH, TH_NUM, type TonPastille } from "../_ui/kit";
 import { partRestante } from "../_ui/temps";
 
 export const dynamic = "force-dynamic";
@@ -230,7 +230,7 @@ function Contenu({
 function TableReleases({ app, releases, courante, maintenant }: { app: string; releases: SourcemapRelease[]; courante: string | null; maintenant: number }) {
   const max = Math.max(...releases.map((r) => r.size_bytes), 1);
   return (
-    <TableDefilante label="Releases">
+    <TableDefilante label="Releases" className={ARRONDI_BAS}>
       <table className="w-full text-sm">
         <caption className="sr-only">Releases de {app} portant des source maps, la plus récente d&apos;abord</caption>
         <thead className="bg-panel2">
@@ -311,7 +311,7 @@ function Manifeste({ release, manifest, maintenant }: { release: string; manifes
       }
     >
       {manifest.files.length > 0 && (
-        <TableDefilante label="Fichiers de la release">
+        <TableDefilante label="Fichiers de la release" className={ARRONDI_BAS}>
           <table className="w-full text-sm">
             <caption className="sr-only">Fichiers de la release {release}, par nom</caption>
             <thead className="bg-panel2">
@@ -384,7 +384,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
       }
     >
       {tokens.length ? (
-        <TableDefilante label="Jetons de CI">
+        <TableDefilante label="Jetons de CI" className={ARRONDI_BAS}>
           <table className="w-full text-sm">
             <caption className="sr-only">Jetons de CI de {app}, actifs d&apos;abord</caption>
             <thead className="bg-panel2">

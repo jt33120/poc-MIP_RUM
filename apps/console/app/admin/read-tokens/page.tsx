@@ -10,7 +10,7 @@ import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { VALIDITE_LECTURE_DEFAUT_JOURS, VALIDITE_LECTURE_MAX_JOURS, VALIDITES_LECTURE_JOURS } from "@/lib/read-tokens";
 import { Fenetre } from "../_ui/Fenetre";
-import { Barre, BOUTON_LIGNE_DANGER, Erreur, LIBELLE_CHAMP, LIGNE, LigneVide, Moment, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TH } from "../_ui/kit";
+import { ARRONDI_BAS, Barre, BOUTON_LIGNE_DANGER, Erreur, LIBELLE_CHAMP, LIGNE, LigneVide, Moment, Panneau, Pastille, PUCE_ID, RangeeCases, TD, TH } from "../_ui/kit";
 import { partRestante } from "../_ui/temps";
 import { createReadTokenAction, revokeReadTokenAction } from "./actions";
 
@@ -152,7 +152,7 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
         {/* Défilant et signalé : `overflow-hidden` coupait Statut et Actions à 390 px. La
             zone existe aussi sans jeton (l'état vide y tient sur une ligne) : c'est elle
             que désignent les tests. */}
-        <TableDefilante label={REGION_JETONS}>
+        <TableDefilante label={REGION_JETONS} className={ARRONDI_BAS}>
           {tokens.length ? (
             <table className="w-full text-sm">
               <thead className="bg-panel2">
