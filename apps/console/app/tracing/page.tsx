@@ -253,6 +253,13 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
     query,
   );
   const appelsLus = serie.ok ? serie.data.reduce((s, x) => s + x.n, 0) : 0;
+  // L'aperçu en fond de case et le graphique de sa fenêtre (recette du 30/09/2026) : la
+  // série DÉJÀ lue pour « Latence des appels dans le temps », même population que la
+  // case, tranche par tranche, avec ses débuts pour un axe du temps daté.
+  const serieDe = (valeur: (p: { n: number; front_p75: number | null; back_p75: number | null }) => number | null, titreAxeY: string) =>
+    serie.ok && serie.data.length > 1
+      ? { serie: serie.data.map(valeur), grapheDebuts: serie.data.map((x) => x.t), titreAxeY }
+      : {};
   // Échelle commune des mini-cascades : la trace la plus longue du tableau.
   const maxLentes = lentes.ok ? Math.max(0, ...lentes.data.map((t) => t.front_ms ?? 0)) : 0;
 
@@ -283,6 +290,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
             <KpiTile
               label="Appels API vus du navigateur"
               libelleCase="Appels API"
+              {...serieDe((x) => x.n, "appels API par tranche")}
               categorie="Navigateur · appels"
               source={SOURCE_APPELS}
               valeur={c.total}
@@ -307,6 +315,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
             <KpiTile
               label="Durée p75 vue du navigateur"
               libelleCase="Durée p75 · navigateur"
+              {...serieDe((x) => x.front_p75, "durée p75 vue du navigateur")}
               categorie="Navigateur · appels"
               source={SOURCE_APPELS}
               valeur={c.front_p75}
@@ -325,6 +334,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
             <KpiTile
               label="Durée p75 côté serveur (appels suivis)"
               libelleCase="Durée p75 · serveur"
+              {...serieDe((x) => x.back_p75, "durée p75 serveur, appels suivis")}
               categorie="Serveur · appels suivis"
               source={SOURCE_TRACES}
               valeur={c.back_p75}
