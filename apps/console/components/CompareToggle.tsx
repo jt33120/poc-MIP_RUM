@@ -87,10 +87,16 @@ export function CompareToggle({
   );
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2" data-testid="compare-toggle">
-      {/* Libellé visible ; le groupe porte le sien (« Comparaison ») pour les lecteurs d'écran. */}
-      <span aria-hidden className="text-xs font-medium text-ink-faint">
-        Comparer à
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-testid="compare-toggle">
+      {/* Le groupe porte son nom (« Comparaison ») pour les lecteurs d'écran. À l'œil,
+          un pictogramme de comparaison ; « Comparer à » n'est écrit qu'à partir de
+          1 536 px (recette du 01/10/2026 : la barre du haut doit tenir sur une rangée
+          dès 1 280 px). La bulle le dit à toute largeur. */}
+      <span aria-hidden className="flex items-center gap-1 text-xs font-medium text-ink-faint" title="Comparer à">
+        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M7 4 3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8" />
+        </svg>
+        <span className="hidden 2xl:inline">Comparer à</span>
       </span>
       <Segmented
         label="Comparaison"
@@ -98,7 +104,8 @@ export function CompareToggle({
         availability={{ available: true }}
         items={(["prev", "release", "none"] as const).map((key) => ({
           key,
-          label: LIBELLES[key],
+          // « Précédente » à l'œil, « Période précédente » au lecteur d'écran et en bulle.
+          ...(key === "prev" ? { label: "Précédente", prefixe: "Période " } : { label: LIBELLES[key] }),
           ...(key === "release" && indisponible ? { availability: { available: false, reason: indisponible } } : {}),
         }))}
         value={mode}

@@ -7,6 +7,7 @@ import { BadgeMesure } from "@/components/BadgeMesure";
 import { CoquilleGarde } from "@/components/CoquilleGarde";
 import { GlobalFilters } from "@/components/GlobalFilters";
 import { ICON_PATHS, Icon } from "@/components/icons";
+import { Loupe } from "@/components/Loupe";
 import { Nav } from "@/components/Nav";
 import { NavAdministration } from "@/components/NavAdministration";
 import { SegmentBar } from "@/components/SegmentBar";
@@ -373,22 +374,38 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </div>
             </div>
             {/* Sous 640 px, UNE ligne de 53 px (spec A2 § 5.5) : la barre de filtres est
-                repliée dans une feuille (`GlobalFilters`), qui se déplie sous l'en-tête. */}
-            <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-panel/80 px-4 py-2.5 backdrop-blur-md sm:flex-wrap sm:px-6">
+                repliée dans une feuille (`GlobalFilters`), qui se déplie sous l'en-tête.
+                À partir de 1 280 px, UNE ligne aussi (recette du 01/10/2026) : elle passait
+                sur deux à 1 440 px, ~50 px perdus sur chaque écran. Les contrôles sont
+                compacts (appareils en pictogrammes, comparaison sans libellé écrit), les
+                états en pastilles à bulle ; entre 640 et 1 280 px, elle passe à la ligne. */}
+            <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-panel/80 px-4 py-2 backdrop-blur-md sm:flex-wrap sm:px-6 xl:flex-nowrap">
               <Suspense>
                 <GlobalFilters schema={schema} timeZones={timeZones} defaultTimeZone={FUSEAU_DEFAUT} />
               </Suspense>
-              <div className="ml-auto flex shrink-0 items-center gap-3 sm:shrink">
+              <div className="ml-auto flex shrink-0 items-center gap-2" data-etats-coquille>
+                {/* La loupe (⌘K, « / ») : un champ à partir de 1 440 px, une loupe seule
+                    entre 1 280 et 1 440 px, où la barre n'a plus la place de l'écrire
+                    sans passer sur deux rangées (fin d'app/globals.css). */}
+                <span className="contents" data-loupe>
+                  <Loupe admin={user.role === "admin"} />
+                </span>
                 {/* Le fuseau de TOUTES les heures de la console, dit une fois ici
                     plutôt qu'à côté de chaque heure (recette du 26/09/2026 : UTC,
-                    heure locale non dite et ISO brut se côtoyaient). */}
+                    heure locale non dite et ISO brut se côtoyaient). En pastille : une
+                    horloge, le nom du fuseau en bulle et pour le lecteur d'écran ; écrit
+                    en entier à partir de 1 536 px seulement. */}
                 <span
-                  className="hidden whitespace-nowrap text-[11px] font-medium text-ink-faint sm:inline"
-                  title="Toutes les heures de la console sont écrites dans ce fuseau."
+                  className="hidden h-7 min-w-7 items-center justify-center gap-1 whitespace-nowrap rounded-full border border-line bg-panel2 px-1.5 text-[11px] font-medium text-ink-soft sm:inline-flex 2xl:px-2.5"
+                  title={`${nomFuseau(FUSEAU_AFFICHAGE).replace(/^./, (c) => c.toUpperCase())} : toutes les heures de la console sont écrites dans ce fuseau.`}
                   data-testid="fuseau-affichage"
                 >
+                  <svg aria-hidden viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" />
+                  </svg>
                   {/* « Heure de Paris » : le nom du fuseau, capitalisé en tête de libellé. */}
-                  {nomFuseau(FUSEAU_AFFICHAGE).replace(/^./, (c) => c.toUpperCase())}
+                  <span className="sr-only 2xl:not-sr-only">{nomFuseau(FUSEAU_AFFICHAGE).replace(/^./, (c) => c.toUpperCase())}</span>
                 </span>
                 {/* La chaîne de mesure : lue avec la coquille, gardée 60 s. Sans
                     schéma des sondes ou sans lecture, pas de badge plutôt qu'un faux. */}
@@ -429,7 +446,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             {/* Réserve basse de 72 px à toutes les largeurs : la pastille d'avis
                 (36 px, fixée à 20 px du coin bas-droit) ne recouvre jamais la fin
                 de l'écran (les KPI des Alertes, les dernières lignes des tables). */}
-            <main className="min-w-0 flex-1 px-4 pb-[72px] pt-4 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">{children}</main>
+            {/* Haut de page resserré (recette du 01/10/2026) : 32 px de blanc entre la
+                barre de segment et le contenu, plus 20 px sous le titre, c'était ~50 px
+                vides sur chaque écran. 16 px suffisent ; marges latérales de 24 px
+                (charte § 3.1). */}
+            <main className="min-w-0 flex-1 px-4 pb-[72px] pt-3 sm:px-6 sm:pt-4">{children}</main>
           </div>
         </div>
         <Capteur init={RUM_INIT} />

@@ -13,6 +13,7 @@ import {
   hrefMatches,
   lienAdministrationActif,
   ongletActif,
+  ongletExact,
   sousOnglets,
   surtitreDe,
 } from "../../apps/console/components/nav-items";
@@ -232,6 +233,24 @@ describe("ADMINISTRATION — le bloc de la sidebar", () => {
     const jetons = ADMINISTRATION.find((l) => l.href === "/admin/read-tokens");
     expect(jetons?.label).toBe("Jetons d'accès");
     expect(ADMINISTRATION.map((l) => l.label).join(" ")).not.toMatch(/lecture/i);
+  });
+
+  it("ongletExact : l'écran d'un onglet (son titre redirait l'onglet), jamais une sous-page ni une route hors menu", () => {
+    // Recette du 01/10/2026 : « Pages » sous l'onglet Pages — le titre passe en lecture seule.
+    expect(ongletExact("/")?.label).toBe("Vue d'ensemble");
+    expect(ongletExact("/pages")?.label).toBe("Pages");
+    expect(ongletExact("/alerts")?.label).toBe("Alertes");
+    expect(ongletExact("/explorer")?.label).toBe("Explorer");
+    // Onglet interne : l'écran porte son propre onglet (« Interactions · Actions »).
+    expect(ongletExact("/actions")?.href).toBe("/actions");
+    // Une sous-page dit ce que l'onglet ne dit pas (la trace, le tableau) : titre écrit.
+    expect(ongletExact("/errors/abc123")).toBeUndefined();
+    expect(ongletExact("/dashboards/42")).toBeUndefined();
+    // /mobile : aucun onglet ne la nomme.
+    expect(ongletExact("/mobile")).toBeUndefined();
+    // Écrans sans barre d'onglets : administration, API et MCP.
+    expect(ongletExact("/admin/users")).toBeUndefined();
+    expect(ongletExact("/api-docs")).toBeUndefined();
   });
 
   it("estAdministration : /admin et ses sous-pages, rien d'autre", () => {

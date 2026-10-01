@@ -30,6 +30,7 @@ import {
   ecrireSegmentsEnregistres,
   lireSegmentsEnregistres,
 } from "@/components/segments-enregistres";
+import { refHote } from "@/components/emplacements-coquille";
 import {
   DIMENSIONS,
   DIMENSION_LABELS,
@@ -345,6 +346,15 @@ export function SegmentBar({ schema }: { schema: string[] }) {
           + Filtre
         </button>
       )}
+
+      {/* Les vues de l'écran (`PresetBar`) se rangent ici à partir de 1 024 px, plutôt
+          que sur une rangée à elles sous la barre (recette du 01/10/2026). Vide (écran
+          sans vues, ou plus étroit), l'emplacement ne prend aucune place. */}
+      <div
+        ref={refHote("vues")}
+        data-emplacement="vues"
+        className="flex min-w-0 flex-1 items-center gap-2 border-l border-line pl-2.5 empty:hidden"
+      />
 
       <div className="ml-auto flex flex-wrap items-center gap-1.5">
         {dropped > 0 && (
