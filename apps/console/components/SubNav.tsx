@@ -5,7 +5,7 @@ import { useRef } from "react";
 import { contextHref } from "@/lib/view-state";
 import { refHote } from "./emplacements-coquille";
 import { ICON_PATHS, Icon } from "./icons";
-import { activeCategory, ongletActif, ongletExact, sousOnglets } from "./nav-items";
+import { activeCategory, ongletActif, sousOnglets } from "./nav-items";
 import { useDebordementHorizontal } from "./TableDefilante";
 
 /** Barre de sous-onglets d'une catégorie (rien si la catégorie est mono-page).
@@ -13,14 +13,13 @@ import { useDebordementHorizontal } from "./TableDefilante";
  *
  * SA PLACE LIBRE SERT (recette du 01/10/2026). Les onglets n'occupent qu'une moitié de
  * la rangée : à droite, l'emplacement `onglets` reçoit ce que l'écran rangeait sur des
- * rangées à lui — le bref de la Vue d'ensemble, l'aide de l'écran, l'assistant
- * (`emplacements-coquille.tsx`). Il passe sous les onglets quand la largeur manque,
- * jamais par-dessus.
+ * rangées à lui — le bref de la Vue d'ensemble, l'aide et les actions d'un écran dont
+ * le titre redisait l'onglet (`PageHeader`), l'assistant (`emplacements-coquille.tsx`).
+ * Il passe sous les onglets quand la largeur manque, jamais par-dessus.
  *
- * `data-onglet-exact` : l'écran EST la page de l'onglet allumé. La feuille de style
- * passe alors le titre de la page en lecture d'écran seule (`[data-titre-page]`) —
- * l'onglet le dit déjà. `data-hote-onglets` : l'emplacement existe, ses replis dans la
- * page se masquent. Les deux visent `main`, frère de cette barre dans le layout. */
+ * `data-hote-onglets` : l'emplacement existe ; la feuille de style masque alors, dès le
+ * rendu serveur, les replis de ce qui va y monter (`main`, frère de cette barre dans le
+ * layout ; fin de `app/globals.css`). */
 export function SubNav() {
   const pathname = usePathname();
   // Contexte persisté (app, plage, filtres, comparaison) ; les réglages propres à l'écran quitté restent derrière.
@@ -46,14 +45,12 @@ export function SubNav() {
   // il n'est écrit que s'il dit autre chose que ses onglets.
   // Recette du 30/09/2026 : plus du tout — la barre latérale allume déjà la catégorie.
   const libelleUtile = false;
-  const exact = ongletExact(pathname) !== undefined;
 
   return (
-    // Sous 640 px, une seule ligne : l'emplacement n'y reçoit que des pictogrammes
-    // (l'aide ; l'assistant y est un rond fixé en bas d'écran), les onglets défilent.
+    // Sous 640 px, une seule ligne, les onglets défilent : rien n'y monte (l'assistant y
+    // est un rond fixé en bas d'écran ; le reste ne monte qu'à partir de 1 024 px).
     <div
       data-hote-onglets=""
-      data-onglet-exact={exact ? "" : undefined}
       className="flex flex-nowrap items-center border-b border-line bg-panel sm:flex-wrap"
     >
     <nav aria-label={`Onglets ${cat.label}`} className="relative min-w-0 flex-1 sm:flex-auto" data-testid="subnav">
