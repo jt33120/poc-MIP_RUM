@@ -12,8 +12,8 @@
 | Routes (`route.ts`) | 46 | **37** |
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
-| Modules `lib/queries*.ts` | 48 (210 fonctions exportées) | — |
-| Sections `lire()` (appels) | 302 | — |
+| Modules `lib/queries*.ts` | 48 (211 fonctions exportées) | — |
+| Sections `lire()` (appels) | 303 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 5 / 0 | — |
 | Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 55 | — |
 | Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 45 | **45** / 47 |
@@ -69,7 +69,7 @@
 | `/logs` | C5 | **oui** | logs | collecte, deploys, events, explorer, logs, v2 | — | — | oui |
 | `/map` | C4 | **oui** | map | collecte, deploys, explorer, map, mobile, sessions, tracing | 6 | noeud | oui |
 | `/mobile` | C3 | **oui** | mobile | queries, accounts, alerting, collecte, dashboards, deploys, dsar, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, tracing, uptime, v2 | 8 | — | oui |
-| `/` | C4 | **oui** | detections-accueil, overview | queries, breakdowns, collecte, deploys, detections, errors, events, explorer, grid, heatmap, mobile, sessions, tracing, v2 | 37 | — | oui |
+| `/` | C4 | **oui** | detections-accueil, overview | queries, breakdowns, collecte, deploys, detections, errors, events, explorer, grid, heatmap, mobile, sessions, tracing, v2 | 38 | — | oui |
 | `/pages` | C4 | **oui** | pages | queries, breakdowns, collecte, deploys, errors, events, explorer, longtasks, mobile, resources, sessions, tracing, v2 | 22 | route | oui |
 | `/paths` | C5 | **oui** | paths | queries, collecte, deploys, explorer, funnel, mobile, paths, sessions, tracing | 9 | — | oui |
 | `/presentation/a-faire` | à classer | non | — | — | — | — | oui |
@@ -199,7 +199,7 @@
 | `lib/queries-collecte.ts` | 1 | 45 |
 | `lib/queries-customers.ts` | 5 | 13 |
 | `lib/queries-dashboards.ts` | 6 | 18 |
-| `lib/queries-deploys.ts` | 4 | 45 |
+| `lib/queries-deploys.ts` | 5 | 45 |
 | `lib/queries-detections.ts` | 2 | 1 |
 | `lib/queries-dimensions.ts` | 1 | 0 |
 | `lib/queries-dsar.ts` | 9 | 18 |

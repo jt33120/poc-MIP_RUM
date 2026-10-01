@@ -4,9 +4,15 @@
 // relatif de B à A. Ce que la comparaison NE dit PAS est écrit aussi fort que ce
 // qu'elle dit :
 //
-//   - même fenêtre, sans normalisation de trafic : deux releases vivent sur la même
-//     plage mais pas sur les mêmes heures ni les mêmes visiteurs ; l'écart mêle le
-//     code et le contexte (phrase obligatoire, toujours rendue) ;
+//   - les valeurs BRUTES sont lues sur la même fenêtre, sans normalisation de trafic :
+//     deux releases vivent sur la même plage mais pas sur les mêmes heures ni les
+//     mêmes visiteurs ; leur écart mêle le code et le contexte (phrase obligatoire,
+//     toujours rendue) ;
+//   - sous LCP, INP et sessions en erreur, la même mesure À MIX DE TRAFIC ÉGAL
+//     (`@mip/stats/standardisation`, nuit du 01/10/2026) : chaque strate route ×
+//     appareil pèse dans A et B ce qu'elle pèse dans les deux réunies. Elle égalise
+//     le mix, rien d'autre : l'écran dit « à mix égal », jamais une cause. Sous un
+//     seuil d'effectif ou de couverture, la ligne se tait et dit pourquoi ;
 //   - la règle qui a choisi A et B (dernier déploiement déclaré, ou volume) est
 //     affichée sous le titre (CP3) ;
 //   - d'où vient la release de chaque mesure (`source`) ;
@@ -31,15 +37,17 @@
 // B quand il est affirmé ; un clic ouvre la comparaison entière ci-dessous, avec ses
 // effectifs, sa règle de choix, sa source et sa phrase de fenêtre.
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { FicheMesure } from "@/components/charts/FicheMesure";
+import { InfoTip } from "@/components/InfoTip";
 import { TableDefilante } from "@/components/TableDefilante";
 import { DessinVignette, EnteteVignette } from "@/components/vue-ensemble/Vignette";
 import { formater, type FormatId, type VitalName } from "@/lib/fmt-ids";
-import type { VersionRow, VersionSource } from "@/lib/queries-deploys";
+import type { ComparaisonStandardisee, LigneStandardisee, VersionRow, VersionSource } from "@/lib/queries-deploys";
 import { relativeChange } from "@/lib/query-contract";
 import { FORME_RATING, RATING_CLASS, RATING_LABEL } from "@/lib/rating";
 import type { IntervalleP75 } from "@mip/stats/incertitude";
+import { COUVERTURE_MIN, EFFECTIF_MIN_RELEASE, EFFECTIF_MIN_STRATE } from "@mip/stats/standardisation";
 import type { Intervalle } from "@mip/stats/types";
 import { fmtInstant } from "@/lib/format";
 import { lireVital, texteVerdict } from "@/lib/vital-lecture";
@@ -92,9 +100,68 @@ export function tauxSessionsEnErreur(s: ReleaseStats): number | null {
   return s.sessionsEnErreur / s.sessions;
 }
 
+// Les valeurs BRUTES (et les règles d'alerte de release, qui la citent) : vraie de tout
+// écart lu sans pondération.
 export const PHRASE_FENETRE = "même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte";
 export const SANS_SESSION = "aucune session de cette release sur la fenêtre";
 export const CLS_NON_LU = "non lue par cette comparaison";
+
+/** Libellé des lignes standardisées : un mix de trafic égalisé, pas une cause établie. */
+export const LIBELLE_MIX = "à mix égal";
+export const PHRASE_MIX =
+  "chaque strate route × appareil (route d'entrée × appareil pour les erreurs) pèse dans A et dans B ce qu'elle pèse dans les deux réunies ; l'écart restant ne tient plus au mix de routes et d'appareils, l'heure, le réseau et le public restent mêlés";
+
+/** Les mesures que la standardisation lit, par clé de ligne. */
+const CLES_MIX = { lcp: "lcp", inp: "inp", erreurs: "erreurs" } as const;
+const UNITE_MIX: Record<keyof typeof CLES_MIX, string> = { lcp: "mesures", inp: "mesures", erreurs: "sessions" };
+
+/** Ce que la case et la fenêtre reçoivent : la lecture, ou son échec. Absente : non lue, rien n'est dit. */
+export type Standardise = ComparaisonStandardisee | "echec";
+
+/** La ligne standardisée d'une mesure ; `null` si la mesure n'en a pas (sessions, CLS). */
+export function ligneMix(s: Standardise | undefined, cle: string): LigneStandardisee | null {
+  if (!s || !(cle in CLES_MIX)) return null;
+  if (s === "echec") return { ok: false, raison: "lecture en échec" };
+  if (!s.disponible) return { ok: false, raison: s.raison };
+  return s[CLES_MIX[cle as keyof typeof CLES_MIX]];
+}
+
+/** Un problème qui tait TOUTES les lignes (lecture en échec, schéma) : dit une fois. */
+function silenceGlobal(s: Standardise | undefined): string | null {
+  if (!s) return null;
+  if (s === "echec") return "lecture en échec";
+  return s.disponible ? null : s.raison;
+}
+
+const pctEntier = (x: number) => `${Math.round(x * 100)}${String.fromCharCode(0xa0)}%`;
+
+/** « 87 % des sessions » : la couverture que la case affiche, ou null. */
+export function couvertureSessions(s: Standardise | undefined): string | null {
+  if (!s || s === "echec" || !s.disponible || !s.couvertureSessions) return null;
+  return `${pctEntier(s.couvertureSessions.ensemble)} des sessions`;
+}
+
+/** La méthode, rangée dans la bulle : ce qui est pondéré, comment, et sous quels seuils. */
+function MethodeMix() {
+  return (
+    <>
+      <span className="block">
+        Standardisation directe. Référence : A et B réunies, sur les strates communes. Poids d&apos;une unité de la
+        release r dans la strate s = part de s dans la référence ÷ part de s dans r.
+      </span>
+      <span className="mt-1 block">
+        LCP et INP : une mesure par unité, strates route × appareil ; p75 pondéré = plus petite valeur dont la somme
+        cumulée des poids atteint 75 % du total. Sessions en erreur : une session par unité, strates route d&apos;entrée
+        (première page vue sous la release) × appareil ; part pondérée.
+      </span>
+      <span className="mt-1 block">
+        Strate commune : {EFFECTIF_MIN_STRATE} unités au moins de chaque côté. Couverture : part des unités de chaque
+        release dans les strates communes. La ligne se tait sous {EFFECTIF_MIN_RELEASE} unités ou{" "}
+        {Math.round(COUVERTURE_MIN * 100)} % de couverture par release.
+      </span>
+    </>
+  );
+}
 
 const SOURCE: Record<VersionSource, string> = {
   occurrence: "release lue sur chaque mesure (vue, métrique, erreur)",
@@ -212,6 +279,46 @@ function EnTete({ role, stats, href }: { role: "A" | "B"; stats: ReleaseStats; h
   );
 }
 
+/**
+ * La ligne « à mix égal » sous une mesure : A et B standardisés, la couverture de
+ * chacune, l'écart et les strates communes — ou, sous un seuil, la raison en une ligne.
+ * Aucune couleur : le verdict des seuils web.dev porte sur la p75 brute et son intervalle.
+ */
+function LigneMix({ mesure, ligne }: { mesure: Mesure; ligne: LigneStandardisee }) {
+  const unite = UNITE_MIX[mesure.cle as keyof typeof UNITE_MIX] ?? "unités";
+  return (
+    <tr className="border-b border-line/60 align-top" data-testid={`release-mix-${mesure.cle}`}>
+      <th scope="row" className="py-1.5 pr-3 pl-2 text-left text-[11px] font-normal text-ink-soft">
+        <span className="sr-only">{mesure.libelle}, </span>
+        <span aria-hidden="true">↳ </span>
+        {LIBELLE_MIX}
+      </th>
+      {ligne.ok ? (
+        <>
+          {(["a", "b"] as const).map((cote) => (
+            <td key={cote} className="py-1.5 pr-3">
+              <span className="font-semibold tabular-nums text-ink">{formater(mesure.format, ligne[cote])}</span>
+              <span className="block text-[11px] text-ink-soft">
+                couv. {pctEntier(ligne.couverture[cote])} des {unite}
+              </span>
+            </td>
+          ))}
+          <td className="py-1.5 text-right tabular-nums text-ink-soft">
+            {ecrireEcart(ligne.a, ligne.b, mesure.format)}
+            <span className="block text-[11px]">
+              {ligne.strates.communes}/{ligne.strates.total} strates
+            </span>
+          </td>
+        </>
+      ) : (
+        <td colSpan={3} className="py-1.5 text-[11px] text-ink-soft" data-testid="release-mix-raison">
+          non calculée : {ligne.raison}
+        </td>
+      )}
+    </tr>
+  );
+}
+
 /** Teinte de la pastille d'un verdict affirmé : le jeton de TEXTE (4,5:1), qui suit le mode sombre. */
 const TEINTE_PASTILLE = { good: "text-good-ink", "needs-improvement": "text-warn-ink", poor: "text-bad-ink" } as const;
 
@@ -223,9 +330,14 @@ const COURT: Record<string, string> = { sessions: "Sessions", lcp: "LCP", inp: "
  * release sans session l'écrit « — » (la fenêtre dit pourquoi). Le verdict de B n'est
  * posé qu'affirmé sur tout l'intervalle — une pastille de forme et de couleur, le mot
  * pour l'écran vocal ; sinon aucune couleur.
+ *
+ * À MIX ÉGAL (nuit du 01/10/2026) : une colonne de plus, l'écart B / A des mêmes mesures
+ * à mix de trafic égal (« — » quand la ligne se tait), et sous la grille la couverture
+ * en % des sessions, ou la raison du silence. Les valeurs standardisées sont dans la
+ * fenêtre.
  */
 export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
-  const { a, b, plage } = props;
+  const { a, b, plage, standardise } = props;
   const vide = (s: ReleaseStats) => s.sessions == null || s.sessions === 0;
   const clsLu = a.cls_p75 !== undefined && b.cls_p75 !== undefined;
   const lignes = MESURES.filter((m) => m.cle !== "cls" || clsLu);
@@ -234,6 +346,36 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
     const vb = m.lire(b) ?? null;
     return m.vital && vb != null && !vide(b) ? verdictRelease(m.vital, vb, b) : null;
   };
+  // La colonne « à mix égal » : l'écart standardisé, « — » pour une ligne qui se tait,
+  // rien pour une mesure que la standardisation ne lit pas (sessions, CLS).
+  const ecartMix = (m: Mesure): string | null => {
+    const l = ligneMix(standardise, m.cle);
+    return l === null ? null : l.ok ? ecrireEcart(l.a, l.b, m.format) : "—";
+  };
+  const couverture = couvertureSessions(standardise);
+  const silence = silenceGlobal(standardise);
+  const toutesTues = lignes.every((m) => {
+    const l = ligneMix(standardise, m.cle);
+    return l === null || !l.ok;
+  });
+  const premiereRaison = lignes.map((m) => ligneMix(standardise, m.cle)).find((l) => l && !l.ok);
+  const piedMix = !standardise
+    ? null
+    : silence
+      ? `${LIBELLE_MIX} : ${silence}`
+      : toutesTues && premiereRaison && !premiereRaison.ok
+        ? `${LIBELLE_MIX} : ${premiereRaison.raison}`
+        : couverture
+          ? `${LIBELLE_MIX} : couverture ${couverture}`
+          : null;
+  const ariaMix = standardise
+    ? `, ${LIBELLE_MIX} : ${lignes
+        .flatMap((m) => {
+          const e = ecartMix(m);
+          return e === null ? [] : [`${m.libelle} ${e}`];
+        })
+        .join(", ")}${piedMix ? ` (${piedMix})` : ""}`
+    : "";
   return (
     <FicheMesure
       titre={`Release ${b.release} face à ${a.release}`}
@@ -242,13 +384,15 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
           const v = verdictB(m);
           return `${m.libelle} ${valeur(m, a)} puis ${valeur(m, b)}${v ? ` (${texteVerdict(v)})` : ""}`;
         })
-        .join(", ")} — ouvrir la comparaison`}
+        .join(", ")}${ariaMix} — ouvrir la comparaison`}
       testId="vignette-release"
       case={
         <>
           <EnteteVignette titre={`Release ${b.release} vs ${a.release}`} meta={plage} />
           <DessinVignette>
-            <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-baseline gap-x-2 gap-y-0.5 text-[11px] tabular-nums">
+            <span
+              className={`grid min-w-0 ${standardise ? "grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] gap-x-1.5" : "grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-x-2"} items-baseline gap-y-0.5 text-[11px] tabular-nums`}
+            >
               <span />
               <span className="truncate text-right text-[10px] text-ink-faint" title={a.release}>
                 A
@@ -257,6 +401,11 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
                 B
               </span>
               <span className="text-right text-[10px] text-ink-faint">B / A</span>
+              {standardise && (
+                <span className="text-right text-[10px] text-ink-faint" data-testid="vignette-release-mix">
+                  {LIBELLE_MIX}
+                </span>
+              )}
               {lignes.map((m) => {
                 const vb = m.lire(b) ?? null;
                 const verdict = verdictB(m);
@@ -275,10 +424,16 @@ export function VignetteRelease(props: Parameters<typeof ReleaseCompare>[0]) {
                       {valeur(m, b)}
                     </span>
                     <span className="text-right text-ink">{ecrireEcart(m.lire(a) ?? null, vb, m.format)}</span>
+                    {standardise && <span className="text-right text-ink">{ecartMix(m) ?? ""}</span>}
                   </span>
                 );
               })}
             </span>
+            {piedMix && (
+              <span className="mt-0.5 block truncate text-[10px] text-ink-faint" data-testid="vignette-release-couverture">
+                {piedMix}
+              </span>
+            )}
           </DessinVignette>
         </>
       }
@@ -299,6 +454,7 @@ export function ReleaseCompare({
   hrefs,
   verdict,
   toutesLesVersions,
+  standardise,
 }: {
   a: ReleaseStats;
   b: ReleaseStats;
@@ -309,9 +465,12 @@ export function ReleaseCompare({
   verdict?: VerdictRelease;
   /** Contenu de « Toutes les versions » (`VersionsTable`), replié sous la comparaison. */
   toutesLesVersions?: ReactNode;
+  /** Les mêmes mesures à mix de trafic égal (`comparaisonStandardisee`) ; absent : non lues, rien n'est dit. */
+  standardise?: Standardise;
 }) {
   const vide = (s: ReleaseStats) => s.sessions == null || s.sessions === 0;
   const clsLu = a.cls_p75 !== undefined && b.cls_p75 !== undefined;
+  const silence = silenceGlobal(standardise);
 
   return (
     <div className="card min-w-0 p-4" data-testid="release-compare">
@@ -368,22 +527,27 @@ export function ReleaseCompare({
               }
               const va = mesure.lire(a) ?? null;
               const vb = mesure.lire(b) ?? null;
+              // Un problème commun (échec, schéma) est dit UNE fois sous le tableau.
+              const mix = silence ? null : ligneMix(standardise, mesure.cle);
               return (
-                <tr key={mesure.cle} className="border-b border-line/60 align-top">
-                  <th scope="row" className="py-2 pr-3 text-left text-xs font-medium text-ink-soft">
-                    {mesure.libelle}
-                  </th>
-                  {[a, b].map((s) => (
-                    <td key={s === a ? "a" : "b"} className="py-2 pr-3">
-                      {vide(s) && mesure.cle !== "sessions" ? (
-                        <span className="text-xs text-ink-soft">{SANS_SESSION}</span>
-                      ) : (
-                        <Valeur mesure={mesure} stats={s} />
-                      )}
-                    </td>
-                  ))}
-                  <td className="py-2 text-right tabular-nums text-ink-soft">{ecrireEcart(va, vb, mesure.format)}</td>
-                </tr>
+                <Fragment key={mesure.cle}>
+                  <tr className="border-b border-line/60 align-top">
+                    <th scope="row" className="py-2 pr-3 text-left text-xs font-medium text-ink-soft">
+                      {mesure.libelle}
+                    </th>
+                    {[a, b].map((s) => (
+                      <td key={s === a ? "a" : "b"} className="py-2 pr-3">
+                        {vide(s) && mesure.cle !== "sessions" ? (
+                          <span className="text-xs text-ink-soft">{SANS_SESSION}</span>
+                        ) : (
+                          <Valeur mesure={mesure} stats={s} />
+                        )}
+                      </td>
+                    ))}
+                    <td className="py-2 text-right tabular-nums text-ink-soft">{ecrireEcart(va, vb, mesure.format)}</td>
+                  </tr>
+                  {mix && <LigneMix mesure={mesure} ligne={mix} />}
+                </Fragment>
               );
             })}
           </tbody>
@@ -391,8 +555,22 @@ export function ReleaseCompare({
       </TableDefilante>
 
       <p className="mt-3 text-xs text-ink-soft" role="note" data-testid="release-phrase">
-        Comparaison sur la {PHRASE_FENETRE}.
+        {standardise ? (
+          <>
+            Valeurs brutes : {PHRASE_FENETRE}. Lignes « {LIBELLE_MIX} » : {PHRASE_MIX}.{" "}
+            <InfoTip label="Méthode : à mix de trafic égal" align="start">
+              <MethodeMix />
+            </InfoTip>
+          </>
+        ) : (
+          <>Comparaison sur la {PHRASE_FENETRE}.</>
+        )}
       </p>
+      {silence && (
+        <p className="mt-1 text-xs text-ink-soft" data-testid="release-mix-silence">
+          Lignes « {LIBELLE_MIX} » non calculées : {silence}.
+        </p>
+      )}
 
       {toutesLesVersions && (
         <details className="mt-3">

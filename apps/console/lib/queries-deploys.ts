@@ -4,10 +4,19 @@
 // dernier déploiement. Marqueurs et fenêtres ±2 h sont bornés par le périmètre d'apps de la requête
 // commune (P6.2), jamais par ses filtres de population : le panneau le dit.
 import { enregistrerDeploiement } from "@mip/backend/lib/deploiements.mjs";
+import {
+  EFFECTIF_MIN_STRATE,
+  P75,
+  TOLERANCE_CUMUL,
+  ponderer,
+  standardiserPart,
+  verifierPonderation,
+  type Couverture,
+} from "@mip/stats/standardisation";
 import { pool, q } from "./db";
 import { queryOf, type Filters } from "./filters";
 import { binder, compileScope, sessionJoin } from "./query-compiler";
-import { sqlContext, type SqlContext } from "./query-sql";
+import { contextFor, sqlContext, type SqlContext } from "./query-sql";
 import { SANS_RELEASE } from "./releases";
 import { type DeployImpact, type VersionRow } from "./deploys-verdict";
 // Les décisions pures (verdict, référence, taux, écarts) et leurs types vivent dans
@@ -223,6 +232,247 @@ async function parSessionSql(sql: SqlContext, limit: number): Promise<VersionRow
      from v left join e on e.version = v.version
      order by v.sessions desc, v.version asc
      limit ${Number(limit)}`,
+    sql.params,
+  );
+}
+
+// ─────────────────────── À mix de trafic égal (standardisation) ───────────────────────
+
+/** Les découpages, en clair : l'écran les écrit tels quels. */
+export const STRATES_VITAUX = "route × appareil";
+export const STRATES_ERREURS = "route d'entrée × appareil";
+/** Route ou appareil absent : une strate comme une autre, nommée. */
+const INCONNU = "(inconnu)";
+
+/** Une mesure à mix de trafic égal, ou la raison chiffrée de son silence (une ligne). */
+export type LigneStandardisee =
+  | {
+      ok: true;
+      a: number;
+      b: number;
+      couverture: Couverture;
+      strates: { communes: number; total: number };
+      effectifs: { a: number; b: number };
+    }
+  | { ok: false; raison: string };
+
+export type ComparaisonStandardisee =
+  | { disponible: false; raison: string }
+  | {
+      disponible: true;
+      lcp: LigneStandardisee;
+      inp: LigneStandardisee;
+      erreurs: LigneStandardisee;
+      /** Part des sessions de A, de B et des deux dans des strates communes (route d'entrée × appareil). */
+      couvertureSessions: Couverture | null;
+    };
+
+export const RAISON_SANS_RELEASE_PAR_MESURE =
+  "la release n'est pas portée par chaque mesure sur ce déploiement (migration v75) : aucune strate à comparer";
+
+interface VitalParStrate {
+  name: "LCP" | "INP";
+  route: string;
+  appareil: string;
+  a: number;
+  b: number;
+  p75a: number | null;
+  p75b: number | null;
+}
+
+interface SessionsParStrate {
+  route: string;
+  appareil: string;
+  na: number;
+  ka: number;
+  nb: number;
+  kb: number;
+}
+
+const cleStrate = (route: string, appareil: string) => `${route}\u0000${appareil}`;
+
+/**
+ * Les releases A et B À MIX DE TRAFIC ÉGAL : LCP et INP p75 standardisés par route ×
+ * appareil, part de sessions en erreur par route d'entrée × appareil, et la couverture
+ * (`@mip/stats/standardisation`, qui porte la méthode et ses seuils).
+ *
+ * MÊMES POPULATIONS QUE `comparaisonVersions` : mêmes cibles du compilateur (fenêtre,
+ * périmètre, filtres, exclusion des robots), release lue sur chaque mesure — mais
+ * BORNÉES AUX DEUX RELEASES comparées : on ne lit rien d'autre.
+ *
+ * LE p75 PONDÉRÉ SE CALCULE EN BASE (Neon se paie à l'usage) : les mesures ne quittent
+ * pas PostgreSQL, seule la somme cumulée des poids les parcourt ; reviennent les
+ * effectifs par strate (pour la couverture et les refus, calculés par le module) et
+ * deux p75 par vital. Le calcul SQL est celui de `quantilePondere` — prouvé contre lui
+ * par tests/integration/versions-standardisees-sql.test.ts.
+ *
+ * La route d'entrée d'une session, pour une release, est celle de sa PREMIÈRE page vue
+ * sous cette release (une session à cheval sur un déploiement entre dans B là où B
+ * l'a reçue). Une lecture en échec LÈVE : le chargeur l'enveloppe dans `section()`.
+ */
+export async function comparaisonStandardisee(f: Filters, relA: string, relB: string): Promise<ComparaisonStandardisee> {
+  const sql = await sqlContext(f);
+  const parOccurrence =
+    sql.schema.has("rum_pageview.release") && sql.schema.has("rum_metric.release") && sql.schema.has("rum_error.release");
+  if (!parOccurrence) return { disponible: false, raison: RAISON_SANS_RELEASE_PAR_MESURE };
+  const [vitaux, sessions] = await Promise.all([
+    vitauxParStrate(sql, relA, relB),
+    sessionsParStrate(contextFor(sql.query, sql.schema), relA, relB),
+  ]);
+
+  const ligneVitale = (nom: VitalParStrate["name"]): LigneStandardisee => {
+    const lignes = vitaux.filter((r) => r.name === nom);
+    const p = ponderer(
+      lignes.map((r) => ({ strate: cleStrate(r.route, r.appareil), a: r.a, b: r.b })),
+      EFFECTIF_MIN_STRATE,
+    );
+    const refus = verifierPonderation(p, "mesures", STRATES_VITAUX);
+    if (refus) return { ok: false, raison: refus.raison };
+    const p75a = lignes[0]?.p75a;
+    const p75b = lignes[0]?.p75b;
+    if (p75a == null || p75b == null || !p.couverture) return { ok: false, raison: "p75 pondéré non calculé" };
+    return { ok: true, a: Number(p75a), b: Number(p75b), couverture: p.couverture, strates: p.nbStrates, effectifs: p.effectifs };
+  };
+
+  const effectifsSessions = sessions.map((r) => ({
+    strate: cleStrate(r.route, r.appareil),
+    a: { n: r.na, k: r.ka },
+    b: { n: r.nb, k: r.kb },
+  }));
+  const part = standardiserPart(effectifsSessions, { unite: "sessions", strates: STRATES_ERREURS });
+  const erreurs: LigneStandardisee =
+    part.ok && part.ponderation.couverture
+      ? {
+          ok: true,
+          a: part.a,
+          b: part.b,
+          couverture: part.ponderation.couverture,
+          strates: part.ponderation.nbStrates,
+          effectifs: part.ponderation.effectifs,
+        }
+      : { ok: false, raison: part.ok ? "part pondérée non calculée" : part.raison };
+  const couvertureSessions = ponderer(
+    effectifsSessions.map((l) => ({ strate: l.strate, a: l.a.n, b: l.b.n })),
+    EFFECTIF_MIN_STRATE,
+  ).couverture;
+
+  return { disponible: true, lcp: ligneVitale("LCP"), inp: ligneVitale("INP"), erreurs, couvertureSessions };
+}
+
+/**
+ * LCP et INP de A et B par route × appareil, et leurs p75 pondérés. Poids d'une
+ * mesure de la release r dans la strate s : (N_s / N) ÷ (n_rs / n_r), sur les strates
+ * où CHAQUE release compte au moins `EFFECTIF_MIN_STRATE` mesures ; p75 = plus petite
+ * valeur dont la somme cumulée des poids atteint 75 % du total (tolérance relative
+ * `TOLERANCE_CUMUL`, la même que le module).
+ */
+async function vitauxParStrate(sql: SqlContext, relA: string, relB: string): Promise<VitalParStrate[]> {
+  const mesures = sql.where({ dataset: "vitals", row: "x", session: "ms", time: "x.ts" });
+  const sans = sql.bind(SANS_RELEASE);
+  const inconnu = sql.bind(INCONNU);
+  const a = sql.bind(relA);
+  const b = sql.bind(relB);
+  const min = sql.bind(EFFECTIF_MIN_STRATE);
+  const p = sql.bind(P75);
+  const tol = sql.bind(TOLERANCE_CUMUL);
+  return q<VitalParStrate>(
+    `with m as (
+       select coalesce(nullif(x.release, ''), ${sans}) as rel, x.name,
+              coalesce(nullif(x.route, ''), ${inconnu}) as route,
+              coalesce(nullif(ms.device_type, ''), ${inconnu}) as appareil,
+              x.value
+         from rum_metric x
+         ${sessionJoin("x", "ms")}
+        where x.name in ('LCP', 'INP')${mesures}
+          and coalesce(nullif(x.release, ''), ${sans}) in (${a}, ${b})
+     ),
+     s as (
+       select name, route, appareil,
+              count(*) filter (where rel = ${a})::int as a,
+              count(*) filter (where rel = ${b})::int as b
+         from m
+        group by 1, 2, 3
+     ),
+     c as (
+       select name, route, appareil, a, b,
+              (a + b)::float8 / (sum(a + b) over (partition by name))::float8 as part_ref,
+              (sum(a) over (partition by name))::float8 as na,
+              (sum(b) over (partition by name))::float8 as nb
+         from s
+        where a >= ${min} and b >= ${min}
+     ),
+     w as (
+       select name, route, appareil, ${a}::text as rel, part_ref / (a::float8 / na) as poids from c
+       union all
+       select name, route, appareil, ${b}::text as rel, part_ref / (b::float8 / nb) as poids from c
+     ),
+     o as (
+       select m.name, m.rel, m.value,
+              sum(w.poids) over (partition by m.name, m.rel order by m.value rows between unbounded preceding and current row) as cumul,
+              sum(w.poids) over (partition by m.name, m.rel) as total
+         from m
+         join w on w.name = m.name and w.route = m.route and w.appareil = m.appareil and w.rel = m.rel
+     ),
+     qp as (
+       select name,
+              min(value) filter (where rel = ${a} and cumul >= ${p}::float8 * total - ${tol}::float8 * total) as p75a,
+              min(value) filter (where rel = ${b} and cumul >= ${p}::float8 * total - ${tol}::float8 * total) as p75b
+         from o
+        group by name
+     )
+     select s.name, s.route, s.appareil, s.a, s.b, qp.p75a, qp.p75b
+       from s
+       left join qp on qp.name = s.name
+      order by s.name, s.a + s.b desc, s.route, s.appareil`,
+    sql.params,
+  );
+}
+
+/**
+ * Sessions de A et B par route d'entrée × appareil, et celles qui portent au moins
+ * une erreur SOUS LA MÊME release (une session en erreur est une session de la
+ * strate : k ≤ n). Session = (app, session), comme le dénominateur de `comparaisonVersions`.
+ */
+async function sessionsParStrate(sql: SqlContext, relA: string, relB: string): Promise<SessionsParStrate[]> {
+  const vues = sql.where({ dataset: "views", row: "p", session: "ps", time: "p.started_at" });
+  const erreurs = sql.where({ dataset: "errors", row: "x", session: "es", time: "x.ts" });
+  const sans = sql.bind(SANS_RELEASE);
+  const inconnu = sql.bind(INCONNU);
+  const a = sql.bind(relA);
+  const b = sql.bind(relB);
+  return q<SessionsParStrate>(
+    `with pv as (
+       select coalesce(nullif(p.release, ''), ${sans}) as rel, p.app_id, p.session_id, p.route,
+              ps.device_type, p.started_at, p.id
+         from rum_pageview p
+         ${sessionJoin("p", "ps")}
+        where true${vues}
+          and coalesce(nullif(p.release, ''), ${sans}) in (${a}, ${b})
+     ),
+     v as (
+       select distinct on (rel, app_id, session_id)
+              rel, app_id, session_id,
+              coalesce(nullif(route, ''), ${inconnu}) as route,
+              coalesce(nullif(device_type, ''), ${inconnu}) as appareil
+         from pv
+        order by rel, app_id, session_id, started_at, id
+     ),
+     e as (
+       select distinct coalesce(nullif(x.release, ''), ${sans}) as rel, x.app_id, x.session_id
+         from rum_error x
+         ${sessionJoin("x", "es")}
+        where true${erreurs}
+          and coalesce(nullif(x.release, ''), ${sans}) in (${a}, ${b})
+     )
+     select v.route, v.appareil,
+            count(*) filter (where v.rel = ${a})::int as na,
+            count(*) filter (where v.rel = ${a} and e.session_id is not null)::int as ka,
+            count(*) filter (where v.rel = ${b})::int as nb,
+            count(*) filter (where v.rel = ${b} and e.session_id is not null)::int as kb
+       from v
+       left join e on e.rel = v.rel and e.app_id = v.app_id and e.session_id = v.session_id
+      group by 1, 2
+      order by count(*) desc, 1, 2`,
     sql.params,
   );
 }
