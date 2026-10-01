@@ -77,8 +77,9 @@ sequenceDiagram
   participant B as Neon
   participant L as notifier
   participant D as Destinataire
-  S->>B: check_alerts(), check_slo_burn(), sondes uptime
+  S->>B: check_alerts(), check_slo_burn(), escalate_alerts(), sondes uptime
   B->>B: alert_event + route_alert() → une livraison « queued » par canal éligible
+  B->>B: escalate_alerts() → une livraison « queued » par niveau échu d'un déclenchement non acquitté (v108)
   Note over S,L: base gratuite : tick à :00, :15, :30, :45 — notifier 45 s après
   L->>B: route_error_issue_notifications() (outbox des issues)
   L->>B: réserve une livraison (for update skip locked)
@@ -91,6 +92,7 @@ sequenceDiagram
 ```
 
 - **Qui décide, qui livre.** Le scheduler **décide** (règles, SLO, uptime) et met en file ; le notifier **livre**. Tant que `SCHEDULER_DELIVERY` vaut `on` (son défaut), le tick livre aussi ; le notifier le remplace dans le même apply qui pose `off`. Au 26/09, cet apply n'a pas eu lieu : le notifier n'existe pas, c'est le tick qui livre.
+- **L'escalade** (migration-v108) : à chaque tick, après `check_slo_burn`, `escalate_alerts()` ajoute une livraison par niveau échu de chaque déclenchement non acquitté, puis les relances du dernier niveau ; l'acquittement (heure et auteur gardés) arrête tout. Le grain est le tick. Détail : `docs/ALERTING.md`, pilier 5.
 - **Les nouvelles erreurs** n'attendent pas le scheduler : l'ingestion écrit une notification dans l'outbox des issues (`error_issue_notification`) à la seconde, et c'est la passe du notifier qui la route vers `route_alert`.
 - **Aucun double envoi** : chaque livraison est réservée ligne par ligne et marquée dans sa transaction ; deux livreurs (le scheduler et le notifier pendant la bascule, deux répliques) se partagent les lignes. Un rejeu après une réponse perdue porte le même `x-mip-delivery-id` (webhook) ou la même clé d'idempotence (Resend).
 - **Rien ne sort vers le réseau privé** : chaque webhook passe par `safe-fetch` (IP littérales, réseaux privés, `*.railway.internal`, métadonnées cloud refusés) ; une cible refusée est soldée `skipped`, jamais rejouée.

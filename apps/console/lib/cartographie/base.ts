@@ -103,6 +103,10 @@ export const DOMAINES: readonly Domaine[] = [
     faits: [
       { texte: "Une règle : un seuil, un écart à l'habitude, ou une régression de release.", sources: [`${SQL}/migration-v02.sql:62`] },
       { texte: "Les alertes déclenchées se purgent à 30 jours.", sources: [`${SQL}/migration-v02.sql:75`] },
+      {
+        texte: "Une alerte non acquittée s'escalade par niveaux, au passage du scheduler ; l'acquittement garde son heure.",
+        sources: [`${SQL}/migration-v108.sql:56`, `${SQL}/migration-v108.sql:151`],
+      },
     ],
     tables: [
       { nom: "alert_rule", role: "les règles d'alerte et leur dernier état" },
@@ -110,6 +114,7 @@ export const DOMAINES: readonly Domaine[] = [
       { nom: "alert_delivery", role: "les livraisons : en file, envoyée, échouée" },
       { nom: "alert_config", role: "la configuration globale du routage (une ligne)" },
       { nom: "notify_channel", role: "les canaux : webhook, Slack, e-mail" },
+      { nom: "alert_escalation_step", role: "l'escalade : niveaux, délais et relances vers les canaux" },
       { nom: "slo", role: "les objectifs de niveau de service" },
     ],
   },

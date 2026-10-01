@@ -148,9 +148,62 @@ calcul Neon est suspendu (jusqu'au 01/10/2026), rien n'est évalué ni livré.
   (10 s dans le notifier, `BUDGET_PASSE_MS` ; 45 s dans le tick, `ECHEANCE_LIVRAISON_MS`) ; une cible ni HTTP ni adresse e-mail est
   `skipped` au lieu d'échouer cinq fois.
 
+## Pilier 5 — Escalade : niveaux, acquittement horodaté, relance (migration v108, 01/10/2026)
+
+Une alerte part une fois, à son déclenchement, vers les canaux éligibles (pilier 3). Si
+personne ne l'acquitte, l'**escalade** la renvoie, niveau par niveau. Le chemin nominal
+(`route_alert`, `check_alerts`) ne change pas : l'escalade ne fait qu'**ajouter** des
+livraisons.
+
+- **Étapes** — table `alert_escalation_step(app_id?, severity_min, level, delay_minutes,
+  channel_id, repeat_minutes?, repeat_max?)`. Une étape dit : « un déclenchement de cette
+  application (ou de toutes, `app_id` nul), de sévérité ≥ `severity_min`, encore non
+  acquitté `delay_minutes` après son déclenchement, part vers le canal `channel_id`, au
+  niveau `level` ». Bornes : niveau 1 à 9, délai 0 à 7 jours, relance 5 min à 24 h,
+  plafond 1 à 48. Une étape globale n'envoie qu'à un **canal global** ; une étape
+  d'application, à un canal de cette application ou global — jamais les alertes d'une
+  application vers le canal d'une autre. Supprimer un canal supprime ses étapes.
+- **`escalate_alerts(p_maintenant)`**, étape du tick du scheduler juste après
+  `check_slo_burn` : pour chaque déclenchement **non acquitté**, de moins de 7 jours,
+  **né après la création de l'étape** (pas d'avalanche sur l'arriéré), une livraison
+  `queued` par niveau échu (`alert_delivery.escalation_level`, rang de relance 0). L'étape
+  du **dernier niveau** qui s'applique au déclenchement relance ensuite toutes les
+  `repeat_minutes`, `repeat_max` fois au plus (rang 1, 2…). Un tick manqué ne rattrape
+  pas les relances sautées : il envoie la plus récente due. Un index unique
+  (déclenchement, étape, rang) interdit le double envoi entre deux passes concurrentes.
+- **Quels déclenchements** : ceux qu'on peut **acquitter** depuis la console — nés d'une
+  règle, d'un SLO ou d'une notification d'issue. Les alertes sans application connue de
+  la base (uptime, absence de collecte, nouvelle erreur historique) ne s'escaladent pas :
+  elles relanceraient jusqu'au plafond sans que personne puisse les arrêter.
+- **Le grain est le tick** (15 min en production) : un délai de 5 min part au passage
+  qui suit son échéance. La section « Escalade » de `/alerts` écrit la cadence lue.
+- **Le livreur** (`dispatch-alerts.mjs`) envoie une livraison d'escalade comme les
+  autres, son texte marqué : `[MIP RUM] Niveau 2, non acquittée — …`, puis
+  `[MIP RUM] Relance 1 / niveau 2, non acquittée — …` ; la charge JSON porte
+  `escalation: { level, relance }`. Un envoi d'escalade dont le déclenchement a été
+  acquitté entre sa mise en file et son envoi est soldé `skipped`, sans tentative.
+- **Acquittement horodaté** : `alert_event.acknowledged_at` et `acknowledged_by`, posés par
+  la console (commande `acquitterEvenement`) une seule fois — un second acquittement ne
+  les réécrit pas. L'acquittement d'un déclenchement d'issue est désormais possible
+  (son application vient de la notification). `/alerts` affiche « acquittée à HH:MM,
+  après N min » et, sur un déclenchement ouvert, le niveau atteint.
+- **MTTA** : la tuile « Délai d'acquittement · 30 j » de `/alerts` est la médiane de
+  `acknowledged_at − fired_at` sur les déclenchements nés après v108
+  (`alert_event.acquittement_horodate`) — un déclenchement plus ancien, acquitté après
+  coup, mesurerait l'absence d'horodatage, pas l'équipe.
+- **Console** : section « Escalade » de `/alerts` (une ligne par étape, détail au clic),
+  commandes `creerEtapeEscalade` et `supprimerEtapeEscalade` (`alerts.createEscalationStep`,
+  `alerts.deleteEscalationStep` dans `docs/api/console-api.md`) — une étape globale :
+  l'administrateur de la plateforme seul. Une étape ne se modifie pas : on la recrée.
+- **Ce qui n'existe pas** : ni rotation d'astreinte, ni SMS, ni outil d'astreinte tiers —
+  des niveaux vers les canaux déjà déclarés.
+- **Preuves** : `tests/integration/escalade-sql.test.ts` (niveau 1 puis 2 aux délais,
+  relances jusqu'au plafond, plus rien après l'acquittement, passes concurrentes, livreur),
+  `tests/unit/escalade-*.test.ts`.
+
 ## Sécurité / exploitation
 
-- `check_alerts` / `check_slo_burn` / `route_alert` / `metric_baseline` sont
+- `check_alerts` / `check_slo_burn` / `route_alert` / `metric_baseline` / `escalate_alerts` sont
   **`SECURITY DEFINER`** à **`search_path` figé** (anti-injection, cf. v11), appelés par le
   service `scheduler` (connecté en propriétaire, `neondb_owner`) — jamais via l'API. Les
   blocs `cron.schedule` de v17 sont sautés sur Neon, faute de pg_cron.

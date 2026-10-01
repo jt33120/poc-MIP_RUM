@@ -157,9 +157,13 @@ export const CATALOGUES: readonly Catalogue[] = [
         raison: `Le déclencheur des tâches planifiées passe à cadence fixe — ${CADENCE_TICK_MIN} minutes visées, davantage tant que la base reste provisoire (la ligne « Latence d'alerte » de la présentation dit la cadence réelle) : un budget peut donc être consommé pendant tout un intervalle avant que l'alerte ne parte. C'est une cadence, pas du temps réel — évaluer le SLO à chaque mesure écrite demanderait un déclencheur en base, pas un passage périodique.`,
       },
       {
-        label: "Politique d'escalade",
+        // L'escalade existe depuis migration-v108 (écran Alertes, section « Escalade ») :
+        // niveaux, délais, relance du dernier niveau, arrêt à l'acquittement horodaté.
+        // Ce qui manque encore, c'est l'ASTREINTE elle-même — la ligne d'avant
+        // (« sans niveaux, ni accusé de réception ») était devenue fausse.
+        label: "Astreinte (rotation, SMS)",
         raison:
-          "Les alertes partent en webhook sortant, sans niveaux, ni astreinte, ni accusé de réception. La console n'a pas de couche d'escalade.",
+          "Une alerte non acquittée s'escalade par niveaux et relance jusqu'à son plafond, réglés sur l'écran Alertes — mais vers les canaux déclarés seulement : webhook, Slack, e-mail. Ni rotation d'astreinte, ni SMS, ni outil d'astreinte tiers n'y est branché.",
       },
     ],
   },
