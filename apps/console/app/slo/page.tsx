@@ -322,7 +322,9 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
               <Field label="Nom">
                 <input name="name" required placeholder="LCP 99 % / 28 j" className={`${INPUT_CLASS} w-44`} />
               </Field>
-              <Field label="Métrique">
+              {/* Libellé dans son propre `span` : le texte des options ne se mêle pas au libellé. */}
+              <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs font-medium text-ink-soft">
+                <span>Métrique</span>
                 <select name="metric" defaultValue="LCP" className={INPUT_CLASS}>
                   {SLO_METRICS.map((m) => (
                     <option key={m} value={m}>
@@ -330,7 +332,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                     </option>
                   ))}
                 </select>
-              </Field>
+              </label>
               <Field label="Objectif (%)">
                 <input
                   name="objective"

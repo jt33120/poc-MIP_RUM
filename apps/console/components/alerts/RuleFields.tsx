@@ -119,7 +119,10 @@ export function RuleFields({
           ))}
         </select>
       </Field>
-      <Field label="Métrique">
+      {/* Libellé dans son propre `span` : les trente options de la liste ne se mêlent
+          pas au texte du libellé (lu d'un bloc par un lecteur d'écran et par l'audit). */}
+      <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs font-medium text-ink-soft">
+        <span>Métrique</span>
         <select name="metric" defaultValue={selectedMetric} className={INPUT_CLASS} data-testid="champ-metrique">
           {ALERT_METRICS.map((m) => (
             <option key={m} value={m}>
@@ -127,7 +130,7 @@ export function RuleFields({
             </option>
           ))}
         </select>
-      </Field>
+      </label>
       <Field label="Nom d’événement">
         <input
           name="event_name"
@@ -256,10 +259,13 @@ export function RuleFields({
               />
             </Field>
             {seuilPropose && (
-              <p className="basis-full min-w-0 break-words text-[11px] text-ink-soft" data-testid="seuil-propose">
+              // Le conseil (« à ajuster si vous changez de métrique ») au survol : une ligne suffit à l'écran.
+              <p
+                className="basis-full min-w-0 break-words text-[11px] text-ink-soft"
+                data-testid="seuil-propose"
+                title="À ajuster si vous changez de métrique : le formulaire ne recalcule pas ce nombre."
+              >
                 Seuil proposé : la borne « mauvais » de {metricLabel(selectedMetric)} — {origineSeuilPropose(selectedMetric)}.
-                {/* Le conseil suit la proposition pour un lecteur d'écran ; à l'écran, une ligne suffit. */}
-                <span className="sr-only"> À ajuster si vous changez de métrique.</span>
               </p>
             )}
           </div>
