@@ -711,8 +711,9 @@ function FigureDistribution({
       )}
       {/* La légende propre de l'histogramme (`distribution-legende`) reste lue, pas
           affichée : sa lecture est dans « Méthode » sous la figure. */}
-      <div className="[&_[data-testid=distribution-legende]]:sr-only">
+      <div className="min-w-0">
         <DistributionSeuils
+          legende="lue"
           vital={vital}
           bacs={bacs}
           plafond={plafond}

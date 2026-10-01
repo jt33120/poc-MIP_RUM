@@ -50,12 +50,13 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { BasculeTri, LIBELLES_TRI, OngletsDecoupage, type OngletDecoupage } from "./Breakdown";
 import { TableAlternative } from "./charts/Figure";
+import { drapeau, PictoSegment } from "./Pictos";
 import { formater, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import { accord } from "@/lib/format";
 import type { TriClassement } from "@/lib/impact";
-import { LOGOS, type Marque } from "@/lib/logos-marques";
 import { FORME_RATING, RATING_BAR, type Rating } from "@/lib/rating";
 import type { IntervalleP75 } from "@mip/stats/incertitude";
+import { sommetRobuste } from "@/lib/series";
 import { lireVital, texteVerdict, type VerdictVital } from "@/lib/vital-lecture";
 
 export interface ImpactMesure {
@@ -219,6 +220,35 @@ function texteMesure(m: ImpactMesure): string {
   return verdict ? `${m.affichage} (${texteVerdict(verdict)})` : m.affichage;
 }
 
+/**
+ * Base 100 % des barres (01/10/2026 : sur /pages, /dashboards/:id à 311,9 s, vue trois
+ * fois, réduisait /select à un point). La base suit les lignes à effectif SUFFISANT :
+ * une ligne « faible » ne fixe plus l'échelle des autres. Sur dix valeurs ou plus, le
+ * sommet est robuste (`sommetRobuste`) : une aberration isolée ne tasse pas la colonne.
+ * Ce qui dépasse la base est plafonné et marqué ▲. Sans ligne suffisante, toutes les
+ * lignes comptent.
+ */
+export function baseBarres(lignes: readonly Pick<ImpactLigne, "pilote" | "echantillonFaible">[]): number {
+  const finies = (ls: readonly Pick<ImpactLigne, "pilote" | "echantillonFaible">[]) =>
+    ls.map((l) => l.pilote).filter((p): p is number => p != null && Number.isFinite(p) && p > 0);
+  const fiables = finies(lignes.filter((l) => !l.echantillonFaible));
+  const source = fiables.length > 0 ? fiables : finies(lignes);
+  if (source.length === 0) return 1;
+  const sommet = source.length >= 10 ? sommetRobuste(source) : Math.max(...source);
+  return sommet > 0 ? sommet : 1;
+}
+
+/**
+ * Une valeur de référence longue (« 12 sur 340 (une session comptée par route vue) ») :
+ * la cellule n'en montre que la valeur, la précision entre parenthèses passe en bulle
+ * et en texte lu. Rognée par la droite d'une colonne alignée à droite, elle s'écrivait
+ * « …par route vue) » (recette du 01/10/2026).
+ */
+export function decouperReference(texte: string): { valeur: string; precision: string | null } {
+  const i = texte.indexOf(" (");
+  return i <= 0 ? { valeur: texte, precision: null } : { valeur: texte.slice(0, i), precision: texte.slice(i + 1) };
+}
+
 /** Préfixe « ≈ » d'une valeur approchée ; « — » reste « — ». */
 function approche(texte: string, approchee: boolean): string {
   return approchee && texte !== "—" ? `≈${String.fromCharCode(0xa0)}${texte}` : texte;
@@ -234,116 +264,9 @@ export function decouperEcart(affichage: string): { valeur: string; reference: s
 }
 
 // ─────────────────────────────── Pictogrammes ───────────────────────────────
-
-/** Familles de navigateurs (packages/backend/shared/dimensions.mjs) qui ont un logo. */
-const LOGO_NAVIGATEUR: Record<string, Marque> = {
-  Chrome: "chrome",
-  Firefox: "firefox",
-  Safari: "safari",
-  Opera: "opera",
-  "Android WebView": "android",
-  "iOS WebView": "apple",
-};
-/** Systèmes qui ont un logo ; Windows n'en a plus chez Simple Icons (monogramme). */
-const LOGO_SYSTEME: Record<string, Marque> = {
-  macOS: "apple",
-  iOS: "apple",
-  Android: "android",
-  Linux: "linux",
-  ChromeOS: "chrome",
-};
-/** Une marque monochrome (noire) ou trop pâle sur fond clair se dessine à l'encre du thème. */
-const ENCRE_DU_THEME = new Set(["#000000", "#FCC624"]);
-
-/** « FR » → 🇫🇷 (indicateurs régionaux) ; un code qui n'est pas ISO 3166 alpha-2 : rien. */
-export function drapeau(code: string): string | null {
-  if (!/^[A-Z]{2}$/.test(code)) return null;
-  return String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
-}
-
-function LogoMarque({ marque }: { marque: Marque }) {
-  const { trace, couleur } = LOGOS[marque];
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill={ENCRE_DU_THEME.has(couleur) ? "currentColor" : couleur}>
-      <path d={trace} />
-    </svg>
-  );
-}
-
-/** Monogramme neutre (Edge, Windows, familles sans logo) : aucune imitation de marque. */
-function Monogramme({ lettre, pointille = false }: { lettre: string; pointille?: boolean }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-ink-soft">
-      <rect
-        x="0.5"
-        y="0.5"
-        width="15"
-        height="15"
-        rx="4"
-        className={pointille ? "fill-none stroke-ink-faint" : "fill-panel2 stroke-line"}
-        strokeDasharray={pointille ? "2 2" : undefined}
-      />
-      <text x="8" y="11.5" textAnchor="middle" fontSize="9.5" fontWeight="700" fill="currentColor">
-        {lettre}
-      </text>
-    </svg>
-  );
-}
-
-/** Pictogramme d'une classe d'appareil (tracés simples, sans marque). */
-function Appareil({ classe }: { classe: string }) {
-  const trace =
-    classe === "desktop" ? (
-      <>
-        <rect x="2" y="3" width="20" height="14" rx="2" />
-        <path d="M8 21h8M12 17v4" />
-      </>
-    ) : classe === "tablet" ? (
-      <>
-        <rect x="4" y="2" width="16" height="20" rx="2" />
-        <path d="M11 18h2" />
-      </>
-    ) : classe === "mobile" ? (
-      <>
-        <rect x="7" y="2" width="10" height="20" rx="2" />
-        <path d="M11 18h2" />
-      </>
-    ) : null;
-  if (!trace) return null;
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-ink-soft" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {trace}
-    </svg>
-  );
-}
-
-/**
- * Le pictogramme d'un segment (charte § 3.5) : logo du navigateur ou du système,
- * drapeau du pays, type d'appareil ; « Inconnu », un point d'interrogation en
- * pointillé. Jamais un `<span>` : le premier `<span>` d'une ligne est son libellé.
- */
-export function PictoSegment({ dimension, libelle }: { dimension?: string; libelle: string }) {
-  if (!dimension || dimension === "route" || dimension === "release") return null;
-  if (libelle === "Inconnu") return <Monogramme lettre="?" pointille />;
-  if (dimension === "browser") {
-    const marque = LOGO_NAVIGATEUR[libelle];
-    return marque ? <LogoMarque marque={marque} /> : <Monogramme lettre={libelle === "Edge" ? "e" : libelle.charAt(0).toUpperCase()} />;
-  }
-  if (dimension === "os") {
-    const marque = LOGO_SYSTEME[libelle];
-    return marque ? <LogoMarque marque={marque} /> : <Monogramme lettre={libelle.charAt(0).toUpperCase()} />;
-  }
-  if (dimension === "country") {
-    const d = drapeau(libelle);
-    return d ? (
-      <i aria-hidden="true" className="w-4 shrink-0 text-center text-sm not-italic leading-none">
-        {d}
-      </i>
-    ) : null;
-  }
-  if (dimension === "device") return <Appareil classe={libelle} />;
-  return null;
-}
+// Réunis dans `components/Pictos.tsx` (01/10/2026), avec ceux des écrans Usages ;
+// réexportés ici pour les appelants qui les prenaient dans ce module.
+export { drapeau, PictoSegment };
 
 /** Une route : ses paramètres (`:id`, `{id}`, `[id]`) grisés, le reste à l'encre. */
 function LibelleRoute({ route }: { route: string }) {
@@ -417,6 +340,30 @@ function palierLarge(nMesures: number, avecEcart: boolean) {
   return PALIERS.find((p) => p.rem >= besoin) ?? PALIERS[PALIERS.length - 1];
 }
 
+/**
+ * Un en-tête de colonne chiffrée : aligné à droite, sur deux lignes au plus, coupé
+ * entre les mots (jamais au milieu d'un mot qui tient). Le texte entier en bulle.
+ */
+function EnTete({ classe, titre, children }: { classe: string; titre: string; children: ReactNode }) {
+  return (
+    <span className={`${classe} min-w-0`} title={titre}>
+      <span className="line-clamp-2 min-w-0 text-right [overflow-wrap:break-word]">{children}</span>
+    </span>
+  );
+}
+
+/** Une cellule de la ligne « Ensemble » : la valeur, sa précision en bulle et en texte lu. */
+function CelluleReference({ classe, colonne, texte }: { classe: string; colonne: string; texte: string | undefined }) {
+  const { valeur, precision } = decouperReference(texte || "—");
+  return (
+    <span className={`${classe} min-w-0 justify-end tabular-nums`} title={texte}>
+      <span className="sr-only">{colonne} </span>
+      <span className="min-w-0 truncate">{valeur}</span>
+      {precision && <span className="sr-only"> {precision}</span>}
+    </span>
+  );
+}
+
 export function ImpactTable({
   titre,
   onglets,
@@ -439,6 +386,7 @@ export function ImpactTable({
   dimension: dimensionDemandee,
   libelleGroupe,
   visibles = LIGNES_VISIBLES,
+  hauteurMax,
 }: {
   titre: string;
   /** Dimensions, mêmes règles que `Breakdown` (raison si indisponible). */
@@ -489,16 +437,24 @@ export function ImpactTable({
   libelleGroupe?: string;
   /** Lignes montrées avant « Voir les N autres » (défaut 10). */
   visibles?: number;
+  /**
+   * Hauteur maximale de la liste à partir de 640 px (« 20rem ») : les lignes défilent
+   * dans la carte sous un en-tête collant, au lieu d'allonger la page (60 routes
+   * faisaient un classement de 2 800 px). En dessous de 640 px, la page défile seule :
+   * deux défilements imbriqués se disputent le doigt.
+   */
+  hauteurMax?: string;
 }) {
   // Un classement de routes qui ne dit pas sa dimension (/pages, /ux) se reconnaît à
   // ses libellés : tous commencent par « / » (ou sont « Inconnu »).
   const dimension =
     dimensionDemandee ??
     (lignes.length > 0 && lignes.every((l) => l.libelle.startsWith("/") || l.libelle === "Inconnu") ? "route" : undefined);
-  const pilotes = lignes.map((l) => l.pilote).filter((p): p is number => p != null && Number.isFinite(p));
-  // Base 100 % : la plus grande valeur. Plus « au moins 1 » : un CLS (0,1 ; 0,25)
-  // n'occupait qu'un quart de la piste.
-  const max = Math.max(0, ...pilotes) || 1;
+  // Base 100 % : celle des lignes à effectif suffisant (`baseBarres`). Plus « au moins
+  // 1 » : un CLS (0,1 ; 0,25) n'occupait qu'un quart de la piste.
+  const max = baseBarres(lignes);
+  const depasse = (l: ImpactLigne) => l.pilote != null && Number.isFinite(l.pilote) && l.pilote > max;
+  const avecDepassement = lignes.some(depasse);
   const avecEcart = lignes.some((l) => l.ecart !== undefined);
   const avecIntervalle = lignes.some((l) => l.intervalle != null);
   const avecFaible = lignes.some((l) => l.echantillonFaible);
@@ -531,8 +487,12 @@ export function ImpactTable({
       L_NOMBRE,
       ...(avecEcart ? [L_ECART] : []),
     ].join(" "),
+    ...(hauteurMax ? { "--impact-hauteur-max": hauteurMax } : {}),
   } as CSSProperties;
-  const grille = `grid items-center gap-x-2 ${GRILLE_ETROITE} ${compact ? "" : `${palier.moyenne} ${palier.large}`}`;
+  // Sans `items-*` : la ligne centre ses cellules, l'en-tête les pose sur sa ligne de base
+  // basse (un libellé sur deux lignes à côté d'un libellé sur une).
+  const grilleNue = `grid gap-x-2 ${GRILLE_ETROITE} ${compact ? "" : `${palier.moyenne} ${palier.large}`}`;
+  const grille = `${grilleNue} items-center`;
   const celluleLarge = compact ? "hidden" : palier.cellule;
   const celluleMoyenne = compact ? "hidden" : CELLULE_MOYENNE;
   // L'en-tête de la valeur classée : la colonne qu'elle double (« LCP p75 »), sinon son
@@ -592,14 +552,28 @@ export function ImpactTable({
             {dimension === "route" ? <LibelleRoute route={l.libelle} /> : l.libelle}
           </span>
         </div>
-        <span className="relative h-2 min-w-0 overflow-hidden rounded-full bg-panel2" aria-hidden="true">
-          {l.pilote != null && Number.isFinite(l.pilote) && (
-            <span
-              aria-hidden="true"
-              className={`absolute inset-y-0 left-0 rounded-full ${couleurBarre(couleur)}`}
-              data-barre=""
-              style={{ width: `${Math.max(2, (l.pilote / max) * 100)}%` }}
-            />
+        {/* Le repère ▲ a sa place réservée sur TOUTES les lignes dès qu'une dépasse : les
+            pistes gardent la même longueur, les barres restent comparables. */}
+        <span
+          className={`min-w-0 items-center gap-0.5 ${avecDepassement ? "grid grid-cols-[minmax(0,1fr)_0.5rem]" : "block"}`}
+          aria-hidden="true"
+          title={depasse(l) ? `au-delà de l'échelle des barres (${pilote(max)})` : undefined}
+        >
+          <span className="relative block h-2 min-w-0 overflow-hidden rounded-full bg-panel2">
+            {l.pilote != null && Number.isFinite(l.pilote) && (
+              <span
+                aria-hidden="true"
+                className={`absolute inset-y-0 left-0 rounded-full ${couleurBarre(couleur)}`}
+                data-barre=""
+                data-depasse={depasse(l) ? "" : undefined}
+                style={{ width: `${Math.max(2, Math.min(1, l.pilote / max) * 100)}%` }}
+              />
+            )}
+          </span>
+          {avecDepassement && (
+            <i className="text-[8px] not-italic leading-none text-ink-soft" data-testid={depasse(l) ? "impact-depasse" : undefined}>
+              {depasse(l) ? "▲" : ""}
+            </i>
           )}
         </span>
         <span className="flex items-center justify-end gap-1 whitespace-nowrap text-xs font-semibold tabular-nums text-ink" title={bulleValeur || undefined}>
@@ -686,9 +660,7 @@ export function ImpactTable({
       <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <h2 className="min-w-0 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">{titre}</h2>
         {onglets && (
-          <div className="min-w-0 [&>nav]:mb-0 [&_a]:px-2 [&_a]:py-0.5 [&_nav>span]:px-2 [&_nav>span]:py-0.5">
-            <OngletsDecoupage titre={titre} onglets={onglets} />
-          </div>
+          <OngletsDecoupage titre={titre} onglets={onglets} className="min-w-0" compacts />
         )}
         {(commandes || tri !== "fourni") && (
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 sm:ml-auto" data-testid="impact-commandes">
@@ -717,30 +689,39 @@ export function ImpactTable({
       {/* Conteneur de requêtes : l'en-tête, la référence et les lignes prennent leurs
           colonnes de la largeur de la TABLE, et restent alignés entre eux. */}
       <div className="[container-type:inline-size]" style={style}>
-        {/* En-têtes visuels ; l'alternative textuelle porte les en-têtes accessibles. */}
+        {/* Avec `hauteurMax`, la liste défile dans la carte (à partir de 640 px) ; l'en-tête
+            et la référence restent collés en haut de la zone. */}
+        <div
+          className={hauteurMax ? "sm:max-h-[var(--impact-hauteur-max)] sm:overflow-y-auto sm:overscroll-contain" : undefined}
+          data-testid={hauteurMax ? "impact-defilement" : undefined}
+        >
+        <div className={hauteurMax ? "sm:sticky sm:top-0 sm:z-10 sm:bg-panel" : undefined}>
+        {/* En-têtes visuels ; l'alternative textuelle porte les en-têtes accessibles. Un
+            libellé passe sur DEUX lignes plutôt que d'être rogné (recette du 01/10/2026 :
+            « ANS RÉACTION », « NS TOUCHÉES ») ; le texte entier reste en bulle. */}
         <div
           aria-hidden="true"
-          className={`${grille} h-6 border-b border-line px-2 text-[10px] font-semibold uppercase tracking-wide text-ink-faint`}
+          className={`${grilleNue} min-h-6 items-end border-b border-line px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase leading-tight tracking-normal text-ink-faint`}
         >
           <span className="min-w-0 truncate">{premiereColonne}</span>
           <span />
-          <span className="truncate text-right" title={libelleValeur}>
+          <EnTete classe="flex justify-end" titre={libelleValeur}>
             {fleche("gravite")}
             {libelleValeur}
-          </span>
+          </EnTete>
           {autres.map(({ c }) => (
-            <span key={c} className={`${celluleLarge} justify-end truncate`} title={c}>
+            <EnTete key={c} classe={`${celluleLarge} justify-end`} titre={c}>
               {c}
-            </span>
+            </EnTete>
           ))}
-          <span className={`${celluleMoyenne} justify-end truncate`} title={volumeLibelle}>
+          <EnTete classe={`${celluleMoyenne} justify-end`} titre={volumeLibelle}>
             {fleche("volume")}
             {volumeLibelle}
-          </span>
+          </EnTete>
           {avecEcart && (
-            <span className={`${celluleMoyenne} justify-end truncate`} title="Écart à l'ensemble">
+            <EnTete classe={`${celluleMoyenne} justify-end`} titre="Écart à l'ensemble">
               Δ ensemble
-            </span>
+            </EnTete>
           )}
         </div>
 
@@ -763,15 +744,9 @@ export function ImpactTable({
               {reference.valeurs.pilote ?? "—"}
             </span>
             {autres.map(({ c, i }) => (
-              <span key={c} className={`${celluleLarge} justify-end truncate whitespace-nowrap tabular-nums`} title={cleMesures[i] ? reference.valeurs[cleMesures[i]] : undefined}>
-                <span className="sr-only">{c} </span>
-                {(cleMesures[i] && reference.valeurs[cleMesures[i]]) || "—"}
-              </span>
+              <CelluleReference key={c} classe={celluleLarge} colonne={c} texte={cleMesures[i] ? reference.valeurs[cleMesures[i]] : undefined} />
             ))}
-            <span className={`${celluleMoyenne} justify-end truncate whitespace-nowrap tabular-nums`} title={reference.valeurs.volume}>
-              <span className="sr-only">{volumeLibelle} </span>
-              {reference.valeurs.volume ?? "—"}
-            </span>
+            <CelluleReference classe={celluleMoyenne} colonne={volumeLibelle} texte={reference.valeurs.volume} />
             {avecEcart && <span className={`${celluleMoyenne} justify-end text-[11px] text-ink-faint`}>réf.</span>}
           </div>
         ) : (
@@ -779,6 +754,7 @@ export function ImpactTable({
             Pas de ligne « Ensemble » : {referenceRaison}
           </p>
         )}
+        </div>
 
         {lignes.length === 0 ? (
           <p className="px-2 py-3 text-xs text-ink-soft">Aucun groupe à classer sur la fenêtre.</p>
@@ -798,6 +774,7 @@ export function ImpactTable({
             )}
           </>
         )}
+        </div>
       </div>
 
       {/* Le pied : l'effectif du classement, sa méthode, son alternative — une ligne
@@ -810,7 +787,7 @@ export function ImpactTable({
             {tronque ? " — les autres ne sont ni repliés dans « Autres », ni additionnés : un p75 ne s'additionne pas." : "."}
           </span>
         </p>
-        {(notice?.trim() || tronque || avecFaible) && (
+        {(notice?.trim() || tronque || avecFaible || avecDepassement) && (
           <details className="min-w-0" data-testid="impact-methode">
             <summary className="cursor-pointer select-none font-medium hover:text-ink">Méthode</summary>
             <div className="mt-1 space-y-1 leading-relaxed">
@@ -822,6 +799,12 @@ export function ImpactTable({
                 </p>
               )}
               {avecFaible && <p>« faible » : échantillon sous le seuil de la dimension ; la ligne est rangée en fin et son verdict se lit avec prudence.</p>}
+              {avecDepassement && (
+                <p data-testid="impact-echelle">
+                  Barres : 100 % = {pilote(max)}, échelle des lignes à effectif suffisant ; ▲ = valeur au-delà, barre plafonnée (la valeur
+                  écrite reste exacte).
+                </p>
+              )}
             </div>
           </details>
         )}

@@ -25,7 +25,7 @@
 // tracé, sur le moins de rangées possible (`rangerEtiquettes`), et les traits
 // partent du haut du tracé : aucun ne traverse un texte. Les graduations de l'axe
 // partagent une unité et une précision, et celle qui n'a pas la place est omise.
-import { TableAlternative, type AlternativeTexte } from "./Figure";
+import { MethodeRepliee, TableAlternative, type AlternativeTexte } from "./Figure";
 import { EtatSurface } from "../states/EtatSurface";
 import { etendueCentree, etiquettesAxeLisibles, largeurTexte, rangerEtiquettes } from "@/lib/etiquettes";
 import { formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
@@ -63,6 +63,12 @@ export interface DistributionSeuilsProps {
   intervalleP75?: { bas: number; haut: number } | null;
   /** false : l'alternative est portée par la `Figure` englobante (`alternativeDistribution`). */
   alternative?: boolean;
+  /**
+   * Où va la légende chiffrée (`distribution-legende`) : `methode` (défaut), repliée sous
+   * le dessin ; `lue`, en `sr-only` quand la `Figure` englobante porte déjà la lecture
+   * dans SA « Méthode » (une seule « Méthode » par figure) ; `visible`, en clair.
+   */
+  legende?: "methode" | "lue" | "visible";
 }
 
 /**
@@ -152,6 +158,7 @@ export function DistributionSeuils({
   valeurMarquee,
   intervalleP75,
   alternative = true,
+  legende = "methode",
 }: DistributionSeuilsProps) {
   if (n === 0) {
     return <EtatSurface etat={{ kind: "vide", population: `mesure ${vital}`, plage: "la fenêtre" }} />;
@@ -206,6 +213,32 @@ export function DistributionSeuils({
     return { debut: px - l / 2, fin: px + l / 2 };
   });
   const axeLisible = new Set(etiquettesAxeLisibles(etenduesAxe, 3));
+
+  // La légende complète, chiffrée. Repliée dans « Méthode » par défaut (recette du
+  // 30/09/2026 : trois paragraphes de trois lignes, un sous chaque histogramme) ; lue
+  // seulement (`sr-only`) quand la figure englobante porte déjà sa « Méthode ».
+  const texteLegende = (
+    <p
+      className={legende === "lue" ? "sr-only" : `${legende === "visible" ? "mt-2" : ""} text-[11px] leading-relaxed text-ink-soft`}
+      data-testid="distribution-legende"
+    >
+      Couleur = zone de seuil de chaque mesure ({texteSeuils(vital)}) ; une barre à cheval sur un seuil est coupée au
+      seuil. Ce n&apos;est pas un verdict : seul le p75 en porte un. Dernière barre : {pluriel(nDebord, "mesure")} ≥{" "}
+      {fmt(plafond)}
+      {plafondLibelle ? ` (${plafondLibelle})` : " (plafond d'affichage)"}. Repères :{" "}
+      {pc
+        ? [
+            pc.p50 != null ? `p50 ${fmt(pc.p50)} (pointillé)` : null,
+            pc.p75 != null ? `p75 ${fmt(pc.p75)} (trait plein)` : null,
+            pc.p95 != null ? `p95 ${fmt(pc.p95)} (tirets)` : null,
+          ]
+            .filter(Boolean)
+            .join(", ")
+        : "p50 pointillé, p75 plein, p95 tirets"}
+      {valeurMarquee ? `, ${valeurMarquee.libelle} en orange` : ""}.
+      {!pc && legende === "visible" && <strong className="font-medium text-ink"> Percentiles non calculables.</strong>}
+    </p>
+  );
 
   const aria = `Distribution ${vital} : ${n.toLocaleString("fr-FR")} mesures${
     pc ? `, p50 ${fmt(pc.p50)}, p75 ${fmt(pc.p75)}, p95 ${fmt(pc.p95)}` : ", percentiles non calculables"
@@ -321,23 +354,17 @@ export function DistributionSeuils({
         )}
       </svg>
 
-      <p className="mt-2 text-[11px] leading-relaxed text-ink-soft" data-testid="distribution-legende">
-        Couleur = zone de seuil de chaque mesure ({texteSeuils(vital)}) ; une barre à cheval sur un seuil est coupée au
-        seuil. Ce n&apos;est pas un verdict : seul le p75 en porte un. Dernière barre : {pluriel(nDebord, "mesure")} ≥{" "}
-        {fmt(plafond)}
-        {plafondLibelle ? ` (${plafondLibelle})` : " (plafond d'affichage)"}. Repères :{" "}
-        {pc
-          ? [
-              pc.p50 != null ? `p50 ${fmt(pc.p50)} (pointillé)` : null,
-              pc.p75 != null ? `p75 ${fmt(pc.p75)} (trait plein)` : null,
-              pc.p95 != null ? `p95 ${fmt(pc.p95)} (tirets)` : null,
-            ]
-              .filter(Boolean)
-              .join(", ")
-          : "p50 pointillé, p75 plein, p95 tirets"}
-        {valeurMarquee ? `, ${valeurMarquee.libelle} en orange` : ""}.
-        {!pc && <strong className="font-medium text-ink"> Percentiles non calculables.</strong>}
-      </p>
+      {/* L'absence de repères se voit sur le dessin : elle est DITE, sur une ligne. */}
+      {!pc && legende !== "visible" && (
+        <p className="mt-1 text-[11px] font-medium text-ink" data-testid="distribution-sans-percentiles">
+          Percentiles non calculables
+        </p>
+      )}
+      {legende === "methode" ? (
+        <MethodeRepliee testId="distribution-methode">{texteLegende}</MethodeRepliee>
+      ) : (
+        texteLegende
+      )}
 
       {alternative && <TableAlternative alternative={alternativeDistribution({ vital, bacs, plafond, percentiles, n })} />}
     </div>
