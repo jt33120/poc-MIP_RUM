@@ -398,6 +398,17 @@ describe("case épurée — le mode par défaut (30/09/2026)", () => {
     expect(html).toContain('aria-haspopup="dialog"');
     expect(html).toContain("<dialog");
     expect(html).not.toContain("<a ");
+    // La case désigne SA fenêtre : l'assistant retrouve la case d'un grand format fermé.
+    const controle = /aria-controls="([^"]+)"/.exec(html)?.[1];
+    expect(controle).toBeTruthy();
+    expect(html).toContain(`<dialog id="${controle}"`);
+  });
+
+  it("aucun bouton dans le bouton de la case, même avec un intervalle (l'hydratation casserait)", () => {
+    const html = renduEpure({ valeur: 2400, intervalle: { bas: 2200, haut: 2600, niveau: 0.95, methode: "quantile_normal" } });
+    const caseSeule = html.slice(0, html.indexOf("<dialog"));
+    expect(caseSeule.match(/<button/g)).toHaveLength(1);
+    expect(caseSeule).toContain('data-testid="kpi-intervalle"');
   });
 
   it("avec href : le seul lien est « Écran détaillé », dans la fenêtre", () => {

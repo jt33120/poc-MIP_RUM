@@ -8,11 +8,26 @@
 // Un repère peut manquer : bloc éteint, onglet du graphique principal fermé, ligne
 // d'une liste repliée. On essaie alors le repli du fait ; un `<details>` fermé qui
 // contient la cible est ouvert, sinon le surlignage ne se verrait pas.
+//
+// Un grand format vit dans la fenêtre de sa vignette (`FicheMesure`) : fenêtre fermée,
+// c'est la VIGNETTE qui se surligne — le bon endroit du tableau de bord, celui qu'un
+// clic ouvre. Ouvrir la fenêtre d'office rendrait le reste de la page inerte.
 
 export const CLASSE_SURLIGNAGE = "assistant-surlignage";
 export const DUREE_SURLIGNAGE_MS = 2500;
 
 const minuteries = new WeakMap<Element, ReturnType<typeof setTimeout>>();
+
+/** La case qui ouvre la fenêtre fermée contenant `el` (son `aria-controls`), sinon `el`. */
+export function cibleVisible(el: Element): Element {
+  const fenetre = el.closest?.("dialog");
+  if (!fenetre || (fenetre as HTMLDialogElement).open) return el;
+  const id = fenetre.getAttribute("id");
+  const declencheur = id
+    ? Array.from(el.ownerDocument.querySelectorAll("[aria-controls]")).find((b) => b.getAttribute("aria-controls") === id)
+    : undefined;
+  return declencheur ?? fenetre.previousElementSibling ?? el;
+}
 
 /** L'élément que vise un fait, ou son repli ; `null` si aucun des deux n'est dans la page. */
 export function trouverCible(racine: Pick<Document, "querySelector">, cible: string, repli?: string): Element | null {
@@ -20,7 +35,7 @@ export function trouverCible(racine: Pick<Document, "querySelector">, cible: str
     if (!selecteur) continue;
     try {
       const el = racine.querySelector(selecteur);
-      if (el) return el;
+      if (el) return cibleVisible(el);
     } catch {
       // Un sélecteur illisible ne vise rien : on passe au repli.
     }

@@ -404,9 +404,11 @@ export function KpiTile({
 
       {texteIntervalle && (
         // La bulle OUVRE la ligne (elle s'ouvre vers l'intérieur à 390 px) ; dans une
-        // tuile-lien, pas de bulle : un bouton dans un lien est un HTML invalide.
+        // tuile-lien, pas de bulle : un bouton dans un lien est un HTML invalide. Pas
+        // non plus dans la case épurée, qui EST un bouton : le parseur HTML fermerait
+        // la case au bouton imbriqué, et l'hydratation casserait (relevé sur /pages).
         <p className="flex min-w-0 items-start gap-1 text-xs text-ink-soft" data-testid="kpi-intervalle">
-          {!href && !compact && <GlossaryTip id="intervalle" />}
+          {!href && !compact && !epure && <GlossaryTip id="intervalle" />}
           <span className="min-w-0 break-words">{texteIntervalle}</span>
         </p>
       )}

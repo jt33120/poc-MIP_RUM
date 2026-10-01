@@ -8,7 +8,13 @@
 //
 // <dialog> natif plutôt qu'une fenêtre maison : le focus y entre et en revient, Échap
 // ferme, et le reste de la page devient inerte — sans une ligne de code pour cela.
-import { useRef, type ReactNode } from "react";
+//
+// LES GRANDS FORMATS VIVENT DANS LA FENÊTRE. Une ancre d'URL qui vise l'un d'eux
+// (`/#historique`, `#hero-LCP`) ouvre donc la fenêtre qui le contient : sinon le lien
+// mènerait à un élément invisible. La case porte `aria-controls` vers sa fenêtre : qui
+// tient un élément de la fenêtre (le surlignage de l'assistant) retrouve ainsi la case
+// à montrer quand la fenêtre est fermée.
+import { useEffect, useId, useRef, type ReactNode } from "react";
 
 export function FicheMesure({
   case: contenuCase,
@@ -31,6 +37,21 @@ export function FicheMesure({
   children: ReactNode;
 }) {
   const fenetre = useRef<HTMLDialogElement>(null);
+  const idFenetre = useId();
+  useEffect(() => {
+    const ouvrirSurAncre = () => {
+      const d = fenetre.current;
+      const ancre = decodeURIComponent(window.location.hash.slice(1));
+      if (!d || d.open || !ancre) return;
+      const cible = document.getElementById(ancre);
+      if (!cible || !d.contains(cible)) return;
+      d.showModal();
+      cible.scrollIntoView({ block: "start" });
+    };
+    ouvrirSurAncre();
+    window.addEventListener("hashchange", ouvrirSurAncre);
+    return () => window.removeEventListener("hashchange", ouvrirSurAncre);
+  }, []);
   return (
     <>
       <button
@@ -38,6 +59,7 @@ export function FicheMesure({
         onClick={() => fenetre.current?.showModal()}
         aria-label={ariaLabel}
         aria-haspopup="dialog"
+        aria-controls={idFenetre}
         data-testid={testId}
         data-ton={alerte ? "bad" : "neutre"}
         className={`relative isolate flex h-full min-h-[6.5rem] w-full min-w-0 flex-col justify-between gap-1 overflow-hidden rounded-xl border bg-panel px-3.5 py-3 text-left transition hover:border-ink-faint/60 hover:bg-panel2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
@@ -49,6 +71,7 @@ export function FicheMesure({
       </button>
       <dialog
         ref={fenetre}
+        id={idFenetre}
         aria-label={titre}
         // Un clic sur le voile (hors de la boîte) ferme : c'est le <dialog> lui-même.
         onClick={(e) => {

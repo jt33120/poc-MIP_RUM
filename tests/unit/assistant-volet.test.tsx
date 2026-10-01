@@ -184,6 +184,21 @@ describe("surligner une source", () => {
     expect(trouverCible(racine as never, "#absent")).toBeNull();
   });
 
+  it("un grand format dans une fenêtre fermée : c'est la vignette qui l'ouvre qui se surligne", () => {
+    const vignette = { getAttribute: (a: string) => (a === "aria-controls" ? "fenetre-1" : null) };
+    const autre = { getAttribute: () => "fenetre-2" };
+    const fenetre = { open: false, getAttribute: (a: string) => (a === "id" ? "fenetre-1" : null), previousElementSibling: null };
+    const historique = {
+      closest: (s: string) => (s === "dialog" ? fenetre : null),
+      ownerDocument: { querySelectorAll: (s: string) => (s === "[aria-controls]" ? [autre, vignette] : []) },
+    };
+    const racine = { querySelector: (s: string) => (s === "#historique" ? historique : null) };
+    expect(trouverCible(racine as never, "#historique")).toBe(vignette);
+    // Fenêtre ouverte : la cible elle-même.
+    fenetre.open = true;
+    expect(trouverCible(racine as never, "#historique")).toBe(historique);
+  });
+
   it("fait défiler jusqu'à la cible, la surligne 2,5 s, et ouvre le repli qui la cache", () => {
     vi.useFakeTimers();
     const details = element("DETAILS");
