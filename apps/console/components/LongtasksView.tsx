@@ -29,7 +29,7 @@ import { Figure } from "@/components/charts/Figure";
 import { StackedBars } from "@/components/charts/StackedBars";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EchecLecture } from "@/components/states/SectionErreur";
-import { Methode } from "@/components/perf/Methode";
+import { InfoTip } from "@/components/InfoTip";
 import { ValeurNoteeMip } from "@/components/NoteMip";
 import { TableDefilante } from "@/components/TableDefilante";
 import { formater } from "@/lib/fmt-ids";
@@ -153,13 +153,21 @@ export function LongtasksView({
   const durees = serie.ok ? dureesP75(serie.data) : { loaf: null, longtask: null };
 
   return (
-    <section className="mb-6 min-w-0" data-testid={partie === "tout" ? "longtasks" : `longtasks-${partie}`}>
+    // La série seule remplit sa cellule de grille (même bord bas que sa voisine) ; les
+    // autres parties gardent leur marge sous elles.
+    <section
+      className={`min-w-0 ${partie === "serie" ? "h-full [&>section]:h-full" : "mb-4"}`}
+      data-testid={partie === "tout" ? "longtasks" : `longtasks-${partie}`}
+    >
       {partie === "pires" ? null : !serie.ok ? (
         <Figure titre={titre} id="figure-taches-longues" etat={{ kind: "erreur", titre }} />
       ) : (
         <Figure
           titre={titre}
           id="figure-taches-longues"
+          // Aucun blocage : la figure tient sur une ligne (recette du 30/09/2026) ; la
+          // raison probable (Chromium seul mesure les trames longues) ouvre « Méthode ».
+          etat={total > 0 ? undefined : { kind: "vide", population: "blocage mesuré", masculin: true, plage: periodLabel }}
           meta={
             <>
               <span>{pluriel(total, "blocage")}</span>
@@ -169,9 +177,20 @@ export function LongtasksView({
           }
           lecture={
             <>
+              {total === 0 && (
+                <>
+                  La mesure des trames longues (LoAF) n&apos;existe que sur Chromium ; ailleurs, le SDK retombe sur celle
+                  des tâches longues.{" "}
+                </>
+              )}
               La durée p75 de chaque API est notée par sa règle MIP, écrite à côté. En haut, les blocages comptés par
               API de mesure ; en bas, le p75 de leur temps de blocage, sans couleur de verdict : le temps de blocage
-              n&apos;a pas de règle MIP. <strong>Aucun cumul de durées n&apos;est affiché</strong>.
+              n&apos;a pas de règle MIP. <strong>Aucun cumul de durées n&apos;est affiché</strong>. Les deux API de
+              mesure ne sont jamais actives ensemble sur un même navigateur : un blocage n&apos;est compté qu&apos;une
+              fois ; elles restent séparées parce qu&apos;un parc mixte produit les deux. Des blocages concurrents de
+              plusieurs visiteurs ne s&apos;additionnent pas en temps d&apos;attente vécu : aucun cumul n&apos;est donc
+              calculé. Source : SDK MIP RUM — API Long Animation Frames (Chromium) et, à défaut, Long Tasks
+              (PerformanceObserver du navigateur).
             </>
           }
           alternative={
@@ -191,25 +210,23 @@ export function LongtasksView({
           }
         >
           {total > 0 ? (
-            <div className="flex min-w-0 flex-col gap-3">
-              {/* La méthode, repliée : elle précédait le graphique sur cinq lignes. */}
-              <Methode>
-                Les deux API de mesure ne sont jamais actives ensemble sur un même navigateur : un blocage n&apos;est
-                compté qu&apos;une fois ; elles restent séparées parce qu&apos;un parc mixte produit les deux. Des
-                blocages concurrents de plusieurs visiteurs ne s&apos;additionnent pas en temps d&apos;attente vécu :
-                aucun cumul n&apos;est donc calculé.
-              </Methode>
+            <div className="flex min-w-0 flex-col gap-2">
+              {/* La méthode des deux API rejoint celle de la figure, dans le repli
+                  « Méthode » sous le dessin : un seul repli par figure (30/09/2026). */}
               {/* `relative` : le libellé `sr-only` d'une note (position absolue) reste dans
-                  ce bloc, jamais placé par rapport à la page (piège 16). */}
-              <div className="relative min-w-0 rounded-md border border-line/60 px-3 py-2" data-testid="durees-p75">
-                <p className="text-[11px] font-medium text-ink-soft [overflow-wrap:anywhere]">
-                  Durée p75 sur {periodLabel}, par API de mesure
-                </p>
-                <dl className="mt-1 flex min-w-0 flex-col gap-1">
+                  ce bloc, jamais placé par rapport à la page (piège 16). Une rangée de
+                  valeurs notées (recette du 30/09/2026 : un encadré de quatre lignes) ;
+                  la neutralité du blocage s'ouvre en bulle. */}
+              <div
+                className="relative flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1 border-y border-line/60 py-1.5 text-[11px]"
+                data-testid="durees-p75"
+              >
+                <p className="font-medium text-ink-soft [overflow-wrap:anywhere]">Durée p75 sur {periodLabel}</p>
+                <dl className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
                   {DUREES_NOTEES.map((d) => {
                     const valeur = durees[d.cle];
                     return (
-                      <div key={d.cle} className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <div key={d.cle} className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
                         <dt className="min-w-0 text-xs text-ink [overflow-wrap:anywhere]">{d.libelle}</dt>
                         <dd className="min-w-0 [overflow-wrap:anywhere]">
                           <ValeurNoteeMip
@@ -222,8 +239,11 @@ export function LongtasksView({
                     );
                   })}
                 </dl>
-                <p className="mt-1 min-w-0 text-[11px] text-ink-faint [overflow-wrap:anywhere]" data-testid="blocage-neutre">
-                  {PHRASE_BLOCAGE_NEUTRE} Le panneau du bas et la table des pires blocages le montrent sans couleur.
+                <p className="inline-flex min-w-0 items-center gap-1 text-ink-faint" data-testid="blocage-neutre">
+                  Blocage sans couleur
+                  <InfoTip label="Pourquoi le blocage n'a pas de couleur" align="end">
+                    {PHRASE_BLOCAGE_NEUTRE} Le panneau du bas et la table des pires blocages le montrent sans couleur.
+                  </InfoTip>
                 </p>
               </div>
               <div className="min-w-0">
@@ -235,7 +255,7 @@ export function LongtasksView({
                   format="count"
                   seauSecondes={bucketSeconds}
                   fuseau={FUSEAU_AFFICHAGE}
-                  hauteur={150}
+                  hauteur={120}
                   zoomHref={zoomHref}
                   annotations={annotations}
                   legendeAnnotations={false}
@@ -253,7 +273,7 @@ export function LongtasksView({
                   format="ms"
                   seauSecondes={bucketSeconds}
                   fuseau={FUSEAU_AFFICHAGE}
-                  hauteur={150}
+                  hauteur={120}
                   zoomHref={zoomHref}
                   annotations={annotations}
                   annotationsIndisponibles={annotationsIndisponibles}
@@ -264,12 +284,7 @@ export function LongtasksView({
                 />
               </div>
             </div>
-          ) : (
-            <p className="py-10 text-center text-sm text-ink-soft">
-              Aucun blocage mesuré sur {periodLabel}. La mesure des trames longues (LoAF) n&apos;existe que sur
-              Chromium ; ailleurs, le SDK retombe sur celle des tâches longues.
-            </p>
-          )}
+          ) : null}
         </Figure>
       )}
 
@@ -284,8 +299,10 @@ export function LongtasksView({
         </div>
       ) : (
         // Défilement signalé : à 390 px, ni la route ni la durée ne se voyaient, sans
-        // indice qu'elles suivaient (recette 26/09).
+        // indice qu'elles suivaient (recette 26/09). Les lignes défilent sous un en-tête
+        // collant au-delà de 18 rem (recette du 30/09/2026 : 20 lignes de 540 px).
         <TableDefilante className="card" label="Les blocages les plus longs">
+          <div className="max-h-[18rem] overflow-y-auto [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10">
           <table className="w-full text-sm">
             <caption className="sr-only">Blocages les plus longs sur {periodLabel}, avec leur session</caption>
             <thead className="bg-panel2">
@@ -330,13 +347,17 @@ export function LongtasksView({
               ))}
               {!worst.data.length && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-ink-soft">
+                  <td colSpan={5} className="px-4 py-3 text-xs text-ink-soft">
+                    <span aria-hidden className="mr-1.5 text-ink-faint">
+                      ⊘
+                    </span>
                     Aucun blocage sur {periodLabel}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+          </div>
         </TableDefilante>
       )}
       </>

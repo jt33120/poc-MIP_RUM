@@ -32,6 +32,9 @@ import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { SelecteurVital } from "@/components/perf/SelecteurVital";
+import { CATEGORIE_VITAL, SOURCE_TRAFIC, SOURCE_VITAL } from "@/components/perf/sources";
+import { texteSeuils } from "@/lib/rating";
+import { InfoTip } from "@/components/InfoTip";
 import { RoutePanel } from "@/components/perf/RoutePanel";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { EtatSurface } from "@/components/states/EtatSurface";
@@ -303,27 +306,31 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
           visitée au-delà n'y entre pas. Une liste coupée en silence ferait croire à
           un catalogue plus petit qu'il n'est. */}
       {decoupe.ok && decoupe.data?.truncated && (
+        // Une pastille chiffrée (recette du 30/09/2026) ; la cause probable — des
+        // identifiants non normalisés dans l'URL — s'ouvre en bulle.
         <div
-          className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
+          className="mb-3 inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-full border border-warn/40 bg-warn/10 px-2.5 py-0.5 text-[11px] text-warn-ink"
           data-testid="routes-tronquees"
         >
+          <span aria-hidden>▲</span>
           <p className="font-semibold">
             {decoupe.data.groups.toLocaleString("fr-FR")} routes distinctes mesurées sur {period.label} — les{" "}
             {ROUTES_MAX} plus mesurées sont classées ; {(decoupe.data.groups - ROUTES_MAX).toLocaleString("fr-FR")}{" "}
             autres, moins mesurées, ne le sont pas.
           </p>
-          <p className="mt-1 text-xs">
-            Au-delà de quelques centaines de routes, il y a une statistique par page, donc plus de
-            statistique du tout. Une cardinalité qui grimpe ainsi vient presque toujours
-            d&apos;identifiants non normalisés dans l&apos;URL — slugs, dates, numéros de dossier —
-            que <code className="font-mono">normalizeRoute</code> ne reconnaît pas encore.
-          </p>
+          <InfoTip label="Pourquoi tant de routes" align="start">
+            Au-delà de quelques centaines de routes, il y a une statistique par page, donc plus de statistique du tout.
+            Une cardinalité qui grimpe ainsi vient presque toujours d&apos;identifiants non normalisés dans l&apos;URL —
+            slugs, dates, numéros de dossier — que <code className="font-mono">normalizeRoute</code> ne reconnaît pas
+            encore.
+          </InfoTip>
         </div>
       )}
 
       <SectionErreur titre="Chiffres clés des pages">
-        <section aria-label="Chiffres clés des pages" className="mb-6" data-testid="kpi-pages">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <section aria-label="Chiffres clés des pages" className="mb-4" data-testid="kpi-pages">
+          {/* Quatre cases sur la grille des cases (charte § 3.3), gouttière de 8 px. */}
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             <TuileVital
               vital={vital}
               vitaux={vitaux}
@@ -331,6 +338,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
               ensemblePrev={prev ? (vitauxPrev.ok ? ensemblePrev.get(vital) : undefined) : undefined}
               prevLu={!prev || vitauxPrev.ok}
               serie={serieVital.ok ? serieVital.data.map((p) => p.p75) : undefined}
+              debuts={serieVital.ok ? serieVital.data.map((p) => p.bucket) : undefined}
               reference={prev ? reference : undefined}
               couverture={prev ? couvertureDe(couvVitaux) : undefined}
               release={
@@ -368,12 +376,15 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
                 return (
                   <KpiTile
                     label="Routes au-delà de « Bon »"
+                    libelleCase="Routes au-delà de Bon"
                     valeur={tuile.valeur}
                     format="count"
                     raisonNull={tuile.raison ?? undefined}
                     sensMeilleur="bas"
                     lecture={lecture}
                     href={hrefCourant({ tri: null }, `#${ANCRE_HERO}`)}
+                    source={SOURCE_VITAL[classement.vital]}
+                    categorie={CATEGORIE_VITAL[classement.vital]}
                   />
                 );
               })()
@@ -389,14 +400,42 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
                 format="count"
                 sensMeilleur="neutre"
                 serie={vues.data.map((p) => p.chargements + p.spa + p.inconnu)}
+                grapheDebuts={vues.data.map((p) => new Date(p.bucket).toISOString())}
+                titreAxeY="pages vues par tranche"
+                source={SOURCE_TRAFIC}
+                categorie="Navigateur · trafic"
                 {...(prev && vuesPrev.ok
                   ? { precedent: totalVuesPrev, reference, couverturePrecedente: couvertureDe(couvVues) }
                   : {})}
               />
             )}
+            {/* La quatrième case : combien de routes distinctes ont une mesure — l'échelle
+                du classement qui suit (charte § 4, « routes vues »). */}
+            {!classement.disponible ? (
+              <KpiTile label="Routes mesurées" valeur={null} format="count" raisonNull={classement.raison} />
+            ) : !decoupe.ok || !decoupe.data ? (
+              <div className="card p-4">
+                <EchecLecture compact titre="Routes mesurées" />
+              </div>
+            ) : (
+              <KpiTile
+                label="Routes mesurées"
+                valeur={decoupe.data.groups}
+                format="count"
+                sensMeilleur="neutre"
+                methode={`Routes distinctes ayant au moins une mesure LCP, INP ou CLS sur ${period.label}.${
+                  decoupe.data.truncated ? ` Les ${ROUTES_MAX} plus mesurées sont classées.` : ""
+                }`}
+                source={SOURCE_VITAL[classement.vital]}
+                categorie="Navigateur · routes"
+                href={hrefCourant({ tri: "volume" }, `#${ANCRE_HERO}`)}
+              />
+            )}
           </div>
 
-          <div className="mt-3 space-y-2">
+          {/* Les réserves de la rangée, en pastilles d'une ligne ; leur phrase au survol et
+              pour les lecteurs d'écran (recette du 30/09/2026). */}
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 empty:hidden">
             {prev && (!vitauxPrev.ok || !vuesPrev.ok) && (
               <EtatSurface
                 compact
@@ -404,10 +443,27 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
               />
             )}
             {mode === "release" && (
-              <p role="note" className="text-xs text-ink-soft" data-testid="note-comparaison">
-                {releaseTuile
-                  ? `Comparaison de releases — ${releaseTuile.regle}. La tuile p75 lit la release ${releaseTuile.relB} contre ${releaseTuile.relA} : même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte. Les autres chiffres portent sur toute la population filtrée.`
-                  : `Comparaison de releases indisponible : ${releaseIndisponible ?? "releases non lues"} ; aucune tuile n'a d'écart.`}
+              <p
+                role="note"
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-panel2 px-2.5 py-0.5 text-[11px] text-ink-soft"
+                data-testid="note-comparaison"
+                title={
+                  releaseTuile
+                    ? `Comparaison de releases — ${releaseTuile.regle}.`
+                    : `Comparaison de releases indisponible : ${releaseIndisponible ?? "releases non lues"}.`
+                }
+              >
+                <span aria-hidden className="text-ink-faint">
+                  ⊘
+                </span>
+                <span aria-hidden className="font-medium text-ink">
+                  {releaseTuile ? `Release ${releaseTuile.relB} contre ${releaseTuile.relA}` : "Comparaison de releases indisponible"}
+                </span>
+                <span className="sr-only">
+                  {releaseTuile
+                    ? `Comparaison de releases — ${releaseTuile.regle}. La tuile p75 lit la release ${releaseTuile.relB} contre ${releaseTuile.relA} : même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte. Les autres chiffres portent sur toute la population filtrée.`
+                    : `Comparaison de releases indisponible : ${releaseIndisponible ?? "releases non lues"} ; aucune tuile n'a d'écart.`}
+                </span>
               </p>
             )}
             {etatEchantillon && <EtatSurface compact etat={etatEchantillon} />}
@@ -458,7 +514,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
 
       {/* 5 — Distributions : ce que le p75 seul masque, la FORME de la population.
           Chaque figure a sa lecture : un histogramme en échec n'efface pas les autres. */}
-      <section id="distribution" aria-label="Distributions" className="mb-6 grid scroll-mt-4 gap-4 md:grid-cols-3">
+      <section id="distribution" aria-label="Distributions" className="mb-4 grid scroll-mt-4 gap-2 md:grid-cols-3">
         {distributions.map((d, i) => (
           <SectionErreur key={d.nom} titre={`Distribution ${d.nom}`}>
             <FigureDistribution
@@ -475,34 +531,37 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
         ))}
       </section>
 
-      {/* 6 — Percentiles par vital : une table, pour comparer des valeurs précises. */}
-      <section id="percentiles" aria-labelledby="percentiles-titre" className="mb-6 min-w-0 scroll-mt-4">
-        <h2 id="percentiles-titre" className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-          Percentiles par vital
-        </h2>
-        <SectionErreur titre="Percentiles par vital">
-          {!pcts.ok ? (
-            <EchecLecture titre="Percentiles par vital" />
-          ) : pcts.data.some((r) => estVital(r.name)) ? (
-            <PercentileTable rows={pcts.data} />
-          ) : (
-            <EtatSurface etat={{ kind: "vide", population: "mesure de Web Vital", plage: period.label }} />
-          )}
-        </SectionErreur>
-      </section>
+      {/* 6 — Percentiles par vital (une table, pour comparer des valeurs précises) et
+          6 bis — vues par type de navigation (combien de vues d'une route n'ont pas de
+          LCP), côte à côte : deux demi-largeurs au lieu de deux étages pleins (30/09/2026). */}
+      <div className="mb-4 grid min-w-0 gap-2 lg:grid-cols-12">
+        <section id="percentiles" aria-labelledby="percentiles-titre" className="min-w-0 scroll-mt-4 lg:col-span-6">
+          <h2 id="percentiles-titre" className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+            Percentiles par vital
+          </h2>
+          <SectionErreur titre="Percentiles par vital">
+            {!pcts.ok ? (
+              <EchecLecture titre="Percentiles par vital" />
+            ) : pcts.data.some((r) => estVital(r.name)) ? (
+              <PercentileTable rows={pcts.data} />
+            ) : (
+              <EtatSurface etat={{ kind: "vide", population: "mesure de Web Vital", plage: period.label }} enLigne />
+            )}
+          </SectionErreur>
+        </section>
 
-      {/* 6 bis — Vues par type de navigation : combien de vues d'une route n'ont pas de LCP. */}
-      <div id="navigation" className="mb-6 scroll-mt-4">
-        <SectionErreur titre="Vues par type de navigation">
-          <FigureNavigation navigation={navigation} ensemble={vues} plage={period.label} drill={drillRoute} />
-        </SectionErreur>
+        <div id="navigation" className="min-w-0 scroll-mt-4 lg:col-span-6 [&>section]:h-full">
+          <SectionErreur titre="Vues par type de navigation">
+            <FigureNavigation navigation={navigation} ensemble={vues} plage={period.label} drill={drillRoute} />
+          </SectionErreur>
+        </div>
       </div>
 
       {/* 7 — Réseau (5/12) · fil principal (7/12), puis les pires blocages. Le bloc
           garde l'adresse `longtasks` des e2e : série et pires cas y restent ensemble. */}
       <div data-testid="longtasks">
-      <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-12">
-        <div id="reseau" className="min-w-0 scroll-mt-4 lg:col-span-5">
+      <div className="mb-2 grid min-w-0 gap-2 lg:grid-cols-12">
+        <div id="reseau" className="min-w-0 scroll-mt-4 lg:col-span-5 [&>section]:h-full">
           <SectionErreur titre="D'où vient le TTFB">
             <FigureTtfb
               vitaux={vitaux}
@@ -640,22 +699,30 @@ function FigureDistribution({
         </>
       }
       alternative={{ ...alternative, legende: `${alternative.legende} ${plafondTexte[0].toUpperCase()}${plafondTexte.slice(1)}.` }}
+      // La légende du graphique passe dans « Méthode » (recette du 30/09/2026 : trois
+      // paragraphes de trois lignes, un sous chaque histogramme). Sa phrase complète,
+      // chiffrée, reste dans la page pour les lecteurs d'écran (voir plus bas).
+      lecture={`Couleur = zone de seuil de chaque mesure (${texteSeuils(vital)}) ; une barre à cheval sur un seuil est coupée au seuil. Ce n'est pas un verdict : seul le p75 en porte un. Dernière barre : les mesures au-delà du plafond. Repères : p50 pointillé, p75 trait plein, p95 tirets. Source : ${SOURCE_VITAL[vital]}`}
     >
       {!pctsLus && (
         <div className="mb-2">
           <EtatSurface compact etat={{ kind: "partiel", raison: "percentiles non lus : repères absents, plafond par défaut." }} />
         </div>
       )}
-      <DistributionSeuils
-        vital={vital}
-        bacs={bacs}
-        plafond={plafond}
-        plafondLibelle={plafondLibelle ?? undefined}
-        percentiles={reperes}
-        n={n}
-        intervalleP75={intervalle ? { bas: intervalle.bas, haut: intervalle.haut } : null}
-        alternative={false}
-      />
+      {/* La légende propre de l'histogramme (`distribution-legende`) reste lue, pas
+          affichée : sa lecture est dans « Méthode » sous la figure. */}
+      <div className="[&_[data-testid=distribution-legende]]:sr-only">
+        <DistributionSeuils
+          vital={vital}
+          bacs={bacs}
+          plafond={plafond}
+          plafondLibelle={plafondLibelle ?? undefined}
+          percentiles={reperes}
+          n={n}
+          intervalleP75={intervalle ? { bas: intervalle.bas, haut: intervalle.haut } : null}
+          alternative={false}
+        />
+      </div>
       <Link
         href={explorer}
         className="mt-2 inline-block rounded text-xs font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
@@ -723,11 +790,12 @@ function FigureNavigation({
   // pas comme un doublon de « /recherche » (recette du 26/09/2026).
   const libelleRoute = (route: string | null) =>
     route !== null && route !== "" && !route.startsWith("/") ? `${groupLabel(route)} (écran mobile)` : groupLabel(route);
+  // Une ligne par route (recette du 30/09/2026) : le détail « N chargements · N SPA »
+  // passe dans l'infobulle et l'alternative ; la barre segmentée le montre déjà.
   const data: RankDatum[] = lignes.map((l) => ({
     label: l.ensemble ? "Ensemble" : libelleRoute(l.route),
     value: total(l),
     display: formater("count", total(l)),
-    sub: sousTexte(l),
     href: l.ensemble ? undefined : drill(l.route),
     title: `${l.ensemble ? "Ensemble" : libelleRoute(l.route)} — ${sousTexte(l)}`,
     segments: CLASSES_NAVIGATION.map((c) => ({ value: l[c.cle], color: c.couleur, label: `${c.libelle} : ${formater("count", l[c.cle])}` })),
@@ -750,7 +818,9 @@ function FigureNavigation({
       lecture={
         <>
           Le LCP n&apos;est mesuré qu&apos;au chargement : les changements de route SPA comptent des vues sans LCP.
-          Une vue sans type de navigation déclaré est comptée à part, jamais parmi les chargements.
+          Une vue sans type de navigation déclaré est comptée à part, jamais parmi les chargements. Source : SDK
+          MIP RUM — type de navigation de chaque vue (navigate, reload, back_forward de l&apos;API Navigation Timing ;
+          spa pour un changement de route).
         </>
       }
       alternative={{
@@ -767,7 +837,11 @@ function FigureNavigation({
           </li>
         ))}
       </ul>
-      <RankBar data={data} labelWidth="13rem" alternative={false} legende={titre} />
+      {/* Treize lignes au plus : elles défilent au-delà de 15 rem, à la hauteur de la
+          table des percentiles voisine (même bord bas, charte § 3.1). */}
+      <div className="max-h-[15rem] overflow-y-auto pr-1">
+        <RankBar data={data} labelWidth="13rem" alternative={false} legende={titre} />
+      </div>
     </Figure>
   );
 }
@@ -828,11 +902,9 @@ function FigureTtfb({
     value: p.p75,
     display: <span data-note={notes[i]?.note ?? ""}>{texteNote(notes[i], formater("ms", p.p75))}</span>,
     color: notes[i]?.jeton,
-    sub: [
-      `n = ${formater("count", p.n)}`,
-      ...(notes[i] ? [notes[i].regle] : []),
-      ...(texteEcart(i) ? [texteEcart(i)] : []),
-    ].join(" · "),
+    // La règle MIP de chaque phase passe dans l'infobulle et l'alternative (recette du
+    // 30/09/2026) : sous la barre, l'effectif et l'écart, sur une ligne.
+    sub: [`n = ${formater("count", p.n)}`, ...(texteEcart(i) ? [texteEcart(i)] : [])].join(" · "),
     title: `${p.libelle} — p75 ${formater("ms", p.p75)}${notes[i] ? ` (${notes[i].libelle}, ${notes[i].regle})` : ""}, ${formater("count", p.n)} mesures`,
   }));
   return (
@@ -849,7 +921,9 @@ function FigureTtfb({
       lecture={
         <span data-testid="ttfb-phrase">
           Chaque barre est le p75 d&apos;une phase mesurée à part ; leur somme n&apos;est pas le TTFB. La couleur
-          suit la règle MIP écrite sous chaque phase : un ordre de grandeur de terrain, pas un seuil publié.
+          suit la règle MIP de chaque phase, écrite au survol de sa barre et dans l&apos;alternative textuelle : un
+          ordre de grandeur de terrain, pas un seuil publié. Source : SDK MIP RUM — phases lues dans
+          PerformanceNavigationTiming (API Navigation Timing du navigateur).
         </span>
       }
       alternative={{
@@ -890,6 +964,7 @@ function TuileVital({
   ensemblePrev,
   prevLu,
   serie,
+  debuts,
   reference,
   couverture,
   release,
@@ -902,6 +977,8 @@ function TuileVital({
   /** La période précédente a été lue (ou n'était pas demandée). */
   prevLu: boolean;
   serie: (number | null)[] | undefined;
+  /** Débuts ISO des tranches de `serie` : l'axe du temps daté de la fenêtre de la case. */
+  debuts?: string[];
   /** Référence `cmp=prev` ; absente hors de ce mode. */
   reference: string | undefined;
   couverture: CouverturePrecedente | undefined;
@@ -944,6 +1021,9 @@ function TuileVital({
         intervalle={b?.intervalle}
         lecture={b && b.n < 100 ? `médiane ${formater(fmt, b.p50)}` : undefined}
         serie={release.serie}
+        source={SOURCE_VITAL[vital]}
+        categorie={CATEGORIE_VITAL[vital]}
+        titreAxeY={`${vital} au 75ᵉ centile`}
         // Référence A illisible : aucun écart, plutôt qu'un « pas de mesure » faux.
         {...(release.a === undefined
           ? {}
@@ -966,6 +1046,10 @@ function TuileVital({
       intervalle={ensemble?.intervalle}
       lecture={ensemble && ensemble.n < 100 ? `médiane ${formater(fmt, ensemble.p50)}` : undefined}
       serie={serie}
+      grapheDebuts={debuts}
+      titreAxeY={`${vital} au 75ᵉ centile`}
+      source={SOURCE_VITAL[vital]}
+      categorie={CATEGORIE_VITAL[vital]}
       {...(reference && couverture && prevLu
         ? {
             precedent: ensemblePrev?.p75 ?? null,
@@ -1074,7 +1158,10 @@ function HeroRoutes({
   return (
     // Défilement de la liste à partir de 640 px seulement : sur mobile, une zone qui
     // défile DANS la page montrait 4 routes sur 9 sans le dire (recette du 26/09/2026).
-    <div className="min-w-0 sm:[&_ol]:max-h-[28rem] sm:[&_ol]:overflow-y-auto" data-testid="hero-routes" data-vital={vital}>
+    // Recette du 30/09/2026 : la notice (provenance de la route, troncature, colonnes lues
+    // à part) précédait les lignes en paragraphe ; elle passe dans une bulle de la rangée
+    // du titre. La liste défile au-delà de 18 rem (≈ 8 routes).
+    <div className="min-w-0 sm:[&_ol]:max-h-[18rem] sm:[&_ol]:overflow-y-auto [&>section]:mb-4" data-testid="hero-routes" data-vital={vital}>
       {avertissements.length > 0 && (
         <div className="mb-2">
           <EtatSurface compact etat={{ kind: "partiel", raison: `${avertissements.join(" ; ")}.` }} />
@@ -1082,6 +1169,11 @@ function HeroRoutes({
       )}
       <ImpactTable
         titre={`Routes classées par ${vital}`}
+        commandes={
+          <InfoTip label="Méthode : routes classées" align="end">
+            {notice}
+          </InfoTip>
+        }
         tri={tri}
         triHref={triHref}
         reference={
@@ -1108,7 +1200,6 @@ function HeroRoutes({
         volumeLibelle={`Mesures ${vital}`}
         groupes={groupes}
         tronque={tronque}
-        notice={notice}
       />
     </div>
   );

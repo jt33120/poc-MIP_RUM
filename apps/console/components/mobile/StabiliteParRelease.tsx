@@ -24,6 +24,7 @@
 // titre de la table (`commandes`) : au-dessus du cadre, elle flottait hors de la carte.
 import { BasculeTri } from "@/components/Breakdown";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
+import { InfoTip } from "@/components/InfoTip";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { formater } from "@/lib/fmt-ids";
 import { classerParGravite, SEUIL_ECHANTILLON_FAIBLE } from "@/lib/impact";
@@ -148,12 +149,18 @@ export function StabiliteParRelease({
   plage: string;
 }) {
   if (resultat.releases === 0) {
+    // Une ligne : le titre, et le vide à sa droite — la « grande boîte » du vide a
+    // disparu (recette du 30/09/2026).
     return (
-      <section className="card mb-6 min-w-0 p-4" aria-labelledby="mobile-stabilite-titre">
-        <h2 id="mobile-stabilite-titre" className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-          Stabilité par release
-        </h2>
-        <EtatSurface etat={{ kind: "vide", population: "session React Native", plage }} />
+      <section className="card mb-4 min-w-0 px-4 py-3" aria-labelledby="mobile-stabilite-titre">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h2 id="mobile-stabilite-titre" className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+            Stabilité par release
+          </h2>
+          <div className="min-w-0 sm:ml-auto">
+            <EtatSurface etat={{ kind: "vide", population: "session React Native", plage }} enLigne />
+          </div>
+        </div>
       </section>
     );
   }
@@ -180,14 +187,24 @@ export function StabiliteParRelease({
       <ImpactTable
         titre="Stabilité par release"
         commandes={
-          <BasculeTri
-            courant={tri}
-            options={[
-              { id: "fourni", libelle: "Chronologie", href: triHref.fourni },
-              { id: "gravite", libelle: "Gravité", href: triHref.gravite },
-              { id: "volume", libelle: "Volume", href: triHref.volume },
-            ]}
-          />
+          <>
+            {/* La méthode en bulle, à côté de l'ordre (recette du 30/09/2026 : plus de
+                paragraphe entre le titre et les lignes). */}
+            <InfoTip label="Méthode : stabilité par release" align="end">
+              Part des sessions React Native de chaque release sans aucune erreur JavaScript — la mesure de la tuile,
+              release par release : plus haut = plus stable. Écart : en points, contre la release précédente de la même
+              app, sur la même fenêtre ; il mêle le code et le contexte (trafic, usage).
+              {toutesFaibles ? ` Toutes les releases ont moins de ${SEUIL_ECHANTILLON_FAIBLE} sessions : échantillon faible.` : ""}
+            </InfoTip>
+            <BasculeTri
+              courant={tri}
+              options={[
+                { id: "fourni", libelle: "Chronologie", href: triHref.fourni },
+                { id: "gravite", libelle: "Gravité", href: triHref.gravite },
+                { id: "volume", libelle: "Volume", href: triHref.volume },
+              ]}
+            />
+          </>
         }
         tri="fourni"
         triHref={{ gravite: null, volume: null, impact: null, fourni: null }}
@@ -212,9 +229,6 @@ export function StabiliteParRelease({
         volumeLibelle="Sessions"
         groupes={resultat.releases}
         tronque={resultat.tronque}
-        notice={`Part des sessions React Native de chaque release sans aucune erreur JavaScript — la mesure de la tuile, release par release : plus haut = plus stable. Écart : en points, contre la release précédente de la même app, sur la même fenêtre ; il mêle le code et le contexte (trafic, usage).${
-          toutesFaibles ? ` Toutes les releases ont moins de ${SEUIL_ECHANTILLON_FAIBLE} sessions : échantillon faible.` : ""
-        }`}
       />
       {(raisons.length > 0 || resultat.tronque) && (
         <div className="-mt-4 mb-6 flex flex-col gap-1 px-1 text-xs text-ink-soft" data-testid="mobile-stabilite-notes">

@@ -24,6 +24,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SEUILS_MIP, type MesureMip, type UniteSeuil } from "../../apps/console/lib/seuils";
+import { CATEGORIE_VITAL, SOURCE_VITAL } from "../../apps/console/components/perf/sources";
+import { VITAUX } from "../../apps/console/lib/fmt-ids";
 
 const CONSOLE = join(__dirname, "..", "..", "apps", "console");
 
@@ -220,5 +222,19 @@ describe("gardes de code des seuils MIP (vague 4)", () => {
     expect(mesuresRecopiees("<Chart titre=\"Tâches longues\" hauteur={150} />")).toEqual([]);
     expect(mesuresRecopiees("{ valeur: \"Firefox\", nBase: 300, partTouches: 0.05, href: \"/errors\" }")).toEqual([]);
     expect(mesuresRecopiees("DNS : 1500 ms")).toEqual([]);
+  });
+});
+
+// Recette du 30/09/2026 : chaque case des écrans de performance cite sa source dans sa
+// fenêtre. Les sources des Web Vitals nomment la bibliothèque de mesure et la référence
+// des seuils, sans recopier une borne (P2 ci-dessus).
+describe("sources des cases de performance", () => {
+  it("chaque Web Vital a une source (web-vitals, web.dev) et une étiquette de pied, sans seuil recopié", () => {
+    for (const vital of VITAUX) {
+      expect(SOURCE_VITAL[vital]).toMatch(/web-vitals/);
+      expect(SOURCE_VITAL[vital]).toContain("web.dev");
+      expect(SOURCE_VITAL[vital]).not.toMatch(/\d+(,\d+)?\s?(ms|s)\b/);
+      expect(CATEGORIE_VITAL[vital]).toBeTruthy();
+    }
   });
 });

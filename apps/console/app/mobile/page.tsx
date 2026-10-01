@@ -39,6 +39,8 @@ import type { ReactNode } from "react";
 import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
+import { InfoTip } from "@/components/InfoTip";
+import { SOURCE_MOBILE } from "@/components/perf/sources";
 import { PageHeader } from "@/components/PageHeader";
 import { PresetBar } from "@/components/PresetBar";
 import { EtenduePercentiles } from "@/components/charts/EtenduePercentiles";
@@ -132,6 +134,19 @@ function texteAnglesMorts(capacites: CapabilityStatus[] | null, ecransDeclares: 
     }
   }
   return `${parties.join(" ; ")}.`;
+}
+
+/** Libellé court d'une capacité, pour une pastille (« ANR » plutôt que sa définition). */
+const LIBELLE_COURT: Partial<Record<MobileCapability, string>> = { anr: "ANR" };
+
+/**
+ * Les capacités qu'on ne voit pas, en pastilles : les trois natives, puis celles que
+ * le capteur déclare non collectées ou ne déclare pas. La phrase de `texteAnglesMorts`
+ * dit la même chose, avec les raisons.
+ */
+function anglesMorts(capacites: CapabilityStatus[] | null): string[] {
+  const autres = (capacites ?? []).filter((c) => !NATIVES.includes(c.capability) && c.state !== "active");
+  return [...NATIVES, ...autres.map((c) => c.capability)].map((c) => LIBELLE_COURT[c] ?? CAPABILITY_LABELS[c]);
 }
 
 export default async function MobilePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -293,12 +308,15 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   const tuiles = (
     <RangeeKpi
       couvertures={prev ? [couvSessions, couvErreurs] : []}
-      className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4"
       testId="mobile-kpi"
     >
       <div className="grid min-w-0" data-testid="mobile-sessions">
         <KpiTile
           label="Sessions React Native commencées"
+          libelleCase="Sessions React Native"
+          source={SOURCE_MOBILE}
+          categorie="Mobile · React Native"
           valeur={sessionsLues.valeur}
           format="count"
           raisonNull={sessionsLues.raison ?? undefined}
@@ -313,6 +331,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
       <div className="grid min-w-0" data-testid="mobile-visiteurs">
         <KpiTile
           label="Visiteurs"
+          source={SOURCE_MOBILE}
+          categorie="Mobile · React Native"
           valeur={data?.sessions.visitors ?? null}
           format="count"
           raisonNull={
@@ -342,6 +362,9 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
       <div className="grid min-w-0" data-testid="mobile-erreurs">
         <KpiTile
           label="Occurrences d'erreurs JS"
+          libelleCase="Erreurs JS"
+          source={SOURCE_MOBILE}
+          categorie="Mobile · React Native"
           valeur={occurrences}
           format="count"
           raisonNull={raisonOccurrences}
@@ -366,6 +389,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
       <div className="grid min-w-0" data-testid="mobile-taux-sans-erreur">
         <KpiTile
           label="Sessions sans erreur JS"
+          source={SOURCE_MOBILE}
+          categorie="Mobile · React Native"
           valeur={tuileTaux?.valeur ?? null}
           format="pct"
           raisonNull={tuileTaux ? tuileTaux.raison : "lecture du résumé mobile en échec"}
@@ -402,13 +427,26 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   const suiviEcransInactif = capacites?.find((c) => c.capability === "screen_tracking")?.state === "unavailable";
   const zones: Record<ZoneMobile, ReactNode> = {
     "angles-morts": (
-      <div className="mb-4 flex min-w-0 flex-wrap items-start gap-2" data-testid="mobile-angles-morts">
-        <div className="min-w-0 flex-1 basis-64">
+      // L'angle mort AVANT le premier chiffre (W-M1), mais sur UNE ligne de pastilles
+      // (recette du 30/09/2026 : un bandeau de deux lignes de phrases). La phrase
+      // entière reste dans la page, lue par les lecteurs d'écran ; « Détail » mène à
+      // la matrice des capacités, en bas de l'écran.
+      <div className="mb-3 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px]" data-testid="mobile-angles-morts">
+        <div className="sr-only">
           <EtatSurface etat={{ kind: "non_collecte", manque: texteAnglesMorts(capacites, (data?.screens.length ?? 0) > 0) }} compact />
         </div>
+        <span aria-hidden className="inline-flex items-center gap-1 rounded-full bg-panel2 px-2.5 py-0.5 font-medium text-ink">
+          <span className="text-ink-faint">⊘</span>
+          Non collecté
+        </span>
+        {anglesMorts(capacites).map((libelle) => (
+          <span key={libelle} aria-hidden className="rounded-full border border-line px-2 py-0.5 text-ink-soft">
+            {libelle}
+          </span>
+        ))}
         <Link
           href="#capacites"
-          className="shrink-0 rounded px-1 py-1.5 text-xs font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+          className="ml-1 shrink-0 rounded text-xs font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
         >
           Détail
         </Link>
@@ -447,11 +485,16 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             <EchecLecture titre="Stabilité par release" />
           </div>
         ) : !parRelease.data.disponible ? (
-          <section className="card mb-6 min-w-0 p-4" data-testid="mobile-stabilite" aria-labelledby="mobile-stabilite-repli">
-            <h2 id="mobile-stabilite-repli" className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-              Stabilité par release
-            </h2>
-            <EtatSurface etat={{ kind: "partiel", raison: parRelease.data.raison }} />
+          // Repli sans lecture par release : une ligne, la raison à droite du titre.
+          <section className="card mb-4 min-w-0 px-4 py-3" data-testid="mobile-stabilite" aria-labelledby="mobile-stabilite-repli">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h2 id="mobile-stabilite-repli" className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+                Stabilité par release
+              </h2>
+              <div className="min-w-0 sm:ml-auto">
+                <EtatSurface etat={{ kind: "partiel", raison: parRelease.data.raison }} compact />
+              </div>
+            </div>
           </section>
         ) : (
           <StabiliteParRelease
@@ -465,12 +508,19 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
       </SectionErreur>
     ),
     "demarrage-ecrans": (
-      <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-2">
+      <div className="mb-4 grid min-w-0 gap-2 lg:grid-cols-2">
         <SectionErreur titre="Démarrage JS jusqu'au premier écran">
           <Figure
             titre="Démarrage JS jusqu'au premier écran"
             id="mobile-demarrage"
-            etat={data ? undefined : { kind: "erreur", titre: "Démarrage JS jusqu'au premier écran" }}
+            // Aucun démarrage mesuré : une ligne (recette du 30/09/2026), la raison dans « Méthode ».
+            etat={
+              !data
+                ? { kind: "erreur", titre: "Démarrage JS jusqu'au premier écran" }
+                : !data.startup.cold && !data.startup.warm
+                  ? { kind: "vide", population: "démarrage mesuré", masculin: true, plage: d.label }
+                  : undefined
+            }
             meta={
               data ? (
                 <>
@@ -528,7 +578,13 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
           <Figure
             titre="Écrans les plus consultés"
             id="mobile-ecrans"
-            etat={data ? undefined : { kind: "erreur", titre: "Écrans les plus consultés" }}
+            etat={
+              !data
+                ? { kind: "erreur", titre: "Écrans les plus consultés" }
+                : data.screens.length === 0
+                  ? { kind: "vide", population: "écran observé", masculin: true, plage: d.label }
+                  : undefined
+            }
             meta={
               data ? (
                 <>
@@ -538,9 +594,11 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
               ) : undefined
             }
             lecture={
-              raisonLienEcrans === null
-                ? "Une consultation par écran affiché. Chaque écran ouvre l'écran Pages filtré sur sa route et sur l'application mobile : les pages web de même route n'y entrent pas."
-                : `Une consultation par écran affiché. Pas de lien vers l'écran Pages : ${raisonLienEcrans}.`
+              data && data.screens.length === 0
+                ? `Aucun écran observé sur la fenêtre. ${CAPABILITY_NOTES.screen_tracking}`
+                : raisonLienEcrans === null
+                  ? "Une consultation par écran affiché. Chaque écran ouvre l'écran Pages filtré sur sa route et sur l'application mobile : les pages web de même route n'y entrent pas."
+                  : `Une consultation par écran affiché. Pas de lien vers l'écran Pages : ${raisonLienEcrans}.`
             }
           >
             {data &&
@@ -572,7 +630,16 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             <EchecLecture titre="Appels réseau les plus lents" />
           </div>
         ) : (
-          (() => {
+          data.resources.length === 0 ? (
+            // Aucun appel mesuré : une ligne, pas une table vide sous une notice.
+            <div className="mb-4">
+              <Figure
+                titre="Appels réseau les plus lents"
+                id="mobile-appels"
+                etat={{ kind: "vide", population: "appel réseau mesuré", masculin: true, plage: d.label }}
+              />
+            </div>
+          ) : (() => {
             const construites: ImpactLigne[] = data.resources.map((r) => {
               const libelle = `${r.method ?? "—"} ${r.path || "—"}`;
               const partErreurs = r.calls > 0 ? r.errors / r.calls : null;
@@ -599,7 +666,15 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
                 titre="Appels réseau les plus lents"
                 tri="fourni"
                 triHref={{ gravite: null, volume: null, impact: null, fourni: null }}
-                ordreLibelle={`Ordre : les 10 appels au p75 le plus élevé, du plus lent au plus rapide ; moins de ${SEUIL_ECHANTILLON_FAIBLE} appels en fin de liste.`}
+                // La provenance des appels en bulle, à côté du titre (recette du 30/09/2026).
+                commandes={
+                  <InfoTip label="Méthode : appels réseau" align="end">
+                    Appels réseau émis par l&apos;application, chemin sans son domaine ; les identifiants du chemin sont
+                    regroupés (:id). Mesurer la latence d&apos;un service tiers ne lui transmet rien.
+                    {toutesFaibles ? ` Chaque appel compte moins de ${SEUIL_ECHANTILLON_FAIBLE} mesures : échantillon faible.` : ""}
+                  </InfoTip>
+                }
+                ordreLibelle={`Ordre : les 10 appels au p75 le plus élevé ; moins de ${SEUIL_ECHANTILLON_FAIBLE} appels en fin.`}
                 reference={null}
                 referenceRaison="p75 de l'ensemble des appels non calculé."
                 lignes={lignes}
@@ -608,9 +683,6 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
                 volumeLibelle="Appels"
                 groupes={lignes.length}
                 tronque={false}
-                notice={`Appels réseau émis par l'application, chemin sans son domaine ; les identifiants du chemin sont regroupés (:id). Mesurer la latence d'un service tiers ne lui transmet rien.${
-                  toutesFaibles ? ` Chaque appel compte moins de ${SEUIL_ECHANTILLON_FAIBLE} mesures : échantillon faible.` : ""
-                }`}
               />
             );
           })()
@@ -636,15 +708,19 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
       </div>
     ),
     capacites: (
-      <section id="capacites" className="card mb-6 min-w-0 p-4" aria-labelledby="mobile-capacites">
-        <h2 id="mobile-capacites" className="text-sm font-semibold text-ink">
-          Ce qui est collecté, et ce qui ne l&apos;est pas
-        </h2>
-        <p className="mt-1 text-xs text-ink-soft">
-          Ce que le capteur de chaque release déclare collecter, toutes périodes confondues : une déclaration n&apos;est
-          pas une mesure. La colonne « Vérifié » n&apos;est remplie que lorsqu&apos;un opérateur a constaté la collecte
-          sur un appareil.
-        </p>
+      <section id="capacites" className="card mb-4 min-w-0 scroll-mt-4 p-4" aria-labelledby="mobile-capacites">
+        {/* Le titre de l'étage, et sa règle de lecture en bulle (recette du 30/09/2026 :
+            plus de paragraphe entre le titre et la table). */}
+        <div className="flex items-center gap-1.5">
+          <h2 id="mobile-capacites" className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+            Ce qui est collecté, et ce qui ne l&apos;est pas
+          </h2>
+          <InfoTip label="Lecture des capacités" align="start">
+            Ce que le capteur de chaque release déclare collecter, toutes périodes confondues : une déclaration n&apos;est
+            pas une mesure. La colonne « Vérifié » n&apos;est remplie que lorsqu&apos;un opérateur a constaté la collecte
+            sur un appareil.
+          </InfoTip>
+        </div>
         {!data ? (
           <div className="mt-3">
             <EchecLecture titre="Capacités déclarées" />
@@ -669,19 +745,21 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
                   data-testid={`capacite-${c.capability}`}
                   className="mb-2 block rounded-lg border border-line/60 p-2 align-top sm:mb-0 sm:table-row sm:rounded-none sm:border-0 sm:border-t sm:p-0"
                 >
-                  <th scope="row" className="block px-2 py-1 text-left font-normal sm:table-cell sm:px-4 sm:py-3">
-                    <div className="font-medium text-ink">{c.label}</div>
-                    <details className="mt-1 text-xs text-ink-soft">
-                      <summary className="cursor-pointer select-none hover:text-ink">Ce que l&apos;absence veut dire</summary>
-                      <p className="mt-1 max-w-md">{c.note}</p>
-                    </details>
+                  <th scope="row" className="block px-2 py-1 text-left font-normal sm:table-cell sm:px-4 sm:py-1.5">
+                    {/* Ce que l'absence veut dire : une bulle à côté du nom, plus un repli sous lui. */}
+                    <span className="inline-flex items-center gap-1.5 font-medium text-ink">
+                      {c.label}
+                      <InfoTip label={`Ce que l'absence veut dire : ${c.label}`} align="start">
+                        {c.note}
+                      </InfoTip>
+                    </span>
                   </th>
-                  <td className="block px-2 py-1 sm:table-cell sm:px-4 sm:py-3">
+                  <td className="block px-2 py-1 sm:table-cell sm:px-4 sm:py-1.5">
                     <span className={`inline-block rounded-full border px-2 py-0.5 text-xs font-semibold ${BADGE[c.state]}`}>
                       {STATE_LABELS[c.state]}
                     </span>
                   </td>
-                  <td className="block px-2 py-1 text-xs text-ink-soft sm:table-cell sm:px-4 sm:py-3">
+                  <td className="block px-2 py-1 text-xs text-ink-soft sm:table-cell sm:px-4 sm:py-1.5">
                     <span className="sm:hidden">Releases déclarantes : </span>
                     {c.declared_by.length ? (
                       <ul className="inline sm:block">
@@ -695,11 +773,11 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
                       "—"
                     )}
                   </td>
-                  <td className="block px-2 py-1 text-xs text-ink-soft sm:table-cell sm:px-4 sm:py-3" data-testid="capacite-derniere-declaration">
+                  <td className="block px-2 py-1 text-xs text-ink-soft sm:table-cell sm:px-4 sm:py-1.5" data-testid="capacite-derniere-declaration">
                     <span className="sm:hidden">Dernière déclaration : </span>
                     {c.last_declared_at ? dateUtc(c.last_declared_at) : "—"}
                   </td>
-                  <td className="block px-2 py-1 text-xs text-ink-soft sm:table-cell sm:px-4 sm:py-3">
+                  <td className="block px-2 py-1 text-xs text-ink-soft sm:table-cell sm:px-4 sm:py-1.5">
                     <span className="sm:hidden">Vérifié (recette) : </span>
                     {c.verified_at ? `${dateUtc(c.verified_at)}${c.verified_by ? ` · ${c.verified_by}` : ""}` : "Jamais"}
                     {/* R5 (C9) : l'administrateur de la plateforme pose la recette d'une capacité

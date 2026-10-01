@@ -58,6 +58,8 @@ import { ecartP75 } from "@mip/stats/incertitude";
 import { ecrirePanel, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { RangeeKpi } from "@/components/charts/RangeeKpi";
+import { InfoTip } from "@/components/InfoTip";
+import { CATEGORIE_VITAL, SOURCE_FRUSTRATION, SOURCE_VITAL } from "@/components/perf/sources";
 
 export const dynamic = "force-dynamic";
 
@@ -169,16 +171,28 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
       )}
 
       {vue.cmp === "release" && (
-        <p role="note" className="mb-2 text-xs text-ink-soft" data-testid="note-cmp-release">
-          Comparaison de releases : les tuiles d&apos;interactions ne comparent que la période précédente ; aucun écart
-          n&apos;est affiché ici.
+        <p
+          role="note"
+          className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-panel2 px-2.5 py-0.5 text-[11px] text-ink-soft"
+          data-testid="note-cmp-release"
+          title="Comparaison de releases : les tuiles d'interactions ne comparent que la période précédente ; aucun écart n'est affiché ici."
+        >
+          <span aria-hidden className="text-ink-faint">
+            ⊘
+          </span>
+          <span className="font-medium text-ink">Écarts non affichés</span>
+          <span className="sr-only">
+            {" "}
+            — Comparaison de releases : les tuiles d&apos;interactions ne comparent que la période précédente ; aucun écart
+            n&apos;est affiché ici.
+          </span>
         </p>
       )}
 
       {/* ── Zone 2 : tuiles (§ 5.4.2). Population : sessions dont le capteur émet. ── */}
       <SectionErreur titre="Signaux de frustration et INP">
         <section aria-label={`Signaux de frustration et INP sur ${label}`} className="mb-4" data-testid="kpi-interactions">
-          <RangeeKpi couvertures={couverturesRangee} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <RangeeKpi couvertures={couverturesRangee} className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             {!totaux.ok ? (
               <div className="col-span-2 lg:col-span-3">
                 <EchecLecture compact titre="Signaux de frustration" />
@@ -209,6 +223,10 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
                 intervalle={inpCourant?.intervalle}
                 couverture={{ n: inpCourant?.n ?? 0, unite: "mesures INP" }}
                 serie={serieInp.ok ? serieInp.data.map((p) => p.p75) : undefined}
+                grapheDebuts={serieInp.ok ? serieInp.data.map((p) => new Date(p.bucket).toISOString()) : undefined}
+                titreAxeY="INP au 75ᵉ centile"
+                source={SOURCE_VITAL.INP}
+                categorie={CATEGORIE_VITAL.INP}
                 reference={reference}
                 {...(vitauxPrec === null
                   ? {}
@@ -220,37 +238,46 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
               />
             )}
           </RangeeKpi>
-          <div className="mt-2 space-y-1 text-xs text-ink-soft">
+          {/* Sous les cases, UNE rangée (recette du 30/09/2026 : deux lignes de population
+              et un bloc de règles précédaient le classement) : ce qui qualifie les
+              comptes se nomme en quelques mots, la phrase entière s'ouvre en bulle ; les
+              règles de détection se déplient à la demande. */}
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-soft">
             {capteur?.etat && !capteur.masquer && <EtatSurface etat={capteur.etat} compact />}
-            <p>
-              Population des signaux : sessions dont le capteur émet des signaux de frustration (SDK navigateur,
-              extension) ; le SDK mobile n&apos;en émet aucun.
-            </p>
-            <p data-testid="ligne-sdk-desactive">
-              Un SDK configuré avec <code>frustration: false</code> envoie 0 sans que la console puisse le savoir.
-            </p>
+            <span className="inline-flex items-center gap-1" data-testid="population-signaux">
+              Population : SDK navigateur et extension
+              <InfoTip label="Population des signaux" align="start">
+                Population des signaux : sessions dont le capteur émet des signaux de frustration (SDK navigateur,
+                extension) ; le SDK mobile n&apos;en émet aucun.
+              </InfoTip>
+            </span>
+            <span className="inline-flex items-center gap-1" data-testid="ligne-sdk-desactive">
+              0 ne prouve pas l&apos;absence
+              <InfoTip label="Pourquoi 0 ne prouve pas l'absence de signal" align="start">
+                Un SDK configuré avec <code>frustration: false</code> envoie 0 sans que la console puisse le savoir.
+              </InfoTip>
+            </span>
+            {/* ── Zone 3 : règles de détection, repliées à un mot ── */}
+            <details className="min-w-0 open:basis-full" data-testid="regles-detection">
+              <summary className="cursor-pointer select-none font-medium text-brand hover:underline">
+                Règles de détection<span className="sr-only"> des clics de rage, sans réaction et suivis d&apos;erreur (réglages du capteur)</span>
+              </summary>
+              <ul className="mt-2 space-y-1 text-xs text-ink-soft">
+                {reglesFrustration().map((r) => (
+                  <li key={r.kind}>
+                    <strong className="font-semibold text-ink">{r.libelle} :</strong> {r.texte}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-ink-soft">{LIMITES_FRUSTRATION}</p>
+            </details>
           </div>
         </section>
       </SectionErreur>
 
-      {/* ── Zone 3 : règles de détection, repliées à une ligne ── */}
-      <details className="card mb-6 px-4 py-3 text-sm" data-testid="regles-detection">
-        <summary className="cursor-pointer select-none font-medium text-ink">
-          Règles de détection des clics de rage, sans réaction et suivis d&apos;erreur (réglages du capteur)
-        </summary>
-        <ul className="mt-2 space-y-1 text-ink-soft">
-          {reglesFrustration().map((r) => (
-            <li key={r.kind}>
-              <strong className="font-semibold text-ink">{r.libelle} :</strong> {r.texte}
-            </li>
-          ))}
-        </ul>
-        <p className="mt-2 text-xs text-ink-soft">{LIMITES_FRUSTRATION}</p>
-      </details>
-
       {/* ── Zone 4 : hero « Routes les plus frustrantes » ── */}
       <SectionErreur titre="Routes les plus frustrantes">
-        <div id="routes-frustrantes" className="mb-6 scroll-mt-4">
+        <div id="routes-frustrantes" className="mb-2 scroll-mt-4">
           <HeroRoutes
             label={label}
             query={query}
@@ -267,9 +294,9 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
           6/12 · 6/12 à 1440 (§ 5.4.1), empilés sous lg : le QUAND à gauche, le SUR QUOI
           à droite. `min-w-0` sur la grille et ses colonnes : un sélecteur CSS long dans
           le nuage ne doit pas élargir la page (piège des colonnes de grille implicites). */}
-      <div className="mt-6 grid min-w-0 gap-4 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-2 lg:grid-cols-2">
         <SectionErreur titre="INP p75 dans le temps">
-          <div id="inp-dans-le-temps" className="min-w-0 scroll-mt-4">
+          <div id="inp-dans-le-temps" className="h-full min-w-0 scroll-mt-4 [&>section]:h-full">
             <SerieInp
               serie={serieInp}
               label={label}
@@ -282,7 +309,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
           </div>
         </SectionErreur>
         <SectionErreur titre="Éléments responsables de l'INP">
-          <div id="elements-inp" className="min-w-0 scroll-mt-4">
+          <div id="elements-inp" className="h-full min-w-0 scroll-mt-4 [&>section]:h-full">
             <ElementsInp inp={inp} label={label} />
           </div>
         </SectionErreur>
@@ -292,7 +319,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
       {/* Le chaînon manquant entre « INP à 900 ms » et un correctif : la zone
           ci-dessus dit OÙ l'utilisateur a cliqué, celle-ci dit QUEL CODE a tenu
           le fil principal pendant ce temps-là. */}
-      <div className="mt-6">
+      <div className="mt-2">
         <SectionErreur titre="Scripts qui bloquent le fil principal">
           <ScriptsBloquants scripts={scripts} label={label} />
         </SectionErreur>
@@ -345,6 +372,8 @@ function TuilesSignaux({
             valeur={t.n}
             format="count"
             sensMeilleur="bas"
+            source={SOURCE_FRUSTRATION}
+            categorie="Navigateur · interactions"
             reference={reference}
             {...comparaison}
             // « 14 signaux, 9 sessions » distingue l'acharné (un visiteur, beaucoup de
@@ -424,29 +453,48 @@ function HeroRoutes({
     };
   });
 
+  const notice = `Route normalisée au moment de la vue. Population : sessions dont le capteur émet des signaux de frustration, ${label}. « Ensemble » = sessions touchées sur la route / sessions qui l'ont vue, sommées sur toutes les routes, comme les lignes.${type ? ` Le classement ne retient que les ${signaux} ; les colonnes de clics comptent tous les signaux de la route.` : ""}${faibles > 0 ? ` ${pluriel(faibles, "route vue", "routes vues")} par moins de 30 sessions, ${accord(faibles, "rangée", "rangées")} en fin.` : ""}`;
   return (
-    <>
-      <nav aria-label="Filtrer par type de signal" className="mb-2 flex flex-wrap items-center gap-1 text-xs" data-testid="filtre-type">
-        <span className="mr-1 text-ink-soft">Signal</span>
-        {([null, "rage", "dead", "error"] as const).map((k) =>
-          k === type ? (
-            <span key={k ?? "tous"} aria-current="true" className="rounded-md border border-accent/50 bg-accent/10 px-2 py-0.5 font-medium text-accent-ink">
-              {k ? LIBELLES_SIGNAL[k] : "Tous"}
-            </span>
-          ) : (
-            <Link
-              key={k ?? "tous"}
-              href={hrefUx({ type: k })}
-              scroll={false}
-              className="rounded-md border border-line bg-panel2 px-2 py-0.5 font-medium text-ink-soft transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
-            >
-              {k ? LIBELLES_SIGNAL[k] : "Tous"}
-            </Link>
-          ),
-        )}
-      </nav>
+    // La liste défile dans sa carte à partir de 640 px (comme sur /pages) : 60 routes
+    // faisaient un classement de 2 800 px de haut (recette du 30/09/2026).
+    <div className="min-w-0 sm:[&_ol]:max-h-[20rem] sm:[&_ol]:overflow-y-auto [&>section]:mb-0">
       <ImpactTable
         titre={`${titre} — part des sessions de la route avec au moins un ${type ? SIGNAL_SINGULIER[type] : "signal"}`}
+        // Filtre de signal, méthode et journal dans la rangée du titre : plus de ligne
+        // de pastilles au-dessus de la carte, ni de phrase sous elle.
+        commandes={
+          <>
+            <nav aria-label="Filtrer par type de signal" className="flex flex-wrap items-center gap-1 text-xs" data-testid="filtre-type">
+              <span className="mr-1 text-ink-soft">Signal</span>
+              {([null, "rage", "dead", "error"] as const).map((k) =>
+                k === type ? (
+                  <span key={k ?? "tous"} aria-current="true" className="rounded-md border border-accent/50 bg-accent/10 px-2 py-0.5 font-medium text-accent-ink">
+                    {k ? LIBELLES_SIGNAL[k] : "Tous"}
+                  </span>
+                ) : (
+                  <Link
+                    key={k ?? "tous"}
+                    href={hrefUx({ type: k })}
+                    scroll={false}
+                    className="rounded-md border border-line bg-panel2 px-2 py-0.5 font-medium text-ink-soft transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                  >
+                    {k ? LIBELLES_SIGNAL[k] : "Tous"}
+                  </Link>
+                ),
+              )}
+            </nav>
+            <Link
+              href={hrefWithQuery("/events", query, { name: `frustration.${type ?? "rage"}` })}
+              title={`Les ${signaux} eux-mêmes, route par route : ajoutez la route dans les filtres du journal.`}
+              className="text-xs font-medium text-perf underline-offset-2 hover:underline"
+            >
+              Journal filtré sur frustration.{type ?? "rage"}
+            </Link>
+            <InfoTip label="Méthode : routes les plus frustrantes" align="end">
+              {notice}
+            </InfoTip>
+          </>
+        }
         tri={tri}
         triHref={{
           gravite: hrefUx({ tri: null }),
@@ -475,19 +523,8 @@ function HeroRoutes({
         volumeLibelle="Sessions de la route"
         groupes={lignes.length}
         tronque={false}
-        notice={`Route normalisée au moment de la vue. Population : sessions dont le capteur émet des signaux de frustration, ${label}. « Ensemble » = sessions touchées sur la route / sessions qui l'ont vue, sommées sur toutes les routes, comme les lignes.${type ? ` Le classement ne retient que les ${signaux} ; les colonnes de clics comptent tous les signaux de la route.` : ""}${faibles > 0 ? ` ${pluriel(faibles, "route vue", "routes vues")} par moins de 30 sessions, ${accord(faibles, "rangée", "rangées")} en fin.` : ""}`}
       />
-      <p className="mt-2 text-xs text-ink-soft">
-        Les {signaux} eux-mêmes, route par route :{" "}
-        <Link
-          href={hrefWithQuery("/events", query, { name: `frustration.${type ?? "rage"}` })}
-          className="text-perf underline-offset-2 hover:underline"
-        >
-          Journal filtré sur frustration.{type ?? "rage"}
-        </Link>{" "}
-        (ajoutez la route dans les filtres).
-      </p>
-    </>
+    </div>
   );
 }
 
@@ -538,7 +575,7 @@ function SerieInp({
           <span>tranches de {seau}</span>
         </>
       }
-      lecture="L'INP p75 de chaque tranche, sur les bandes Bon / À améliorer / Mauvais de web.dev (seuils lus dans le code, jamais recopiés). Une tranche sans interaction mesurée est un trou, pas un zéro. Un clic sur une tranche zoome sur sa plage ; les traits verticaux sont les déploiements."
+      lecture={`L'INP p75 de chaque tranche, sur les bandes Bon / À améliorer / Mauvais de web.dev (seuils lus dans le code, jamais recopiés). Une tranche sans interaction mesurée est un trou, pas un zéro. Un clic sur une tranche zoome sur sa plage ; les traits verticaux sont les déploiements. Source : ${SOURCE_VITAL.INP}`}
       alternative={
         mesures > 0
           ? {
@@ -596,7 +633,7 @@ function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof
           <span>{Math.min(ETIQUETTES_INP, pts.length)} sélecteurs les plus lents étiquetés</span>
         </>
       }
-      lecture="Chaque point = un élément interactif : X = nombre d'interactions, Y = INP p75, couleur = verdict web.dev de l'INP. En haut à droite : fréquents ET lents, à corriger d'abord ; les cinq plus lents portent leur sélecteur. Les points ne sont pas cliquables : la cible n'est pas une dimension de filtre — la table sous le nuage porte les mêmes lignes, chiffrées."
+      lecture="Chaque point = un élément interactif : X = nombre d'interactions, Y = INP p75, couleur = verdict web.dev de l'INP. En haut à droite : fréquents ET lents, à corriger d'abord ; les cinq plus lents portent leur sélecteur. Les points ne sont pas cliquables : la cible n'est pas une dimension de filtre — la table sous le nuage porte les mêmes lignes, chiffrées. Source : SDK MIP RUM, bibliothèque web-vitals 5.3 (attribution de l'INP : l'élément cible de l'interaction)."
     >
       <ScatterPlot
         points={pts}
@@ -612,7 +649,10 @@ function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof
       {/* Défilement signalé. La zone de TableDefilante est `relative` : sans ancêtre
           positionné, le `sr-only` de la légende (position: absolute) se place par
           rapport à la PAGE et l'élargit. */}
-      <TableDefilante className="mt-4" testId="table-elements-inp" label="Éléments responsables de l'INP">
+      <TableDefilante className="mt-3" testId="table-elements-inp" label="Éléments responsables de l'INP">
+        {/* 20 éléments au plus : la table défile dans la figure (en-tête collant) au lieu
+            de l'allonger de 800 px (recette du 30/09/2026). */}
+        <div className="max-h-[15rem] overflow-y-auto [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10">
         <table className="w-full text-sm">
           <caption className="sr-only">Éléments responsables de l&apos;INP sur {label}</caption>
           <thead className="bg-panel2">
@@ -643,6 +683,7 @@ function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof
             ))}
           </tbody>
         </table>
+        </div>
       </TableDefilante>
     </Figure>
   );

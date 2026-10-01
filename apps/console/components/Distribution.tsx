@@ -55,20 +55,20 @@ export function PercentileTable({
         </caption>
         <thead className="bg-panel2">
           <tr>
-            <th scope="col" className="th text-ink-soft">
+            <th scope="col" className="th px-3 text-ink-soft">
               Vital
             </th>
             {PCT_LABELS.map((p) => (
-              <th key={p} scope="col" className="th text-ink-soft" title={pctHelp(p)}>
+              <th key={p} scope="col" className="th px-3 text-ink-soft" title={pctHelp(p)}>
                 {p}
               </th>
             ))}
             {avecIntervalle && (
-              <th scope="col" className="th text-ink-soft" title="intervalle à 95 % du p75, par rangs de la loi binomiale">
+              <th scope="col" className="th px-3 text-ink-soft" title="intervalle à 95 % du p75, par rangs de la loi binomiale">
                 Intervalle p75 (95 %)
               </th>
             )}
-            <th scope="col" className="th text-ink-soft" title="nombre de mesures sur lesquelles portent les percentiles">
+            <th scope="col" className="th px-3 text-ink-soft" title="nombre de mesures sur lesquelles portent les percentiles">
               n
             </th>
           </tr>
@@ -81,14 +81,14 @@ export function PercentileTable({
             const lecture = lireVital(name, p75, r.n, r.intervalle);
             return (
               <tr key={name} className="border-t border-line/60">
-                <th scope="row" className="px-4 py-2.5 text-left font-semibold text-ink">
+                <th scope="row" className="px-3 py-1.5 text-left font-semibold text-ink">
                   {name}
                 </th>
                 {cells.map((c) => {
                   const verdict = c.label === "p75" ? lecture.verdict : null;
                   const rating = verdict?.kind === "etabli" ? verdict.rating : null;
                   return (
-                    <td key={c.label} className="px-4 py-2.5">
+                    <td key={c.label} className="px-3 py-1.5">
                       {verdict && verdict.kind !== "etabli" ? (
                         <span className="inline-flex flex-wrap items-center gap-1" data-testid={`p75-incertain-${name}`}>
                           <span className="rounded border border-line bg-panel2 px-1.5 py-0.5 text-xs font-medium tabular-nums text-ink">
@@ -112,11 +112,11 @@ export function PercentileTable({
                   );
                 })}
                 {avecIntervalle && (
-                  <td className="px-4 py-2.5 text-xs text-ink-soft" data-testid={`intervalle-p75-${name}`}>
+                  <td className="px-3 py-1.5 text-xs text-ink-soft" data-testid={`intervalle-p75-${name}`}>
                     {lecture.texteIntervalle ?? "—"}
                   </td>
                 )}
-                <td className="px-4 py-2.5 tabular-nums text-ink-soft">{r.n.toLocaleString("fr-FR")}</td>
+                <td className="px-3 py-1.5 tabular-nums text-ink-soft">{r.n.toLocaleString("fr-FR")}</td>
               </tr>
             );
           })}

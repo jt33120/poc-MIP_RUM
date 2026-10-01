@@ -7,7 +7,7 @@ import type { ErrorStatus } from "@/lib/queries-v2";
 export function ErrorTypeBadge({ type, large = false }: { type: string | null; large?: boolean }) {
   return (
     <span
-      className={`rounded border border-bad/30 bg-bad/10 font-mono text-bad-ink ${
+      className={`shrink-0 rounded border border-bad/30 bg-bad/10 font-mono text-bad-ink ${
         large ? "px-2 py-0.5 text-base" : "mr-2 px-1.5 py-0.5 text-xs"
       }`}
     >
@@ -42,7 +42,7 @@ export function ErrorStatusBadges({ status, regressed }: { status: ErrorStatus; 
   const { libelle, classes } = STATUT_GROUPE[etat];
   return (
     <span
-      className={`mr-2 inline-block rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${classes}`}
+      className={`mr-2 inline-block shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${classes}`}
       data-testid="statut-groupe"
       data-statut={etat}
     >

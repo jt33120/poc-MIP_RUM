@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Sparkline } from "@/components/charts/Sparkline";
+import { ErrorNotices } from "@/components/errors/ErrorNotices";
 import { CelluleGroupe, FiltreStatut, echelleCommune, noteEchelle } from "@/components/errors/ListeErreurs";
 
 const rendu = (el: ReactElement) => renderToStaticMarkup(el);
@@ -97,5 +98,38 @@ describe("FiltreStatut", () => {
     const html = rendu(<FiltreStatut caches={caches} statut="regressed" hrefSansFiltre="/errors?app=boutique" />);
     expect(html).toContain('value="regressed" selected');
     expect(html).toContain('href="/errors?app=boutique"');
+  });
+
+  it("dans la rangée d'en-tête de la liste : ni carte ni bouton plein (recette du 30/09/2026)", () => {
+    const html = rendu(<FiltreStatut caches={caches} statut={null} hrefSansFiltre="/errors?app=boutique" />);
+    expect(html).not.toMatch(/class="card /);
+    expect(html).not.toContain("btn-accent");
+  });
+});
+
+// Recette du 30/09/2026 : les réserves de la liste (échantillonnage, enrichissement)
+// précédaient les cases en deux bandeaux de phrases ; ce sont des pastilles de deux
+// mots, dont la phrase entière reste dans la page.
+describe("ErrorNotices — les réserves en pastilles", () => {
+  it("deux mots à l'écran, la phrase entière lue par les lecteurs d'écran", () => {
+    const html = rendu(
+      <ErrorNotices
+        sampling={{ min_inclusion_probability: 0.5, message: "Occurrences échantillonnées : une sur deux est gardée." }}
+        enrichment={{ available: false, diagnostic: "Pile non symbolisée : aucune source map déposée." }}
+      />,
+    );
+    const t = texte(html);
+    expect(t).toContain("Échantillonné");
+    expect(t).toContain("Occurrences échantillonnées : une sur deux est gardée.");
+    expect(t).toContain("Enrichissement partiel");
+    expect(t).toContain("Pile non symbolisée : aucune source map déposée.");
+    expect(html).toContain('class="sr-only"');
+  });
+
+  it("rien à signaler : aucun bloc rendu", () => {
+    const html = rendu(
+      <ErrorNotices sampling={{ min_inclusion_probability: null, message: null }} enrichment={{ available: true, diagnostic: null }} />,
+    );
+    expect(html).toBe("");
   });
 });
