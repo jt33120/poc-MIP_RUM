@@ -12,8 +12,12 @@
 // pouvoir s'arrêter (WCAG 2.2.2) : d'où les commandes, en icônes comme sur xsom.fr.
 // Le son part coupé, seule condition de la lecture automatique ; il ne s'ouvre que
 // sur le bouton, geste qui autorise aussi à lancer le film s'il était arrêté.
+//
+// En bas à gauche, le bouton du film de présentation (FilmPresentation) : un autre
+// film, qui s'ouvre en grand et ne joue que sur demande.
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { FilmPresentation, type FilmDePresentation } from "./FilmPresentation";
 
 /** Les fils du fond animé : départ en bas du cadre, arrivée au foyer, à droite du titre. */
 const FILS = Array.from({ length: 16 }, (_, i) => {
@@ -112,9 +116,12 @@ function Commande({ libelle, icone, onClick, testId }: { libelle: string; icone:
 
 export function FilmAccueil({
   film,
+  presentation = null,
   suite,
 }: {
   film: { mp4: string; affiche: string } | null;
+  /** Le film de présentation, ouvert en grand par un bouton ; `null` : pas de bouton. */
+  presentation?: FilmDePresentation | null;
   /** L'ancre de la section suivante, que vise l'invitation à descendre. */
   suite: string;
 }) {
@@ -214,6 +221,11 @@ export function FilmAccueil({
       </div>
 
       <div className="relative mx-auto flex w-full max-w-6xl items-end justify-center px-4 pb-7 sm:px-6">
+        {presentation && (
+          <div className="absolute bottom-6 left-4 sm:left-6">
+            <FilmPresentation film={presentation} />
+          </div>
+        )}
         <a
           href={`#${suite}`}
           className="group flex flex-col items-center gap-1.5 text-xs font-medium uppercase tracking-[0.24em] text-white/70 transition hover:text-white"

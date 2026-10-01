@@ -6,6 +6,7 @@
 //   - les entrées : le compte démo passe par la connexion pré-remplie, la connexion et
 //     l'inscription sont à droite ; connecté, une seule entrée ; démo fermée, verrouillée ;
 //   - le film : monté, présent, léger, avec son affiche ;
+//   - le film de présentation : un bouton, une fenêtre, la vidéo montée à l'ouverture ;
 //   - l'aperçu : une légende par étape, une scène animée qui commence sur la santé ;
 //   - le pied de page commun (attribution GeoIP, conditions d'utilisation) ;
 //   - les images servies sans session (matcher du middleware).
@@ -15,7 +16,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Landing } from "@/components/presentation/Landing";
 import type { SessionUser } from "@/lib/auth";
-import { ETAPES_APERCU, FILM_ACCUEIL } from "@/lib/vitrine";
+import { ETAPES_APERCU, FILM_ACCUEIL, FILM_PRESENTATION } from "@/lib/vitrine";
 
 const RACINE = join(__dirname, "../..");
 const ADMIN: SessionUser = { email: "a@mip.test", role: "admin", apps: null };
@@ -71,6 +72,30 @@ describe("le film d'accueil", () => {
     expect(video).toContain(`poster="${FILM_ACCUEIL.affiche}"`);
     // La lecture part du script, et jamais pour qui a demandé moins de mouvement.
     expect(video).not.toContain("autoplay");
+  });
+});
+
+describe("le film de présentation", () => {
+  it("un fichier du dépôt sous /vitrine/ (servi sans session), sous 15 Mo, avec son affiche", () => {
+    if (!FILM_PRESENTATION) return;
+    for (const f of [FILM_PRESENTATION.mp4, FILM_PRESENTATION.affiche]) {
+      expect(f.startsWith("/vitrine/"), f).toBe(true);
+      expect(existsSync(join(RACINE, "apps/console/public", f)), f).toBe(true);
+    }
+    expect(statSync(join(RACINE, "apps/console/public", FILM_PRESENTATION.mp4)).size).toBeLessThanOrEqual(15_000_000);
+  });
+
+  it("un bouton qui ouvre une fenêtre ; la vidéo n'est montée qu'à l'ouverture, jamais lancée par la page", () => {
+    if (!FILM_PRESENTATION) {
+      expect(VISITEUR).not.toContain("vitrine-film-presentation");
+      return;
+    }
+    const bouton = /<button\b[^>]*data-testid="vitrine-film-presentation"[^>]*>/.exec(VISITEUR)?.[0] ?? "";
+    expect(bouton).toContain('aria-haspopup="dialog"');
+    expect(VISITEUR).toContain('data-testid="vitrine-film-presentation-fenetre"');
+    // Une seule balise <video> au rendu serveur : celle du film d'accueil.
+    expect(compte(VISITEUR, "<video ")).toBe(FILM_ACCUEIL ? 1 : 0);
+    expect(VISITEUR).not.toContain(FILM_PRESENTATION.mp4);
   });
 });
 
