@@ -203,7 +203,8 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
                   {DEFINITION_CONVERSION} Chaque objectif se rapporte aux sessions de son application. La marge « ± » est la demi-largeur de
                   l&apos;intervalle de confiance à 95&nbsp;% (méthode de Wilson). Sous {FAIBLE_SOUS_PROPORTION} conversions ou{" "}
                   {FAIBLE_SOUS_PROPORTION} non-conversions, un objectif passe en fin de classement, marqué « échantillon
-                  faible » : son taux se départage mal de ses voisins.
+                  faible » : son taux se départage mal de ses voisins. Source : pages vues et événements du capteur navigateur,
+                  rapprochés des objectifs définis dans la console.
                 </Methode>
               </>
             )}

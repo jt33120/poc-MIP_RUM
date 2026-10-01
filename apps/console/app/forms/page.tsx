@@ -601,7 +601,8 @@ function ChampsDuFormulaire({
           qui ont touché le champ. Ordre médian de première interaction, pas un tri par abandons&nbsp;: la place du champ dans le formulaire est
           l&apos;information. Ce n&apos;est pas un entonnoir&nbsp;: un champ peut être sauté, les barres ne décroissent
           donc pas forcément. p50 et p75&nbsp;: temps passé sur le champ par la moitié et par les trois quarts des
-          tentatives. Retours&nbsp;: nombre moyen de retours sur le champ après l&apos;avoir quitté.
+          tentatives. Retours&nbsp;: nombre moyen de retours sur le champ après l&apos;avoir quitté. Source&nbsp;: événements
+          form.* du SDK navigateur (identifiants de champ, durées, compteurs ; aucune valeur saisie).
         </Methode>
       </Figure>
       {/* Données PARTIELLES (abandons hors barres, liste tronquée) : l'emploi de « Partiel ». */}

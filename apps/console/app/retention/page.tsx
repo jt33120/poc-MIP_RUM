@@ -314,7 +314,8 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                       />
                       <Methode>
                         Part des visiteurs de chaque cohorte revenus n semaines après leur arrivée. Moyenne pondérée par la taille des cohortes dont la semaine est terminée{NBSP}; la semaine en
-                        cours est exclue. Un point sans cohorte complète est un trou, jamais 0.
+                        cours est exclue. Un point sans cohorte complète est un trou, jamais 0. Source{NBSP}: identifiant de visiteur
+                        aléatoire posé par le capteur navigateur.
                       </Methode>
                     </>
                   )}

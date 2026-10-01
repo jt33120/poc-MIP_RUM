@@ -259,7 +259,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
                 meta(lecture.ok ? `${compte(lecture.data.referrers.length, "site affiché", "sites affichés")} (${TOP_REFERENTS} au plus)` : undefined)
               }
               etat={!lecture.ok ? { kind: "erreur", titre: "Sites référents" } : undefined}
-              lecture="Part = sessions arrivées de ce site, sur toutes les sessions de la période (pas sur les seuls sites affichés) ; longueur relative au premier site."
+              lecture="Part = sessions arrivées de ce site, sur toutes les sessions de la période (pas sur les seuls sites affichés) ; longueur relative au premier site. Source : référent de la première page vue, capteur navigateur."
             >
               {lecture.ok && <BarresReferents rep={lecture.data} dansPhrase={dansPhrase} />}
             </Figure>
@@ -734,7 +734,7 @@ function SerieCanaux({
       titre={titre}
       meta={meta}
       etat={total === 0 ? { kind: "vide", population: "session", plage: dansPhrase } : undefined}
-      lecture={`Chaque session compte une fois, dans la tranche de sa première page vue. Cliquez une tranche pour y restreindre l'écran.${
+      lecture={`Chaque session compte une fois, dans la tranche de sa première page vue (heure de Paris). Cliquez une tranche pour y restreindre l'écran. Source : référent de la première page vue, capteur navigateur.${
         plafond
           ? ` Plafond atteint : la série porte sur les mêmes ${PLAFOND_TEXTE} premières sessions que les canaux (par application, puis par identifiant).`
           : ""
