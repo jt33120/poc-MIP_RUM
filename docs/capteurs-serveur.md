@@ -70,16 +70,18 @@ tourne sous l'agent Python (`tests/e2e/site-cobaye/requirements.txt`,
 `tests/e2e/tracing.spec.ts`) ; les exportateurs Node officiels sont testés contre le
 collector et une vraie base (`tests/integration/otlp-protobuf-agent-sql.test.ts`).
 
-« Éprouvé en local » : une petite application, configurée par le seul socle ci-dessus
-(`mip.api_key` comprise), a tourné le 01/10/2026 dans un conteneur Docker jetable et
-envoyé au collecteur de développement (`services/collector/dev-server.mjs`, clé exigée)
-et à une base locale : Go (`net/http`), PHP (Slim sous `php -S`, PDO SQLite, Monolog),
+« Éprouvé en local » : une petite application, configurée par le socle ci-dessus
+(`mip.api_key` comprise) et, en Go et en Ruby, par les lignes de code du tableau (en Go,
+de plus, l'option `trace.WithStackTrace(true)` à l'enregistrement de l'exception, § 3),
+a tourné le 01/10/2026 dans un conteneur Docker jetable et envoyé au collecteur de
+développement (`services/collector/dev-server.mjs`, clé exigée) et à une base locale : Go (`net/http`), PHP (Slim sous `php -S`, PDO SQLite, Monolog),
 Ruby (Sinatra sous WEBrick). Appelées avec le `traceparent` et le `tracestate` du SDK
 web, les trois ont donné : spans serveur aux routes `:nom`, sous-appel HTTP (Go, Ruby)
 ou requêtes SQL (PHP) en spans de détail, exception comptée une fois, 404 →
 `(non trouvée)`, session retrouvée par le `tracestate`. Les corps réellement émis sont
 figés dans `tests/fixtures/otlp-agents/` (provenance, versions) et rejoués contre le
-collector et une vraie base (`tests/integration/otlp-agents-go-php-ruby-sql.test.ts`).
+collector et une vraie base (`tests/integration/otlp-agents-go-php-ruby-sql.test.ts`) ;
+le code des trois applications est dans `tests/fixtures/otlp-agents/applications/`.
 Ce n'est pas la production : aucun agent Go, PHP ou Ruby n'a encore envoyé à la collecte
 réelle.
 
@@ -120,8 +122,18 @@ tableau. Un journal d'agent ne porte pas la session : il se relie à elle par sa
   et `tracestate` — chaque requête ouvre une nouvelle trace, sans session, et le
   sous-appel part dans une trace à lui (constaté avec `otelhttp` 0.71.0). `otelhttp`
   0.71.0 n'écrit pas `http.route` : la route vient du nom du span (`GET /factures/{id}`,
-  motifs du `ServeMux` de Go 1.22 et plus). À l'essai, l'exception s'enregistre dans le
-  gestionnaire : `span.RecordError(err)` puis `span.SetStatus(codes.Error, …)`.
+  motifs du `ServeMux` de Go 1.22 et plus), **sauf en 404 et en 405** : la console n'y
+  croit que `http.route` (§ 4). Un 404 ou un 405 renvoyé par un gestionnaire Go perd donc
+  sa route et compte en `(non trouvée)`, même sur une route que le `ServeMux` a résolue
+  (une facture absente sous `/factures/{id}`). À l'essai, l'exception s'enregistrait dans
+  le gestionnaire, `span.RecordError` puis `span.SetStatus(codes.Error, …)`, avec
+  l'option `trace.WithStackTrace(true)` : le corps capturé porte une pile, que le SDK Go
+  n'écrit qu'avec elle. **Cette pile se lit mal** : seules ses frames inlinées (sans
+  suffixe `+0x…`) sont reconnues, la première est celle du SDK OpenTelemetry
+  (`…/sdk@v1.46.0/trace/span.go`), et la clé de regroupement v2 se calcule sur ce
+  chemin. Une montée de version du SDK change donc la clé de chaque erreur Go, et deux
+  gestionnaires qui lèvent la même erreur (même type, même message) partagent une clé.
+  Sans l'option, pas de pile : la clé ne tient qu'au type et au message.
   L'instrumentation Go sans code (eBPF, compilation) est un projet en cours, non éprouvé
   ici.
 - **PHP.** `pecl install opentelemetry` compile l'extension : il faut les outils de
@@ -148,8 +160,10 @@ tableau. Un journal d'agent ne porte pas la session : il se relie à elle par sa
   le framework : `<int:commande_id>` (Flask, Django) et `{id:int}` (ASP.NET Core)
   deviennent `:commande_id` et `:id`. Sans `http.route` (`otelhttp` en Go), la route
   vient du nom du span : `GET /factures/{id}` devient `/factures/:id`. Un serveur sans
-  modèle de route (`com.sun.net.httpserver` en Java) ne donne que son contexte. Un 404 ou un 405 sans
-  route résolue prend la route fixe `(non trouvée)`, jamais le chemin brut.
+  modèle de route (`com.sun.net.httpserver` en Java) ne donne que son contexte. Un 404 ou
+  un 405 sans `http.route` prend la route fixe `(non trouvée)`, jamais le chemin brut ni
+  le nom du span : en Go, tout 404 ou 405 y tombe, route résolue ou non (§ 3). Un 5xx
+  sans `http.route` ni motif dans son nom garde, lui, le chemin brut.
 - **Exceptions.** Une exception publiée à la fois par le span et par un journal ne compte
   qu'une fois. Deux cas comptent encore double : un span enfant et son parent envoyés
   dans deux lots, un journal émis dans un span enfant pour l'exception de son parent.

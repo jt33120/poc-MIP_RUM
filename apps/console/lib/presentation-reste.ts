@@ -263,7 +263,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     manque:
       "La collecte accepte depuis le 28/09/2026 le format des agents OpenTelemetry officiels, et ceux de Python, Java et .NET ont été éprouvés en production le même jour : un vrai serveur, configuré par la seule documentation, a envoyé traces, journaux et erreurs. Le 29/09/2026, FastAPI sous l'agent Python et, pour les traces, Node ont suivi. Le 01/10/2026, Go, PHP et Ruby ont été éprouvés en local : spans, sous-appels et exceptions rattachés à la session (journaux pour PHP), corps rejoués en test. Aucun agent Go, PHP ou Ruby n'a encore envoyé à la collecte de production.",
     debloque:
-      "Brancher un vrai backend Go, PHP ou Ruby, sous son agent officiel, sur la collecte de production.",
+      "Brancher sur la collecte de production un vrai backend de chacun des trois langages, Go, PHP et Ruby, sous son agent officiel.",
     decide: "L'équipe MIP.",
     sources: [
       "C5",
