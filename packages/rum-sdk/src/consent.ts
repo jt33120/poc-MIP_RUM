@@ -38,10 +38,21 @@ export const CLE_VISITEUR = "mip_rum_visitor";
 export const CLE_ECHANTILLONNAGE = "mip_rum_sampling";
 export const CLE_SEQUENCE = "mip_rum_seq";
 export const CLES_TERMINAL = [CLE_SESSION, CLE_VISITEUR, CLE_ECHANTILLONNAGE, CLE_SEQUENCE] as const;
+/** Période de silence du widget d'avis, une clé par application (mip-rum-feedback.js). */
+export const PREFIXE_AVIS = "mip_rum_feedback_last:";
 
-/** Efface ce que le SDK a posé sur le terminal (refus de consentement). */
+/** Efface ce que le SDK et son widget d'avis ont posé sur le terminal (refus de consentement). */
 export function effacerTerminal(): void {
-  for (const cle of CLES_TERMINAL) {
+  const cles: string[] = [...CLES_TERMINAL];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const cle = localStorage.key(i);
+      if (cle?.startsWith(PREFIXE_AVIS)) cles.push(cle);
+    }
+  } catch {
+    /* stockage sans énumération : les clés fixes suffisent */
+  }
+  for (const cle of cles) {
     try {
       localStorage.removeItem(cle);
     } catch {

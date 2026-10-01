@@ -1,7 +1,13 @@
 import { initApiSpans } from "./apispans";
 import { ActionTracker, actionAttrs, initAutomaticActions } from "./actions";
 import { createBreadcrumbTrail, initClickBreadcrumbs, MIP_UI_ATTR, type BreadcrumbTrail } from "./breadcrumbs";
-import { autoriserAccesTerminal, ConsentGate, effacerTerminal, type BufferedEvent } from "./consent";
+import {
+  accesTerminalAutorise,
+  autoriserAccesTerminal,
+  ConsentGate,
+  effacerTerminal,
+  type BufferedEvent,
+} from "./consent";
 import { currentRoute, initNavigation, scrubUrl } from "./context";
 import { initConsoleErrors, initCspErrors, initResourceErrors } from "./error-capture";
 import { initErrors, type Emit } from "./errors";
@@ -152,7 +158,11 @@ function loadFeedbackWidget(opt: boolean | { label?: string; accent?: string }):
   if (typeof document === "undefined") return;
   const w = window as unknown as { __mipRumFeedbackMounted?: boolean; MIPRumFeedback?: unknown };
   if (w.__mipRumFeedbackMounted) return;
-  if (opt && typeof opt === "object") w.MIPRumFeedback = opt; // { label, accent } avant chargement
+  // { label, accent } avant chargement ; sinon la configuration posée par la page.
+  const base = opt && typeof opt === "object" ? opt : w.MIPRumFeedback;
+  // Le widget garde sa période de silence dans le stockage local : il reçoit
+  // l'interrupteur du SDK pour ne pas y toucher avant l'accord (finding 1.11).
+  w.MIPRumFeedback = { ...(base && typeof base === "object" ? base : {}), stockageAutorise: accesTerminalAutorise };
   const url = sdkScriptSrc ? new URL("mip-rum-feedback.js", sdkScriptSrc).href : "/mip-rum-feedback.js";
   const s = document.createElement("script");
   s.src = url;

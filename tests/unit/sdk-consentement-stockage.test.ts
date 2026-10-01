@@ -86,10 +86,14 @@ beforeEach(() => {
       journal.push({ op: "effacer", cle });
       stockage.delete(cle);
     },
+    get length() {
+      return stockage.size;
+    },
+    key: (i: number) => [...stockage.keys()][i] ?? null,
   });
   vi.stubGlobal("document", {
     visibilityState: "visible", referrer: "", currentScript: null,
-    addEventListener: () => {}, head: { appendChild: () => {} }, createElement: () => ({}),
+    addEventListener: () => {}, head: { appendChild: () => {} }, createElement: () => ({ setAttribute: () => {} }),
   });
   vi.stubGlobal("window", {});
   vi.stubGlobal("navigator", { userAgent: "vitest" });
@@ -168,6 +172,17 @@ describe("requireConsent : rien sur le terminal avant l'accord", () => {
     expect(sessionStockee()).toBe(session);
   });
 
+  it("le widget d'avis chargé par le SDK reçoit l'interrupteur : pas de période de silence avant l'accord", async () => {
+    const sdk = await chargerPage({ requireConsent: true, feedback: { label: "Avis" } });
+    const config = (window as unknown as { MIPRumFeedback: { label: string; stockageAutorise: () => boolean } }).MIPRumFeedback;
+    expect(config.label).toBe("Avis");
+    expect(config.stockageAutorise()).toBe(false);
+    sdk.consent(true);
+    expect(config.stockageAutorise()).toBe(true);
+    sdk.consent(false);
+    expect(config.stockageAutorise()).toBe(false);
+  });
+
   it("le mode d'échantillonnage se décide à l'accord, pour la session retenue", async () => {
     // keepOnError:false et sampleRate:0 : la session tombe hors échantillon.
     const sdk = await chargerPage({ requireConsent: true, sampleRate: 0, keepOnError: false });
@@ -200,10 +215,12 @@ describe("requireConsent : rien sur le terminal avant l'accord", () => {
 });
 
 describe("consent(false) : ce que le SDK avait posé est effacé", () => {
-  it("efface session, visiteur, échantillonnage, compteur et file de rejeu ; plus rien n'est écrit", async () => {
+  it("efface session, visiteur, échantillonnage, compteur, file de rejeu et silence du widget ; plus rien n'est écrit", async () => {
     const sdk = await chargerPage(); // sans requireConsent : tout est écrit dès l'init
     stockage.set("mip_rum_retry", JSON.stringify({ spans: [], notBefore: 0, tentatives: 1 }));
     stockage.set("mip_rum_retry_revoked_actions", "[]");
+    stockage.set("mip_rum_feedback_last:app-consentement", String(T0));
+    stockage.set("preference_du_site", "garder"); // le stockage du site hôte n'est pas le nôtre
     const session = sessionStockee();
     const visiteur = stockage.get("mip_rum_visitor");
     for (const cle of ["mip_rum_session", "mip_rum_visitor", "mip_rum_sampling", "mip_rum_seq"]) {
@@ -213,10 +230,11 @@ describe("consent(false) : ce que le SDK avait posé est effacé", () => {
     sdk.consent(false);
     for (const cle of [
       "mip_rum_session", "mip_rum_visitor", "mip_rum_sampling", "mip_rum_seq",
-      "mip_rum_retry", "mip_rum_retry_revoked_actions",
+      "mip_rum_retry", "mip_rum_retry_revoked_actions", "mip_rum_feedback_last:app-consentement",
     ]) {
       expect(stockage.has(cle), `${cle} survit au refus`).toBe(false);
     }
+    expect(stockage.get("preference_du_site")).toBe("garder");
 
     journal.length = 0;
     sdk.track("apres_refus");

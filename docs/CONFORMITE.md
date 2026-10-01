@@ -58,9 +58,11 @@ dev-server/edge) → on ne dépend pas du seul client. Source maps **privées** 
 - **Consentement** : `requireConsent` met le SDK en tampon mémoire jusqu'à `MIPRum.consent(true)` —
   côté réseau (aucune requête) **et côté terminal** (aucune lecture ni écriture du stockage local).
   Session, visiteur et mode d'échantillonnage vivent en mémoire jusqu'à l'accord, qui les écrit, ou
-  reprend ceux d'une visite déjà consentie. `MIPRum.consent(false)` efface du stockage local
-  `mip_rum_session`, `mip_rum_visitor`, `mip_rum_sampling`, `mip_rum_seq` et la file de rejeu
-  (`mip_rum_retry`), et le SDK n'y écrit plus rien : un accord ultérieur repart d'un nouveau visiteur
+  reprend ceux d'une visite déjà consentie. Le widget d'avis chargé par le SDK (option `feedback`)
+  suit le même accord pour sa période de silence ; posé à la main, il ne le connaît pas.
+  `MIPRum.consent(false)` efface du stockage local `mip_rum_session`, `mip_rum_visitor`,
+  `mip_rum_sampling`, `mip_rum_seq`, la file de rejeu (`mip_rum_retry`) et la période de silence du
+  widget (`mip_rum_feedback_last:*`), et le SDK n'y écrit plus rien : un accord ultérieur repart d'un nouveau visiteur
   (finding 1.11 de l'audit, traité le 01/10/2026 : `packages/rum-sdk/src/consent.ts`,
   `tests/unit/sdk-consentement-stockage.test.ts`). Ce qui est déjà parti avant un refus tardif ne
   s'efface que par une demande DSAR (ci-dessous) : il n'existe pas de route d'oubli appelée par le SDK.

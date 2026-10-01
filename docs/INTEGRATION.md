@@ -249,8 +249,10 @@ API : `MIPRum.consent(bool)`, `track(nom, props)`, `setUser` / `clearUser`,
   connaît le choix du visiteur : sans cet appel, la page reste en mémoire.
   `MIPRum.consent(false)` purge ce qui attendait (mémoire, file de rejeu, erreurs
   compactées), efface du stockage local `mip_rum_session`, `mip_rum_visitor`,
-  `mip_rum_sampling`, `mip_rum_seq` et `mip_rum_retry`, et arrête la collecte ; un
-  accord ultérieur repart d'un nouveau visiteur. La fiche du client donne le snippet
+  `mip_rum_sampling`, `mip_rum_seq`, `mip_rum_retry` et la période de silence du widget
+  d'avis (`mip_rum_feedback_last:*`), et arrête la collecte ; un accord ultérieur repart
+  d'un nouveau visiteur. Le widget d'avis suit l'accord s'il est chargé par l'option
+  `feedback` du SDK, pas s'il est posé à la main. La fiche du client donne le snippet
   dans cette version.
 - **`honorDNT: true`** (défaut) : si le navigateur signale un refus (Do Not Track ou
   Global Privacy Control), aucune collecte. `false` est réservé aux applications qui
