@@ -402,6 +402,19 @@ describe("ImpactTable", () => {
     );
     const ref = rendu.split('data-testid="impact-reference"')[1] ?? "";
     expect(ref).toContain('title="2,5 % (par route vue)"');
+    // Le libellé aussi : « Ensemble » se lit, sa précision en bulle et lue, le texte entier
+    // gardé dans le nœud (l'e2e lit « Ensemble (toute la population filtrée) »).
+    const long = renderToStaticMarkup(
+      <ImpactTable
+        {...BASE}
+        tri="gravite"
+        reference={{ libelle: "Ensemble (toute la population filtrée)", valeurs: { pilote: "2,5 s" } }}
+        lignes={[LIGNE("/a", 900, 40)]}
+      />,
+    );
+    const cellule = long.split('data-testid="impact-reference"')[1]?.split("</span></span>")[0] ?? "";
+    expect(cellule).toContain('title="Ensemble (toute la population filtrée)">Ensemble<span class="sr-only"> (toute la population filtrée)</span>');
+    expect(texte(cellule)).toContain("Ensemble (toute la population filtrée)");
     expect(ref).toContain('<span class="min-w-0 truncate">2,5 %</span><span class="sr-only"> (par route vue)</span>');
   });
 
@@ -482,9 +495,18 @@ describe("Breakdown — aucune phrase au-dessus des barres", () => {
       { dimension: "country", label: "Pays", available: false, reason: "GeoIP éteint", current: false, href: null },
     ];
     const defaut = renderToStaticMarkup(<OngletsDecoupage titre="Erreurs" onglets={onglets} />);
-    expect(defaut).toMatch(/^<nav [^>]*class="flex flex-wrap gap-1 mb-3"/);
+    expect(defaut).toMatch(/^<nav [^>]*class="flex gap-1 flex-wrap mb-3"/);
     const sans = renderToStaticMarkup(<OngletsDecoupage titre="Erreurs" onglets={onglets} className="min-w-0" />);
-    expect(sans).toMatch(/^<nav [^>]*class="flex flex-wrap gap-1 min-w-0"/);
+    expect(sans).toMatch(/^<nav [^>]*class="flex gap-1 flex-wrap min-w-0"/);
     expect(texte(sans)).toContain("indisponible : GeoIP éteint");
+  });
+
+  // Recette du 01/10/2026 : deux lignes d'onglets (48 px) avant la première barre d'une
+  // carte de 4 colonnes. Compacts : une ligne qui défile de côté, jamais deux.
+  it("OngletsDecoupage compacts : une seule ligne, défilante, onglets insécables", () => {
+    const onglets = [{ dimension: "country", label: "Pays estimé", available: true, reason: null, current: false, href: "/x" }];
+    const html = renderToStaticMarkup(<OngletsDecoupage titre="Erreurs" onglets={onglets} compacts />);
+    expect(html).toMatch(/^<nav [^>]*class="flex gap-1 flex-nowrap overflow-x-auto[^"]*"/);
+    expect(html).toContain("shrink-0 whitespace-nowrap");
   });
 });

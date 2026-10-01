@@ -140,9 +140,13 @@ export function OngletsDecoupage({
   className?: string;
   compacts?: boolean;
 }) {
-  const taille = compacts ? "px-2 py-0.5" : "px-2.5 py-1";
+  // Compacts : UNE ligne, 11 px, qui défile de côté quand les six dimensions ne tiennent
+  // pas (recette du 01/10/2026 : deux lignes d'onglets, 48 px, avant la première barre
+  // d'une carte de 4 colonnes sur /errors).
+  const taille = compacts ? "shrink-0 whitespace-nowrap px-1.5 py-px text-[11px]" : "px-2.5 py-1 text-xs";
+  const rangee = compacts ? "flex-nowrap overflow-x-auto overscroll-x-contain [scrollbar-width:thin]" : "flex-wrap";
   return (
-    <nav aria-label={`Découper ${titre.toLowerCase()} par`} className={`flex flex-wrap gap-1 ${className}`}>
+    <nav aria-label={`Découper ${titre.toLowerCase()} par`} className={`flex gap-1 ${rangee} ${className}`}>
       {onglets.map((tab) =>
         tab.available && tab.href ? (
           <Link
@@ -151,7 +155,7 @@ export function OngletsDecoupage({
             scroll={false}
             aria-current={tab.current ? "page" : undefined}
             data-testid={`breakdown-tab-${tab.dimension}`}
-            className={`rounded-md border ${taille} text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
+            className={`rounded-md border ${taille} font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
               tab.current
                 ? "border-accent/50 bg-accent/10 text-accent-ink"
                 : "border-line bg-panel2 text-ink-soft hover:text-ink"
@@ -165,7 +169,7 @@ export function OngletsDecoupage({
             data-testid={`breakdown-tab-${tab.dimension}`}
             aria-disabled="true"
             title={tab.reason ?? undefined}
-            className={`cursor-help rounded-md border border-dashed border-line bg-panel2/50 ${taille} text-xs font-medium text-ink-faint`}
+            className={`cursor-help rounded-md border border-dashed border-line bg-panel2/50 ${taille} font-medium text-ink-faint`}
           >
             {tab.label}
             {/* Le `title` seul n'est pas annoncé partout : la raison est aussi lue. */}

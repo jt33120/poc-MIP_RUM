@@ -658,6 +658,7 @@ export function ImpactTable({
   };
   const tete = lignes.slice(0, visibles);
   const reste = lignes.slice(visibles);
+  const libelleReference = reference ? decouperReference(reference.libelle) : null;
 
   return (
     <section className={`card min-w-0 ${compact ? "p-3" : "p-3 sm:p-4"}`} data-testid="impact-table" data-tri={tri}>
@@ -735,8 +736,11 @@ export function ImpactTable({
             data-testid="impact-reference"
             title="référence, non classée"
           >
+            {/* « Ensemble (toute la population filtrée) » se coupait à 390 px : « Ensemble »
+                se lit, la précision passe en bulle et en texte lu (même texte pour l'e2e). */}
             <span className="min-w-0 truncate font-medium text-ink" title={reference.libelle}>
-              {reference.libelle}
+              {libelleReference?.valeur}
+              {libelleReference?.precision && <span className="sr-only"> {libelleReference.precision}</span>}
               <span className="sr-only"> — référence, non classée</span>
             </span>
             {/* La référence n'a pas de barre : elle se lit à côté, elle ne se classe pas. */}
