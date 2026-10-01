@@ -242,3 +242,39 @@ describe("ADMINISTRATION — le bloc de la sidebar", () => {
     expect(estAdministration("/")).toBe(false);
   });
 });
+
+// La loupe (recette du 01/10/2026) remplace l'entrée « Explorer » : elle mène à un
+// écran (menu ou hors menu), à une action, à une session ou à une route.
+describe("loupe", async () => {
+  const { avecContexte, chercher, normaliser } = await import("../../apps/console/lib/loupe");
+
+  it("trouve un écran sans les accents, en tête quand le libellé commence par la saisie", () => {
+    expect(normaliser("  Rétention ")).toBe("retention");
+    expect(chercher("reten", false)[0]).toMatchObject({ libelle: "Rétention", href: "/retention" });
+    // Hors menu, mais joignable par la loupe.
+    expect(chercher("explorer", false).map((r) => r.href)).toContain("/explorer");
+    expect(chercher("mobile", false).map((r) => r.href)).toContain("/mobile");
+  });
+
+  it("les actions de création, et l'administration pour un administrateur seulement", () => {
+    expect(chercher("alerte", false).map((r) => r.libelle)).toContain("Créer une alerte");
+    expect(chercher("jetons", false).some((r) => r.groupe === "Administration")).toBe(false);
+    expect(chercher("jetons", true).some((r) => r.href === "/admin/read-tokens")).toBe(true);
+  });
+
+  it("un identifiant de session ou une route collés mènent directement", () => {
+    expect(chercher("e67bf2c5-1a2b-4c3d-8e9f-001122334455", false)[0]).toMatchObject({
+      groupe: "Session",
+      href: "/sessions/e67bf2c5-1a2b-4c3d-8e9f-001122334455",
+    });
+    expect(chercher("/checkout", false)[0]).toMatchObject({ groupe: "Route", href: "/pages?route=%2Fcheckout" });
+    expect(chercher("zzzz introuvable", false)).toEqual([]);
+  });
+
+  it("l'application et la période suivent l'écran visé ; l'ancre reste à la fin", () => {
+    const [alerte] = chercher("créer une alerte", false);
+    expect(avecContexte(alerte, "?app=uti&period=7d&vital=LCP")).toBe("/alerts?app=uti&period=7d#nouvelle-regle");
+    const [route] = chercher("/checkout", false);
+    expect(avecContexte(route, "?app=uti")).toBe("/pages?route=%2Fcheckout&app=uti");
+  });
+});
