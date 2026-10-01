@@ -307,9 +307,9 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
       {!rienCree && (
       <div className={`mb-4 grid min-w-0 gap-2 ${cote ? "xl:grid-cols-12" : ""}`}>
         {/* La figure prend la hauteur de la rangée : ses bords bas s'alignent sur la liste. */}
-        <div className={`min-w-0 ${cote ? "xl:col-span-8 xl:[&>section]:h-full" : ""}`}>
+        <div className={`min-w-0 ${cote ? "xl:col-span-8" : ""}`}>
           <SectionErreur titre={`Déclenchements des ${JOURS_DECLENCHEMENTS} derniers jours`}>
-            <Figure
+            <Figure pleineHauteur
               titre={`Déclenchements des ${JOURS_DECLENCHEMENTS} derniers jours`}
               id="declenchements"
               meta={

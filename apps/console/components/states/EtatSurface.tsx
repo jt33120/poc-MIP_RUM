@@ -175,6 +175,25 @@ export function EtatSurface({ etat, compact = false, enLigne = false }: { etat: 
       );
 
     case "partiel":
+      // En ligne (01/10/2026) : une PASTILLE « Partiel », la raison en bulle et en texte
+      // lu. Le bandeau ambre de trois lignes en tête d'une cascade passait avant le
+      // dessin qu'il qualifie ; la vérité reste, elle ne prend plus la place du dessin.
+      if (enLigne) {
+        return (
+          <div role={role} data-testid={testId} data-etat={etat.kind} className="flex min-w-0">
+            <span
+              title={etat.raison}
+              className="inline-flex cursor-help items-center gap-1 rounded-full border border-warn/40 bg-warn/10 px-2 py-px text-[11px] font-semibold text-warn-ink"
+            >
+              <span aria-hidden="true">◐</span>
+              Partiel
+            </span>
+            <span className="sr-only">
+              {NBSP}: {etat.raison}
+            </span>
+          </div>
+        );
+      }
       return (
         <CadreEtat ton="attention" role={role} compact={compact} testId={testId} etat={etat.kind}>
           <p>

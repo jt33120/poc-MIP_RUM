@@ -100,4 +100,17 @@ describe("EtatSurface — autres états", () => {
     expect(html).toContain("text-xs");
     expect(texte(html)).toContain("Partiel : x");
   });
+
+  // Recette du 01/10/2026 : un bandeau ambre de trois lignes devant la cascade. En ligne,
+  // une pastille « Partiel » ; la raison en bulle et lue — même texte pour l'e2e.
+  it("partiel en ligne : une pastille, la raison en bulle et en texte lu, même lecture qu'en bandeau", () => {
+    const html = renderToStaticMarkup(<EtatSurface etat={{ kind: "partiel", raison: "20 ressources par vue" }} enLigne />);
+    expect(html).toContain('data-testid="etat-partiel"');
+    expect(html).toContain('role="note"');
+    expect(html).toContain('title="20 ressources par vue"');
+    expect(html).toMatch(/rounded-full[^"]*"[^>]*>.*Partiel<\/span>/);
+    expect(html).toMatch(/<span class="sr-only">[^<]*20 ressources par vue<\/span>/);
+    expect(texte(html)).toContain("Partiel : 20 ressources par vue");
+    expect(html).not.toMatch(/<p[ >]/);
+  });
 });

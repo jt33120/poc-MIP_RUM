@@ -2,7 +2,10 @@
 // ce qu'elle dit, sans base ni rendu. Le silence du canari se lit à l'âge du
 // dernier passage (un canari qui ne passe plus ne laisse aucun échec à lire), puis
 // la fenêtre ouverte de la plateforme décide.
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { SanteChaine } from "@/components/SanteChaine";
 import {
   ETATS_FRISE_CHAINE,
   HEURES_FRISE,
@@ -186,5 +189,36 @@ describe("la frise de 7 jours", () => {
     expect(libelleLatences({ etage: "ingest_console", p50: 420, p95: 1800, n: 672 })).toBe("p50 420 ms · p95 1 800 ms, sur 672 passages");
     expect(libelleLatences({ etage: "ingest_console", p50: null, p95: null, n: 0 })).toBeNull();
     expect(libelleLatences(undefined)).toBeNull();
+  });
+});
+
+// Le rendu de la carte (recette du 01/10/2026) : un fait par ligne. Le verdict tient sur
+// une ligne, sa phrase d'explication et la cause d'une fenêtre se replient — elles
+// restent dans le document, elles ne sont plus étalées.
+describe("la carte : une ligne par fait", () => {
+  const rendre = (b: SanteChaineBrute | null) => renderToStaticMarkup(createElement(SanteChaine, { brute: b, cadenceMin: 15, maintenant: MAINTENANT }));
+
+  it("verdict avec explication : titre sur une ligne, la phrase repliée sous « Pourquoi »", () => {
+    const html = rendre(brute(5, [fenetre({})]));
+    const verdict = html.split('data-testid="sante-chaine-verdict"')[1]?.split("</details>")[0] ?? "";
+    expect(html).toMatch(/<details class="group" data-testid="sante-chaine-verdict"/);
+    expect(verdict).toMatch(/<summary[^>]*>.*Collecte interrompue depuis 1 h.*Pourquoi.*<\/summary><p[^>]*>le canari n&#x27;a pas été écrit<\/p>/);
+    expect(verdict).toContain("truncate");
+  });
+
+  it("verdict sans explication : une ligne, rien à ouvrir", () => {
+    const html = rendre(brute(6));
+    expect(html).toMatch(/<p class="[^"]*" data-testid="sante-chaine-verdict">/);
+    expect(html).not.toContain("Pourquoi");
+  });
+
+  it("aucune fenêtre : « 0 » sur la ligne du titre, la phrase lue ; une fenêtre : cause et preuve repliées", () => {
+    const vide = rendre(brute(6));
+    expect(vide).toContain('data-testid="sante-chaine-fenetres-aucune"');
+    expect(vide).toMatch(/<span class="sr-only">[^<]*la collecte a été nominale sur la période\.<\/span>/);
+    const avec = rendre(brute(5, [fenetre({ fin: ilYa(30), preuve: "passage p-12" })]));
+    const liste = avec.split('data-testid="sante-chaine-fenetres"')[1] ?? "";
+    expect(liste).toMatch(/<li[^>]*><details><summary[^>]*>.*Interrompue.*<\/summary><div[^>]*>le canari/);
+    expect(liste).toContain("passage p-12");
   });
 });

@@ -298,9 +298,9 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
       {/* Fm3 — le classement (6 colonnes) à côté des champs du formulaire choisi (6 colonnes). */}
       {/* Même bord bas pour les deux figures de la rangée (la figure prend la hauteur de sa cellule). */}
       <div className="mb-4 grid min-w-0 gap-3 lg:grid-cols-12">
-        <div className="min-w-0 lg:col-span-6 lg:[&>section]:h-full">
+        <div className="min-w-0 lg:col-span-6">
           <SectionErreur titre="Formulaires classés par abandons">
-            <Figure
+            <Figure pleineHauteur
               id="forms-classement"
               titre="Formulaires classés par abandons"
               meta={meta(

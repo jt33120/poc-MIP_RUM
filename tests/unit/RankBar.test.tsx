@@ -2,7 +2,7 @@
 // intégrée, libellés bornés à 7rem sous 640 px, image sans lien / liste avec liens.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { RankBar } from "@/components/charts/RankBar";
+import { RankBar, texteLibelle } from "@/components/charts/RankBar";
 import { SERIE } from "@/lib/palette";
 
 const LIGNES = [
@@ -44,13 +44,31 @@ describe("RankBar", () => {
     expect(html.toLowerCase().split(`background-color:${couleur}`).length - 1).toBe(1);
   });
 
-  // Recette du 26/09/2026 : « Direct ou référen… » à 390 px.
-  it("libellé et sous-texte passent à la ligne, jamais coupés", () => {
+  // Recette du 26/09/2026 : « Direct ou référen… » à 390 px — le libellé passe à la ligne.
+  // Recette du 01/10/2026 : le sous-texte sur trois lignes faisait de chaque rangée un
+  // paragraphe — il tient sur une ligne, coupé, entier en bulle.
+  it("libellé : passe à la ligne, jamais coupé ; sous-texte : une ligne coupée, entier en bulle", () => {
     const html = renderToStaticMarkup(
       <RankBar data={[{ label: "Direct ou référent inconnu", value: 12, sub: "12 sessions · 7,1 % du total", href: "/x" }]} />,
     );
-    expect(html).not.toContain("truncate");
-    expect(html.match(/\[overflow-wrap:anywhere\]/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(html).toMatch(/<a class="block min-w-0 \[overflow-wrap:anywhere\][^"]*"[^>]*>Direct ou référent inconnu<\/a>/);
+    expect(html).toContain('<div class="truncate text-[10px] text-ink-faint" title="12 sessions · 7,1 % du total">');
+    expect(html.match(/truncate/g)).toHaveLength(1);
+  });
+
+  it("libellé en nœud (pictogramme + nom) : `labelTexte` donne la bulle, la clé et l'alternative", () => {
+    const html = renderToStaticMarkup(
+      <RankBar
+        data={[{ label: <><i aria-hidden="true">🇫🇷</i> France</>, labelTexte: "France", value: 40 }]}
+        legende="Sessions par pays"
+      />,
+    );
+    expect(html).toContain('title="France"');
+    expect(html).toContain("🇫🇷");
+    expect(html).toMatch(/scope="row"[^>]*>France<\/th>/);
+    expect(texteLibelle({ label: "Chrome" })).toBe("Chrome");
+    expect(texteLibelle({ label: <b>x</b> })).toBe("");
+    expect(texteLibelle({ label: <b>x</b>, labelTexte: "Firefox" })).toBe("Firefox");
   });
 
   it("ligne active : marquée et annoncée (aria-current)", () => {

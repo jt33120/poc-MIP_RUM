@@ -285,9 +285,9 @@ export default async function Retention({ searchParams }: { searchParams: Promis
         <>
           {/* R3 — hero (7 colonnes) et « Par appareil » (5 colonnes), empilés sous 1024 px. */}
           <div className="mb-4 grid min-w-0 gap-3 lg:grid-cols-12">
-            <div className="min-w-0 lg:col-span-7 lg:[&>section]:h-full">
+            <div className="min-w-0 lg:col-span-7">
               <SectionErreur titre="Courbe de rétention">
-                <Figure
+                <Figure pleineHauteur
                   titre="Courbe de rétention"
                   id="retention-courbe"
                   meta={<span>{weeks} semaines</span>}
@@ -322,9 +322,9 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                 </Figure>
               </SectionErreur>
             </div>
-            <div className="min-w-0 lg:col-span-5 lg:[&>section]:h-full">
+            <div className="min-w-0 lg:col-span-5">
               <SectionErreur titre="Par appareil">
-                <Figure
+                <Figure pleineHauteur
                   titre="Par appareil"
                   id="retention-appareils"
                   etat={parAppareil && !parAppareil.ok ? { kind: "erreur", titre: "Par appareil" } : undefined}

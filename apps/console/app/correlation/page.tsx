@@ -411,9 +411,9 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
           {/* ── Zone 4 : hero (2/3) + concordance (1/3). ── */}
           <div className="mb-4 grid min-w-0 gap-2 xl:grid-cols-3">
             {/* Les deux figures prennent la hauteur de la rangée : bords bas alignés. */}
-            <div className="min-w-0 xl:col-span-2 xl:[&>section]:h-full">
+            <div className="min-w-0 xl:col-span-2">
               <SectionErreur titre="Robot face au réel">
-                <Figure
+                <Figure pleineHauteur
                   titre={`Robot face au réel${libelleChoisi ? ` — ${libelleChoisi}` : ""}`}
                   id="hero"
                   aide="robotVsReal"
@@ -549,9 +549,9 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
               </SectionErreur>
             </div>
 
-            <div className="min-w-0 xl:[&>section]:h-full">
+            <div className="min-w-0">
               <SectionErreur titre="Concordance des états">
-                <Figure
+                <Figure pleineHauteur
                   titre="Concordance des états, par heure et par route"
                   id="concordance"
                   meta={
@@ -671,9 +671,9 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
       {/* ── Zone 6 : nuage des routes (CR10) + routes sans robot (CR11). ── */}
       <div className="mb-4 grid min-w-0 gap-2 lg:grid-cols-2">
         {!robotAbsent && (
-          <div className="min-w-0 lg:[&>section]:h-full">
+          <div className="min-w-0">
             <SectionErreur titre="Nuage des routes">
-              <Figure
+              <Figure pleineHauteur
                 titre="Nuage des routes : premier chargement robot × LCP p75 réel"
                 id="nuage"
                 meta={<span>un point par route vue des deux côtés · taille = mesures LCP · {plage}</span>}
@@ -722,9 +722,9 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
             </SectionErreur>
           </div>
         )}
-        <div className={`min-w-0 lg:[&>section]:h-full ${robotAbsent ? "lg:col-span-2" : ""}`}>
+        <div className={`min-w-0 ${robotAbsent ? "lg:col-span-2" : ""}`}>
           <SectionErreur titre="Routes à trafic réel sans scénario robot">
-            <Figure
+            <Figure pleineHauteur
               titre="Routes à trafic réel sans scénario robot"
               id="sans-robot"
               meta={

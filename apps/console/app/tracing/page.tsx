@@ -387,9 +387,9 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
       {/* 3 — Hero : classement (3/5) et série (2/5), côte à côte à partir de 1280 px. */}
       <div className="mb-4 grid grid-cols-1 gap-2 xl:grid-cols-5">
         {/* Les deux figures prennent la hauteur de la rangée : bords bas alignés. */}
-        <div className="min-w-0 xl:col-span-3 xl:[&>section]:h-full">
+        <div className="min-w-0 xl:col-span-3">
           <SectionErreur titre="Appels API les plus lents">
-            <Figure
+            <Figure pleineHauteur
               titre="Appels API les plus lents, et la part médiane du serveur"
               id="hero-traces"
               aide="tracing"
@@ -444,9 +444,9 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
           </SectionErreur>
         </div>
 
-        <div className="min-w-0 xl:col-span-2 xl:[&>section]:h-full">
+        <div className="min-w-0 xl:col-span-2">
           <SectionErreur titre="Latence des appels dans le temps">
-            <Figure
+            <Figure pleineHauteur
               titre="Latence des appels dans le temps"
               id="latence-appels"
               etat={

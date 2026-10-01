@@ -30,7 +30,7 @@
 // leur arrêt de tabulation (le triangle du dessin n'en est pas un).
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useId, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import {
   Area,
   Bar,
@@ -563,11 +563,30 @@ export function NoteCollecteRecente({
   else if (grille.length * seauSecondes <= 86_400) quand = `à ${fmtHeure(t)} (${fuseau})`;
   else quand = `le ${fmtInstant(t)} (${fuseau})`;
   return (
-    <p className="mb-1 text-xs text-ink-soft" data-testid="collecte-recente">
-      <span className="font-medium text-ink">
-        {debutCollecte ? "Collecte commencée" : "Premières données"} {quand}
-      </span>{" "}
-      : trop peu de recul pour lire une évolution sur la période.
+    <NotePastille testId="collecte-recente" raison="trop peu de recul pour lire une évolution sur la période.">
+      {debutCollecte ? "Collecte commencée" : "Premières données"} {quand}
+    </NotePastille>
+  );
+}
+
+/**
+ * Une note de figure en PASTILLE d'une ligne (01/10/2026) : le fait (« Premières
+ * données à 21:00 ») se lit, la phrase qui l'explique passe en bulle (`title`) et en
+ * texte lu. Une ligne entière de prose au-dessus de chaque courbe poussait le dessin.
+ */
+function NotePastille({ testId, raison, children }: { testId: string; raison: string; children: ReactNode }) {
+  return (
+    <p className="mb-1 flex min-w-0" data-testid={testId}>
+      <span
+        className="inline-flex min-w-0 cursor-help items-center gap-1 truncate rounded-full border border-line bg-panel2 px-2 py-px text-[11px] font-medium text-ink-soft"
+        title={raison}
+      >
+        <span aria-hidden="true" className="text-ink-faint">
+          ◔
+        </span>
+        <span className="truncate text-ink">{children}</span>
+        <span className="sr-only"> : {raison}</span>
+      </span>
     </p>
   );
 }
@@ -579,10 +598,9 @@ export function NoteCollecteRecente({
  */
 export function NotePeuDePoints({ n, seauSecondes, jours }: { n: number; seauSecondes: number; jours: boolean }) {
   return (
-    <p className="mb-1 text-xs text-ink-soft" data-testid="peu-de-points">
-      <span className="font-medium text-ink">{phrasePeuDePoints(n, seauSecondes, jours)}</span>
-      {"\u00a0"}: trop peu de points pour lire une évolution.
-    </p>
+    <NotePastille testId="peu-de-points" raison="trop peu de points pour lire une évolution.">
+      {phrasePeuDePoints(n, seauSecondes, jours)}
+    </NotePastille>
   );
 }
 

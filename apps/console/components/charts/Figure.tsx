@@ -143,6 +143,7 @@ export function Figure({
   methode,
   explorer,
   id,
+  pleineHauteur = false,
   children,
 }: {
   /** Question courte ou mesure, jamais du langage de requête. */
@@ -168,10 +169,17 @@ export function Figure({
   explorer?: string;
   /** Ancre, cible des tests e2e. */
   id?: string;
+  /**
+   * La carte prend toute la hauteur de sa cellule de grille : deux figures voisines
+   * ont le même bord bas. Les écrans le faisaient de l'extérieur
+   * (`[&>section]:h-full`), un sélecteur qui tombait dès qu'un enrobage s'intercalait.
+   */
+  pleineHauteur?: boolean;
   children?: ReactNode;
 }) {
   const ancre = id ?? ancreDe(titre);
   const titreId = `${ancre}-titre`;
+  const hauteur = pleineHauteur ? " h-full" : "";
   // Recette du 30/09/2026 : une figure SANS DESSIN (vide, non collectée) tient sur une
   // ligne — son titre, et l'état à sa droite — au lieu d'une grande carte blanche.
   const enLigne = etat?.kind === "vide" || etat?.kind === "non_collecte";
@@ -185,7 +193,7 @@ export function Figure({
 
   if (enLigne && etat) {
     return (
-      <section id={ancre} className="card min-w-0 px-4 py-3" data-testid="figure" data-etat={etat.kind}>
+      <section id={ancre} className={`card min-w-0 px-4 py-3${hauteur}`} data-testid="figure" data-etat={etat.kind}>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 id={titreId} className="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
             {aide && <GlossaryTip id={aide} />}
@@ -211,7 +219,7 @@ export function Figure({
   }
 
   return (
-    <section id={ancre} className="card min-w-0 p-4 sm:p-5" data-testid="figure" data-etat={etat?.kind}>
+    <section id={ancre} className={`card min-w-0 p-4 sm:p-5${hauteur}`} data-testid="figure" data-etat={etat?.kind}>
       <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
         <h2
           id={titreId}
