@@ -330,7 +330,7 @@ function Carte(props: SessionsTableProps & { s: LigneSessions }) {
     >
       <div className="flex min-w-0 items-center gap-x-2">
         <LienSession s={s} panelHrefs={panelHrefs} pageHrefs={pageHrefs} ouvert={estOuverte} />
-        <span className="truncate text-[11px] tabular-nums text-ink-faint">
+        <span className="min-w-0 truncate text-[11px] tabular-nums text-ink-faint">
           {instantUtc(s.last_seen_at)} · {formater("s-auto", dureeObservee(s))}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -339,7 +339,7 @@ function Carte(props: SessionsTableProps & { s: LigneSessions }) {
           <Pays pays={s.geo_country} source={s.geo_source} />
         </span>
       </div>
-      <div className="mt-1 flex min-w-0 items-center gap-x-2.5 text-xs text-ink-soft">
+      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-ink-soft">
         <span className="shrink-0 tabular-nums" title="Pages vues">
           {pluriel(s.page_count, "page")}
         </span>
