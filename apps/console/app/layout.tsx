@@ -100,7 +100,7 @@ function ProjectSwitcher({ name, appId }: { name: string; appId: string }) {
   return (
     <Link
       href="/select"
-      className="group mb-6 block rounded-xl border border-line bg-panel2 p-3 transition hover:border-perf/40"
+      className="group block rounded-xl border border-line bg-panel2 p-3 transition hover:border-perf/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
       title="Changer de projet"
     >
       <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
@@ -125,7 +125,7 @@ function SansProjet() {
   return (
     <Link
       href="/select"
-      className="group mb-6 block rounded-xl border border-dashed border-line bg-panel2 p-3 transition hover:border-perf/40"
+      className="group block rounded-xl border border-dashed border-line bg-panel2 p-3 transition hover:border-perf/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
     >
       <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
         <span className="h-1.5 w-1.5 rounded-full bg-ink-faint" />
@@ -248,36 +248,51 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen">
         <CoquilleGarde rendue="console" />
         <div className="flex min-h-screen">
-          {/* Sidebar claire : neutre, épurée — n'entre plus en concurrence avec le contenu */}
-          <aside className="hidden w-64 shrink-0 flex-col border-r border-line bg-panel p-4 lg:flex">
-            <div className="mb-6 px-1 pt-1">
-              <BrandMark />
-            </div>
-            {/* La carte projet OCCUPE TOUJOURS sa place : absente sur les écrans
-                d'administration (trans-projets, sans projet choisi), elle faisait
-                sauter toute la navigation d'environ 90 px d'un écran à l'autre
-                (recette du 26/09/2026). */}
-            {currentProject ? (
-              <ProjectSwitcher name={currentProject.name} appId={currentProject.app_id} />
-            ) : (
-              <SansProjet />
-            )}
-            <Suspense>
-              {/* La roue vit dans la sidebar, contre « Performance » : c'est ce
-                  menu qu'elle compose. Le choix est lu ici parce que le layout
-                  la rend — la Vue d'ensemble le relit de son côté pour décider
-                  quelles requêtes lancer. */}
-              <Nav reglages={await rouesDeReglage()} />
-            </Suspense>
-            {user.role === "admin" && (
-              <div className="mt-5 border-t border-line pt-4">
-                <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
-                  Administration
-                </div>
-                <NavAdministration />
+          {/* Sidebar claire : neutre, épurée — n'entre plus en concurrence avec le contenu.
+              COLLÉE À LA FENÊTRE (recette du 30/09/2026 : « le bouton de déconnexion est
+              trop bas, il n'est pas fixé en bas de l'écran »). Elle s'étirait sur toute
+              la hauteur de la PAGE — 5 256 px sur la Vue d'ensemble — et la déconnexion
+              suivait, tout en bas. Désormais : hauteur de l'écran, en trois étages ;
+              seule la navigation défile, le compte reste visible en bas (charte § 3.10).
+              `z-20` : une barre collante forme son propre empilement ; sans rang, la
+              fenêtre de la roue (fixe, montée ici) passerait sous l'en-tête collant
+              (z-10). Le volet de détail (z-40) reste au-dessus d'elle. */}
+          <aside
+            className="sticky top-0 z-20 hidden h-screen w-64 shrink-0 flex-col border-r border-line bg-panel lg:flex"
+            data-testid="barre-laterale"
+          >
+            <div className="shrink-0 px-4 pt-4">
+              <div className="mb-4 px-1">
+                <BrandMark />
               </div>
-            )}
-            <div className="mt-auto pt-6">
+              {/* La carte projet OCCUPE TOUJOURS sa place : absente sur les écrans
+                  d'administration (trans-projets, sans projet choisi), elle faisait
+                  sauter toute la navigation d'environ 90 px d'un écran à l'autre
+                  (recette du 26/09/2026). */}
+              {currentProject ? (
+                <ProjectSwitcher name={currentProject.name} appId={currentProject.app_id} />
+              ) : (
+                <SansProjet />
+              )}
+            </div>
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3"
+              data-testid="barre-laterale-navigation"
+            >
+              <Suspense>
+                {/* La roue vit dans la sidebar, contre « Performance » : c'est ce
+                    menu qu'elle compose. Le choix est lu ici parce que le layout
+                    la rend — la Vue d'ensemble le relit de son côté pour décider
+                    quelles requêtes lancer. */}
+                <Nav reglages={await rouesDeReglage()} />
+              </Suspense>
+              {user.role === "admin" && (
+                <div className="mt-3 border-t border-line pt-3">
+                  <NavAdministration />
+                </div>
+              )}
+            </div>
+            <div className="shrink-0 border-t border-line px-4 pb-3 pt-3" data-testid="barre-laterale-compte">
               <div className="flex items-center gap-2.5 rounded-xl border border-line bg-panel2 p-2.5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent/90 to-accent-deep text-xs font-bold text-navy-950">
                   {initials}
@@ -294,13 +309,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     data-testid="logout"
                     title="Se déconnecter"
                     aria-label="Se déconnecter"
-                    className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-faint transition hover:bg-app hover:text-accent"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-faint transition hover:bg-app hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
                   >
                     <Icon paths={ICON_PATHS.logout} className="h-3.5 w-3.5" />
                   </button>
                 </form>
               </div>
-              <footer className="px-1 pt-3 text-[10px] tracking-wide text-ink-faint">
+              <footer className="px-1 pt-2 text-[10px] tracking-wide text-ink-faint">
                 v0.3 — OTel-native · données en UE
               </footer>
             </div>
@@ -325,24 +340,29 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <Icon paths={ICON_PATHS.grid} className="h-5 w-5" />
                     <span className="sr-only">Ouvrir la navigation</span>
                   </summary>
-                  <div className="absolute right-0 z-30 mt-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-xl border border-line bg-panel p-2 shadow-card">
-                    {/* La MÊME navigation que la sidebar (F09) : ses liens portent le
-                        contexte (app, plage, filtres, comparaison) — l'ancienne liste
-                        pointait les landings nues et perdait la population sur mobile. */}
-                    <Suspense>
-                      <Nav />
-                    </Suspense>
-                    {user.role === "admin" && (
-                      <Link
-                        href="/admin/customers"
-                        className="rounded-lg border-t border-line px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
-                      >
-                        Administration
-                      </Link>
-                    )}
-                    <form action="/logout" method="post" className="border-t border-line pt-1">
+                  {/* Le tiroir ne dépasse pas l'écran : la liste défile, la déconnexion
+                      reste en pied, comme dans la barre latérale (recette du 30/09/2026). */}
+                  <div className="absolute right-0 z-30 mt-2 flex max-h-[calc(100dvh-5rem)] w-72 max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-line bg-panel p-2 shadow-card">
+                    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                      {/* La MÊME navigation que la sidebar (F09) : ses liens portent le
+                          contexte (app, plage, filtres, comparaison) — l'ancienne liste
+                          pointait les landings nues et perdait la population sur mobile. */}
+                      <Suspense>
+                        <Nav />
+                      </Suspense>
+                      {/* Le même bloc Administration, repliable et mémorisé : un lien
+                          unique vers /admin/customers obligeait à passer par les
+                          Clients pour atteindre tout autre écran d'administration. */}
+                      {user.role === "admin" && (
+                        <div className="mt-1 border-t border-line pt-1">
+                          <NavAdministration />
+                        </div>
+                      )}
+                    </div>
+                    <form action="/logout" method="post" className="mt-1 shrink-0 border-t border-line pt-1">
                       <button
                         type="submit"
+                        data-testid="logout-tiroir"
                         className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
                       >
                         Se déconnecter

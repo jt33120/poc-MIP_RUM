@@ -252,7 +252,7 @@ export const ICON_PATHS = {
       <path d="M10 6h4M10 10h4M10 14h4M10 18h4" />
     </>
   ),
-  // clé — jetons de lecture
+  // clé — jetons d'accès
   key: (
     <>
       <circle cx="7.5" cy="15.5" r="5.5" />

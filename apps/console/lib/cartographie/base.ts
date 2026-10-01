@@ -128,7 +128,7 @@ export const DOMAINES: readonly Domaine[] = [
       { nom: "console_user", role: "les comptes : e-mail, mot de passe bcrypt, rôle, apps autorisées, SSO, date d'inscription" },
       { nom: "console_session", role: "une session de console ou de démo, révocable" },
       { nom: "auth_throttle", role: "les compteurs d'échecs de connexion et d'inscriptions par IP" },
-      { nom: "read_tokens", role: "les jetons de lecture de l'API v1, hachés" },
+      { nom: "read_tokens", role: "les jetons d'accès à la synthèse d'une application, hachés" },
       { nom: "sourcemap_upload_token", role: "les jetons de CI : source maps et déploiements" },
     ],
   },

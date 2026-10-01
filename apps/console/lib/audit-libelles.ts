@@ -54,9 +54,10 @@ const LIBELLES: Record<string, string> = {
   extension_scope_toggle: "Domaine de l'extension activé ou désactivé",
   extension_install_forget: "Poste retiré de l'inventaire",
   mobile_capability_verify: "Capacité mobile vérifiée",
-  // Jetons et raccordements
-  read_token_create: "Jeton de lecture créé",
-  read_token_revoke: "Jeton de lecture révoqué",
+  // Jetons et raccordements. « Jeton d'accès » depuis le 30/09/2026 (ex-« jeton de
+  // lecture ») : le nom de l'écran ; l'action enregistrée garde sa clé.
+  read_token_create: "Jeton d'accès créé",
+  read_token_revoke: "Jeton d'accès révoqué",
   sourcemap_token_create: "Jeton de CI créé",
   sourcemap_token_revoke: "Jeton de CI révoqué",
   sourcemap_replace: "Source map remplacée",

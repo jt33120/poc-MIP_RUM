@@ -134,7 +134,7 @@
 | `/api/metrics` | GET | jeton de métriques | **oui** | à supprimer (supervision par les /metrics des services) |
 | `/api/releases` | GET | — | **oui** | reste sur Vercel, relais serveur (C11) |
 | `/api/replay/[sessionId]` | GET | — | **oui** | console-api (C3) |
-| `/api/rum/summary` | GET | jeton de lecture en base | **oui** | api (P4) |
+| `/api/rum/summary` | GET | jeton d'accès en base | **oui** | api (P4) |
 | `/api/sourcemaps` | GET, POST | session administrateur | **oui** | collector pour les jetons de CI, console-api pour l'admin (C11) |
 | `/api/v1/actions` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/apps` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |

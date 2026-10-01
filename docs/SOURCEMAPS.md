@@ -37,7 +37,8 @@ Console › **Administration › Source maps** › *Jetons de CI* (administrateu
 - rotation : créer un nouveau jeton, basculer la CI, **révoquer** l'ancien — un jeton n'est
   jamais prolongé.
 
-Les jetons de lecture (`CONSOLE_API_TOKENS`, `read_tokens`) n'ont **aucun** droit d'upload.
+Les jetons d'API (`CONSOLE_API_TOKENS`) et les jetons d'accès (`read_tokens`, ex-« jetons de
+lecture ») n'ont **aucun** droit d'upload.
 
 ### 3. Envoyer les maps depuis la CI
 ```yaml
@@ -82,7 +83,7 @@ jamais écrit dans la sortie. `--dry-run` valide et affiche le plan sans jeton n
 
 Codes de sortie : `0` upload complet · `1` incomplet (map invalide ou absente, lot refusé, 409,
 empreinte serveur différente, serveur injoignable) · `2` usage (argument, URL, jeton absent ou
-au format d'un jeton de lecture).
+au format d'un jeton d'accès).
 
 Ne **jamais** publier les `.map` avec le site : elles restent côté MIP.
 
@@ -117,7 +118,7 @@ Authentification :
 - **backend direct** : `Authorization: Bearer msu_…` **uniquement**, vérifié **avant** la lecture
   du corps ; le jeton fixe l'app (`appId` différent → 403) ;
 - **console** : le même jeton, **ou** la session admin avec l'`Origin` de la console (CSRF) ;
-  jamais viewer, démo ni jeton de lecture.
+  jamais viewer, démo, jeton d'accès ni jeton d'API.
 
 Ordre des contrôles : jeton → débit (par instance : 60 uploads/min et 2 simultanés par émetteur,
 6 simultanés au total) → taille annoncée → corps lu borné en octets **et** en durée (60 s au total,

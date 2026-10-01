@@ -199,12 +199,12 @@ describe("exécution contre un serveur local", () => {
     expect(JSON.stringify(ecrit)).not.toContain("mappings");
   });
 
-  it("jeton absent ou au format d'un jeton de lecture : code 2, rien n'est envoyé", async () => {
+  it("jeton absent ou au format d'un jeton d'accès : code 2, rien n'est envoyé", async () => {
     bundle("assets/main.js");
     expect((await lancer([], {})).code).toBe(SORTIE.usage);
     const lecture = await lancer([], { MIP_SOURCEMAP_TOKEN: "mrk_lecture" });
     expect(lecture.code).toBe(SORTIE.usage);
-    expect(lecture.sortie).toContain("un jeton de lecture n'y donne pas droit");
+    expect(lecture.sortie).toContain("un jeton d'accès ou d'API n'y donne pas droit");
     expect(lecture.sortie).not.toContain("mrk_lecture");
     expect(recues).toHaveLength(0);
   });
