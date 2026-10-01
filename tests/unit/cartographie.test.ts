@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { TABLES_CARTE } from "@/lib/cartographie/base";
 import { CARTOGRAPHIE, CHIFFRES } from "@/lib/cartographie/donnees";
 import { HAUTEUR_ELEMENT, LARGEUR_ELEMENT, idLien, type Element } from "@/lib/cartographie/types";
+import { SDK_GZIP_KO, koTexte } from "@/lib/sdk-poids";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (chemin: string) => readFileSync(join(RACINE, chemin), "utf8");
@@ -192,6 +193,16 @@ describe("les chiffres affichés se recomptent", () => {
       .split("\n")
       .filter((l) => /^\| `[a-zA-Z]+\.[a-zA-Z]+` \|/.test(l));
     expect(lignes.length).toBe(CHIFFRES.operationsConsoleApi);
+  });
+
+  // Le poids du SDK est écrit à la main dans la carte : sans ce garde, un rebuild
+  // qui fait bouger lib/sdk-poids.ts (remesuré par specs.test.ts) le laissait faux.
+  it("le poids du SDK web : celui de lib/sdk-poids.ts", () => {
+    const sdk = PAR_ID.get("sdk-web")!;
+    const textes = [sdk.sousTitre ?? "", ...sdk.faits.map((f) => f.texte)].join("\n");
+    const poids = [...textes.matchAll(/(\d+(?:,\d+)?) Ko gzip/g)].map((m) => m[1]);
+    expect(poids.length).toBeGreaterThan(0);
+    for (const p of poids) expect(p).toBe(koTexte(SDK_GZIP_KO));
   });
 
   it("les fichiers de tests, suite par suite", () => {

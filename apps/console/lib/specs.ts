@@ -375,7 +375,7 @@ export const MESURES: Mesure[] = [
     table: "rum_span",
     module: "packages/rum-sdk/src/apispans.ts",
     detail:
-      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un arbre enraciné. Chaque appel y a sa durée réelle — son span s'ouvre au départ de la requête et se ferme à la réponse — et les attributs HTTP stables d'OpenTelemetry (http.request.method, url.full, http.response.status_code, error.type d'un appel en échec) à côté des anciens. La page vue racine reste un instant. Un seul saut : du navigateur au serveur, pas d'un serveur à l'autre.",
+      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un arbre enraciné. Chaque appel y a sa durée réelle — son span s'ouvre au départ de la requête et se ferme à la réponse : ses en-têtes pour fetch (un corps long ou en flux n'est pas compté), sa fin pour XHR — et les attributs HTTP stables d'OpenTelemetry (http.request.method, url.full, http.response.status_code, error.type d'un appel en échec) à côté des anciens. La page vue racine reste un instant. Un seul saut : du navigateur au serveur, pas d'un serveur à l'autre.",
   },
   // Côté serveur, aucun capteur maison depuis le 29/09/2026 : l'émetteur est
   // l'agent OpenTelemetry officiel du langage du client, hors de ce dépôt. Le

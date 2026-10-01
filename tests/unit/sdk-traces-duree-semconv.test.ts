@@ -266,6 +266,20 @@ describe("conventions HTTP stables d'OpenTelemetry, à côté des anciennes", ()
     expect(a["http.url"]).toBe("https://app.test/api/clients/:client/factures");
     expect(a["url.full"]).toBe("https://app.test/api/clients/:client/factures");
   });
+
+  // XHR accepte une URL à identifiants (fetch la refuse) : la convention veut
+  // `REDACTED:REDACTED@` dans url.full, et le SDK le fait dès scrubUrl, donc
+  // aussi dans http.url. Le nettoyage RÉEL : ce fichier simule le module.
+  it("des identifiants user:pass@ dans l'URL deviennent REDACTED:REDACTED@", async () => {
+    const { scrubUrl } = await vi.importActual<typeof import("../../packages/rum-sdk/src/context")>(
+      "../../packages/rum-sdk/src/context",
+    );
+    expect(scrubUrl("https://alice:motdepasse@app.test/api/x?y=1#z")).toBe("https://REDACTED:REDACTED@app.test/api/x");
+    expect(scrubUrl("https://alice@app.test/api/x")).toBe("https://REDACTED:REDACTED@app.test/api/x");
+    // Un @ dans le chemin n'est pas un identifiant : rien ne change.
+    expect(scrubUrl("https://app.test/u/a@b.fr")).toBe("https://app.test/u/a@b.fr");
+    expect(scrubUrl("/api/x")).toBe("/api/x");
+  });
 });
 
 describe("l'erreur porte son événement OpenTelemetry « exception »", () => {

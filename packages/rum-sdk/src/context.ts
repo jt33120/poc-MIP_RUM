@@ -18,9 +18,9 @@ export function currentRoute(): string {
   return route;
 }
 
-/** Retire query string et fragment (PII, PLAN §14). */
+/** Retire query string et fragment (PII, PLAN §14) ; `user:pass@` devient `REDACTED:REDACTED@` (convention `url.full`). */
 export function scrubUrl(url: string): string {
-  return url.split("?")[0].split("#")[0];
+  return url.split("?")[0].split("#")[0].replace(/^([a-z][a-z\d+.-]*:\/\/)[^/@]*@/i, "$1REDACTED:REDACTED@");
 }
 
 /**

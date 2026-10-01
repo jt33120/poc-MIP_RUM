@@ -49,7 +49,7 @@ export const ELEMENTS_CLIENT: readonly Element[] = [
     faits: [
       {
         texte: "DNT et GPC sont respectés par défaut : un navigateur qui refuse n'envoie rien.",
-        sources: [`${SDK}/src/index.ts:168-178`, `${SDK}/src/privacy.ts:33-36`],
+        sources: [`${SDK}/src/index.ts:169-179`, `${SDK}/src/privacy.ts:33-36`],
       },
       {
         texte: "Les frames d'animation longues (LoAF) ne se mesurent que sur Chromium.",
@@ -125,7 +125,7 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
       "Avant tout envoi : les refus du navigateur respectés, le consentement sur option, les URL sans requête ni fragment, un filtre par événement, et un rejeu masqué par défaut.",
     etiquettes: ["DNT · GPC", "consentement", "beforeSend"],
     faits: [
-      { texte: "DNT et GPC respectés par défaut : rien n'est collecté.", sources: [`${SDK}/src/index.ts:168-178`] },
+      { texte: "DNT et GPC respectés par défaut : rien n'est collecté.", sources: [`${SDK}/src/index.ts:169-179`] },
       { texte: "Consentement sur option : 200 événements gardés en mémoire, rejoués à l'accord, purgés au refus.", sources: [`${SDK}/src/consent.ts:6`] },
       { texte: "Requêtes et fragments retirés de toutes les URL.", sources: [`${SDK}/src/context.ts:22-24`] },
       { texte: "Rejeu : texte masqué, médias bloqués, saisies masquées par défaut.", sources: [`${SDK}/src/replay.ts:41-70`] },
@@ -139,15 +139,15 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
     famille: "capteur",
     zone: "capteurs",
     titre: "SDK web",
-    sousTitre: "mip-rum.js · 22,6 Ko gzip",
+    sousTitre: "mip-rum.js · 23,3 Ko gzip",
     resume:
       "Un seul fichier JavaScript posé dans le <head> : il mesure les Web Vitals, les erreurs, les sessions, les clics et les appels réseau, et les envoie par lots au format OpenTelemetry.",
     etiquettes: ["OTLP/HTTP JSON", "0 dépendance", "lots de 64"],
     faits: [
-      { texte: "22,6 Ko gzip, sous un budget de 35 Ko que chaque build fait respecter.", sources: [`${SDK}/build.mjs:52-62`, "apps/console/lib/sdk-poids.ts:17-27"] },
+      { texte: "23,3 Ko gzip, sous un budget de 35 Ko que chaque build fait respecter.", sources: [`${SDK}/build.mjs:52-62`, "apps/console/lib/sdk-poids.ts:17-27"] },
       {
         texte: "Envoi par lots de 64 spans toutes les 3 s, en fetch keepalive ; vidage quand la page passe en arrière-plan.",
-        sources: [`${SDK}/src/otel.ts:27`, `${SDK}/src/otel.ts:131-139`, `${SDK}/src/otel.ts:253-271`],
+        sources: [`${SDK}/src/otel.ts:30`, `${SDK}/src/otel.ts:187-195`, `${SDK}/src/otel.ts:309-327`],
       },
       {
         texte: "Hors ligne, une file bornée (100 spans, 50 Ko) rejoue les envois refusés pour surcharge.",
@@ -181,7 +181,7 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
       { texte: "Arrêt après 2 minutes ou 1 Mo compressé ; un morceau part toutes les 10 s.", sources: [`${SDK}/src/replay.ts:9-12`] },
       {
         texte: "Il démarre dès l'initialisation si le site n'exige pas le consentement.",
-        sources: [`${SDK}/src/index.ts:543-550`],
+        sources: [`${SDK}/src/index.ts:551-558`],
       },
     ],
     x: 1840,
@@ -340,7 +340,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
       "Chaque appel fetch ou XHR de la page vers son domaine, chronométré, et marqué d'un identifiant de trace que le serveur reprend.",
     etiquettes: ["fetch · XHR", "100 par page"],
     faits: [
-      { texte: "fetch et XMLHttpRequest instrumentés : méthode, adresse sans requête, statut, durée.", sources: [`${SDK}/src/apispans.ts:146-158`] },
+      { texte: "fetch et XMLHttpRequest instrumentés : méthode, adresse sans requête, statut, durée.", sources: [`${SDK}/src/apispans.ts:146-164`] },
       {
         texte: "traceparent ajouté vers la même origine et les domaines déclarés, jamais vers la collecte.",
         sources: [`${SDK}/src/apispans.ts:88-108`],
@@ -372,7 +372,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
     etiquettes: [`≥ ${TEXTE_SEUIL_COLLECTE_RESSOURCE}`, "LoAF d'abord"],
     faits: [
       { texte: `Une ressource compte si elle dure ${TEXTE_SEUIL_COLLECTE_RESSOURCE} ou plus, ou bloque le rendu.`, sources: [`${SDK}/src/resources.ts:8`, `${SDK}/src/resources.ts:26-28`] },
-      { texte: "LoAF quand le navigateur le permet, les tâches longues sinon, jamais les deux.", sources: [`${SDK}/src/index.ts:378`] },
+      { texte: "LoAF quand le navigateur le permet, les tâches longues sinon, jamais les deux.", sources: [`${SDK}/src/index.ts:386`] },
     ],
     ...mesure(7),
   },
@@ -401,7 +401,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
     resume: "Ce que l'application déclare elle-même : événements, vues, temps, drapeaux de fonctionnalité, identité et avis.",
     etiquettes: ["MIPRum.track", "identité hachée"],
     faits: [
-      { texte: "track(nom, props) émet un événement track.<nom>.", sources: [`${SDK}/src/index.ts:589-611`] },
+      { texte: "track(nom, props) émet un événement track.<nom>.", sources: [`${SDK}/src/index.ts:597-619`] },
       { texte: "L'identifiant d'utilisateur est remplacé par un HMAC-SHA256 à la collecte.", sources: ["packages/db/sql/migration-v66.sql:64", "packages/backend/lib/identity-hash.mjs"] },
     ],
     ...mesure(9),
