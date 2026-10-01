@@ -9,6 +9,7 @@
 //   · une lecture en échec se dit (« santé non lue », « constats partiels ») : un
 //     bandeau muet se lirait comme un bandeau calme.
 import Link from "next/link";
+import { Deporte } from "@/components/emplacements-coquille";
 import { HEALTH_CLASS, type HealthLabel } from "@/lib/health-libelles";
 import { fmtInstant, pluriel } from "@/lib/format";
 
@@ -43,7 +44,15 @@ export function BandeauR0({
   masquerSante = false,
 }: ProprietesBandeauR0) {
   const Score = hrefSante ? "a" : "span";
+  // UNE RANGÉE DE MOINS (recette du 01/10/2026). Le bandeau tenait une carte pleine
+  // largeur pour une ligne, et redisait le premier constat que la carte « Constats »
+  // affiche juste en dessous. À partir de 1 024 px, il monte à droite des onglets
+  // (`Deporte`, emplacement `onglets`) : le compte des constats et le dernier
+  // déploiement, en petit. La phrase du constat n'y est écrite que si la carte des
+  // constats n'est pas à l'écran (règle `#constats` d'app/globals.css). En dessous de
+  // 1 024 px, il reste une carte dans la page.
   return (
+    <Deporte vers="onglets" repli="bref" des={1024} ordre={0} classeDepot="min-w-0 shrink">
     <section
       aria-label="En bref"
       data-testid="bandeau-r0"
@@ -114,5 +123,6 @@ export function BandeauR0({
         )}
       </span>
     </section>
+    </Deporte>
   );
 }

@@ -23,6 +23,7 @@ import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } fr
 import { createPortal } from "react-dom";
 import type { Digest, FaitDigest } from "@/lib/assistant/digest";
 import { QUESTIONS_SUGGEREES, repondreParRegles, segmenterCitations, type ReponseAssistant } from "@/lib/assistant/resume";
+import { Deporte } from "../emplacements-coquille";
 import { surligner, trouverCible } from "./surligner";
 
 /** Une question et sa réponse ; les faits cités sont GARDÉS avec la réponse (la page se relit, le condensé change). */
@@ -478,13 +479,17 @@ export function Assistant({ digest }: { digest: Digest }) {
     });
   }
 
-  // LE BOUTON, EN HAUT À DROITE, SANS PRENDRE DE PLACE. Flottant à droite de la
-  // première rangée de l'écran ; son libellé ne s'écrit qu'à partir de 1 280 px, sinon
-  // il reprendrait sa largeur à la rangée voisine (mesuré : +31 px de hauteur à 1 024 px).
-  // Sous 640 px, il quitte le haut de l'écran : un rond fixé en bas à droite, au-dessus
-  // du bouton « Votre avis ? » — en haut, il aurait écrasé la barre des vues (+207 px).
+  // LE BOUTON, EN HAUT À DROITE, SANS PRENDRE DE PLACE. Il était « flottant » en tête
+  // de l'écran — mais l'écran est une colonne flex, où rien ne flotte : il y tenait une
+  // rangée à lui seul, à gauche (recette du 01/10/2026, ~60 px de blanc). Il se range
+  // désormais au bord droit de la rangée des onglets (`Deporte`, emplacement
+  // `onglets`), là où la charte place l'assistant. Son libellé ne s'écrit qu'à partir
+  // de 1 280 px. Sous 640 px, il quitte le haut de l'écran : un rond fixé en bas à
+  // droite, au-dessus du bouton « Votre avis ? ».
   return (
-    <div className="sm:float-right sm:mb-2 sm:ml-3" data-testid="assistant">
+    <>
+    <Deporte vers="onglets" repli="assistant" des={640} ordre={2} className="contents sm:flex sm:justify-end">
+    <div className="contents" data-testid="assistant">
       <button
         ref={bouton}
         type="button"
@@ -499,6 +504,8 @@ export function Assistant({ digest }: { digest: Digest }) {
         <Etincelle className="h-4 w-4 shrink-0 text-ai dark:text-ai-soft" />
         <span className="hidden xl:inline">Assistant</span>
       </button>
+    </div>
+    </Deporte>
       <p className="sr-only" aria-live="polite">
         {annonce}
       </p>
@@ -531,6 +538,6 @@ export function Assistant({ digest }: { digest: Digest }) {
           </aside>,
           document.body,
         )}
-    </div>
+    </>
   );
 }

@@ -1163,3 +1163,104 @@
 @media (min-width: 1440px) {
   html[data-assistant="ouvert"] body { padding-right: 25rem; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Coquille — les emplacements (recette du 01/10/2026).                 */
+/* Ce que l'écran rangeait sur des rangées à lui (vues, bref, actions   */
+/* d'un titre qui redisait l'onglet, assistant) part dans la place      */
+/* libre de la coquille (components/emplacements-coquille.tsx). Ces     */
+/* règles masquent son REPLI dès le rendu serveur, aux mêmes largeurs   */
+/* que `Deporte`, quand la coquille rend l'hôte : sans elles, l'élément */
+/* s'afficherait dans la page puis sauterait à l'hydratation.           */
+/* L'hôte `onglets` est le frère de <main> qui porte                    */
+/* `data-hote-onglets` ; l'hôte `vues` vit dans la barre de segment.    */
+/* ------------------------------------------------------------------ */
+@media (min-width: 640px) {
+  [data-hote-onglets] ~ main [data-repli="assistant"] { display: none; }
+}
+@media (min-width: 1024px) {
+  [data-hote-onglets] ~ main [data-repli="entete"],
+  [data-hote-onglets] ~ main [data-repli="bref"] { display: none; }
+  [data-testid="segment-bar"] ~ main [data-repli="vues"] { display: none; }
+  /* L'enveloppe que l'écran pose autour de ses vues (marges comprises) part avec elles. */
+  [data-testid="segment-bar"] ~ main div:has(> [data-repli="vues"]:only-child) { display: none; }
+}
+/* Le bref ne redit pas le premier constat quand la carte des constats est à l'écran,
+   juste en dessous : il n'en garde que le compte (et le lien qui y mène). */
+body:has(#constats) [data-testid="r0-phrase"] { display: none; }
+/* Monté à droite des onglets, le bref n'est plus une carte : une ligne de 12 px, sans
+   cadre, qui ne pousse pas la rangée. */
+[data-depot="bref"] [data-testid="bandeau-r0"] {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  flex-wrap: nowrap;
+  column-gap: 0.75rem;
+  font-size: 12px;
+}
+[data-depot="bref"] [data-testid="r0-phrase"] {
+  flex: 0 1 auto;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-depot="bref"] [data-testid="r0-deploiement"] {
+  max-width: 20rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Montées dans la barre de segment, les vues tiennent sur sa ligne : un nom long est
+   coupé (le nom entier en bulle), « Enregistrer la vue » devient un signet. */
+[data-depot="vues"] [data-testid="preset-vue"] { padding-left: 0.5rem; padding-right: 0.5rem; }
+[data-depot="vues"] .libelle-vue {
+  display: block;
+  max-width: 7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-depot="vues"] .libelle-enregistrer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+[data-depot="vues"] [data-testid="preset-enregistrer"] { position: relative; padding: 0.25rem 0.375rem; }
+
+/* Le titre d'un écran d'onglet : l'onglet allumé le dit déjà (« Pages » sous l'onglet
+   Pages). Il reste aux lecteurs d'écran, comme celui de la Vue d'ensemble. Un titre qui
+   porte une pastille (« 3 non acquittées » des Alertes) garde la pastille : le mot se
+   tait, le chiffre reste. */
+.titre-onglet:not(:has([data-testid])) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+.titre-onglet:has([data-testid]) { font-size: 0; line-height: 0; }
+
+/* Les états de la barre du haut (fuseau, chaîne de mesure) en pastilles : le libellé
+   n'est écrit qu'à partir de 1 536 px. En dessous, la forme et la bulle le disent, et
+   le lecteur d'écran le lit toujours (le texte est masqué à l'œil, pas retiré). */
+@media (min-width: 640px) and (max-width: 1535.98px) {
+  [data-etats-coquille] [data-testid="badge-mesure"] > span:not([aria-hidden]):not(.sr-only) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}

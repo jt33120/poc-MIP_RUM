@@ -20,7 +20,7 @@
 // ne les reçoit pas, elle est donc lue par `GET /api/releases`, une fois par
 // changement de ces paramètres (jamais au rafraîchissement LIVE).
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { CompareToggle } from "@/components/CompareToggle";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { estFermee } from "@/lib/capacites";
@@ -56,6 +56,46 @@ import {
 // « Ordinateur » et non « Desktop » : un seul vocabulaire, français, d'un écran à
 // l'autre (la Rétention écrit déjà « ordinateurs, mobiles, tablettes »).
 const DEVICE_LABELS: Record<Device, string> = { desktop: "Ordinateur", mobile: "Mobile", tablet: "Tablette" };
+
+/** Pictogramme 14 px, une couleur, trait du jeu de la console. */
+function Picto({ children }: { children: ReactNode }) {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  );
+}
+
+// Les appareils en PICTOGRAMMES (recette du 01/10/2026) : « Tous · Ordinateur · Mobile ·
+// Tablette » écrits prenaient 267 px et faisaient passer la barre du haut sur deux
+// rangées à 1 440 px. Le nom reste celui du mot (bulle et lecteur d'écran).
+const DEVICE_ICONES: Record<Device, ReactNode> = {
+  desktop: (
+    <Picto>
+      <rect x="3" y="4" width="18" height="12" rx="1.5" />
+      <path d="M8 20h8M12 16v4" />
+    </Picto>
+  ),
+  mobile: (
+    <Picto>
+      <rect x="7" y="2.5" width="10" height="19" rx="2" />
+      <path d="M11 18.5h2" />
+    </Picto>
+  ),
+  tablet: (
+    <Picto>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M11 18h2" />
+    </Picto>
+  ),
+};
+
+const ICONE_CALENDRIER = (
+  <Picto>
+    <rect x="3.5" y="5" width="17" height="15" rx="1.5" />
+    <path d="M3.5 10h17M8 3v4M16 3v4" />
+  </Picto>
+);
 
 /** Paramètres d'une page de résultats : un changement de filtre les invalide. */
 const PAGINATION_PARAMS = ["cursor", "offset"];
@@ -233,7 +273,8 @@ export function GlobalFilters({
             availability={presetAvailability}
             items={[
               ...RANGE_PRESETS.map((key) => ({ key, label: PRESET_LABELS[key] })),
-              { key: "custom", label: "Personnalisée", availability: customAvailability },
+              // Le calendrier ouvre l'éditeur de plage ; « Personnalisée » en bulle.
+              { key: "custom", label: "Personnalisée", availability: customAvailability, icone: ICONE_CALENDRIER },
             ]}
             value={custom ? "custom" : preset}
             onChange={(key) => (key === "custom" ? toggleRangeEditor() : choosePreset(key as RangePreset))}
@@ -257,6 +298,7 @@ export function GlobalFilters({
             ...DEVICES.map((key) => ({
               key,
               label: DEVICE_LABELS[key],
+              icone: DEVICE_ICONES[key],
               availability: conditionAvailability(surface, { dimension: "device", operator: "eq", value: key }, columns),
             })),
           ]}
@@ -648,7 +690,13 @@ export function Segmented({
   testid,
 }: {
   label: string;
-  items: { key: string; label: string; availability?: FilterAvailability }[];
+  /**
+   * `icone` : le choix s'affiche en pictogramme, son libellé en bulle et pour le lecteur
+   * d'écran (nom accessible inchangé). `prefixe` : début du libellé tu à l'œil, dit au
+   * lecteur d'écran (« Période » de « Période précédente », que la barre compacte
+   * n'écrit pas) — le texte visible reste une partie du nom.
+   */
+  items: { key: string; label: string; availability?: FilterAvailability; icone?: ReactNode; prefixe?: string }[];
   value: string | null;
   onChange: (key: string) => void;
   /** Disponibilité du groupe entier (écran sans plage, dimension sans objet…). */
@@ -681,12 +729,22 @@ export function Segmented({
             onClick={() => onChange(item.key)}
             disabled={reason !== null}
             aria-pressed={active}
-            title={reason ?? undefined}
-            className={`rounded-md px-2.5 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf disabled:cursor-not-allowed disabled:opacity-50 ${
-              active ? "bg-panel text-ink shadow-sm ring-1 ring-line" : "text-ink-faint hover:text-ink-soft"
-            }`}
+            title={reason ?? (item.icone || item.prefixe ? `${item.prefixe ?? ""}${item.label}` : undefined)}
+            className={`flex items-center rounded-md py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf disabled:cursor-not-allowed disabled:opacity-50 ${
+              item.icone ? "px-1.5" : "px-2.5"
+            } ${active ? "bg-panel text-ink shadow-sm ring-1 ring-line" : "text-ink-faint hover:text-ink-soft"}`}
           >
-            {item.label}
+            {item.icone ? (
+              <>
+                {item.icone}
+                <span className="sr-only">{item.label}</span>
+              </>
+            ) : (
+              <>
+                {item.prefixe && <span className="sr-only">{item.prefixe}</span>}
+                {item.label}
+              </>
+            )}
           </button>
         );
       })}

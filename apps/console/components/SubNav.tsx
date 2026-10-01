@@ -3,12 +3,24 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useRef } from "react";
 import { contextHref } from "@/lib/view-state";
+import { refHote } from "./emplacements-coquille";
 import { ICON_PATHS, Icon } from "./icons";
-import { activeCategory, ongletActif, sousOnglets } from "./nav-items";
+import { activeCategory, ongletActif, ongletExact, sousOnglets } from "./nav-items";
 import { useDebordementHorizontal } from "./TableDefilante";
 
 /** Barre de sous-onglets d'une catégorie (rien si la catégorie est mono-page).
- * Rend la hiérarchie visible sans multiplier les titres dans la sidebar. */
+ * Rend la hiérarchie visible sans multiplier les titres dans la sidebar.
+ *
+ * SA PLACE LIBRE SERT (recette du 01/10/2026). Les onglets n'occupent qu'une moitié de
+ * la rangée : à droite, l'emplacement `onglets` reçoit ce que l'écran rangeait sur des
+ * rangées à lui — le bref de la Vue d'ensemble, l'aide de l'écran, l'assistant
+ * (`emplacements-coquille.tsx`). Il passe sous les onglets quand la largeur manque,
+ * jamais par-dessus.
+ *
+ * `data-onglet-exact` : l'écran EST la page de l'onglet allumé. La feuille de style
+ * passe alors le titre de la page en lecture d'écran seule (`[data-titre-page]`) —
+ * l'onglet le dit déjà. `data-hote-onglets` : l'emplacement existe, ses replis dans la
+ * page se masquent. Les deux visent `main`, frère de cette barre dans le layout. */
 export function SubNav() {
   const pathname = usePathname();
   // Contexte persisté (app, plage, filtres, comparaison) ; les réglages propres à l'écran quitté restent derrière.
@@ -34,9 +46,17 @@ export function SubNav() {
   // il n'est écrit que s'il dit autre chose que ses onglets.
   // Recette du 30/09/2026 : plus du tout — la barre latérale allume déjà la catégorie.
   const libelleUtile = false;
+  const exact = ongletExact(pathname) !== undefined;
 
   return (
-    <nav aria-label={`Onglets ${cat.label}`} className="relative border-b border-line bg-panel" data-testid="subnav">
+    // Sous 640 px, une seule ligne : l'emplacement n'y reçoit que des pictogrammes
+    // (l'aide ; l'assistant y est un rond fixé en bas d'écran), les onglets défilent.
+    <div
+      data-hote-onglets=""
+      data-onglet-exact={exact ? "" : undefined}
+      className="flex flex-nowrap items-center border-b border-line bg-panel sm:flex-wrap"
+    >
+    <nav aria-label={`Onglets ${cat.label}`} className="relative min-w-0 flex-1 sm:flex-auto" data-testid="subnav">
       <div ref={rangee} className="flex items-center gap-1 overflow-x-auto px-4 sm:px-6">
         {libelleUtile && (
           <span className="mr-2 hidden shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint md:inline">
@@ -78,5 +98,13 @@ export function SubNav() {
         </span>
       )}
     </nav>
+      {/* Hors du <nav> : ce qui s'y range n'est pas un onglet (la barre ne compte que
+          ses liens d'onglets). Vide, il ne prend aucune place. */}
+      <div
+        ref={refHote("onglets")}
+        data-emplacement="onglets"
+        className="ml-auto flex min-w-0 max-w-full shrink-0 items-center justify-end gap-2 pr-4 empty:hidden sm:py-1 sm:pl-4 sm:pr-6"
+      />
+    </div>
   );
 }

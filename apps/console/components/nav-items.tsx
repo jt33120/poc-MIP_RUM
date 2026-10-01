@@ -257,6 +257,21 @@ export function ongletActif(c: NavCategory, pathname: string): string | undefine
   return best;
 }
 
+/**
+ * Le lien dont l'écran courant EST la page (chemin identique), dans une catégorie qui
+ * rend sa barre d'onglets ; sinon undefined. Sur cet écran, l'onglet allumé nomme déjà
+ * la page : le titre n'est pas écrit une deuxième fois en dessous (recette du
+ * 01/10/2026, « Pages » sous l'onglet Pages). Il reste écrit sur une sous-page
+ * (/tracing/abc, /dashboards/x : il dit ce que l'onglet ne dit pas) et sur une route
+ * `horsMenu` (/mobile : aucun onglet ne la nomme). Un onglet INTERNE (`sousOnglet:
+ * false`, /actions) compte : l'onglet de la page porte son nom.
+ */
+export function ongletExact(pathname: string): NavLink | undefined {
+  const c = activeCategory(pathname);
+  if (!c || c.verrouille || !sousOnglets(c).length) return undefined;
+  return c.children?.find((l) => l.href === pathname && !l.horsMenu);
+}
+
 /** Un href de nav correspond-il au chemin courant ? ("/" exige l'égalité stricte). */
 export function hrefMatches(href: string, pathname: string): boolean {
   if (href === "/") return pathname === "/";
