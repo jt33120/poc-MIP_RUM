@@ -325,11 +325,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
 
   return (
     <div data-testid="explorer-racine" className="animate-fade-up">
-      <PageHeader title="Explorer">
-        <Link href="/explorer/views" className="btn-ghost">
-          Vues enregistrées
-        </Link>
-      </PageHeader>
+      <PageHeader title="Explorer" />
       <p className="sr-only">Composez une analyse sur {ecran.label}, puis exécutez-la : rien n’est lu avant.</p>
 
       {/* Zones 2 à 4 : la BARRE DE REQUÊTE, compacte, en tête (recette du 30/09/2026) — le
