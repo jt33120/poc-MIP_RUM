@@ -7,6 +7,7 @@ import { BadgeMesure } from "@/components/BadgeMesure";
 import { CoquilleGarde } from "@/components/CoquilleGarde";
 import { GlobalFilters } from "@/components/GlobalFilters";
 import { ICON_PATHS, Icon } from "@/components/icons";
+import { Loupe } from "@/components/Loupe";
 import { Nav } from "@/components/Nav";
 import { NavAdministration } from "@/components/NavAdministration";
 import { SegmentBar } from "@/components/SegmentBar";
@@ -383,6 +384,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <GlobalFilters schema={schema} timeZones={timeZones} defaultTimeZone={FUSEAU_DEFAUT} />
               </Suspense>
               <div className="ml-auto flex shrink-0 items-center gap-2" data-etats-coquille>
+                {/* La loupe (⌘K, « / ») : un champ à partir de 1 440 px, une loupe seule
+                    entre 1 280 et 1 440 px, où la barre n'a plus la place de l'écrire
+                    sans passer sur deux rangées (fin d'app/globals.css). */}
+                <span className="contents" data-loupe>
+                  <Loupe admin={user.role === "admin"} />
+                </span>
                 {/* Le fuseau de TOUTES les heures de la console, dit une fois ici
                     plutôt qu'à côté de chaque heure (recette du 26/09/2026 : UTC,
                     heure locale non dite et ISO brut se côtoyaient). En pastille : une

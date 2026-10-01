@@ -1251,6 +1251,21 @@ body:has(#constats) [data-testid="r0-phrase"] { display: none; }
 }
 .titre-onglet:has([data-testid]) { font-size: 0; line-height: 0; }
 
+/* La loupe entre 1 280 et 1 440 px : la loupe seule, carrée ; son nom (« Rechercher un
+   écran, une action… ⌘K ») reste au lecteur d'écran. Au-delà, le champ entier. */
+@media (min-width: 1280px) and (max-width: 1439.98px) {
+  [data-loupe] [data-testid="loupe"] { width: 2rem; padding: 0; justify-content: center; position: relative; }
+  [data-loupe] [data-testid="loupe"] > span:not(.sr-only),
+  [data-loupe] [data-testid="loupe"] > kbd {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
 /* Les états de la barre du haut (fuseau, chaîne de mesure) en pastilles : le libellé
    n'est écrit qu'à partir de 1 536 px. En dessous, la forme et la bulle le disent, et
    le lecteur d'écran le lit toujours (le texte est masqué à l'œil, pas retiré). */
