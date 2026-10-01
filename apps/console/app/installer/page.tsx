@@ -168,7 +168,7 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
     // toute la page : plusieurs codes la portent à la place de leur repère.
     <SecretFourni nom={cleDe(app)}>
       {/* Pleine largeur (refonte du 01/10/2026) : la colonne de 896 px laissait un quart de
-          l'écran vide à droite ; il accueille désormais les valeurs du parcours. */}
+          l'écran vide à droite. Les valeurs de chaque parcours ouvrent son onglet. */}
       <div className="min-w-0 animate-fade-up" data-testid="installer">
         <PageHeader title={TITRE} domain="integrations">
           <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
@@ -199,7 +199,7 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
           </h2>
           <ParcoursInstallation
             vert={vert}
-            cotes={parParcours((p) => <TableauPersonnalisation app={app} parcours={p} lignes={lignes[p]} dansSonOnglet />)}
+            entetes={parParcours((p) => <TableauPersonnalisation app={app} parcours={p} lignes={lignes[p]} dansSonOnglet />)}
             panneaux={{
               snippet: (
                 <ParcoursSnippet
