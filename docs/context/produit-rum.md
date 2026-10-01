@@ -172,7 +172,7 @@ blocage — mais pas le masquage du texte par défaut. Or « masqué par défaut
 devenu table-stakes chez tous les acteurs comparés.
 
 *Corrigé le 09/09/2026 (commit `0b3aa37e`) : le niveau par défaut `all` masque
-aussi le texte et les médias (`packages/rum-sdk/src/replay.ts:64-70`).*
+aussi le texte et les médias (`packages/rum-sdk/src/replay.ts:201-211`).*
 
 ---
 

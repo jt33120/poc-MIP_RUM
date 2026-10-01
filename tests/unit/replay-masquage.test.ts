@@ -29,6 +29,7 @@ import {
   masquerTexteHors,
   optionsMasquage,
   resoudreDemasquage,
+  selecteurInoperant,
   selecteurMediasBloques,
   selecteurValide,
   type Demasquage,
@@ -168,11 +169,37 @@ describe("resoudreDemasquage — l'option replayUnmask", () => {
     expect(o.maskTextFn).toBeTypeOf("function");
   });
 
-  it("hors navigateur, aucun sélecteur n'est valide : rien n'est démasqué", () => {
+  // Hors navigateur, le rejeu ne tourne pas : ce cas ne dit que le repli de la
+  // RÉSOLUTION. La classe réservée reste dans le sélecteur ; c'est l'option de
+  // l'application qui est refusée, et les médias qui restent bloqués.
+  it("hors navigateur, aucun sélecteur n'est valide : l'option est refusée, les médias restent bloqués", () => {
     expect(selecteurValide(ZONE)).toBe(false); // pas de `document` sous Node
     const avertir = vi.fn();
     expect(resoudreDemasquage("#commandes", undefined, avertir)).toEqual({ selecteur: ZONE, medias: false });
     expect(avertir).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Le navigateur accepte ces sélecteurs sans erreur, et ils ne visent rien
+// (pseudo-élément) ou cassent la composition `:is()`/`:not()` des médias
+// (commentaire ouvert) : vérifié dans Chromium le 01/10/2026.
+describe("un sélecteur valide mais inopérant", () => {
+  const toutValide = () => true;
+
+  it("pseudo-élément ou commentaire : ignoré, avec l'avertissement d'un sélecteur refusé", () => {
+    for (const s of ["#a::before", "#a:after", ".b, p::first-line", "#a /*", "#a /* c */ .b"]) {
+      const avertir = vi.fn();
+      expect(resoudreDemasquage(s, toutValide, avertir), s).toEqual(CLASSE_SEULE);
+      expect(avertir, s).toHaveBeenCalledTimes(1);
+      expect(avertir.mock.calls[0][0], s).toMatch(/^\[mip-rum\] replayUnmask ignoré/);
+    }
+  });
+
+  it("un « :: » ou un « /* » entre guillemets n'est ni un pseudo-élément ni un commentaire", () => {
+    expect(selecteurInoperant('[title="a::b"]')).toBe(false);
+    expect(selecteurInoperant("[data-x='/* rien */']")).toBe(false);
+    expect(selecteurInoperant(".a:hover, #b:first-child, .c:after-x")).toBe(false);
+    expect(selecteurInoperant('[title="a::b"]::before')).toBe(true);
   });
 });
 
@@ -221,6 +248,9 @@ describe("selecteurMediasBloques", () => {
  */
 const element = (...ancetres: string[]) =>
   ({ closest: (s: string) => (ancetres.includes(s) ? {} : null) }) as unknown as HTMLElement;
+/** Le même, dans un document en `designMode = "on"`. */
+const editable = (...ancetres: string[]) =>
+  ({ ...element(...ancetres), ownerDocument: { designMode: "on" } }) as unknown as HTMLElement;
 
 describe("masquerTexteHors — le maskTextFn passé à rrweb", () => {
   const masque = masquerTexteHors(ZONE);
@@ -254,6 +284,13 @@ describe("ce qui reste masqué dans une zone démasquée", () => {
   it("le bloc marqué, et le texte qu'un visiteur peut taper hors d'un <input>", () => {
     for (const c of [`.${CLASSE_BLOC}`, "textarea", "select", "[contenteditable]:not([contenteditable=false])"])
       expect(cibles, c).toContain(c);
+  });
+
+  // designMode rend tout le document éditable sans attribut : ce qu'on y tape est
+  // du texte ordinaire, qu'aucun sélecteur ne distingue.
+  it("une page en designMode compte entière comme une saisie", () => {
+    expect(estDemasque(editable(ZONE), ZONE)).toBe(false);
+    expect(masquerTexteHors(ZONE)("tapé ici", editable(ZONE))).toBe("**** ***");
   });
 
   it("estDemasque exige la zone ET l'absence de saisie ou de bloc", () => {

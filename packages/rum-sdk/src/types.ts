@@ -72,11 +72,15 @@ export interface MIPRumConfig {
    * descendants est enregistré en clair ; ses médias ne sont plus remplacés par
    * un cadre. Défaut : aucune zone, tout reste masqué.
    *
-   * Le plancher ne bouge pas : les saisies restent masquées (y compris
-   * `textarea`, `select` et `contenteditable` dans la zone), et `.mip-rum-block`
-   * l'emporte toujours. Un sélecteur que le navigateur refuse est ignoré, avec
-   * un avertissement en console. Sur un navigateur d'avant 2021 (sans `:is()`),
-   * le texte se démasque mais les médias restent bloqués.
+   * Le plancher ne bouge pas : dans la zone, les champs natifs (`input`,
+   * `textarea`, `select`), le texte d'un `contenteditable` et une page en
+   * `designMode` restent masqués, et `.mip-rum-block` l'emporte toujours. Un
+   * widget de saisie maison (valeur affichée dans des `div`, éditeur de code,
+   * code à usage unique en cases) écrit du texte ordinaire : le marquer
+   * `.mip-rum-block`. Un sélecteur refusé par le navigateur, ou inopérant
+   * (pseudo-élément, commentaire), est ignoré avec un avertissement en console.
+   * Sur un navigateur d'avant 2021 (sans `:is()`), le texte se démasque mais les
+   * médias restent bloqués.
    *
    * Démasquer, c'est enregistrer en clair : un choix du responsable de
    * traitement, à faire zone par zone, sur ce qui ne porte pas de donnée

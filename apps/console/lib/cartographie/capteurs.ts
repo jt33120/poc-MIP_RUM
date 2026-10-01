@@ -128,7 +128,7 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
       { texte: "DNT et GPC respectés par défaut : rien n'est collecté.", sources: [`${SDK}/src/index.ts:168-178`] },
       { texte: "Consentement sur option : 200 événements gardés en mémoire, rejoués à l'accord, purgés au refus.", sources: [`${SDK}/src/consent.ts:6`] },
       { texte: "Requêtes et fragments retirés de toutes les URL.", sources: [`${SDK}/src/context.ts:22-24`] },
-      { texte: "Rejeu : texte masqué, médias bloqués, saisies masquées par défaut.", sources: [`${SDK}/src/replay.ts:41-70`] },
+      { texte: "Rejeu : texte masqué, médias bloqués, saisies masquées par défaut.", sources: [`${SDK}/src/replay.ts:201-211`] },
       { texte: "Limite reconnue : les identifiants de session s'écrivent avant le consentement.", sources: [`${SDK}/src/session.ts:37-40`] },
     ],
     x: 1180,
@@ -139,12 +139,12 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
     famille: "capteur",
     zone: "capteurs",
     titre: "SDK web",
-    sousTitre: "mip-rum.js · 23 Ko gzip",
+    sousTitre: "mip-rum.js · 23,2 Ko gzip",
     resume:
       "Un seul fichier JavaScript posé dans le <head> : il mesure les Web Vitals, les erreurs, les sessions, les clics et les appels réseau, et les envoie par lots au format OpenTelemetry.",
     etiquettes: ["OTLP/HTTP JSON", "0 dépendance", "lots de 64"],
     faits: [
-      { texte: "23 Ko gzip, sous un budget de 35 Ko que chaque build fait respecter.", sources: [`${SDK}/build.mjs:52-62`, "apps/console/lib/sdk-poids.ts:17-27"] },
+      { texte: "23,2 Ko gzip, sous un budget de 35 Ko que chaque build fait respecter.", sources: [`${SDK}/build.mjs:52-62`, "apps/console/lib/sdk-poids.ts:17-27"] },
       {
         texte: "Envoi par lots de 64 spans toutes les 3 s, en fetch keepalive ; vidage quand la page passe en arrière-plan.",
         sources: [`${SDK}/src/otel.ts:27`, `${SDK}/src/otel.ts:131-139`, `${SDK}/src/otel.ts:253-271`],
@@ -176,9 +176,9 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
     faits: [
       {
         texte: "Par défaut, tout le texte est masqué, les médias bloqués et les saisies masquées.",
-        sources: [`${SDK}/src/replay.ts:41-70`],
+        sources: [`${SDK}/src/replay.ts:201-211`],
       },
-      { texte: "Arrêt après 2 minutes ou 1 Mo compressé ; un morceau part toutes les 10 s.", sources: [`${SDK}/src/replay.ts:9-12`] },
+      { texte: "Arrêt après 2 minutes ou 1 Mo compressé ; un morceau part toutes les 10 s.", sources: [`${SDK}/src/replay.ts:11-13`] },
       {
         texte: "Il démarre dès l'initialisation si le site n'exige pas le consentement.",
         sources: [`${SDK}/src/index.ts:543-550`],
@@ -325,7 +325,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
     etiquettes: ["plafonnées par page", "pile : 4 000 car."],
     faits: [
       { texte: "error et unhandledrejection, toujours captées.", sources: [`${SDK}/src/errors.ts:278-307`] },
-      { texte: "Quatre voies de plus sur option (captureErrors).", sources: [`${SDK}/src/types.ts:134-148`] },
+      { texte: "Quatre voies de plus sur option (captureErrors).", sources: [`${SDK}/src/types.ts:156-170`] },
       { texte: "Plafonds par page : 50 erreurs non interceptées, 20 par autre voie, 10 CSP.", sources: [`${SDK}/src/errors.ts:54-60`] },
     ],
     ...mesure(4),
@@ -358,7 +358,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
     etiquettes: ["/v1/replay", "2 Mio max"],
     faits: [
       { texte: "2 Mio au plus par morceau, 32 Mio une fois décompressé.", sources: ["packages/backend/shared/limits.mjs:29-36"] },
-      { texte: "Session, application, numéro et clé voyagent en en-têtes x-mip-*.", sources: [`${SDK}/src/replay.ts:235-250`] },
+      { texte: "Session, application, numéro et clé voyagent en en-têtes x-mip-*.", sources: [`${SDK}/src/replay.ts:418-427`] },
     ],
     ...mesure(6),
   },

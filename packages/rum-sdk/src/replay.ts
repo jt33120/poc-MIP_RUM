@@ -67,7 +67,8 @@ export const CLASSE_DEMASQUE = "mip-rum-unmask";
  * `contenteditable` ni celui d'une liste déroulante : ce sont des nœuds de texte
  * comme les autres, qu'une zone démasquée laisserait passer en clair. Un bloc
  * `mip-rum-block` n'est jamais sérialisé — rrweb s'arrête à lui —, il figure ici
- * pour que la règle ne dépende pas de ce détail d'implémentation.
+ * pour que la règle ne dépende pas de ce détail d'implémentation. Une page en
+ * `designMode` est éditable sans attribut : `estDemasque` la traite à part.
  */
 export const SELECTEUR_TOUJOURS_MASQUE =
   `.${CLASSE_BLOC},textarea,select,[contenteditable]:not([contenteditable=false])`;
@@ -119,11 +120,27 @@ export function selecteurValide(selecteur: string): boolean {
 }
 
 /**
+ * Un sélecteur que le navigateur ACCEPTE peut rester inopérant, sans erreur : un
+ * pseudo-élément (`::before`, `:after`…) ne désigne aucun élément, donc aucune
+ * zone ; un commentaire `/*` laissé ouvert avale, une fois le sélecteur composé
+ * dans `:is()`/`:not()`, la suite du sélecteur de médias — le texte se
+ * démasquerait, pas les médias. Les chaînes entre guillemets sont écartées
+ * d'abord : `[title="a::b"]` est un sélecteur ordinaire.
+ */
+export function selecteurInoperant(selecteur: string): boolean {
+  return /\/\*|::|:(?:before|after|first-line|first-letter)(?![\w-])/i.test(
+    selecteur.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, '""'),
+  );
+}
+
+/**
  * Résout l'option `replayUnmask` en zones démasquées.
  *
  * Un sélecteur invalide est IGNORÉ, avec un avertissement : le transmettre tel
  * quel ferait lever `matches()` dans rrweb, qui avale l'exception et répond
  * « non bloqué » — un sélecteur mal tapé démasquerait alors TOUS les médias.
+ * Un sélecteur valide mais inopérant (`selecteurInoperant`) l'est de même : il
+ * vaut mieux un avertissement qu'une zone qui ne se démasque pas sans le dire.
  */
 export function resoudreDemasquage(
   replayUnmask: unknown,
@@ -133,8 +150,8 @@ export function resoudreDemasquage(
   let selecteur = `.${CLASSE_DEMASQUE}`;
   const brut = typeof replayUnmask === "string" ? replayUnmask.trim() : replayUnmask;
   if (brut !== undefined && brut !== null && brut !== "") {
-    if (typeof brut === "string" && valide(brut)) selecteur = `${selecteur},${brut}`;
-    else avertir(`[mip-rum] replayUnmask ignoré : ${JSON.stringify(brut)} n'est pas un sélecteur CSS valide. Rien n'est démasqué par cette option.`);
+    if (typeof brut === "string" && valide(brut) && !selecteurInoperant(brut)) selecteur = `${selecteur},${brut}`;
+    else avertir(`[mip-rum] replayUnmask ignoré : ${JSON.stringify(brut)} n'est pas un sélecteur CSS utilisable (invalide, pseudo-élément ou commentaire). Rien n'est démasqué par cette option.`);
   }
   return { selecteur, medias: valide(selecteurMediasBloques(selecteur)) };
 }
@@ -142,11 +159,19 @@ export function resoudreDemasquage(
 /**
  * L'élément est-il dans une zone démasquée, hors de tout ce qui reste masqué ?
  * Toute exception vaut « non » : dans le doute, on masque.
+ *
+ * `designMode = "on"` rend tout le document éditable sans poser d'attribut : ce
+ * qu'on y tape devient du texte ordinaire, qu'aucun sélecteur ne distingue. Le
+ * document entier compte alors comme une saisie.
  */
 export function estDemasque(element: Element | null, selecteurDemasque: string): boolean {
   if (!element) return false;
   try {
-    return element.closest(selecteurDemasque) !== null && element.closest(SELECTEUR_TOUJOURS_MASQUE) === null;
+    return (
+      element.ownerDocument?.designMode !== "on" &&
+      element.closest(selecteurDemasque) !== null &&
+      element.closest(SELECTEUR_TOUJOURS_MASQUE) === null
+    );
   } catch {
     return false;
   }

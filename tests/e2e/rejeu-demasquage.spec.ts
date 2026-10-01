@@ -30,6 +30,8 @@ interface Noeud {
   attributes?: Record<string, unknown>;
   childNodes?: Noeud[];
   textContent?: string;
+  /** Enfant direct d'une racine de shadow DOM. */
+  isShadow?: boolean;
 }
 interface Evenement {
   type: number;
@@ -55,6 +57,8 @@ const CORPS = `
     <p class="total">Total 128,40 €</p>
     <input class="saisie" value="secret-123" />
     <div class="editable" contenteditable="true">note privée</div>
+    <textarea class="note">avis confidentiel</textarea>
+    <select class="choix"><option>Option secrète</option></select>
     <img class="logo-clair" src="/logo.svg" width="20" height="20" alt="" />
     <p class="bloc mip-rum-block">IBAN FR76 3000</p>
   </div>
@@ -135,6 +139,26 @@ function trouver(n: Noeud, repere: string): Noeud {
 const texte = (n: Noeud): string =>
   (n.childNodes ?? []).map((c) => (c.type === 3 ? (c.textContent ?? "") : texte(c))).join("");
 
+/**
+ * Chaque nœud de texte du fil — instantanés complets ET nœuds ajoutés par les
+ * mutations —, avec son élément parent. Un ajout arrive à plat, rattaché par
+ * `parentId` : le parent se retrouve par son identifiant.
+ */
+function textesDuFil(chunks: Evenement[][]): { texte: string; parent?: Noeud }[] {
+  const parId = new Map<number, Noeud>();
+  const textes: { texte: string; parent?: Noeud; parentId?: number }[] = [];
+  const parcourir = (n: Noeud, parent?: Noeud, parentId?: number) => {
+    parId.set(n.id, n);
+    if (n.type === 3) textes.push({ texte: n.textContent ?? "", parent, parentId });
+    for (const c of n.childNodes ?? []) parcourir(c, n);
+  };
+  for (const e of chunks.flat()) {
+    if (e.data.node) parcourir(e.data.node);
+    for (const a of e.data.adds ?? []) parcourir(a.node, undefined, a.parentId);
+  }
+  return textes.map((t) => ({ texte: t.texte, parent: t.parent ?? parId.get(t.parentId ?? -1) }));
+}
+
 test.describe("démasquage sélectif — niveau « all » (défaut)", () => {
   test("critères 1 à 4 sur l'instantané complet, et le plancher", async ({ page }) => {
     const chunks = await monter(page, { replayUnmask: "[data-rejeu-clair]" });
@@ -151,6 +175,9 @@ test.describe("démasquage sélectif — niveau « all » (défaut)", () => {
     // 3. Une saisie dans la zone reste masquée — sa valeur comme un contenteditable.
     expect(trouver(racine, "saisie").attributes?.value).toBe("**********");
     expect(texte(trouver(racine, "editable"))).toBe("**** ******");
+    // Un textarea rempli dès le HTML, et le texte des options d'un select.
+    expect(trouver(racine, "note").attributes?.value).toBe("*".repeat("avis confidentiel".length));
+    expect(texte(trouver(racine, "choix"))).toBe("****** *******");
 
     // 4. Une image démasquée garde sa source ; hors zone, elle reste un cadre.
     const clair = trouver(racine, "logo-clair").attributes!;
@@ -167,13 +194,17 @@ test.describe("démasquage sélectif — niveau « all » (défaut)", () => {
     expect(JSON.stringify(chunks)).not.toContain("IBAN");
     expect(JSON.stringify(chunks)).not.toContain("secret-123");
     expect(JSON.stringify(chunks)).not.toContain("Jeanne");
+    expect(JSON.stringify(chunks)).not.toContain("confidentiel");
+    expect(JSON.stringify(chunks)).not.toContain("secrète");
   });
 
   test("les mutations suivent la même règle que l'instantané", async ({ page }) => {
     const chunks = await monter(page, {});
-    // characterData dans la zone, nœud ajouté hors zone, saisie tapée dans la zone.
+    // characterData dans la zone ET hors zone, nœud ajouté hors zone, saisie tapée
+    // dans la zone.
     await page.evaluate(() => {
       (document.querySelector(".clair")!.firstChild as Text).data = "Commande 4522";
+      (document.querySelector(".voisine")!.firstChild as Text).data = "Jeanne Dupont";
       document.querySelector(".voisine")!.append(" et Paul Durand");
     });
     await page.fill(".saisie", "nouveau-secret");
@@ -184,12 +215,34 @@ test.describe("démasquage sélectif — niveau « all » (défaut)", () => {
     const textes = mutations.flatMap((e) => e.data.texts ?? []).map((t) => t.value);
     const ajouts = mutations.flatMap((e) => e.data.adds ?? []).map((a) => a.node.textContent);
     expect(textes).toContain("Commande 4522");
+    expect(textes).toContain("****** ******"); // « Jeanne Dupont », hors zone
     expect(ajouts).toContain(" ** **** ******");
     const saisies = incrementaux.filter((e) => e.data.source === 5).map((e) => e.data.text); // Input
     expect(saisies.length).toBeGreaterThan(0);
     for (const s of saisies) expect(s).toMatch(/^\**$/);
     expect(JSON.stringify(chunks)).not.toContain("Paul");
+    expect(JSON.stringify(chunks)).not.toContain("Dupont");
     expect(JSON.stringify(chunks)).not.toContain("nouveau-secret");
+  });
+
+  // designMode rend tout le document éditable sans attribut : aucun sélecteur ne
+  // distingue ce qu'on y tape du texte de la page. Le SDK compte alors le
+  // document entier comme une saisie, zones démasquées comprises.
+  test("une page en designMode : ce qu'on tape dans une zone démasquée reste masqué", async ({ page }) => {
+    const chunks = await monter(page, {});
+    await page.evaluate(() => {
+      document.designMode = "on";
+    });
+    await page.click(".total");
+    await page.keyboard.press("End");
+    await page.keyboard.type(" Dupont");
+    await vider(page, chunks, 2);
+
+    const mutations = chunks.flat().filter((e) => e.type === 3 && e.data.source === 0);
+    const textes = mutations.flatMap((e) => e.data.texts ?? []).map((t) => t.value);
+    expect(textes.length).toBeGreaterThan(0);
+    for (const t of textes) expect(t).toMatch(/^[\s*]*$/);
+    expect(JSON.stringify(chunks)).not.toContain("Dupont");
   });
 
   test("un sélecteur invalide est ignoré, avec un avertissement : la zone qu'il visait reste masquée", async ({
@@ -241,8 +294,14 @@ test("le démasquage ne traverse ni un shadow DOM ni une iframe", async ({ page 
     })
     .toBe(true);
 
+  // Le NŒUD, pas une sous-chaîne du fil : « ***** ** ******** » (l'iframe)
+  // contient « ***** ** ****** » en préfixe, et suffirait à une recherche de texte.
+  const textes = textesDuFil(chunks);
+  const shadow = textes.find((t) => t.texte === "***** ** ******"); // « Texte du shadow »
+  expect(shadow, "texte du shadow DOM sérialisé, et masqué").toBeTruthy();
+  expect(shadow!.parent?.isShadow, "son parent est un enfant de la racine du shadow DOM").toBe(true);
+  expect(textes.some((t) => t.texte === "***** ** ********")).toBe(true); // « Texte de l'iframe »
   const fil = JSON.stringify(chunks);
-  expect(fil).toContain("***** ** ******"); // « Texte du shadow »
   expect(fil).not.toContain("Texte du shadow");
   // Le NŒUD de texte de l'iframe est masqué. (Son attribut `srcdoc`, lui, part
   // tel quel : rrweb ne masque aucun attribut — limite connue, hors démasquage.)

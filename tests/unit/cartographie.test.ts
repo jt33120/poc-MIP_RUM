@@ -126,6 +126,31 @@ describe("les sources citées existent", () => {
     }
     expect(fautes).toEqual([]);
   });
+
+  // Le test précédent ne voit qu'une ligne qui existe : une citation décalée par un
+  // ajout en amont reste verte, et le panneau en fait un lien vers le mauvais code.
+  // Pour les fichiers du SDK que les lots modifient le plus, la plage citée doit
+  // contenir le code qu'elle prouve.
+  it("les plages citées du rejeu et des options du SDK montrent le code qu'elles prouvent", () => {
+    const ANCRES: Record<string, string[]> = {
+      "packages/rum-sdk/src/replay.ts:201-211": ["function optionsMasquage", "maskAllInputs: true", 'maskTextSelector: "*"'],
+      "packages/rum-sdk/src/replay.ts:11-13": ["REPLAY_MAX_MS = 120_000", "REPLAY_MAX_COMPRESSED_BYTES = 1024 * 1024", "CHUNK_FLUSH_MS = 10_000"],
+      "packages/rum-sdk/src/replay.ts:418-427": ['"x-mip-session"', '"x-mip-app"', '"x-mip-seq"', '"x-mip-key"'],
+      "packages/rum-sdk/src/types.ts:156-170": ["interface CaptureErrorsConfig", "console?:", "resources?:", "csp?:", "network?:"],
+    };
+    const citees = new Set(CARTOGRAPHIE.elements.flatMap((e) => e.faits.flatMap((f) => f.sources)));
+    const fautes: string[] = [];
+    for (const [source, attendus] of Object.entries(ANCRES)) {
+      if (!citees.has(source)) {
+        fautes.push(`${source} n'est plus citée : mettre l'ancre à jour avec la citation`);
+        continue;
+      }
+      const [, chemin, debut, fin] = /^(.+):(\d+)-(\d+)$/.exec(source)!;
+      const extrait = lire(chemin).split("\n").slice(Number(debut) - 1, Number(fin)).join("\n");
+      for (const a of attendus) if (!extrait.includes(a)) fautes.push(`${source} ne contient pas ${a}`);
+    }
+    expect(fautes).toEqual([]);
+  });
 });
 
 describe("les listes de la carte sont celles du dépôt", () => {
