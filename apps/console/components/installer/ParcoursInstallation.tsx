@@ -40,10 +40,16 @@ const SondageCtx = createContext<Sondage | null>(null);
 export function ParcoursInstallation({
   vert,
   panneaux,
+  entetes,
 }: {
   /** Le test « ça arrive » de chaque parcours est-il tout vert ? (lu par la page, à chaque relecture) */
   vert: Record<Parcours, boolean>;
   panneaux: Record<Parcours, ReactNode>;
+  /**
+   * Ce qui précède la check-list de chaque parcours, dans son onglet (refonte du
+   * 01/10/2026 : ses valeurs, sur toute la largeur).
+   */
+  entetes?: Record<Parcours, ReactNode>;
 }) {
   const [actif, setActif] = useState<Parcours>("snippet");
   const ongletsRef = useRef<HTMLDivElement>(null);
@@ -164,6 +170,7 @@ export function ParcoursInstallation({
             hidden={p !== actif}
             data-testid={`parcours-${p}`}
           >
+            {entetes && <div className="mb-3">{entetes[p]}</div>}
             {panneaux[p]}
           </div>
         ))}

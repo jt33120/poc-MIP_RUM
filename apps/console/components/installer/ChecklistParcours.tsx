@@ -153,7 +153,13 @@ export function VueChecklist({
                         )}
                       </div>
                       {e.sonde?.aide && !e.sonde.ok && <p className="mt-1.5 pl-7 text-xs text-ink-soft">{e.sonde.aide}</p>}
-                      {e.corps && <div className="mt-2 min-w-0 pl-0 text-xs leading-relaxed text-ink-soft sm:pl-7">{e.corps}</div>}
+                      {/* Une étape cochée se replie sur son titre (refonte du 01/10/2026) : la
+                          check-list raccourcit à mesure qu'on avance ; décocher la rouvre. */}
+                      {e.corps && (
+                        <div className="mt-2 min-w-0 pl-0 text-xs leading-relaxed text-ink-soft sm:pl-7" hidden={coche && !e.sonde}>
+                          {e.corps}
+                        </div>
+                      )}
                     </li>
                   );
                 })}
