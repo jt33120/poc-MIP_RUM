@@ -1,12 +1,12 @@
 # `notifier`
 
-**Rôle.** Livre ce que la plateforme a décidé de dire — webhooks signés, e-mails par Resend — et, seul de tous les services, détient les secrets sortants.
+**Rôle.** Livre ce que la plateforme a décidé de dire — webhooks signés, e-mails par Resend — et, seul de tous les services, détient les secrets sortants. Une seule décision lui est propre : alerter quand les travaux planifiés se taisent (« Veille de l'ordonnanceur »).
 
 | | |
 |---|---|
 | Groupe du canevas | 3 · Traitements |
 | Point d'entrée | `node services/notifier/worker.mjs` (câblage seul, sur `@mip/service-kit`) |
-| Logique | `@mip/backend/jobs/livreur.mjs` (la passe), `@mip/backend/lib/dispatch-alerts.mjs` (webhooks et e-mails), `@mip/backend/lib/net/resend.mjs`, `@mip/backend/lib/net/signature-webhook.mjs` |
+| Logique | `@mip/backend/jobs/livreur.mjs` (la passe), `@mip/backend/jobs/veille-ordonnanceur.mjs` (la veille du tick), `@mip/backend/lib/dispatch-alerts.mjs` (webhooks et e-mails), `@mip/backend/lib/net/resend.mjs`, `@mip/backend/lib/net/signature-webhook.mjs` |
 | Exposition | privée : sondes seulement, aucune route publique (le hook entrant des tickets, C11, est retiré depuis le 29/09/2026) |
 | Rôle BDD | propriétaire (`DATABASE_URL`) ; pool de 2 (`PGPOOL_MAX`), `application_name = mip-notifier` |
 | Réplicas | 1 (deux seraient sûrs : voir « Sûreté multi-réplique ») |
@@ -18,12 +18,14 @@
 
 | Boucle | Quand | Étapes |
 |---|---|---|
-| `livraison` | toutes les 15 s (`NOTIFIER_INTERVAL_MS`) — sur la base gratuite, toutes les 15 min alignées 45 s après le tick —, la première au démarrage | `route_error_issue_notifications` (outbox des issues → `alert_event` + livraisons), `dispatch_alerts` (webhooks, e-mails), puis le battement si les deux ont abouti |
+| `livraison` | toutes les 15 s (`NOTIFIER_INTERVAL_MS`) — sur la base gratuite, toutes les 15 min alignées 45 s après le tick —, la première au démarrage | la veille de l'ordonnanceur (au plus une fois par minute), `route_error_issue_notifications` (outbox des issues → `alert_event` + livraisons), `dispatch_alerts` (webhooks, e-mails), puis le battement si les deux étapes ont abouti |
 | `reconciliation` | à HH:00:50 | `reconcile_alert_deliveries` (livraisons `sent` de l'ère pg_net) |
 
 Une passe n'entame plus de livraison au-delà de 10 s (`BUDGET_PASSE_MS`) : ce qui reste part 15 s plus tard, et le drainage d'un redéploiement couvre toujours la passe en cours.
 
 **Battement.** Le notifier n'a pas de bail : sa trace en base est une ligne de `sonde_battement` (`service = 'notifier'`, `dernier_ok` à l'heure de la base, migration-v103), écrite en upsert à la fin d'une passe **aboutie**, au plus une fois par minute (`BATTEMENT_MIN_MS`). La base est déjà éveillée par la passe : aucun réveil de plus. Une passe en échec ne l'écrit pas, et une écriture ratée ne fait pas échouer la passe. La carte « Santé de la chaîne de mesure » (`/admin/health`) l'affiche. Le rôle est le propriétaire : aucun droit à accorder.
+
+**Veille de l'ordonnanceur.** Le scheduler ne peut pas dire qu'il s'est tu : ses sondes meurent avec lui, et le dead-man's switch externe (`DEADMAN_URL`) n'est posé nulle part. Le notifier le dit à sa place. En tête de passe (au plus une fois par minute, `VEILLE_MIN_MS`), **une** requête lit, à l'heure de la base, le bail du tick (`scheduler_lease`, ligne `tick` : son échéance passée est l'heure du dernier tick **abouti**), la cadence publiée (`platform_flag.scheduler_tick_min`) et la fenêtre ouverte. Au-delà de **2 × cadence + 5 min** sans tick abouti (35 min au quart d'heure, 15 min à 5 min) — la règle de la reconstitution et de la carte « Santé de la chaîne de mesure » —, il ouvre une fenêtre du registre (`collecte_fenetre`, portée `*`, étage `ordonnanceur`, état `interrompue`, datée du dernier tick abouti) et lève **une** alerte `critical` par `sonde_alerter` (migration-v103), routée vers les seuls canaux **globaux** (sans application) : elle est mise en file avant la livraison, donc **livrée dans la même passe**. Les passes suivantes de l'épisode ne lèvent rien ; deux notifiers ne doublent ni la fenêtre (une seule ouverte par étage) ni l'alerte (ligne verrouillée). La fenêtre se ferme au tick revenu, datée de lui ; pas d'alerte de retour. Un tick manqué (redéploiement, migrations au pré-déploiement, bail tenu par l'instance sortante) ne suffit pas ; deux non plus en production (tick et passes au quart d'heure) : l'alerte part à la passe qui suit le troisième, vers 46 min après le dernier tick abouti. Cadence non publiée : 15 min supposées, et l'alerte le dit. Aucun réveil de base de plus : la requête part dans la passe. La veille ne lève jamais d'exception : en échec, elle l'écrit au journal et retente à la passe suivante, la livraison continue. Hors de la collecte : l'étage `ordonnanceur` n'est lu ni par les graphiques ni par `check_alerts` (la mesure arrive sans le scheduler). **Ce qu'elle ne couvre pas** : la panne du notifier lui-même, celle de la base, celle de tout Railway — l'astreinte reste à MIP. Sans canal global (`notify_channel.app_id` nul), l'alerte ne se lit que dans `/alerts`, périmètre « toutes les applications » (elle n'en porte aucune), et la fenêtre dans `/admin/health`.
 
 **Webhooks.** `POST` JSON (champ `text` lisible par Slack), par `safeFetch` : ni réseau privé, ni métadonnées cloud, ni boucle locale — une cible refusée est soldée `skipped`. Chaque envoi porte `x-mip-delivery-id` (le destinataire dédoublonne un rejeu) ; avec `WEBHOOK_SIGNING_SECRET`, aussi `x-mip-timestamp` et `x-mip-signature: sha256=HMAC(secret, "<timestamp>.<corps>")`. Vérification de référence : `verifierSignature`, `packages/backend/lib/net/signature-webhook.mjs` (écart d'horloge admis : 5 min).
 
@@ -37,8 +39,8 @@ Une passe n'entame plus de livraison au-delà de 10 s (`BUDGET_PASSE_MS`) : ce q
 |---|---|---|
 | `GET /health` | réseau privé | processus vivant **et** base joignable (ping en cache 30 s). **C'est la sonde Railway.** |
 | `GET /live` | réseau privé | processus vivant, jamais la base — pour une supervision externe |
-| `GET /ready` | jeton `METRICS_TOKEN` (sinon 404) | 503 dès SIGTERM ; sinon **fraîcheur** (une passe aboutie depuis moins de 4 intervalles, 60 s au moins, comptés depuis le démarrage tant qu'aucune n'a abouti) et **arriéré** (`queued` de plus de 15 min = bloqué). Supervision seulement. |
-| `GET /metrics` | jeton `METRICS_TOKEN` (sinon 404) | `notifier_deliveries_total{canal,status}`, `notifier_step_failures_total{step}`, `notifier_backlog_deliveries`, `notifier_backlog_oldest_seconds`, `loop_*`, pool, mémoire |
+| `GET /ready` | jeton `METRICS_TOKEN` (sinon 404) | 503 dès SIGTERM ; sinon **fraîcheur** (une passe aboutie depuis moins de 4 intervalles, 60 s au moins, comptés depuis le démarrage tant qu'aucune n'a abouti) et **arriéré** (`queued` de plus de 15 min = bloqué). Le dernier bilan de la veille (`veille_ordonnanceur` : décision, dernier tick, silence, seuil) s'y lit, sans peser sur le verdict. Supervision seulement. |
+| `GET /metrics` | jeton `METRICS_TOKEN` (sinon 404) | `notifier_deliveries_total{canal,status}`, `notifier_step_failures_total{step}`, `notifier_scheduler_watch_total{action}` (rien, ouvrir, alerter, fermer, erreur), `notifier_backlog_deliveries`, `notifier_backlog_oldest_seconds`, `loop_*`, pool, mémoire |
 Toute autre route : 404. Le hook entrant des tickets (`POST /v1/webhooks/tickets/{id}`, C11) et l'en-tête `x-mip-notifier` qui servait à son relais sont retirés depuis le 29/09/2026, avec la fonctionnalité des tickets.
 
 ## Configuration
@@ -88,6 +90,8 @@ Pas de bail : chaque étape réserve ses lignes par `for update skip locked` (li
 | destinataire hors liste de test | `skipped` avant tout appel | la raison dans `alert_delivery.response` |
 | webhook vers le réseau privé ou les métadonnées | `skipped`, jamais posté | `cible refusée : …` |
 | SIGTERM pendant une passe | la passe finit (≤ 10 s d'échéance), puis `pool.end()`, sortie 0 | `arrêt demandé`, `arrêt terminé` |
+| scheduler muet (arrêté, bloqué, en échec à chaque tick) au-delà de 2 × cadence + 5 min | fenêtre `ordonnanceur` ouverte, une alerte `critical` aux canaux globaux, livrée dans la passe ; fermée au tick revenu | `travaux planifiés muets — alerte levée` (`error`), puis `travaux planifiés revenus — fenêtre fermée` ; `notifier_scheduler_watch_total{action="ouvrir"}` |
+| veille en échec (base, schéma sans v87 ou v103) | la passe livre quand même ; nouvel essai à la passe suivante | `veille de l'ordonnanceur en échec` ou `en attente du schéma`, `{action="erreur"}` |
 
 ## Lancement local
 

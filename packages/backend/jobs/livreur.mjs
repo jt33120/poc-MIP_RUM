@@ -8,13 +8,20 @@
 // les secrets sortants (clé Resend, secret de signature des webhooks) : un
 // processus qui décide n'a aucune raison de pouvoir écrire à un tiers.
 //
-// UNE PASSE = deux étapes, dans cet ordre, celles du tick du scheduler
-// (`etapesLivraison`, `planifie.mjs`) :
+// UNE PASSE = la veille de l'ordonnanceur, puis deux étapes, dans cet ordre,
+// celles du tick du scheduler (`etapesLivraison`, `planifie.mjs`) :
+//   veille de l'ordonnanceur          le tick s'est-il tu ? (`veille-ordonnanceur.mjs`,
+//                                     une fois par minute au plus, jamais bloquante)
 //   route_error_issue_notifications   l'outbox des issues → alert_event + livraisons
 //   dispatch_alerts                   webhooks signés, e-mails Resend
-// puis, si les deux ont abouti, le battement (`sonde_battement`, une fois par
-// minute au plus). La réconciliation des livraisons héritées de pg_net tourne à
-// l'heure.
+// puis, si les deux étapes ont abouti, le battement (`sonde_battement`, une fois
+// par minute au plus). La veille passe EN PREMIER : l'alerte qu'elle lève est mise
+// en file avant la livraison, et part dans la même passe. La réconciliation des
+// livraisons héritées de pg_net tourne à l'heure.
+//
+// LA SEULE DÉCISION DU NOTIFIER. Il livre ce que d'autres décident, sauf ceci : le
+// scheduler ne peut pas dire qu'il s'est tu, ses sondes meurent avec lui. Le
+// notifier, qui lit la même base et sait livrer, le dit à sa place.
 //
 // PAS DE BAIL. Chaque étape réserve ses lignes par `for update skip locked` : deux
 // répliques, ou le scheduler et le notifier pendant la bascule, se partagent les
@@ -33,6 +40,7 @@
 // fois plus souvent. Dès 5 min d'intervalle, l'alignement s'applique.
 import { dispatchOnce } from "../lib/dispatch-alerts.mjs";
 import { etapesLivraison, executerEtapes } from "./planifie.mjs";
+import { creerVeilleOrdonnanceur } from "./veille-ordonnanceur.mjs";
 
 export const INTERVALLE_DEFAUT_MS = 15_000;
 /**
@@ -92,7 +100,8 @@ export function erreurIntervalle(intervalleMs) {
  * @param {{ pool: { query: Function, connect: Function }, log: any, metrics?: any,
  *           dispatch?: typeof dispatchOnce, email?: object | null, secretSignature?: string | null,
  *           intervalleMs?: number, budgetMs?: number, battementMinMs?: number,
- *           maintenant?: () => number }} options
+ *           veille?: boolean, maintenant?: () => number }} options
+ *   `veille` : la veille de l'ordonnanceur dans chaque passe (vrai par défaut).
  */
 export function creerLivreur({
   pool,
@@ -104,11 +113,13 @@ export function creerLivreur({
   intervalleMs = INTERVALLE_DEFAUT_MS,
   budgetMs = BUDGET_PASSE_MS,
   battementMinMs = BATTEMENT_MIN_MS,
+  veille = true,
   maintenant = Date.now,
 }) {
   const demarrage = maintenant();
   /** Dernière passe et dernière réconciliation DANS CE PROCESSUS. */
   const local = { passe: null, reconciliation: null };
+  const veilleOrdonnanceur = veille ? creerVeilleOrdonnanceur({ pool, log, metrics, maintenant }) : null;
 
   const livraisons = metrics?.counter("notifier_deliveries_total", "Livraisons soldées, par canal et par statut.", {
     labels: ["canal", "status"],
@@ -172,6 +183,12 @@ export function creerLivreur({
   /** Une passe de livraison. Ne lève pas : une étape en échec n'annule pas les suivantes. */
   async function passe() {
     const debut = maintenant();
+    // Avant la livraison : l'alerte d'un tick muet part dans CETTE passe. Jamais
+    // bloquante (elle ne lève pas), et comptée dans l'échéance de la passe : le
+    // drainage d'un redéploiement (20 s) doit couvrir la passe entière. Au pire,
+    // une base lente à l'ouverture d'un épisode (4 requêtes à 2 s), elle en prend
+    // 8 s sur 10 ; une livraison non entamée attend la passe suivante.
+    await veilleOrdonnanceur?.veiller();
     const l = etapesLivraison(pool, { log, dispatch: dispatchConfigure, echeance: debut + budgetMs });
     const bilan = await executerEtapes([l.route, l.dispatch], log, { job: "livraison" });
     if (bilan.ok) await battre();
@@ -233,6 +250,9 @@ export function creerLivreur({
       passe: { ...(local.passe ?? {}), silence_s: silenceS, tolerance_s: toleranceS },
       reconciliation: local.reconciliation,
       backlog: { livraisons_en_attente: a.en_attente, plus_ancienne_s: a.plus_ancienne_s, bloque },
+      // Le dernier bilan de la veille, pour lire : il ne décide pas du verdict (un
+      // scheduler muet n'empêche pas le notifier de livrer).
+      veille_ordonnanceur: veilleOrdonnanceur?.etat() ?? null,
     };
   }
 

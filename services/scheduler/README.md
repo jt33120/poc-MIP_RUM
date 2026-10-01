@@ -75,7 +75,7 @@ Toute autre route : 404. (`/status`, sans jeton, a disparu : son contenu est dan
 
 **Le battement.** `scheduler_lease.expires_at` d'un bail rendu est l'heure du dernier passage **abouti** : la vitrine le lit (`dernierTickScheduler`), `/ready` aussi. Il n'est écrit que sur **succès** ; un passage en échec libère le bail en remettant l'ancien battement.
 
-**Le dead-man's switch.** Si `DEADMAN_URL` est posée, un `GET` part (par `safeFetch`, 5 s, jamais bloquant) après chaque **tick abouti**. Le service externe sonne quand les signaux cessent : scheduler arrêté, bloqué, en échec à chaque passage — ce qu'aucune sonde interne ne voit. Régler la période sur la cadence du tick (15 min par défaut, 5 sur une offre payante) et la marge sur 10 à 15 min.
+**Le dead-man's switch.** Si `DEADMAN_URL` est posée, un `GET` part (par `safeFetch`, 5 s, jamais bloquant) après chaque **tick abouti**. Le service externe sonne quand les signaux cessent : scheduler arrêté, bloqué, en échec à chaque passage — ce qu'aucune sonde interne ne voit. Régler la période sur la cadence du tick (15 min par défaut, 5 sur une offre payante) et la marge sur 10 à 15 min. Sans lui, le notifier en tient lieu en partie : il lit ce battement à chaque passe et alerte à la première passe au-delà de 2 × cadence + 5 min (au quart d'heure : après trois ticks manqués, vers 46 min) ([README du notifier](../notifier/README.md), « Veille de l'ordonnanceur ») — mais rien ne veille le notifier.
 
 ## Configuration
 

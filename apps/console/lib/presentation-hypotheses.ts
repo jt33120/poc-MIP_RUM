@@ -96,7 +96,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     production: "Un domaine d'envoi vérifié, une signature propre à chaque canal, et le branchement sur l'astreinte de MIP.",
     sources: [
       ".railway/railway.ts:399-405",
-      "services/notifier/README.md:32,59",
+      "services/notifier/README.md:34,61",
       "docs/ALERTING.md:60-74",
       "packages/db/sql/migration-v108.sql:34,109,197",
     ],
@@ -105,10 +105,15 @@ export const HYPOTHESES: readonly Hypothese[] = [
     id: "H9",
     titre: "Une supervision de la supervision minimale",
     aujourdhui:
-      "Une sonde externe vérifie toutes les 15 minutes que le service répond, et prévient par e-mail les personnes qui suivent le dépôt. Les travaux planifiés et les notifications ne sont pas sondés de l'extérieur.",
+      "Une sonde externe vérifie toutes les 15 minutes que le service répond, et prévient par e-mail les personnes qui suivent le dépôt. Le service des notifications alerte quand les travaux planifiés se taisent, au-delà de deux passages manqués ; lui-même n'est suivi que par son battement, affiché dans la console.",
     pourquoi: "Une panne de quelques heures ne prive aucun client pendant le POC.",
-    production: "Une supervision reliée à l'astreinte, et un signal qui alerte quand les travaux planifiés se taisent.",
-    sources: [".github/workflows/sonde-externe.yml:1-22", "docs/architecture/overview.md:116,131"],
+    production: "Une supervision reliée à l'astreinte, qui surveille aussi le service des notifications.",
+    sources: [
+      ".github/workflows/sonde-externe.yml:1-22",
+      "packages/backend/jobs/veille-ordonnanceur.mjs:16-27,50-51",
+      "services/notifier/README.md:26,28",
+      "docs/architecture/overview.md:116,131",
+    ],
   },
   {
     id: "H10",
@@ -196,7 +201,7 @@ export const CHANTIERS: readonly Chantier[] = [
     id: "X6",
     titre: "Des notifications de production",
     texte: "Vérifier le domaine d'envoi des e-mails, et signer chaque canal avec son propre secret.",
-    sources: ["docs/ALERTING.md:70-73", "services/notifier/README.md:59"],
+    sources: ["docs/ALERTING.md:70-73", "services/notifier/README.md:61"],
   },
   {
     id: "X7",
