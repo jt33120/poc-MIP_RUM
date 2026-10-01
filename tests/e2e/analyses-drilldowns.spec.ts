@@ -301,7 +301,9 @@ test("sessions : recherche bornée, refus récupérable et pagination stable", a
   // Recherche par identifiant technique exact.
   await page.selectOption('select[name="qf"]', "session");
   await page.fill('input[name="q"]', SESSIONS[0].id);
-  await page.getByRole("button", { name: "Rechercher" }).click();
+  // Le bouton du formulaire des sessions, pas la loupe de la barre du haut
+  // (« Rechercher un écran, une action… ») : même verbe, autre geste.
+  await page.getByRole("form", { name: "Rechercher une session" }).getByRole("button", { name: "Rechercher", exact: true }).click();
   await page.waitForURL((u) => u.searchParams.get("q") === SESSIONS[0].id, { timeout: 15_000 });
   await expect(page.getByTestId("recherche-resume")).toContainText("identifiant");
   // Depuis F42, chaque session est rendue DEUX fois : une rangée de la table (à partir
