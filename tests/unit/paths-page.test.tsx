@@ -151,7 +151,7 @@ describe("/paths — la part se lit sur les sessions avec vue (B31), jamais sur 
   it("la carte « Transitions les plus fréquentes » a disparu : le flux porte son alternative", async () => {
     const html = await rendre();
     expect(texte(html)).not.toContain("Transitions les plus fréquentes");
-    const flux = html.slice(html.indexOf('id="paths-flux"'), html.indexOf('data-testid="paths-ancrage"'));
+    const flux = html.slice(html.indexOf('id="paths-flux"'), html.indexOf('id="paths-entrees"'));
     expect(flux).toContain('data-testid="alternative"');
     // Des passages, pas des sessions : une session repasse parfois deux fois par la même transition.
     expect(texte(flux)).toContain("De Vers Passages");
@@ -200,7 +200,7 @@ describe("/paths — ancrage `depuis` (B31)", () => {
   it("ancré : le flux ne dessine que les départs de la route, les tuiles ne changent pas", async () => {
     const html = await rendre({ depuis: "/panier" });
     expect(routeTransitions).toHaveBeenCalledWith(expect.anything(), 50, { depuis: "/panier" });
-    const flux = html.slice(html.indexOf('id="paths-flux"'), html.indexOf('data-testid="paths-ancrage"'));
+    const flux = html.slice(html.indexOf('id="paths-flux"'), html.indexOf('id="paths-entrees"'));
     expect(texte(flux)).toContain("Flux à partir de /panier");
     expect(texte(flux)).toContain("/aide");
     // Les tuiles lisent toujours toutes les transitions (réglage d'écran : aucun chiffre ne change).

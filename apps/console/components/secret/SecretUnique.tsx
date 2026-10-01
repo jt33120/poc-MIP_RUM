@@ -1,7 +1,7 @@
 "use client";
 // C9c — UN SECRET À USAGE UNIQUE, DE LA COMMANDE À L'ÉCRAN.
 //
-// Un mot de passe, une clé d'ingestion, un jeton de lecture : la commande le génère,
+// Un mot de passe, une clé d'ingestion, un jeton d'accès : la commande le génère,
 // n'en garde que le haché et le rend UNE fois dans sa décision. La server action le
 // rend à son formulaire (`useActionState`), qui le REMET à l'écran — sur la même
 // page, ou sur celle où il navigue ensuite (la fiche de l'application qu'on vient de

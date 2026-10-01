@@ -30,7 +30,7 @@
 // leur arrêt de tabulation (le triangle du dessin n'en est pas un).
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useId, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import {
   Area,
   Bar,
@@ -563,11 +563,30 @@ export function NoteCollecteRecente({
   else if (grille.length * seauSecondes <= 86_400) quand = `à ${fmtHeure(t)} (${fuseau})`;
   else quand = `le ${fmtInstant(t)} (${fuseau})`;
   return (
-    <p className="mb-1 text-xs text-ink-soft" data-testid="collecte-recente">
-      <span className="font-medium text-ink">
-        {debutCollecte ? "Collecte commencée" : "Premières données"} {quand}
-      </span>{" "}
-      : trop peu de recul pour lire une évolution sur la période.
+    <NotePastille testId="collecte-recente" raison="trop peu de recul pour lire une évolution sur la période.">
+      {debutCollecte ? "Collecte commencée" : "Premières données"} {quand}
+    </NotePastille>
+  );
+}
+
+/**
+ * Une note de figure en PASTILLE d'une ligne (01/10/2026) : le fait (« Premières
+ * données à 21:00 ») se lit, la phrase qui l'explique passe en bulle (`title`) et en
+ * texte lu. Une ligne entière de prose au-dessus de chaque courbe poussait le dessin.
+ */
+function NotePastille({ testId, raison, children }: { testId: string; raison: string; children: ReactNode }) {
+  return (
+    <p className="mb-1 flex min-w-0" data-testid={testId}>
+      <span
+        className="inline-flex min-w-0 cursor-help items-center gap-1 truncate rounded-full border border-line bg-panel2 px-2 py-px text-[11px] font-medium text-ink-soft"
+        title={raison}
+      >
+        <span aria-hidden="true" className="text-ink-faint">
+          ◔
+        </span>
+        <span className="truncate text-ink">{children}</span>
+        <span className="sr-only"> : {raison}</span>
+      </span>
     </p>
   );
 }
@@ -579,10 +598,9 @@ export function NoteCollecteRecente({
  */
 export function NotePeuDePoints({ n, seauSecondes, jours }: { n: number; seauSecondes: number; jours: boolean }) {
   return (
-    <p className="mb-1 text-xs text-ink-soft" data-testid="peu-de-points">
-      <span className="font-medium text-ink">{phrasePeuDePoints(n, seauSecondes, jours)}</span>
-      {"\u00a0"}: trop peu de points pour lire une évolution.
-    </p>
+    <NotePastille testId="peu-de-points" raison="trop peu de points pour lire une évolution.">
+      {phrasePeuDePoints(n, seauSecondes, jours)}
+    </NotePastille>
   );
 }
 
@@ -739,6 +757,7 @@ export function ThresholdSeries({
   fenetresCollecte,
   debutPlage,
   apercu = false,
+  echelleRobuste = true,
 }: {
   /** OBLIGATOIRE : débuts de seau attendus, ISO UTC (`bucketStarts`) ou jours « AAAA-MM-JJ ». */
   grille: string[];
@@ -818,6 +837,11 @@ export function ThresholdSeries({
    * chiffrée et cliquable, se lit.
    */
   apercu?: boolean;
+  /**
+   * Échelle robuste (défaut, 30/09/2026) : une tranche aberrante ne tasse plus la courbe ;
+   * elle est rognée au sommet et DITE sous le graphique (nombre, valeur maximale).
+   */
+  echelleRobuste?: boolean;
 }) {
   const router = useRouter();
   const motifs = useIdSvg("en-cours");
@@ -851,8 +875,8 @@ export function ThresholdSeries({
   // compte n'a pas de seuil (R-S). Le plan l'interdit ; on ne la dessine pas.
   const vitalEffectif = aDesBarres ? undefined : vital;
   const echelle = useMemo(
-    () => echelleY(prep.lignes, visibles, format, { vital: vitalEffectif, bande }),
-    [prep.lignes, visibles, format, vitalEffectif, bande],
+    () => echelleY(prep.lignes, visibles, format, { vital: vitalEffectif, bande, robuste: echelleRobuste }),
+    [prep.lignes, visibles, format, vitalEffectif, bande, echelleRobuste],
   );
   const haut = echelle.haut;
   const etiquetteY = useMemo(() => formateurGraduations(echelle.valeurs, format), [echelle.valeurs, format]);
@@ -1142,7 +1166,11 @@ export function ThresholdSeries({
 
       {!apercu && (
       <>
-      <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft" data-testid="legende-serie">
+      {/* Recette du 30/09/2026 : une légende sur une ligne, en petit. Les séries et les
+          seuils gardent leur texte ; les repères secondaires (effectif faible, tranche en
+          cours, début partiel, collecte interrompue) s'écrivent court, le libellé complet
+          au survol et pour les lecteurs d'écran. */}
+      <ul className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-ink-soft" data-testid="legende-serie">
         {tracees.map((s) => (
           <li key={s.cle} className="flex min-w-0 items-center gap-1.5" data-serie={s.cle}>
             {/* Légende chiffrée et cliquable (spec A2 § 5.4) : clic = isoler, Alt-clic =
@@ -1165,9 +1193,10 @@ export function ThresholdSeries({
           </li>
         )}
         {episodes && episodes.length > 0 && (
-          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-episodes">
+          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-episodes" title="hors plage habituelle (détecté par calcul)">
             <PaveLegende couleur="rgb(var(--c-signal))" opacite={0.25} />
-            <span className="min-w-0 [overflow-wrap:anywhere]">hors plage habituelle (détecté par calcul)</span>
+            <span aria-hidden>hors plage</span>
+            <span className="sr-only">hors plage habituelle (détecté par calcul)</span>
           </li>
         )}
         {bandes && (
@@ -1187,31 +1216,41 @@ export function ThresholdSeries({
           </>
         )}
         {prep.faibleEffectif && (
-          <li className="flex items-center gap-1.5" data-testid="legende-faible-effectif">
+          <li className="flex items-center gap-1.5" data-testid="legende-faible-effectif" title={`moins de ${faibleSous} mesures`}>
             <PointCreuxLegende />
-            moins de {faibleSous} mesures
+            <span aria-hidden>&lt; {faibleSous} mes.</span>
+            <span className="sr-only">moins de {faibleSous} mesures</span>
           </li>
         )}
         {enCours && (
-          <li className="flex items-center gap-1.5" data-testid="legende-seau-en-cours">
+          <li className="flex items-center gap-1.5" data-testid="legende-seau-en-cours" title={periodeEnCours}>
             {barres.length > 0 ? <PaveEnCours id={barres[0].id} /> : <PointCreuxLegende />}
-            {periodeEnCours}
+            <span aria-hidden>en cours</span>
+            <span className="sr-only">{periodeEnCours}</span>
           </li>
         )}
         {premierPartiel && (
-          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-premier-partiel">
+          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-premier-partiel" title={premierPartiel.libelle}>
             <PointCreuxLegende />
-            <span className="min-w-0 [overflow-wrap:anywhere]">{premierPartiel.libelle}</span>
+            <span aria-hidden>début partiel</span>
+            <span className="sr-only">{premierPartiel.libelle}</span>
           </li>
         )}
         {prep.horsCollecte.length > 0 && (
-          <li className="flex items-center gap-1.5" data-testid="legende-hors-collecte">
+          <li className="flex items-center gap-1.5" data-testid="legende-hors-collecte" title="non mesuré (collecte interrompue)">
             <PaveHorsCollecte id={motifHorsCollecte} />
-            non mesuré (collecte interrompue)
+            <span aria-hidden>non mesuré</span>
+            <span className="sr-only">non mesuré (collecte interrompue)</span>
           </li>
         )}
       </ul>
       {noteCollecte && <NoteHorsCollecte fenetres={fenetresVisibles} fuseau={fuseau} />}
+      {echelle.depassements && (
+        <p className="mt-1 text-[11px] text-ink-soft" data-testid="donnees-hors-echelle">
+          ▲ {echelle.depassements.n} {echelle.depassements.n > 1 ? "tranches" : "tranche"} au-dessus de l&apos;échelle
+          (jusqu&apos;à {formater(format, echelle.depassements.max)}), rognée{echelle.depassements.n > 1 ? "s" : ""} au sommet.
+        </p>
+      )}
       {bandes?.horsEchelle && (
         <p className="mt-1 text-xs text-ink-soft" data-testid="seuil-hors-echelle">
           {bandes.horsEchelle}

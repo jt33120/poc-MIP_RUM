@@ -1,19 +1,31 @@
-import Link from "next/link";
 import { headers } from "next/headers";
 import { Fragment } from "react";
 import { ECRANS_ADMIN } from "@mip/console-contract";
+import { InfoTip } from "@/components/InfoTip";
 import { PageHeader } from "@/components/PageHeader";
 import { SanteChaine } from "@/components/SanteChaine";
+import { KpiLibelle } from "@/components/charts/KpiLibelle";
+import { KpiTile } from "@/components/charts/KpiTile";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { chargerSante } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { verdictSante, FILE_ATTENTION, RETARD_CONSO_ATTENTION_H, RETARD_CONSO_INCIDENT_H, type VerdictSante } from "@/lib/health-verdict";
 import { dogfoodingEndpoint, ingestEndpoint, ingestEndpointDirect, origineCollecteurDogfooding } from "@/lib/ingest-endpoint";
 import type { HealthSnapshot } from "@/lib/metrics-format";
+import { Panneau, Pastille, Repli, TD, TH, type TonPastille } from "../_ui/kit";
 
 export const dynamic = "force-dynamic";
 
-/** Santé interne de MIP RUM (auto-observabilité, P1) — admin. Mêmes chiffres que /api/metrics. */
+const HEURE_MS = 3_600_000;
+const SOURCE = "Instantané de santé interne de la console — les mêmes indicateurs que ceux publiés pour Prometheus (jeton requis)";
+
+/**
+ * Santé interne de MIP RUM (auto-observabilité, P1) — admin. Mêmes chiffres que /api/metrics.
+ *
+ * Refonte du 01/10/2026 : le verdict sur une ligne (ses raisons en puces qui mènent à
+ * l'indicateur), les indicateurs en cases rangées par étage, la chaîne de mesure, puis
+ * les adresses de collecte en tableau ; chaque explication dans une bulle ou un repli.
+ */
 export default async function Health() {
   // Le chargeur (`lib/chargeurs/administration.ts`) : l'administrateur de la
   // plateforme seul (C9). Lecture en échec : les tuiles ne sont PAS rendues à zéro
@@ -29,9 +41,9 @@ export default async function Health() {
   // décommissionné (invariant AD-4). Un endpoint qui ne pointe pas l'hôte de la page
   // est signalé ici, au lieu de se lire dans un tableau vide des semaines plus tard.
   const hote = (await headers()).get("host");
-  const endpoint = dogfoodingEndpoint(hote);          // la console -> elle-même
+  const endpoint = dogfoodingEndpoint(hote); // la console -> elle-même
   const direct = origineCollecteurDogfooding(hote) !== null; // ou au collector, en direct (P6b.G)
-  const snippet = ingestEndpoint("traces", hote);     // ce qu'on remet aux CLIENTS
+  const snippet = ingestEndpoint("traces", hote); // ce qu'on remet aux CLIENTS
   const directeClients = ingestEndpointDirect("traces"); // ou, par défaut, le collector (P6b.G)
   const force = Boolean(process.env.NEXT_PUBLIC_RUM_ENDPOINT);
   const memeHote = (() => {
@@ -51,27 +63,20 @@ export default async function Health() {
 
   return (
     <div className="animate-fade-up">
-      <PageHeader
-        title="Santé interne"
-        sub={
-          <>
-            L&apos;état de MIP RUM lui-même : collecte, notifications d&apos;alerte, consommation. Les mêmes
-            indicateurs sont publiés pour Prometheus à l&apos;adresse <code className="chip-mono">/api/metrics</code>{" "}
-            (jeton requis).
-          </>
-        }
-      />
+      <PageHeader title="Santé interne" />
 
       {verdict ? <Verdict verdict={verdict} /> : <EchecLecture titre="Santé interne" />}
 
       {(identity.label === "degraded" || causal.label === "degraded") && (
-        <div id="degradations" className="mb-6 grid gap-3">
+        <div id="degradations" className="mb-4 grid scroll-mt-20 gap-2">
           {identity.label === "degraded" && (
-            <div className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink" data-testid="identity-health-degraded">
-              <strong>Identité métier dégradée.</strong>{" "}
-              {!identity.configured && <>La clé de pseudonymisation des identifiants n&apos;est pas configurée. </>}
-              {!identity.schema && <>La base n&apos;est pas à jour pour l&apos;identité métier. </>}
-              Les identifiants utilisateur et compte sont omis quand il le faut ; le reste de la collecte continue.
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn-ink" data-testid="identity-health-degraded">
+              <strong>Identité métier dégradée.</strong>
+              {!identity.configured && <>La clé de pseudonymisation des identifiants n&apos;est pas configurée.</>}
+              {!identity.schema && <>La base n&apos;est pas à jour pour l&apos;identité métier.</>}
+              <InfoTip label="Conséquence" align="start">
+                Les identifiants utilisateur et compte sont omis quand il le faut ; le reste de la collecte continue.
+              </InfoTip>
               <DetailTechnique>
                 {!identity.configured && <>Variable absente : <code>IDENTITY_HASH_SECRET</code>. </>}
                 {!identity.schema && <>Migration v66 non détectée.</>}
@@ -79,18 +84,22 @@ export default async function Health() {
             </div>
           )}
           {causal.label === "degraded" && (
-            <div className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink" data-testid="causal-actions-health-degraded">
-              <strong>Actions causales indisponibles.</strong> La base n&apos;est pas à jour pour elles : la collecte
-              continue sans interruption, mais les liens entre actions et le classement des actions restent vides.
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn-ink" data-testid="causal-actions-health-degraded">
+              <strong>Actions causales indisponibles.</strong> La base n&apos;est pas à jour pour elles.
+              <InfoTip label="Conséquence" align="start">
+                La collecte continue sans interruption, mais les liens entre actions et le classement des actions restent vides.
+              </InfoTip>
               <DetailTechnique>Migration v67 non détectée.</DetailTechnique>
             </div>
           )}
         </div>
       )}
 
+      {sante.ok && <StatsSante h={sante.data} />}
+
       {/* La preuve que la mesure passe, étage par étage (canari du scheduler, A3 § 2.6). */}
-      <h2 id="chaine" className="mb-2 scroll-mt-20 text-sm font-semibold text-ink">
-        Santé de la chaîne de mesure
+      <h2 id="chaine" className="mb-1.5 mt-5 scroll-mt-20 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-soft">
+        Chaîne de mesure
       </h2>
       {chaine?.ok ? (
         <SanteChaine brute={chaine.data.brute} cadenceMin={chaine.data.cadenceMin} maintenant={Date.now()} />
@@ -98,64 +107,84 @@ export default async function Health() {
         <EchecLecture titre="Santé de la chaîne de mesure" />
       )}
 
-      <h2 id="collecte" className="mb-2 scroll-mt-20 text-sm font-semibold text-ink">
-        Où partent les données
-      </h2>
-      <div
-        className={`card mb-6 px-4 py-3 ${memeHote ? "" : "border-warn/50 bg-warn/5"}`}
-        data-testid="dogfooding-endpoint"
+      <Panneau
+        id="collecte"
+        testId="dogfooding-endpoint"
+        titre="Où partent les données"
+        className={`mt-4 scroll-mt-20 ${memeHote ? "" : "border-warn/50"}`}
+        aide="Les adresses où partent les mesures : celles de la console elle-même, et celles remises aux clients. Une adresse qui ne pointe pas cet hôte fait émettre dans le vide, sans erreur visible."
       >
-        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-          Mesures de la console elle-même
+        <div className="overflow-x-auto rounded-b-xl">
+          <table className="w-full text-sm">
+            <thead className="bg-panel2">
+              <tr>
+                <th className={TH}>Flux</th>
+                <th className={TH}>Adresse</th>
+                <th className={TH}>État</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line/60">
+              <LigneAdresse
+                flux="Mesures de la console elle-même"
+                url={endpoint}
+                ton={direct ? "neutre" : "bon"}
+                etat={direct ? "collecteur, en direct" : "hôte de cette page"}
+                explication={
+                  direct
+                    ? "Directement au collecteur, qui en déduit le pays par l'adresse IP (collecte directe). Retirer ce réglage ramène ces mesures sur l'hôte de cette page."
+                    : "L'hôte de cette page : seule la collecte directe au collecteur peut l'en déplacer."
+                }
+                technique={
+                  direct ? (
+                    <>
+                      Réglage : <code>NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL</code>.
+                    </>
+                  ) : null
+                }
+              />
+              <LigneAdresse
+                flux="Collecte directe des navigateurs des clients"
+                url={directeClients}
+                ton={directeClients ? "bon" : "eteint"}
+                etat={directeClients ? "ouverte" : "fermée"}
+                testId="collecte-directe-clients"
+                explication={
+                  directeClients
+                    ? "Ouverte : le code de suivi et l'extension visent le collecteur, qui déduit le pays de l'adresse IP. Le code par la console reste proposé pour un site dont la CSP fige connect-src."
+                    : "Fermée : le code de suivi et l'extension passent par la console, qui ne transmet pas l'adresse IP ; le pays reste estimé."
+                }
+                technique={
+                  directeClients ? (
+                    <>
+                      Réglage : <code>NEXT_PUBLIC_DIRECT_COLLECTOR_URL</code>.
+                    </>
+                  ) : null
+                }
+              />
+              <LigneAdresse
+                flux={directeClients ? "Collecte par la console (CSP figée, agents serveur)" : "Adresse remise aux clients (code de suivi)"}
+                url={snippet}
+                ton={memeHote ? "bon" : "attention"}
+                etat={memeHote ? (force ? "fixée, pointe cet hôte" : "déduite de cet hôte") : "pointe un AUTRE hôte"}
+                explication={
+                  memeHote
+                    ? force
+                      ? "Fixée par la configuration, et pointe bien cet hôte."
+                      : "Déduite de l'hôte de la requête : aucune configuration à maintenir."
+                    : "La configuration pointe un AUTRE hôte que celui-ci. Chaque code de suivi copié depuis la console envoie donc les données du client là-bas, sans erreur visible ni chez le client ni ici. Retirez ce réglage pour revenir à l'hôte courant."
+                }
+                technique={
+                  force ? (
+                    <>
+                      Réglage : <code>NEXT_PUBLIC_RUM_ENDPOINT</code>.
+                    </>
+                  ) : null
+                }
+              />
+            </tbody>
+          </table>
         </div>
-        <Adresse url={endpoint} />
-        <div className="mt-1 text-xs text-ink-soft">
-          {direct
-            ? "Directement au collecteur, qui en déduit le pays par l'adresse IP (collecte directe). Retirer ce réglage ramène ces mesures sur l'hôte de cette page."
-            : "L'hôte de cette page : seule la collecte directe au collecteur peut l'en déplacer."}
-          {direct && (
-            <DetailTechnique>
-              Réglage : <code>NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL</code>.
-            </DetailTechnique>
-          )}
-        </div>
-
-        <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-          Collecte directe des navigateurs des clients
-        </div>
-        {directeClients && <Adresse url={directeClients} />}
-        <div className="mt-1 text-xs text-ink-soft" data-testid="collecte-directe-clients">
-          {directeClients
-            ? "Ouverte : le code de suivi et l'extension visent le collecteur, qui déduit le pays de l'adresse IP. Le code par la console reste proposé pour un site dont la CSP fige connect-src."
-            : "Fermée : le code de suivi et l'extension passent par la console, qui ne transmet pas l'adresse IP ; le pays reste estimé."}
-          {directeClients && (
-            <DetailTechnique>
-              Réglage : <code>NEXT_PUBLIC_DIRECT_COLLECTOR_URL</code>.
-            </DetailTechnique>
-          )}
-        </div>
-
-        <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-          {directeClients
-            ? "Adresse de collecte par la console (CSP figée, agents serveur)"
-            : "Adresse de collecte remise aux clients (code de suivi)"}
-        </div>
-        <Adresse url={snippet} />
-        <div className={`mt-1 text-xs ${memeHote ? "text-ink-soft" : "text-warn-ink"}`}>
-          {memeHote
-            ? force
-              ? "Fixée par la configuration, et pointe bien cet hôte."
-              : "Déduite de l'hôte de la requête : aucune configuration à maintenir."
-            : "La configuration pointe un AUTRE hôte que celui-ci. Chaque code de suivi copié depuis la console envoie donc les données du client là-bas, sans erreur visible ni chez le client ni ici. Retirez ce réglage pour revenir à l'hôte courant."}
-          {force && (
-            <DetailTechnique>
-              Réglage : <code>NEXT_PUBLIC_RUM_ENDPOINT</code>.
-            </DetailTechnique>
-          )}
-        </div>
-      </div>
-
-      {sante.ok && <StatsSante h={sante.data} />}
+      </Panneau>
     </div>
   );
 }
@@ -166,23 +195,35 @@ const TON_VERDICT: Record<VerdictSante["niveau"], string> = {
   incident: "border-bad/40 bg-bad/10 text-bad-ink",
 };
 
-/** Le verdict d'ensemble, en tête : une phrase, puis les points qui la justifient. */
+/** La forme double la couleur : le verdict se lit sans elle. */
+const FORME_VERDICT: Record<VerdictSante["niveau"], string> = { ok: "●", attention: "▲", incident: "■" };
+
+/** Le verdict d'ensemble, en tête, sur une ligne : la phrase, puis ses raisons en puces qui mènent à l'indicateur. */
 function Verdict({ verdict }: { verdict: VerdictSante }) {
   return (
     <section
-      className={`mb-6 rounded-xl border px-4 py-3 text-sm ${TON_VERDICT[verdict.niveau]}`}
+      className={`mb-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border px-3 py-2 text-sm ${TON_VERDICT[verdict.niveau]}`}
       role={verdict.niveau === "incident" ? "alert" : "status"}
       data-testid="sante-verdict"
       data-niveau={verdict.niveau}
     >
-      <p className="font-semibold">{verdict.titre}</p>
+      <p className="font-semibold">
+        <span aria-hidden className="mr-1.5">
+          {FORME_VERDICT[verdict.niveau]}
+        </span>
+        {verdict.titre}
+      </p>
       {verdict.raisons.length > 0 && (
-        <ul className="mt-2 list-disc space-y-0.5 pl-5">
+        <ul className="flex min-w-0 flex-wrap gap-1.5">
           {verdict.raisons.map((r) => (
-            <li key={r.texte}>
-              {r.texte}{" "}
-              <a href={r.ancre} className="font-medium underline underline-offset-2">
-                Voir
+            <li key={r.texte} className="min-w-0">
+              <a
+                href={r.ancre}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-line bg-panel/70 px-2 py-px text-xs font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+              >
+                <span className="min-w-0">{r.texte}</span>
+                <span aria-hidden>→</span>
+                <span className="sr-only">Voir</span>
               </a>
             </li>
           ))}
@@ -198,7 +239,7 @@ function Verdict({ verdict }: { verdict: VerdictSante }) {
  */
 function DetailTechnique({ children }: { children: React.ReactNode }) {
   return (
-    <details className="mt-1 text-xs">
+    <details className="text-xs">
       <summary className="cursor-pointer select-none text-ink-soft">Détail technique</summary>
       <p className="mt-1 text-ink-soft">{children}</p>
     </details>
@@ -212,7 +253,7 @@ function DetailTechnique({ children }: { children: React.ReactNode }) {
 function Adresse({ url }: { url: string }) {
   const morceaux = url.split("/");
   return (
-    <code className="mt-1 block font-mono text-[13px] text-ink [overflow-wrap:anywhere]">
+    <code className="block font-mono text-xs text-ink [overflow-wrap:anywhere]">
       {morceaux.map((m, i) => (
         <Fragment key={i}>
           {m}
@@ -227,120 +268,194 @@ function Adresse({ url }: { url: string }) {
   );
 }
 
+/** Une ligne du tableau des adresses : le flux, l'adresse, l'état en pastille ; la phrase dans la bulle. */
+function LigneAdresse({
+  flux,
+  url,
+  ton,
+  etat,
+  explication,
+  technique,
+  testId,
+}: {
+  flux: string;
+  url: string | null;
+  ton: TonPastille;
+  etat: string;
+  explication: string;
+  technique: React.ReactNode | null;
+  testId?: string;
+}) {
+  return (
+    <tr className="align-top">
+      <td className={`${TD} text-xs font-medium text-ink`}>{flux}</td>
+      <td className={`${TD} min-w-[14rem]`}>{url ? <Adresse url={url} /> : <span className="text-xs text-ink-faint">—</span>}</td>
+      {/* Un repli plutôt qu'une bulle : dans le tableau qui défile, une bulle serait rognée. */}
+      <td className={TD} data-testid={testId}>
+        <span className="flex min-w-0 flex-wrap items-start gap-1.5">
+          <Pastille ton={ton}>{etat}</Pastille>
+          <Repli libelle={`Explication : ${flux}`}>
+            <p>{explication}</p>
+            {technique && <p className="mt-1 text-ink-faint">{technique}</p>}
+          </Repli>
+        </span>
+      </td>
+    </tr>
+  );
+}
+
+/** Un étage d'indicateurs : son surtitre en petites capitales, sa bulle, ses cases. */
+function Etage({ id, titre, aide, colonnes = 4, children }: { id: string; titre: string; aide?: React.ReactNode; colonnes?: 2 | 3 | 4; children: React.ReactNode }) {
+  const grille = { 2: "grid-cols-2", 3: "grid-cols-2 sm:grid-cols-3", 4: "grid-cols-2 sm:grid-cols-4" }[colonnes];
+  return (
+    <section id={id} aria-labelledby={`${id}-titre`} className="min-w-0 scroll-mt-20">
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <h2 id={`${id}-titre`} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-soft">
+          {titre}
+        </h2>
+        {aide && (
+          <InfoTip label={`Aide : ${titre}`} align="start">
+            {aide}
+          </InfoTip>
+        )}
+      </div>
+      <div className={`grid gap-2 ${grille}`}>{children}</div>
+    </section>
+  );
+}
+
 /** Les tuiles de l'instantané de santé — rendues seulement sur une lecture réussie. */
 function StatsSante({ h }: { h: HealthSnapshot }) {
   const lag = h.metering_lag_hours;
-  const lagTone = lag == null ? "text-warn-ink" : lag > RETARD_CONSO_INCIDENT_H ? "text-bad-ink" : lag > RETARD_CONSO_ATTENTION_H ? "text-warn-ink" : "";
   const fileVide = h.ingest_backlog === 0 && h.ingest_backlog_blocked === 0;
   return (
-    <>
-      <h2 className="mb-2 text-sm font-semibold text-ink">Collecte des 5 dernières minutes (toutes applications)</h2>
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Mesures Web Vitals" value={h.ingest_metrics_5m} />
-        <Stat label="Pages vues" value={h.ingest_pageviews_5m} />
-        <Stat label="Erreurs" value={h.ingest_errors_5m} />
-        <Stat label="Sessions" value={h.ingest_sessions_5m} />
-      </div>
+    <div className="grid gap-x-4 gap-y-3 lg:grid-cols-2">
+      <Etage id="collecte-5-min" titre="Collecte · 5 dernières minutes" aide="Ce qui est arrivé ces 5 dernières minutes, toutes applications confondues.">
+        <KpiTile label="Mesures Web Vitals reçues (5 min)" libelleCase="Web Vitals" valeur={h.ingest_metrics_5m} format="count" source={SOURCE} methode="Mesures Web Vitals écrites ces 5 dernières minutes, toutes applications." />
+        <KpiTile label="Pages vues reçues (5 min)" libelleCase="Pages vues" valeur={h.ingest_pageviews_5m} format="count" source={SOURCE} methode="Pages vues écrites ces 5 dernières minutes, toutes applications." />
+        <KpiTile label="Erreurs reçues (5 min)" libelleCase="Erreurs" valeur={h.ingest_errors_5m} format="count" source={SOURCE} methode="Erreurs écrites ces 5 dernières minutes, toutes applications." />
+        <KpiTile label="Sessions reçues (5 min)" libelleCase="Sessions" valeur={h.ingest_sessions_5m} format="count" source={SOURCE} methode="Sessions actives ces 5 dernières minutes, toutes applications." />
+      </Etage>
 
-      <h2 id="notifications" className="mb-2 scroll-mt-20 text-sm font-semibold text-ink">
-        Alertes et notifications (toutes applications)
-      </h2>
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <Etage id="notifications" titre="Alertes et notifications" aide="Toutes applications. Un déclenchement à acquitter est une tâche, pas une panne de MIP RUM.">
         {/* Un déclenchement à acquitter est une tâche, pas une panne de MIP RUM : neutre, et un lien pour s'en occuper. */}
-        <Stat label="Déclenchements non acquittés" value={h.alerts_unacked}>
-          {h.alerts_unacked > 0 && (
-            <Link href="/alerts" className="mt-0.5 block text-[11px] font-medium text-brand hover:underline">
-              Voir les alertes →
-            </Link>
-          )}
-        </Stat>
-        <Stat label="Notifications en attente d'envoi" value={h.deliveries_queued} />
-        <Stat label="Notifications en échec (nouvel essai prévu)" value={h.deliveries_failed} tone={h.deliveries_failed > 0 ? "text-warn-ink" : ""} />
-        <Stat label="Notifications abandonnées" value={h.deliveries_dead} tone={h.deliveries_dead > 0 ? "text-bad-ink" : ""} />
-      </div>
+        <KpiTile label="Déclenchements non acquittés" libelleCase="Non acquittés" valeur={h.alerts_unacked} format="count" href="/alerts" source={SOURCE} methode="Déclenchements d'alerte qu'aucun membre n'a encore acquittés." />
+        <KpiTile label="Notifications en attente d'envoi" libelleCase="En attente" valeur={h.deliveries_queued} format="count" source={SOURCE} methode="Notifications d'alerte prêtes à partir." />
+        <KpiTile
+          label="Notifications en échec (nouvel essai prévu)"
+          libelleCase="En échec"
+          valeur={h.deliveries_failed}
+          format="count"
+          alerte={{ si: ">", valeur: 0, regle: "un nouvel essai est prévu" }}
+          source={SOURCE}
+          methode="Notifications dont l'envoi a échoué ; un nouvel essai est prévu."
+        />
+        <KpiTile
+          label="Notifications abandonnées"
+          libelleCase="Abandonnées"
+          valeur={h.deliveries_dead}
+          format="count"
+          alerte={{ si: ">", valeur: 0, regle: "abandonnées après plusieurs échecs : personne n'a été prévenu" }}
+          source={SOURCE}
+          methode="Notifications abandonnées après plusieurs échecs : elles ne partiront plus."
+        />
+      </Etage>
 
-      <h2 id="file" className="mb-2 scroll-mt-20 text-sm font-semibold text-ink">
-        File d&apos;attente de la collecte
-      </h2>
       {/* La console écrit toujours en direct (ses routes d'ingestion n'emploient pas
           cette file) : seul le service de collecte la remplit, s'il tourne en
           collecte différée. Une file vide veut donc dire « inutilisée », pas
           « saine » — et l'écran le dit (recette du 26/09/2026). */}
       {fileVide ? (
-        <p className="card mb-6 px-4 py-3 text-sm text-ink-soft" data-testid="file-inutilisee">
-          <strong className="text-ink">Inutilisée.</strong> La console écrit les données reçues directement en base.
-          Seul le service de collecte peut passer par cette file, s&apos;il est réglé en collecte différée : rien
-          n&apos;y attend.
-        </p>
+        <Etage id="file" titre="File d'attente de la collecte" colonnes={2}>
+          <div className="col-span-2 flex min-h-[6.5rem] min-w-0 flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-3.5 py-3 text-sm text-ink-soft" data-testid="file-inutilisee">
+            <strong className="text-ink">Inutilisée.</strong> La console écrit les données reçues directement en base.
+            <InfoTip label="Pourquoi la file est vide" align="start">
+              Seul le service de collecte peut passer par cette file, s&apos;il est réglé en collecte différée : rien n&apos;y attend.
+            </InfoTip>
+          </div>
+        </Etage>
       ) : (
-        <>
-          <div className="mb-2 text-xs text-ink-soft">
-            Le service de collecte l&apos;utilise (collecte différée) : les données reçues y attendent avant
-            d&apos;être écrites. Elle n&apos;est pas protégée contre un arrêt brutal de la base : ce qui y attend
-            serait perdu. Une file qui monte veut dire que l&apos;écriture ne suit pas ; des lots abandonnés,
-            qu&apos;une écriture échoue en boucle — ceux-là ne seront plus repris.
-            <DetailTechnique>
-              Réglage <code>INGEST_DEFERRED</code> du service de collecte ; file non journalisée par la base
-              (UNLOGGED).
-            </DetailTechnique>
-          </div>
-          <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Stat label="Lots en attente" value={h.ingest_backlog} tone={h.ingest_backlog > FILE_ATTENTION ? "text-warn-ink" : ""} />
-            <Stat label="Lots abandonnés" value={h.ingest_backlog_blocked} tone={h.ingest_backlog_blocked > 0 ? "text-bad-ink" : ""} />
-            <div className="card px-4 py-3">
-              <div className="text-[11px] uppercase tracking-wide text-ink-faint">Plus vieux lot en attente</div>
-              <div className="mt-0.5 text-2xl font-bold tabular-nums text-ink">
-                {h.ingest_backlog === 0 ? "aucun" : `${h.ingest_backlog_age_s.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}\u00a0s`}
-              </div>
-            </div>
-          </div>
-        </>
+        <Etage
+          id="file"
+          titre="File d'attente de la collecte"
+          colonnes={3}
+          aide={
+            <>
+              Le service de collecte l&apos;utilise (collecte différée) : les données reçues y attendent avant d&apos;être écrites. Elle
+              n&apos;est pas protégée contre un arrêt brutal de la base : ce qui y attend serait perdu. Une file qui monte veut dire que
+              l&apos;écriture ne suit pas ; des lots abandonnés, qu&apos;une écriture échoue en boucle — ceux-là ne seront plus repris.
+              Réglage <code>INGEST_DEFERRED</code> du service de collecte ; file non journalisée par la base (UNLOGGED).
+            </>
+          }
+        >
+          <KpiTile
+            label="Lots en attente"
+            valeur={h.ingest_backlog}
+            format="count"
+            alerte={{ si: ">", valeur: FILE_ATTENTION, regle: "l'écriture ne suit pas" }}
+            source={SOURCE}
+            methode="Lots de données reçus qui attendent d'être écrits en base."
+          />
+          <KpiTile
+            label="Lots abandonnés"
+            valeur={h.ingest_backlog_blocked}
+            format="count"
+            alerte={{ si: ">", valeur: 0, regle: "ils ne seront plus repris" }}
+            source={SOURCE}
+            methode="Lots dont l'écriture a échoué en boucle : ils ne seront plus repris."
+          />
+          <KpiTile
+            label="Plus vieux lot en attente"
+            libelleCase="Plus vieux lot"
+            valeur={h.ingest_backlog === 0 ? null : h.ingest_backlog_age_s * 1000}
+            format="s-auto"
+            raisonNull="aucun lot en attente"
+            source={SOURCE}
+            methode="Âge du plus ancien lot encore en attente d'écriture."
+          />
+        </Etage>
       )}
 
-      <h2 id="routes" className="mb-2 scroll-mt-20 text-sm font-semibold text-ink">
-        Détail par route
-      </h2>
-      <p className="mb-2 text-xs text-ink-soft">
-        Au-delà du plafond d&apos;une application, ses nouvelles routes sont regroupées sur une seule ligne
-        « autres ». Rien n&apos;est perdu en volume : c&apos;est le détail par route qui s&apos;arrête. Une
-        application au plafond a besoin de règles de regroupement de ses adresses (par exemple{" "}
-        <code className="chip-mono">/produit/123</code> → <code className="chip-mono">/produit/:id</code>), pas
-        d&apos;un plafond plus haut.
-      </p>
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Applications au plafond" value={h.apps_route_capped} tone={h.apps_route_capped > 0 ? "text-warn-ink" : ""} />
-        <Stat label="Routes distinctes (application la plus détaillée)" value={h.routes_max} />
-      </div>
-
-      <h2 id="consommation" className="mb-2 scroll-mt-20 text-sm font-semibold text-ink">
-        Applications et consommation
-      </h2>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Applications actives" value={h.apps_active} />
-        <div className="card px-4 py-3" data-testid="retard-consommation">
-          <div className="text-[11px] uppercase tracking-wide text-ink-faint">Dernier calcul de la consommation</div>
-          <div className={`mt-0.5 text-2xl font-bold tabular-nums ${lagTone || "text-ink"}`}>
-            {lag == null ? "jamais exécuté" : `il y a ${lag.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} h`}
-          </div>
-          <div className="mt-0.5 text-[11px] text-ink-soft">
-            {lag == null
-              ? "Sans lui, l'écran Consommation n'affiche aucun volume."
-              : `Signalé au-delà de ${RETARD_CONSO_ATTENTION_H} h, en incident au-delà de ${RETARD_CONSO_INCIDENT_H} h.`}
-          </div>
+      <Etage
+        id="routes"
+        titre="Routes et consommation"
+        aide={
+          <>
+            Au-delà du plafond d&apos;une application, ses nouvelles routes sont regroupées sur une seule ligne
+            « autres ». Rien n&apos;est perdu en volume : c&apos;est le détail par route qui s&apos;arrête. Une
+            application au plafond a besoin de règles de regroupement de ses adresses (par exemple{" "}
+            <code className="chip-mono">/produit/123</code> → <code className="chip-mono">/produit/:id</code>), pas
+            d&apos;un plafond plus haut.
+          </>
+        }
+      >
+        <KpiTile
+          label="Applications au plafond de routes"
+          libelleCase="Au plafond"
+          valeur={h.apps_route_capped}
+          format="count"
+          alerte={{ si: ">", valeur: 0, regle: "leurs nouvelles routes sont regroupées" }}
+          source={SOURCE}
+          methode="Applications dont les nouvelles routes sont regroupées sur une seule ligne « autres » : il leur faut des règles de regroupement de leurs adresses."
+        />
+        <KpiTile label="Routes distinctes (application la plus détaillée)" libelleCase="Routes (max)" valeur={h.routes_max} format="count" source={SOURCE} methode="Nombre de routes distinctes de l'application qui en a le plus." />
+        <KpiTile label="Applications actives" valeur={h.apps_active} format="count" source={SOURCE} methode="Applications autorisées à envoyer des mesures." />
+        <div id="consommation" className="min-w-0 scroll-mt-20" data-testid="retard-consommation">
+          {lag == null ? (
+            <KpiLibelle label="Dernier calcul de la consommation" texte="jamais exécuté" lecture="Sans lui, l'écran Consommation n'affiche aucun volume." />
+          ) : (
+            <KpiTile
+              label="Dernier calcul de la consommation"
+              libelleCase="Calcul de la conso."
+              valeur={lag * HEURE_MS}
+              format="s-auto"
+              alerte={{ si: ">", valeur: RETARD_CONSO_ATTENTION_H * HEURE_MS, regle: `signalé au-delà de ${RETARD_CONSO_ATTENTION_H} h, en incident au-delà de ${RETARD_CONSO_INCIDENT_H} h` }}
+              source={SOURCE}
+              methode={`Temps écoulé depuis le dernier calcul de la consommation. Signalé au-delà de ${RETARD_CONSO_ATTENTION_H} h, en incident au-delà de ${RETARD_CONSO_INCIDENT_H} h.`}
+            />
+          )}
         </div>
-      </div>
-    </>
-  );
-}
-
-function Stat({ label, value, tone = "", children }: { label: string; value: number; tone?: string; children?: React.ReactNode }) {
-  return (
-    <div className="card px-4 py-3">
-      <div className="text-[11px] uppercase tracking-wide text-ink-faint">{label}</div>
-      <div className={`mt-0.5 text-2xl font-bold tabular-nums ${tone || "text-ink"}`}>
-        {value.toLocaleString("fr-FR")}
-      </div>
-      {children}
+      </Etage>
     </div>
   );
 }

@@ -9,8 +9,14 @@ import type { IconName } from "./icons";
  * route gardée derrière un onglet INTERNE à une page (/actions, sous
  * « Interactions ») : une entrée de plus dans la barre dirait deux écrans là où
  * il n'y a qu'une question. Défaut : `true`.
+ *
+ * `horsMenu: true` (recette du 30/09/2026) : la page n'a rien à montrer à aucun
+ * projet actuel, elle quitte le menu mais GARDE son adresse (liens partagés, e2e).
+ * Sur sa route, la catégorie reste allumée et AUCUN onglet ne l'est : l'onglet
+ * voisin allumé dirait qu'on lit un autre écran, ce que `sousOnglet: false` fait
+ * exprès pour un onglet interne.
  */
-export type NavLink = { href: string; label: string; sousOnglet?: boolean };
+export type NavLink = { href: string; label: string; sousOnglet?: boolean; horsMenu?: boolean };
 
 export type NavCategory = {
   href: string; // page d'atterrissage de la catégorie (1er onglet)
@@ -57,7 +63,15 @@ export const CATEGORIES: NavCategory[] = [
       // P7.5 : le runtime React Native a son écran parce qu'il a ses angles
       // MORTS — crashes natifs, ANR, démarrage natif. Les fondre dans les
       // écrans web ferait lire leurs absences comme des zéros.
-      { href: "/mobile", label: "Mobile" },
+      // Hors menu depuis la recette du 30/09/2026 : seul le SDK React Native
+      // l'alimente, il n'est pas publié et aucun projet n'est mobile — l'onglet
+      // ne menait qu'à un écran vide. La page reste à son adresse, prête pour le
+      // premier projet mobile.
+      { href: "/mobile", label: "Mobile", horsMenu: true },
+      // Tendances (recette du 01/10/2026) : la dérive des Web Vitals sur 14 jours est
+      // une question de PERFORMANCE, pas de fiabilité ; l'adresse ne change pas.
+      // Ajustement linéaire sur 14 points quotidiens : une tendance, pas une prévision.
+      { href: "/forecast", label: "Tendances" },
     ],
   },
   // Synthétique × RUM : la promesse « synthétique + RUM unifiés », notre
@@ -100,26 +114,24 @@ export const CATEGORIES: NavCategory[] = [
     children: [
       { href: "/slo", label: "SLO" },
       { href: "/alerts", label: "Alertes" },
-      // Ajustement linéaire sur 14 points quotidiens : une tendance, pas une
-      // prévision.
-      { href: "/forecast", label: "Tendances" },
     ],
   },
   {
-    href: "/explorer",
-    label: "Explorer",
+    href: "/events",
+    label: "Données",
     icon: "compass",
     domain: "perf",
     children: [
-      // Explorer générique (P6.4) : la même fenêtre et les mêmes filtres que les
-      // écrans voisins, mais la mesure se compose au lieu d'être prédéfinie. C'est
-      // la destination commune de « Ouvrir dans l'Explorer » de chaque figure.
-      { href: "/explorer", label: "Explorer" },
       // Journal filtrable (liste + facettes + tendance) : il sert l'exploration.
       { href: "/events", label: "Journal" },
       // Un tableau est une composition de requêtes de l'Explorer (widgets v2 =
       // AST Explorer, lib/dashboards.ts) : il vit à côté d'elles, pas des alertes.
       { href: "/dashboards", label: "Tableaux de bord" },
+      // Explorer générique (P6.4) : la mesure se compose au lieu d'être prédéfinie.
+      // Hors menu depuis la recette du 01/10/2026 : on y entre par la loupe de la
+      // barre du haut (`components/Loupe.tsx`) et par « Ouvrir dans l'Explorer » de
+      // chaque figure ; l'adresse ne change pas.
+      { href: "/explorer", label: "Explorer", horsMenu: true },
     ],
   },
   // Retirés du menu (recette du 30/09/2026), les pages restent à leur adresse :
@@ -145,7 +157,10 @@ export const ADMINISTRATION: readonly LienAdministration[] = [
   { href: "/admin/customers", label: "Clients", icon: "building" },
   { href: "/admin/users", label: "Utilisateurs", icon: "user" },
   { href: "/admin/privacy", label: "Vie privée · RGPD", icon: "shield" },
-  { href: "/admin/read-tokens", label: "Jetons de lecture", icon: "key" },
+  // « Jetons d'accès » (recette du 30/09/2026) : un « jeton de lecture » EST un jeton
+  // d'accès porteur, en lecture seule, limité à la synthèse d'une application — le
+  // nom que le métier connaît. L'adresse, la table et le code gardent « read ».
+  { href: "/admin/read-tokens", label: "Jetons d'accès", icon: "key" },
   { href: "/admin/sourcemaps", label: "Source maps", icon: "fileCode" },
   { href: "/admin/extension-scope", label: "Extension navigateur", icon: "puzzle" },
   { href: "/admin/extension-installs", label: "Postes équipés", icon: "monitor" },
@@ -156,6 +171,11 @@ export const ADMINISTRATION: readonly LienAdministration[] = [
   { href: "/admin/usage", label: "Consommation", icon: "barChart" },
   { href: "/admin/health", label: "Santé interne", icon: "heartPulse" },
 ];
+
+/** Le chemin est-il un écran d'administration ? Le bloc repliable s'y ouvre d'office. */
+export function estAdministration(pathname: string): boolean {
+  return hrefMatches("/admin", pathname);
+}
 
 /** Entrée d'administration active pour ce chemin (préfixe le plus long), ou undefined. */
 export function lienAdministrationActif(pathname: string): LienAdministration | undefined {
@@ -173,7 +193,7 @@ export const DOMAINE_DE_CATEGORIE = {
   "/correlation": "robot",
   "/sessions": "usages",
   "/slo": "fiabilite",
-  "/explorer": "explorer",
+  "/events": "explorer",
 } as const satisfies Record<string, string>;
 export type DomaineRum = (typeof DOMAINE_DE_CATEGORIE)[keyof typeof DOMAINE_DE_CATEGORIE];
 
@@ -213,28 +233,45 @@ export function surtitreDe(pathname: string): DomaineRum | DomaineHorsRum | null
   return null;
 }
 
-/** Sous-onglets RENDUS par la barre : les liens `sousOnglet: false` en sont retirés. */
+/** Sous-onglets RENDUS par la barre : les liens `sousOnglet: false` et `horsMenu` en sont retirés. */
 export function sousOnglets(c: NavCategory): NavLink[] {
-  return (c.children ?? []).filter((l) => l.sousOnglet !== false);
+  return (c.children ?? []).filter((l) => l.sousOnglet !== false && !l.horsMenu);
 }
 
 /**
  * Onglet RENDU à allumer pour ce chemin. Un lien masqué est rattaché à l'onglet
  * visible qui le précède : sur /actions, c'est « Interactions » qui est actif —
- * la barre ne doit jamais n'allumer aucun onglet sur une route de sa catégorie.
+ * la barre ne doit jamais n'allumer aucun onglet sur une route gardée derrière un
+ * onglet interne. Une route `horsMenu` (/mobile) n'en allume AUCUN : elle n'est
+ * derrière aucun onglet.
  */
 export function ongletActif(c: NavCategory, pathname: string): string | undefined {
   let visible: string | undefined;
   let best: string | undefined;
   let bestLen = -1;
   for (const l of c.children ?? []) {
-    if (l.sousOnglet !== false) visible = l.href;
+    if (l.sousOnglet !== false && !l.horsMenu) visible = l.href;
     if (visible !== undefined && hrefMatches(l.href, pathname) && l.href.length > bestLen) {
-      best = visible;
+      best = l.horsMenu ? undefined : visible;
       bestLen = l.href.length;
     }
   }
   return best;
+}
+
+/**
+ * Le lien dont l'écran courant EST la page (chemin identique), dans une catégorie qui
+ * rend sa barre d'onglets ; sinon undefined. Sur cet écran, l'onglet allumé nomme déjà
+ * la page : le titre n'est pas écrit une deuxième fois en dessous (recette du
+ * 01/10/2026, « Pages » sous l'onglet Pages). Il reste écrit sur une sous-page
+ * (/tracing/abc, /dashboards/x : il dit ce que l'onglet ne dit pas) et sur une route
+ * `horsMenu` (/mobile : aucun onglet ne la nomme). Un onglet INTERNE (`sousOnglet:
+ * false`, /actions) compte : l'onglet de la page porte son nom.
+ */
+export function ongletExact(pathname: string): NavLink | undefined {
+  const c = activeCategory(pathname);
+  if (!c || c.verrouille || !sousOnglets(c).length) return undefined;
+  return c.children?.find((l) => l.href === pathname && !l.horsMenu);
 }
 
 /** Un href de nav correspond-il au chemin courant ? ("/" exige l'égalité stricte). */

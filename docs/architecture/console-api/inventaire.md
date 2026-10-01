@@ -1,6 +1,6 @@
 # Inventaire de la console, pour la piste C
 
-> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-09-30, sur `HEAD`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
+> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-10-01, sur `HEAD`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
 
 ## En chiffres
 
@@ -9,7 +9,7 @@
 | Écrans (`page.tsx`) | 60 | **47** |
 | Fichiers d'actions serveur (`"use server"`) | 20 (56 actions) | **18** |
 | Actions déclarées dans un écran | 0 | — |
-| Routes (`route.ts`) | 45 | **37** |
+| Routes (`route.ts`) | 46 | **37** |
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
 | Modules `lib/queries*.ts` | 48 (210 fonctions exportées) | — |
@@ -122,6 +122,7 @@
 | Route | Méthodes | Authentification | Base | Destination |
 |---|---|---|---|---|
 | `/admin/privacy/export` | GET | — | **oui** | console-api (C10 RGPD) |
+| `/api/assistant` | POST | session | non | à classer |
 | `/api/auth/oidc/callback` | GET | émet la session | **oui** | console-api (C1 identité) |
 | `/api/auth/oidc/login` | GET | — | non | console-api (C1 identité) |
 | `/api/dashboards/[id]/export` | GET | — | **oui** | console-api (C6) |
@@ -134,7 +135,7 @@
 | `/api/metrics` | GET | jeton de métriques | **oui** | à supprimer (supervision par les /metrics des services) |
 | `/api/releases` | GET | — | **oui** | reste sur Vercel, relais serveur (C11) |
 | `/api/replay/[sessionId]` | GET | — | **oui** | console-api (C3) |
-| `/api/rum/summary` | GET | jeton de lecture en base | **oui** | api (P4) |
+| `/api/rum/summary` | GET | jeton d'accès en base | **oui** | api (P4) |
 | `/api/sourcemaps` | GET, POST | session administrateur | **oui** | collector pour les jetons de CI, console-api pour l'admin (C11) |
 | `/api/v1/actions` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/apps` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |

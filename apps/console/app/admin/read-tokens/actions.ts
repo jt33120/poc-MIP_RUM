@@ -1,5 +1,7 @@
 "use server";
-// Server Actions /admin/read-tokens — génère / révoque les jetons de lecture. C9 — les COMMANDES `creerJetonLecture` et `revoquerJetonLecture`
+// Server Actions /admin/read-tokens — génère / révoque les jetons d'accès (ex-« jetons de
+// lecture » : porteurs, en lecture seule, limités à la synthèse d'une application ; le
+// code garde « lecture »). C9 — les COMMANDES `creerJetonLecture` et `revoquerJetonLecture`
 // (`lib/commandes/raccordements.ts`) : l'administrateur de l'application du jeton,
 // audité ; le jeton en clair rendu UNE fois par la commande (seul le hash est en
 // base), rendu au formulaire (`useActionState`, C9c) qui l'affiche une fois.

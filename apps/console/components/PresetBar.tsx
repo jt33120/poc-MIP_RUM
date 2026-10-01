@@ -27,6 +27,7 @@ import {
   ecrireSegmentsEnregistres,
   lireSegmentsEnregistres,
 } from "@/components/segments-enregistres";
+import { Deporte } from "@/components/emplacements-coquille";
 import { hrefDeVue, vueActuelle, vueCorrespond, vuesPersonnelles, type VuePrereglee } from "@/lib/presets";
 import type { SavedSegment } from "@/lib/query-contract";
 
@@ -70,8 +71,14 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
     setSaisie(null);
   }
 
+  // UNE RANGÉE DE MOINS (recette du 01/10/2026) : la rangée « Vues » tenait toute la
+  // largeur sous la barre de segment, à moitié vide. À partir de 1 024 px, elle monte
+  // DANS la barre de segment, à droite de « + Filtre » (`Deporte`, emplacement
+  // `vues`) : une vue est une population, sa place est à côté du segment. En dessous,
+  // ou sur un écran sans barre de segment (la vitrine des composants), elle reste ici.
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2" data-testid="preset-bar">
+    <Deporte vers="vues" repli="vues" des={1024} classeDepot="flex-1">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2" data-testid="preset-bar">
       <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Vues</span>
       <div className="relative min-w-0 flex-1">
         {/* `relative` : les textes sr-only (position absolue) des vues indisponibles se
@@ -91,7 +98,7 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
                   data-indisponible="true"
                   className={`${PASTILLE} cursor-not-allowed border-dashed border-line text-ink-soft opacity-70`}
                 >
-                  {vue.libelle}
+                  <span className="libelle-vue">{vue.libelle}</span>
                   <span className="sr-only"> — indisponible : {vue.indisponible}</span>
                 </span>
               );
@@ -106,6 +113,9 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
                   data-vue={vue.id}
                   data-origine={vue.origine}
                   scroll={false}
+                  // Le nom entier en bulle : dans la barre de segment, une vue longue est
+                  // coupée (« Pire navigateur • Chr… »).
+                  title={vue.libelle}
                   className={`${PASTILLE} ${
                     active
                       ? // Même règle que les badges de santé (F01) : le TEXTE sur la teinte
@@ -114,7 +124,7 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
                       : "border-line text-ink-soft hover:border-perf/40 hover:text-perf-ink dark:hover:text-perf"
                   } ${vue.origine === "personnelle" ? "italic" : ""}`}
                 >
-                  {vue.libelle}
+                  <span className="libelle-vue">{vue.libelle}</span>
                 </Link>
               </span>
             );
@@ -128,11 +138,17 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
           onClick={() => actuelle && setSaisie(actuelle.nom)}
           disabled={!actuelle}
           title={actuelle ? "Enregistrer la population actuelle comme vue personnelle" : "Aucun filtre de population à enregistrer"}
-          className="shrink-0 rounded-lg border border-dashed border-line px-2 py-0.5 text-xs font-medium text-ink-soft transition hover:border-perf/40 hover:text-perf disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-dashed border-line px-2 py-0.5 text-xs font-medium text-ink-soft transition hover:border-perf/40 hover:text-perf disabled:cursor-not-allowed disabled:opacity-60"
           data-testid="preset-enregistrer"
         >
-          Enregistrer la vue
-          <span className="sr-only"> actuelle</span>
+          {/* Dans la barre de segment, le signet seul ; le nom reste au lecteur d'écran et en bulle. */}
+          <svg aria-hidden viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 3h12v18l-6-4-6 4zM12 7v6M9 10h6" />
+          </svg>
+          <span className="libelle-enregistrer">
+            Enregistrer la vue
+            <span className="sr-only"> actuelle</span>
+          </span>
         </button>
       ) : (
         <form
@@ -166,5 +182,6 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
         </form>
       )}
     </div>
+    </Deporte>
   );
 }

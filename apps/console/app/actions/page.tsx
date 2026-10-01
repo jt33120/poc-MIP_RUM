@@ -37,6 +37,8 @@ import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { OngletsInteractions } from "@/components/perf/OngletsInteractions";
+import { SOURCE_ACTIONS } from "@/components/perf/sources";
+import { InfoTip } from "@/components/InfoTip";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { TableDefilante } from "@/components/TableDefilante";
@@ -176,19 +178,31 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
       )}
 
       {vue.cmp === "release" && (
-        <p role="note" className="mb-2 text-xs text-ink-soft" data-testid="note-cmp-release">
-          Comparaison de releases : les tuiles d&apos;actions ne comparent que la période précédente ; aucun écart
-          n&apos;est affiché ici.
+        <p
+          role="note"
+          className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-panel2 px-2.5 py-0.5 text-[11px] text-ink-soft"
+          data-testid="note-cmp-release"
+          title="Comparaison de releases : les tuiles d'actions ne comparent que la période précédente ; aucun écart n'est affiché ici."
+        >
+          <span aria-hidden className="text-ink-faint">
+            ⊘
+          </span>
+          <span className="font-medium text-ink">Écarts non affichés</span>
+          <span className="sr-only">
+            {" "}
+            — Comparaison de releases : les tuiles d&apos;actions ne comparent que la période précédente ; aucun écart
+            n&apos;est affiché ici.
+          </span>
         </p>
       )}
 
-      {/* ── Zone 2 : KPI ×3 (§ 5.4.3). Neutres : aucun seuil publié (R-S). ── */}
+      {/* ── Zone 2 : KPI ×4 (§ 5.4.3). Neutres : aucun seuil publié (R-S). ── */}
       <SectionErreur titre="Actions, sessions et erreurs liées">
         <section aria-label={`Actions sur ${label}`} className="mb-4" data-testid="kpi-actions">
           {!resume.ok ? (
             <EchecLecture titre="Actions, sessions et erreurs liées" />
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
               <TuilesActions
                 resume={resume.data}
                 resumePrec={resumePrec}
@@ -199,8 +213,9 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
             </div>
           )}
           {resume.ok && resume.data.sampling_notice && (
-            <div className="mt-3">
+            <div className="mt-2">
               <EtatSurface
+                compact
                 etat={{
                   kind: "echantillonne",
                   probaMin: resume.data.sampling_notice.min_sample_rate,
@@ -223,7 +238,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
 
       {/* ── Zone 3 : hero (barres NON empilées) ── */}
       <SectionErreur titre={ORDRES[ordre].titre}>
-        <div className="mb-6">
+        <div className="mb-2">
           <HeroActions
             hero={hero}
             label={label}
@@ -244,19 +259,24 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
           // Défilement SIGNALÉ au-delà de 640 px ; en dessous, une carte par ligne :
           // à 390 px, seules Action et Route se voyaient, tous les chiffres hors champ.
           <TableDefilante className="card" testId="table-actions" label="Table des actions">
+            {/* Tableau DENSE (recette du 30/09/2026) : une ligne par action, 50 par page, qui
+                défilent dans la carte sous un en-tête collant — la page faisait 5 000 px. */}
+            <div className="max-h-[34rem] overflow-y-auto [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10">
             <table className="block w-full text-sm sm:table sm:min-w-[67rem] sm:table-fixed">
-              <caption className="caption-top px-4 pt-3 text-left text-xs text-ink-soft">
+              {/* La légende est lue, pas affichée : la phrase sur le cumul est dans la bulle
+                  de sa colonne. */}
+              <caption className="sr-only">
                 Actions de {label}, {ORDRES[ordre].titre.replace("Actions classées", "classées")}. {PHRASE_CUMUL}
               </caption>
               {/* Neuf colonnes tenant dans la carte à 1 440 px : la route passe sous le nom
                   de l'action (elle avait sa colonne, et deux colonnes sortaient du champ). */}
               <colgroup>
-                <col className="w-64" />
+                <col className="w-56" />
                 {[0, 1, 2].map((column) => (
                   <col key={column} className="w-20" />
                 ))}
-                <col className="w-24" />
-                <col className="w-24" />
+                <col className="w-28" />
+                <col className="w-28" />
                 <col className="w-32" />
                 <col className="w-36" />
                 <col className="w-28" />
@@ -270,7 +290,14 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
                   <th scope="col" className="th text-right">Ressources</th>
                   <th scope="col" className="th text-right">API</th>
                   <th scope="col" className="th text-right">Temps réseau lié (p75 par action)</th>
-                  <th scope="col" className="th text-right">{TITRE_CUMUL}</th>
+                  <th scope="col" className="th text-right">
+                    <span className="inline-flex items-center justify-end gap-1">
+                      {TITRE_CUMUL}
+                      <InfoTip label="Ce que dit le cumul" align="end">
+                        {PHRASE_CUMUL}
+                      </InfoTip>
+                    </span>
+                  </th>
                   <th scope="col" className="th">Dernière vue</th>
                 </tr>
               </thead>
@@ -279,16 +306,21 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
                   <tr
                     key={`${row.app_id}|${row.name}|${row.type}|${row.route ?? ""}`}
                     data-testid="action-ligne"
-                    className="block border-t border-line/60 px-4 py-3 hover:bg-panel2/60 sm:table-row sm:p-0"
+                    className="block border-t border-line/60 px-4 py-2 hover:bg-panel2/60 sm:table-row sm:p-0"
                   >
-                    <td className="block min-w-0 sm:table-cell sm:px-4 sm:py-3 sm:align-top">
-                      <div className="break-words font-semibold text-ink">{libelleAction(row.name)}</div>
-                      <div className="mt-0.5 break-all font-mono text-xs text-ink-soft">{row.route ?? "(route inconnue)"}</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-faint">
-                        <span className="rounded border border-line px-1.5 py-0.5">
+                    {/* Deux lignes courtes : le nom et son type, puis la route (et l'app). */}
+                    <td className="block min-w-0 sm:table-cell sm:px-4 sm:py-1.5 sm:align-middle">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="min-w-0 truncate font-semibold text-ink" title={libelleAction(row.name)}>
+                          {libelleAction(row.name)}
+                        </span>
+                        <span className="shrink-0 rounded border border-line px-1 text-[10px] text-ink-faint">
                           {row.type === "click" ? "clic" : "manuelle"}
                         </span>
-                        {avecApp && <span className="font-mono">{row.app_id}</span>}
+                      </div>
+                      <div className="truncate font-mono text-[11px] text-ink-soft" title={row.route ?? "(route inconnue)"}>
+                        {row.route ?? "(route inconnue)"}
+                        {avecApp && <span className="text-ink-faint"> · {row.app_id}</span>}
                       </div>
                     </td>
                     <Nombre libelle="Actions">{row.actions.toLocaleString("fr-FR")}</Nombre>
@@ -304,7 +336,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
                     <Nombre libelle="Réseau cumulé" doux>
                       {sansReseau(row) ? "—" : formater("ms", row.total_ms)}
                     </Nombre>
-                    <td className="mt-1 block text-xs text-ink-faint sm:mt-0 sm:table-cell sm:whitespace-nowrap sm:px-4 sm:py-3">
+                    <td className="mt-1 block text-xs text-ink-faint sm:mt-0 sm:table-cell sm:whitespace-nowrap sm:px-4 sm:py-1.5">
                       <span className="sm:hidden">Dernière vue : </span>
                       {fmtDate(row.last_seen)}
                     </td>
@@ -312,6 +344,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
                 ))}
               </tbody>
             </table>
+            </div>
           </TableDefilante>
         ) : (
           <EtatSurface etat={{ kind: "vide", population: "action", plage: label }} />
@@ -366,14 +399,18 @@ function TuilesActions({
       : !resumePrec.ok
         ? { precedent: null, couverturePrecedente: PRECEDENTE_EN_ECHEC }
         : { precedent: valeur(resumePrec.data), couverturePrecedente: couverture };
+  // Les mêmes pieds de case partout : d'où vient le chiffre, en deux mots.
+  const commun = { source: SOURCE_ACTIONS, categorie: "Navigateur · actions" } as const;
   return (
     <>
       <KpiTile
         label={`Actions · ${label}`}
+        libelleCase="Actions"
         valeur={resume.actions}
         format="count"
         reference={reference}
         {...comparaison((r) => r.actions)}
+        {...commun}
       />
       <KpiTile
         label="Sessions avec action"
@@ -382,6 +419,7 @@ function TuilesActions({
         methode="Sessions dans lesquelles au moins une action a été observée."
         reference={reference}
         {...comparaison((r) => r.sessions)}
+        {...commun}
       />
       <KpiTile
         label="Actions suivies d’une erreur"
@@ -389,10 +427,24 @@ function TuilesActions({
         format="count"
         sensMeilleur="bas"
         lecture={`${pluriel(resume.errors, "occurrence d’erreur liée", "occurrences d’erreurs liées")} au total`}
-        methode="Actions dont le clic est suivi d’une erreur. Une même action peut en déclencher plusieurs : le total des occurrences est écrit sous le chiffre."
+        methode="Actions dont le clic est suivi d’une erreur. Une même action peut en déclencher plusieurs : le total des occurrences a sa propre case."
         reference={reference}
         {...comparaison((r) => r.error_clicks)}
         href="#figure-actions-erreurs"
+        {...commun}
+      />
+      {/* Le total des occurrences, qui se lisait en phrase sous la case précédente, a sa
+          case (recette du 30/09/2026) : une rangée de quatre, alignée sur la grille. */}
+      <KpiTile
+        label="Occurrences d’erreurs liées"
+        libelleCase="Erreurs liées"
+        valeur={resume.errors}
+        format="count"
+        sensMeilleur="bas"
+        methode="Occurrences d’erreurs rattachées à une action : une même action peut en déclencher plusieurs."
+        reference={reference}
+        {...comparaison((r) => r.errors)}
+        {...commun}
       />
     </>
   );
@@ -441,44 +493,51 @@ function HeroActions({
       display: ordre === "reseau" ? (valeur === null ? "—" : formater("ms", valeur)) : formater("count", row.errors),
       color: TEINTE_NEUTRE,
       href: versErreurs(row.route),
-      title: `${nom} — ${route}${avecApp ? ` (${row.app_id})` : ""}`,
-      // Le sous-texte passe à la ligne au lieu d'être coupé (contre-recette du
-      // 26/09/2026) : à 390 px, « 48 actions · 43 sessi… » perdait les appels API, et
-      // « Sessions passées par la route » son dernier mot ; à 1 440 px aussi.
+      // Les comptes complets (ressources, appels API) en infobulle : ils sont aussi dans
+      // la table, sous le classement (recette du 30/09/2026 : trois lignes par barre).
+      title: `${nom} — ${route}${avecApp ? ` (${row.app_id})` : ""} — ${[
+        pluriel(row.actions, "action"),
+        pluriel(row.sessions, "session"),
+        pluriel(row.errors, "erreur liée", "erreurs liées"),
+        pluriel(row.resources, "ressource"),
+        pluriel(row.api_calls, "appel API", "appels API"),
+      ].join(" · ")}`,
       sub: (
         <>
           {/* La route sous le nom : deux actions de même nom sur deux routes sont deux
-              barres, et la recette ne pouvait pas les distinguer. */}
-          <span className="block font-mono [overflow-wrap:anywhere]">
-            {route}
-            {avecApp ? ` · ${row.app_id}` : ""}
-          </span>
-          {/* « N sessions » : celles qui ont FAIT l'action. Un nombre, jamais un lien. */}
-          <span className="block">
-            {[
-              pluriel(row.actions, "action"),
-              pluriel(row.sessions, "session"),
-              // Sous le classement réseau, la barre dit le réseau : le sous-texte garde les erreurs.
-              ...(ordre === "reseau"
-                ? [pluriel(row.errors, "erreur liée", "erreurs liées")]
-                : [pluriel(row.resources, "ressource"), pluriel(row.api_calls, "appel API", "appels API")]),
-            ].join(" · ")}
-          </span>
-          {sessions === null ? null : sessions.href !== null ? (
-            <Link
-              href={sessions.href}
-              title={`Toutes les sessions passées par ${row.route}, qu’elles aient fait « ${nom} » ou non`}
-              className="block rounded text-ink-soft underline-offset-2 hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
-              data-testid="actions-sessions-route"
-            >
-              {LIEN_SESSIONS_ROUTE}
-            </Link>
-          ) : (
-            // Route que la recherche exacte refuserait : le libellé reste, en texte, avec sa raison.
-            <span className="relative block text-ink-soft" title={sessions.raison}>
-              Sessions de la route non proposées<span className="sr-only"> — {sessions.raison}</span>
+              barres, et la recette ne pouvait pas les distinguer. Puis « N sessions » :
+              celles qui ont FAIT l'action — un nombre, jamais un lien. Une ligne. */}
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 sm:flex-nowrap">
+            <span className="min-w-0 truncate font-mono">
+              {route}
+              {avecApp ? ` · ${row.app_id}` : ""}
             </span>
-          )}
+            <span className="sm:shrink-0">
+              {[
+                pluriel(row.actions, "action"),
+                pluriel(row.sessions, "session"),
+                // Sous le classement réseau, la barre dit le réseau : le sous-texte garde les erreurs.
+                ...(ordre === "reseau" ? [pluriel(row.errors, "erreur liée", "erreurs liées")] : []),
+              ].join(" · ")}
+            </span>
+            {/* Le lien vers les sessions de la route, sur la même ligne : la route se
+                coupe (entière au survol) avant lui. */}
+            {sessions === null ? null : sessions.href !== null ? (
+              <Link
+                href={sessions.href}
+                title={`Toutes les sessions passées par ${row.route}, qu’elles aient fait « ${nom} » ou non`}
+                className="rounded text-ink-soft sm:shrink-0 underline-offset-2 hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                data-testid="actions-sessions-route"
+              >
+                {LIEN_SESSIONS_ROUTE}
+              </Link>
+            ) : (
+              // Route que la recherche exacte refuserait : le libellé reste, en texte, avec sa raison.
+              <span className="relative text-ink-soft sm:shrink-0" title={sessions.raison}>
+                Sessions de la route non proposées<span className="sr-only"> — {sessions.raison}</span>
+              </span>
+            )}
+          </span>
         </>
       ),
     };
@@ -509,7 +568,7 @@ function HeroActions({
         </>
       }
     >
-      <RankBar data={data} legende={`${titre}, ${label}`} labelWidth="13rem" />
+      <RankBar data={data} legende={`${titre}, ${label}`} labelWidth="28rem" />
     </Figure>
   );
 }
@@ -528,7 +587,7 @@ function Nombre({
 }) {
   return (
     <td
-      className={`mr-4 mt-1 inline-flex items-baseline gap-1 text-xs tabular-nums sm:mr-0 sm:mt-0 sm:table-cell sm:px-4 sm:py-3 sm:text-right sm:text-sm ${
+      className={`mr-4 mt-1 inline-flex items-baseline gap-1 text-xs tabular-nums sm:mr-0 sm:mt-0 sm:table-cell sm:px-4 sm:py-1.5 sm:text-right sm:align-middle sm:text-sm ${
         gras ? "sm:font-semibold" : ""
       } ${doux ? "sm:text-ink-soft" : ""}`}
     >
@@ -541,16 +600,15 @@ function Nombre({
 /** Un compte et SON temps réseau : « 12 » puis « 1,2 s », jamais fondus en un seul ; aucun : « — ». */
 function NetMs({ libelle, compte, ms }: { libelle: string; compte: number; ms: number }) {
   return (
-    <td className="mr-4 mt-1 inline-flex items-baseline gap-1 text-xs tabular-nums sm:mr-0 sm:mt-0 sm:table-cell sm:px-4 sm:py-3 sm:text-right sm:text-sm">
+    <td className="mr-4 mt-1 inline-flex items-baseline gap-1 text-xs tabular-nums sm:mr-0 sm:mt-0 sm:table-cell sm:px-4 sm:py-1.5 sm:text-right sm:align-middle sm:text-sm">
       <span className="text-ink-soft sm:hidden">{libelle}</span>
       {compte === 0 ? (
         "—"
       ) : (
+        // Le compte, puis SON temps réseau en petit, sur la même ligne.
         <>
-          <span className="sm:block">{compte.toLocaleString("fr-FR")}</span>
-          <span className="text-ink-faint sm:block sm:text-xs">
-            <span className="sm:hidden">·</span> {formater("ms", ms)}
-          </span>
+          <span>{compte.toLocaleString("fr-FR")}</span>
+          <span className="text-[11px] text-ink-faint"> · {formater("ms", ms)}</span>
         </>
       )}
     </td>

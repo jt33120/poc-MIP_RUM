@@ -332,7 +332,7 @@ export async function executer(argv, env, { log = console.log, erreur = console.
   if (!options.dryRun && !/^msu_[0-9a-f]{32}_[0-9a-f]{64}$/.test(jeton)) {
     erreur(
       jeton
-        ? "erreur : MIP_SOURCEMAP_TOKEN n'a pas le format d'un jeton d'upload de source maps (msu_…) — un jeton de lecture n'y donne pas droit"
+        ? "erreur : MIP_SOURCEMAP_TOKEN n'a pas le format d'un jeton d'upload de source maps (msu_…) — un jeton d'accès ou d'API n'y donne pas droit"
         : "erreur : variable MIP_SOURCEMAP_TOKEN absente (jeton de CI créé dans Admin › Source maps)",
     );
     return SORTIE.usage;

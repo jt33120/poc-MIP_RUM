@@ -24,6 +24,7 @@ import { PHRASE_FENETRE } from "@/components/ReleaseCompare";
 import { RuleRow } from "@/components/alerts/RuleRow";
 import type { AlertRuleRow } from "@/lib/queries-v2";
 import { THRESHOLDS } from "@/lib/rating";
+import { Field } from "@/components/forms/Field";
 import { SEUILS_MIP } from "@/lib/seuils";
 
 const APPS = [{ app_id: "demo", name: "Démo" }];
@@ -273,5 +274,20 @@ describe("vague 4 — RuleFields : seuil « mauvais » proposé", () => {
     const html = renderToStaticMarkup(<RuleFields apps={APPS} regle={{ metrique: "log_errors", route: null, seuil: null }} />);
     expect(champSeuil(html)).toContain('value=""');
     expect(html).not.toContain('data-testid="seuil-propose"');
+  });
+});
+
+// Field (le libellé des champs de /alerts) — 01/10/2026 : nu dans le `<label>`, le texte
+// du libellé et celui des options d'une liste se lisaient comme un seul nœud.
+describe("Field — le libellé dans son propre nœud", () => {
+  it("le texte du libellé est un `span` à part, avant le contrôle", () => {
+    const html = renderToStaticMarkup(
+      <Field label="Mesure">
+        <select name="m">
+          <option>LCP p75</option>
+        </select>
+      </Field>,
+    );
+    expect(html).toMatch(/^<label class="[^"]*"><span class="min-w-0" data-libelle="">Mesure<\/span><select/);
   });
 });

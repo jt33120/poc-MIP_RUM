@@ -20,8 +20,9 @@ const TH = "th whitespace-nowrap";
 // Sous 640 px, chaque appel est une CARTE (recette du 26/09/2026 : à 390 px, seuls
 // « Méthode et chemin » et « Appels » tenaient dans l'écran, les p75 hors champ) :
 // les chiffres s'écrivent à la suite, chacun précédé de son libellé.
+// Lignes denses (recette du 30/09/2026) : nombres alignés à droite, 32 px environ.
 const TD =
-  "mr-4 mt-1 inline-flex items-baseline gap-1 text-xs tabular-nums sm:mr-0 sm:mt-0 sm:table-cell sm:px-4 sm:py-3 sm:text-sm";
+  "mr-4 mt-1 inline-flex items-baseline gap-1 text-xs tabular-nums sm:mr-0 sm:mt-0 sm:table-cell sm:px-3 sm:py-1.5 sm:text-right sm:text-[13px]";
 
 /** Libellé d'une cellule, écrit seulement dans la carte (sous 640 px). */
 function Libelle({ children }: { children: ReactNode }) {
@@ -35,13 +36,13 @@ function Entete() {
         <th scope="col" className={`${TH} sticky left-0 z-10 bg-panel2`}>
           Méthode et chemin
         </th>
-        <th scope="col" className={TH}>Appels</th>
-        <th scope="col" className={TH}>Suivis</th>
-        <th scope="col" className={TH}>p75 navigateur</th>
-        <th scope="col" className={TH}>p75 serveur (appels suivis)</th>
-        <th scope="col" className={TH}>p75 trajet (par trace)</th>
+        <th scope="col" className={`${TH} text-right`}>Appels</th>
+        <th scope="col" className={`${TH} text-right`}>Suivis</th>
+        <th scope="col" className={`${TH} text-right`}>p75 navigateur</th>
+        <th scope="col" className={`${TH} text-right`}>p75 serveur (appels suivis)</th>
+        <th scope="col" className={`${TH} text-right`}>p75 trajet (par trace)</th>
         <th scope="col" className={TH}>Part serveur (médiane)</th>
-        <th scope="col" className={TH}>Échecs</th>
+        <th scope="col" className={`${TH} text-right`}>Échecs</th>
         {/* En-tête ÉCRIT, pas `sr-only` : un élément en position absolue (ce qu'est
             `sr-only`) sans ancêtre positionné se place par rapport à la page — dans
             une table plus large que l'écran, il la POUSSE (débordement constaté à
@@ -59,12 +60,12 @@ function Ligne({ a, hrefTraces }: { a: ApiCallDecomposition; hrefTraces: string 
   return (
     <tr
       id={ancreAppel(a.method, a.url)}
-      className="block scroll-mt-20 border-t border-line/60 px-4 py-3 target:bg-perf/10 sm:table-row sm:p-0"
+      className="block scroll-mt-20 border-t border-line/60 px-3 py-2 target:bg-perf/10 sm:table-row sm:p-0"
       data-testid="ligne-appel"
     >
       <th
         scope="row"
-        className="block min-w-0 text-left font-mono text-xs font-normal sm:sticky sm:left-0 sm:z-10 sm:table-cell sm:max-w-[16rem] sm:bg-panel sm:px-4 sm:py-3"
+        className="block min-w-0 text-left font-mono text-xs font-normal sm:sticky sm:left-0 sm:z-10 sm:table-cell sm:max-w-[16rem] sm:bg-panel sm:px-3 sm:py-1.5"
       >
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="shrink-0 rounded bg-panel2 px-1.5 py-0.5 font-semibold text-ink-soft">{a.method}</span>
@@ -93,7 +94,7 @@ function Ligne({ a, hrefTraces }: { a: ApiCallDecomposition; hrefTraces: string 
         <Libelle>p75 trajet</Libelle>
         {formater("ms", a.reseau_p75)}
       </td>
-      <td className="mt-1 flex items-center gap-2 text-xs sm:mt-0 sm:table-cell sm:px-4 sm:py-3">
+      <td className="mt-1 flex items-center gap-2 text-xs sm:mt-0 sm:table-cell sm:px-3 sm:py-1.5">
         <Libelle>Part serveur</Libelle>
         {part === null ? <span className="text-ink-soft">—</span> : <ShareBar share={part} />}
       </td>
@@ -102,7 +103,7 @@ function Ligne({ a, hrefTraces }: { a: ApiCallDecomposition; hrefTraces: string 
         {formater("count", a.err)}
         <span className="text-ink-soft"> ({formater("pct", a.n > 0 ? a.err / a.n : null)})</span>
       </td>
-      <td className="mt-1 block whitespace-nowrap text-xs sm:mt-0 sm:table-cell sm:px-4 sm:py-3">
+      <td className="mt-1 block whitespace-nowrap text-xs sm:mt-0 sm:table-cell sm:px-3 sm:py-1.5">
         <Link href={hrefTraces} className="text-perf underline-offset-2 hover:underline">
           Voir les traces
         </Link>

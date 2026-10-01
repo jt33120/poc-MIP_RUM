@@ -53,7 +53,7 @@ verrouille cette absence.
 ## 2. Authentification
 
 **Oui, un jeton est nécessaire.** C'est le même que celui de l'API v1 :
-une entrée de `CONSOLE_API_TOKENS` côté console. Les jetons de lecture en base
+une entrée de `CONSOLE_API_TOKENS` côté console. Les jetons d'accès en base
 (`/admin/read-tokens`) ne valent que pour `/api/rum/summary`, pas pour l'API v1 :
 ils ne donnent accès à aucun outil.
 

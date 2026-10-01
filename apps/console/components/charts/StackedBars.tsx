@@ -526,7 +526,10 @@ function BarresSurGrille({
         </ResponsiveContainer>
       </div>
 
-      <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft" data-testid="legende-serie">
+      {/* Recette du 30/09/2026 : la légende sur une ligne, en petit ; les repères
+          secondaires s'écrivent court, le libellé complet au survol et pour les lecteurs
+          d'écran (comme `ThresholdSeries`). */}
+      <ul className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-ink-soft" data-testid="legende-serie">
         {dessinees.map((s) => {
           // Légende chiffrée et cliquable (spec A2 § 5.4). Une série qui a sa
           // destination (`href`) garde son libellé en LIEN : le bouton d'isolement est
@@ -567,23 +570,26 @@ function BarresSurGrille({
           );
         })}
         {enCours && dessinees.length > 0 && (
-          <li className="flex items-center gap-1.5" data-testid="legende-seau-en-cours">
+          <li className="flex items-center gap-1.5" data-testid="legende-seau-en-cours" title={libellePeriodeEnCours(seauSecondes, estJour(dernier ?? ""))}>
             <PaveEnCours id={idEnCours(0)} />
-            {libellePeriodeEnCours(seauSecondes, estJour(dernier ?? ""))}
+            <span aria-hidden>en cours</span>
+            <span className="sr-only">{libellePeriodeEnCours(seauSecondes, estJour(dernier ?? ""))}</span>
           </li>
         )}
         {premierPartiel && dessinees.length > 0 && (
-          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-premier-partiel">
+          <li className="flex min-w-0 items-center gap-1.5" data-testid="legende-premier-partiel" title={premierPartiel.libelle}>
             <svg width={12} height={10} aria-hidden="true" className="shrink-0">
               <rect x={0.5} y={0.5} width={11} height={9} rx={2} fill={dessinees[0].couleur} fillOpacity={0.45} stroke={dessinees[0].couleur} strokeDasharray="3 2" />
             </svg>
-            <span className="min-w-0 [overflow-wrap:anywhere]">{premierPartiel.libelle}</span>
+            <span aria-hidden>début partiel</span>
+            <span className="sr-only">{premierPartiel.libelle}</span>
           </li>
         )}
         {prep.horsCollecte.length > 0 && (
-          <li className="flex items-center gap-1.5" data-testid="legende-hors-collecte">
+          <li className="flex items-center gap-1.5" data-testid="legende-hors-collecte" title="non mesuré (collecte interrompue)">
             <PaveHorsCollecte id={motifHorsCollecte} />
-            non mesuré (collecte interrompue)
+            <span aria-hidden>non mesuré</span>
+            <span className="sr-only">non mesuré (collecte interrompue)</span>
           </li>
         )}
       </ul>

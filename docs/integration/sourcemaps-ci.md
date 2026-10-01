@@ -75,7 +75,7 @@ sourcemaps-mip:
 
 - **Publier les `.map` avec le site** : elles donnent votre code source à tous les visiteurs. Supprimez-les de l'artefact déployé après l'envoi.
 - **Envoyer avant d'avoir figé la release** : la release du SDK et celle de l'envoi doivent venir de la même variable du même pipeline.
-- **Réutiliser un jeton de lecture** (`CONSOLE_API_TOKENS`, jetons de l'API v1) : il n'a aucun droit d'envoi, et c'est voulu.
+- **Réutiliser un jeton d'accès** (`CONSOLE_API_TOKENS`, jetons de l'API v1) : il n'a aucun droit d'envoi, et c'est voulu.
 
 ## 6. Marquer un déploiement
 

@@ -845,7 +845,7 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
     const cle = await appeler("renouvelerCle", "admin", { app: A });
     expect(cle).toMatchObject({ etat: "ok", app: A });
     expect(String(cle.cle)).toMatch(/^mip_[0-9a-f]{32}$/);
-    // Un jeton de lecture et un jeton de CI de l'app A : créés, puis révoqués dans elle.
+    // Un jeton d'accès et un jeton de CI de l'app A : créés, puis révoqués dans elle.
     const lecture = await appeler("creerJetonLecture", "admin", { app: A, corps: { label: "C9" } });
     const idLecture = (await pool.query<{ id: string }>("select id::text as id from read_tokens where app_id = $1 and label = 'C9'", [A])).rows[0].id;
     expect(lecture).toMatchObject({ etat: "cree", app: A });

@@ -228,13 +228,13 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
     id: "s-jetons",
     famille: "securite",
     zone: "vercel",
-    titre: "Jetons de lecture",
+    titre: "Jetons d'accès",
     sousTitre: "lecture seule, par application",
     resume:
       "Les machines lisent avec un jeton : il ne donne qu'une lecture, éventuellement limitée à certaines applications, et ne se stocke jamais en clair.",
     etiquettes: ["SHA-256", "échéance", "CORS en liste"],
     faits: [
-      { texte: "Jetons de lecture mrk_ stockés en SHA-256, avec une échéance de 1 à 365 jours.", sources: [`${CONSOLE}/lib/read-tokens.ts:1-14`] },
+      { texte: "Jetons d'accès mrk_ stockés en SHA-256, avec une échéance de 1 à 365 jours.", sources: [`${CONSOLE}/lib/read-tokens.ts:1-14`] },
       { texte: "Jetons machine de l'API v1 : lecture seule, comparés à temps constant.", sources: [`${CONSOLE}/lib/api/auth.ts`] },
       { texte: "Jetons de CI des source maps : secret en SHA-256, 90 jours au plus.", sources: ["packages/backend/lib/sourcemap-upload.mjs"] },
       { texte: "CORS de l'API v1 en liste blanche.", sources: [`${CONSOLE}/lib/api/cors.ts:1-34`] },
@@ -359,9 +359,29 @@ export const ELEMENTS_TIERS_LECTURE: readonly Element[] = [
     x: -440,
     y: 2700,
   },
+  {
+    // Placé à droite de la console, à sa hauteur, dans la colonne des tiers de la
+    // lecture (équipes, scripts) : la seule place libre qui ne croise aucune zone.
+    id: "mistral",
+    famille: "externe",
+    titre: "Mistral AI",
+    sousTitre: "assistant du tableau de bord",
+    resume:
+      "Le modèle qui rédige les réponses de l'assistant à partir des chiffres agrégés de la Vue d'ensemble ; déclaré comme sous-traitant, appelé seulement si sa clé est posée.",
+    statut: "option",
+    etiquettes: ["sous-traitant", "UE", "agrégats seuls"],
+    faits: [
+      { texte: "Appelé par la route de l'assistant, sinon réponse par règles.", sources: [`${CONSOLE}/app/api/assistant/route.ts:87`, `${CONSOLE}/lib/assistant/mistral.ts:175-182`] },
+      { texte: "Trois conditions : une clé, un fournisseur déclaré, une réponse en 20 s.", sources: [`${CONSOLE}/lib/assistant/mistral.ts:8-16`] },
+      { texte: "Déclaré au registre des sous-traitants.", sources: [`${CONSOLE}/lib/legal.ts:172-182`] },
+    ],
+    x: 3760,
+    y: 1420,
+  },
 ];
 
 export const LIENS_LECTURE: readonly Lien[] = [
+  { de: "console", vers: "mistral", nature: "appel", libelle: "question + chiffres agrégés" },
   { de: "equipes", vers: "console-ecrans", nature: "lit", libelle: "consultent" },
   { de: "equipes", vers: "console-auth", nature: "appel", libelle: "se connectent" },
   { de: "console-auth", vers: "console-api", nature: "appel", libelle: "connexion, /v1/me, déconnexion" },

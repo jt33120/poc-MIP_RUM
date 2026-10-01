@@ -278,7 +278,7 @@ Ces questions ne peuvent pas être résolues depuis ce dépôt :
 4. Existe-t-il un **endpoint de retour d'expérience** permettant à MIP de pousser
    `ai_regenerate` / `ai_feedback` (option 2 du §3.1) ?
 5. Quelle **isolation multi-locataire** — le jeton `xsr_` est-il scopé à une app,
-   comme l'est notre jeton de lecture RUM ?
+   comme l'est notre jeton d'accès RUM ?
 6. Quelle **trajectoire** vis-à-vis des conventions sémantiques GenAI d'OTel ?
 7. Y a-t-il un **SLA**, et un versionnement du contrat `/v1` ?
 

@@ -1,4 +1,4 @@
-// Jetons de lecture — couche I/O. Résolution à l'auth (par hash, non révoqué, non
+// Jetons d'accès — couche I/O. Résolution à l'auth (par hash, non révoqué, non
 // échu) + gestion admin (liste / création / révocation). Le jeton en clair n'est
 // jamais stocké ni relu : seul son hash circule ici.
 //

@@ -82,6 +82,10 @@ export const dynamic = "force-dynamic";
 // Le titre est celui du menu (recette du 30/09/2026) : on CORRÈLE la mesure
 // synthétique (le robot) et le RUM (les visiteurs réels).
 const TITRE = "Corrélation synthétique × RUM";
+
+/** D'où viennent les chiffres des cases, écrit dans leur fenêtre. */
+const SOURCE_ROBOT = "Robot : scénarios synthétiques rejoués par les sondes MIP (premier chargement, état, score).";
+const SOURCE_REEL = "Réel : SDK MIP RUM, LCP des visiteurs (web-vitals), p75 par heure et par route.";
 const H = 3_600_000;
 /** Couples listés au plus dans « Routes à trafic réel sans scénario robot » (P14). */
 const TOP_SANS_ROBOT = 10;
@@ -292,12 +296,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
 
   return (
     <div className="animate-fade-up">
-      <PageHeader
-        title={TITRE}
-        domain="robot"
-        help="robotVsReal"
-        sub="Le robot voit-il ce que vivent les visiteurs, et sur quelles routes, à quelles heures, ne le voit-il pas ?"
-      />
+      <PageHeader title={TITRE} domain="robot" help="robotVsReal" />
 
       {/* ── Zone 2 : fraîcheur du robot, AVANT tout chiffre (CR1). ── */}
       {!fraicheurs.ok ? (
@@ -325,14 +324,17 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
       {/* ── Zone 3 : KPI (CR2 à CR6). Une rangée (`RangeeKpi`) : si la période
              précédente est incomplète, la raison est dite une fois au-dessus. ── */}
       <SectionErreur titre="Chiffres clés robot et réel">
-        <div className="mb-6 min-w-0">
+        <div className="mb-4 min-w-0">
         <RangeeKpi
           couvertures={prev ? [couverturePrec] : []}
-          className="grid min-w-0 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5"
+          className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5"
           testId="kpi-correlation"
         >
           <KpiTile
             label="Routes suivies par le robot"
+            libelleCase="Routes suivies · robot"
+            categorie="Synthétique"
+            source={SOURCE_ROBOT}
             valeur={routesRobot}
             format="count"
             raisonNull="lecture en échec"
@@ -344,6 +346,8 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
               — la tuile le dit, sinon « 3 routes » côtoyait « aucune heure commune ». */}
           <KpiTile
             label="Routes vues des deux côtés"
+            categorie="Synthétique × RUM"
+            source={`${SOURCE_ROBOT} ${SOURCE_REEL}`}
             valeur={couples.ok ? couples.data.length : null}
             format="count"
             raisonNull="lecture en échec"
@@ -354,6 +358,8 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
           />
           <KpiTile
             label="Heures en angle mort"
+            categorie="Synthétique × RUM"
+            source={`${SOURCE_ROBOT} ${SOURCE_REEL}`}
             valeur={heuresAM}
             format="count"
             raisonNull="lecture de la concordance en échec"
@@ -366,6 +372,9 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
           />
           <KpiTile
             label="Part du LCP réel sur des routes suivies par le robot"
+            libelleCase="LCP réel couvert · robot"
+            categorie="RUM"
+            source={SOURCE_REEL}
             valeur={part}
             format="pct"
             raisonNull={cartes.ok ? "aucune mesure LCP réelle sur la plage" : "lecture en échec"}
@@ -373,6 +382,8 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
           />
           <KpiTile
             label="Dernier passage du robot"
+            categorie="Synthétique"
+            source={SOURCE_ROBOT}
             valeur={ageDernier}
             format="s-auto"
             raisonNull={fraicheurs.ok ? "Aucun passage du robot sur la plage" : "lecture en échec"}
@@ -383,7 +394,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
       </SectionErreur>
 
       {robotAbsent ? (
-        <div className="mb-6">
+        <div className="mb-4">
           <Figure
             titre="Robot face au réel"
             id="hero"
@@ -398,10 +409,11 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
       ) : (
         <>
           {/* ── Zone 4 : hero (2/3) + concordance (1/3). ── */}
-          <div className="mb-6 grid min-w-0 gap-4 xl:grid-cols-3">
+          <div className="mb-4 grid min-w-0 gap-2 xl:grid-cols-3">
+            {/* Les deux figures prennent la hauteur de la rangée : bords bas alignés. */}
             <div className="min-w-0 xl:col-span-2">
               <SectionErreur titre="Robot face au réel">
-                <Figure
+                <Figure pleineHauteur
                   titre={`Robot face au réel${libelleChoisi ? ` — ${libelleChoisi}` : ""}`}
                   id="hero"
                   aide="robotVsReal"
@@ -520,14 +532,18 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                       ariaLabel={`Robot · état par heure, ${libelleChoisi ?? ""}, ${plage}`}
                     />
                   )}
-                  <p className="mt-1 text-[11px] text-ink-soft">
+                  {/* Ce que dit la frise, et la règle de la concordance, derrière un repli :
+                      écrites une fois pour l'écran (la colonne « Concordance » y renvoie). */}
+                  <p className="sr-only">
                     État du robot (pire état de l&apos;heure), pas une note du LCP : aucune bande de seuil ne
                     s&apos;applique au robot.
                   </p>
-                  {/* La règle de la concordance, derrière un repli : écrite une fois pour
-                      l'écran (la colonne « Concordance » de la table y renvoie). */}
                   <Methode className="mt-2" testId="methode-concordance">
-                    {regleConcordance()}
+                    <p>
+                      État du robot (pire état de l&apos;heure), pas une note du LCP : aucune bande de seuil ne
+                      s&apos;applique au robot.
+                    </p>
+                    <p className="mt-1">{regleConcordance()}</p>
                   </Methode>
                 </Figure>
               </SectionErreur>
@@ -535,7 +551,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
 
             <div className="min-w-0">
               <SectionErreur titre="Concordance des états">
-                <Figure
+                <Figure pleineHauteur
                   titre="Concordance des états, par heure et par route"
                   id="concordance"
                   meta={
@@ -607,7 +623,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
           </div>
 
           {/* ── Zone 5 : angles morts (CR9). ── */}
-          <div className="mb-6">
+          <div className="mb-4">
             <SectionErreur titre="Angles morts">
               <Figure
                 titre="Angles morts — heures où le robot dit ok alors que les visiteurs attendent"
@@ -623,7 +639,8 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                 }
                 etat={!spots.ok ? { kind: "erreur", titre: "Angles morts" } : undefined}
               >
-                <p className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="regle-angle-mort">
+                {/* La règle d'un angle mort, en une ligne discrète au-dessus de la table. */}
+                <p className="mb-2 text-[11px] leading-snug text-ink-faint" data-testid="regle-angle-mort">
                   {regleAngleMort(EFFECTIF_MIN_HEURE)}
                 </p>
                 {heuresAM !== null && heuresAM > lignesAngles.length && (
@@ -638,7 +655,10 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                   <TableAnglesMorts lignes={lignesAngles} avecApp={plusieursApps(lignesAngles)} />
                 ) : (
                   // La règle est écrite juste au-dessus : pas une seconde fois ici.
-                  <p className="py-4 text-center text-sm text-ink-soft" data-testid="aucun-angle-mort">
+                  <p className="flex items-center gap-1.5 text-xs text-ink-soft" data-testid="aucun-angle-mort">
+                    <span aria-hidden className="text-ink-faint">
+                      ⊘
+                    </span>
                     Aucun angle mort sur la plage.
                   </p>
                 )}
@@ -649,11 +669,11 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
       )}
 
       {/* ── Zone 6 : nuage des routes (CR10) + routes sans robot (CR11). ── */}
-      <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-2">
+      <div className="mb-4 grid min-w-0 gap-2 lg:grid-cols-2">
         {!robotAbsent && (
           <div className="min-w-0">
             <SectionErreur titre="Nuage des routes">
-              <Figure
+              <Figure pleineHauteur
                 titre="Nuage des routes : premier chargement robot × LCP p75 réel"
                 id="nuage"
                 meta={<span>un point par route vue des deux côtés · taille = mesures LCP · {plage}</span>}
@@ -704,7 +724,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
         )}
         <div className={`min-w-0 ${robotAbsent ? "lg:col-span-2" : ""}`}>
           <SectionErreur titre="Routes à trafic réel sans scénario robot">
-            <Figure
+            <Figure pleineHauteur
               titre="Routes à trafic réel sans scénario robot"
               id="sans-robot"
               meta={

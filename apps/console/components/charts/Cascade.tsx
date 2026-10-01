@@ -333,12 +333,19 @@ export function Cascade({
   /** « reduite » dans un panneau : l'aperçu par piste seul. */
   hauteur?: "normale" | "reduite";
 }) {
-  const bandeau = partiel ? <EtatSurface etat={{ kind: "partiel", raison: partiel }} compact /> : null;
+  // Une pastille « Partiel » (raison en bulle et lue), en tête, sur la ligne des repères :
+  // la cascade se lit toujours incomplète, sans un bandeau de trois lignes devant elle.
+  const bandeau = partiel ? <EtatSurface etat={{ kind: "partiel", raison: partiel }} enLigne /> : null;
   if (!elements.length) {
     return (
       <div data-testid="cascade" className="min-w-0 space-y-2">
         {bandeau}
-        <p className="py-6 text-center text-sm text-ink-soft">Aucun élément à placer sur l&apos;axe.</p>
+        <p className="flex items-center gap-1.5 py-1 text-xs text-ink-soft">
+          <span aria-hidden="true" className="text-ink-faint">
+            ⊘
+          </span>
+          Aucun élément à placer sur l&apos;axe.
+        </p>
       </div>
     );
   }
@@ -386,17 +393,20 @@ export function Cascade({
 
   return (
     <div data-testid="cascade" data-hauteur={hauteur} className="min-w-0 space-y-3 overflow-hidden">
-      {bandeau}
-
-      {reperes.length > 0 && (
-        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-soft" aria-label="Repères">
-          {reperes.map((r, i) => (
-            <li key={i} className="flex min-w-0 items-center gap-1.5">
-              <span aria-hidden="true" className={`h-3 w-px shrink-0 ${r.verdict ? RATING_BAR[r.verdict] : "bg-ink-soft"}`} />
-              <span className="min-w-0 break-words">{r.texte}</span>
-            </li>
-          ))}
-        </ul>
+      {(bandeau || reperes.length > 0) && (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+          {bandeau}
+          {reperes.length > 0 && (
+            <ul className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs text-ink-soft" aria-label="Repères">
+              {reperes.map((r, i) => (
+                <li key={i} className="flex min-w-0 items-center gap-1.5">
+                  <span aria-hidden="true" className={`h-3 w-px shrink-0 ${r.verdict ? RATING_BAR[r.verdict] : "bg-ink-soft"}`} />
+                  <span className="min-w-0 break-words">{r.texte}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {apercu && (

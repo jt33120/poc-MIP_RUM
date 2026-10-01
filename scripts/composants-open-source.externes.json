@@ -316,7 +316,7 @@
       "categorie": "donnees",
       "nom": "Simple Icons",
       "version": "13.21.0",
-      "role": "Logos des langages et des navigateurs du schéma d'installation de la vitrine, recopiés en tracés (apps/console/lib/logos-marques.ts).",
+      "role": "Logos des langages, des navigateurs et des systèmes : schéma d'installation de la vitrine et pictogrammes des tableaux classés de la console, recopiés en tracés (apps/console/lib/logos-marques.ts).",
       "licence": "CC0-1.0",
       "depot": "https://github.com/simple-icons/simple-icons",
       "utilisePar": [

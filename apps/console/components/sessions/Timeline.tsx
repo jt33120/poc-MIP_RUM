@@ -42,7 +42,7 @@ const DETAIL_COURT = 60;
  */
 function ProprietesEvenement({ detail }: { detail: string }) {
   if (detail.length <= DETAIL_COURT) {
-    return <span className="max-w-xl truncate font-mono text-xs text-ink-faint">{detail}</span>;
+    return <span className="min-w-0 max-w-full truncate sm:max-w-xl font-mono text-xs text-ink-faint">{detail}</span>;
   }
   return (
     <details className="w-full min-w-0 text-xs">
@@ -131,14 +131,14 @@ export function TimelineRow({
   const st = KIND_STYLE[item.kind];
   const offset = new Date(item.ts).getTime() - t0;
   return (
-    <li id={id} data-ligne={id} className={`relative scroll-mt-24 rounded-r pb-4 pl-6 last:pb-0 target:bg-brand/10 ${LIGNE_COURANTE}`}>
+    <li id={id} data-ligne={id} className={`relative scroll-mt-24 rounded-r pb-2 pl-6 last:pb-0 target:bg-brand/10 ${LIGNE_COURANTE}`}>
       <span
         data-point={noteDeLigne(item) ?? ""}
         className={`absolute -left-[9px] top-1 flex h-4 w-4 items-center justify-center rounded-full text-white ${pointDeLigne(item)}`}
       >
         {KIND_ICON[item.kind]}
       </span>
-      <div className="flex flex-wrap items-baseline gap-2 text-sm">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[13px]">
         <Decalage
           texte={fmtOffset(Math.max(0, offset))}
           ts={item.ts}
@@ -171,8 +171,8 @@ function ItemBody({ item }: { item: TimelineItem }) {
     case "pageview":
       return (
         <>
-          <span className="chip-mono">{item.title}</span>
-          {item.detail && <span className="text-xs text-ink-faint">{item.detail}</span>}
+          <span className="chip-mono min-w-0 max-w-full truncate">{item.title}</span>
+          {item.detail && <span className="min-w-0 max-w-full truncate text-xs text-ink-faint">{item.detail}</span>}
         </>
       );
     case "vital": {
@@ -184,7 +184,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
           <>
             <span className="font-semibold">{item.title}</span>
             <ValeurNoteeMip mesure={mesure} valeur={valeur} texte={mesure === "DOWNLINK" ? (valeur == null ? "—" : `${valeur.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mbit/s`) : fmtVital(item.title ?? "", valeur)} />
-            {item.detail && <span className="font-mono text-xs text-ink-faint">{item.detail}</span>}
+            {item.detail && <span className="min-w-0 max-w-full truncate font-mono text-xs text-ink-faint" title={item.detail}>{item.detail}</span>}
           </>
         );
       }
@@ -197,7 +197,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
             {note && <span aria-hidden="true" className="mr-1">{FORME_RATING[note]}</span>}
             {fmtVital(item.title ?? "", valeur)}
           </span>
-          {item.detail && <span className="font-mono text-xs text-ink-faint">{item.detail}</span>}
+          {item.detail && <span className="min-w-0 max-w-full truncate font-mono text-xs text-ink-faint" title={item.detail}>{item.detail}</span>}
         </>
       );
     }
@@ -205,7 +205,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
       return (
         <>
           <span className="font-semibold text-bad-ink">{item.title}</span>
-          <span className="max-w-xl truncate text-xs text-ink-soft" title={item.detail ?? ""}>
+          <span className="min-w-0 max-w-full truncate sm:max-w-xl text-xs text-ink-soft" title={item.detail ?? ""}>
             {item.detail}
           </span>
         </>
@@ -217,7 +217,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
             {TYPES_REPERE[item.title ?? ""] ?? item.title}
           </span>
           {item.detail && (
-            <span className="max-w-xl truncate text-xs text-ink-soft" title={item.detail}>
+            <span className="min-w-0 max-w-full truncate sm:max-w-xl text-xs text-ink-soft" title={item.detail}>
               {libelleRepere(item.detail)}
             </span>
           )}
@@ -229,7 +229,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
           <span className="font-semibold tabular-nums text-orange-700 dark:text-orange-400">
             {item.value != null ? `${Math.round(Number(item.value))} ms` : "—"}
           </span>
-          {item.detail && <span className="font-mono text-xs text-ink-faint">{item.detail}</span>}
+          {item.detail && <span className="min-w-0 max-w-full truncate font-mono text-xs text-ink-faint" title={item.detail}>{item.detail}</span>}
         </>
       );
     case "event":
@@ -247,7 +247,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
           <span className="font-semibold text-fuchsia-700 dark:text-fuchsia-300" title={item.title ?? undefined}>
             {libelleAction(item.title)}
           </span>
-          {item.detail && <span className="text-xs text-ink-faint">{item.detail}</span>}
+          {item.detail && <span className="min-w-0 max-w-full truncate text-xs text-ink-faint" title={item.detail}>{item.detail}</span>}
         </>
       );
     case "resource":
@@ -258,7 +258,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
           ) : (
             <span className="font-semibold text-ink-soft">{item.title}</span>
           )}
-          {item.detail && <span className="max-w-xl truncate font-mono text-xs text-ink-faint" title={item.detail}>{item.detail}</span>}
+          {item.detail && <span className="min-w-0 max-w-full truncate sm:max-w-xl font-mono text-xs text-ink-faint" title={item.detail}>{item.detail}</span>}
         </>
       );
     case "api":
@@ -274,7 +274,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
             texte={item.value != null ? fmtVital("", Number(item.value)) : "—"}
           />
           {item.rating === "poor" && <span className="text-xs font-semibold text-bad-ink">échec</span>}
-          {item.detail && <span className="text-xs text-ink-soft">{item.detail}</span>}
+          {item.detail && <span className="min-w-0 max-w-full truncate text-xs text-ink-soft" title={item.detail}>{item.detail}</span>}
         </>
       );
   }

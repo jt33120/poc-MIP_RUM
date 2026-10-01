@@ -16,11 +16,12 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { InfoTip } from "@/components/InfoTip";
 import { PageHeader } from "@/components/PageHeader";
 import { ChoixParcours } from "@/components/installer/ChoixParcours";
 import { ParcoursExtension, ParcoursServeur, ParcoursSnippet, type ContexteParcours } from "@/components/installer/Parcours";
 import { ParcoursInstallation } from "@/components/installer/ParcoursInstallation";
-import { TableauxPersonnalisation } from "@/components/installer/TableauPersonnalisation";
+import { TableauPersonnalisation } from "@/components/installer/TableauPersonnalisation";
 import { SecretFourni } from "@/components/secret/SecretUnique";
 import { CadreEtat, EtatSurface } from "@/components/states/EtatSurface";
 import { chargerInstaller } from "@/lib/chargeurs/installer";
@@ -166,18 +167,18 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
     // La clé remise dans cet onglet (création, régénération) est lue UNE fois pour
     // toute la page : plusieurs codes la portent à la place de leur repère.
     <SecretFourni nom={cleDe(app)}>
-      <div className="min-w-0 max-w-4xl animate-fade-up" data-testid="installer">
-        <PageHeader
-          title={TITRE}
-          domain="integrations"
-          sub={
-            <>
-              Poser MIP RUM sur <strong className="font-semibold text-ink">{c.name}</strong>{" "}
-              <code className="chip-mono">{app}</code>, pas à pas. Chaque parcours finit par un test en direct : les cases
-              passent au vert quand les données arrivent.
-            </>
-          }
-        >
+      {/* Pleine largeur (refonte du 01/10/2026) : la colonne de 896 px laissait un quart de
+          l'écran vide à droite. Les valeurs de chaque parcours ouvrent son onglet. */}
+      <div className="min-w-0 animate-fade-up" data-testid="installer">
+        <PageHeader title={TITRE} domain="integrations">
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
+            <span className="truncate font-medium text-ink">{c.name}</span>
+            <code className="chip-mono">{app}</code>
+            <InfoTip label="Aide : installer" align="end">
+              Poser MIP RUM sur {c.name}, pas à pas. Chaque parcours finit par un test en direct : les cases passent au vert quand
+              les données arrivent.
+            </InfoTip>
+          </span>
           {administrable && (
             <Link href={`/admin/customers/${encodeURIComponent(app)}`} className="btn-ghost" data-testid="lien-fiche">
               Fiche de l&apos;application
@@ -185,29 +186,20 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
           )}
         </PageHeader>
 
-        <section className="mb-8" aria-labelledby="titre-choisir">
-          <h2 id="titre-choisir" className="mb-3 text-sm font-semibold text-ink">
+        <section className="mb-4" aria-labelledby="titre-choisir">
+          <h2 id="titre-choisir" className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-soft">
             Lequel choisir ?
           </h2>
           <ChoixParcours vert={vert} />
         </section>
 
-        <section className="mb-8" aria-labelledby="titre-personnalisation">
-          <h2 id="titre-personnalisation" className="mb-1 text-sm font-semibold text-ink">
-            Ce qui est propre à votre application, ce qui est pareil pour tous
-          </h2>
-          <p className="mb-3 text-xs text-ink-soft">
-            Les codes de cette page sont déjà remplis avec ces valeurs ; seule la clé d&apos;API reste à poser.
-          </p>
-          <TableauxPersonnalisation app={app} lignes={lignes} />
-        </section>
-
         <section aria-labelledby="titre-parcours">
-          <h2 id="titre-parcours" className="mb-3 text-sm font-semibold text-ink">
+          <h2 id="titre-parcours" className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-soft">
             Les parcours, pas à pas
           </h2>
           <ParcoursInstallation
             vert={vert}
+            entetes={parParcours((p) => <TableauPersonnalisation app={app} parcours={p} lignes={lignes[p]} dansSonOnglet />)}
             panneaux={{
               snippet: (
                 <ParcoursSnippet

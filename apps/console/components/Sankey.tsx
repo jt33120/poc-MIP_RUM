@@ -30,8 +30,11 @@ import { TableAlternative } from "./charts/Figure";
 import { SERIE } from "@/lib/palette";
 import { hauteurSankey, type SankeyModel } from "@/lib/sankey";
 
-const W = 720;
-const MARGIN = 150; // marge latérale réservée aux libellés de routes
+// 960 unités de large (refonte du 30/09/2026) : sur un panneau de 12 colonnes à 1 440 px,
+// le dessin garde une échelle proche de 1 (police de 11 px lisible, hauteur ≤ 480 px) ;
+// à 720, il était agrandi d'une fois et demie et prenait deux tiers d'écran.
+const W = 960;
+const MARGIN = 170; // marge latérale réservée aux libellés de routes
 const NODE_W = 12;
 const X0 = MARGIN; // bord droit des nœuds source = X0 + NODE_W
 const X1 = W - MARGIN - NODE_W; // bord gauche des nœuds cible
@@ -134,14 +137,22 @@ function ListeTransitions({ model, liens }: { model: SankeyModel; liens: LiensSa
   const max = principales[0]?.count ?? 0;
   return (
     <div className="sm:hidden" data-testid="sankey-liste">
-      <p className="mb-2 text-xs text-ink-soft">
-        {/* « 8 principales transitions sur 17 » contredisait la tuile « Transitions
-            distinctes : 44 » (contre-recette du 26/09/2026) : 17 ne compte que les
-            rubans DESSINÉS, entre les routes principales de chaque côté. Le dire. */}
-        {principales.length < model.links.length
-          ? `Les ${compte(principales.length)} plus fréquentes des ${compte(model.links.length)} transitions dessinées (entre les routes principales de chaque côté)`
-          : "Les transitions dessinées (entre les routes principales de chaque côté)"}
-        , de la plus fréquente à la moins fréquente
+      {/* « 8 principales transitions sur 17 » contredisait la tuile « Transitions
+          distinctes : 44 » (contre-recette du 26/09/2026) : 17 ne compte que les
+          rubans DESSINÉS, entre les routes principales de chaque côté. Le dire — en
+          court à l'écran, la phrase entière lue. */}
+      <p className="mb-1.5 text-[11px] text-ink-soft">
+        <span aria-hidden="true">
+          {principales.length < model.links.length
+            ? `${compte(principales.length)} / ${compte(model.links.length)} transitions dessinées · par fréquence`
+            : "Transitions dessinées · par fréquence"}
+        </span>
+        <span className="sr-only">
+          {principales.length < model.links.length
+            ? `Les ${compte(principales.length)} plus fréquentes des ${compte(model.links.length)} transitions dessinées (entre les routes principales de chaque côté)`
+            : "Les transitions dessinées (entre les routes principales de chaque côté)"}
+          , de la plus fréquente à la moins fréquente
+        </span>
       </p>
       <ol className="space-y-1">
         {principales.map((l) => {
@@ -205,7 +216,12 @@ export function Sankey({
   alternative?: boolean;
 }) {
   if (!model.links.length) {
-    return <p className="py-8 text-center text-ink-faint">Pas assez de transitions pour un flux</p>;
+    return (
+      <p className="flex items-center gap-1.5 py-1 text-sm text-ink-faint">
+        <span aria-hidden="true">⊘</span>
+        Pas assez de transitions pour un flux
+      </p>
+    );
   }
   const H = hauteur ?? hauteurSankey(model);
   const y = (v: number) => v * H;

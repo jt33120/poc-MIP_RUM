@@ -40,7 +40,8 @@ export function TokenRevokeButton({ id, name, appId, scope }: { id: string; name
         confirmer="Révoquer le jeton"
         enCours="Révocation…"
         onConfirmer={revoquer}
-        classeDeclencheur="btn-ghost px-2 py-1 text-bad-ink"
+        // Bouton de ligne compact (refonte du 01/10/2026) : la ligne du tableau reste à 32-34 px.
+        classeDeclencheur="inline-flex items-center whitespace-nowrap rounded-md border border-bad/40 bg-panel px-2 py-0.5 text-[11px] font-medium leading-4 text-bad-ink transition hover:bg-bad/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bad/40"
       />
       {echec && (
         <span role="alert" className="text-xs text-bad-ink">

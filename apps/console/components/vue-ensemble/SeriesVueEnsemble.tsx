@@ -3,15 +3,24 @@
 // `StackedBars`) ; ici, le cadre (`Figure`), les séries, les états et
 // l'alternative textuelle, calculés côté serveur à partir des lectures.
 //
+// DES VIGNETTES QUI S'OUVRENT EN GRAND (recette du 30/09/2026). Sur la page, chaque
+// graphique est une vignette : son titre et sa courbe, rien d'autre. Un clic ouvre la
+// fenêtre du grand format — axes chiffrés, légende, notes de lecture, source,
+// alternative textuelle. Les trois onglets du graphique principal (Web Vitals,
+// Erreurs, Trafic) ont la même rangée de vignettes, de même hauteur : changer
+// d'onglet ne fait pas sauter la page.
+//
 // ZONE 5 — « Core Web Vitals dans le temps » : TROIS PETITS MULTIPLES (LCP, INP,
 // CLS), un par vital, chacun sur ses bandes Bon / À améliorer / Mauvais : trois
 // unités, trois échelles, jamais superposées (Datadog, en mieux : l'INP, et une
-// échelle par vital).
+// échelle par vital). Les onglets Erreurs et Trafic suivent la même règle : un
+// taux et un compte, deux comptes — chacun sa vignette, chacun son axe.
 //
 // ZONE 6 — « Charge, erreurs et LCP » : TROIS PANNEAUX EMPILÉS qui partagent
 // l'axe x (même grille, même seau, mêmes marges `SERIE_MARGES`, survol
 // synchronisé), JAMAIS un axe secondaire (P5) : la dégradation coïncide-t-elle
-// avec la charge ou avec des erreurs ? Chaque grandeur garde SON axe.
+// avec la charge ou avec des erreurs ? Chaque grandeur garde SON axe. Sur la page,
+// un panneau compact : les trois bandes réduites, empilées sur la même grille.
 import type { ReactNode } from "react";
 import { FicheMesure } from "@/components/charts/FicheMesure";
 import { Figure, type AlternativeTexte } from "@/components/charts/Figure";
@@ -21,7 +30,9 @@ import { EtatSurface, type Etat } from "@/components/states/EtatSurface";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { formater, formatDuVital, type VitalName } from "@/lib/fmt-ids";
 import type { SectionLue } from "@/lib/lecture";
+import { AUTRES, categorie, SERIE } from "@/lib/palette";
 import { bucketLabel } from "@/lib/query-contract";
+import { THRESHOLDS } from "@/lib/rating";
 import { libelleSeauComplet, type Annotation, type PointSerie, type SerieDef } from "@/lib/series";
 import {
   pointsCharge,
@@ -36,6 +47,7 @@ import {
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { LIBELLE_PLAGE, phrasePlagesHero, type PlageHero } from "@/lib/detections-ecran";
 import { pluriel } from "@/lib/format";
+import { BandeMini, DessinVignette, EnteteVignette, HAUTEUR_VIGNETTE, MiniSerie } from "./Vignette";
 
 /** Ce que les séries comparent : rien, la période précédente, ou deux releases (§ 3.2). */
 export type ModeSeries =
@@ -65,6 +77,17 @@ interface Commun {
 
 const somme = (valeurs: number[]) => valeurs.reduce((a, b) => a + b, 0);
 const ligneSeau = (t: string, seau: number) => libelleSeauComplet(t, seau, FUSEAU_AFFICHAGE);
+/** Hauteur d'un graphique dans la fenêtre d'une vignette. */
+const HAUTEUR_FENETRE = 300;
+/** Les sources écrites dans les grands formats (charte : chaque figure cite sa source). */
+const SOURCE_TRAFIC = "Source : SDK MIP RUM dans la page — une session par visite, une page vue par chargement ou changement de route.";
+const SOURCE_ERREURS =
+  "Source : SDK MIP RUM — événements error et unhandledrejection du navigateur, échecs réseau et violations CSP, rapportés aux pages vues de la tranche.";
+const SOURCE_CHARGE =
+  "Sources : SDK MIP RUM — pages vues (chargements et changements de route SPA), erreurs du navigateur, LCP (bibliothèque web-vitals, API Largest Contentful Paint) ; seuils web.dev (Google).";
+
+/** Le contexte d'une vignette : « 25 × 1 h ». */
+const tranches = (c: Commun) => `${c.grille.length} × ${bucketLabel(c.seauSecondes)}`;
 
 // ─────────────────────────────── Zone 5 — hero ───────────────────────────────
 
@@ -174,14 +197,14 @@ export function HeroCwv({
   const phrasePlage = plages ? phrasePlagesHero(vitaux.map((l) => plages[l.vital])) : null;
   const seau = bucketLabel(commun.seauSecondes);
   return (
-    <section className="mb-6 min-w-0" aria-labelledby="hero-cwv-titre" data-testid="hero-cwv">
+    <section className="min-w-0" aria-labelledby="hero-cwv-titre" data-testid="hero-cwv">
       {/* Recette du 30/09/2026 : côte à côte, des VIGNETTES — le titre et la courbe,
           rien d'autre. Un clic ouvre le graphique en grand, avec sa légende chiffrée,
           ses notes de lecture et son alternative textuelle. */}
       <h2 id="hero-cwv-titre" className="sr-only">
         Core Web Vitals dans le temps
       </h2>
-      <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-3">
         {vitaux.map((l, i) => {
           const m = petitMultiple(l, mode, commun, mode.kind === "release" ? undefined : plages?.[l.vital]);
           const courbe = (grand: boolean) =>
@@ -203,7 +226,7 @@ export function HeroCwv({
                 legendeAnnotations={grand}
                 noteCollecte={grand}
                 apercu={!grand}
-                hauteur={grand ? 320 : 150}
+                hauteur={grand ? 320 : HAUTEUR_VIGNETTE}
                 ariaLabel={`${l.vital} p75 par tranche de ${seau}, ${commun.grille.length} tranches, 3 zones de seuil (Bon, À améliorer, Mauvais)${
                   m.series.length > 1 ? `, comparé à ${m.series[1].libelle.toLowerCase()}` : ""
                 }`}
@@ -217,14 +240,10 @@ export function HeroCwv({
               testId={`vignette-${l.vital}`}
               case={
                 <>
-                  <span className="flex items-center justify-between text-[11px] font-medium text-ink-soft">
-                    <span>{l.vital} p75</span>
-                    <span className="text-ink-faint">{commun.grille.length} tranches de {seau}</span>
-                  </span>
-                  {/* La vignette ne se manipule pas : c'est la case entière qui s'ouvre. */}
-                  <span className="pointer-events-none mt-1 block min-w-0" inert>
+                  <EnteteVignette titre={`${l.vital} p75`} meta={tranches(commun)} />
+                  <DessinVignette>
                     {m.ok ? courbe(false) : <span className="block py-10 text-center text-xs text-ink-soft">Aucune mesure</span>}
-                  </span>
+                  </DessinVignette>
                 </>
               }
             >
@@ -278,9 +297,83 @@ type LigneVues = { bucket: string; chargements: number; spa: number; inconnu: nu
 
 /** Ce que les onglets Erreurs et Trafic disent d'une comparaison qu'ils ne tracent pas. */
 function noteComparaison(mode: ModeSeries): string | null {
-  if (mode.kind === "prev") return "La comparaison à la période précédente se lit dans les tuiles de la rangée Trafic.";
+  if (mode.kind === "prev") return "La comparaison à la période précédente se lit dans les cases de la grille.";
   if (mode.kind === "release") return "La comparaison de releases se lit dans l'onglet Web Vitals ; ici, toute la population.";
   return null;
+}
+
+/** Une série d'un onglet : sa vignette sur la page, son grand format dans la fenêtre. */
+interface SerieOnglet {
+  cle: string;
+  /** Titre court de la vignette. */
+  vignette: string;
+  /** Titre complet du grand format (et de la fenêtre). */
+  titre: string;
+  id: string;
+  serie: SerieDef;
+  format: "pour100" | "count";
+  lecture: ReactNode;
+  meta: ReactNode;
+  alternative: AlternativeTexte;
+  /** Le chiffre qui résume la vignette (total, dernier taux). */
+  resume: string;
+}
+
+/** La rangée de vignettes d'un onglet (Erreurs, Trafic) : même hauteur que celle des Web Vitals. */
+function RangeeOnglet({ series, points, commun, testId, titre }: { series: SerieOnglet[]; points: PointSerie[]; commun: Commun; testId: string; titre: string }) {
+  const seau = bucketLabel(commun.seauSecondes);
+  const courbe = (s: SerieOnglet, grand: boolean) => (
+    <ThresholdSeries
+      grille={commun.grille}
+      points={points}
+      series={[s.serie]}
+      format={s.format}
+      seauSecondes={commun.seauSecondes}
+      fuseau={FUSEAU_AFFICHAGE}
+      zoomHref={grand ? commun.zoomHref : undefined}
+      debutPlage={commun.debutPlage}
+      annotations={commun.annotations.annotations}
+      annotationsIndisponibles={commun.annotations.indisponible ?? undefined}
+      legendeAnnotations={grand}
+      noteCollecte={grand}
+      apercu={!grand}
+      hauteur={grand ? HAUTEUR_FENETRE : HAUTEUR_VIGNETTE}
+      ariaLabel={`${s.titre} par tranche de ${seau}, ${commun.grille.length} tranches`}
+    />
+  );
+  return (
+    <section className="min-w-0" aria-label={titre} data-testid={testId}>
+      <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2">
+        {series.map((s) => (
+          <FicheMesure
+            key={s.cle}
+            titre={`${s.titre}, par tranche de ${seau}`}
+            ariaLabel={`${s.titre} : ${s.resume} — ouvrir le graphique`}
+            testId={`vignette-${s.cle}`}
+            case={
+              <>
+                <EnteteVignette
+                  titre={s.vignette}
+                  meta={
+                    <>
+                      <span className="font-semibold tabular-nums text-ink-soft">{s.resume}</span> · {tranches(commun)}
+                    </>
+                  }
+                />
+                <DessinVignette>{courbe(s, false)}</DessinVignette>
+              </>
+            }
+          >
+            <div className="mt-3">
+              <Figure titre={s.titre} id={s.id} lecture={s.lecture} meta={s.meta} alternative={s.alternative}>
+                {courbe(s, true)}
+              </Figure>
+            </div>
+          </FicheMesure>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 export function HeroErreurs({
@@ -295,61 +388,91 @@ export function HeroErreurs({
 }) {
   const seau = bucketLabel(commun.seauSecondes);
   // Sans la colonne de source (v69), le numérateur porte toutes les sources : le titre le dit (CP14).
-  const titre =
-    erreurs.ok && !erreurs.data.restreint
-      ? "Occurrences d'erreurs (toutes sources) pour 100 pages vues"
-      : "Occurrences d'erreurs navigateur pour 100 pages vues";
+  const toutes = erreurs.ok && !erreurs.data.restreint;
+  const titre = toutes
+    ? "Occurrences d'erreurs (toutes sources) pour 100 pages vues"
+    : "Occurrences d'erreurs navigateur pour 100 pages vues";
   if (!vues.ok || !erreurs.ok) {
     return <Figure titre={titre} id="hero-taux-erreurs" etat={{ kind: "erreur", titre }} />;
   }
   const points = pointsHeroErreurs(commun.grille, vues.data, erreurs.data.points);
   const totalVues = somme(points.map((p) => p.vues ?? 0));
   const totalOcc = somme(points.map((p) => p.occurrences ?? 0));
-  const etat: Etat | undefined =
-    totalVues === 0 ? { kind: "vide", population: "page vue (dénominateur du taux)", plage: commun.plage } : undefined;
-  const note = noteComparaison(mode);
-  return (
-    <Figure
-      titre={titre}
-      id="hero-taux-erreurs"
-      etat={etat}
-      lecture={
-        <>
-          Un taux, pas un compte : les occurrences de la tranche rapportées à ses pages vues. Une tranche sans page vue
-          n&apos;a pas de taux (trou, jamais 0).{note ? ` ${note}` : null}
-        </>
-      }
-      meta={
-        <>
-          <span>pour 100 pages vues, par tranche de {seau}</span>
-          <span>{commun.grille.length} tranches</span>
-          <span>
-            {formater("count", totalOcc)} occurrences · {formater("count", totalVues)} pages vues
-          </span>
-          <span>{commun.plage}</span>
-        </>
-      }
-      alternative={{
-        legende: `${titre}, par tranche de ${seau}`,
-        colonnes: ["Période", "Occurrences", "Pages vues", "Pour 100 pages vues"],
-        lignes: points.map((p) => [ligneSeau(p.t, commun.seauSecondes), p.occurrences, p.vues, formater("pour100", p.pour100)]),
-      }}
-    >
-      <ThresholdSeries
-        grille={commun.grille}
-        points={points as unknown as PointSerie[]}
-        series={[{ cle: "pour100", libelle: "Pour 100 pages vues", role: "principale" }]}
-        format="pour100"
-        seauSecondes={commun.seauSecondes}
-        fuseau={FUSEAU_AFFICHAGE}
-        zoomHref={commun.zoomHref}
-        debutPlage={commun.debutPlage}
-        annotations={commun.annotations.annotations}
-        annotationsIndisponibles={commun.annotations.indisponible ?? undefined}
-        hauteur={240}
-        ariaLabel={`${titre} par tranche de ${seau}, ${commun.grille.length} tranches`}
+  if (totalVues === 0) {
+    return (
+      <Figure
+        titre={titre}
+        id="hero-taux-erreurs"
+        etat={{ kind: "vide", population: "page vue (dénominateur du taux)", plage: commun.plage }}
       />
-    </Figure>
+    );
+  }
+  const note = noteComparaison(mode);
+  const titreOcc = toutes ? "Occurrences d'erreurs (toutes sources)" : "Occurrences d'erreurs navigateur";
+  const meta = (unite: string) => (
+    <>
+      <span>
+        {unite}, par tranche de {seau}
+      </span>
+      <span>{commun.grille.length} tranches</span>
+      <span>
+        {formater("count", totalOcc)} occurrences · {formater("count", totalVues)} pages vues
+      </span>
+      <span>{commun.plage}</span>
+    </>
+  );
+  const alternative = (legende: string): AlternativeTexte => ({
+    legende: `${legende}, par tranche de ${seau}`,
+    colonnes: ["Période", "Occurrences", "Pages vues", "Pour 100 pages vues"],
+    lignes: points.map((p) => [ligneSeau(p.t, commun.seauSecondes), p.occurrences, p.vues, formater("pour100", p.pour100)]),
+  });
+  return (
+    <RangeeOnglet
+      titre="Erreurs dans le temps"
+      testId="hero-erreurs-vignettes"
+      commun={commun}
+      points={points as unknown as PointSerie[]}
+      series={[
+        {
+          cle: "taux-erreurs",
+          vignette: "Erreurs / 100 pages vues",
+          titre,
+          id: "hero-taux-erreurs",
+          serie: { cle: "pour100", libelle: "Pour 100 pages vues", role: "principale" },
+          format: "pour100",
+          // « pour 100 » s'écrit « % » dans une case (recette du 30/09/2026, comme `KpiTile`) ;
+          // le ratio peut dépasser 100 %, la lecture de la fenêtre le dit.
+          resume: formater("pour100", (100 * totalOcc) / totalVues).replace(/[\s  ]pour[\s  ]100$/, " %"),
+          lecture: (
+            <>
+              Un taux, pas un compte : les occurrences de la tranche rapportées à ses pages vues, écrites en % ; plusieurs
+              erreurs sur une même page vue le portent au-delà de 100 %. Une tranche sans page vue n&apos;a pas de taux (trou,
+              jamais 0).{note ? ` ${note}` : null} {SOURCE_ERREURS}
+            </>
+          ),
+          meta: meta("pour 100 pages vues"),
+          alternative: alternative(titre),
+        },
+        {
+          cle: "occurrences-erreurs",
+          vignette: toutes ? "Occurrences d'erreurs" : "Occurrences navigateur",
+          titre: titreOcc,
+          id: "hero-occurrences-erreurs",
+          serie: { cle: "occurrences", libelle: titreOcc, role: "categorie", categorieIndex: 3, forme: "barres", additive: true },
+          format: "count",
+          resume: formater("count", totalOcc),
+          lecture: (
+            <>
+              Un compte d&apos;occurrences par tranche : une erreur répétée compte à chaque occurrence. Zéro occurrence ne prouve
+              pas l&apos;absence d&apos;erreur : seules les erreurs que le capteur voit sont comptées.{note ? ` ${note}` : null}{" "}
+              {SOURCE_ERREURS}
+            </>
+          ),
+          meta: meta("occurrences"),
+          alternative: alternative(titreOcc),
+        },
+      ]}
+    />
   );
 }
 
@@ -369,54 +492,68 @@ export function HeroTrafic({
   if (!points) return <Figure titre={titre} id="hero-trafic" etat={{ kind: "erreur", titre }} />;
   const totalVues = somme(points.map((p) => p.vues));
   const totalSessions = somme(points.map((p) => p.sessions));
-  const etat: Etat | undefined =
-    totalVues === 0 && totalSessions === 0 ? { kind: "vide", population: "page vue ni session", plage: commun.plage } : undefined;
+  if (totalVues === 0 && totalSessions === 0) {
+    return <Figure titre={titre} id="hero-trafic" etat={{ kind: "vide", population: "page vue ni session", plage: commun.plage }} />;
+  }
   const note = noteComparaison(mode);
+  const meta = (
+    <>
+      <span>par tranche de {seau}</span>
+      <span>{commun.grille.length} tranches</span>
+      <span>
+        {formater("count", totalVues)} pages vues · {formater("count", totalSessions)} sessions
+      </span>
+      <span>{commun.plage}</span>
+    </>
+  );
+  const alternative: AlternativeTexte = {
+    legende: `${titre}, par tranche de ${seau}`,
+    colonnes: ["Période", "Pages vues", "Sessions commencées"],
+    lignes: points.map((p) => [ligneSeau(p.t, commun.seauSecondes), p.vues, p.sessions]),
+  };
   return (
-    <Figure
-      titre={titre}
-      id="hero-trafic"
-      etat={etat}
-      lecture={
-        <>
-          Deux comptes sur le même axe : une session compte une fois, à son début ; ses pages vues comptent chacune dans
-          leur tranche.{note ? ` ${note}` : null}
-        </>
-      }
-      meta={
-        <>
-          <span>par tranche de {seau}</span>
-          <span>{commun.grille.length} tranches</span>
-          <span>
-            {formater("count", totalVues)} pages vues · {formater("count", totalSessions)} sessions
-          </span>
-          <span>{commun.plage}</span>
-        </>
-      }
-      alternative={{
-        legende: `${titre}, par tranche de ${seau}`,
-        colonnes: ["Période", "Pages vues", "Sessions commencées"],
-        lignes: points.map((p) => [ligneSeau(p.t, commun.seauSecondes), p.vues, p.sessions]),
-      }}
-    >
-      <ThresholdSeries
-        grille={commun.grille}
-        points={points as unknown as PointSerie[]}
-        series={[
-          { cle: "vues", libelle: "Pages vues", role: "principale", additive: true },
-          { cle: "sessions", libelle: "Sessions commencées", role: "categorie", categorieIndex: 1, additive: true },
-        ]}
-        format="count"
-        seauSecondes={commun.seauSecondes}
-        fuseau={FUSEAU_AFFICHAGE}
-        zoomHref={commun.zoomHref}
-        debutPlage={commun.debutPlage}
-        annotations={commun.annotations.annotations}
-        annotationsIndisponibles={commun.annotations.indisponible ?? undefined}
-        hauteur={240}
-        ariaLabel={`${titre} par tranche de ${seau}, ${commun.grille.length} tranches`}
-      />
-    </Figure>
+    <RangeeOnglet
+      titre="Trafic dans le temps"
+      testId="hero-trafic-vignettes"
+      commun={commun}
+      points={points as unknown as PointSerie[]}
+      series={[
+        {
+          cle: "pages-vues",
+          vignette: "Pages vues",
+          titre: "Pages vues",
+          id: "hero-trafic",
+          serie: { cle: "vues", libelle: "Pages vues", role: "principale", additive: true },
+          format: "count",
+          resume: formater("count", totalVues),
+          lecture: (
+            <>
+              Chaque page vue compte dans sa tranche : chargement complet ou changement de route SPA.{note ? ` ${note}` : null}{" "}
+              {SOURCE_TRAFIC}
+            </>
+          ),
+          meta,
+          alternative,
+        },
+        {
+          cle: "sessions",
+          vignette: "Sessions commencées",
+          titre: "Sessions commencées",
+          id: "hero-sessions",
+          serie: { cle: "sessions", libelle: "Sessions commencées", role: "principale", additive: true },
+          format: "count",
+          resume: formater("count", totalSessions),
+          lecture: (
+            <>
+              Une session compte une fois, dans la tranche où elle commence ; ses pages vues comptent chacune dans leur
+              tranche.{note ? ` ${note}` : null} {SOURCE_TRAFIC}
+            </>
+          ),
+          meta,
+          alternative,
+        },
+      ]}
+    />
   );
 }
 
@@ -488,7 +625,7 @@ export function ChargeErreursLcp({
     zoomHref: commun.zoomHref,
     debutPlage: commun.debutPlage,
     synchro,
-    hauteur: 110,
+    hauteur: 120,
   };
 
   return (
@@ -514,10 +651,11 @@ export function ChargeErreursLcp({
           Trois panneaux, un axe chacun, la même heure alignée sur les trois : aucune grandeur n&apos;est lue sur
           l&apos;échelle d&apos;une autre.{" "}
           {precedent
-            ? "La série grise pointillée du LCP est la période précédente, alignée tranche à tranche ; les comptes se comparent dans les tuiles."
+            ? "La série grise pointillée du LCP est la période précédente, alignée tranche à tranche ; les comptes se comparent dans les cases de la grille."
             : mode.kind === "release"
               ? "La comparaison de releases se lit dans « Core Web Vitals dans le temps » ; ici, toute la population."
-              : null}
+              : null}{" "}
+          {SOURCE_CHARGE}
         </>
       }
       alternative={{
@@ -620,5 +758,66 @@ export function ChargeErreursLcp({
         </Panneau>
       </div>
     </Figure>
+  );
+}
+
+/**
+ * « Charge, erreurs et LCP » sur la page : un PANNEAU COMPACT (recette du 30/09/2026) —
+ * les trois bandes réduites, empilées sur la même grille de tranches, le total de
+ * chacune à gauche ; un clic ouvre les trois panneaux en grand (`ChargeErreursLcp`).
+ * Toutes les lectures en échec : la figure dit l'échec elle-même, sans vignette.
+ */
+export function VignetteCharge({
+  lectures,
+  mode,
+  lcpP75,
+  ...commun
+}: Commun & {
+  lectures: LecturesCharge;
+  mode: ModeSeries;
+  /** LCP p75 de toute la population filtrée (la case LCP de la grille), écrit dans la bande. */
+  lcpP75?: number | null;
+}) {
+  if (!lectures.vues.ok && !lectures.erreurs.ok && !lectures.lcp.ok) {
+    return <ChargeErreursLcp lectures={lectures} mode={mode} {...commun} />;
+  }
+  const seau = bucketLabel(commun.seauSecondes);
+  const points = pointsCharge(
+    commun.grille,
+    lectures.vues.ok ? lectures.vues.data : null,
+    lectures.erreurs.ok ? lectures.erreurs.data.points : null,
+    lectures.lcp.ok ? lectures.lcp.data : null,
+  );
+  const vues = lectures.vues.ok ? points.map((p) => (p.chargements ?? 0) + (p.spa ?? 0) + (p.inconnu ?? 0)) : null;
+  const erreurs = lectures.erreurs.ok ? points.map((p) => p.erreurs ?? 0) : null;
+  const lcp = lectures.lcp.ok ? points.map((p) => p.p75) : null;
+  const total = (v: number[] | null) => (v ? formater("count", somme(v)) : "non lu");
+  const nonLue = <span className="block text-[10px] text-ink-faint">non lue</span>;
+  return (
+    <FicheMesure
+      titre={`Charge, erreurs et LCP par tranche de ${seau}`}
+      ariaLabel={`Charge, erreurs et LCP : ${total(vues)} pages vues, ${total(erreurs)} occurrences d'erreurs navigateur, LCP p75 ${formater("ms", lcpP75 ?? null)} — ouvrir les trois graphiques`}
+      testId="vignette-charge"
+      case={
+        <>
+          <EnteteVignette titre="Charge, erreurs et LCP" meta={tranches(commun)} />
+          <span className="mt-1 grid min-w-0 gap-1.5" aria-hidden="true">
+            <BandeMini libelle="Pages vues" valeur={total(vues)}>
+              {vues ? <MiniSerie valeurs={vues} forme="barres" couleur={AUTRES} /> : nonLue}
+            </BandeMini>
+            <BandeMini libelle="Erreurs" valeur={total(erreurs)}>
+              {erreurs ? <MiniSerie valeurs={erreurs} forme="barres" couleur={categorie(3)} /> : nonLue}
+            </BandeMini>
+            <BandeMini libelle="LCP p75" valeur={formater("ms", lcpP75 ?? null)}>
+              {lcp ? <MiniSerie valeurs={lcp} forme="ligne" couleur={SERIE.principale} seuils={THRESHOLDS.LCP} /> : nonLue}
+            </BandeMini>
+          </span>
+        </>
+      }
+    >
+      <div className="mt-3">
+        <ChargeErreursLcp lectures={lectures} mode={mode} {...commun} />
+      </div>
+    </FicheMesure>
   );
 }

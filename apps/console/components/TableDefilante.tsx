@@ -89,11 +89,20 @@ export function useDebordementHorizontal(ref: RefObject<HTMLElement | null>, cle
  */
 const OMBRE = "pointer-events-none absolute inset-y-0 z-20 w-6 from-navy-950/15 to-transparent dark:from-black/60";
 
+/**
+ * Hauteur maximale : la zone défile AUSSI verticalement, et l'en-tête du tableau
+ * (`thead`) reste collé en haut, sur le fond du panneau (01/10/2026 : les écrans
+ * bornaient leurs tableaux par des sélecteurs `[&_ol]:max-h-[…]` posés de l'extérieur,
+ * et l'en-tête partait avec les lignes). L'indice de défilement horizontal reste.
+ */
+const EN_TETE_COLLANT = "[&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-panel";
+
 export function TableDefilante({
   children,
   className = "",
   label = "Tableau défilant",
   testId,
+  hauteurMax,
 }: {
   children: ReactNode;
   /** Classes du cadre (`card`, bordures, arrondis, marges) : seul le débordement est géré ici. */
@@ -102,6 +111,8 @@ export function TableDefilante({
   label?: string;
   /** `data-testid` du cadre — celui que portait l'ancien conteneur. */
   testId?: string;
+  /** Hauteur maximale de la zone (« 20rem ») : défilement vertical, en-tête collant. */
+  hauteurMax?: string;
 }) {
   const zone = useRef<HTMLDivElement>(null);
   const { gauche, droite } = useDebordementHorizontal(zone);
@@ -127,7 +138,11 @@ export function TableDefilante({
           role="region"
           aria-label={label}
           tabIndex={0}
-          className="relative overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-perf"
+          data-hauteur-max={hauteurMax ? "" : undefined}
+          style={hauteurMax ? { maxHeight: hauteurMax } : undefined}
+          className={`relative overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-perf ${
+            hauteurMax ? `overflow-y-auto overscroll-contain ${EN_TETE_COLLANT}` : ""
+          }`}
         >
           {children}
         </div>

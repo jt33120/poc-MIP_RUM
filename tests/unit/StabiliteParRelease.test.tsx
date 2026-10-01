@@ -152,6 +152,9 @@ describe("StabiliteParRelease", () => {
     );
     expect(texte(vide)).toContain("Aucune session React Native sur 24 h.");
     expect(vide).not.toContain('data-testid="impact-table"');
+    // Recette du 30/09/2026 : le vide tient sur UNE ligne (titre et état côte à côte),
+    // pas dans une boîte encadrée sous le titre.
+    expect(vide).not.toContain("rounded-lg border leading-relaxed");
   });
 
   it("tri gravité : la release la moins stable en tête, part non calculable en fin", () => {

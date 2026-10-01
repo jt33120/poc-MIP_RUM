@@ -78,7 +78,7 @@ test.describe("à 390 px", () => {
     ["/admin/audit", "Journal d'audit"],
     ["/admin/usage", "Consommation par application"],
     ["/admin/uptime", "Sondes"],
-    ["/admin/read-tokens", "Jetons de lecture"],
+    ["/admin/read-tokens", "Jetons d'accès"],
     ["/admin/extension-scope", "Domaines enregistrés"],
     ["/admin/customers", "Applications"],
   ] as const) {

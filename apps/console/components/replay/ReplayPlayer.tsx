@@ -29,10 +29,10 @@ import type { Replayer } from "@rrweb/replay";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import "@rrweb/replay/dist/style.css";
 import { EtatSurface } from "@/components/states/EtatSurface";
+import { CouvertureRejeu } from "./CouvertureRejeu";
 import { formater } from "@/lib/fmt-ids";
 import { pluriel } from "@/lib/format";
 import {
-  TEXTE_COUVERTURE,
   VITESSES,
   lireIgnores,
   messagePosition,
@@ -276,16 +276,14 @@ export default function ReplayPlayer({
 
   return (
     <div
-      className="card min-w-0 p-4 sm:p-6"
+      className="card min-w-0 p-3"
       data-testid="replay-player"
       data-state={state}
       data-events={eventCount}
       data-ignores={ignores}
       data-tronques={tronques}
     >
-      <p className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="replay-couverture">
-        {TEXTE_COUVERTURE}
-      </p>
+      <CouvertureRejeu />
       {ignores > 0 && state === "ready" && (
         <div className="mb-3">
           <EtatSurface compact etat={{ kind: "partiel", raison: `${texteIgnores(ignores)} : le rejeu peut sauter des passages` }} />
@@ -299,31 +297,44 @@ export default function ReplayPlayer({
       {state === "loading" && (
         <p className="py-8 text-center text-sm text-ink-soft">Chargement du replay…</p>
       )}
+      {/* Un rejeu vide tient sur une ligne ; les raisons possibles sont dans le repli. */}
       {state === "empty" && ignores > 0 && (
-        <div className="py-2" data-testid="replay-empty">
-          <h3 className="text-sm font-bold tracking-tight">Rejeu incomplet</h3>
-          <p className="mt-2 max-w-2xl text-sm text-ink-soft">
+        <div className="py-1" data-testid="replay-empty">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+            <span aria-hidden="true" className="text-ink-faint">
+              ⊘
+            </span>
+            Rejeu incomplet
+          </p>
+          <p className="mt-1 text-xs text-ink-soft">
             {texteIgnores(ignores)} : ce qui reste ne suffit pas à reconstruire la page (il faut au moins
             l&apos;instantané initial).
           </p>
         </div>
       )}
       {state === "empty" && ignores === 0 && (
-        <div className="py-2" data-testid="replay-empty">
-          <h3 className="text-sm font-bold tracking-tight">Aucun rejeu pour cette session</h3>
-          <p className="mt-2 max-w-2xl text-sm text-ink-soft">
-            Aucun enregistrement n&apos;a été capturé pour cette session : le rejeu n&apos;est pas activé
-            dans le SDK de cette application (<code className="rounded bg-panel2 px-1">replay: true</code>), ou
-            la session était trop courte, ou le visiteur a émis un signal{" "}
-            <strong>DNT/GPC</strong> ou refusé son consentement, ou son navigateur n&apos;a pas{" "}
-            <code className="rounded bg-panel2 px-1">CompressionStream</code>.
+        <div className="py-1" data-testid="replay-empty">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+            <span aria-hidden="true" className="text-ink-faint">
+              ⊘
+            </span>
+            Aucun rejeu pour cette session
           </p>
-          <p className="mt-3 max-w-2xl text-sm text-ink-soft">
-            Quand un rejeu existe, les saisies sont <strong>masquées à l&apos;enregistrement</strong>{" "}
-            (<code className="rounded bg-panel2 px-1">maskAllInputs</code>) et les blocs{" "}
-            <code className="rounded bg-panel2 px-1">mip-rum-block</code> exclus ; chunks gzip stockés
-            avec TTL 30 j (RGPD).
-          </p>
+          <details className="mt-1 text-xs text-ink-soft">
+            <summary className="cursor-pointer select-none font-medium hover:text-ink">Pourquoi ?</summary>
+            <p className="mt-1 max-w-2xl leading-relaxed">
+              Aucun enregistrement n&apos;a été capturé pour cette session : le rejeu n&apos;est pas activé dans le SDK
+              de cette application (<code className="rounded bg-panel2 px-1">replay: true</code>), ou la session était
+              trop courte, ou le visiteur a émis un signal <strong>DNT/GPC</strong> ou refusé son consentement, ou son
+              navigateur n&apos;a pas <code className="rounded bg-panel2 px-1">CompressionStream</code>.
+            </p>
+            <p className="mt-1 max-w-2xl leading-relaxed">
+              Quand un rejeu existe, les saisies sont <strong>masquées à l&apos;enregistrement</strong> (
+              <code className="rounded bg-panel2 px-1">maskAllInputs</code>) et les blocs{" "}
+              <code className="rounded bg-panel2 px-1">mip-rum-block</code> exclus ; chunks gzip stockés avec TTL 30 j
+              (RGPD).
+            </p>
+          </details>
         </div>
       )}
       {state === "error" && (
@@ -335,11 +346,17 @@ export default function ReplayPlayer({
         </div>
       )}
       {state === "ready" && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <button type="button" className="btn-accent" onClick={play}>
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <button type="button" className="btn-accent px-3 py-1 text-xs" onClick={play}>
+            <span aria-hidden="true" className="mr-1">
+              ▶
+            </span>
             Lecture
           </button>
-          <button type="button" className="btn-ghost" onClick={() => replayer.current?.pause()}>
+          <button type="button" className="btn-ghost px-2.5 py-1 text-xs" onClick={() => replayer.current?.pause()}>
+            <span aria-hidden="true" className="mr-1">
+              ❚❚
+            </span>
             Pause
           </button>
           <div role="group" aria-label="Vitesse de lecture" className="flex overflow-hidden rounded-md border border-line" data-testid="replay-vitesses">

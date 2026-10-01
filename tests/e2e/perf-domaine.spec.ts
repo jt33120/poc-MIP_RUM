@@ -6,7 +6,7 @@
 // Chaque lot sème ses données dans SA propre app, dans le `beforeAll` de son bloc :
 // aucun bloc ne dépend des données d'un autre. Un seul compte admin DÉDIÉ au fichier,
 // jamais le compte admin local de seed-admin.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import pg from "pg";
 import { compteDedie } from "./helpers/compte-dedie";
 import { debordements, LARGEURS } from "./helpers/debordements";
@@ -34,6 +34,29 @@ async function login(page: Page) {
   await page.fill('input[name="password"]', motDePasse);
   await page.click('button[type="submit"]');
   await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
+}
+
+/**
+ * La case dont le libellé COMPLET est `libelle`. Depuis le 30/09/2026, une case peut
+ * n'afficher qu'un libellé court (« Nouveaux groupes ») : le libellé complet ouvre
+ * son nom accessible (« <libellé> <valeur>, … ») et titre sa fenêtre.
+ */
+const caseKpi = (portee: Page | Locator, libelle: string) =>
+  portee.locator(`[data-testid="kpi-tile"][aria-label^="${libelle} "]`);
+
+/**
+ * Depuis le 30/09/2026, une case est un bouton qui ouvre sa fenêtre (`FicheMesure`) :
+ * son lien vers le niveau suivant (« Écran détaillé → ») vit dans la fenêtre, que la
+ * case désigne par `aria-controls`. On ouvre la case comme un visiteur, puis on rend
+ * ce lien.
+ */
+async function lienDeLaCase(page: Page, tuile: Locator): Promise<Locator> {
+  const id = await tuile.getAttribute("aria-controls", { timeout: 15_000 });
+  expect(id, "la case désigne sa fenêtre").toBeTruthy();
+  await tuile.click();
+  const fenetre = page.locator(`dialog[id="${id}"]`);
+  await expect(fenetre).toBeVisible();
+  return fenetre.getByRole("link", { name: /Écran détaillé/ });
 }
 
 // ——— Blocs des lots, dans l'ordre d'arrivée ———
@@ -269,6 +292,8 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
   test("« Charge, erreurs et LCP » : trois panneaux, un axe chacun, le même nombre de seaux que le hero", async ({ page }) => {
     await login(page);
     await page.goto(ACCUEIL_F12, { waitUntil: "domcontentloaded" });
+    // 30/09/2026 : sur la page, un panneau compact ; les trois graphiques s'ouvrent en grand.
+    await page.getByTestId("vignette-charge").click();
     const figure = page.locator("#charge-erreurs-lcp");
     await expect(figure.locator('[role="img"]')).toHaveCount(3, { timeout: 15_000 });
     const panneaux = figure.locator('[data-testid="stacked-bars"], [data-testid="threshold-series"]');
@@ -328,7 +353,9 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
       await page.setViewportSize({ width: largeur, height: 900 });
       await login(page);
       await page.goto(ACCUEIL_F12, { waitUntil: "domcontentloaded" });
-      await expect(page.locator("#charge-erreurs-lcp .recharts-surface").first()).toBeVisible({ timeout: 15_000 });
+      // La page telle qu'elle s'affiche (30/09/2026) : vignettes et panneau compact, fenêtres fermées.
+      await expect(page.locator('[data-testid="vignette-LCP"] .recharts-surface').first()).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("vignette-charge")).toBeVisible();
       expect(await debordements(page), `${largeur} px`).toEqual([]);
     });
   }
@@ -433,10 +460,11 @@ test.describe("F13 — Vue d'ensemble : segments, release, angle mort, historiqu
     await page.goto(ACCUEIL_F13, { waitUntil: "domcontentloaded" });
     const angle = page.getByTestId("angle-mort");
     await expect(angle.getByTestId("kpi-valeur")).toHaveText("3", { timeout: 15_000 });
-    // La règle est la méthode de la tuile (son infobulle) ; plus de chemin du dépôt à l'écran.
-    await expect(angle.getByTestId("kpi-tile")).toHaveAttribute("title", /seuil Bon du LCP/);
+    // 30/09/2026 : une case qui s'ouvre ; la règle (sa méthode) et le lien vers la
+    // corrélation sont dans sa fenêtre. Plus de chemin du dépôt à l'écran.
+    await expect(angle.getByTestId("kpi-methode")).toContainText("seuil Bon du LCP");
     await expect(angle).not.toContainText("lib/rating.ts");
-    const tuile = new URL((await angle.getByTestId("kpi-tile").getAttribute("href"))!, consoleUrl);
+    const tuile = new URL((await angle.getByTestId("angle-mort-lien").getAttribute("href"))!, consoleUrl);
     expect(tuile.pathname).toBe("/correlation");
     expect(tuile.hash).toBe("#angles-morts");
     expect(tuile.searchParams.get("app")).toBe(APP_F13);
@@ -512,9 +540,8 @@ test.describe("F18 — Erreurs : KPI, hero, répartition", () => {
     }
   });
 
-  /** La tuile dont le libellé est exactement `libelle`. */
-  const tuile = (page: Page, libelle: string) =>
-    page.getByTestId("kpi-tile").filter({ has: page.getByText(libelle, { exact: true }) });
+  /** La tuile dont le libellé complet est `libelle` (la case peut n'en montrer qu'un court). */
+  const tuile = (page: Page, libelle: string) => caseKpi(page, libelle);
 
   test("quatre tuiles : les occurrences sont une somme, sans « % » ni couleur de verdict", async ({ page }) => {
     await login(page);
@@ -572,13 +599,13 @@ test.describe("F18 — Erreurs : KPI, hero, répartition", () => {
   test("tuiles → liste : « Groupes apparus » restreint la liste, « Sessions touchées » la trie", async ({ page }) => {
     await login(page);
     await page.goto(`${consoleUrl}/errors?app=${APP}`);
-    await tuile(page, "Groupes apparus sur la période").click();
+    await (await lienDeLaCase(page, tuile(page, "Groupes apparus sur la période"))).click();
     await expect(page).toHaveURL(/nouveaux=1/);
     await expect(page.locator('[data-testid^="error-group-"]')).toHaveCount(6);
     await expect(page.locator("#groupes-erreurs")).toContainText("apparus sur la période");
 
     await page.goto(`${consoleUrl}/errors?app=${APP}`);
-    await tuile(page, "Sessions touchées").click();
+    await (await lienDeLaCase(page, tuile(page, "Sessions touchées"))).click();
     await expect(page).toHaveURL(/tri=sessions/);
     await expect(page.getByTestId("tri-sessions")).toHaveAttribute("aria-current", "true");
   });
@@ -643,9 +670,8 @@ test.describe("F22 — Interactions : onglets, Frustration KPI, règles, hero", 
     }
   });
 
-  /** La tuile dont le libellé est exactement `libelle`. */
-  const tuile = (page: Page, libelle: string) =>
-    page.getByTestId("kpi-tile").filter({ has: page.getByText(libelle, { exact: true }) });
+  /** La tuile dont le libellé complet est `libelle` (la case peut n'en montrer qu'un court). */
+  const tuile = (page: Page, libelle: string) => caseKpi(page, libelle);
 
   test("onglets Frustration / Actions : les filtres suivent, dans les deux sens", async ({ page }) => {
     await login(page);
@@ -669,7 +695,7 @@ test.describe("F22 — Interactions : onglets, Frustration KPI, règles, hero", 
     await expect(tuile(page, "Clics de rage").getByTestId("kpi-valeur")).toHaveText("2");
     await expect(tuile(page, "Clics de rage")).toContainText("2 signaux, 1 session");
     await expect(page.getByTestId("ligne-sdk-desactive")).toContainText("frustration: false");
-    await tuile(page, "Clics de rage").click();
+    await (await lienDeLaCase(page, tuile(page, "Clics de rage"))).click();
     await expect(page).toHaveURL(/type=rage/);
     await expect(page.getByTestId("filtre-type").locator('[aria-current="true"]')).toHaveText("Clics de rage");
   });
@@ -915,8 +941,10 @@ test.describe("F14 — Pages : KPI, sélecteur de vital, hero classé", () => {
     const tuiles = page.getByTestId("kpi-pages");
     await expect(tuiles).toContainText("LCP p75 (ensemble)");
     await expect(tuiles).toContainText("Pages vues");
-    // Le dénominateur est écrit dans la tuile ; une seule route au-delà de 2,5 s.
-    const auDela = tuiles.getByTestId("kpi-tile").filter({ hasText: "Routes au-delà de « Bon »" });
+    // Le dénominateur est écrit dans la tuile (lu à l'écran vocal, et dans sa fenêtre) ;
+    // une seule route au-delà de 2,5 s. La case affiche un libellé court : on la vise
+    // par son libellé complet.
+    const auDela = caseKpi(tuiles, "Routes au-delà de « Bon »");
     await expect(auDela.getByTestId("kpi-valeur")).toHaveText("1");
     await expect(auDela).toContainText("sur 3 routes classées, 0 à faible effectif");
   });
@@ -941,7 +969,7 @@ test.describe("F14 — Pages : KPI, sélecteur de vital, hero classé", () => {
       "classement FCP non disponible : le découpage ne lit que LCP, INP, CLS",
     );
     await expect(page.getByTestId("impact-table")).toHaveCount(0);
-    const auDela = page.getByTestId("kpi-tile").filter({ hasText: "Routes au-delà de « Bon »" });
+    const auDela = caseKpi(page, "Routes au-delà de « Bon »");
     await expect(auDela.getByTestId("kpi-valeur")).toHaveText("—");
     await expect(auDela.getByTestId("kpi-raison")).toContainText("classement FCP non disponible");
     await expect(page.getByTestId("selecteur-vital").getByRole("button", { name: "FCP", exact: true })).toHaveAttribute(
@@ -1078,8 +1106,10 @@ test.describe("F15 — Pages : distributions, percentiles, TTFB, type de navigat
     await expect(ttfb.getByTestId("ttfb-phrase")).toContainText("leur somme n'est pas le TTFB");
     const phases = ttfb.getByTestId("ttfb-phases");
     for (const libelle of ["Redirection", "DNS", "Connexion TCP", "TLS", "Requête", "Réponse"]) await expect(phases).toContainText(libelle);
-    // La redirection n'est pas mesurée : « — », jamais 0 ms.
-    await ttfb.getByText("Alternative textuelle").click();
+    // La redirection n'est pas mesurée : « — », jamais 0 ms. Le repli de l'alternative
+    // est visé par son repère : la phrase de lecture, rangée dans « Méthode », cite
+    // elle aussi « l'alternative textuelle ».
+    await ttfb.getByTestId("alternative").locator("summary").click();
     await expect(ttfb.locator("table tr", { hasText: "Redirection" })).toContainText("—");
   });
 
@@ -2261,10 +2291,8 @@ test.describe("F27 — Recette transverse du domaine performance", () => {
   test("P8 — /ux : tuile de signal et routes frustrantes mènent au niveau suivant", async ({ page }) => {
     await login(page);
     await ouvrirF27(page, "/ux");
-    const rage = page
-      .getByTestId("kpi-interactions")
-      .getByTestId("kpi-tile")
-      .filter({ has: page.getByText("Clics de rage", { exact: true }) });
+    // La case ouvre sa fenêtre ; le niveau suivant est le lien de la fenêtre.
+    const rage = await lienDeLaCase(page, caseKpi(page.getByTestId("kpi-interactions"), "Clics de rage"));
     verifierP8("tuile Clics de rage", await urlDeF27(rage, "tuile Clics de rage"), "/ux", ["type", "rage"]);
     const route = page.locator("#routes-frustrantes").getByTestId("impact-ligne").first().locator("a");
     verifierP8("routes les plus frustrantes", await urlDeF27(route, "routes frustrantes"), "/pages", ["panel", /^route:%2Ff27-/]);
@@ -2301,7 +2329,8 @@ test.describe("F27 — Recette transverse du domaine performance", () => {
   // partir de l'événement de clic lui-même ; `locator.click()` échouerait sur le
   // point actif que recharts pose par-dessus au survol.
   const ZOOMS_F27 = [
-    { chemin: "/", serie: '#charge-erreurs-lcp [data-testid="panneau-lcp"]', figure: "Charge, erreurs et LCP (panneau LCP)" },
+    // Sur `/`, le graphique vit dans la fenêtre de sa vignette (30/09/2026) : on l'ouvre d'abord.
+    { chemin: "/", ouvrir: "vignette-charge", serie: '#charge-erreurs-lcp [data-testid="panneau-lcp"]', figure: "Charge, erreurs et LCP (panneau LCP)" },
     { chemin: "/pages", serie: '#figure-taches-longues [data-testid="threshold-series"]', figure: "tâches longues (blocage p75)" },
     { chemin: "/ux", serie: "#figure-inp-dans-le-temps", figure: "INP p75 dans le temps" },
     { chemin: "/experience", serie: '#satisfaction-dans-le-temps [data-testid="threshold-series"]', figure: "satisfaction dans le temps" },
@@ -2310,6 +2339,7 @@ test.describe("F27 — Recette transverse du domaine performance", () => {
     test(`P8 — ${zoom.chemin} : un point de « ${zoom.figure} » zoome sur son seau`, async ({ page }) => {
       await login(page);
       await ouvrirF27(page, zoom.chemin);
+      if (zoom.ouvrir) await page.getByTestId(zoom.ouvrir).click();
       const point = page.locator(`${zoom.serie} .recharts-line-dots circle`).first();
       await expect(point).toBeVisible({ timeout: 15_000 });
       await point.scrollIntoViewIfNeeded();

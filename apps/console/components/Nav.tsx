@@ -7,8 +7,14 @@ import { ICON_PATHS, Icon } from "./icons";
 
 const DOMAIN_DOT = { perf: "text-perf", neutral: "text-ink-faint" } as const;
 
-const BASE =
-  "group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition";
+// Éléments de 32 px (charte § 3.10) : à 36 px, la navigation et l'administration
+// dépliée ne tenaient pas dans un écran de 900 px avec la carte du compte. L'anneau
+// de focus est INTÉRIEUR : la zone qui défile rognerait un anneau extérieur.
+export const NAV_ELEMENT =
+  "group relative flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-perf";
+
+/** Barre de 3 px à gauche de l'élément actif (charte § 3.10). */
+export const NAV_BARRE_ACTIVE = "absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-accent transition-opacity";
 
 /** Icône de la catégorie, coiffée d'un cadenas quand la capacité est fermée. */
 function Pastille({ c, isActive }: { c: NavCategory; isActive: boolean }) {
@@ -52,7 +58,7 @@ export function Nav({ reglages }: { reglages?: Record<string, React.ReactNode> }
   const active = activeCategory(pathname);
 
   return (
-    <nav className="flex flex-col gap-0.5">
+    <nav aria-label="Navigation principale" className="flex flex-col gap-0.5">
       {CATEGORIES.map((c) => {
         const isActive = c === active;
 
@@ -69,7 +75,7 @@ export function Nav({ reglages }: { reglages?: Record<string, React.ReactNode> }
               aria-disabled
               aria-current={isActive ? "page" : undefined}
               title="Bientôt disponible — accès fermé"
-              className={`${BASE} cursor-not-allowed ${isActive ? "bg-panel2 text-ink-soft" : "text-ink-faint"}`}
+              className={`${NAV_ELEMENT} cursor-not-allowed ${isActive ? "bg-panel2 text-ink-soft" : "text-ink-faint"}`}
             >
               <Pastille c={c} isActive={false} />
               {c.label}
@@ -80,15 +86,11 @@ export function Nav({ reglages }: { reglages?: Record<string, React.ReactNode> }
         const lien = (
           <Link
             href={contextHref(c.href, sp)}
-            className={`${BASE} min-w-0 flex-1 ${
+            className={`${NAV_ELEMENT} min-w-0 flex-1 ${
               isActive ? "bg-perf/10 text-ink" : "text-ink-soft hover:bg-panel2 hover:text-ink"
             }`}
           >
-            <span
-              className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-accent transition-opacity ${
-                isActive ? "opacity-100" : "opacity-0"
-              }`}
-            />
+            <span aria-hidden className={`${NAV_BARRE_ACTIVE} ${isActive ? "opacity-100" : "opacity-0"}`} />
             <Pastille c={c} isActive={isActive} />
             <span className="truncate">{c.label}</span>
           </Link>

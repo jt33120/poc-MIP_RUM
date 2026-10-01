@@ -1,8 +1,10 @@
 // ThresholdSeries (F04, plan § 4.2) : composant client recharts, non rendu ici (§ 0.4) —
 // on teste la fonction PURE qui prépare ses points, exportée par le composant, et le
 // domaine et les bandes qu'il dessine.
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { SERIE_MARGES, preparerPoints, type SerieDef } from "@/components/charts/ThresholdSeries";
+import { NoteCollecteRecente, NotePeuDePoints, SERIE_MARGES, preparerPoints, type SerieDef } from "@/components/charts/ThresholdSeries";
 import { THRESHOLDS } from "@/lib/rating";
 import { bandesSeuils, domaineY } from "@/lib/series";
 
@@ -153,5 +155,26 @@ describe("contrat du composant", () => {
   it("SERIE_MARGES est exporté par ThresholdSeries (panneaux empilés sur un même axe x)", () => {
     expect(SERIE_MARGES.gauche).toBeGreaterThan(0);
     expect(SERIE_MARGES.droite).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// Recette du 01/10/2026 : « Premières données … : trop peu de recul » était une ligne de
+// prose au-dessus de chaque courbe ; c'est une pastille d'une ligne, la phrase en bulle
+// et lue (les e2e lisent toujours `collecte-recente` et `peu-de-points`).
+describe("notes de collecte en pastille", () => {
+  it("collecte récente : le fait dans la pastille, la raison en bulle et en sr-only", () => {
+    const html = renderToStaticMarkup(createElement(NoteCollecteRecente, { grille: GRILLE, premier: 2, seauSecondes: 3600 }));
+    expect(html).toMatch(/^<p class="[^"]*" data-testid="collecte-recente">/);
+    expect(html).toContain("rounded-full");
+    expect(html).toContain('title="trop peu de recul pour lire une évolution sur la période."');
+    expect(html).toMatch(/<span class="sr-only"> : trop peu de recul/);
+    expect(txt(html.replace(/<[^>]+>/g, ""))).toMatch(/^◔Premières données à \d\d:\d\d \(.+\) : trop peu de recul/);
+  });
+
+  it("peu de points : même pastille, sa propre raison", () => {
+    const html = renderToStaticMarkup(createElement(NotePeuDePoints, { n: 2, seauSecondes: 3600, jours: false }));
+    expect(html).toContain('data-testid="peu-de-points"');
+    expect(html).toContain('title="trop peu de points pour lire une évolution."');
+    expect(html).toContain("rounded-full");
   });
 });

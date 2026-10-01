@@ -304,7 +304,7 @@ const AUTH_LIBELLES = {
   guardAdmin: "session administrateur",
   getUser: "session",
   signJwt: "émet la session",
-  resolveReadToken: "jeton de lecture en base",
+  resolveReadToken: "jeton d'accès en base",
   bearerMatches: "jeton de métriques",
 };
 

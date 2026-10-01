@@ -30,6 +30,16 @@ const ALIGN = {
   end: "sm:right-0",
 } as const;
 
+/**
+ * JAMAIS ROGNÉE (01/10/2026). En absolu dans son groupe, la bulle était coupée par
+ * tout ancêtre qui défile (`TableDefilante`, la liste d'un classement) ou qui coupe
+ * (`overflow-hidden` d'une carte). Une fois l'îlot monté, il pose `data-place` sur le
+ * groupe et les coordonnées de FENÊTRE (`--bulle-x`, `--bulle-y`, `placerBulle`) : la
+ * bulle passe en `fixed`, hors de tout conteneur. Sans JS, l'absolu d'avant reste.
+ */
+const PLACEE =
+  "sm:group-data-[place]:fixed sm:group-data-[place]:left-[var(--bulle-x)] sm:group-data-[place]:top-[var(--bulle-y)] sm:group-data-[place]:right-auto sm:group-data-[place]:bottom-auto sm:group-data-[place]:m-0 sm:group-data-[place]:translate-x-0";
+
 export function InfoTip({
   children,
   icon = "help",
@@ -48,7 +58,7 @@ export function InfoTip({
 }) {
   const pos = side === "top" ? "sm:bottom-full sm:mb-2" : "sm:bottom-auto sm:top-full sm:mt-2";
   return (
-    <span className={`group relative inline-flex align-middle ${className}`}>
+    <span className={`group relative inline-flex align-middle ${className}`} data-side={side} data-align={align}>
       <button
         type="button"
         aria-label={label}
@@ -58,7 +68,7 @@ export function InfoTip({
       </button>
       <span
         role="tooltip"
-        className={`pointer-events-none fixed inset-x-4 bottom-4 z-50 hidden max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-panel p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-ink-soft shadow-pop group-hover:block group-focus-within:block group-data-[ferme]:!hidden sm:absolute sm:inset-x-auto sm:w-72 ${pos} ${ALIGN[align]}`}
+        className={`pointer-events-none fixed inset-x-4 bottom-4 z-50 hidden max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-panel p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-ink-soft shadow-pop group-hover:block group-focus-within:block group-data-[ferme]:!hidden sm:absolute sm:inset-x-auto sm:w-72 ${pos} ${ALIGN[align]} ${PLACEE}`}
       >
         {children}
       </span>

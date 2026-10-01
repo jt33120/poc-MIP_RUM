@@ -48,13 +48,96 @@ export function brancherEchap(groupe: HTMLElement, doc: Document): () => void {
   };
 }
 
+/** Un rectangle à l'écran (coordonnées de la fenêtre, comme `getBoundingClientRect`). */
+export interface Rect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+const ECART = 8;
+const MARGE = 8;
+
+/**
+ * Où poser la bulle, en coordonnées de la FENÊTRE (`position: fixed`). Posée en
+ * absolu dans son groupe, elle était rognée par tout ancêtre qui défile ou coupe
+ * (`overflow`) : un tableau défilant, une carte `overflow-hidden`, la liste d'un
+ * classement (recette du 01/10/2026). Accrochée à l'icône (`align`), du côté demandé
+ * (`side`), retournée de l'autre côté si elle n'y tient pas, et toujours gardée à
+ * 8 px des bords de la fenêtre.
+ */
+export function placerBulle(
+  cible: Rect,
+  bulle: { largeur: number; hauteur: number },
+  vue: { largeur: number; hauteur: number },
+  side: "top" | "bottom",
+  align: "center" | "start" | "end",
+): { x: number; y: number } {
+  const brut = align === "start" ? cible.left : align === "end" ? cible.right - bulle.largeur : (cible.left + cible.right) / 2 - bulle.largeur / 2;
+  const x = Math.max(MARGE, Math.min(brut, vue.largeur - bulle.largeur - MARGE));
+  const dessous = cible.bottom + ECART;
+  const dessus = cible.top - ECART - bulle.hauteur;
+  const tientDessous = dessous + bulle.hauteur <= vue.hauteur - MARGE;
+  const tientDessus = dessus >= MARGE;
+  const y = side === "top" ? (tientDessus || !tientDessous ? dessus : dessous) : tientDessous || !tientDessus ? dessous : dessus;
+  return { x, y: Math.max(MARGE, y) };
+}
+
+/**
+ * À partir de 640 px, pose la bulle en `fixed` aux coordonnées de `placerBulle` quand
+ * le groupe s'ouvre (survol, focus), et la suit pendant un défilement. En dessous, la
+ * bulle reste posée au bord bas de la fenêtre (CSS d'`InfoTip`) : rien à calculer.
+ * Sans JS, la bulle garde sa position absolue d'avant : le rendu serveur reste lisible.
+ */
+export function brancherPlacement(groupe: HTMLElement, win: Window): () => void {
+  const placer = () => {
+    const bouton = groupe.querySelector("button");
+    const bulle = groupe.querySelector<HTMLElement>('[role="tooltip"]');
+    if (!bouton || !bulle || win.innerWidth < 640) {
+      groupe.removeAttribute("data-place");
+      return;
+    }
+    groupe.setAttribute("data-place", "");
+    const r = bouton.getBoundingClientRect();
+    const { x, y } = placerBulle(
+      r,
+      { largeur: bulle.offsetWidth, hauteur: bulle.offsetHeight },
+      { largeur: win.innerWidth, hauteur: win.innerHeight },
+      groupe.dataset.side === "top" ? "top" : "bottom",
+      groupe.dataset.align === "start" ? "start" : groupe.dataset.align === "end" ? "end" : "center",
+    );
+    groupe.style.setProperty("--bulle-x", `${Math.round(x)}px`);
+    groupe.style.setProperty("--bulle-y", `${Math.round(y)}px`);
+  };
+  // Un défilement (de la page ou d'un ancêtre) déplace l'icône : la bulle la suit.
+  const suivre = () => {
+    if (groupe.hasAttribute("data-place")) placer();
+  };
+  groupe.addEventListener("mouseenter", placer);
+  groupe.addEventListener("focusin", placer);
+  win.addEventListener("scroll", suivre, { capture: true, passive: true });
+  win.addEventListener("resize", suivre);
+  return () => {
+    groupe.removeEventListener("mouseenter", placer);
+    groupe.removeEventListener("focusin", placer);
+    win.removeEventListener("scroll", suivre, { capture: true });
+    win.removeEventListener("resize", suivre);
+  };
+}
+
 export function InfoTipEchap() {
   const repere = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     const groupe = repere.current?.parentElement;
     if (!groupe) return;
-    return brancherEchap(groupe, document);
+    const sansEchap = brancherEchap(groupe, document);
+    const sansPlacement = brancherPlacement(groupe, window);
+    return () => {
+      sansEchap();
+      sansPlacement();
+    };
   }, []);
 
   return <span ref={repere} hidden />;

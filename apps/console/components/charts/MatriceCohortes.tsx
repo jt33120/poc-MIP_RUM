@@ -15,7 +15,7 @@
 // Les chiffres sont posés sur une pastille `bg-panel/90` : lisibles sur le palier le
 // plus soutenu, en clair comme en sombre.
 import { formater } from "@/lib/fmt-ids";
-import { PALIERS_SEQUENTIELLE_JETONS, sequentielleJeton } from "@/lib/palette";
+import { PALIERS_SEQUENTIELLE_JETONS, palierSequentiel, sequentielleJeton } from "@/lib/palette";
 
 /** Hachures de la semaine en cours : un motif, pas une couleur de plus (§ 3.9). */
 const HACHURES = "repeating-linear-gradient(135deg, rgb(var(--c-ink-soft) / 0.35) 0 2px, transparent 2px 6px)";
@@ -85,26 +85,29 @@ export function MatriceCohortes({
                     }
                     const fond = c.taux === null ? "transparent" : sequentielleJeton(c.taux);
                     const titre = `${l.cohorte}, S+${o} : ${nombre(c.retenus)} / ${nombre(l.taille)} (${formater("pct", c.taux)})${c.incomplete ? ", semaine incomplète" : ""}`;
+                    // Heatmap chiffrée (refonte du 30/09/2026) : le chiffre est posé À MÊME la
+                    // couleur, qui remplit la case. Sur les deux paliers les plus soutenus, le
+                    // texte passe en clair (et en foncé la nuit, où la rampe s'inverse).
+                    const soutenu = c.taux !== null && palierSequentiel(c.taux) >= 3;
+                    const encre = soutenu ? "text-white dark:text-navy-950" : "text-ink";
                     return (
                       <td
                         key={o}
                         data-testid="cohorte-cellule"
                         data-incomplete={c.incomplete ? "1" : undefined}
                         title={titre}
-                        className="h-12 w-16 min-w-[4rem] rounded px-1 py-1 text-center align-middle"
+                        className={`h-11 w-16 min-w-[4rem] rounded px-1 py-0.5 text-center align-middle leading-tight ${encre}`}
                         style={{ backgroundColor: fond, backgroundImage: c.incomplete ? HACHURES : undefined }}
                       >
-                        <span className="inline-flex flex-col items-center rounded bg-panel/90 px-1 leading-tight">
-                          <span className="text-[11px] tabular-nums text-ink">
-                            {nombre(c.retenus)} / {nombre(l.taille)}
-                          </span>
-                          <span className="text-xs font-semibold tabular-nums text-ink">{formater("pct", c.taux)}</span>
-                          {c.incomplete && (
-                            <span className="text-[10px] text-ink-soft">
-                              <span className="sr-only">semaine </span>incomplète
-                            </span>
-                          )}
+                        <span className="block text-xs font-semibold tabular-nums">{formater("pct", c.taux)}</span>
+                        <span className="block text-[10px] tabular-nums opacity-80">
+                          {nombre(c.retenus)} / {nombre(l.taille)}
                         </span>
+                        {c.incomplete && (
+                          <span className="block text-[10px] opacity-80">
+                            <span className="sr-only">semaine </span>incomplète
+                          </span>
+                        )}
                       </td>
                     );
                   })}

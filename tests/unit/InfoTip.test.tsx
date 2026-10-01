@@ -39,6 +39,28 @@ describe("InfoTip", () => {
     // `!` : l'état fermé l'emporte sur l'ouverture au survol et au focus.
     expect(bulle(html)).toContain("group-data-[ferme]:!hidden");
     // L'îlot se repère à son parent : il doit être un enfant DIRECT du groupe.
-    expect(html).toMatch(/^<span class="group [^"]*">.*<span hidden=""><\/span><\/span>$/);
+    expect(html).toMatch(/^<span class="group [^"]*"[^>]*>.*<span hidden=""><\/span><\/span>$/);
+  });
+
+  // Recette du 01/10/2026 : une bulle dans une liste qui défile (classement, tableau
+  // défilant) était coupée par son conteneur. Une fois placée par l'îlot (`data-place`),
+  // elle passe en `fixed` aux coordonnées de fenêtre, hors de tout conteneur.
+  it("au-delà de 640 px, placée par l'îlot : `fixed` aux coordonnées de fenêtre ; côté et alignement exposés", () => {
+    const html = renderToStaticMarkup(
+      <InfoTip side="top" align="end">
+        Aide
+      </InfoTip>,
+    );
+    expect(html).toMatch(/^<span class="group [^"]*" data-side="top" data-align="end">/);
+    expect(bulle(html)).toEqual(
+      expect.arrayContaining([
+        "sm:group-data-[place]:fixed",
+        "sm:group-data-[place]:left-[var(--bulle-x)]",
+        "sm:group-data-[place]:top-[var(--bulle-y)]",
+      ]),
+    );
+    // Sans JS, l'absolu d'avant reste (pas de `data-place` au rendu serveur).
+    expect(html).not.toContain("data-place");
+    expect(bulle(html)).toContain("sm:absolute");
   });
 });

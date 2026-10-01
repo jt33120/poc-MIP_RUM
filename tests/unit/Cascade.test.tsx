@@ -104,6 +104,23 @@ describe("Cascade — « partiel » en tête", () => {
     }
   });
 
+  // Recette du 01/10/2026 : « Partiel » en pastille sur la ligne des repères, pas un
+  // bandeau de trois lignes.
+  it("« Partiel » est une pastille, sur la même rangée que les repères", () => {
+    const html = renderToStaticMarkup(
+      <Cascade
+        totalMs={1000}
+        pistes={PISTES}
+        elements={[el("a", "neutre", { piste: "nav" })]}
+        marqueurs={[{ libelle: "TTFB", t: 200 }]}
+        partiel="20 ressources par vue"
+      />,
+    );
+    const rangee = html.split('data-testid="etat-partiel"')[1]?.split("cascade-apercu")[0] ?? "";
+    expect(html).toContain('title="20 ressources par vue"');
+    expect(rangee).toContain('aria-label="Repères"');
+  });
+
   it("sans `partiel`, aucun bandeau", () => {
     const html = renderToStaticMarkup(<Cascade totalMs={100} pistes={PISTES} elements={[el("a", "neutre")]} />);
     expect(html).not.toContain("etat-partiel");

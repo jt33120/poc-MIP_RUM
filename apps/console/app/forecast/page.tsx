@@ -36,9 +36,11 @@ import type { ReactNode } from "react";
 import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
+import { FicheMesure } from "@/components/charts/FicheMesure";
 import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
+import { ICON_PATHS, Icon } from "@/components/icons";
 import { EtatSurface, type Etat } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import type { SearchParams } from "@/lib/filters";
@@ -103,18 +105,30 @@ function texteTendance(t: Tendance, unite: string): string {
   return t.etat === "bruit" ? `tendance non distinguable du bruit (${pente})` : `tendance établie (${pente})`;
 }
 
-const TON_SYNTHESE = {
-  risk: "border-bad/40 bg-bad/5",
-  watch: "border-warn/50 bg-warn/10",
-  ok: "border-line bg-panel2/60",
+/**
+ * Le voyant de la case « Synthèse » (recette du 30/09/2026) : rouge quand le LCP p75
+ * dépasse déjà la borne « Bon » de web.dev, ambre quand la projection la franchit dans
+ * l'horizon — les deux seuls constats que la synthèse sait sourcer. Sinon, aucun voyant.
+ */
+const POINT_SYNTHESE = {
+  risk: "bg-bad",
+  watch: "bg-warn",
+  ok: null,
 } as const;
 
+/** Sources écrites dans la fenêtre de chaque case (capteur, API, référence des seuils). */
+const SOURCE_LCP =
+  "Navigateur, bibliothèque web-vitals 5.3 (Largest Contentful Paint, W3C) ; p75 du jour. Seuils : web.dev (Google).";
+const SOURCE_TRAFIC_JOUR = "SDK MIP RUM dans la page : une page vue par chargement ou changement de route, comptée par jour.";
+const SOURCE_ERREURS_JOUR =
+  "SDK MIP RUM : événements error et unhandledrejection, échecs réseau et violations CSP, rapportés aux pages vues du jour.";
+
 function Methode() {
+  // Replié sur une ligne, sans cadre (recette du 30/09/2026) : la méthode se lit à la
+  // demande, elle n'occupe plus une carte en bas d'écran.
   return (
-    <details className="card mt-6 p-4 text-sm sm:p-5" data-testid="methode">
-      <summary className="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-        Méthode
-      </summary>
+    <details className="mt-4 text-xs text-ink-soft" data-testid="methode">
+      <summary className="cursor-pointer select-none font-medium text-ink-soft hover:text-ink">Méthode</summary>
       <p className="mt-2 leading-relaxed text-ink-soft">
         Droite des moindres carrés sur les jours d&apos;au moins {MESURES_MIN_JOUR} mesures (un jour en dessous est un
         point creux, exclu de l&apos;ajustement), tracée sur les {GRID_DAYS} jours pour voir si elle colle aux points ;
@@ -257,54 +271,66 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
   const pointsVues = jours.map((t, i) => ({ t, vues: vues[i], vues_j7: i >= 7 ? vues[i - 7] : null }));
 
   const kpi = (contenu: ReactNode) => <div className="min-w-0">{contenu}</div>;
+  // Début de chaque journée dans le fuseau de l'app : l'axe du temps de la fenêtre d'une case.
+  const debutsJours = jours.map((j) => bornesJourLocal(j, fuseau).from);
+
+  // ─────────────── Synthèse, en une case (recette du 30/09/2026) ───────────────
+  // Une valeur courte, la plus importante d'abord : ce qui est déjà franchi, puis ce qui
+  // le sera dans l'horizon, puis l'état de la tendance. Les phrases de la synthèse (et la
+  // date des premières tendances) sont dans la fenêtre de la case.
+  // L'échéance qu'on a le droit d'écrire : la règle de `buildForecastNarrative` — une
+  // projection seulement si la pente dépasse le bruit ; un seuil déjà dépassé, toujours.
+  const etaEcrite = tLcp.etat === "significative" ? analyseLcp.eta : analyseLcp.eta === 0 ? 0 : null;
+  const valeurSynthese = !lcpLu.ok
+    ? "—"
+    : etaEcrite === 0
+      ? `> ${LCP_BON_TEXTE}`
+      : etaEcrite != null && etaEcrite > 0 && etaEcrite <= HORIZON_JOURS
+        ? `J+${Math.ceil(etaEcrite)}`
+        : tLcp.etat === "significative"
+          ? "Établie"
+          : tLcp.etat === "bruit"
+            ? "Dans le bruit"
+            : "Non calculée";
+  const pointSynthese = lcpLu.ok ? POINT_SYNTHESE[synthese.status] : null;
+  const phraseFenetre = `${GRID_DAYS} jours complets, du ${jjmm(jours[0])} au ${dateDernier}, fuseau de l'app (${nomFuseau(fuseau)}) ; la plage choisie en haut ne s'applique pas ; la journée en cours est exclue.`;
+
+  // ─────────────── Datation, en une ligne ───────────────
+  // Le constat se lit en un coup d'œil (« Rupture autour du 07/09 : 1,9 s → 2,7 s ») ;
+  // la phrase entière, ses chiffres et ses réserves restent dans la page, lus par un
+  // lecteur d'écran et repris par la méthode.
+  const ligneDatation =
+    datation.ok && datation.rupture
+      ? `Rupture autour du ${jjmm(datation.rupture.jour)} : ${formater("ms", datation.rupture.medianeAvant)} → ${formater("ms", datation.rupture.medianeApres)} (Pettitt, p = ${formaterP(datation.rupture.p)})`
+      : null;
 
   return (
     <div className="animate-fade-up">
-      <PageHeader
-        title="Tendances"
-        domain="fiabilite"
-        help="forecast"
-        sub="Si la tendance des 14 derniers jours continue, quand franchit-on le seuil, et cette tendance se distingue-t-elle du bruit ?"
-      />
+      <PageHeader title="Tendances" domain="fiabilite" help="forecast">
+        {/* 1 — La fenêtre fixe, en pastille à droite du titre : la plage du haut ne
+            s'applique pas, et la pastille le dit avec les dates (le détail au survol). */}
+        <p
+          role="note"
+          data-testid="fenetre-fixe"
+          title={phraseFenetre}
+          className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-line bg-panel px-2.5 py-1 text-[11px] text-ink-soft"
+        >
+          <Icon paths={ICON_PATHS.timer} className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+          <span className="min-w-0">
+            {GRID_DAYS} jours complets, du {jjmm(jours[0])} au {dateDernier}, fuseau de l&apos;app ({nomFuseau(fuseau)})
+          </span>
+          <span className="sr-only"> ; la plage choisie en haut ne s&apos;applique pas ; la journée en cours est exclue.</span>
+        </p>
+      </PageHeader>
 
-      {/* 1 — Bandeau de fenêtre fixe : la plage du haut ne s'applique pas, et on le dit avec les dates. */}
-      <p role="note" data-testid="fenetre-fixe" className="-mt-2 mb-5 rounded-lg border border-line bg-panel2/60 px-4 py-2 text-xs text-ink-soft">
-        {GRID_DAYS} jours complets, du {jjmm(jours[0])} au {dateDernier}, fuseau de l&apos;app ({nomFuseau(fuseau)}) ; la plage
-        choisie en haut ne s&apos;applique pas ; la journée en cours est exclue.
-      </p>
-
-      {/* 2 — Synthèse (TE1) : une échéance seulement si la pente dépasse le bruit. */}
-      <section role="note" aria-label="Synthèse" data-testid="synthese" className={`mb-6 rounded-xl border px-4 py-3 ${TON_SYNTHESE[synthese.status]}`}>
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Synthèse</h2>
-        {!lcpLu.ok ? (
-          <p className="mt-1 text-sm text-ink">LCP non lu (lecture en échec) : aucune synthèse n&apos;est calculée.</p>
-        ) : (
-          <ul className="mt-1.5 space-y-0.5 text-sm text-ink">
-            {synthese.lines.map((l) => (
-              <li key={l}>{l}</li>
-            ))}
-          </ul>
-        )}
-        {lcpLu.ok && tLcp.etat === "insuffisante" && phrasePremiereTendance && (
-          <p className="mt-1 text-sm text-ink" data-testid="premiere-tendance">
-            {phrasePremiereTendance}
-          </p>
-        )}
-        {/* Proposée seulement quand une tendance est calculée : sans elle, la synthèse
-            dit qu'elle ne sait rien, et l'alerte arrivait comme une conclusion. */}
-        {peutEcrire && lcpLu.ok && tLcp.etat !== "insuffisante" && (
-          <Link href={lienAlerte} className="mt-2 inline-block text-xs font-medium text-perf underline-offset-2 hover:underline">
-            Créer une alerte LCP &gt; {LCP_BON_TEXTE}
-          </Link>
-        )}
-      </section>
-
-      {/* 3 — Chiffres du dernier jour complet, contre le même jour de la semaine précédente. */}
-      {/* La référence incomplète est dite UNE fois, au-dessus des tuiles. */}
+      {/* 2 — Quatre cases de même gabarit : le dernier jour complet contre le même jour de
+          la semaine précédente, et la synthèse de la tendance. La référence incomplète est
+          dite UNE fois, au-dessus des cases. */}
       <BandeauComparaison couvertures={semainePrecedente >= 0 && !toutVide ? [couvLcp, couvRatio, couvVues] : []} />
-      <section
+      <div
+        role="group"
         aria-label="Dernier jour complet"
-        className={`mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3 ${MASQUE_SILENCE_REPETE}`}
+        className={`mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4 ${MASQUE_SILENCE_REPETE}`}
       >
         {kpi(
           !lcpLu.ok ? (
@@ -312,15 +338,20 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
           ) : (
             <KpiTile
               label={`LCP p75, dernier jour complet (${dateDernier})`}
+              libelleCase={`LCP p75 · ${dateDernier}`}
               valeur={lcp[dernier] ?? null}
               format="ms"
               vital="LCP"
               raisonNull="aucune mesure LCP ce jour-là"
               serie={lcp}
+              grapheDebuts={debutsJours}
+              titreAxeY="LCP p75 du jour"
               couverture={{ n: mesures[dernier] ?? 0, unite: "mesures LCP" }}
               precedent={semainePrecedente >= 0 ? (lcp[semainePrecedente] ?? null) : undefined}
               reference={referenceJ7}
               couverturePrecedente={couvLcp ?? undefined}
+              source={SOURCE_LCP}
+              categorie="Navigateur · Core Web Vitals"
               href={hrefWithQuery("/pages", query, { vital: "LCP" })}
             />
           ),
@@ -331,15 +362,21 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
           ) : (
             <KpiTile
               label={`Occurrences d'erreurs pour 100 pages vues, dernier jour complet (${dateDernier})`}
+              libelleCase={`Erreurs / 100 vues · ${dateDernier}`}
               valeur={ratios[dernier] ?? null}
               format="pour100"
               sensMeilleur="bas"
               raisonNull="aucune page vue ce jour-là"
               methode="Inclut les erreurs sans page vue (backend) : le ratio peut dépasser 100."
+              serie={ratios}
+              grapheDebuts={debutsJours}
+              titreAxeY="erreurs pour 100 pages vues"
               couverture={{ n: vues[dernier] ?? 0, unite: "pages vues", faibleSous: MESURES_MIN_JOUR }}
               precedent={semainePrecedente >= 0 ? (ratios[semainePrecedente] ?? null) : undefined}
               reference={referenceJ7}
               couverturePrecedente={couvRatio ?? undefined}
+              source={SOURCE_ERREURS_JOUR}
+              categorie="Navigateur · erreurs"
               href={hrefWithQuery("/errors", query)}
             />
           ),
@@ -350,22 +387,97 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
           ) : (
             <KpiTile
               label={`Pages vues, dernier jour complet (${dateDernier})`}
+              libelleCase={`Pages vues · ${dateDernier}`}
               // Aucune page vue sur 14 jours : « — » et sa raison, comme les deux autres
               // tuiles, jamais un « 0 » qui se lirait comme une journée mesurée.
               valeur={aucuneVue ? null : (vues[dernier] ?? 0)}
               raisonNull={`aucune page vue sur les ${GRID_DAYS} derniers jours complets`}
               format="count"
               sensMeilleur="neutre"
+              serie={aucuneVue ? undefined : vues}
+              grapheDebuts={debutsJours}
+              titreAxeY="pages vues par jour"
+              // Un même jour de référence presque vide (une poignée de vues) donnait
+              // « +35 200 % » : sous 30 pages vues d'un côté ou de l'autre, l'écart se tait
+              // et dit pourquoi (recette du 30/09/2026).
+              couverture={{ n: aucuneVue ? null : (vues[dernier] ?? 0), unite: "pages vues", faibleSous: MESURES_MIN_JOUR }}
               precedent={semainePrecedente >= 0 ? (vues[semainePrecedente] ?? null) : undefined}
               reference={referenceJ7}
               couverturePrecedente={couvVues ?? undefined}
+              source={SOURCE_TRAFIC_JOUR}
+              categorie="Navigateur · trafic"
             />
           ),
         )}
-      </section>
+        {/* Synthèse (TE1) : une case — la valeur courte ; les phrases, la date des
+            premières tendances et « Créer une alerte » dans sa fenêtre. */}
+        <div className="min-w-0" data-testid="synthese" role="note" aria-label="Synthèse">
+          <FicheMesure
+            titre="Synthèse de la tendance du LCP p75"
+            ariaLabel={`Synthèse de la tendance du LCP p75 : ${
+              !lcpLu.ok ? "LCP non lu (lecture en échec) : aucune synthèse n'est calculée." : synthese.lines.join(" ")
+            }`}
+            testId="synthese-case"
+            case={
+              <>
+                <span className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-[11px] font-medium text-ink-soft">Tendance · LCP p75</span>
+                  {pointSynthese && <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${pointSynthese}`} />}
+                </span>
+                <span className="whitespace-nowrap text-[22px] font-semibold leading-8 tracking-tight text-ink" data-testid="synthese-valeur">
+                  {valeurSynthese}
+                </span>
+                {lcpLu.ok && tLcp.etat === "insuffisante" && phrasePremiereTendance ? (
+                  // Sans tendance calculable, la date des premières tendances reste VISIBLE
+                  // en pied de case (coupée, entière au survol et dans la fenêtre).
+                  <span className="truncate text-[10px] text-ink-faint" data-testid="premiere-tendance" title={phrasePremiereTendance}>
+                    {phrasePremiereTendance}
+                  </span>
+                ) : (
+                  <span className="truncate text-[10px] text-ink-faint">
+                    {etaEcrite != null && etaEcrite > 0 && etaEcrite <= HORIZON_JOURS
+                      ? `franchit ${LCP_BON_TEXTE} · horizon ${HORIZON_JOURS} j`
+                      : `seuil ${LCP_BON_TEXTE} · horizon ${HORIZON_JOURS} j`}
+                  </span>
+                )}
+              </>
+            }
+          >
+            {!lcpLu.ok ? (
+              <p className="mt-3 text-sm text-ink">LCP non lu (lecture en échec) : aucune synthèse n&apos;est calculée.</p>
+            ) : (
+              <ul className="mt-3 space-y-1 text-sm text-ink">
+                {synthese.lines.map((l) => (
+                  <li key={l}>{l}</li>
+                ))}
+              </ul>
+            )}
+            {lcpLu.ok && tLcp.etat === "insuffisante" && phrasePremiereTendance && (
+              <p className="mt-2 text-sm text-ink-soft">{phrasePremiereTendance}</p>
+            )}
+            <dl className="mt-4 grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1.5 border-t border-line pt-3 text-xs leading-snug">
+              <dt className="text-ink-faint">Tendance</dt>
+              <dd className="min-w-0 text-ink-soft">{texteTendance(tLcp, "ms")}</dd>
+              <dt className="text-ink-faint">Seuil</dt>
+              <dd className="min-w-0 text-ink-soft">borne « Bon » du LCP, {LCP_BON_TEXTE} (web.dev)</dd>
+              <dt className="text-ink-faint">Horizon</dt>
+              <dd className="min-w-0 text-ink-soft">{HORIZON_JOURS} jours, si la pente dépasse le bruit</dd>
+              <dt className="text-ink-faint">Source</dt>
+              <dd className="min-w-0 text-ink-soft">{SOURCE_LCP}</dd>
+            </dl>
+            {/* Proposée seulement quand une tendance est calculée : sans elle, la synthèse
+                dit qu'elle ne sait rien, et l'alerte arrivait comme une conclusion. */}
+            {peutEcrire && lcpLu.ok && tLcp.etat !== "insuffisante" && (
+              <Link href={lienAlerte} className="mt-4 inline-flex text-sm font-medium text-perf underline-offset-2 hover:underline">
+                Créer une alerte LCP &gt; {LCP_BON_TEXTE}
+              </Link>
+            )}
+          </FicheMesure>
+        </div>
+      </div>
 
       {toutVide && (
-        <div className="mb-6" data-testid="tendances-vides">
+        <div className="mb-4" data-testid="tendances-vides">
           <EtatSurface
             etat={{
               kind: "vide",
@@ -377,7 +489,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
         </div>
       )}
 
-      {/* 4 — Hero (TE5) : 14 jours observés, droite ajustée, projection si la pente dépasse le bruit. */}
+      {/* 3 — Hero (TE5) : 14 jours observés, droite ajustée, projection si la pente dépasse le bruit. */}
       {!toutVide && (
       <SectionErreur titre="LCP p75 quotidien et sa tendance">
         <Figure
@@ -405,6 +517,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
                       : "aucune rupture datée (Pettitt)"
                     : "datation non tentée"}
                 </span>
+                <span>source : web-vitals (navigateur), seuils web.dev</span>
               </>
             )
           }
@@ -443,35 +556,21 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
                 }
           }
         >
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
+            {/* Les raisons d'une tendance absente sont dans la méta, au-dessus du dessin :
+                ces phrases entières restent lues par un lecteur d'écran. */}
             {tLcp.etat === "insuffisante" && (
-              // Une information, pas un avertissement : la série est juste trop courte.
-              <p className="text-xs text-ink-soft" data-testid="tendance-insuffisante">
+              <p className="sr-only" data-testid="tendance-insuffisante">
                 Tendance non calculée : {JOURS_VALIDES_REQUIS} jours mesurés requis, {tLcp.joursValides} disponibles.
                 {phrasePremiereTendance ? ` ${phrasePremiereTendance}` : ""}
               </p>
             )}
             {tLcp.etat === "bruit" && (
-              <p className="text-xs text-ink-soft" data-testid="tendance-bruit">
+              <p className="sr-only" data-testid="tendance-bruit">
                 Tendance non distinguable du bruit : la pente sur {GRID_DAYS} jours ne dépasse pas {K_BRUIT} écarts types
                 des résidus.
               </p>
             )}
-            {/* P*.7 — « depuis quand ? » : la datation, ou son refus chiffré. La réserve
-                d'interprétation est écrite ICI, jamais par le module (RM5). */}
-            <div className="min-w-0 text-xs text-ink-soft" data-testid="datation-rupture">
-              {phraseDatation}
-              {ruptureDeploiement && ` ${RESERVE_COINCIDENCE}`}
-              {datation.ok &&
-                datation.rupture &&
-                tLcp.etat === "significative" &&
-                ` ${RESERVE_TENDANCE_ETABLIE}`}
-              {/* La règle reste à côté du résultat (RM4), mais repliée : elle passait
-                  avant l'information (recette du 26/09/2026). */}
-              <MethodeRepliee titre="Règle de la datation" className="mt-1">
-                {REGLE_RUPTURE}.
-              </MethodeRepliee>
-            </div>
             <ThresholdSeries
               grille={hero.grille}
               points={hero.points}
@@ -487,14 +586,39 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               liensSeaux={liensVue}
               ariaLabel={`LCP p75 quotidien sur ${GRID_DAYS} jours complets, droite ajustée${tLcp.etat === "significative" ? ` et projection à ${HORIZON_JOURS} jours` : ""}, 3 zones de seuil`}
             />
+            {/* P*.7 — « depuis quand ? » : la datation, ou son refus chiffré, en une ligne
+                sous le dessin. La réserve d'interprétation est écrite ICI, jamais par le
+                module (RM5) ; la règle reste à côté du résultat (RM4), repliée. */}
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 text-[11px] text-ink-soft" data-testid="datation-rupture">
+              {ligneDatation ? (
+                <>
+                  <span className="font-medium text-ink" aria-hidden>
+                    {ligneDatation}
+                  </span>
+                  <span className="sr-only">
+                    {phraseDatation}
+                    {ruptureDeploiement && ` ${RESERVE_COINCIDENCE}`}
+                    {datation.ok && datation.rupture && tLcp.etat === "significative" && ` ${RESERVE_TENDANCE_ETABLIE}`}
+                  </span>
+                  {ruptureDeploiement && (
+                    <span aria-hidden className="rounded-full bg-panel2 px-2 py-0.5">
+                      déploiement {ruptureDeploiement.version ?? "sans version"} le {jjmm(ruptureDeploiement.jour)} : coïncidence de date
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span>{phraseDatation}</span>
+              )}
+              <MethodeRepliee titre="Règle de la datation">{REGLE_RUPTURE}.</MethodeRepliee>
+            </div>
           </div>
         </Figure>
       </SectionErreur>
       )}
 
-      {/* 5 — Deux petits multiples, sans seuil ni échéance. */}
+      {/* 4 — Deux petits multiples, sans seuil ni échéance, de même gabarit. */}
       {!toutVide && (
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-2">
         <SectionErreur titre="Occurrences d'erreurs pour 100 pages vues">
           <Figure
             titre="Occurrences d'erreurs pour 100 pages vues"
@@ -505,6 +629,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
                 <>
                   <span>par jour, {nomFuseau(fuseau)}</span>
                   <span>{texteTendance(tRatio, "pour100")}</span>
+                  <span>source : SDK MIP RUM</span>
                 </>
               )
             }
@@ -536,7 +661,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               fuseau={fuseau}
               fenetresCollecte={fenetres}
               liensSeaux={liensErreurs}
-              hauteur={140}
+              hauteur={160}
               ariaLabel={`Occurrences d'erreurs pour 100 pages vues, par jour, ${GRID_DAYS} jours complets`}
             />
           </Figure>
@@ -552,6 +677,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
                 <>
                   <span>par jour, {nomFuseau(fuseau)}</span>
                   <span>repère J−7 sur les 7 derniers jours</span>
+                  <span>source : SDK MIP RUM</span>
                 </>
               )
             }
@@ -582,7 +708,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               fuseau={fuseau}
               fenetresCollecte={fenetres}
               liensSeaux={liensVue}
-              hauteur={140}
+              hauteur={160}
               ariaLabel={`Pages vues par jour sur ${GRID_DAYS} jours complets, repère du même jour de la semaine précédente`}
             />
           </Figure>
@@ -590,7 +716,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
       </div>
       )}
 
-      {/* 6 — Méthode (TE8). */}
+      {/* 5 — Méthode (TE8), repliée sur une ligne. */}
       <Methode />
     </div>
   );

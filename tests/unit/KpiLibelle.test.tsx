@@ -23,7 +23,10 @@ describe("KpiLibelle", () => {
     expect(t).toContain("Page d'entrée n°1");
     expect(t).toContain("/partners · 28 sessions sur 28");
     expect(t).toContain("sessions commencées");
-    expect(html).toContain("card");
+    // Le gabarit des cases depuis le 30/09/2026 (celui de la case épurée) : il s'aligne
+    // dans la même rangée qu'une case chiffrée.
+    expect(html).toContain("rounded-xl");
+    expect(html).toContain("min-h-[6.5rem]");
   });
 
   it("texte null → « — » et la raison, jamais une tuile vide", () => {

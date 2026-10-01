@@ -71,6 +71,7 @@ export function InsightStrip({
   fenetre,
   ouvertParDefaut = false,
   reglesEnInfobulle = false,
+  etire = false,
 }: {
   constats: Constat[];
   /**
@@ -89,12 +90,18 @@ export function InsightStrip({
    * texte reste dans la page pour les lecteurs d'écran.
    */
   reglesEnInfobulle?: boolean;
+  /**
+   * La carte prend la hauteur de sa colonne (Vue d'ensemble, recette du 30/09/2026) :
+   * à côté du graphique principal, les deux panneaux ont le même bord bas.
+   */
+  etire?: boolean;
 }) {
   const aStatuts = !!statuts && statuts.length > 0;
+  const hauteur = etire ? "grow" : "";
 
   if (constats.length === 0) {
     return (
-      <div className="card min-w-0 px-4 py-3" data-testid="constats" data-compte={0}>
+      <div className={`card min-w-0 px-4 py-3 ${hauteur}`} data-testid="constats" data-compte={0}>
         <p className="min-w-0 break-words text-sm text-ink-soft" role="note" data-testid="constats-aucun">
           <span className="font-semibold text-ink">Constats (0)</span> · {fenetre} ·{" "}
           {reglesEnInfobulle ? (
@@ -117,7 +124,7 @@ export function InsightStrip({
   }
 
   return (
-    <div className="card min-w-0 px-4 py-3" data-testid="constats" data-compte={constats.length}>
+    <div className={`card min-w-0 px-4 py-3 ${hauteur}`} data-testid="constats" data-compte={constats.length}>
       <details open={ouvertParDefaut || undefined}>
         <summary className="cursor-pointer text-sm">
           <span className="font-semibold text-ink">Constats ({constats.length})</span>
@@ -127,7 +134,8 @@ export function InsightStrip({
         </summary>
         <ul className="mt-2 flex flex-col divide-y divide-line/60">
           {constats.map((c, i) => (
-            <li key={`${c.type}-${i}`} className="min-w-0 py-2" data-testid="constat">
+            // 13 px : un constat se lit comme une ligne de liste, pas comme un titre (recette du 01/10/2026).
+            <li key={`${c.type}-${i}`} className="min-w-0 py-1.5 text-[13px] leading-snug" data-testid="constat">
               <span className="mr-2 inline-block rounded border border-line px-1.5 py-px text-[11px] font-medium text-ink-soft">
                 {LIBELLE_TYPE[c.type]}
               </span>

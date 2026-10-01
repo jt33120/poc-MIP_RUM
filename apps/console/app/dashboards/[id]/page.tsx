@@ -33,6 +33,7 @@ import { chargerTableau } from "@/lib/chargeurs/tableau";
 import { chargerEcran } from "@/lib/ecran";
 import { hrefWithQuery, queryToSearchParams } from "@/lib/query-contract";
 import type { WidgetData } from "@/lib/widget-data";
+import { estAdditive } from "@/lib/analytics-schema";
 import { fenetresLues, type FenetreCollecte } from "@/lib/series";
 import {
   addWidgetAction,
@@ -58,11 +59,15 @@ export const dynamic = "force-dynamic";
 /**
  * Une carte occupe-t-elle toute la largeur de sa rangée (§ 5.25.3) ? Une série et
  * un journal, oui : un axe de temps ou une table de colonnes comprimés dans un
- * tiers de page cessent d'être lisibles. Une valeur ou un classement tiennent dans
- * une case. La règle se lit sur la DONNÉE rendue, pas sur un champ enregistré.
+ * tiers de page cessent d'être lisibles. Une valeur ou un classement en barres tiennent
+ * dans une case. Un classement NON additif (p75, moyenne : la table d'impact) aussi a
+ * besoin de la rangée (recette du 30/09/2026) : dans une demi-page, chacune de ses
+ * lignes passait sur quatre lignes, 1 057 px pour dix routes à côté d'une carte de
+ * 361 px. La règle se lit sur la DONNÉE rendue, pas sur un champ enregistré.
  */
 function pleineLargeur(data: Fil<WidgetData> | undefined): boolean {
-  return data?.kind === "timeseries" || data?.kind === "table";
+  if (data?.kind === "timeseries" || data?.kind === "table") return true;
+  return data?.kind === "toplist" && data.analyse !== undefined && !estAdditive(data.analyse.plan.measure.aggregation);
 }
 
 /** Ce que chaque carte de la grille reçoit, quel que soit son groupe. */
@@ -95,14 +100,15 @@ function GrilleDeCartes({ cartes, c }: { cartes: GroupeDeCartes["cartes"]; c: Co
   const etroites = cartes.filter(({ index }) => !pleineLargeur(c.data[index])).length;
   const deuxColonnes = etroites === 2;
   return (
-    <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${deuxColonnes ? "" : "xl:grid-cols-3"}`}>
+    // Gouttière de 8 px ; chaque carte prend la hauteur de sa rangée (bords bas alignés).
+    <div className={`grid grid-cols-1 gap-2 md:grid-cols-2 ${deuxColonnes ? "" : "xl:grid-cols-3"}`}>
       {cartes.map(({ index, widget }) => (
         <div
           key={index}
           className={
             pleineLargeur(c.data[index])
               ? `min-w-0 md:col-span-2 ${deuxColonnes ? "" : "xl:col-span-3"}`
-              : "min-w-0"
+              : "min-w-0 [&>div]:h-full"
           }
         >
           <WidgetCard
@@ -145,7 +151,7 @@ function SectionDuTableau({
   return (
     <details open className="group/section min-w-0" data-testid={`section-${index}`}>
       <summary className="cursor-pointer list-none rounded-lg py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf [&::-webkit-details-marker]:hidden">
-        <h2 className="flex min-w-0 items-center gap-2 text-base font-bold tracking-tight text-ink">
+        <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight text-ink">
           <svg
             aria-hidden="true"
             viewBox="0 0 12 12"
@@ -156,16 +162,16 @@ function SectionDuTableau({
           <span className="min-w-0 break-words">{widget.title}</span>
         </h2>
         {question && (
-          <span className="mt-0.5 block break-words pl-5 text-sm text-ink-soft" data-testid={`section-${index}-question`}>
+          <span className="mt-0.5 block break-words pl-5 text-xs text-ink-soft" data-testid={`section-${index}-question`}>
             {question}
           </span>
         )}
       </summary>
-      <div className="mt-3">
+      <div className="mt-2">
         {cartes.length ? (
           <GrilleDeCartes cartes={cartes} c={c} />
         ) : (
-          <p className="rounded-lg border border-dashed border-line px-4 py-4 text-sm text-ink-soft">
+          <p className="rounded-lg border border-dashed border-line px-3 py-2 text-xs text-ink-soft">
             Aucune carte dans cette section.
             {c.editable && c.edition ? " Une carte y entre par ses boutons ↑ ↓." : ""}
           </p>
@@ -245,14 +251,7 @@ export default async function D({
 
   return (
     <div className="animate-fade-up">
-      <PageHeader
-        title={dash.name}
-        sub={
-          <>
-            Application : {scope} · Propriétaire : {ecran.proprietaire} · {ecran.label}
-          </>
-        }
-      >
+      <PageHeader title={dash.name}>
         <Link href="/dashboards" className="btn-ghost">
           ← Tous
         </Link>
@@ -280,6 +279,14 @@ export default async function D({
         <PrintButton />
       </PageHeader>
 
+      {/* Le périmètre et le propriétaire du tableau, en pastilles (l'en-tête ne porte
+          plus de sous-titre depuis le 30/09/2026) : une carte n'a pas de sens sans eux. */}
+      <p className="-mt-3 mb-2 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-soft" data-testid="tableau-perimetre">
+        <span className="rounded-full bg-panel2 px-2 py-0.5">Application : {scope}</span>
+        <span className="rounded-full bg-panel2 px-2 py-0.5">Propriétaire : {ecran.proprietaire}</span>
+        {/* La plage lue est écrite juste dessous, par la barre de population. */}
+        <span className="sr-only">{ecran.label}</span>
+      </p>
       <PopulationBar puces={puces} plage={rangeLabel(populationQuery.range, timeZone)} fuseau={FUSEAU_AFFICHAGE} />
 
       {reglages.ignores.map((ligne) => (
@@ -292,7 +299,7 @@ export default async function D({
         <p
           role="alert"
           data-testid="dashboard-conflit"
-          className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft"
+          className="mb-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-soft"
         >
           Ce tableau de bord a changé depuis son affichage : rien n’a été écrit, pour ne pas effacer la modification
           d’un autre onglet. Cette page montre maintenant la version à jour — refaire le geste si nécessaire.
@@ -302,7 +309,7 @@ export default async function D({
         <p
           role="alert"
           data-testid="dashboard-refus"
-          className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft"
+          className="mb-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-soft"
         >
           Modification refusée : la valeur soumise n’est pas applicable à cette carte. Rien n’a été écrit.
         </p>
@@ -311,7 +318,7 @@ export default async function D({
         <p
           role="alert"
           data-testid="dashboard-plein"
-          className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft"
+          className="mb-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-soft"
         >
           Rien n’a été ajouté : ce tableau de bord compte déjà {MAX_WIDGETS} éléments, sections comprises — la limite
           d’un tableau. Retirer une carte ou une section avant d’en ajouter une autre.
@@ -321,14 +328,14 @@ export default async function D({
         <p
           role="alert"
           data-testid="dashboard-section-refusee"
-          className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft"
+          className="mb-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-soft"
         >
           Section refusée : son titre est vide, ou la position demandée n’existe plus. Rien n’a été écrit.
         </p>
       )}
 
       {horsPerimetre && (
-        <p role="status" data-testid="dashboard-hors-perimetre" className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
+        <p role="status" data-testid="dashboard-hors-perimetre" className="mb-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-soft">
           Ce tableau de bord porte sur {dash.app_id === null ? "toutes les applications" : nomApp(dash.app_id)}, hors de
           l&apos;application sélectionnée : ses cartes ne remplacent pas l&apos;application de l&apos;écran et restent
           vides. Changez de projet pour le lire.
@@ -336,7 +343,7 @@ export default async function D({
       )}
 
       {invalides > 0 && (
-        <p role="status" data-testid="dashboard-invalides" className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
+        <p role="status" data-testid="dashboard-invalides" className="mb-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-ink-soft">
           {invalides === 1 ? "Une carte n’est pas lisible" : `${invalides} cartes ne sont pas lisibles`} : leur
           configuration est conservée telle quelle et affichée en diagnostic. {editable
             ? "La corriger revient à la retirer puis à l’enregistrer de nouveau depuis l’Explorer."
@@ -345,7 +352,7 @@ export default async function D({
       )}
 
       {edition && (
-        <p role="note" data-testid="bandeau-edition" className="mb-6 rounded-lg border border-line bg-panel2/60 px-4 py-3 text-sm text-ink-soft">
+        <p role="note" data-testid="bandeau-edition" className="mb-3 rounded-lg border border-line bg-panel2/60 px-3 py-2 text-xs text-ink-soft">
           Mode édition : ↑ ↓ rangent les cartes, ✕ en retire une. Ajouter une carte ou une section, renommer ou
           supprimer le tableau : en bas de page.
         </p>
@@ -356,7 +363,7 @@ export default async function D({
         // Une section titre les cartes qui la suivent, jusqu'à la suivante ; les
         // cartes posées avant la première section forment une grille sans titre.
         // Sans aucune section : une grille unique, comme avant F37.
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-5">
           {groupes.map((g) =>
             g.section === null ? (
               <GrilleDeCartes key="sans-section" cartes={g.cartes} c={contexteCartes} />
@@ -366,7 +373,10 @@ export default async function D({
           )}
         </div>
       ) : (
-        <p className="card px-4 py-8 text-center text-sm text-ink-soft">
+        <p className="card flex flex-wrap items-center gap-1.5 px-3 py-2 text-xs text-ink-soft">
+          <span aria-hidden className="text-ink-faint">
+            ⊘
+          </span>
           Aucune carte dans ce tableau de bord.
           {editable
             ? " Ajoutez-en une en mode édition, ou enregistrez une analyse depuis l’Explorer."
@@ -375,11 +385,11 @@ export default async function D({
       )}
 
       {/* ----- Édition : seulement en mode édition, pour qui peut écrire ----- */}
-      {edition && <section className="card mt-8" data-testid="edit-panel" aria-labelledby="edition-titre">
-        <h2 id="edition-titre" className="px-4 py-3 text-sm font-semibold text-ink">
+      {edition && <section className="card mt-5" data-testid="edit-panel" aria-labelledby="edition-titre">
+        <h2 id="edition-titre" className="px-3 py-2 text-xs font-semibold text-ink">
           Éditer le tableau de bord
         </h2>
-        <div className="flex flex-col gap-6 border-t border-line p-4">
+        <div className="flex flex-col gap-4 border-t border-line p-3">
           {/* F37 — 24 éléments, sections comprises : plus rien ne s'ajoute, et la page
               le dit au lieu de proposer un geste que l'action refuserait. */}
           {plein && (

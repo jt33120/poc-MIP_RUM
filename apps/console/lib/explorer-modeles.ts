@@ -35,6 +35,8 @@ export interface ModeleDepart {
   question: string;
   href: string | null;
   raison?: string;
+  /** La forme du résultat, dessinée en pictogramme sur la carte (recette du 30/09/2026). */
+  representation?: ExplorerPlan["visualization"];
 }
 
 // Les six plans du § 5.21.4 (W-E1). Une série temporelle superpose au plus cinq
@@ -160,7 +162,7 @@ export function modelesDeDepart(
 ): ModeleDepart[] {
   return MODELES_EXPLORER.map((modele) => {
     const raison = raisonIndisponible(modele, query, schema);
-    const base = { cle: modele.cle, titre: modele.titre, question: modele.question };
+    const base = { cle: modele.cle, titre: modele.titre, question: modele.question, representation: modele.plan.visualization };
     if (raison) return { ...base, href: null, raison };
     return { ...base, href: explorerHref(query, { ...modele.plan, cursor: null }, { ...extra, run: "1" }) };
   });

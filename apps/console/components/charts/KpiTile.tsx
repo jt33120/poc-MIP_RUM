@@ -28,8 +28,9 @@ import { InfoTip } from "../InfoTip";
 import { pluriel } from "@/lib/format";
 import { lireVital, texteVerdict } from "@/lib/vital-lecture";
 import { ValeurNoteeMip } from "../NoteMip";
+import { noteMip as noterMip } from "@/lib/seuils";
 import { FicheMesure } from "./FicheMesure";
-import { ApercuFond, GrapheMesure } from "./GrapheMesure";
+import { ApercuFond, GrapheMesure, JaugeSeuils } from "./GrapheMesure";
 
 export type SensMeilleur = "bas" | "haut" | "neutre";
 
@@ -176,8 +177,10 @@ export function CadreTuile({
   compact?: boolean;
   children: ReactNode;
 }) {
+  // Compact : le même gabarit que la case épurée (30/09/2026), pour qu'une tuile texte
+  // (`KpiLibelle`) et une case chiffrée s'alignent dans la même rangée.
   const classes = compact
-    ? `relative flex h-full min-w-0 flex-col gap-0.5 rounded-lg border bg-panel p-3 shadow-card dark:shadow-none ${alerte ? "border-bad/50" : "border-line"}`
+    ? `relative flex h-full min-h-[6.5rem] min-w-0 flex-col justify-between gap-1 rounded-xl border bg-panel px-3.5 py-3 ${alerte ? "border-bad/50" : "border-line"}`
     : `card flex min-w-0 flex-col gap-1 p-4 ${alerte ? "border-bad/50" : ""}`;
   if (href) {
     return (
@@ -221,7 +224,7 @@ export function KpiTile({
   testid,
   approchee = false,
   compact = false,
-  epure = false,
+  epure = true,
   source,
   categorie,
   libelleCase,
@@ -299,11 +302,13 @@ export function KpiTile({
    */
   compact?: boolean;
   /**
-   * Case ÉPURÉE (recette du 30/09/2026, tableau de bord) : le libellé, la valeur et
-   * son unité, un voyant de verdict, la source en une étiquette — rien d'autre. Un
-   * clic ouvre la fenêtre de la mesure (`FicheMesure`) : graphique grand format aux
-   * axes chiffrés, verdict, intervalle, variation, effectif, méthode, source. Les
-   * MÊMES refus que les autres modes : seule la mise en page change.
+   * Case ÉPURÉE — LE MODE PAR DÉFAUT depuis le 30/09/2026, sur toute la console : le
+   * libellé, la valeur et son unité, un voyant de verdict, la source en une étiquette,
+   * l'aperçu de la courbe en fond — rien d'autre. Un clic ouvre la fenêtre de la mesure
+   * (`FicheMesure`) : graphique grand format aux axes chiffrés, verdict, intervalle,
+   * variation, effectif, note MIP, méthode, source. Les MÊMES refus que le mode
+   * détaillé (`epure={false}`) : seule la mise en page change, et tout ce que la tuile
+   * sait reste dans la page pour les lecteurs d'écran.
    */
   epure?: boolean;
   /** D'où vient la mesure (capteur, API du navigateur, table) : écrite dans la fiche. */
@@ -399,9 +404,11 @@ export function KpiTile({
 
       {texteIntervalle && (
         // La bulle OUVRE la ligne (elle s'ouvre vers l'intérieur à 390 px) ; dans une
-        // tuile-lien, pas de bulle : un bouton dans un lien est un HTML invalide.
+        // tuile-lien, pas de bulle : un bouton dans un lien est un HTML invalide. Pas
+        // non plus dans la case épurée, qui EST un bouton : le parseur HTML fermerait
+        // la case au bouton imbriqué, et l'hydratation casserait (relevé sur /pages).
         <p className="flex min-w-0 items-start gap-1 text-xs text-ink-soft" data-testid="kpi-intervalle">
-          {!href && !compact && <GlossaryTip id="intervalle" />}
+          {!href && !compact && !epure && <GlossaryTip id="intervalle" />}
           <span className="min-w-0 break-words">{texteIntervalle}</span>
         </p>
       )}
@@ -486,7 +493,17 @@ export function KpiTile({
       ["Méthode", methode ?? ""],
       ["Source", source ?? ""],
     ].filter((l): l is [string, string] => l[1] !== "");
-    const couleurPoint = verdict?.kind === "etabli" ? POINT_VERDICT[verdict.rating] : null;
+    // Le voyant : le verdict d'un Web Vital au p75, sinon la note d'une règle MIP (la
+    // part des sessions touchées, par exemple), sinon l'alerte. Rien d'autre ne colore.
+    const noteRegle = noteMip ? noterMip(noteMip.mesure, noteMip.valeur) : null;
+    const couleurPoint =
+      verdict?.kind === "etabli"
+        ? POINT_VERDICT[verdict.rating]
+        : noteRegle
+          ? POINT_VERDICT[noteRegle]
+          : enAlerte
+            ? "bg-bad"
+            : null;
     return (
       <FicheMesure
         titre={label}
@@ -499,19 +516,28 @@ export function KpiTile({
               <span className="min-w-0 truncate text-[11px] font-medium text-ink-soft">{libelleCase ?? label}</span>
               {couleurPoint && <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${couleurPoint}`} />}
             </span>
+            {/* Le repère de test porte le NOMBRE en texte direct (les e2e et les tests
+                lisent « 2 », « — »), l'unité suit en plus petit après une espace insécable. */}
             <span
-              className={`flex items-baseline gap-1 whitespace-nowrap tabular-nums tracking-tight ${enAlerte ? "text-bad-ink" : echantillonFaible ? "text-ink-soft" : "text-ink"}`}
+              className={`whitespace-nowrap text-[26px] font-semibold leading-8 tabular-nums tracking-tight ${enAlerte ? "text-bad-ink" : echantillonFaible ? "text-ink-soft" : "text-ink"}`}
               data-testid={testid ?? "kpi-valeur"}
             >
-              <span className="text-[26px] font-semibold leading-8">{nombre}</span>
-              {unite && <span className="text-sm font-medium text-ink-soft">{unite}</span>}
+              {nombre}
+              {unite && (
+                <>
+                  {NBSP}
+                  <span className="text-sm font-medium text-ink-soft">{unite}</span>
+                </>
+              )}
             </span>
-            {categorie && <span className="truncate text-[10px] text-ink-faint">{categorie}</span>}
-            {/* Tout le reste, pour les lecteurs d'écran et les tests. */}
+            {/* Tout ce que la tuile sait, juste après la valeur : lu dans l'ordre par un
+                lecteur d'écran (« Sessions touchées — Inconnu : … »), hors de la vue. */}
             <span className="sr-only">
+              {secondaires}
               {verdict?.kind === "etabli" && <span data-testid="kpi-verdict">{RATING_LABEL[verdict.rating]}</span>}
               {comparaison?.kind === "delta" && !deltaNonEtabli && <span>{texteComparaison}</span>}
             </span>
+            {categorie && <span className="truncate text-[10px] text-ink-faint">{categorie}</span>}
           </>
         }
       >
@@ -529,7 +555,18 @@ export function KpiTile({
             <DeltaBadge pct={comparaison.pct} reference={comparaison.reference} sensMeilleur={sens} />
           )}
         </div>
-        {serie && grapheDebuts && (
+        {vital && connue && (
+          <div className="mt-4">
+            <JaugeSeuils
+              seuils={THRESHOLDS[vital]}
+              valeur={valeur}
+              format={format}
+              intervalle={intervalleCalcule}
+              effectif={texteEffectif}
+            />
+          </div>
+        )}
+        {serie && serie.length > 1 && (
           <div className="mt-4">
             <GrapheMesure
               valeurs={serie}
@@ -544,11 +581,23 @@ export function KpiTile({
           {lignes.map(([cle, texte]) => (
             <div key={cle} className="contents">
               <dt className="text-ink-faint">{cle}</dt>
-              <dd className="min-w-0 whitespace-pre-line text-ink-soft [overflow-wrap:anywhere]">{texte}</dd>
+              <dd
+                className="min-w-0 whitespace-pre-line text-ink-soft [overflow-wrap:anywhere]"
+                data-testid={cle === "Méthode" ? "kpi-methode" : undefined}
+              >
+                {texte}
+              </dd>
             </div>
           ))}
+          {noteMip && (
+            <div className="contents">
+              <dt className="text-ink-faint">Règle MIP</dt>
+              <dd className="min-w-0 text-ink-soft [overflow-wrap:anywhere]">
+                <ValeurNoteeMip mesure={noteMip.mesure} valeur={noteMip.valeur} texte={noteMip.texte} />
+              </dd>
+            </div>
+          )}
         </dl>
-        <div className="sr-only">{secondaires}</div>
         {href && (
           <Link href={href} className="mt-4 inline-flex text-sm font-medium text-perf underline-offset-2 hover:underline">
             Écran détaillé →

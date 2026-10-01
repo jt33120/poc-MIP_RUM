@@ -19,8 +19,8 @@ import type { Pastille } from "@/lib/explorer-page-params";
 
 export function QueryPills({ pastilles, resume }: { pastilles: Pastille[]; resume: string }) {
   return (
-    <div role="group" aria-label={resume} data-testid="requete-pastilles" className="mb-4 flex min-w-0 flex-wrap items-center gap-2">
-      <span aria-hidden="true" className="text-xs font-semibold text-ink-soft">
+    <div role="group" aria-label={resume} data-testid="requete-pastilles" className="flex min-w-0 flex-wrap items-center gap-2">
+      <span aria-hidden="true" className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
         Requête appliquée
       </span>
       <ul className="flex min-w-0 flex-1 flex-wrap items-center gap-2">

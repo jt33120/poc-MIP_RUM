@@ -9,7 +9,7 @@ import {
   type IssueStatus,
 } from "@/lib/issues-libelles";
 
-const PASTILLE = "mr-2 inline-block rounded-full border px-1.5 py-0.5 text-[10px] font-semibold";
+const PASTILLE = "mr-2 inline-block shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold";
 
 // Couleurs de STATUT, distinctes du rouge de la GRAVITÉ (type, « non gérée »,
 // « fatale ») : « Ouverte », « Error » et « fatale » étaient tous rouges, et le

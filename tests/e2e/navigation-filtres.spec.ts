@@ -161,7 +161,10 @@ const NAVIGATION = [
       ["/errors", "Erreurs"],
       ["/ux", "Interactions"],
       ["/experience", "Satisfaction"],
-      ["/mobile", "Mobile"],
+      // Tendances sous Performance depuis le 01/10/2026 (dérive des Web Vitals).
+      ["/forecast", "Tendances"],
+      // « Mobile » hors menu depuis le 30/09/2026 (SDK React Native non publié,
+      // aucun projet mobile) : sa route reste, vérifiée plus bas.
     ],
   },
   {
@@ -191,22 +194,21 @@ const NAVIGATION = [
     onglets: [
       ["/slo", "SLO"],
       ["/alerts", "Alertes"],
-      ["/forecast", "Tendances"],
     ],
   },
   {
-    categorie: "Explorer",
-    landing: "/explorer",
+    // Explorer hors menu depuis le 01/10/2026 : on y entre par la loupe de la barre du haut.
+    categorie: "Données",
+    landing: "/events",
     onglets: [
-      ["/explorer", "Explorer"],
       ["/events", "Journal"],
       ["/dashboards", "Tableaux de bord"],
     ],
   },
 ] as const;
 
-/** Routes du périmètre (§ 2.3), /actions comprise : gardée, sans onglet propre. */
-const ROUTES: string[] = [...NAVIGATION.flatMap((c) => c.onglets.map(([href]) => href)), "/actions", "/explorer/views"];
+/** Routes du périmètre (§ 2.3), /actions comprise : gardée, sans onglet propre ; /mobile aussi : hors menu, adresse gardée. */
+const ROUTES: string[] = [...NAVIGATION.flatMap((c) => c.onglets.map(([href]) => href)), "/actions", "/mobile", "/explorer", "/explorer/views"];
 
 /** Un écran rendu : un titre, et pas la page d'erreur de Next. */
 async function ecranRendu(page: Page, chemin: string) {
@@ -244,6 +246,43 @@ test("chaque écran du périmètre est atteignable par la sidebar et les sous-on
   await ecranRendu(page, "/actions");
   await expect(page.getByTestId("subnav").getByRole("link", { name: "Interactions", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.getByTestId("subnav").getByRole("link", { name: "Actions", exact: true })).toHaveCount(0);
+
+  // /mobile : hors menu, l'adresse reste. Aucun onglet « Mobile », et aucun onglet
+  // voisin allumé à sa place ; la catégorie Performance, elle, reste allumée.
+  await page.goto(`${consoleUrl}/mobile?app=demo-app&period=1h`);
+  await ecranRendu(page, "/mobile");
+  await expect(page.getByTestId("subnav").getByRole("link", { name: "Mobile", exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("subnav").locator('[aria-current="page"]')).toHaveCount(0);
+  await expect(sidebar.getByRole("link", { name: "Performance", exact: true })).toHaveClass(/bg-perf\/10/);
+});
+
+test("barre latérale : collée à la fenêtre, déconnexion toujours visible, Administration repliable", async ({ page }) => {
+  await login(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${consoleUrl}/?app=demo-app&period=1h`);
+  await ecranRendu(page, "/");
+  // En bas d'une page longue, la déconnexion n'a pas bougé : la barre suit la fenêtre.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(page.getByTestId("logout")).toBeInViewport();
+
+  // Replié par défaut hors /admin ; le choix se mémorise.
+  const bascule = page.locator("aside").getByTestId("nav-administration-bascule");
+  const liste = page.locator("aside").getByRole("navigation", { name: "Administration" });
+  await expect(bascule).toHaveAttribute("aria-expanded", "false");
+  await expect(liste).toBeHidden();
+  await bascule.click();
+  await expect(bascule).toHaveAttribute("aria-expanded", "true");
+  await expect(liste.getByRole("link", { name: "Jetons d'accès" })).toBeVisible();
+  await page.reload();
+  await expect(bascule).toHaveAttribute("aria-expanded", "true");
+  await bascule.click();
+  await expect(bascule).toHaveAttribute("aria-expanded", "false");
+
+  // Sur une page d'administration : ouvert d'office, l'entrée courante marquée.
+  await page.goto(`${consoleUrl}/admin/audit`);
+  await expect(bascule).toHaveAttribute("aria-expanded", "true");
+  await expect(liste.getByRole("link", { name: "Audit" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByTestId("logout")).toBeInViewport();
 });
 
 test("rafraîchissement : LIVE partout, lecture à la demande sur l'Explorer et les tableaux de bord", async ({ page }) => {

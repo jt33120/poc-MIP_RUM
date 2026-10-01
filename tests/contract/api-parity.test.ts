@@ -200,7 +200,7 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
       `insert into deploy_marker (app_id, ts, version, env, source) values ($1, now() - interval '2 days', '1.2.0', 'prod', 'ci')`,
       [A],
     );
-    // Un jeton de lecture EN BASE (écran « Jetons de lecture ») : celui de `/api/rum/summary`.
+    // Un jeton d'accès EN BASE (écran « Jetons d'accès ») : celui de `/api/rum/summary`.
     await pool.query(
       `insert into read_tokens (token_hash, app_id, label)
        values (encode(sha256(convert_to($1, 'utf8')), 'hex'), $2, 'parite')

@@ -566,13 +566,39 @@ export function domaineY(
  * hors échelle est écrite sous la figure (`bandesSeuils`). Sans aucune donnée,
  * l'axe garde la bande « Bon » entière.
  */
+/**
+ * Sommet d'échelle ROBUSTE (recette du 30/09/2026) : une seule tranche aberrante (un
+ * p75 de 166 s calculé sur deux mesures) écrasait toute une courbe contre l'axe. Le
+ * sommet suit le 90ᵉ centile × 1,25 quand le maximum le dépasse de moitié ; sinon le
+ * maximum. `seuilHaut` (le seuil « mauvais ») sert de plancher quand il est donné.
+ */
+export function sommetRobuste(valeurs: number[], seuilHaut?: number): number {
+  const tries = [...valeurs].filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  const max = tries[tries.length - 1] ?? 0;
+  const p90 = tries[Math.min(tries.length - 1, Math.floor(0.9 * (tries.length - 1)))] ?? 0;
+  const robuste = Math.max(p90 * 1.25, seuilHaut ? seuilHaut * 1.1 : 0);
+  return max > robuste * 1.5 ? robuste : Math.max(max, seuilHaut ? seuilHaut * 1.05 : 0);
+}
+
+/** Les tranches au-dessus du haut de l'axe, quand l'échelle est robuste. */
+export interface Depassements {
+  n: number;
+  max: number;
+}
+
 export function echelleY(
   lignes: LignePreparee[],
   series: SerieDef[],
   format: FormatId,
-  { vital, bande, empile = false }: { vital?: VitalName; bande?: { basseCle: string; hauteCle: string }; empile?: boolean } = {},
-): Graduations {
+  {
+    vital,
+    bande,
+    empile = false,
+    robuste = false,
+  }: { vital?: VitalName; bande?: { basseCle: string; hauteCle: string }; empile?: boolean; robuste?: boolean } = {},
+): Graduations & { depassements: Depassements | null } {
   let maxDonnees = 0;
+  const valeurs: number[] = [];
   for (const l of lignes) {
     if (empile) {
       // Des barres empilées montent jusqu'à la SOMME des segments du seau.
@@ -580,11 +606,18 @@ export function echelleY(
       continue;
     }
     for (const c of [...series.map((s) => s.cle), ...(bande ? [bande.hauteCle] : [])]) {
-      maxDonnees = Math.max(maxDonnees, nombreOuNull(l[c]) ?? 0);
+      const v = nombreOuNull(l[c]);
+      if (v !== null) valeurs.push(v);
+      maxDonnees = Math.max(maxDonnees, v ?? 0);
     }
   }
   const bon = vital ? THRESHOLDS[vital][0] : null;
-  return graduationsAxe(maxDonnees > 0 ? maxDonnees : bon !== null ? bon * 1.1 : 0, format);
+  // Robuste : jamais sur des barres empilées (une somme n'a pas d'aberration à écarter),
+  // et sans plancher au seuil : un vital « tout Bon » reste calé sur ses données.
+  const sommet = robuste && !empile && valeurs.length > 2 ? Math.min(maxDonnees, sommetRobuste(valeurs)) : maxDonnees;
+  const g = graduationsAxe(sommet > 0 ? sommet : bon !== null ? bon * 1.1 : 0, format);
+  const au_dessus = valeurs.filter((v) => v > g.haut);
+  return { ...g, depassements: au_dessus.length ? { n: au_dessus.length, max: Math.max(...au_dessus) } : null };
 }
 
 export interface BandesSeuils {

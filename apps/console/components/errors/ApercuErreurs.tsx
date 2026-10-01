@@ -35,6 +35,10 @@ import { FAIBLE_SOUS_PROPORTION, ecartProportions, intervalleWilson } from "@mip
 import { GROUPES_DU_HERO } from "@/lib/error-view";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { RangeeKpi } from "@/components/charts/RangeeKpi";
+import { SOURCE_ERREURS } from "@/components/perf/sources";
+
+/** Étiquette de pied des cases : la même que la case d'erreurs de la Vue d'ensemble. */
+const CATEGORIE_ERREURS = "Navigateur · erreurs";
 export { GROUPES_DU_HERO };
 
 /** Part lue, ou le refus du contrat (un filtre que les pages vues ne portent pas). */
@@ -115,11 +119,13 @@ export function TuilesErreurs({
     : [];
 
   return (
-    <section aria-label={`Erreurs sur ${plage}`} className="mb-6" data-testid="kpi-erreurs">
-      <p className="mb-2 text-xs text-ink-soft" data-testid="kpi-erreurs-plage">
+    <section aria-label={`Erreurs sur ${plage}`} className="mb-4" data-testid="kpi-erreurs">
+      {/* La population, dite aux lecteurs d'écran : à l'écran, la barre de filtres porte
+          déjà la plage (recette du 30/09/2026 : une ligne de moins au-dessus des cases). */}
+      <p className="sr-only" data-testid="kpi-erreurs-plage">
         Occurrences d&apos;erreurs sur {plage}
       </p>
-      <RangeeKpi couvertures={couvertures} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <RangeeKpi couvertures={couvertures} className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         {totaux.ok ? (
           <>
             <KpiTile
@@ -128,12 +134,18 @@ export function TuilesErreurs({
               format="count"
               sensMeilleur="bas"
               serie={totaux.data.trend.map((p) => p.occurrences)}
+              grapheDebuts={totaux.data.trend.map((p) => new Date(p.bucket).toISOString())}
+              titreAxeY="occurrences par tranche"
+              source={SOURCE_ERREURS}
+              categorie={CATEGORIE_ERREURS}
               reference={ref}
               {...precedente(totauxPrec, couvErreurs, (d) => d.totals.occurrences)}
               methode={LECTURE_OCCURRENCES}
             />
             <KpiTile
               label="Sessions touchées"
+              source={SOURCE_ERREURS}
+              categorie={CATEGORIE_ERREURS}
               valeur={sessionsTouchees(totaux.data.totals)}
               raisonNull={RAISON_SESSIONS_INCONNUES}
               format="count"
@@ -159,6 +171,9 @@ export function TuilesErreurs({
         ) : (
           <KpiTile
             label="Part des sessions touchées"
+            libelleCase="Sessions touchées (%)"
+            source={`${SOURCE_ERREURS} Base : sessions avec au moins une page vue.`}
+            categorie={CATEGORIE_ERREURS}
             valeur={valeurPart.valeur}
             raisonNull={valeurPart.raison ?? undefined}
             format="pct"
@@ -194,6 +209,9 @@ export function TuilesErreurs({
         {nouveaux.ok ? (
           <KpiTile
             label="Groupes apparus sur la période"
+            libelleCase="Nouveaux groupes"
+            source={SOURCE_ERREURS}
+            categorie={CATEGORIE_ERREURS}
             valeur={nouveaux.data}
             format="count"
             sensMeilleur="bas"
@@ -249,7 +267,7 @@ export function HeroGroupesErreurs({
   const titre = "Occurrences dans le temps, par groupe";
   if (!totaux.ok || !top.ok) {
     return (
-      <div className="mb-6">
+      <div className="h-full min-w-0 [&>section]:h-full">
         <Figure titre={titre} id="hero-erreurs" etat={{ kind: "erreur", titre }} />
       </div>
     );
@@ -257,7 +275,7 @@ export function HeroGroupesErreurs({
   const total = totaux.data.totals.occurrences;
   if (total === 0) {
     return (
-      <div className="mb-6">
+      <div className="h-full min-w-0 [&>section]:h-full">
         <Figure titre={titre} id="hero-erreurs" etat={{ kind: "vide", population: "erreur", plage }} />
       </div>
     );
@@ -298,7 +316,7 @@ export function HeroGroupesErreurs({
   }));
 
   return (
-    <div className="mb-6">
+    <div className="h-full min-w-0 [&>section]:h-full">
       <Figure
         titre={titre}
         id="hero-erreurs"
@@ -322,7 +340,8 @@ export function HeroGroupesErreurs({
             zoome sur sa plage.{" "}
             <Link href="#groupes-erreurs" className="text-perf underline-offset-2 hover:underline">
               Tous les groupes
-            </Link>
+            </Link>{" "}
+            Source : {SOURCE_ERREURS}
           </>
         }
         alternative={{

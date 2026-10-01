@@ -153,8 +153,13 @@ test("comparaison par version : les deux releases, leur LCP et leur taux d'erreu
   // qui nomme LUI AUSSI les releases comparées — un `section` repéré par son texte, ou
   // un `tr` cherché dans toute la zone, en trouverait deux. On ouvre le repli, et on
   // vise la table elle-même.
+  // Depuis le 30/09/2026, la comparaison vit dans la fenêtre de sa vignette, sur la
+  // rangée des formes : on ouvre la vignette, puis le repli.
+  const vignette = page.getByTestId("vignette-release");
+  await expect(vignette).toBeVisible({ timeout: 15_000 });
+  await vignette.click();
   const repli = page.getByText("Toutes les versions", { exact: true });
-  if (await repli.count()) await repli.first().click();
+  await repli.first().click();
   const section = page.getByTestId("versions-table");
   await expect(section).toBeVisible({ timeout: 15_000 });
 

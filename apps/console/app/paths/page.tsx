@@ -27,8 +27,13 @@
 // sont plus coupées à quatre caractères : elles passent à la ligne, coupées au
 // milieu au-delà de `ROUTE_AFFICHEE_MAX`, et l'accès à Pages est une icône à côté
 // du nom, et non plus un second lien texte qui prenait sa place.
+//
+// REFONTE DU 30/09/2026 (charte § 4 « Parcours ») : quatre cases épurées, l'ancrage
+// « À partir de » en barre de filtre au-dessus du flux, le Sankey sur toute la largeur,
+// les deux tables de bords côte à côte (même bord bas), l'entonnoir sous elles. Les
+// phrases de lecture (« épaisseur d'un ruban = … », « cliquez une route … ») sont dans
+// les replis « Méthode » ; la consigne de l'entonnoir, dans une bulle.
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { FunnelChart, StepPicker } from "@/components/Funnel";
@@ -37,6 +42,7 @@ import { Sankey, routeCoupable, tronquerMilieu } from "@/components/Sankey";
 import { Figure, MethodeRepliee as Methode } from "@/components/charts/Figure";
 import { KpiLibelle } from "@/components/charts/KpiLibelle";
 import { KpiTile } from "@/components/charts/KpiTile";
+import { InfoTip } from "@/components/InfoTip";
 import { RangeeKpi } from "@/components/charts/RangeeKpi";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
@@ -62,6 +68,9 @@ const ANCRES_PROPOSEES = 8;
 const POPULATION_VUES = "sessions ayant vu au moins une page sur la période";
 // Les boucles A→A (rechargement, navigation vers la même route) sont exclues par la lecture.
 const POPULATION_TRANSITIONS = "passages d'une route à une autre route";
+
+/** D'où viennent les chiffres de l'écran, écrit dans la fenêtre des cases. */
+const SOURCE_PARCOURS = "Capteur navigateur · pages vues des sessions, robots exclus";
 
 /** Méthode des deux tables de bords : le dénominateur des parts est UNE définition (R-P). */
 const METHODE_BORDS =
@@ -164,7 +173,7 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
       <SectionErreur titre="Chiffres clés">
         <RangeeKpi
           couvertures={[comparaisonTransitions.couverturePrecedente]}
-          className="mb-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3"
+          className="mb-3 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4"
         >
           <TuileBord
             label="Page d'entrée n°1"
@@ -196,16 +205,34 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
               format="count"
               raisonNull="lecture des transitions en échec"
               lecture="Paires de routes différentes, « départ → arrivée »."
+              methode="Paires de routes distinctes « départ → arrivée » entre deux pages vues successives d'une même session ; un passage d'une route vers elle-même n'est pas compté."
+              source={SOURCE_PARCOURS}
+              categorie="Parcours · départ → arrivée"
               {...comparaisonTransitions}
             />
           )}
+          {/* Le dénominateur des parts des tables : TOUTES les sessions avec vue de la plage. */}
+          <KpiTile
+            label="Sessions avec vue"
+            valeur={denominateur}
+            format="count"
+            raisonNull="le nombre de sessions avec vue n'a pas pu être lu"
+            methode="Sessions ayant vu au moins une page sur la période : le dénominateur de toutes les parts de l'écran, jamais la somme des routes affichées."
+            source={SOURCE_PARCOURS}
+            categorie="Parcours · dénominateur des parts"
+          />
         </RangeeKpi>
       </SectionErreur>
 
       <BandeauEchantillonnage lecture={echantillonnage} />
 
-      {/* P3 — le hero : le flux, et son ancrage « à partir de ». */}
-      <div className="mb-6">
+      {/* P3 — le hero : l'ancrage « à partir de » (barre de filtre), puis le flux. */}
+      <div className="mb-4">
+        <SelecteurAncrage
+          depuis={depuis}
+          routes={transitions.ok ? departs(transitions.data) : []}
+          lien={(route) => lienEcran({ depuis: route })}
+        />
         <SectionErreur titre="Flux entre routes">
           <Figure
             id="paths-flux"
@@ -229,35 +256,29 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
             {sankey && (
               <>
                 <Sankey model={sankey} ancre={depuis} liens={liensSankey} />
-                {/* Deux lectures : le dessin (au-delà de 640 px) et sa liste (en deçà). */}
-                <Lecture>
+                {/* Deux lectures : le dessin (au-delà de 640 px) et sa liste (en deçà) ; le mode
+                    d'emploi de chacune est dans le repli. */}
+                <Methode>
                   <span className="hidden sm:inline">
                     Épaisseur d&apos;un ruban = nombre de passages. Cliquez un ruban pour voir les sessions passées par
                     la route d&apos;arrivée, une route de gauche pour ne garder que les passages qui en partent, une route
                     de droite pour l&apos;ouvrir dans Pages.
                   </span>
-                  <span className="sm:hidden">Touchez une transition pour voir les sessions passées par sa route d&apos;arrivée.</span>
-                </Lecture>
-                <Methode>
+                  <span className="sm:hidden">Touchez une transition pour voir les sessions passées par sa route d&apos;arrivée.</span>{" "}
                   Un passage relie deux pages vues successives d&apos;une même session ; un passage d&apos;une route vers
                   elle-même (rechargement, changement de paramètre) n&apos;est pas compté. Seules les huit routes les plus
                   fréquentes de chaque côté sont dessinées : le nombre de passages représentés est écrit au-dessus du
                   dessin. Choisir une route de départ ne change que le dessin : les chiffres clés et les tableaux portent
-                  toujours sur toutes les routes.
+                  toujours sur toutes les routes. Source : pages vues du capteur navigateur.
                 </Methode>
               </>
             )}
           </Figure>
         </SectionErreur>
-        <SelecteurAncrage
-          depuis={depuis}
-          routes={transitions.ok ? departs(transitions.data) : []}
-          lien={(route) => lienEcran({ depuis: route })}
-        />
       </div>
 
       {/* P4 — deux tables MIROIR : mêmes colonnes, même ordre, même lecture. */}
-      <div className="mb-6 grid min-w-0 gap-4 md:grid-cols-2">
+      <div className="mb-4 grid min-w-0 gap-3 md:grid-cols-2">
         {(
           [
             { titre: "Pages d'entrée", id: "paths-entrees", hint: "1re route de la session", rows: bords.ok ? bords.data.entries : [] },
@@ -265,7 +286,9 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
           ] as const
         ).map((table) => (
           <SectionErreur key={table.id} titre={table.titre}>
-            <Figure
+            {/* Même bord bas pour les deux tables : la figure prend la hauteur de sa cellule. */}
+            <div className="min-w-0">
+            <Figure pleineHauteur
               id={table.id}
               titre={table.titre}
               meta={meta(
@@ -283,9 +306,12 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
               }
             >
               <TableBords rows={table.rows} titre={table.titre} query={query} denominateur={denominateur} lcp={lcpParRoute} />
-              <Lecture>Cliquez une route pour voir les sessions passées par elle ; l&apos;icône à côté l&apos;ouvre dans Pages.</Lecture>
-              <Methode>{METHODE_BORDS}</Methode>
+              <Methode>
+                Cliquez une route pour voir les sessions passées par elle ; l&apos;icône à côté l&apos;ouvre dans Pages.{" "}
+                {METHODE_BORDS}
+              </Methode>
             </Figure>
+            </div>
           </SectionErreur>
         ))}
       </div>
@@ -298,13 +324,20 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
           meta={meta("sessions ayant réalisé l'étape 1 sur la période", events.ok ? compte(events.data.length, "événement proposé", "événements proposés") : undefined)}
           etat={!events.ok ? { kind: "erreur", titre: "Entonnoir de conversion" } : undefined}
         >
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
             {/* Seul ce qui est proposé est dit : les étapes de type vue ou action (B33)
-                ne sont pas livrées, et un bandeau « Partiel » les montrait présentes. */}
-            <p className="text-xs text-ink-soft" data-testid="entonnoir-consigne">
-              <span className="font-medium text-ink">Étapes : événements personnalisés.</span> Choisissez-en 2 à 4, dans
-              l&apos;ordre du parcours : l&apos;entonnoir montre combien de sessions atteignent chaque étape et combien
-              abandonnent.
+                ne sont pas livrées, et un bandeau « Partiel » les montrait présentes. La
+                consigne est dans la bulle ; elle reste lue. */}
+            <p className="flex items-center gap-1.5 text-xs text-ink-soft" data-testid="entonnoir-consigne">
+              <span className="font-medium text-ink">Étapes : événements personnalisés.</span>
+              <span className="sr-only">
+                Choisissez-en 2 à 4, dans l&apos;ordre du parcours : l&apos;entonnoir montre combien de sessions atteignent
+                chaque étape et combien abandonnent.
+              </span>
+              <InfoTip label="Construire l'entonnoir" align="start">
+                2 à 4 événements, dans l&apos;ordre du parcours : l&apos;entonnoir montre combien de sessions atteignent
+                chaque étape et combien abandonnent.
+              </InfoTip>
             </p>
             {events.ok && events.data.length > 0 ? (
               <StepPicker events={events.data} selected={steps} sp={sp} />
@@ -329,12 +362,9 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
                     dénominateur.
                   </p>
                 )}
-                <p className="text-xs leading-relaxed text-ink-soft">
-                  Chaque étape donne deux taux, l&apos;un rapporté à l&apos;étape précédente, l&apos;autre au départ ;
-                  l&apos;abandon est un nombre de sessions.
-                </p>
                 <Methode>
-                  Une session atteint une étape si elle a réalisé toutes les étapes précédentes, dans l&apos;ordre, au
+                  Chaque étape donne deux taux, l&apos;un rapporté à l&apos;étape précédente, l&apos;autre au départ ;
+                  l&apos;abandon est un nombre de sessions. Une session atteint une étape si elle a réalisé toutes les étapes précédentes, dans l&apos;ordre, au
                   cours de la même session ; seule la première occurrence de chaque événement compte. L&apos;abandon
                   d&apos;une étape est le nombre de sessions qui ont atteint l&apos;étape précédente sans atteindre
                   celle-ci.
@@ -351,11 +381,6 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
 /** « Sessions passées par cette route » : la recherche exacte de `/sessions` (qf=route). */
 function lienSessions(query: AnalyticsQuery, route: string): string {
   return hrefWithQuery("/sessions", query, { qf: "route", q: route });
-}
-
-/** La phrase de lecture d'une figure : ce qu'il faut regarder, et où mène un clic. */
-function Lecture({ children }: { children: ReactNode }) {
-  return <p className="mt-3 text-xs leading-relaxed text-ink-soft">{children}</p>;
 }
 
 
@@ -376,7 +401,7 @@ function SelecteurAncrage({ depuis, routes, lien }: { depuis: string | null; rou
   return (
     <nav
       aria-label="Ancrage du flux"
-      className="relative mt-3 flex min-w-0 max-w-full items-center gap-1.5 overflow-x-auto py-0.5 text-xs"
+      className="relative mb-2 flex min-w-0 max-w-full items-center gap-1.5 overflow-x-auto py-0.5 text-xs"
       data-testid="paths-ancrage"
     >
       <span className="shrink-0 text-ink-soft">À partir de :</span>
@@ -450,10 +475,12 @@ const TH = "py-1 text-right text-[11px] font-semibold uppercase tracking-wider t
 function RouteDeTable({ route, sessions, pages }: { route: string; sessions: string; pages: string }) {
   const affichee = tronquerMilieu(route, ROUTE_AFFICHEE_MAX);
   return (
-    <span className="flex min-w-0 items-start gap-1">
+    <span className="flex min-w-0 items-center gap-1">
+      {/* Une ligne par route (charte § 3.5) : rognée à la largeur de la colonne, entière
+          dans l'infobulle et dans le nom du lien. */}
       <Link
         href={sessions}
-        className="min-w-0 font-mono text-xs text-ink [overflow-wrap:anywhere] hover:text-accent hover:underline"
+        className="block min-w-0 truncate font-mono text-xs text-ink hover:text-accent hover:underline"
         title={`Sessions passées par ${route}`}
         aria-label={affichee !== route ? route : undefined}
       >
@@ -526,12 +553,12 @@ function TableBords({
                     y passe à la ligne (`overflow-wrap: anywhere`) au lieu d'être coupée
                     à la largeur : trois « /par… » ne se distinguaient plus. `text-left` :
                     un `th` centre par défaut, la route flottait au-dessus de son icône. */}
-                <th scope="row" className="w-2/5 min-w-[10rem] max-w-0 py-1.5 pr-3 text-left align-top font-normal">
+                <th scope="row" className="h-8 w-2/5 min-w-[10rem] max-w-0 py-1 pr-3 text-left align-middle font-normal">
                   <RouteDeTable route={r.route} sessions={lienSessions(query, r.route)} pages={hrefWithQuery("/pages", query, { route: r.route })} />
                 </th>
-                <td className="py-1.5 pr-3 text-right text-xs tabular-nums text-ink">{formater("count", r.n)}</td>
+                <td className="py-1 pr-3 text-right text-xs tabular-nums text-ink">{formater("count", r.n)}</td>
                 <td
-                  className="relative py-1.5 pr-3 text-right text-xs tabular-nums text-ink"
+                  className="relative py-1 pr-3 text-right text-xs tabular-nums text-ink"
                   title={part === null ? "part non calculée : le nombre de sessions avec vue n'a pas pu être lu" : undefined}
                 >
                   {/* Un volume est neutre : le bleu `perf` se lisait comme le domaine Performance. */}
@@ -540,9 +567,9 @@ function TableBords({
                   )}
                   <span className="relative">{formater("pct", part)}</span>
                 </td>
-                <td className="py-1.5 pr-3 text-right text-xs tabular-nums text-ink">{formater("count", r.une_vue)}</td>
+                <td className="py-1 pr-3 text-right text-xs tabular-nums text-ink">{formater("count", r.une_vue)}</td>
                 <td
-                  className="py-1.5 text-right text-xs tabular-nums text-ink"
+                  className="py-1 text-right text-xs tabular-nums text-ink"
                   title={
                     lcp === null
                       ? "lecture du LCP en échec"

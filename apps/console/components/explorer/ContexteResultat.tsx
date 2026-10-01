@@ -169,7 +169,8 @@ export function VolumeResultat({
   };
 
   return (
-    <div className="min-w-0">
+    // Même hauteur que la répartition voisine : les deux figures ont le même bord bas.
+    <div className="flex h-full min-w-0 flex-col [&>section]:flex-1">
       <Figure
         id="volume-resultat"
         titre={titre}
@@ -299,7 +300,7 @@ export function RepartitionResultat({
 }) {
   const titre = `Répartition par ${dimensionLabel.toLowerCase()}`;
   const enveloppe = (contenu: ReactNode, metaFigure?: ReactNode, pied?: ReactNode) => (
-    <div data-testid="repartition-resultat" data-dimension={plan.groupBy[0]} className="min-w-0">
+    <div data-testid="repartition-resultat" data-dimension={plan.groupBy[0]} className="flex h-full min-w-0 flex-col [&>section]:flex-1">
       <Figure id="repartition-resultat" titre={titre} meta={metaFigure}>
         <Onglets onglets={onglets} />
         {contenu}

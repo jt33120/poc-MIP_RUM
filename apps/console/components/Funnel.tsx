@@ -17,6 +17,10 @@
 //     renvoie déjà ce compte, et choisir une étape à l'aveugle donnait des
 //     entonnoirs qui partent de zéro.
 //   - Alternative textuelle intégrée (P10) : les mêmes lignes que les barres.
+//
+// REFONTE DU 30/09/2026 : le sélecteur tient sur une ligne (étiquette AU-DESSUS de sa
+// liste, reliée par `htmlFor` — dans le `label`, les options entraient dans son texte) ;
+// les marches sont plus serrées.
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { TableAlternative } from "./charts/Figure";
@@ -60,7 +64,7 @@ export function StepPicker({
   sp: Record<string, string | string[] | undefined>;
 }) {
   return (
-    <form method="GET" className="flex flex-wrap items-end gap-3" data-testid="funnel-picker">
+    <form method="GET" className="flex flex-wrap items-end gap-2" data-testid="funnel-picker">
       {preservedParams(sp).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}
@@ -68,9 +72,16 @@ export function StepPicker({
         // Sous 640 px, une étape prend toute la largeur (`basis-full`) : quatre
         // sélecteurs côte à côte y devenaient illisibles, et un `select` à 12 rem
         // débordait de la carte.
-        <label key={i} className="min-w-0 basis-full text-xs font-medium text-ink-soft sm:basis-auto">
-          Étape {i + 1}
-          <select name={`s${i + 1}`} defaultValue={selected[i] ?? ""} className="field mt-1 block w-full sm:w-48">
+        <div key={i} className="min-w-0 basis-full sm:basis-auto">
+          <label htmlFor={`etape-${i + 1}`} className="block text-[11px] font-medium text-ink-soft">
+            Étape {i + 1}
+          </label>
+          <select
+            id={`etape-${i + 1}`}
+            name={`s${i + 1}`}
+            defaultValue={selected[i] ?? ""}
+            className="field mt-0.5 block w-full py-1 text-xs sm:w-48"
+          >
             <option value="">—</option>
             {events.map((e) => (
               <option key={e.name} value={e.name}>
@@ -78,9 +89,9 @@ export function StepPicker({
               </option>
             ))}
           </select>
-        </label>
+        </div>
       ))}
-      <button type="submit" className="btn-accent">
+      <button type="submit" className="btn-accent px-3 py-1 text-xs">
         Construire l&apos;entonnoir
       </button>
     </form>
@@ -114,7 +125,7 @@ export function FunnelChart({
 
   return (
     <div className="min-w-0">
-      <ol className="mt-4 flex flex-col gap-2">
+      <ol className="mt-2 flex flex-col gap-1">
         {steps.map((s) => {
           const w = start > 0 ? Math.max(2, (s.reached / start) * 100) : 0;
           const laPire = s.ord === pire;
@@ -123,7 +134,7 @@ export function FunnelChart({
               key={s.ord}
               data-testid="funnel-etape"
               data-pire={laPire ? "1" : undefined}
-              className={`min-w-0 rounded-lg p-2 ${laPire ? "border border-bad/40 bg-bad/5" : "border border-transparent"}`}
+              className={`min-w-0 rounded-lg px-2 py-1.5 ${laPire ? "border border-bad/40 bg-bad/5" : "border border-transparent"}`}
             >
               <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink" title={s.name}>
@@ -144,7 +155,7 @@ export function FunnelChart({
                   </Link>
                 )}
               </div>
-              <div className="relative mt-1 h-6 min-w-0 overflow-hidden rounded bg-panel2">
+              <div className="relative mt-1 h-5 min-w-0 overflow-hidden rounded bg-panel2">
                 <div className="h-full rounded bg-accent/70" style={{ width: `${w}%` }} />
                 {/* Un chiffre posé sur une barre colorée va sur une pastille : sinon il
                     perd son contraste dès que la barre passe dessous (mode sombre). */}

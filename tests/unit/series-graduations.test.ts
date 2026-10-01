@@ -54,7 +54,7 @@ describe("echelleY", () => {
   const S: SerieDef[] = [{ cle: "v", libelle: "V", role: "principale" }];
 
   it("compte : haut rond, depuis 0 (253 → 300)", () => {
-    expect(echelleY(lignes([12, 253, 40]), S, "count")).toEqual({ haut: 300, valeurs: [0, 100, 200, 300] });
+    expect(echelleY(lignes([12, 253, 40]), S, "count")).toEqual({ haut: 300, valeurs: [0, 100, 200, 300], depassements: null });
   });
 
   // Recette du 26/09/2026 : un LCP à 92 ms s'écrasait sous une échelle de 0 à 2,8 s.
@@ -168,5 +168,27 @@ describe("peu de points : une figure presque vide le dit", () => {
     expect(phrasePeuDePoints(1, 3600)).toBe("Une seule heure mesurée sur la période");
     expect(phrasePeuDePoints(2, 86_400)).toBe("Deux jours mesurés sur la période");
     expect(phrasePeuDePoints(1, 300)).toBe("Une seule tranche mesurée sur la période");
+  });
+});
+
+// Recette du 30/09/2026 : une tranche aberrante (un p75 de 166 s sur deux mesures)
+// tassait toute la courbe. L'échelle robuste la rogne au sommet et le DIT.
+describe("echelleY — échelle robuste", () => {
+  const lignes = (vals: (number | null)[]): LignePreparee[] => vals.map((v, i) => ({ t: GRILLE_24H[i], v }));
+  const S: SerieDef[] = [{ cle: "v", libelle: "V", role: "principale" }];
+  const valeurs = [2100, 2400, 1800, 2600, 3000, 2200, 2500, 1900, 2300, 166_500];
+  it("sans l'option : le maximum fixe le haut, rien n'est rogné", () => {
+    const e = echelleY(lignes(valeurs), S, "ms", { vital: "LCP" });
+    expect(e.haut).toBeGreaterThanOrEqual(166_500);
+    expect(e.depassements).toBeNull();
+  });
+  it("robuste : le haut suit le gros des tranches, l'aberration est comptée", () => {
+    const e = echelleY(lignes(valeurs), S, "ms", { vital: "LCP", robuste: true });
+    expect(e.haut).toBeLessThan(10_000);
+    expect(e.depassements).toEqual({ n: 1, max: 166_500 });
+  });
+  it("robuste sans aberration : identique au maximum", () => {
+    const sages = [2100, 2400, 1800, 2600];
+    expect(echelleY(lignes(sages), S, "ms", { robuste: true }).haut).toBe(echelleY(lignes(sages), S, "ms").haut);
   });
 });

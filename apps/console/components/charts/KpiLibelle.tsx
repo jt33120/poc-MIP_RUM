@@ -29,22 +29,20 @@ export function KpiLibelle({
     .filter(Boolean)
     .join(", ");
   return (
-    <CadreTuile href={href} ariaLabel={ariaLabel} testId="kpi-libelle">
-      <span className="min-w-0 break-words text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
-        {label}
-      </span>
+    // Le gabarit des cases (30/09/2026) : libellé, texte, rien d'autre à l'écran ; la
+    // raison d'un « — » et la lecture au survol et pour les lecteurs d'écran.
+    <CadreTuile href={href} ariaLabel={ariaLabel} testId="kpi-libelle" compact titre={[!connu ? raisonNull : null, lecture].filter(Boolean).join(" · ") || undefined}>
+      <span className="min-w-0 truncate text-[11px] font-medium text-ink-soft">{label}</span>
       <span
-        className="min-w-0 text-lg font-semibold leading-snug text-ink [overflow-wrap:anywhere]"
+        className="line-clamp-2 min-w-0 text-base font-semibold leading-snug text-ink [overflow-wrap:anywhere]"
         data-testid="kpi-libelle-texte"
       >
         {connu ? texte : "—"}
       </span>
-      {!connu && raisonNull && (
-        <p className="text-xs text-ink-soft" data-testid="kpi-raison">
-          {raisonNull}
-        </p>
-      )}
-      {lecture && <p className="text-xs text-ink-soft">{lecture}</p>}
+      <span className="sr-only">
+        {!connu && raisonNull && <span data-testid="kpi-raison">{raisonNull}</span>}
+        {lecture && <span> {lecture}</span>}
+      </span>
     </CadreTuile>
   );
 }
