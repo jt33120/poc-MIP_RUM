@@ -142,8 +142,8 @@ const LIBELLES_AVEC: Record<(typeof AVEC_SESSIONS)[number], string> = {
 };
 
 /** La source des cases, écrite dans leur fenêtre (charte § 3.3). */
-const SOURCE_SESSIONS = "Capteur navigateur (SDK ou extension) · table rum_session, robots exclus";
-const SOURCE_ERREURS = "Capteur navigateur (SDK ou extension) · tables rum_error et rum_session";
+const SOURCE_SESSIONS = "Capteur navigateur (SDK ou extension) · sessions, robots exclus";
+const SOURCE_ERREURS = "Capteur navigateur (SDK ou extension) · erreurs JS rattachées aux sessions";
 
 /**
  * Hero « À regarder d'abord ». B30 (§ 6.3, `sessionsAPrioriser`) n'est pas livré :
@@ -551,7 +551,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
                   )}
                 </>
               }
-              methode={<p>Source : capteur navigateur (SDK ou extension), table rum_session ; heures de Paris.</p>}
+              methode={<p>Source : capteur navigateur (SDK ou extension), sessions ; heures de Paris.</p>}
               alternative={{
                 legende: `Volume par tranche de ${bucketLabel(query.range.bucketSeconds)}, ${ecran.label}`,
                 colonnes: [

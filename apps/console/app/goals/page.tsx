@@ -76,7 +76,7 @@ const pct = (v: number | null) => formater("pct", v);
 const POPULATION = "sessions ayant vu au moins une page sur la période";
 
 /** D'où viennent les chiffres de l'écran, écrit dans la fenêtre des cases. */
-const SOURCE_OBJECTIFS = "Capteur navigateur · pages vues et événements (rum_pageview, rum_event), objectifs de la table goal";
+const SOURCE_OBJECTIFS = "Capteur navigateur · pages vues et événements des sessions ; objectifs définis dans la console";
 
 /** La définition d'une conversion, dite une fois (en-tête de la table et repli). */
 const DEFINITION_CONVERSION = "Une conversion est une session qui atteint l'objectif, même si elle l'atteint plusieurs fois.";

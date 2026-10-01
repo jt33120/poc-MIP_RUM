@@ -631,10 +631,10 @@ function Resume({
         // jamais comme un temps passé (onglet ouvert, sortie brutale).
         lecture={`écart entre la première et la dernière observation, pas du temps actif${active ? " · encore active : elle peut encore augmenter" : ""}.`}
         methode="Écart entre la première et la dernière observation, pas du temps actif."
-        source="Capteur navigateur · table rum_session (started_at, last_seen_at)"
+        source="Capteur navigateur · première et dernière observation de la session"
         categorie={active ? "Session · encore active" : "Session · close"}
       />
-      <KpiTile label="Pages vues" valeur={pages} format="count" href={hrefs.vues} source="Capteur navigateur · table rum_session (page_count)" categorie="Session · vues" />
+      <KpiTile label="Pages vues" valeur={pages} format="count" href={hrefs.vues} source="Capteur navigateur · pages vues de la session" categorie="Session · vues" />
       <KpiTile
         label={erreursEnLignes ? "Erreurs (lignes)" : "Occurrences d'erreur"}
         libelleCase={erreursEnLignes ? "Erreurs (lignes)" : "Erreurs"}

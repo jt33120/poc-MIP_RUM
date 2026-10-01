@@ -70,7 +70,7 @@ const POPULATION_VUES = "sessions ayant vu au moins une page sur la période";
 const POPULATION_TRANSITIONS = "passages d'une route à une autre route";
 
 /** D'où viennent les chiffres de l'écran, écrit dans la fenêtre des cases. */
-const SOURCE_PARCOURS = "Capteur navigateur · pages vues (table rum_pageview) et sessions (rum_session), robots exclus";
+const SOURCE_PARCOURS = "Capteur navigateur · pages vues des sessions, robots exclus";
 
 /** Méthode des deux tables de bords : le dénominateur des parts est UNE définition (R-P). */
 const METHODE_BORDS =
@@ -269,7 +269,7 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
                   elle-même (rechargement, changement de paramètre) n&apos;est pas compté. Seules les huit routes les plus
                   fréquentes de chaque côté sont dessinées : le nombre de passages représentés est écrit au-dessus du
                   dessin. Choisir une route de départ ne change que le dessin : les chiffres clés et les tableaux portent
-                  toujours sur toutes les routes. Source : pages vues du capteur navigateur (table rum_pageview).
+                  toujours sur toutes les routes. Source : pages vues du capteur navigateur.
                 </Methode>
               </>
             )}

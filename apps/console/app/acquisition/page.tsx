@@ -103,7 +103,7 @@ const PICTO_CANAL: Record<Channel, string> = {
 };
 
 /** D'où viennent les chiffres de l'écran, écrit dans la fenêtre des cases. */
-const SOURCE_ACQUISITION = "Capteur navigateur · référent de la première page vue (table rum_pageview), robots exclus";
+const SOURCE_ACQUISITION = "Capteur navigateur · référent de la première page vue de chaque session, robots exclus";
 
 /** La population de l'écran, nommée dans chaque méta (S1, R-P). */
 const POPULATION = "sessions ayant vu au moins une page sur la période";

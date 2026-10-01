@@ -19,7 +19,7 @@ import { formater } from "@/lib/fmt-ids";
 import { etiquettesGraduations, graduationsAxe } from "@/lib/graduations";
 import { pluriel } from "@/lib/format";
 import { estFrustration } from "@/lib/session-detail";
-import { libelleEvenement } from "@/lib/timeline-constants";
+import { KIND_STYLE, libelleEvenement } from "@/lib/timeline-constants";
 import { libelleAction } from "@/lib/libelle-action";
 
 /** Les pistes de la frise, dans l'ordre de lecture (du contexte à l'incident). */
@@ -35,14 +35,18 @@ export const LIBELLES_PISTES: Record<PisteFrise, string> = {
   taches: "Tâches longues",
 };
 
-/** Teinte de chaque piste : les natures du déroulé, le rouge réservé aux erreurs. */
+/**
+ * Teinte de chaque piste : les MÊMES points que les lignes du déroulé (`KIND_STYLE`),
+ * pour qu'un point de la frise et sa ligne se reconnaissent ; le rouge réservé aux
+ * erreurs, l'ambre aux signaux de frustration (comme les repères du rejeu).
+ */
 const TEINTE: Record<PisteFrise, string> = {
-  vues: "bg-sky-500/70 dark:bg-sky-400/60",
-  actions: "bg-fuchsia-600 dark:bg-fuchsia-400",
+  vues: `${KIND_STYLE.pageview.dot} opacity-70`,
+  actions: KIND_STYLE.action.dot,
   frustration: "bg-warn",
-  erreurs: "bg-bad",
-  api: "bg-sky-600 dark:bg-sky-400",
-  taches: "bg-orange-500",
+  erreurs: KIND_STYLE.error.dot,
+  api: KIND_STYLE.api.dot,
+  taches: KIND_STYLE.longtask.dot,
 };
 
 export interface ElementFrise {

@@ -73,7 +73,7 @@ const enPct = (t: number | null) => (t === null ? null : Math.round(t * 1000) / 
 const RAISON_ECHEC = "les cohortes n'ont pas pu être chargées";
 
 /** D'où viennent les chiffres de l'écran, écrit dans la fenêtre des cases. */
-const SOURCE_RETENTION = "Capteur navigateur · identifiant de visiteur aléatoire (visitor_id, table rum_session), cohortes hebdomadaires";
+const SOURCE_RETENTION = "Capteur navigateur · identifiant de visiteur aléatoire des sessions, cohortes hebdomadaires";
 
 /** La semaine de retour « à un mois » que le plan demande en seconde tuile. */
 const SEMAINE_LONGUE = 4;

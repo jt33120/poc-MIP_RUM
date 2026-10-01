@@ -212,7 +212,7 @@ export function PanneauSession({
             lecture={`écart entre la première et la dernière observation, pas du temps actif${
               active ? " · encore active : elle peut encore augmenter" : ""
             }.`}
-            source="Capteur navigateur · table rum_session (started_at, last_seen_at)"
+            source="Capteur navigateur · première et dernière observation de la session"
           />
           <KpiTile
             label="Pages vues"
@@ -220,7 +220,7 @@ export function PanneauSession({
             valeur={meta.page_count}
             format="count"
             href={lien({ voir: "vue" }, "chronologie")}
-            source="Capteur navigateur · table rum_session (page_count)"
+            source="Capteur navigateur · pages vues de la session"
           />
           <KpiTile
             label={erreursEnLignes ? "Erreurs (lignes)" : "Occurrences d'erreur"}
@@ -230,7 +230,7 @@ export function PanneauSession({
             format="count"
             lecture={erreursEnLignes ? "une ligne peut regrouper plusieurs répétitions." : undefined}
             href={lien({ tab: "erreurs" })}
-            source="Capteur navigateur · chronologie de la session (rum_error)"
+            source="Capteur navigateur · erreurs JS de la session"
           />
           {/* Garde capteur (R-F) : lue sur la SESSION, elle tient même si la chronologie n'a pas pu l'être. */}
           <KpiTile

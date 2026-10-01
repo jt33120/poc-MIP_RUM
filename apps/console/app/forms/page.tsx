@@ -93,7 +93,7 @@ const TEXTE_PLAFOND = `${formater(
 const GARDE_MOBILE = `Le SDK React Native n'émet aucun événement de formulaire${NBSP}: une application mobile n'apparaît jamais ici, même si ses utilisateurs remplissent des formulaires.`;
 
 /** D'où viennent les chiffres de l'écran, écrit dans la fenêtre de chaque case. */
-const SOURCE_FORMULAIRES = "SDK navigateur (option « forms ») · événements form.submit et form.abandon, table rum_event";
+const SOURCE_FORMULAIRES = "SDK navigateur (option « forms ») · événements form.submit et form.abandon";
 
 /**
  * Au-delà, un nom de formulaire est coupé AU MILIEU à l'écran (son début et sa fin
@@ -342,7 +342,7 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
                     Classement par nombre d&apos;abandons. Un formulaire entamé moins de {SEUIL_ECHANTILLON_FAIBLE} fois
                     ferme la liste, marqué «&nbsp;échantillon faible&nbsp;»&nbsp;: quelques abandons sur quelques
                     tentatives ne se comparent pas à un volume. Un clic sur un formulaire affiche ses champs. Source&nbsp;:
-                    événements form.* du SDK navigateur (table rum_event).
+                    événements form.* du SDK navigateur.
                   </Methode>
                 </>
               )}
