@@ -25,11 +25,14 @@ import { forgetInstallAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-const ETAT: Record<Freshness, { libelle: string; ton: TonPastille; alveole: string }> = {
-  actif: { libelle: "Actif", ton: "bon", alveole: "bg-good" },
-  silencieux: { libelle: "Silencieux", ton: "attention", alveole: "bg-warn" },
-  perdu: { libelle: "Sans signe de vie", ton: "eteint", alveole: "bg-ink-faint/40" },
+const ETAT: Record<Freshness, { libelle: string; pluriel: string; ton: TonPastille; alveole: string }> = {
+  actif: { libelle: "Actif", pluriel: "actifs", ton: "bon", alveole: "bg-good" },
+  silencieux: { libelle: "Silencieux", pluriel: "silencieux", ton: "attention", alveole: "bg-warn" },
+  perdu: { libelle: "Sans signe de vie", pluriel: "sans signe de vie", ton: "eteint", alveole: "bg-ink-faint/40" },
 };
+
+/** « 1 actif », « 3 actifs » : le compte d'un état, accordé. */
+const compteEtat = (e: Freshness, n: number) => `${n} ${n > 1 ? ETAT[e].pluriel : ETAT[e].libelle.toLowerCase()}`;
 
 const SOURCE = "Déclarations des postes équipés de l'extension (une toutes les 6 h, poste allumé)";
 
@@ -238,7 +241,7 @@ export default async function ExtensionInstalls() {
  */
 function Alveoles({ postes }: { postes: { id: string; nom: string; etat: Freshness }[] }) {
   const comptes = (["actif", "silencieux", "perdu"] as const).map((e) => ({ e, n: postes.filter((p) => p.etat === e).length }));
-  const resume = comptes.map(({ e, n }) => `${n} ${ETAT[e].libelle.toLowerCase()}`).join(", ");
+  const resume = comptes.map(({ e, n }) => compteEtat(e, n)).join(", ");
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2" data-testid="alveoles-parc">
       <div role="img" aria-label={`${pluriel(postes.length, "poste")} : ${resume}`} className="flex max-w-full flex-wrap gap-0.5">
@@ -250,7 +253,7 @@ function Alveoles({ postes }: { postes: { id: string; nom: string; etat: Freshne
         {comptes.map(({ e, n }) => (
           <li key={e} className="inline-flex items-center gap-1">
             <span className={`h-2.5 w-3 ${HEXAGONE} ${ETAT[e].alveole}`} />
-            <span className="tabular-nums text-ink">{n}</span> {ETAT[e].libelle.toLowerCase()}
+            <span className="tabular-nums text-ink">{n}</span> {n > 1 ? ETAT[e].pluriel : ETAT[e].libelle.toLowerCase()}
           </li>
         ))}
       </ul>

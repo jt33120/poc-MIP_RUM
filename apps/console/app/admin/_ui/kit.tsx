@@ -64,7 +64,7 @@ export function Panneau({
 }) {
   return (
     <div id={id} data-testid={testId} className={`card min-w-0 overflow-hidden ${className}`}>
-      <div className="flex min-h-[2.75rem] flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-3 py-2">
+      <div className="flex min-h-[2.5rem] flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line px-3 py-1.5">
         <h2 className="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-soft">
           <span className="min-w-0 truncate">{titre}</span>
           {compte != null && (
