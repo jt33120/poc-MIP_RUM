@@ -72,9 +72,11 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
             {/* `min-w-0 max-w-full` + `w-full` : la liste prend la largeur de son plus
                 long libellé (« Console MIP RUM (dogfooding) (mip-rum-console) ») et
                 portait la page à 417 px sur 390 ; elle se borne au panneau. */}
-            <label className={LIBELLE_CHAMP}>
-              Application
-              <select name="app" required defaultValue="" className="field block w-full max-w-full py-1 text-xs sm:w-72">
+            {/* Libellé relié par `htmlFor` (et non englobant) : le texte du libellé reste
+                « Application », sans la liste de ses options. */}
+            <div className={LIBELLE_CHAMP}>
+              <label htmlFor="domaine-application">Application</label>
+              <select id="domaine-application" name="app" required defaultValue="" className="field block w-full max-w-full py-1 text-xs sm:w-72">
                 <option value="" disabled>
                   choisir…
                 </option>
@@ -84,7 +86,7 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
             <button type="submit" className="btn-accent">
               Enregistrer
             </button>
