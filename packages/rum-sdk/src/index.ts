@@ -21,7 +21,7 @@ import { DEFAULT_SLOW_RESOURCE_MS, initResources } from "./resources";
 import { purgeRetryQueue, replayRetryQueue } from "./retry";
 import { createSampler, decideMode, loadMode, storeMode, type SampleMode } from "./sampling";
 import { readPrivacySignals, signalsOptOut } from "./privacy";
-import { getOrCreateSession, rotateSession, touchSession, type Session } from "./session";
+import { echue, getOrCreateSession, rotateSession, touchSession, type Session } from "./session";
 import { decisionIdentite, marqueIdentite } from "./identite-session";
 import type {
   AddErrorOptions,
@@ -61,6 +61,7 @@ let gate: ConsentGate | null = null;
 let deliver: Emit | null = null; // émission réelle (post-consent)
 let replayRetry: (() => void) | null = null;
 let replayArm: (() => void) | null = null; // replay échantillonné, en attente de consent
+let arreterReplay: (() => void) | null = null; // posé au démarrage du rejeu, appelé au refus
 let drainErrors: (() => void) | null = null;
 let resetErrors: (() => void) | null = null;
 let markManualError: ((error: Error) => void) | null = null;
@@ -235,31 +236,39 @@ export function init(cfg: MIPRumConfig): void {
   let sampler = createSampler(mode0, promouvoir);
 
   /**
-   * La page passe à une autre session sans se recharger : durée maximale atteinte,
-   * ou retour depuis le cache du navigateur après expiration. Comme pour un
-   * changement d'identité : l'action en cours est close (ses effets tardifs
-   * restent dans l'ancienne session) et le rejeu vide son morceau courant. La
-   * session neuve garde le mode d'échantillonnage de la page, mémorisé pour elle
-   * — sans quoi la page suivante le tirerait de nouveau au sort.
+   * La page passe à une autre session sans se recharger : inactivité, durée
+   * maximale atteinte, ou retour depuis le cache du navigateur après expiration.
+   * Comme pour un changement d'identité : l'action en cours est close (ses effets
+   * tardifs restent dans l'ancienne session) et le rejeu vide son morceau courant
+   * AVANT le changement, pour qu'il parte sous l'ancienne session. La session
+   * suivante garde le mode d'échantillonnage de la page, mémorisé pour elle s'il
+   * ne l'est pas déjà (un autre onglet a pu l'ouvrir) — sans quoi la page suivante
+   * le tirerait de nouveau au sort.
    */
   const passerA = (nouvelle: Session): Session => {
     const avant = session;
-    session = nouvelle;
     if (avant && avant.sessionId !== nouvelle.sessionId) {
       causalActions?.close();
       flushReplayBoundary();
       if (loadMode(nouvelle.sessionId) == null) storeMode(nouvelle.sessionId, sampler.mode ?? mode0);
     }
+    session = nouvelle;
     return nouvelle;
   };
 
-  // DURÉE MAXIMALE (finding 2.12 b). Une session ne se prolonge pas au-delà de
-  // son échéance (4 h après son début, ./session.ts), même si l'onglet ne se
-  // ferme jamais : l'événement suivant ouvre une session neuve, même visiteur.
+  // DURÉE MAXIMALE (finding 2.12 b) ET INACTIVITÉ. Une session ne se prolonge pas
+  // au-delà de son échéance (4 h après son début, ./session.ts), ni après
+  // 30 minutes sans événement, même si l'onglet ne se ferme jamais.
+  //
+  // La suite se cherche d'abord dans le STOCKAGE, comme au chargement d'une page :
+  // un autre onglet du même visiteur a pu y ouvrir la session suivante. En tirer
+  // une ici sans regarder séparait les onglets — deux onglets ouverts sur S0
+  // passaient l'un sur Sa, l'autre sur Sb, puis réécrivaient tour à tour
+  // `mip_rum_session` : N onglets comptaient N sessions par tranche de 4 h.
   const sessionCourante = (): Session => {
     const s = session!;
-    if (s.echeance == null || Date.now() < s.echeance) return s;
-    return passerA(rotateSession(s.visitorId, identites));
+    if (!echue(s, Date.now())) return s;
+    return passerA(reconcilierIdentites(getOrCreateSession(s)));
   };
 
   // Identifiants tirés en mémoire avant l'accord, et ceux qui les remplacent
@@ -389,8 +398,12 @@ export function init(cfg: MIPRumConfig): void {
 
   causalActions = new ActionTracker({
     emitRoot: (attrs, ts) => emitBaseDecision("rum.action", attrs, ts),
+    // L'action se rattache à la session où elle naît : si la précédente a fini,
+    // elle tourne ICI, avant que l'action ne soit posée comme courante — tourner
+    // plus tard (à l'émission de la racine) l'aurait close à peine ouverte, et la
+    // racine serait partie sous l'identifiant de l'ancienne session.
     rootSnapshot: (context) => {
-      const current = session!;
+      const current = sessionCourante();
       const envelope = eventContext.envelope(context);
       return {
         "mip.session_id": current.sessionId,
@@ -496,7 +509,7 @@ export function init(cfg: MIPRumConfig): void {
     // Une répétition peut être drainée après un changement de contexte ou
     // d'identité. Figer ici l'enveloppe complète de l'occurrence évite de la
     // réétiqueter avec la session/utilisateur courant au moment du drain.
-    const current = session!;
+    const current = sessionCourante();
     const envelope = eventContext.envelope();
     return {
       ...collectionOrigin(at),
@@ -576,7 +589,10 @@ export function init(cfg: MIPRumConfig): void {
         ? cfg.trace.map((o) => o.replace(/\/+$/, ""))
         : [],
       denyOrigins,
-      sessionId: () => session!.sessionId,
+      // `tracestate` part avec la session où la requête naît, échéance comprise.
+      sessionId: () => sessionCourante().sessionId,
+      // Session hors échantillon (tirage « off » à l'accord) : ni en-tête ni span.
+      actif: () => sampler.mode !== "off",
       traceId: currentTraceId, // même trace que la page vue (E0)
       action: () => ({ ...collectionOrigin(), ...actionAttrs(causalActions!.origin()) }),
       ...(network
@@ -634,7 +650,7 @@ export function init(cfg: MIPRumConfig): void {
   // Une session que l'accord a fait tomber hors échantillon ne s'enregistre pas.
   replayArm = isReplaySampled(cfg.replay)
     ? () => {
-        if (sampler.mode !== "off") startReplay(cfg, () => session!.sessionId);
+        if (sampler.mode !== "off") arreterReplay = startReplay(cfg, () => session!.sessionId) ?? null;
       }
     : null;
 
@@ -727,6 +743,9 @@ export function consent(granted: boolean): void {
     resetErrors?.();
     purgeRetryQueue();
     discardPendingSpans();
+    // Le rejeu aussi : sans cet arrêt, rrweb enregistrait et postait encore
+    // jusqu'à 2 minutes après le refus.
+    arreterReplay?.();
     refuser?.();
   } else {
     // Les occurrences vues pendant une période explicitement refusée ne

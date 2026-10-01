@@ -38,6 +38,7 @@ vi.mock("../../packages/rum-sdk/src/session", () => ({
   getOrCreateSession: (candidate?: unknown) => candidate ?? { sessionId: "sdk-public-session", visitorId: "visitor-public" },
   rotateSession: () => ({ sessionId: "sdk-rotated-session", visitorId: "visitor-public" }),
   touchSession: () => {},
+  echue: () => false,
 }));
 vi.mock("../../packages/rum-sdk/src/privacy", () => ({ readPrivacySignals: () => ({}), signalsOptOut: () => false }));
 vi.mock("../../packages/rum-sdk/src/sampling", () => ({

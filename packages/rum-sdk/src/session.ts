@@ -109,8 +109,14 @@ function ouvrir(sessionId: string, visitorId: string, identites: MarquesIdentite
   return { sessionId, visitorId, identites, debut, derniere: debut, echeance: debut + SESSION_MAX_MS };
 }
 
-/** Une session en mémoire a-t-elle fini, par inactivité ou par durée ? Sans repère, non. */
-function echue(session: Session, maintenant: number): boolean {
+/**
+ * Une session en mémoire a-t-elle fini, par inactivité ou par durée ? Sans repère, non.
+ *
+ * La page la consulte avant chaque événement (`sessionCourante`, ./index.ts) : une
+ * session ne se ferme pas seulement d'un chargement à l'autre, mais aussi dans une
+ * page restée ouverte.
+ */
+export function echue(session: Session, maintenant: number): boolean {
   return (
     (session.derniere != null && maintenant - session.derniere >= INACTIVITY_TTL_MS) ||
     (session.echeance != null && maintenant >= session.echeance)
@@ -173,8 +179,10 @@ export function getOrCreateSession(candidate?: Session): Session {
 }
 
 /** Ouvre une nouvelle session technique en conservant le visiteur. Utilisé
- * quand l'identité métier change pour qu'une session ne mélange jamais A/B, et
- * quand la session atteint sa durée maximale. */
+ * quand l'identité métier change, pour qu'une session ne mélange jamais A/B.
+ * Une session échue (inactivité, durée maximale) ne passe PAS par ici : la
+ * suivante se cherche d'abord dans le stockage (`getOrCreateSession`), où un
+ * autre onglet a pu l'ouvrir. */
 export function rotateSession(visitorId: string, identites: { user: string | null; account: string | null } = { user: null, account: null }): Session {
   const sessionId = uuid();
   // Les identités en cours sont rattachées à la nouvelle session, marquées pour ELLE.

@@ -81,6 +81,30 @@ describe("propagation de session après changement d'identité", () => {
     expect(propagated).toEqual(["mip=s:session-a", "mip=s:session-b"]);
   });
 
+  it("session hors échantillon (actif faux) : la requête part sans en-tête ni span", async () => {
+    let actif = true;
+    const propagated: Array<string | null> = [];
+    const emitted: string[] = [];
+    const originalFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      propagated.push(new Headers(init?.headers).get("traceparent"));
+      return { status: 200 } as Response;
+    });
+    vi.stubGlobal("location", { href: "https://app.test/page", origin: "https://app.test" });
+    vi.stubGlobal("performance", { now: () => 1 });
+    vi.stubGlobal("window", { fetch: originalFetch });
+    initApiSpans((name) => { emitted.push(name); }, {
+      extraOrigins: [], denyOrigins: [], sessionId: "session-a",
+      traceId: () => "a".repeat(32), actif: () => actif,
+    });
+
+    await window.fetch("/api/avant");
+    actif = false; // l'accord a tiré « off »
+    await window.fetch("/api/apres");
+    expect(propagated[0]).toMatch(/^00-a{32}-/);
+    expect(propagated[1]).toBeNull();
+    expect(emitted).toEqual(["http.client"]);
+  });
+
   it("conserve l'action capturée au départ malgré un clic B avant la réponse A", async () => {
     const pending: Array<(response: Response) => void> = [];
     const originalFetch = vi.fn(() => new Promise<Response>((resolve) => pending.push(resolve)));

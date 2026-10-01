@@ -16,7 +16,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Attrs = Record<string, unknown>;
 const { etat } = vi.hoisted(() => ({
-  etat: { spans: [] as Array<{ name: string; attributes: Attrs }>, traces: 0 },
+  etat: {
+    spans: [] as Array<{ name: string; attributes: Attrs }>,
+    traces: 0,
+    // Options que le SDK passe au traçage des appels réseau (dernier init()).
+    optionsApi: null as null | { actif?: () => boolean; sessionId: () => string },
+  },
 }));
 
 vi.mock("../../packages/rum-sdk/src/otel", () => ({
@@ -50,7 +55,12 @@ vi.mock("../../packages/rum-sdk/src/resources", () => ({
   DEFAULT_SLOW_RESOURCE_MS: 1000,
   initResources: () => ({ reset: () => {} }),
 }));
-vi.mock("../../packages/rum-sdk/src/apispans", () => ({ initApiSpans: () => null }));
+vi.mock("../../packages/rum-sdk/src/apispans", () => ({
+  initApiSpans: (_emit: unknown, options: typeof etat.optionsApi) => {
+    etat.optionsApi = options;
+    return null;
+  },
+}));
 vi.mock("../../packages/rum-sdk/src/replay", () => ({
   flushReplayBoundary: () => {}, isReplaySampled: () => false, startReplay: () => {},
 }));
@@ -69,6 +79,7 @@ let maintenant = T0;
 beforeEach(() => {
   etat.spans.length = 0;
   etat.traces = 0;
+  etat.optionsApi = null;
   stockage.clear();
   journal.length = 0;
   maintenant = T0;
@@ -194,6 +205,13 @@ describe("requireConsent : rien sur le terminal avant l'accord", () => {
     expect(etat.spans, "une session hors échantillon n'envoie ni son tampon ni la suite").toEqual([]);
   });
 
+  it("une session que l'accord fait tomber hors échantillon cesse d'injecter traceparent", async () => {
+    const sdk = await chargerPage({ requireConsent: true, sampleRate: 0, keepOnError: false, trace: true });
+    expect(etat.optionsApi?.actif?.(), "avant l'accord, la page trace comme une session retenue").toBe(true);
+    sdk.consent(true);
+    expect(etat.optionsApi?.actif?.()).toBe(false);
+  });
+
   it("error-biased : le tampon part entier s'il porte une erreur, rien sinon", async () => {
     let sdk = await chargerPage({ requireConsent: true, sampleRate: 0 });
     sdk.track("routine");
@@ -249,6 +267,43 @@ describe("consent(false) : ce que le SDK avait posé est effacé", () => {
   });
 });
 
+describe("consent(false) arrête le rejeu", () => {
+  it("l'enregistrement cesse, et ni le morceau en cours ni ceux en file ne partent", async () => {
+    vi.resetModules();
+    const { startReplay, flushReplayBoundary } = await vi.importActual<typeof import("../../packages/rum-sdk/src/replay")>(
+      "../../packages/rum-sdk/src/replay",
+    );
+    const envois: string[] = [];
+    vi.stubGlobal("fetch", (_url: string, init: { headers: Record<string, string> }) => {
+      envois.push(init.headers["x-mip-seq"]);
+      return Promise.resolve({ ok: true, status: 200, headers: new Headers() });
+    });
+    let emettre: (evenement: unknown) => void = () => {};
+    let enregistre = true;
+    (window as { MIPRumReplay?: unknown }).MIPRumReplay = {
+      record: (o: { emit: (e: unknown) => void }) => {
+        emettre = o.emit;
+        return () => { enregistre = false; };
+      },
+    };
+
+    const arreter = startReplay({ endpoint: "https://ingest.test/v1/traces", appId: "app" }, "session-1");
+    await vi.waitFor(() => expect(typeof emettre).toBe("function"));
+    emettre({ type: 2, data: "instantane" });
+    flushReplayBoundary();
+    await vi.waitFor(() => expect(envois).toEqual(["0"]));
+
+    emettre({ type: 3, data: "en file" });
+    flushReplayBoundary(); // morceau 1 enfilé, compression pas encore faite
+    emettre({ type: 3, data: "en cours" });
+    arreter();
+    expect(enregistre, "rrweb enregistre encore").toBe(false);
+    flushReplayBoundary();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(envois, "un morceau est parti après le refus").toEqual(["0"]);
+  });
+});
+
 describe("sans requireConsent, rien ne change", () => {
   it("session, visiteur et mode sont écrits dès l'init", async () => {
     await chargerPage();
@@ -292,6 +347,98 @@ describe("une session dure au plus 4 heures, même active", () => {
     // Même visiteur, et la session neuve garde le mode de la page.
     expect(idsDe(0, "mip.visitor_id").size).toBe(1);
     expect(JSON.parse(stockage.get("mip_rum_sampling")!)).toEqual({ sid: seconde[0], mode: "full" });
+  });
+
+  it("deux onglets sur la même session passent ENSEMBLE à la suivante, et y restent", async () => {
+    // Deux imports du SDK (vi.resetModules) sur le même stockage : deux onglets.
+    const a = await chargerPage();
+    maintenant = T0 + MINUTE;
+    const b = await chargerPage();
+    const s0 = sessionStockee();
+    for (let t = 20; t < 240; t += 20) {
+      maintenant = T0 + t * MINUTE;
+      a.track("onglet_a");
+      b.track("onglet_b");
+    }
+    expect(idsDe(0, "mip.session_id")).toEqual(new Set([s0]));
+
+    const depuis = etat.spans.length;
+    maintenant = T0 + 241 * MINUTE;
+    a.track("onglet_a");
+    const suivante = sessionStockee();
+    expect(suivante).not.toBe(s0);
+    // Le second onglet atteint l'échéance à son tour : il REPREND la session que le
+    // premier vient d'ouvrir, au lieu d'en tirer une troisième.
+    maintenant = T0 + 242 * MINUTE;
+    b.track("onglet_b");
+    for (let t = 250; t < 400; t += 10) {
+      maintenant = T0 + t * MINUTE;
+      a.track("onglet_a");
+      b.track("onglet_b");
+    }
+    expect(idsDe(depuis, "mip.session_id")).toEqual(new Set([suivante]));
+    expect(sessionStockee()).toBe(suivante);
+  });
+
+  it("dans la même page : 30 minutes sans événement ferment la session", async () => {
+    const sdk = await chargerPage();
+    const premiere = sessionStockee();
+    maintenant += 29 * MINUTE;
+    sdk.track("encore_la");
+    expect(idsDe(0, "mip.session_id")).toEqual(new Set([premiere]));
+
+    const depuis = etat.spans.length;
+    maintenant += 45 * MINUTE;
+    sdk.track("retour_apres_pause");
+    const seconde = [...idsDe(depuis, "mip.session_id")];
+    expect(seconde).toHaveLength(1);
+    expect(seconde[0]).not.toBe(premiere);
+    expect(sessionStockee()).toBe(seconde[0]);
+    expect(idsDe(0, "mip.visitor_id").size, "même visiteur").toBe(1);
+  });
+
+  it("un onglet resté inactif rejoint la session qu'un autre onglet a ouverte entre-temps", async () => {
+    const a = await chargerPage();
+    const s0 = sessionStockee();
+    maintenant += 2 * 60 * MINUTE;
+    await chargerPage(); // second onglet, deux heures plus tard : session neuve
+    const s1 = sessionStockee();
+    expect(s1).not.toBe(s0);
+
+    maintenant += MINUTE;
+    const depuis = etat.spans.length;
+    a.track("retour_sur_le_premier_onglet");
+    expect(idsDe(depuis, "mip.session_id")).toEqual(new Set([s1]));
+    // Et il ne réécrit pas l'ancienne session par-dessus celle de l'autre onglet.
+    expect(sessionStockee()).toBe(s1);
+  });
+
+  it("la première action après l'échéance naît dans la session suivante", async () => {
+    const sdk = await chargerPage();
+    const premiere = sessionStockee();
+    maintenant = T0 + 241 * MINUTE;
+    const depuis = etat.spans.length;
+    sdk.addAction("Valider");
+    const suivante = sessionStockee();
+    expect(suivante).not.toBe(premiere);
+    const racine = etat.spans.slice(depuis).find((s) => s.name === "rum.action");
+    expect(racine?.attributes["mip.session_id"], "la racine est partie sous l'ancienne session").toBe(suivante);
+  });
+
+  it("error-biased : l'erreur qui suit cette action s'y rattache, dans la session suivante", async () => {
+    // La racine n'est émise qu'à l'erreur (rejeu error-biased) : c'est l'erreur qui
+    // ferait tourner la session si l'action ne l'avait pas fait à son ouverture.
+    const sdk = await chargerPage({ sampleRate: 0 });
+    maintenant = T0 + 241 * MINUTE;
+    const depuis = etat.spans.length;
+    sdk.addAction("Valider");
+    sdk.addError(new Error("échec après l'échéance"));
+    const suivante = sessionStockee();
+    const racine = etat.spans.slice(depuis).find((s) => s.name === "rum.action");
+    const erreur = etat.spans.slice(depuis).find((s) => s.name === "exception");
+    expect(erreur?.attributes["mip.session_id"]).toBe(suivante);
+    expect(racine?.attributes["mip.session_id"]).toBe(suivante);
+    expect(erreur?.attributes["mip.action_id"], "l'action a été close à peine ouverte").toBe(racine?.attributes["mip.action_id"]);
   });
 
   it("une session écrite par un SDK d'avant (sans début) reprend, et compte ses 4 h depuis maintenant", async () => {
