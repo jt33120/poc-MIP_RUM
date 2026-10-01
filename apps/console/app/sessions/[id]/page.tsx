@@ -36,10 +36,11 @@ import { notFound } from "next/navigation";
 import type { Fil } from "@mip/console-contract";
 import type { ReactNode } from "react";
 import { ECRANS } from "@mip/console-contract";
-import { PageHeader } from "@/components/PageHeader";
 import { ReplaySynchro } from "@/components/replay/ReplaySynchro";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RecitSession } from "@/components/sessions/RecitSession";
+import { FriseSession } from "@/components/sessions/FriseSession";
+import { PictoAppareil, PictoCapteur, PictoNavigateur, PictoPays, PictoSysteme } from "@/components/sessions/Pictos";
 import { TabLink } from "@/components/sessions/TabLink";
 import { CopierIdentifiant } from "@/components/sessions/CopierIdentifiant";
 import { EtatSurface } from "@/components/states/EtatSurface";
@@ -105,9 +106,10 @@ function decalage(ts: Date | string, t0: number): string {
   return `+${formater("s-auto", Math.max(0, new Date(ts).getTime() - t0))}`;
 }
 
-const TABLE = "w-full min-w-[36rem] text-left text-sm";
+const TABLE = "w-full min-w-[36rem] text-left text-xs";
+/** Tables denses (charte § 3.5) : en-têtes de 11 px, lignes de 32 px. */
 const TH = "px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-soft";
-const TD = "border-t border-line/60 px-2 py-1.5 align-top";
+const TD = "h-8 border-t border-line/60 px-2 py-1 align-middle";
 
 export default async function SessionDetail({
   params,
@@ -215,43 +217,36 @@ export default async function SessionDetail({
   const vitaux = onglet === "vitals" ? vitauxDeSession(timeline) : null;
   const situations = new Map(d.situations);
 
+  // Frise : chaque point renvoie à SA ligne du déroulé (ancre), sur la page même quand
+  // le Déroulé est affiché, sinon sur le Déroulé.
+  const lienFrise: Record<number, string> = {};
+  timeline.forEach((_it, i) => {
+    lienFrise[i] = onglet === "deroule" ? `#${ancreEvenement(i)}` : hrefOnglet("deroule", { ancre: ancreEvenement(i) });
+  });
+
   return (
     <div className="animate-fade-up">
-      <Link
-        href={`/sessions${qs ? `?${qs}` : ""}`}
-        className="rounded text-sm text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
-      >
-        ← Sessions
-      </Link>
-      <div className="mt-2">
-        <PageHeader
-          title={
-            <>
-              Session{" "}
-              <span className="break-all font-mono text-lg text-ink-soft" data-testid="session-identifiant">
-                {meta.session_id}
-              </span>
-            </>
-          }
-          sub="Que s'est-il passé dans cette session, dans quel ordre, et qu'a vu le visiteur ?"
+      {/* En-tête d'une ligne : retour, identifiant complet (sélectionnable), copie. */}
+      <div className="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <Link
+          href={`/sessions${qs ? `?${qs}` : ""}`}
+          className="shrink-0 rounded text-sm text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
         >
-          <CopierIdentifiant valeur={meta.session_id} />
-        </PageHeader>
+          ← Sessions
+        </Link>
+        <h1 className="min-w-0 text-xl font-bold tracking-tight text-ink">
+          Session{" "}
+          <span className="break-all font-mono text-base font-semibold text-ink-soft" data-testid="session-identifiant">
+            {meta.session_id}
+          </span>
+        </h1>
+        <CopierIdentifiant valeur={meta.session_id} />
       </div>
 
-      {/* Y1 — puces de contexte : une ligne à 1440 px, repliées « Contexte (N) » à 390 px. */}
-      <PucesSession puces={puces} />
+      {/* Y1 — puces de contexte à pictogrammes : une ligne à 1440 px, repliées « Contexte (N) » à 390 px. */}
+      <PucesSession puces={puces} meta={meta} />
 
-      <SectionErreur titre="En bref">
-        <RecitSession
-          phrases={recit.ok ? recit.phrases : []}
-          rejeu={rejeuLu.ok ? (rejeuLu.data ? "present" : "absent") : null}
-          // Hors du Déroulé, la chronologie n'est pas sur la page : les ancres y ramènent.
-          lienBase={onglet === "deroule" ? "" : hrefOnglet("deroule")}
-        />
-      </SectionErreur>
-
-      {/* Y2 — résumé chiffré. */}
+      {/* Y2 — résumé chiffré : cinq cases, le détail de chacune dans sa fenêtre. */}
       <SectionErreur titre="Résumé de la session">
         <Resume
           resume={resume}
@@ -270,13 +265,39 @@ export default async function SessionDetail({
         />
       </SectionErreur>
 
+      {/* La chronologie graphique (8 colonnes) et le récit « En bref » (4 colonnes), même hauteur. */}
+      <div className="mb-4 grid min-w-0 gap-2 xl:grid-cols-12">
+        <div className="min-w-0 xl:col-span-8">
+          <SectionErreur titre="Chronologie de la session">
+            <FriseSession
+              items={timeline}
+              debut={t0}
+              fin={new Date(meta.last_seen_at).getTime()}
+              hrefDe={lienFrise}
+              tronquee={resume.tronquee}
+            />
+          </SectionErreur>
+        </div>
+        <div className="min-w-0 xl:col-span-4">
+          <SectionErreur titre="En bref">
+            <RecitSession
+              phrases={recit.ok ? recit.phrases : []}
+              rejeu={rejeuLu.ok ? (rejeuLu.data ? "present" : "absent") : null}
+              // Hors du Déroulé, la chronologie n'est pas sur la page : les ancres y ramènent.
+              lienBase={onglet === "deroule" ? "" : hrefOnglet("deroule")}
+              className="h-full"
+            />
+          </SectionErreur>
+        </div>
+      </div>
+
       {/* Y3 — onglets comptés ; un compte inconnu s'écrit « (—) », jamais « (0) ». */}
       {[ignore, ignoreVoir].filter(Boolean).map((ligne) => (
         <p key={ligne} role="note" className="mb-2 text-xs text-ink-soft" data-testid="reglage-ignore">
           {ligne}
         </p>
       ))}
-      <nav aria-label="Onglets de la session" className="relative mb-4 flex overflow-x-auto border-b border-line" data-testid="session-tabs">
+      <nav aria-label="Onglets de la session" className="relative mb-3 flex overflow-x-auto border-b border-line" data-testid="session-tabs">
         {ONGLETS_SESSION.map((o) => (
           <TabLink key={o} href={hrefOnglet(o)} active={onglet === o} compte={comptes[o]}>
             {LIBELLES_ONGLETS[o]}
@@ -306,10 +327,13 @@ export default async function SessionDetail({
             id="chronologie"
             aria-label="Chronologie de la session"
             // `relative` : conteneur défilant (xl) — un `sr-only` d'une ligne y reste borné (piège 16).
-            className={`card relative min-w-0 scroll-mt-24 p-4 sm:p-6 ${avecRejeu ? "xl:col-span-2 xl:max-h-[48rem] xl:overflow-y-auto" : ""}`}
+            className={`card relative min-w-0 scroll-mt-24 p-3 ${avecRejeu ? "xl:col-span-2 xl:max-h-[48rem] xl:overflow-y-auto" : ""}`}
           >
             {!avecRejeu && (
-              <p className="mb-4 text-xs text-ink-soft" data-testid="deroule-sans-rejeu">
+              <p className="mb-2 flex items-center gap-1.5 text-xs text-ink-soft" data-testid="deroule-sans-rejeu">
+                <span aria-hidden="true" className="text-ink-faint">
+                  ⊘
+                </span>
                 Aucun rejeu enregistré pour cette session : la chronologie seule.
               </p>
             )}
@@ -454,15 +478,15 @@ export default async function SessionDetail({
       )}
 
       {onglet === "attributs" && (
-        <details className="card p-4 sm:p-6" data-testid="attributs">
+        <details className="card p-3" data-testid="attributs">
           <summary className="cursor-pointer rounded text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
             Attributs techniques ({attributsDeSession(meta).length})
           </summary>
-          <p className="mt-2 text-xs text-ink-soft">
+          <p className="sr-only">
             Colonnes non identifiantes de la session. L&apos;identifiant de visiteur n&apos;y figure que tronqué (en-tête) ;
             les empreintes d&apos;identité ne sont jamais affichées.
           </p>
-          <dl className="mt-3 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[12rem_1fr]">
+          <dl className="mt-2 grid gap-x-4 gap-y-0.5 text-xs sm:grid-cols-[12rem_1fr]">
             {attributsDeSession(meta).map((a) => (
               <div key={a.cle} className="contents">
                 <dt className="font-mono text-xs text-ink-soft">{a.cle}</dt>
@@ -512,29 +536,56 @@ function FiltresVoir({
   );
 }
 
-/** Puces de contexte (§ 5.12.4) : même rendu que `DetailPanel.puces`, provenance écrite. */
-function PucesSession({ puces }: { puces: PuceContexte[] }) {
+/**
+ * Le pictogramme d'une puce (charte § 3.8 : « pastilles de contexte, pictogramme +
+ * valeur »), lu sur la valeur BRUTE de la session ; les puces sans image n'en ont pas.
+ */
+function PictoPuce({ label, meta }: { label: string; meta: MetaPictos }) {
+  if (label === "Appareil") return <PictoAppareil classe={meta.device_type} />;
+  if (label === "Navigateur") return <PictoNavigateur nom={meta.browser} />;
+  if (label === "Système") return <PictoSysteme nom={meta.os} />;
+  if (label === "Pays estimé") return <PictoPays code={meta.geo_country} />;
+  if (label === "Capteur") return <PictoCapteur source={meta.collection_source} />;
+  return null;
+}
+
+type MetaPictos = { device_type: string | null; browser?: string | null; os?: string | null; geo_country: string | null; collection_source: string | null };
+
+/** Une puce à pictogramme se passe de son libellé à l'écran (il reste lu et survolé). */
+const PUCES_A_IMAGE = new Set(["Appareil", "Navigateur", "Système", "Pays estimé", "Capteur"]);
+
+/** Puces de contexte (§ 5.12.4) : pictogramme et valeur, libellé lu, provenance survolée et lue. */
+function PucesSession({ puces, meta }: { puces: PuceContexte[]; meta: MetaPictos }) {
   const liste = (classe: string) => (
     <dl className={classe}>
-      {puces.map((p, i) => (
-        <div key={`${p.label}-${i}`} className="flex min-w-0 max-w-full items-baseline gap-1 rounded-md bg-panel2 px-2 py-0.5 text-xs" data-puce={p.label}>
-          <dt className="shrink-0 text-ink-soft">{p.label}</dt>
-          <dd className="min-w-0 break-words font-medium text-ink">
-            {p.href ? (
-              <Link href={p.href} className="rounded text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-                {p.valeur}
-              </Link>
-            ) : (
-              p.valeur
-            )}
-            {p.provenance && <span className="font-normal text-ink-soft"> (provenance : {p.provenance})</span>}
-          </dd>
-        </div>
-      ))}
+      {puces.map((p, i) => {
+        const image = PUCES_A_IMAGE.has(p.label);
+        return (
+          <div
+            key={`${p.label}-${i}`}
+            className="flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-line bg-panel px-2 py-0.5 text-xs"
+            data-puce={p.label}
+            title={p.provenance ? `${p.label} : ${p.valeur} (provenance : ${p.provenance})` : `${p.label} : ${p.valeur}`}
+          >
+            <dt className={image ? "sr-only" : "shrink-0 text-ink-faint"}>{p.label}</dt>
+            {image && <PictoPuce label={p.label} meta={meta} />}
+            <dd className="min-w-0 break-words font-medium text-ink">
+              {p.href ? (
+                <Link href={p.href} className="rounded text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
+                  {p.valeur}
+                </Link>
+              ) : (
+                p.valeur
+              )}
+              {p.provenance && <span className="sr-only"> (provenance : {p.provenance})</span>}
+            </dd>
+          </div>
+        );
+      })}
     </dl>
   );
   return (
-    <div className="mb-6">
+    <div className="mb-3">
       {/* Deux rendus des MÊMES puces : dépliées à partir de 640 px, repliées dessous. */}
       <div className="hidden sm:block" data-testid="puces-session">
         {liste("flex flex-wrap gap-1.5")}
@@ -569,40 +620,54 @@ function Resume({
 }) {
   // Avant v67, une ligne d'erreur ne porte pas ses occurrences : on compte des lignes, et on le dit.
   const erreursEnLignes = !resume.tronquee && !occurrencesParLigne;
+  const source = "Capteur navigateur · chronologie de la session";
   return (
-    <section aria-label="Résumé de la session" className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" data-testid="resume-session">
+    <section aria-label="Résumé de la session" className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-5" data-testid="resume-session">
       <KpiTile
         label="Durée observée"
         valeur={dureeMs}
         format="s-auto"
-        lecture={active ? "encore active : elle peut encore augmenter." : undefined}
+        // « pas du temps actif » est LU avec la valeur : une durée observée ne se lit
+        // jamais comme un temps passé (onglet ouvert, sortie brutale).
+        lecture={`écart entre la première et la dernière observation, pas du temps actif${active ? " · encore active : elle peut encore augmenter" : ""}.`}
         methode="Écart entre la première et la dernière observation, pas du temps actif."
+        source="Capteur navigateur · première et dernière observation de la session"
+        categorie={active ? "Session · encore active" : "Session · close"}
       />
-      <KpiTile label="Pages vues" valeur={pages} format="count" href={hrefs.vues} />
+      <KpiTile label="Pages vues" valeur={pages} format="count" href={hrefs.vues} source="Capteur navigateur · pages vues de la session" categorie="Session · vues" />
       <KpiTile
         label={erreursEnLignes ? "Erreurs (lignes)" : "Occurrences d'erreur"}
+        libelleCase={erreursEnLignes ? "Erreurs (lignes)" : "Erreurs"}
         valeur={erreursEnLignes ? resume.erreursLignes : resume.occurrences}
         raisonNull={RAISON_TRONQUEE}
         format="count"
-        methode={erreursEnLignes ? "Une ligne peut regrouper plusieurs répétitions." : undefined}
+        methode={erreursEnLignes ? "Une ligne peut regrouper plusieurs répétitions." : "Occurrences sommées : une ligne d'erreur porte le nombre de ses répétitions."}
         href={hrefs.erreurs}
+        source={source}
+        categorie="Erreurs JS · occurrences"
       />
       <KpiTile
         label="Signaux de frustration"
+        libelleCase="Frustration"
         valeur={resume.frustration}
         raisonNull={mobile ? RAISON_FRUSTRATION_MOBILE : RAISON_TRONQUEE}
         format="count"
         // Les règles de détection derrière l'aide : la tuile faisait sept lignes.
         methode={mobile ? undefined : LECTURE_FRUSTRATION}
         href={hrefs.frustration}
+        source={source}
+        categorie="Interactions · signaux"
       />
       <KpiTile
         label="Appels API en échec"
+        libelleCase="API en échec"
         valeur={resume.apiEchecs}
         raisonNull={RAISON_TRONQUEE}
         format="count"
         methode="Statut 400 ou plus, ou échec réseau (statut 0)."
         href={hrefs.api}
+        source={source}
+        categorie="Réseau · statut ≥ 400"
       />
     </section>
   );
@@ -621,7 +686,7 @@ function OngletTable({
   children: ReactNode;
 }) {
   return (
-    <section aria-label={titre} className="card min-w-0 p-4 sm:p-6">
+    <section aria-label={titre} className="card min-w-0 p-3">
       {tronquee && (
         <div className="mb-3">
           <EtatSurface compact etat={{ kind: "partiel", raison: `chronologie tronquée à ${LIMITE_CHRONOLOGIE} événements : la table n'en montre que le début` }} />
@@ -633,7 +698,12 @@ function OngletTable({
           leur position dans la table large, et l'élargissaient (575 px à 390 px, e2e
           « aucun débordement »). */}
       {vide ? (
-        <p className="py-8 text-center text-sm text-ink-soft">{vide}</p>
+        <p className="flex items-center gap-1.5 py-1 text-sm text-ink-soft">
+          <span aria-hidden="true" className="text-ink-faint">
+            ⊘
+          </span>
+          {vide}
+        </p>
       ) : (
         // Nom distinct de la section (déjà nommée `titre`) : deux régions homonymes
         // rendraient ambiguë toute recherche par nom.
@@ -743,7 +813,7 @@ function OngletVitaux({
     );
   }
   return (
-    <div className="space-y-4" data-testid="onglet-vitaux">
+    <div className="space-y-3" data-testid="onglet-vitaux">
       {tronquee && (
         <EtatSurface
           compact
@@ -756,7 +826,7 @@ function OngletVitaux({
       <SectionErreur titre="Pire mesure de chaque Web Vital">
         <section
           aria-label="Pire mesure de chaque Web Vital"
-          className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5"
+          className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5"
           data-testid="vitaux-tuiles"
         >
           {vitaux.pires.map((p) => {
@@ -778,7 +848,7 @@ function OngletVitaux({
         </section>
       </SectionErreur>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-2">
         {vitaux.pires.map((p) => (
           <SectionErreur key={p.vital} titre={`${p.vital} : où se situe la pire vue`}>
             <FigureSituation
@@ -918,11 +988,23 @@ function FigureSituation({
       id={id}
       meta={
         <>
-          <span className="min-w-0 break-words" data-testid="vitaux-population">
-            mesures {vital} de {route} {periode}, toutes sessions (robots exclus), {inclusion}
+          {/* La population en une ligne courte ; la phrase entière (fenêtre, robots,
+              inclusion de cette mesure) survolée et lue. */}
+          <span
+            className="min-w-0 break-words"
+            data-testid="vitaux-population"
+            title={`mesures ${vital} de ${route} ${periode}, toutes sessions (robots exclus), ${inclusion}`}
+          >
+            <span aria-hidden="true" className="font-mono">
+              {route}
+            </span>
+            <span className="sr-only">
+              mesures {vital} de {route} {periode}, toutes sessions (robots exclus), {inclusion}
+            </span>
           </span>
+          <span className="tabular-nums">{periode}</span>
           <span>{pluriel(n, "mesure")}</span>
-          {n > 0 && <span>{plafondTexte}</span>}
+          {n > 0 && <span className="sr-only">{plafondTexte}</span>}
         </>
       }
       lecture={

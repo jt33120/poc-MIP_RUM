@@ -176,48 +176,72 @@ export function PanneauSession({
 
   return (
     <DetailPanel type="session" titre={<Titre id={meta.session_id} />} puces={pucesDuPanneau(meta, avecApp)} {...parcours}>
-      <div className="space-y-5" data-testid="panneau-session">
+      <div className="space-y-4" data-testid="panneau-session">
+        {/* La portée en une ligne : les bornes de la session à l'écran, la règle (la plage
+            de l'écran ne la borne pas) lue et survolée. */}
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-          <p className="min-w-0 basis-full text-xs text-ink-soft sm:basis-auto sm:flex-1" data-testid="panneau-session-portee">
-            Session entière, du {instantUtc(meta.started_at)} au {instantUtc(meta.last_seen_at)}
-            {active ? ", encore active" : ""} : ces chiffres ne dépendent pas de la plage de l&apos;écran ({plage}), qui
-            n&apos;a servi qu&apos;à la lister.
+          <p
+            className="min-w-0 flex-1 text-xs text-ink-soft"
+            data-testid="panneau-session-portee"
+            title={`Ces chiffres ne dépendent pas de la plage de l'écran (${plage}), qui n'a servi qu'à la lister.`}
+          >
+            <span className="tabular-nums">
+              Session entière, du {instantUtc(meta.started_at)} au {instantUtc(meta.last_seen_at)}
+              {active ? ", encore active" : ""}
+            </span>
+            <span className="sr-only">
+              {" "}
+              : ces chiffres ne dépendent pas de la plage de l&apos;écran ({plage}), qui n&apos;a servi qu&apos;à la lister.
+            </span>
           </p>
           <GesteRejeu rejeu={rejeu} href={lien({ tab: "replay" })} />
         </div>
 
-        {/* Quatre tuiles (§ 5.11.4) : deux colonnes dans le demi-écran (≥ 1280 px) et à
-            390 px, quatre quand le panneau occupe toute la largeur d'un écran moyen. */}
+        {/* Quatre cases sur UNE rangée (§ 5.11.4), deux colonnes à 390 px ; le détail de
+            chacune (méthode, raison d'un « — ») est dans sa fenêtre. */}
         <section
           aria-label="Résumé de la session"
-          className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-2"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-4"
           data-testid="panneau-session-resume"
         >
           <KpiTile
             label="Durée observée"
+            libelleCase="Durée"
             valeur={dureeObservee(meta.started_at, meta.last_seen_at)}
             format="s-auto"
             lecture={`écart entre la première et la dernière observation, pas du temps actif${
               active ? " · encore active : elle peut encore augmenter" : ""
             }.`}
+            source="Capteur navigateur · première et dernière observation de la session"
           />
-          <KpiTile label="Pages vues" valeur={meta.page_count} format="count" href={lien({ voir: "vue" }, "chronologie")} />
+          <KpiTile
+            label="Pages vues"
+            libelleCase="Pages"
+            valeur={meta.page_count}
+            format="count"
+            href={lien({ voir: "vue" }, "chronologie")}
+            source="Capteur navigateur · pages vues de la session"
+          />
           <KpiTile
             label={erreursEnLignes ? "Erreurs (lignes)" : "Occurrences d'erreur"}
+            libelleCase="Erreurs"
             valeur={resume === null ? null : erreursEnLignes ? resume.erreursLignes : resume.occurrences}
             raisonNull={resume === null ? RAISON_NON_LUE : RAISON_TRONQUEE}
             format="count"
             lecture={erreursEnLignes ? "une ligne peut regrouper plusieurs répétitions." : undefined}
             href={lien({ tab: "erreurs" })}
+            source="Capteur navigateur · erreurs JS de la session"
           />
           {/* Garde capteur (R-F) : lue sur la SESSION, elle tient même si la chronologie n'a pas pu l'être. */}
           <KpiTile
             label="Signaux de frustration"
+            libelleCase="Frustration"
             valeur={mobile ? null : (resume?.frustration ?? null)}
             raisonNull={mobile ? RAISON_FRUSTRATION_MOBILE : resume === null ? RAISON_NON_LUE : RAISON_TRONQUEE}
             format="count"
-            lecture={mobile ? undefined : LECTURE_FRUSTRATION}
+            methode={mobile ? undefined : LECTURE_FRUSTRATION}
             href={mobile ? undefined : lien({ voir: "frustration" }, "chronologie")}
+            source="Capteur navigateur · événements frustration.* de la session"
           />
         </section>
 
@@ -228,7 +252,7 @@ export function PanneauSession({
           {items ? (
             <>
               <Cascade hauteur="reduite" {...cascadeDeSession(items, meta.started_at, meta.last_seen_at)} />
-              <p className="mt-2 text-xs text-ink-soft">
+              <p className="sr-only">
                 Aperçu par piste sur la durée observée ; chaque élément, avec son début et sa durée, est dans
                 l&apos;alternative textuelle et sur la page de la session.
               </p>
@@ -241,31 +265,29 @@ export function PanneauSession({
         {/* Le déroulé de la page, sur les quinze premiers événements : même groupement
             par vue, mêmes pastilles de Web Vitals, mêmes phases réseau repliées (F45). */}
         <section aria-labelledby="panneau-session-evenements-titre" className="min-w-0" data-testid="panneau-session-evenements">
-          <h3 id="panneau-session-evenements-titre" className={TITRE_BLOC}>
-            Premiers événements
+          <h3 id="panneau-session-evenements-titre" className={`${TITRE_BLOC} flex items-baseline justify-between gap-2`}>
+            <span>Premiers événements</span>
+            {premiers && premiers.total > 0 && (
+              <span className="text-[11px] font-normal normal-case tracking-normal text-ink-faint" data-testid="panneau-session-evenements-compte">
+                {premiers.total > premiers.montres
+                  ? `Les ${formater("count", premiers.montres)} premiers événements sur ${formater("count", premiers.total)}${
+                      resume?.tronquee ? ` lus (chronologie limitée à ${LIMITE_CHRONOLOGIE} lignes)` : ""
+                    }, groupés par page vue`
+                  : `${pluriel(premiers.total, "événement")}, ${premiers.total < 2 ? "rattaché à sa" : "groupés par"} page vue`}
+              </span>
+            )}
           </h3>
           {premiers ? (
-            <>
-              <Deroule items={premiers.items} t0={t0} voir={null} liens={liensVues} tronque={false} />
-              {premiers.total > 0 && (
-                <p className="mt-3 text-xs text-ink-soft" data-testid="panneau-session-evenements-compte">
-                  {premiers.total > premiers.montres
-                    ? `Les ${formater("count", premiers.montres)} premiers événements sur ${formater("count", premiers.total)}${
-                        resume?.tronquee ? ` lus (chronologie limitée à ${LIMITE_CHRONOLOGIE} lignes)` : ""
-                      }, groupés par page vue ; la suite est sur la page de la session.`
-                    : `${pluriel(premiers.total, "événement")}, ${premiers.total < 2 ? "rattaché à sa" : "groupés par"} page vue.`}
-                </p>
-              )}
-            </>
+            <Deroule items={premiers.items} t0={t0} voir={null} liens={liensVues} tronque={false} />
           ) : (
             <EchecLecture titre="Premiers événements" compact />
           )}
         </section>
 
-        <p className="border-t border-line pt-4 text-xs text-ink-soft">
-          Rejeu, déroulé complet, erreurs et appels API sont sur la page de la session.{" "}
+        <p className="flex justify-end border-t border-line pt-3 text-xs">
+          <span className="sr-only">Rejeu, déroulé complet, erreurs et appels API sont sur la page de la session. </span>
           <Link href={lien({}, "chronologie")} className={LIEN} data-testid="panneau-session-deroule">
-            Voir le déroulé complet
+            Voir le déroulé complet →
           </Link>
         </p>
       </div>

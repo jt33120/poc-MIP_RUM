@@ -28,6 +28,11 @@
 //     apps EFFECTIVES du principal et applique tous les filtres de session (tablette,
 //     « Inconnu ») ; le refus « une application à la fois » de F40 est levé (F53) et
 //     « Par appareil » compte aussi les tablettes.
+//
+// REFONTE DU 30/09/2026 : trois cases épurées (sources dans leur fenêtre), la courbe et
+// « Par appareil » côte à côte (même bord bas), la matrice en heatmap chiffrée sur toute
+// la largeur ; les phrases de lecture dans les replis « Méthode », les états vides sur
+// une ligne.
 import Link from "next/link";
 import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
@@ -66,6 +71,9 @@ const NBSP = "\u00a0";
 /** Un taux en pourcentage pour la courbe (0..100, une décimale) ; `null` reste un trou. */
 const enPct = (t: number | null) => (t === null ? null : Math.round(t * 1000) / 10);
 const RAISON_ECHEC = "les cohortes n'ont pas pu être chargées";
+
+/** D'où viennent les chiffres de l'écran, écrit dans la fenêtre des cases. */
+const SOURCE_RETENTION = "Capteur navigateur · identifiant de visiteur aléatoire des sessions, cohortes hebdomadaires";
 
 /** La semaine de retour « à un mois » que le plan demande en seconde tuile. */
 const SEMAINE_LONGUE = 4;
@@ -118,6 +126,8 @@ function tuileRetour({
       sensMeilleur="neutre"
       couverture={complet ? { n: complet.taille, unite: accord(complet.taille, "visiteur"), faibleSous: 30 } : undefined}
       lecture={lecture}
+      source={SOURCE_RETENTION}
+      categorie={`Rétention · S+${offset}, cohortes complètes`}
       methode={`Part des visiteurs d'une cohorte revenus ${
         offset === 1 ? "la semaine qui suit" : `${offset} semaines après`
       } leur semaine d'arrivée. Moyenne pondérée par la taille des cohortes dont cette semaine est terminée${NBSP}; la semaine en cours est exclue.`}
@@ -216,7 +226,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
       {/* R2 — une rangée, une population : les visiteurs identifiés. La 4e tuile du
           plan (« Sessions sans identifiant, hors matrice ») attend B35 : non rendue. */}
       <SectionErreur titre="Chiffres clés">
-        <div className="mb-6 grid gap-4 sm:grid-cols-3" data-testid="retention-kpi">
+        <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3" data-testid="retention-kpi">
           <KpiTile
             label="Visiteurs identifiés suivis"
             valeur={cohortes.ok ? totalVisiteurs : null}
@@ -229,6 +239,8 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                 : undefined
             }
             methode="Visiteurs dont les sessions portent un identifiant de visiteur, sur la fenêtre choisie. Les sessions sans identifiant (dont toutes celles collectées avant le 09/09/2026) n'entrent dans aucune cohorte."
+            source={SOURCE_RETENTION}
+            categorie={`Rétention · ${weeks} semaines`}
           />
           {tuileRetour({ point: courbe[1], offset: 1, lu: cohortes.ok, weeks, lisibleLe: lisibleLe(1) })}
           {/* S+4, ou la dernière semaine que la fenêtre contient : sous une fenêtre de 4
@@ -253,15 +265,27 @@ export default async function Retention({ searchParams }: { searchParams: Promis
       {!cohortes.ok ? (
         <EchecLecture titre="Cohortes de rétention" />
       ) : rows.length === 0 ? (
-        <div className="card p-8 text-center text-ink-soft" data-testid="retention-vide">
-          Aucun visiteur identifié sur la fenêtre. Les sessions collectées avant le 09/09/2026 ne portent pas
-          d&apos;identifiant de visiteur et n&apos;entrent donc dans aucune cohorte.
+        // Une ligne (charte § 3.7) ; la raison de l'absence est lue et survolée.
+        <div
+          className="card flex items-center gap-1.5 px-4 py-3 text-sm text-ink-soft"
+          data-testid="retention-vide"
+          title="Les sessions collectées avant le 09/09/2026 ne portent pas d'identifiant de visiteur et n'entrent donc dans aucune cohorte."
+        >
+          <span aria-hidden="true" className="text-ink-faint">
+            ⊘
+          </span>
+          Aucun visiteur identifié sur la fenêtre.
+          <span className="sr-only">
+            {" "}
+            Les sessions collectées avant le 09/09/2026 ne portent pas d&apos;identifiant de visiteur et n&apos;entrent donc
+            dans aucune cohorte.
+          </span>
         </div>
       ) : (
         <>
           {/* R3 — hero (7 colonnes) et « Par appareil » (5 colonnes), empilés sous 1024 px. */}
-          <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-12">
-            <div className="min-w-0 lg:col-span-7">
+          <div className="mb-4 grid min-w-0 gap-3 lg:grid-cols-12">
+            <div className="min-w-0 lg:col-span-7 lg:[&>section]:h-full">
               <SectionErreur titre="Courbe de rétention">
                 <Figure
                   titre="Courbe de rétention"
@@ -288,19 +312,17 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                         domain={[0, 100]}
                         ariaLabel={`Rétention pondérée par semaine depuis l'arrivée, de S+0 à S+${Math.max(0, colonnes - 1)}, fenêtre de ${weeks} semaines ; un point sans cohorte complète est un trou`}
                       />
-                      <p className="mt-3 text-xs leading-relaxed text-ink-soft">
-                        Part des visiteurs de chaque cohorte revenus n semaines après leur arrivée.
-                      </p>
                       <Methode>
-                        Moyenne pondérée par la taille des cohortes dont la semaine est terminée{NBSP}; la semaine en
-                        cours est exclue. Un point sans cohorte complète est un trou, jamais 0.
+                        Part des visiteurs de chaque cohorte revenus n semaines après leur arrivée. Moyenne pondérée par la taille des cohortes dont la semaine est terminée{NBSP}; la semaine en
+                        cours est exclue. Un point sans cohorte complète est un trou, jamais 0. Source{NBSP}: identifiant de visiteur
+                        aléatoire posé par le capteur navigateur.
                       </Methode>
                     </>
                   )}
                 </Figure>
               </SectionErreur>
             </div>
-            <div className="min-w-0 lg:col-span-5">
+            <div className="min-w-0 lg:col-span-5 lg:[&>section]:h-full">
               <SectionErreur titre="Par appareil">
                 <Figure
                   titre="Par appareil"
@@ -321,7 +343,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                   }
                 >
                   {appareilFiltre ? (
-                    <p className="py-8 text-center text-sm text-ink-soft" data-testid="retention-deja-filtre">
+                    <p className="py-1 text-sm text-ink-soft" data-testid="retention-deja-filtre">
                       Déjà filtré sur {appareilFiltre.libelle}{NBSP}: la comparaison par appareil ne
                       s&apos;applique pas.{" "}
                       <Link
@@ -404,12 +426,9 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                   cellules: cellulesDeCohorte(r, semaineCourante, colonnes),
                 }))}
               />
-              <p className="mt-3 text-xs leading-relaxed text-ink-soft">
-                Chaque ligne suit les visiteurs arrivés la même semaine{NBSP}; S+0 est leur semaine d&apos;arrivée
-                (100{NBSP}%).
-              </p>
               <Methode>
-                Cohorte = première semaine d&apos;activité <strong>dans la fenêtre choisie</strong> (au plus {jours}{" "}
+                Chaque ligne suit les visiteurs arrivés la même semaine{NBSP}; S+0 est leur semaine d&apos;arrivée
+                (100{NBSP}%). Cohorte = première semaine d&apos;activité <strong>dans la fenêtre choisie</strong> (au plus {jours}{" "}
                 jours conservés), pas la première visite absolue. Les cases vides sont des semaines encore à venir pour
                 une cohorte récente. Moins de 10 visiteurs{NBSP}: effectif faible.
               </Methode>

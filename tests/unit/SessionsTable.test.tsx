@@ -4,6 +4,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SessionsTable } from "@/components/sessions/SessionsTable";
+import { PictoNavigateur, PictoSysteme, drapeauPays, marqueNavigateur, marqueSysteme } from "@/components/sessions/Pictos";
 import type { SessionRow } from "@/lib/queries";
 import type { LigneSessions } from "@/lib/sessions-priorite";
 
@@ -51,10 +52,21 @@ const rendu = (lignes: LigneSessions[], extra: Partial<Parameters<typeof Session
     />,
   );
 
+/**
+ * Le nom LU d'un en-tête : depuis le 30/09/2026, un en-tête court à l'écran (« Erreurs »,
+ * masqué aux lecteurs d'écran) porte son nom complet en `sr-only`.
+ */
+function nomsDEntetes(html: string): string[] {
+  return [...html.matchAll(/<th scope="col"[^>]*>(.*?)<\/th>/g)].map((m) => {
+    const complet = /<span class="sr-only">([^<]*)<\/span>/.exec(m[1]);
+    return texte(complet ? complet[1] : m[1]).trim();
+  });
+}
+
 describe("SessionsTable — colonnes et valeurs", () => {
   it("porte dix colonnes, erreurs, rejeu et frustration juste après la durée (recette du 26/09/2026)", () => {
     const html = rendu([ligne("s1")]);
-    const entetes = [...html.matchAll(/<th scope="col"[^>]*>([^<]*)<\/th>/g)].map((m) => texte(m[1]).trim());
+    const entetes = nomsDEntetes(html);
     expect(entetes).toEqual([
       "Session",
       "Dernière activité",
@@ -159,6 +171,70 @@ describe("SessionsTable — mises en page, liens et vide", () => {
   it("« Sessions suivantes » n'apparaît que s'il reste une page", () => {
     expect(rendu([ligne("s1")])).not.toContain("Sessions suivantes");
     expect(rendu([ligne("s1")], { suivantHref: "/sessions?cursor=x" })).toContain("Sessions suivantes");
+  });
+});
+
+describe("SessionsTable — ligne dense et pictogrammes (refonte du 30/09/2026)", () => {
+  it("une ligne de 32 px ; les en-têtes courts sont masqués aux lecteurs d'écran, le nom complet lu", () => {
+    const html = rendu([ligne("s1")]);
+    expect(html).toMatch(/<tr class="h-8 [^"]*"[^>]*data-testid="ligne-session"/);
+    expect(html).toContain('<span aria-hidden="true">Erreurs</span><span class="sr-only">Occurrences d&#x27;erreur</span>');
+    expect(html).toContain('title="Occurrences d&#x27;erreur"');
+  });
+
+  it("appareil, navigateur et système en pictogrammes, leurs noms survolés et lus ; le pays en drapeau", () => {
+    const html = rendu([ligne("s1", { browser: "Safari", os: "macOS" })]);
+    // Logo Safari (Simple Icons) et pomme pour macOS, l'appareil en tracé simple.
+    expect(html).toContain('fill="#006CFF"');
+    expect(html).toContain('title="desktop · Safari · macOS"');
+    expect(texte(html)).toContain("desktop · Safari · macOS");
+    expect(html).toContain("🇫🇷");
+    expect(html).toContain('title="Pays estimé : FR · Fuseau horaire du terminal"');
+  });
+
+  it("valeur inconnue : un « ? » en pointillé, jamais le logo d'une marque au hasard", () => {
+    const html = rendu([ligne("s1", { browser: null, user_agent: null, os: null, geo_country: null, device_type: null })]);
+    expect(html).toContain('stroke-dasharray="2 2"');
+    expect(html).not.toContain('fill="#4285F4"');
+    expect(texte(html)).toContain("Inconnu · Inconnu · Inconnu");
+  });
+
+  it("erreurs et frustration non nulles en pastilles teintées ; un zéro reste pâle", () => {
+    const avec = rendu([ligne("s1", { err_count: 5, frustration: 2 })]);
+    expect(avec).toMatch(/bg-bad\/10 text-bad-ink">5</);
+    expect(avec).toMatch(/bg-warn\/15 text-warn-ink">2</);
+    const sans = rendu([ligne("s1", { err_count: 0, frustration: 0 })]);
+    expect(sans).not.toContain("bg-bad/10");
+    expect(sans).toContain('<span class="text-ink-faint">0</span>');
+  });
+
+  it("session native : ni logo de navigateur ni « ? », le capteur mobile en pastille", () => {
+    const html = rendu([ligne("s1", { runtime: "react_native", browser: null, os: "Android", device_type: "mobile" })]);
+    expect(texte(html)).toContain("application native");
+    expect(html).toContain('fill="#34A853"');
+    expect(html).toContain('data-testid="capteur-session"');
+  });
+});
+
+describe("Pictos — drapeaux et marques", () => {
+  it("« FR » devient 🇫🇷 ; un code qui n'est pas ISO alpha-2 ne rend rien", () => {
+    expect(drapeauPays("FR")).toBe("🇫🇷");
+    expect(drapeauPays("de")).toBe("🇩🇪");
+    expect(drapeauPays("FRA")).toBeNull();
+    expect(drapeauPays("")).toBeNull();
+    expect(drapeauPays(null)).toBeNull();
+  });
+
+  it("les familles de navigateurs et de systèmes à logo ; les autres en monogramme", () => {
+    expect(marqueNavigateur("Chrome")).toBe("chrome");
+    expect(marqueNavigateur("iOS WebView")).toBe("apple");
+    expect(marqueNavigateur("Edge")).toBeNull();
+    expect(marqueSysteme("macOS")).toBe("apple");
+    expect(marqueSysteme("Windows")).toBeNull();
+    const edge = renderToStaticMarkup(<PictoNavigateur nom="Edge" />);
+    expect(edge).toContain(">e</text>");
+    const windows = renderToStaticMarkup(<PictoSysteme nom="Windows" />);
+    expect(windows).toContain(">W</text>");
   });
 });
 

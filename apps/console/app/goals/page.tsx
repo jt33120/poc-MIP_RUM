@@ -23,6 +23,11 @@
 //     (désactivés, ou d'une application interne que « toutes » ne compte pas).
 //   - La méthode (intervalle de Wilson, seuil d'échantillon) est repliée sous la
 //     figure ou derrière l'aide « ? » ; aucune justification technique visible.
+//
+// REFONTE DU 30/09/2026 : trois cases épurées (sources dans leur fenêtre), le taux par
+// objectif et la conversion par appareil côte à côte (même bord bas), la table en
+// lignes denses ; les phrases de lecture (« longueur = part… », « entre parenthèses :
+// l'écart… », la définition d'une conversion) dans les replis « Méthode » et les bulles.
 import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { ConfirmationDanger } from "@/components/ConfirmationDanger";
@@ -70,6 +75,12 @@ const pct = (v: number | null) => formater("pct", v);
 /** La population de l'écran, nommée dans chaque méta (S1, R-P). */
 const POPULATION = "sessions ayant vu au moins une page sur la période";
 
+/** D'où viennent les chiffres de l'écran, écrit dans la fenêtre des cases. */
+const SOURCE_OBJECTIFS = "Capteur navigateur · pages vues et événements des sessions ; objectifs définis dans la console";
+
+/** La définition d'une conversion, dite une fois (en-tête de la table et repli). */
+const DEFINITION_CONVERSION = "Une conversion est une session qui atteint l'objectif, même si elle l'atteint plusieurs fois.";
+
 /** « 1 session », « 20 sessions ». */
 const sessions = (n: number) => `${formater("count", n)} ${n > 1 ? "sessions" : "session"}`;
 
@@ -110,10 +121,14 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
   // État commun du hero et des petits multiples : aucun objectif, puis aucune session.
   const vide =
     rep && rows.length === 0 ? (
-      <CadreEtat ton="neutre" role="status" testId="etat-vide" etat="vide" className="text-center">
+      // Une ligne (charte § 3.7) : le pictogramme d'absence, le constat, le geste à côté.
+      <CadreEtat ton="neutre" role="status" testId="etat-vide" etat="vide" enLigne className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span aria-hidden="true" className="text-ink-faint">
+          ⊘
+        </span>
         <p>Aucun objectif actif sur ce périmètre.</p>
         {creer && (
-          <a href={creer.href} className="mt-2 inline-block font-medium text-brand hover:underline">
+          <a href={creer.href} className="font-medium text-brand hover:underline">
             {creer.libelle}
           </a>
         )}
@@ -168,8 +183,11 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
         )}
       </SectionErreur>
 
-      {/* G3 — le hero, au-dessus du pli. */}
-      <div className="mb-6">
+      {/* G3 et G4 — le taux par objectif (6 colonnes) à côté de la conversion par appareil
+          (6 colonnes), au-dessus du pli, même bord bas. Sans objectif, une seule ligne sur
+          toute la largeur : il n'y a rien à découper par appareil. */}
+      <div className="mb-4 grid min-w-0 gap-3 lg:grid-cols-12">
+      <div className={`min-w-0 lg:[&>section]:h-full ${vide ? "lg:col-span-12" : "lg:col-span-6"}`}>
         <SectionErreur titre="Taux de conversion par objectif">
           <Figure
             id="conversions-taux"
@@ -180,15 +198,14 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
             {vide ?? (
               <>
                 <BarresObjectifs rows={rows} prefixeApp={prefixeApp} />
-                <p className="mt-3 text-xs leading-relaxed text-ink-soft">
-                  Longueur = part des sessions qui atteignent l&apos;objectif, de 0 à 100&nbsp;% ; « ± » donne la marge
-                  d&apos;incertitude. Les objectifs sont indépendants : ce ne sont pas les étapes d&apos;un entonnoir.
-                </p>
                 <Methode>
-                  Chaque objectif se rapporte aux sessions de son application. La marge « ± » est la demi-largeur de
+                  Longueur = part des sessions qui atteignent l&apos;objectif, de 0 à 100&nbsp;% ; « ± » donne la marge
+                  d&apos;incertitude. Les objectifs sont indépendants : ce ne sont pas les étapes d&apos;un entonnoir.{" "}
+                  {DEFINITION_CONVERSION} Chaque objectif se rapporte aux sessions de son application. La marge « ± » est la demi-largeur de
                   l&apos;intervalle de confiance à 95&nbsp;% (méthode de Wilson). Sous {FAIBLE_SOUS_PROPORTION} conversions ou{" "}
                   {FAIBLE_SOUS_PROPORTION} non-conversions, un objectif passe en fin de classement, marqué « échantillon
-                  faible » : son taux se départage mal de ses voisins.
+                  faible » : son taux se départage mal de ses voisins. Source : pages vues et événements du capteur navigateur,
+                  rapprochés des objectifs définis dans la console.
                 </Methode>
               </>
             )}
@@ -197,7 +214,8 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
       </div>
 
       {/* G4 — petits multiples par appareil. */}
-      <div className="mb-6">
+      {!vide && (
+      <div className="min-w-0 lg:col-span-6 lg:[&>section]:h-full">
         <SectionErreur titre="Conversion par appareil">
           <Figure
             id="conversions-appareils"
@@ -234,12 +252,9 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
                     prefixeApp={prefixeApp}
                     href={(device) => breakdownDrillHref("/goals", query, "device", device, schema)}
                   />
-                  <p className="mt-3 text-xs leading-relaxed text-ink-soft">
-                    Entre parenthèses : l&apos;écart, en points, au taux de l&apos;objectif tous appareils confondus.
-                    Cliquez un appareil pour filtrer l&apos;écran.
-                  </p>
                   <Methode>
-                    Taux = conversions ÷ sessions de cet appareil dans l&apos;application de l&apos;objectif, sur la même
+                    Entre parenthèses : l&apos;écart, en points, au taux de l&apos;objectif tous appareils confondus.
+                    Cliquez un appareil pour filtrer l&apos;écran. Taux = conversions ÷ sessions de cet appareil dans l&apos;application de l&apos;objectif, sur la même
                     échelle pour chaque objectif. Un appareil sans session n&apos;a pas de taux (« — »).
                   </Methode>
                 </>
@@ -247,9 +262,11 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
           </Figure>
         </SectionErreur>
       </div>
+      )}
+      </div>
 
       {/* G5 — la table des objectifs. */}
-      <div className="mb-8" id="objectifs">
+      <div className="mb-6" id="objectifs">
         <SectionErreur titre="Objectifs">
           {rep ? (
             <TableObjectifs rows={rows} plusieursApps={plusieursApps} isAdmin={isAdmin} nomApp={nomApp} />
@@ -308,7 +325,7 @@ function TuilesConversions({
   // Un objectif au taux plus haut, écarté pour échantillon faible, se dit sous la tuile.
   const ecartes = texteEcartes(ecartesPlusHauts(rows, best));
   return (
-    <RangeeKpi couvertures={[reference ? couverture : undefined]} className="mb-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3">
+    <RangeeKpi couvertures={[reference ? couverture : undefined]} className="mb-3 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
       <KpiTile
         label="Sessions de la période"
         valeur={total}
@@ -316,12 +333,21 @@ function TuilesConversions({
         lecture="Le dénominateur de chaque taux."
         // Tuile-lien : la méthode passe dans son infobulle native (pas de bouton dans un lien).
         methode="Sessions ayant vu au moins une page sur la période. Chaque objectif se rapporte aux seules sessions de son application."
+        source={SOURCE_OBJECTIFS}
+        categorie="Conversions · dénominateur"
         precedent={reference ? precedent : undefined}
         reference={reference}
         couverturePrecedente={couverture}
         href={hrefSessions}
       />
-      <KpiTile label="Objectifs actifs" valeur={rows.length} format="count" href="#objectifs" />
+      <KpiTile
+        label="Objectifs actifs"
+        valeur={rows.length}
+        format="count"
+        href="#objectifs"
+        source="Table goal (objectifs actifs du périmètre)"
+        categorie="Conversions · objectifs"
+      />
       <KpiTile
         label="Meilleur taux"
         valeur={best?.rate ?? null}
@@ -332,6 +358,8 @@ function TuilesConversions({
         // Un objectif au taux plus haut, écarté pour échantillon faible, est NOMMÉ sous le
         // chiffre : « 82,2 % » côtoyait un « 97,0 % » sans dire pourquoi.
         lecture={best ? (ecartes ? `${best.name} — ${ecartes}` : best.name) : undefined}
+        source={SOURCE_OBJECTIFS}
+        categorie="Conversions · taux (Wilson 95 %)"
         methode={`Le taux le plus haut parmi les objectifs dont l'échantillon suffit (au moins ${FAIBLE_SOUS_PROPORTION} conversions et ${FAIBLE_SOUS_PROPORTION} non-conversions) ; un objectif au taux plus haut mais à l'échantillon faible est écarté, et nommé sous le chiffre. Intervalle de confiance à 95\u00a0% (méthode de Wilson).`}
       />
     </RangeeKpi>
@@ -367,9 +395,9 @@ function PetitsMultiples({
   href: (device: string | null) => string;
 }) {
   return (
-    <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid min-w-0 gap-2 sm:grid-cols-2">
       {rows.map((g) => (
-        <div key={g.id} className="min-w-0 rounded-lg border border-line p-3" data-testid="conversion-appareils">
+        <div key={g.id} className="min-w-0 rounded-lg border border-line p-2.5" data-testid="conversion-appareils">
           <h3 className="mb-2 min-w-0 truncate text-xs font-semibold text-ink" title={`${prefixeApp(g)}${g.name}`}>
             {prefixeApp(g)}
             {g.name} · {pct(g.rate)}
@@ -462,7 +490,7 @@ function TableObjectifs({
               <th scope="col" className="th w-56">
                 Taux
               </th>
-              <th scope="col" className="th">
+              <th scope="col" className="th" title={DEFINITION_CONVERSION}>
                 Conversions (sessions)
               </th>
               {plusieursApps && (
@@ -486,12 +514,12 @@ function TableObjectifs({
           <tbody className="divide-y divide-line/60">
             {rows.map((g) => (
               <tr key={g.id} id={`objectif-${g.id}`} className="scroll-mt-6 transition hover:bg-panel2/60">
-                <th scope="row" className="sticky left-0 bg-panel px-4 py-2 text-left font-medium text-ink">
+                <th scope="row" className="sticky left-0 bg-panel px-3 py-1.5 text-left font-medium text-ink">
                   {g.name}
                 </th>
                 {/* `min-w-[12rem]` : sans elle, à 390 px, la colonne cédait sa largeur aux
                     suivantes, la barre disparaissait et l'intervalle tenait sur quatre lignes. */}
-                <td className="px-4 py-2">
+                <td className="px-3 py-1.5">
                   <div className="flex min-w-[12rem] items-center gap-2">
                     <div className="h-2 flex-1 overflow-hidden rounded-full bg-panel2">
                       {/* La couleur du taux est celle des barres du hero et des petits
@@ -514,20 +542,20 @@ function TableObjectifs({
                     </p>
                   )}
                 </td>
-                <td className="px-4 py-2 tabular-nums text-ink-soft">
+                <td className="px-3 py-1.5 tabular-nums text-ink-soft">
                   {formater("count", g.conversions)} sur {formater("count", g.sessions)}
                 </td>
                 {plusieursApps && (
-                  <td className="px-4 py-2 text-xs text-ink-soft" title={g.app_id}>
+                  <td className="px-3 py-1.5 text-xs text-ink-soft" title={g.app_id}>
                     {nomApp(g.app_id)}
                   </td>
                 )}
-                <td className="px-4 py-2 font-mono text-xs text-ink-soft">{libelleCondition(g)}</td>
-                <td className="px-4 py-2 text-xs tabular-nums text-ink-soft">
+                <td className="px-3 py-1.5 font-mono text-xs text-ink-soft">{libelleCondition(g)}</td>
+                <td className="px-3 py-1.5 text-xs tabular-nums text-ink-soft">
                   {g.derniere ? fmtDate(g.derniere) : "—"}
                 </td>
                 {isAdmin && (
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-1.5">
                     <ActionsObjectif g={g} />
                   </td>
                 )}
@@ -543,9 +571,7 @@ function TableObjectifs({
           </tbody>
         </table>
       </TableDefilante>
-      <p className="mt-2 text-xs text-ink-soft">
-        Une conversion est une session qui atteint l&apos;objectif, même si elle l&apos;atteint plusieurs fois.
-      </p>
+      <p className="sr-only">{DEFINITION_CONVERSION}</p>
     </>
   );
 }
@@ -640,18 +666,18 @@ function Gestion({
                   <th scope="row" className="px-4 py-2 text-left font-medium text-ink">
                     {g.name}
                   </th>
-                  <td className="px-4 py-2 text-xs text-ink-soft" title={g.app_id}>
+                  <td className="px-3 py-1.5 text-xs text-ink-soft" title={g.app_id}>
                     {nomApp(g.app_id)}
                   </td>
-                  <td className="px-4 py-2 font-mono text-xs text-ink-soft">{libelleCondition(g)}</td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-1.5 font-mono text-xs text-ink-soft">{libelleCondition(g)}</td>
+                  <td className="px-3 py-1.5">
                     <span
                       className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${g.active ? "bg-good/10 text-good-ink" : "bg-panel2 text-ink-soft"}`}
                     >
                       {g.active ? "actif" : "inactif"}
                     </span>
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-1.5">
                     <ActionsObjectif g={g} />
                   </td>
                 </tr>

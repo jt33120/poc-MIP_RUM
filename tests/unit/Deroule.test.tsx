@@ -7,6 +7,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Deroule } from "@/components/sessions/Deroule";
+import { FriseSession, elementsDeFrise } from "@/components/sessions/FriseSession";
 import type { TimelineItem } from "@/lib/queries";
 
 const T0 = Date.parse("2026-09-22T10:00:00Z");
@@ -106,5 +107,46 @@ describe("Deroule", () => {
   it("chronologie vide et chronologie tronquée : deux états distincts, tous deux dits", () => {
     expect(rendu({ items: [] })).toContain("Aucun événement enregistré pour cette session");
     expect(rendu({ tronque: true })).toContain("chronologie tronquée à 500 événements");
+  });
+});
+
+// Refonte du 30/09/2026 — la frise de la session : la chronologie GRAPHIQUE en tête du
+// détail. Mêmes lignes que le déroulé, rangées par piste, sur un axe gradué.
+describe("FriseSession", () => {
+  const FIN = T0 + 60_000;
+
+  it("une vue s'étend jusqu'à la suivante, la dernière jusqu'à la fin ; les Web Vitals n'y sont pas", () => {
+    const items = [...ITEMS, item("pageview", 30, { title: "/merci" })];
+    const elements = elementsDeFrise(items, T0, FIN);
+    const vues = elements.filter((e) => e.piste === "vues");
+    expect(vues.map((v) => [v.libelle, v.debutMs, v.dureeMs])).toEqual([
+      ["/panier", 0, 30_000],
+      ["/merci", 30_000, 30_000],
+    ]);
+    expect(elements.some((e) => e.libelle === "LCP")).toBe(false);
+    expect(elements.find((e) => e.piste === "erreurs")?.libelle).toBe("TypeError : x is undefined");
+    expect(elements.find((e) => e.piste === "frustration")?.libelle).toBe("Clics de rage");
+    expect(elements.find((e) => e.piste === "actions")?.rang).toBe(10);
+  });
+
+  it("dessine une piste par nature présente, un axe gradué, et renvoie chaque point à sa ligne du déroulé", () => {
+    const html = renderToStaticMarkup(
+      <FriseSession items={ITEMS} debut={T0} fin={FIN} hrefDe={{ 11: "#evt-11" }} tronquee={false} />,
+    );
+    for (const piste of ["vues", "actions", "erreurs", "frustration"]) expect(html).toContain(`data-piste="${piste}"`);
+    expect(html).not.toContain('data-piste="api"');
+    expect(html).toContain('href="#evt-11"');
+    expect(html).toContain('tabindex="-1"');
+    // Axe : 0, puis des durées lisibles (« 15 s », « 1 min »), jamais « 0,5 min ».
+    expect(html).toMatch(/>15[\s ]s</);
+    expect(html).toMatch(/>1[\s ]min</);
+    expect(html).not.toMatch(/0,5[\s ]min/);
+    // Résumé lu à la place du dessin, décoratif.
+    expect(html).toContain("Pages : 1 · Actions : 1 · Frustration : 1 · Erreurs : 1");
+  });
+
+  it("chronologie tronquée : la frise le dit", () => {
+    const html = renderToStaticMarkup(<FriseSession items={ITEMS} debut={T0} fin={FIN} hrefDe={{}} tronquee />);
+    expect(html).toContain("chronologie tronquée : début seulement");
   });
 });
