@@ -105,16 +105,16 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Format sur le fil",
     cible: "OTLP/HTTP standard, outil d'analyse remplaçable",
-    // CE QUI A ÉTÉ ÉCRIT DE TRAVERS, ET CORRIGÉ LE MÊME JOUR. Cette ligne a
-    // annoncé le matin du 09/09/2026 une trace « lisible par un collecteur
-    // tiers ». La STRUCTURE avait bien été vérifiée — parenté, nature, issue —
-    // mais pas le TEMPS : `realEmit` ouvre le span et le referme dans la foulée
-    // (cf. otel.ts), si bien que début et fin tombent sur la même milliseconde.
-    // La durée réelle ne vit que dans l'attribut propriétaire `http.duration_ms`.
-    // Un collecteur tiers reçoit donc un arbre juste et une chronologie vide :
-    // il dessine un waterfall PLAT. Vérifier la forme d'un span ne dit rien de
-    // ce qu'il mesure.
-    reel: "OTLP JSON dont la structure est vérifiée — parentSpanId, kind, status, trace enracinée sur la page vue. Mais les spans partent avec une durée nulle : un collecteur tiers dessine une cascade plate. Vocabulaire encore en partie propre à MIP.",
+    // Le 09/09/2026, cette ligne a annoncé une trace « lisible par un collecteur
+    // tiers » : la STRUCTURE était vérifiée, pas le TEMPS — `realEmit` refermait
+    // chaque span à son ouverture, et un collecteur tiers dessinait un waterfall
+    // PLAT. Vérifier la forme d'un span ne dit rien de ce qu'il mesure.
+    // Depuis le 01/10/2026, un appel réseau se ferme `http.duration_ms` après
+    // son ouverture (packages/rum-sdk/src/index.ts), parle la convention HTTP
+    // stable et une erreur porte son événement « exception » (otel.ts). Page
+    // vue, ressources et tâches longues partent encore comme des instants : la
+    // ligne reste partielle.
+    reel: "OTLP JSON dont la structure est vérifiée — parentSpanId, kind, status, trace enracinée sur la page vue. Les appels réseau portent leur durée réelle et les attributs HTTP stables, les erreurs leur événement « exception » ; page vue, ressources et tâches longues partent encore avec une durée nulle. Vocabulaire propre à MIP pour le reste.",
     s: "partiel",
   },
   {

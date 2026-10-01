@@ -158,7 +158,13 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
           "http.url": scrubUrl(url),
           "http.method": method,
           "http.status_code": status,
+          // La DURÉE du span : `realEmit` le ferme à `tsMs` + cette valeur. Les
+          // attributs HTTP stables (http.request.method, url.full…) sont ajoutés
+          // à la fermeture, après beforeSend (otel.ts, `conventionsHttp`).
           "http.duration_ms": Math.round(performance.now() - startPerf),
+          // Échec sans réponse : la classe d'erreur au sens OpenTelemetry. Un
+          // abandon voulu par l'application n'en est pas une (cf. echecReseau).
+          ...(issue === "timeout" ? { "error.type": "TimeoutError" } : issue === "network" ? { "error.type": "NetworkError" } : {}),
         },
         tsMs,
       );
@@ -241,13 +247,12 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
           const ts = Date.now();
           const actionAttrs = opts.action?.() ?? {};
           // error/timeout/abort précèdent toujours loadend : ils disent POURQUOI
-          // le statut vaut 0, que loadend seul ne dit pas.
+          // le statut vaut 0, que loadend seul ne dit pas. Écoutés même sans la
+          // voie d'erreurs réseau : l'issue du span (`error.type`) en dépend.
           let issue: IssueReseau | null = null;
-          if (opts.errors) {
-            this.addEventListener("error", () => { issue = "network"; }, { once: true });
-            this.addEventListener("timeout", () => { issue = "timeout"; }, { once: true });
-            this.addEventListener("abort", () => { issue = "abort"; }, { once: true });
-          }
+          this.addEventListener("error", () => { issue = "network"; }, { once: true });
+          this.addEventListener("timeout", () => { issue = "timeout"; }, { once: true });
+          this.addEventListener("abort", () => { issue = "abort"; }, { once: true });
           // loadend couvre load/error/abort/timeout ; status 0 = échec réseau
           this.addEventListener(
             "loadend",

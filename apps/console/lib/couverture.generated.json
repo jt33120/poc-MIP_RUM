@@ -127,8 +127,8 @@
       "famille": "Analyse et exploration",
       "capacite": "Découper par navigateur, système, appareil, pays estimé, release, route",
       "verdict": "deploye_non_eprouve",
-      "preuve": "migration v75, `shared/dimensions.mjs` ; `tests/unit/dimensions.test.ts`, `tests/integration/dimensions-v75-sql.test.ts` ; PR #191/#193",
-      "limite": "**Tout ce qui précède v75 a ses dimensions à `NULL`**, affichées « Inconnu ». Un iPad sous iPadOS 13+ est compté *desktop*. Pas de groupe « Autres » : additionner des p75 n'a pas de sens.",
+      "preuve": "migration v75, `shared/dimensions.mjs` ; `tests/unit/dimensions.test.ts`, `tests/unit/dimensions-tablette.test.ts`, `tests/integration/dimensions-v75-sql.test.ts` ; PR #191/#193",
+      "limite": "**Tout ce qui précède v75 a ses dimensions à `NULL`**, affichées « Inconnu ». Un iPad sous iPadOS 13+ n'est compté *tablet* qu'avec le SDK web du 01/10/2026, qui déclare l'écran tactile ; ses sessions antérieures restent *desktop*. Pas de groupe « Autres » : additionner des p75 n'a pas de sens.",
       "ligne": 156
     },
     {

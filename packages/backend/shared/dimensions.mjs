@@ -86,8 +86,11 @@ export function boundedRelease(value) {
 // du système —, reprise quand le système déclaré est 18.6 : elle départage un
 // vrai iOS 18.6 d'un iOS 26 figé.
 //
-// LIMITE ASSUMÉE : un iPad sous iPadOS 13+ se présente en Macintosh et reste
-// compté « desktop » ; le distinguer exigerait une détection tactile côté SDK.
+// IPAD SOUS IPADOS 13+ (finding 2.13) : Safari s'y présente en Macintosh, et
+// l'user-agent seul le compte « desktop ». Le SDK web, qui voit l'écran tactile
+// (packages/rum-sdk/src/appareil.ts), déclare alors l'indice « tablet » : il
+// l'emporte sur cette seule lecture — aucun Mac n'a d'écran tactile. Les sessions
+// d'un SDK antérieur, sans cet indice, restent « desktop ».
 
 /** Au-delà, ce n'est pas un user-agent : aucun navigateur n'en émet de si long. */
 const UA_MAX = 1024;
@@ -187,11 +190,17 @@ function parserUserAgent(ua) {
  * L'user-agent est lu UNE fois (il est commun à la resource) ; la fonction rendue
  * y joint l'indice `mip.device_type`, propre à chaque span.
  *
- * L'user-agent PRIME sur cet indice : le SDK web le déduit du même user-agent
- * avec une règle plus grossière, qui range les tablettes Android en « desktop »
- * et les iPad en « mobile ». L'indice ne sert que quand l'user-agent ne dit
- * rien — et « ios »/« android » du SDK React Native y deviennent « mobile », la
- * plateforme restant portée par `os`. Toute autre valeur d'indice est ignorée.
+ * L'user-agent PRIME sur cet indice : un SDK web antérieur au 01/10/2026 le
+ * déduisait du même user-agent avec une règle plus grossière, qui rangeait les
+ * tablettes Android en « desktop » et les iPad en « mobile ». L'indice ne sert
+ * que quand l'user-agent ne dit rien — et « ios »/« android » du SDK React Native
+ * y deviennent « mobile », la plateforme restant portée par `os`. Toute autre
+ * valeur d'indice est ignorée.
+ *
+ * UNE EXCEPTION : l'indice « tablet » sur un user-agent Macintosh lu « desktop ».
+ * C'est l'iPad sous iPadOS 13+, que seul le SDK distingue (écran tactile) : il
+ * devient une tablette sous iOS — la famille des autres iPad —, version inconnue,
+ * puisque le « Mac OS X 10_15_7 » qu'il déclare est figé.
  *
  * Un ROBOT n'a ni navigateur ni système : `is_bot` le dit déjà, et lui prêter
  * « Chrome / Linux » gonflerait ces familles dès que les robots sont inclus dans
@@ -210,6 +219,9 @@ export function clientDimensions(userAgent) {
   return (deviceHint) => {
     const indice = typeof deviceHint === "string" ? deviceHint.trim().toLowerCase() : "";
     const plateforme = PLATEFORMES_MOBILES.get(indice) ?? null;
+    if (indice === "tablet" && lu.os === "macOS" && lu.device_type === "desktop") {
+      return { browser: lu.browser, browser_version: lu.browser_version, os: "iOS", os_version: null, device_type: "tablet" };
+    }
     return {
       browser: lu.browser,
       browser_version: lu.browser_version,

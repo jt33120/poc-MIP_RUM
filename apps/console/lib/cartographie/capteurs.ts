@@ -151,7 +151,7 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
       { texte: "23,7 Ko gzip, sous un budget de 35 Ko que chaque build fait respecter.", sources: [`${SDK}/build.mjs:52-62`, "apps/console/lib/sdk-poids.ts:17-27"] },
       {
         texte: "Envoi par lots de 64 spans toutes les 3 s, en fetch keepalive ; vidage quand la page passe en arrière-plan.",
-        sources: [`${SDK}/src/otel.ts:27`, `${SDK}/src/otel.ts:131-139`, `${SDK}/src/otel.ts:253-271`],
+        sources: [`${SDK}/src/otel.ts:30`, `${SDK}/src/otel.ts:187-195`, `${SDK}/src/otel.ts:309-327`],
       },
       {
         texte: "Hors ligne, une file bornée (100 spans, 50 Ko) rejoue les envois refusés pour surcharge.",
@@ -351,7 +351,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
       "Chaque appel fetch ou XHR de la page vers son domaine, chronométré, et marqué d'un identifiant de trace que le serveur reprend.",
     etiquettes: ["fetch · XHR", "100 par page"],
     faits: [
-      { texte: "fetch et XMLHttpRequest instrumentés : méthode, adresse sans requête, statut, durée.", sources: [`${SDK}/src/apispans.ts:146-158`] },
+      { texte: "fetch et XMLHttpRequest instrumentés : méthode, adresse sans requête, statut, durée.", sources: [`${SDK}/src/apispans.ts:146-164`] },
       {
         texte: "traceparent ajouté vers la même origine et les domaines déclarés, jamais vers la collecte.",
         sources: [`${SDK}/src/apispans.ts:88-108`],

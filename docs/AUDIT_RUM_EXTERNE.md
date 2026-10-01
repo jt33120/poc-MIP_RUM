@@ -14,7 +14,7 @@ est ouvert — son état n'a pas été revérifié ici, sauf quand la ligne donn
 | 1.1 | traité — lot 2 (`eea622ef`, 09/09) | `apps/console/lib/queries-errors.ts` (« finding 1.1 »), `tests/unit/erreurs-fenetre.test.ts` |
 | 1.2 | traité — lot 0 (`b39c0185`, 09/09) | `packages/db/sql/migration-v56.sql` |
 | 1.3 | traité — lot 1 (`d48c180b`, 09/09) | `packages/db/sql/migration-v57.sql`, `tests/unit/identite-visiteur.test.ts` |
-| 1.4 | partiel — lot 0 a corrigé l'affirmation, pas la durée | les spans restent fermés à leur instant d'ouverture (`realEmit`, `packages/rum-sdk/src/index.ts`) ; la vitrine le dit (« Elle n'est pas encore une CHRONOLOGIE », `apps/console/lib/specs.ts`) |
+| 1.4 | traité pour les appels réseau — 01/10/2026 | `realEmit` ferme un span `http.client` à son ouverture plus `http.duration_ms` (`packages/rum-sdk/src/index.ts`), `tests/unit/sdk-traces-duree-semconv.test.ts` ; page vue, ressources et tâches longues restent des instants, et la vitrine le dit (« Format sur le fil », `apps/console/components/presentation/Specs.tsx`) |
 | 1.5 | traité — lot 3 (`615f5cd6`, 09/09) | `packages/db/sql/migration-v58.sql` |
 | 1.6 | non cité | — |
 | 1.7 | traité — lot 0 (`b39c0185`) | `normalizeModulePath`, `packages/backend/shared/otlp.mjs` ; `migration-v56.sql` |
@@ -36,7 +36,7 @@ est ouvert — son état n'a pas été revérifié ici, sauf quand la ligne donn
 | 2.10 | traité — lots 5 et 6 (index), lot 7 (percentiles pré-agrégés) | `migration-v61.sql` |
 | 2.11 | non cité | le relais d'ingestion traite toujours les logs comme non idempotents (`IDEMPOTENTS`, `apps/console/lib/ingest-relay.ts`) |
 | 2.12 | b) traité — 01/10/2026 ; a) **ouvert** | b) une session dure au plus 4 h, même active : échéance portée par la session (`SESSION_MAX_MS`, `packages/rum-sdk/src/session.ts`), rotation à l'événement suivant (`sessionCourante`, `packages/rum-sdk/src/index.ts`), qui reprend d'abord la session suivante si un autre onglet l'a déjà ouverte dans le stockage — sans quoi N onglets comptaient N sessions ; `tests/unit/sdk-consentement-stockage.test.ts`. a) relu le 01/10 : le span `http.client` garde la trace du départ (`mip.trace_id`) mais ne porte pas `mip.parent_span_id` (`packages/rum-sdk/src/apispans.ts`, `record`) ; il reçoit donc à sa création le parent de la page COURANTE (`startSpan`, `packages/rum-sdk/src/otel.ts`) — `otel.ts` sait recopier ce parent, personne ne le lui donne |
-| 2.13 | **ouvert** | le SDK décide toujours avec `/mobile\|tablet/i` et n'émet que `mobile` ou `desktop` (`packages/rum-sdk/src/index.ts`, attribut `mip.device_type`) |
+| 2.13 | traité — 01/10/2026 | le SDK émet `tablet` pour un iPad — iPadOS 13+ compris : user-agent Macintosh et `maxTouchPoints > 1` — et pour un Android sans « Mobile » (`packages/rum-sdk/src/appareil.ts`) ; l'ingestion laisse cet indice l'emporter sur sa lecture « desktop » d'un user-agent Macintosh (`packages/backend/shared/dimensions.mjs`), `tests/unit/dimensions-tablette.test.ts`. Pas de rétro-classement : les sessions d'un SDK antérieur restent `desktop` |
 
 **Chemins cités.** Les citations `fichier:ligne` sont celles du commit `59caea9`, mais les
 chemins ont été réécrits mécaniquement le 23/09/2026 (P1, commits `e8f18a5a` et `6cf392e3`) :
