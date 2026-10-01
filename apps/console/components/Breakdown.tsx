@@ -344,7 +344,11 @@ export function Breakdown({
                   <span className="col-start-3 row-start-1 text-right text-xs font-semibold tabular-nums text-ink">
                     {item.display}
                   </span>
-                  <span className="col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-x-2 whitespace-nowrap text-[11px] tabular-nums text-ink-soft [@container_(min-width:32rem)]:col-start-4 [@container_(min-width:32rem)]:justify-start [@container_(min-width:32rem)]:text-xs">
+                  {/* Les détails : chacun d'un bloc (`whitespace-nowrap`). ÉTROITE, la piste est
+                      `auto` et les porte sur une ligne. LARGE, la quatrième piste est bornée
+                      (`minmax(7rem,1fr)`) : ils PASSENT À LA LIGNE — sur une ligne, ils sortaient
+                      de la carte et de la fenêtre (1 024 px, liste de 43 rem : page à 1 110 px en CI). */}
+                  <span className="col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-x-2 gap-y-0.5 whitespace-nowrap text-[11px] tabular-nums text-ink-soft [@container_(min-width:32rem)]:col-start-4 [@container_(min-width:32rem)]:flex-wrap [@container_(min-width:32rem)]:justify-start [@container_(min-width:32rem)]:text-xs">
                     {item.cells.map((cell) => (
                       <span key={cell.label}>
                         <span className="text-ink-faint">{cell.label} </span>
