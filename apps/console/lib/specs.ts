@@ -427,7 +427,7 @@ export const MESURES: Mesure[] = [
     table: "replay_chunk",
     module: "packages/rum-sdk/src/replay.ts",
     detail:
-      "rrweb, activé application par application, sur un canal séparé. Masqué par défaut : saisies, texte de la page et médias (images, vidéos, canvas, SVG) ; les blocs marqués par l'app ne sont jamais capturés. Plafonné à 2 minutes et 1 Mo par session.",
+      "rrweb, activé application par application, sur un canal séparé. Masqué par défaut : saisies, texte de la page et médias (images, vidéos, canvas, SVG). L'app peut démasquer une zone choisie (classe mip-rum-unmask ou option replayUnmask) : son texte et ses médias passent en clair, ses saisies restent masquées. Les blocs marqués par l'app ne sont jamais capturés. Plafonné à 2 minutes et 1 Mo par session.",
   },
 ];
 

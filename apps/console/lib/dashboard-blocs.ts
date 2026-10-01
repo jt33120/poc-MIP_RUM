@@ -119,15 +119,10 @@ export const CATALOGUES: readonly Catalogue[] = [
         raison:
           "Jamais de personne nommée. Une session porte un identifiant de visiteur tiré au hasard, sans lien avec le terminal ni avec un compte, et les données personnelles sont retirées à la collecte comme à l'ingestion. C'est un engagement du produit, pas une fonctionnalité manquante.",
       },
-      {
-        // La ligne d'avant — « ne masque encore ni le texte ni les images » —
-        // est devenue fausse le 09/09/2026 : le rejeu masque par défaut les
-        // saisies, le texte ET les médias, vérifié dans un vrai navigateur.
-        // Ce qui manque à sa place, c'est le mouvement INVERSE.
-        label: "Démasquage sélectif au rejeu",
-        raison:
-          "Le masquage se règle par application — tout, les médias seuls, ou les saisies seules — mais pas élément par élément : on ne peut pas demander « montre ce tableau, cache cette colonne ». La version de rrweb utilisée n'expose pas de sélecteur de démasquage, seulement de masquage.",
-      },
+      // « Démasquage sélectif au rejeu » est retiré le 01/10/2026 : le SDK démasque
+      // une zone choisie (classe `mip-rum-unmask`, option `replayUnmask`) par le
+      // `maskTextFn` de rrweb, saisies et blocs marqués toujours masqués —
+      // vérifié dans un vrai Chromium (tests/e2e/rejeu-demasquage.spec.ts).
     ],
   },
   {
