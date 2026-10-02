@@ -214,7 +214,13 @@ describe("affirmations que le code ne tient pas", () => {
     for (const cle of ["mip_rum_session", "mip_rum_visitor", "mip_rum_sampling", "mip_rum_retry"]) {
       expect(paragraphe, `le dossier ne dit pas que ${cle} est effacé au refus`).toContain(cle);
     }
+    // La limite du refus (autre onglet, bfcache) et l'arrêt du rejeu : dits ici
+    // comme dans l'annexe B de docs/INTEGRATION.md.
+    expect(paragraphe).toMatch(/ne vaut que pour la\s+page où il est donné/);
+    expect(paragraphe).toMatch(/bfcache/);
+    expect(paragraphe).toMatch(/arrête aussi\s+l'enregistrement du rejeu/);
     const sdk = (f: string) => readFileSync(join(__dirname, `../../packages/rum-sdk/src/${f}`), "utf8");
+    expect(sdk("index.ts")).toContain("arreterReplay?.();");
     expect(sdk("session.ts")).not.toContain("CE QUI N'EST PAS RÉGLÉ ICI");
     expect(sdk("index.ts")).toContain("autoriserAccesTerminal(!accordAttendu)");
     for (const cle of ["mip_rum_session", "mip_rum_visitor", "mip_rum_sampling"]) {

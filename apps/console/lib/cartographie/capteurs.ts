@@ -76,7 +76,10 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
         texte: "OTLP/HTTP en protobuf, compressé en gzip ; traces et journaux, pas de métriques.",
         sources: [`${RECETTES}:74-84`],
       },
-      { texte: "Go, PHP et Ruby : renvoyés à la documentation de l'agent, sans recette éprouvée.", sources: [`${RECETTES}:202-206`] },
+      {
+        texte: "Go, PHP et Ruby : éprouvés en local le 01/10/2026, pas en production ; l'installateur renvoie à la documentation de l'agent.",
+        sources: ["docs/capteurs-serveur.md:58-60", `${RECETTES}:202-206`],
+      },
       {
         texte: "Les capteurs serveur maison (FastAPI, agent Node, Express) sont archivés depuis le 29/09/2026.",
         sources: ["docs/archive/capteurs-serveur-maison.md"],
@@ -131,6 +134,10 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
         texte: "Avant l'accord, rien n'est lu ni écrit dans le stockage local ; un refus efface session, visiteur, échantillonnage et file de rejeu.",
         sources: [`${SDK}/src/consent.ts:20-62`, `${SDK}/src/index.ts:220`],
       },
+      {
+        texte: "Un refus arrête aussi le rejeu en cours : ce qui n'en est pas encore parti est jeté.",
+        sources: [`${SDK}/src/index.ts:754-756`, `${SDK}/src/replay.ts:418-424`],
+      },
       { texte: "Une page prérendue ne collecte rien tant qu'elle n'est pas affichée.", sources: [`${SDK}/src/index.ts:207-213`] },
       { texte: "Requêtes et fragments retirés de toutes les URL.", sources: [`${SDK}/src/context.ts:22-24`] },
       { texte: "Rejeu : texte masqué, médias bloqués, saisies masquées par défaut.", sources: [`${SDK}/src/replay.ts:201-211`] },
@@ -161,7 +168,7 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
         texte: "Requêtes et fragments retirés des URL ; beforeSend filtre ou jette chaque span.",
         sources: [`${SDK}/src/context.ts:22-24`, "packages/rum-core/src/before-send.ts:21-30"],
       },
-      { texte: "Consentement sur option : tant qu'il manque, rien ne part ni ne s'écrit dans le navigateur (200 événements gardés en mémoire).", sources: [`${SDK}/src/consent.ts:6`, `${SDK}/src/consent.ts:115-116`, `${SDK}/src/index.ts:220`] },
+      { texte: "Consentement sur option : tant qu'il manque, rien ne part ni ne s'écrit dans le navigateur (200 événements gardés en mémoire).", sources: [`${SDK}/src/consent.ts:6`, `${SDK}/src/consent.ts:115-131`, `${SDK}/src/index.ts:220`] },
     ],
     x: 1500,
     y: 520,
@@ -213,7 +220,7 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
     famille: "capteur",
     zone: "capteurs",
     titre: "Extension navigateur",
-    sousTitre: "Chrome · Edge · Manifest V3 · 85 Ko",
+    sousTitre: "Chrome · Edge · Manifest V3 · 87 Ko",
     resume:
       "Installée sur les postes gérés par la DSI, elle injecte le même SDK sur les domaines enregistrés, sans toucher au site et sans clé.",
     statut: "pilote",
@@ -270,7 +277,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
       "La part serveur de chaque appel : sa durée, ses requêtes SQL et ses appels sortants, rattachée à la session du navigateur par l'en-tête traceparent.",
     etiquettes: ["/v1/traces", "protobuf ou JSON"],
     faits: [
-      { texte: "Un span SERVER se rattache à la session par l'en-tête tracestate que pose le SDK.", sources: [`${SDK}/src/apispans.ts:94-96`, "packages/backend/shared/otlp.mjs"] },
+      { texte: "Un span SERVER se rattache à la session par l'en-tête tracestate que pose le SDK.", sources: [`${SDK}/src/apispans.ts:197`, `${SDK}/src/apispans.ts:245`, "packages/backend/shared/otlp.mjs"] },
       { texte: "2 Mo et 20 000 spans au plus par requête.", sources: ["packages/backend/shared/limits.mjs:10-13"] },
     ],
     ...mesure(0),
@@ -426,7 +433,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
     resume: "L'extension demande si un domaine est suivi, et chaque poste se déclare toutes les 6 heures : sa version, les applications qu'il alimente.",
     etiquettes: ["toutes les 6 h", "UUID du poste"],
     faits: [
-      { texte: "Un battement toutes les 6 h, immédiat pour une application nouvelle.", sources: [`${EXT}/lib/install.ts:36-40`] },
+      { texte: "Un battement toutes les 6 h, immédiat pour une application nouvelle.", sources: [`${EXT}/lib/install.ts:36`, `${EXT}/lib/install.ts:76-94`] },
       { texte: "La réponse de résolution se garde 60 s par domaine.", sources: [`${EXT}/src/background.ts:28`] },
     ],
     ...mesure(10),

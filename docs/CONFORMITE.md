@@ -62,7 +62,13 @@ dev-server/edge) → on ne dépend pas du seul client. Source maps **privées** 
   suit le même accord pour sa période de silence ; posé à la main, il ne le connaît pas.
   `MIPRum.consent(false)` efface du stockage local `mip_rum_session`, `mip_rum_visitor`,
   `mip_rum_sampling`, `mip_rum_seq`, la file de rejeu (`mip_rum_retry`) et la période de silence du
-  widget (`mip_rum_feedback_last:*`), et le SDK n'y écrit plus rien : un accord ultérieur repart d'un nouveau visiteur
+  widget (`mip_rum_feedback_last:*`), et le SDK n'y écrit plus rien. Ce refus ne vaut que pour la
+  page où il est donné : un autre onglet du même site, déjà consenti, réécrit `mip_rum_session` à son
+  événement suivant (et `mip_rum_visitor` quand sa session expire), et une page restaurée depuis le
+  cache du navigateur (bfcache) réécrit session et visiteur, tant que l'outil de consentement n'y
+  appelle pas `consent(false)` à son tour (`docs/INTEGRATION.md`, annexe B). Le refus arrête aussi
+  l'enregistrement du rejeu en cours, et ce qui n'en est pas encore parti est jeté
+  (`packages/rum-sdk/src/index.ts`, `consent`). Un accord ultérieur repart d'un nouveau visiteur
   (finding 1.11 de l'audit, traité le 01/10/2026 : `packages/rum-sdk/src/consent.ts`,
   `tests/unit/sdk-consentement-stockage.test.ts`). Ce qui est déjà parti avant un refus tardif ne
   s'efface que par une demande DSAR (ci-dessous) : il n'existe pas de route d'oubli appelée par le SDK.
