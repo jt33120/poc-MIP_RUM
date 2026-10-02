@@ -9,6 +9,8 @@
 // Types d'export locaux (ex-@opentelemetry/core + sdk-trace-web) : le SDK OTel a
 // été retiré (Chantier A, allègement du bundle) — on ne garde que le contrat
 // minimal réellement utilisé par le décorateur et l'émetteur maison (otel.ts).
+import { accesTerminalAutorise } from "./consent";
+
 export enum ExportResultCode {
   SUCCESS = 0,
   FAILED = 1,
@@ -247,7 +249,13 @@ export interface FileRejeu {
 
 const FILE_VIDE: FileRejeu = { spans: [], notBefore: 0, tentatives: 0 };
 
+// SOUS CONSENTEMENT (finding 1.11). La file ne se remplit qu'après un envoi, donc
+// après l'accord ; mais un lot en vol peut échouer juste après un refus. Lire et
+// écrire la file suivent donc le même interrupteur que la session : sans accès au
+// terminal, la file n'existe pas. L'EFFACER, en revanche, reste toujours permis —
+// c'est ce que fait un refus (`purgeRetryQueue`).
 function loadRevokedRoots(): Set<string> {
+  if (!accesTerminalAutorise()) return revokedRootsMemory;
   try {
     const raw = JSON.parse(localStorage.getItem(RETRY_REVOKED_ACTIONS_KEY) || "[]");
     if (Array.isArray(raw)) {
@@ -263,6 +271,7 @@ function loadRevokedRoots(): Set<string> {
 
 function saveRevokedRoots(roots: Set<string>): void {
   for (const id of roots) revokedRootsMemory.add(id);
+  if (!accesTerminalAutorise()) return;
   try {
     localStorage.setItem(
       RETRY_REVOKED_ACTIONS_KEY,
@@ -282,6 +291,7 @@ function clearRetryFile(): void {
 }
 
 export function loadRetryQueue(): FileRejeu {
+  if (!accesTerminalAutorise()) return { ...FILE_VIDE };
   try {
     const raw = JSON.parse(localStorage.getItem(RETRY_KEY) || "null");
     if (Array.isArray(raw)) return { spans: raw as RetrySpan[], notBefore: 0, tentatives: 0 };
@@ -299,6 +309,7 @@ export function loadRetryQueue(): FileRejeu {
 }
 
 export function saveRetryQueue(file: FileRejeu): boolean {
+  if (!accesTerminalAutorise()) return false;
   try {
     localStorage.setItem(RETRY_KEY, JSON.stringify(file));
     return true;

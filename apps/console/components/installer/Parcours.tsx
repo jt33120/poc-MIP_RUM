@@ -390,8 +390,9 @@ export function ParcoursSnippet({
           <Ligne
             aide={
               <>
-                Avec <code>requireConsent</code>, rien ne part tant que votre outil de consentement n&apos;a pas appelé{" "}
-                <code>MIPRum.consent(true)</code>.
+                Avec <code>requireConsent</code>, rien ne part et rien ne s&apos;écrit dans le navigateur tant que votre
+                outil de consentement n&apos;a pas appelé <code>MIPRum.consent(true)</code>, à chaque page ;{" "}
+                <code>MIPRum.consent(false)</code> efface les identifiants déjà posés.
               </>
             }
           >

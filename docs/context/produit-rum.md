@@ -144,7 +144,7 @@ promesse « OTel-native, donc réversible et corrélable ».
 
 *Corrigé le 29/07/2026 (commit `b950a898`, E0) : un `traceId` par page vue,
 partagé par tous les spans de la page, et le span d'appel API propage son
-`spanId` dans `traceparent` (`packages/rum-sdk/src/otel.ts:54-66`).*
+`spanId` dans `traceparent` (`packages/rum-sdk/src/otel.ts:61-73`).*
 
 **③ Les seuils Core Web Vitals ne sont pas ceux de web.dev.** Trois fichiers portent
 la même valeur erronée pour le LCP — `packages/rum-sdk/src/vitals.ts`,
@@ -172,7 +172,7 @@ blocage — mais pas le masquage du texte par défaut. Or « masqué par défaut
 devenu table-stakes chez tous les acteurs comparés.
 
 *Corrigé le 09/09/2026 (commit `0b3aa37e`) : le niveau par défaut `all` masque
-aussi le texte et les médias (`packages/rum-sdk/src/replay.ts:64-70`).*
+aussi le texte et les médias (`packages/rum-sdk/src/replay.ts:201-211`).*
 
 ---
 

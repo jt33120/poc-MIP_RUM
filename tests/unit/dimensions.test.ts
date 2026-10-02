@@ -68,7 +68,7 @@ describe("clientDimensions — tablettes", () => {
     expect(lire(ua)).toEqual(attendu);
   });
 
-  it("un iPad sous iPadOS 13+ se présente en Macintosh : desktop, limite assumée", () => {
+  it("un iPad sous iPadOS 13+ se présente en Macintosh : desktop sans l'indice tactile du SDK (dimensions-tablette.test.ts)", () => {
     expect(lire("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15"))
       .toEqual(d("Safari", "17", "macOS", null, "desktop"));
   });

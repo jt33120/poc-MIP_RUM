@@ -100,6 +100,10 @@ export const DELAIS_ETAPES_MS = Object.freeze({
   // La purge efface des jours entiers de lignes brutes, client par client :
   // c'est l'étape longue par nature. 30 min, la moitié du bail quotidien.
   purge_rum_tenants: 30 * 60_000,
+  // L'escalade (v108) lit les déclenchements ouverts de 7 jours au plus, par un
+  // index partiel : quelques millisecondes. 30 s plutôt que la minute du défaut :
+  // le pire cas du tick garde sa marge sous le bail.
+  escalate_alerts: 30_000,
 });
 
 /** Le délai d'une étape SQL, par son nom. */
@@ -353,6 +357,8 @@ export function travaux(pool, { log = console, dispatch = null, livraison = true
     return { name: nom, delaiMs, run: () => appelerFn(pool, appel, { delaiMs }) };
   };
 
+  const delaiEscalade = delaiEtape("escalate_alerts");
+
   return {
     /** Toutes les 5 minutes : ce qui doit réagir vite. */
     tick: () => {
@@ -366,6 +372,18 @@ export function travaux(pool, { log = console, dispatch = null, livraison = true
           sql("check_alerts", "check_alerts()"),
           ...(livraison ? [l.route] : []),
           sql("check_slo_burn", "check_slo_burn()"),
+          // L'escalade (v108) : une livraison 'queued' par niveau échu de chaque INCIDENT
+          // non acquitté (une source, migration-v108), et les relances du dernier niveau. Elle
+          // DÉCIDE, comme check_alerts : elle tourne même quand le notifier livre.
+          // Présente seulement avec sa migration : le code peut la précéder.
+          {
+            name: "escalate_alerts",
+            delaiMs: delaiEscalade,
+            run: () =>
+              appelerFnSiPresente(pool, "escalate_alerts(timestamp with time zone)", "escalate_alerts()", "migration-v108", {
+                delaiMs: delaiEscalade,
+              }),
+          },
           { name: "uptime", run: () => sonderUptime(pool, log) },
           // Vérification du canari, registre, alerte d'absence : avant la livraison.
           ...(sondes ? [sondes.verifier] : []),

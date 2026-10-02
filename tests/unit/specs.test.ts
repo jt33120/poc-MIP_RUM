@@ -196,6 +196,9 @@ describe("chiffres annoncés — remesurés sur les fichiers publiés", () => {
     const m = JSON.parse(lire("apps/extension/manifest.json"));
     expect(m.manifest_version).toBe(3);
     expect(m.version).toBe(EXT_VERSION);
+    // La version que le SDK web émet (`service.version`) suit celle de son paquet.
+    expect(JSON.parse(lire("packages/rum-sdk/package.json")).version).toBe(EXT_VERSION);
+    expect(lire("packages/rum-sdk/src/otel.ts")).toContain(`const SDK_VERSION = "${EXT_VERSION}";`);
     expect(m.permissions).toEqual([...EXT_PERMISSIONS]);
     // « jamais <all_urls> » est l'argument de confidentialité de l'extension, et
     // le premier motif de rejet au Chrome Web Store. Une permission d'hôte

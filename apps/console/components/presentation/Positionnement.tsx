@@ -43,7 +43,7 @@ export const POSITIONNEMENT: readonly LignePositionnement[] = [
       ekara: `${NOTES_IPLABEL}:69-79`,
       poc: [
         "docs/RUM_PARITY_STATUS.md:156",
-        "apps/console/lib/dashboard-blocs.ts:73-77",
+        "apps/console/lib/dashboard-blocs.ts:76-80",
         "packages/db/sql/migration-v53.sql:14-21",
       ],
     },

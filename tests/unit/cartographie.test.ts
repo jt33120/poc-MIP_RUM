@@ -14,6 +14,8 @@ import { describe, expect, it } from "vitest";
 import { TABLES_CARTE } from "@/lib/cartographie/base";
 import { CARTOGRAPHIE, CHIFFRES } from "@/lib/cartographie/donnees";
 import { HAUTEUR_ELEMENT, LARGEUR_ELEMENT, idLien, type Element } from "@/lib/cartographie/types";
+import { POIDS_KO } from "@/lib/installation-faits";
+import { FEEDBACK_GZIP_KO, REPLAY_GZIP_KO, SDK_GZIP_KO, koTexte } from "@/lib/sdk-poids";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (chemin: string) => readFileSync(join(RACINE, chemin), "utf8");
@@ -126,6 +128,31 @@ describe("les sources citées existent", () => {
     }
     expect(fautes).toEqual([]);
   });
+
+  // Le test précédent ne voit qu'une ligne qui existe : une citation décalée par un
+  // ajout en amont reste verte, et le panneau en fait un lien vers le mauvais code.
+  // Pour les fichiers du SDK que les lots modifient le plus, la plage citée doit
+  // contenir le code qu'elle prouve.
+  it("les plages citées du rejeu et des options du SDK montrent le code qu'elles prouvent", () => {
+    const ANCRES: Record<string, string[]> = {
+      "packages/rum-sdk/src/replay.ts:201-211": ["function optionsMasquage", "maskAllInputs: true", 'maskTextSelector: "*"'],
+      "packages/rum-sdk/src/replay.ts:11-13": ["REPLAY_MAX_MS = 120_000", "REPLAY_MAX_COMPRESSED_BYTES = 1024 * 1024", "CHUNK_FLUSH_MS = 10_000"],
+      "packages/rum-sdk/src/replay.ts:439-448": ['"x-mip-session"', '"x-mip-app"', '"x-mip-seq"', '"x-mip-key"'],
+      "packages/rum-sdk/src/types.ts:156-170": ["interface CaptureErrorsConfig", "console?:", "resources?:", "csp?:", "network?:"],
+    };
+    const citees = new Set(CARTOGRAPHIE.elements.flatMap((e) => e.faits.flatMap((f) => f.sources)));
+    const fautes: string[] = [];
+    for (const [source, attendus] of Object.entries(ANCRES)) {
+      if (!citees.has(source)) {
+        fautes.push(`${source} n'est plus citée : mettre l'ancre à jour avec la citation`);
+        continue;
+      }
+      const [, chemin, debut, fin] = /^(.+):(\d+)-(\d+)$/.exec(source)!;
+      const extrait = lire(chemin).split("\n").slice(Number(debut) - 1, Number(fin)).join("\n");
+      for (const a of attendus) if (!extrait.includes(a)) fautes.push(`${source} ne contient pas ${a}`);
+    }
+    expect(fautes).toEqual([]);
+  });
 });
 
 describe("les listes de la carte sont celles du dépôt", () => {
@@ -192,6 +219,25 @@ describe("les chiffres affichés se recomptent", () => {
       .split("\n")
       .filter((l) => /^\| `[a-zA-Z]+\.[a-zA-Z]+` \|/.test(l));
     expect(lignes.length).toBe(CHIFFRES.operationsConsoleApi);
+  });
+
+  // Le poids du SDK est écrit à la main dans la carte : sans ce garde, un rebuild
+  // qui fait bouger lib/sdk-poids.ts (remesuré par specs.test.ts) le laissait faux.
+  it("le poids du SDK web : celui de lib/sdk-poids.ts", () => {
+    const sdk = PAR_ID.get("sdk-web")!;
+    const textes = [sdk.sousTitre ?? "", ...sdk.faits.map((f) => f.texte)].join("\n");
+    const poids = [...textes.matchAll(/(\d+(?:,\d+)?) Ko gzip/g)].map((m) => m[1]);
+    expect(poids.length).toBeGreaterThan(0);
+    for (const p of poids) expect(p).toBe(koTexte(SDK_GZIP_KO));
+  });
+
+  // Même garde pour les autres poids écrits à la main dans la carte : l'archive de
+  // l'extension (85 Ko restés après la refonte des zips à 87 Ko), le rejeu, le widget.
+  it("les poids du rejeu, du widget d'avis et de l'extension : ceux de l'installateur", () => {
+    const sousTitre = (id: string) => PAR_ID.get(id)!.sousTitre ?? "";
+    expect(sousTitre("rejeu")).toContain(`${koTexte(REPLAY_GZIP_KO)} Ko gzip`);
+    expect(sousTitre("avis")).toContain(`${koTexte(FEEDBACK_GZIP_KO)} Ko gzip`);
+    expect(sousTitre("extension")).toContain(`${koTexte(POIDS_KO.extension)} Ko`);
   });
 
   it("les fichiers de tests, suite par suite", () => {

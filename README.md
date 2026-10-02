@@ -8,7 +8,7 @@ La vitrine de la console (`/presentation`) dit ce que le POC contient, ce qu'il 
 
 ## Pourquoi celui-là
 
-- **Format OpenTelemetry** : le SDK web émet de l'OTLP/HTTP JSON vers la route `/api/ingest/v1/traces` de la console (`apps/console/lib/ingest-endpoint.ts`). La structure des spans est vérifiée, mais ils partent avec une durée nulle et une partie du vocabulaire reste propre à MIP : un collecteur tiers en dessinerait un waterfall plat (vitrine, onglet Specs, ligne « Format sur le fil » : `apps/console/components/presentation/Specs.tsx`). Pour les gros volumes, un chemin ClickHouse a été mesuré en local le 11/06/2026 — mêmes p75, stockage 15 fois plus compact (`labs/clickhouse/NOTES.md`) ; ce banc n'a pas été rejoué depuis la migration vers Neon.
+- **Format OpenTelemetry** : le SDK web émet de l'OTLP/HTTP JSON vers la route `/api/ingest/v1/traces` de la console (`apps/console/lib/ingest-endpoint.ts`). La structure des spans est vérifiée ; les appels réseau portent leur durée réelle et les attributs HTTP stables d'OpenTelemetry, les erreurs leur événement « exception ». Page vue, ressources et tâches longues partent encore avec une durée nulle, et une partie du vocabulaire reste propre à MIP (vitrine, onglet Specs, ligne « Format sur le fil » : `apps/console/components/presentation/Specs.tsx`). Pour les gros volumes, un chemin ClickHouse a été mesuré en local le 11/06/2026 — mêmes p75, stockage 15 fois plus compact (`labs/clickhouse/NOTES.md`) ; ce banc n'a pas été rejoué depuis la migration vers Neon.
 - **Hébergement** : Données hébergées en UE ; hébergeurs de droit américain ; ce POC n'est pas une offre souveraine. Aucune adresse IP n'est stockée, sous aucune forme (`docs/RUM_PARITY_STATUS.md`, § 6.4). Détail dans la section [Architecture](#architecture), lu dans `apps/console/lib/legal.ts`.
 - **Robot et réel** : l'écran `/correlation` confronte, route par route et heure par heure, l'état d'un robot de monitoring synthétique au LCP p75 des visiteurs réels, et compte les heures où l'un voit ce que l'autre ne voit pas (angle mort) — sans jamais soustraire une mesure de robot à un LCP de visiteur (`apps/console/app/correlation/page.tsx`). Cet écran est hors du document de couverture : il n'y a pas de verdict.
 
@@ -67,7 +67,7 @@ flowchart TB
 | `console-api` | Railway, groupe 2 · Restitution | le backend de la console ; la connexion passe par lui depuis le 27/09/2026 |
 | `mcp` | Railway, groupe 2 · Restitution | serveur MCP en lecture seule, qui passe par `api` sur le réseau privé ; aucun accès à la base |
 | `scheduler` | Railway, groupe 3 · Traitements | travaux planifiés sous bail, toutes les 15 minutes ; seul migrateur, au pré-déploiement |
-| `notifier` | Railway, groupe 3 · Traitements | livre les alertes (webhooks signés, e-mails) ; seul détenteur des secrets sortants |
+| `notifier` | Railway, groupe 3 · Traitements | livre les alertes (webhooks signés, e-mails) et leurs escalades ; alerte quand les travaux planifiés se taisent ; seul détenteur des secrets sortants |
 | PostgreSQL | Neon, aws-eu-central-1 (Francfort), offre payante Launch depuis le 27/09/2026 | à l'usage, calcul plafonné à 0,25 CU, veille active. Un palier : la base d'un vrai produit se choisira selon le standard de la DSI de MIP ([ADR-0014](docs/architecture/adr/0014-base-gratuite.md), remplacée) |
 
 Le schéma de production est à `migration-v96` : le redéploiement du scheduler du 27/09/2026 a appliqué v87 → v96.
@@ -173,7 +173,7 @@ En cas de désaccord entre ces documents, [docs/RUM_PARITY_STATUS.md](docs/RUM_P
 | [docs/capteurs-serveur.md](docs/capteurs-serveur.md) · [capteurs-serveur.csv](docs/capteurs-serveur.csv) | Côté serveur : l'agent OpenTelemetry officiel de chaque langage, sa commande, ce qui est éprouvé (l'agent Node et le middleware FastAPI maison sont archivés : [docs/archive/capteurs-serveur-maison.md](docs/archive/capteurs-serveur-maison.md)) |
 | [packages/rum-mobile/README.md](packages/rum-mobile/README.md) | SDK React Native (crashes, écrans, réseau, événements) |
 | [docs/API_CONSOLE.md](docs/API_CONSOLE.md) · [docs/RUM_READ_API.md](docs/RUM_READ_API.md) | API de lecture v1 (ITSM/CI-CD) + résumé partenaire |
-| [docs/MULTITENANT.md](docs/MULTITENANT.md) · [docs/ALERTING.md](docs/ALERTING.md) | Multi-tenant / RBAC · alerting (webhook/Slack ; e-mail par le service `notifier`, Resend en mode test — [services/notifier/README.md](services/notifier/README.md)) |
+| [docs/MULTITENANT.md](docs/MULTITENANT.md) · [docs/ALERTING.md](docs/ALERTING.md) | Multi-tenant / RBAC · alerting (webhook/Slack ; e-mail par le service `notifier`, Resend en mode test ; escalade par niveaux des alertes non acquittées — [services/notifier/README.md](services/notifier/README.md)) |
 | [docs/CONFORMITE.md](docs/CONFORMITE.md) · [docs/DPA.md](docs/DPA.md) | Conformité RGPD (résidence UE, DSAR, scrub PII) · modèle de DPA (art. 28) |
 | [docs/DOCUMENTS-HORS-DEPOT.md](docs/DOCUMENTS-HORS-DEPOT.md) | **Ce qui n'est pas ici** : documents commerciaux (offre, démo, scan marché) et documents d'un client nommé. Présents sur le poste, hors dépôt, et listés avec leur contenu |
 | [docs/LIMITES.md](docs/LIMITES.md) | Limites du produit : liste du 10/06/2026 (v0.1 à v0.3), mises à jour du 18/09 (P8.8) et du 26/09/2026 |

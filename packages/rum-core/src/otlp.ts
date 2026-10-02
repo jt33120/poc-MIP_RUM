@@ -28,6 +28,22 @@ export interface EmitSpan {
   startTime: HrTime;
   endTime: HrTime;
   attributes: Attributes;
+  /**
+   * Événements OTLP du span. OPTIONNELS : le SDK React Native n'en émet pas, et
+   * un span sans événement se sérialise exactement comme avant.
+   */
+  events?: SpanEvent[];
+}
+
+/**
+ * Événement OTLP porté par un span — `exception` au sens des conventions
+ * OpenTelemetry : c'est là qu'un backend tiers lit le type, le message et la
+ * pile d'une erreur.
+ */
+export interface SpanEvent {
+  name: string;
+  time: HrTime;
+  attributes: Attributes;
 }
 
 /** Identité du scope OTLP : le package émetteur, pas le service du client. */
@@ -100,8 +116,13 @@ export function kindPour(name: string): SpanKind {
 export function statutPour(name: string, attrs: Attributes): SpanStatus | undefined {
   if (name === "exception") return { code: STATUS_CODE.ERROR };
   if (name === "http.client" || name === "http.server") {
-    const code = attrs["http.status_code"];
-    if (typeof code !== "number") return undefined; // requête coupée : on ne sait pas
+    // `error.type` dit un échec SANS réponse (délai, réseau coupé) : c'est la
+    // convention OpenTelemetry, et la seule issue connue d'un appel en statut 0.
+    if (attrs["error.type"] != null) return { code: STATUS_CODE.ERROR };
+    const code = attrs["http.response.status_code"] ?? attrs["http.status_code"];
+    // Requête coupée, ou abandonnée par l'application : statut absent ou 0, pas
+    // de réponse — on ne sait pas, et « OK » serait une affirmation fausse.
+    if (typeof code !== "number" || code <= 0) return undefined;
     // 4xx et 5xx sont des erreurs pour un span CLIENT (spec HTTP semconv : côté
     // serveur seul le 5xx l'est, mais ce SDK n'émet pas de span serveur).
     return { code: code >= 400 ? STATUS_CODE.ERROR : STATUS_CODE.OK };
@@ -191,6 +212,15 @@ export function buildResourceSpans(
               startTimeUnixNano: hrToNanos(s.startTime),
               endTimeUnixNano: hrToNanos(s.endTime),
               attributes: encodeAttributes(s.attributes),
+              ...(s.events?.length
+                ? {
+                    events: s.events.map((e) => ({
+                      timeUnixNano: hrToNanos(e.time),
+                      name: e.name,
+                      attributes: encodeAttributes(e.attributes),
+                    })),
+                  }
+                : {}),
             })),
           },
         ],

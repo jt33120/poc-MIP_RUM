@@ -51,7 +51,7 @@ describe("les neuf points, dans l'ordre fixe du plan", () => {
       ["R8", "Souveraineté et mise en service chez un client"],
       ["R9", "Une chaîne de livraison qui dit vrai"],
       ["R10", "Une base choisie pour un vrai produit"],
-      ["R11", "Les backends Go, PHP et Ruby, pas encore éprouvés"],
+      ["R11", "Les backends Go, PHP et Ruby, éprouvés en local, pas en production"],
     ]);
   });
 
@@ -193,18 +193,29 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
   });
 
   // Le tableau par langage vit dans docs/capteurs-serveur.md depuis le 29/09/2026 (avant :
-  // docs/INTEGRATION.md § 10) ; Python y est éprouvé sous Flask.
-  it("R11 suit docs/capteurs-serveur.md § 2 — Python, Java et .NET éprouvés, restent Go, PHP et Ruby", () => {
+  // docs/INTEGRATION.md § 10) ; Python y est éprouvé sous Flask. Le 01/10/2026, Go, PHP et
+  // Ruby y passent « éprouvé en local » : R11 ne garde que la production.
+  it("R11 suit docs/capteurs-serveur.md § 2 — Python, Java et .NET éprouvés en production, Go, PHP et Ruby en local", () => {
     const capteurs = lire("docs/capteurs-serveur.md");
     for (const langage of ["Python (Flask)", "Java", ".NET"]) {
       expect(capteurs).toContain(`| ${langage} | éprouvé en production le 28/09/2026 |`);
     }
     for (const langage of ["Go", "PHP", "Ruby"]) {
-      expect(capteurs).toContain(`| ${langage} | non éprouvé |`);
+      expect(capteurs).toContain(`| ${langage} | éprouvé en local le 01/10/2026 |`);
     }
+    // Les lignes que R11 cite (`docs/capteurs-serveur.md:51-60`) restent le tableau.
+    const tableau = capteurs.split("\n").slice(50, 60);
+    expect(tableau[0]).toMatch(/^\| Langage \| État chez MIP \|/);
+    expect(tableau[9]).toMatch(/^\| Ruby \| /);
+    expect(capteurs).toContain("tests/integration/otlp-agents-go-php-ruby-sql.test.ts");
     const r11 = point("R11");
+    expect(r11.titre).toBe("Les backends Go, PHP et Ruby, éprouvés en local, pas en production");
     expect(r11.manque).toContain("ceux de Python, Java et .NET ont été éprouvés en production le même jour");
-    expect(r11.manque).toContain("Aucun agent Go, PHP ou Ruby n'a encore envoyé de trace");
+    expect(r11.manque).toContain("Le 01/10/2026, Go, PHP et Ruby ont été éprouvés en local");
+    expect(r11.manque).toContain("Aucun agent Go, PHP ou Ruby n'a encore envoyé à la collecte de production.");
+    expect(r11.sources).toContain("tests/integration/otlp-agents-go-php-ruby-sql.test.ts:1-20");
+    // L'ancien état : aucun essai Go, PHP ou Ruby.
+    expect(affiche("R11")).not.toContain("Aucun agent Go, PHP ou Ruby n'a encore envoyé de trace");
     expect(r11.manque).toContain("Le 29/09/2026, FastAPI sous l'agent Python et, pour les traces, Node ont suivi.");
     expect(capteurs).toContain("| Python (FastAPI) | éprouvé en production le 29/09/2026 |");
     expect(capteurs).toContain("| Node | éprouvé en production (traces) le 29/09/2026 |");

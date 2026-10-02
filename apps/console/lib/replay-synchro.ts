@@ -6,8 +6,9 @@
 //   · Le masquage est une garantie de vie privée, donc il se dit EXACTEMENT : les
 //     saisies le sont toujours ; le texte et les médias, au réglage par DÉFAUT du
 //     SDK (`replayMask: "all"`). Une application peut démasquer le texte
-//     (`"media"`) ou le texte et les médias (`"inputs"`), et ce réglage n'est pas
-//     transmis avec la session : écrire « texte et médias masqués » pour toutes
+//     (`"media"`) ou le texte et les médias (`"inputs"`) — ou, depuis le SDK 0.5.0,
+//     une zone seulement (`mip-rum-unmask`, `replayUnmask`, champs toujours
+//     masqués) —, et ce réglage n'est pas transmis avec la session : écrire « texte et médias masqués » pour toutes
 //     les sessions serait une promesse que la console ne peut pas tenir.
 //   · L'enregistrement s'arrête après 2 minutes ou 1 Mo compressé : bornes du SDK
 //     (`packages/rum-sdk/src/replay.ts`), recopiées ici parce que la console ne
@@ -27,7 +28,7 @@ export const REJEU_CONSERVATION_JOURS = 30;
 /** En-tête du lecteur, écrit dans TOUS ses états (§ 5.12.4). */
 export const TEXTE_COUVERTURE =
   "Saisies toujours masquées à l'enregistrement ; texte et médias aussi, au réglage par défaut du SDK " +
-  "(une application peut les démasquer, et ce réglage n'est pas transmis avec la session) · " +
+  "(une application peut les démasquer, partout ou zone par zone, et ce réglage n'est pas transmis avec la session) · " +
   `conservé ${REJEU_CONSERVATION_JOURS} jours par défaut · enregistrement limité aux ` +
   `${REJEU_MAX_MS / 60_000} premières minutes ou ${REJEU_MAX_OCTETS / (1024 * 1024)} Mo compressé`;
 

@@ -1,6 +1,6 @@
 # `scheduler`
 
-**Rôle.** Déclenche les travaux planifiés sous bail — alertes, SLO, sondes uptime, livraisons, rollups, purge de rétention, comptage — et, seul de tous les services, applique les migrations au pré-déploiement.
+**Rôle.** Déclenche les travaux planifiés sous bail — alertes, SLO, escalade, sondes uptime, livraisons, rollups, purge de rétention, comptage — et, seul de tous les services, applique les migrations au pré-déploiement.
 
 | | |
 |---|---|
@@ -17,15 +17,17 @@
 
 | Cadence | Quand (UTC) | Étapes | Bail |
 |---|---|---|---|
-| `tick` | :00, :05, :10… — ou :00, :15, :30, :45 avec `SCHEDULER_TICK_MIN=15` (+ un passage au démarrage) | `canari_emettre`, `check_alerts`, `route_error_issue_notifications`, `check_slo_burn`, uptime, `canari_verifier` (journal, registre, alerte d'absence), `dispatch_alerts`, `reconcile_deliveries` — avec `SCHEDULER_DELIVERY=off` : sans les deux étapes de livraison ; avec `CANARI=off` : sans les deux étapes du canari | 600 s |
+| `tick` | :00, :05, :10… — ou :00, :15, :30, :45 avec `SCHEDULER_TICK_MIN=15` (+ un passage au démarrage) | `canari_emettre`, `check_alerts`, `route_error_issue_notifications`, `check_slo_burn`, `escalate_alerts` (v108), uptime, `canari_verifier` (journal, registre, alerte d'absence), `dispatch_alerts`, `reconcile_deliveries` — avec `SCHEDULER_DELIVERY=off` : sans les deux étapes de livraison ; avec `CANARI=off` : sans les deux étapes du canari | 600 s |
 | `horaire` | HH:05 | `refresh_rum_rollups(26)`, `refresh_metric_histogram(26)`, `check_new_errors`, `check_ai_op_anomalies`, notes historiques, `detections_horaires` (v101 : `refresh_vital_horaire(3)` puis plage habituelle et épisodes) | 900 s |
 | `quotidien` | 03:17 | `purge_rum_tenants(30)`, `meter_tenant_usage`, `purge_console_sessions`, `purge_detections(8)` (v101) | 3 600 s |
 
 **Les détections horaires (v101).** `detections_horaires` recalcule les p75 des trois dernières heures fermées dans `vital_horaire` (SQL, upsert idempotent, délai de 60 s), puis, en JS sur ces agrégats (`packages/backend/jobs/detections.mjs`), compare chacune des quatre dernières heures fermées à sa **plage habituelle** (médiane et écart absolu médian du même créneau des semaines passées, repli quotidien puis 48 h ; A2 § 7.1) et ouvre ou ferme les épisodes dans `signal_detecte`. Aucun réveil de la base en plus : l'étape est greffée sur le passage horaire. Une app sans ingestion depuis plus de 15 min est **suspendue** pour le passage (aucun constat ouvert, fermé ni mis à jour) : une panne de collecte ne doit pas passer pour une amélioration. Sur une base sans v101, l'étape rend « migration-v101 non appliquée » au lieu d'échouer.
 
+**L'escalade (v108).** `escalate_alerts()`, juste après `check_slo_burn`, met en file une livraison `queued` par niveau échu de chaque **incident** non acquitté — les déclenchements ouverts d'une même source (règle, SLO ou issue), chacun à moins de 24 h du précédent, escaladés une fois depuis le premier ; moins de 7 jours ; né après l'étape —, puis la relance du dernier niveau dont le canal est actif, à sa cadence, sans sauter de rang, jusqu'à son plafond. Acquitter une ligne acquitte tout l'incident et arrête tout, y compris l'envoi déjà en file, que le livreur solde `skipped` ; si la règle reste franchie, le déclenchement suivant ouvre un nouvel incident. L'escalade ignore la sévérité minimale du canal (`notify_channel.severity_min` : c'est celle de l'étape qui compte) et continue sur les déclenchements déjà ouverts d'une règle désactivée. Elle **décide** et reste au tick quand `SCHEDULER_DELIVERY=off`. Son grain est le tick : chaque délai part au premier passage qui suit son échéance (la console le dit, section « Escalade » de `/alerts`). Délai SQL de 30 s ; sur une base sans v108, l'étape rend « migration-v108 non appliquée ». Étapes et réglages : [`docs/ALERTING.md`](../../docs/ALERTING.md), pilier 5.
+
 **La livraison part au notifier (P5).** Webhooks et e-mails sont l'affaire du service [`notifier`](../notifier/README.md), toutes les 15 s par défaut, seul détenteur des secrets sortants — pas encore créé sur Railway : en production, le tick livre. Tant que `SCHEDULER_DELIVERY` vaut `on`, le tick livre aussi, comme avant ; `off` le réduit à **décider** — les livraisons restent `queued` pour le notifier. Le scheduler n'a pas de clé Resend : une livraison e-mail qu'il prend est soldée `skipped`, d'où `off` posé au plus tard quand le notifier démarre.
 
-Chaque étape SQL est bornée par un `statement_timeout` posé **dans sa transaction** (`set_config(…, true)`, jamais en `SET` de session : le pooler Neon le perdrait) — 60 s par défaut, 5 min pour les pré-agrégats et le comptage, **30 min pour la purge** (`DELAIS_ETAPES_MS`, `packages/backend/jobs/planifie.mjs`). La somme des délais d'une cadence reste sous la durée de son bail. Une étape en échec n'annule pas les suivantes ; elle part au journal en `error` **avec sa pile complète**.
+Chaque étape SQL est bornée par un `statement_timeout` posé **dans sa transaction** (`set_config(…, true)`, jamais en `SET` de session : le pooler Neon le perdrait) — 60 s par défaut, 30 s pour l'escalade, 5 min pour les pré-agrégats et le comptage, **30 min pour la purge** (`DELAIS_ETAPES_MS`, `packages/backend/jobs/planifie.mjs`). La somme des délais d'une cadence reste sous la durée de son bail. Une étape en échec n'annule pas les suivantes ; elle part au journal en `error` **avec sa pile complète**.
 
 ## Le canari et le journal des sondes
 
@@ -73,7 +75,7 @@ Toute autre route : 404. (`/status`, sans jeton, a disparu : son contenu est dan
 
 **Le battement.** `scheduler_lease.expires_at` d'un bail rendu est l'heure du dernier passage **abouti** : la vitrine le lit (`dernierTickScheduler`), `/ready` aussi. Il n'est écrit que sur **succès** ; un passage en échec libère le bail en remettant l'ancien battement.
 
-**Le dead-man's switch.** Si `DEADMAN_URL` est posée, un `GET` part (par `safeFetch`, 5 s, jamais bloquant) après chaque **tick abouti**. Le service externe sonne quand les signaux cessent : scheduler arrêté, bloqué, en échec à chaque passage — ce qu'aucune sonde interne ne voit. Régler la période sur la cadence du tick (15 min par défaut, 5 sur une offre payante) et la marge sur 10 à 15 min.
+**Le dead-man's switch.** Si `DEADMAN_URL` est posée, un `GET` part (par `safeFetch`, 5 s, jamais bloquant) après chaque **tick abouti**. Le service externe sonne quand les signaux cessent : scheduler arrêté, bloqué, en échec à chaque passage — ce qu'aucune sonde interne ne voit. Régler la période sur la cadence du tick (15 min par défaut, 5 sur une offre payante) et la marge sur 10 à 15 min. Sans lui, le notifier en tient lieu en partie : il lit ce battement à chaque passe et alerte à la première passe au-delà de 2 × cadence + 5 min (au quart d'heure : après trois ticks manqués, vers 46 min) ([README du notifier](../notifier/README.md), « Veille de l'ordonnanceur ») — mais rien ne veille le notifier.
 
 ## Configuration
 

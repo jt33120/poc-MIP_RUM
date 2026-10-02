@@ -53,7 +53,7 @@ export {
 } from "./sdk-poids";
 
 /** Version de l'extension, telle qu'elle est dans apps/extension/manifest.json. */
-export const EXT_VERSION = "0.4.3";
+export const EXT_VERSION = "0.5.0";
 /** Ses permissions, dans l'ordre du manifeste. */
 export const EXT_PERMISSIONS = ["scripting", "webNavigation", "storage", "activeTab"] as const;
 
@@ -311,7 +311,7 @@ export const MESURES: Mesure[] = [
     table: "rum_pageview",
     module: "packages/rum-sdk/src/index.ts",
     detail:
-      "Route normalisée (les identifiants deviennent :id, sinon chaque page produirait sa propre statistique), navigations SPA comprises — pushState, replaceState et retour arrière. La normalisation du SDK ne couvre que les entiers, les UUID et les hexadécimaux longs : depuis le 10/09/2026 chaque application peut ajouter ses propres règles, appliquées en base — donc quel que soit le chemin d'arrivée des mesures — et rejouables sur l'historique pour que la série d'une route ne se coupe pas en deux le jour où la règle est écrite. Au-delà de 2 000 routes distinctes par application, les routes inédites sont regroupées sous « (other) » et l'écran de santé interne le signale : la dimension cesse de croître, et la perte de détail est visible.",
+      "Route normalisée (les identifiants deviennent :id, sinon chaque page produirait sa propre statistique), navigations SPA comprises — pushState, replaceState et retour arrière. Depuis le SDK 0.5.0, un retour arrière servi par le cache du navigateur (bfcache) compte une page vue, avec sa propre trace, et une page prérendue n'est mesurée que si elle s'affiche : les pages vues montent un peu, d'autant que les visiteurs reviennent en arrière. La normalisation du SDK ne couvre que les entiers, les UUID et les hexadécimaux longs : depuis le 10/09/2026 chaque application peut ajouter ses propres règles, appliquées en base — donc quel que soit le chemin d'arrivée des mesures — et rejouables sur l'historique pour que la série d'une route ne se coupe pas en deux le jour où la règle est écrite. Au-delà de 2 000 routes distinctes par application, les routes inédites sont regroupées sous « (other) » et l'écran de santé interne le signale : la dimension cesse de croître, et la perte de détail est visible.",
   },
   {
     quoi: "Sessions pseudonymes",
@@ -319,7 +319,7 @@ export const MESURES: Mesure[] = [
     table: "rum_session",
     module: "packages/rum-sdk/src/index.ts",
     detail:
-      "Type d'appareil, navigateur déduit du user-agent, pays déduit du fuseau horaire — et à défaut de l'en-tête pays que pose le CDN, quand il y en a un devant. Pour les mesures envoyées directement au collecteur (celles de la console seule, depuis le 28/09/2026), le pays vient de l'adresse IP, lue dans une base IP→pays embarquée. Aucune adresse IP n'est stockée côté MIP ; « ni même résolue » serait faux, puisque c'est bien une résolution IP→pays que fait le CDN dans ce second cas. Le visiteur porte un identifiant tiré au hasard par le SDK, gardé dans le stockage local du navigateur : ni cookie, ni dérivation du terminal, effaçable par le visiteur. Les sessions antérieures au 09/09/2026, identifiées par une empreinte du terminal partagée par tout un parc homogène, restent marquées comme telles et sortent des comptes de personnes. Source de collecte (balise ou extension), version déployée, qualité du lien.",
+      "Type d'appareil, navigateur déduit du user-agent, pays déduit du fuseau horaire — et à défaut de l'en-tête pays que pose le CDN, quand il y en a un devant. Pour les mesures envoyées directement au collecteur (celles de la console seule, depuis le 28/09/2026), le pays vient de l'adresse IP, lue dans une base IP→pays embarquée. Aucune adresse IP n'est stockée côté MIP ; « ni même résolue » serait faux, puisque c'est bien une résolution IP→pays que fait le CDN dans ce second cas. Le visiteur porte un identifiant tiré au hasard par le SDK, gardé dans le stockage local du navigateur : ni cookie, ni dérivation du terminal, effaçable par le visiteur. Depuis le SDK 0.5.0 : quand le site exige le consentement, rien n'est écrit dans ce stockage avant l'accord, et un refus l'efface ; une session se ferme après 30 minutes d'inactivité, ou 4 heures après son début même active — un écran resté ouvert toute la journée compte plusieurs sessions. Les sessions antérieures au 09/09/2026, identifiées par une empreinte du terminal partagée par tout un parc homogène, restent marquées comme telles et sortent des comptes de personnes. Source de collecte (balise ou extension), version déployée, qualité du lien.",
   },
   {
     quoi: "Erreurs JavaScript",
@@ -375,7 +375,7 @@ export const MESURES: Mesure[] = [
     table: "rum_span",
     module: "packages/rum-sdk/src/apispans.ts",
     detail:
-      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un arbre enraciné. Elle n'est pas encore une chronologie — un span part avec un début et une fin sur la même milliseconde, et la durée réelle ne voyage que dans un attribut propre à MIP. Un seul saut : du navigateur au serveur, pas d'un serveur à l'autre.",
+      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un arbre enraciné. Chaque appel y a sa durée réelle — son span s'ouvre au départ de la requête et se ferme à la réponse : ses en-têtes pour fetch (un corps long ou en flux n'est pas compté), sa fin pour XHR — et les attributs HTTP stables d'OpenTelemetry (http.request.method, url.full, http.response.status_code, error.type d'un appel en échec) à côté des anciens. La page vue racine reste un instant. Un seul saut : du navigateur au serveur, pas d'un serveur à l'autre.",
   },
   // Côté serveur, aucun capteur maison depuis le 29/09/2026 : l'émetteur est
   // l'agent OpenTelemetry officiel du langage du client, hors de ce dépôt. Le
@@ -427,7 +427,7 @@ export const MESURES: Mesure[] = [
     table: "replay_chunk",
     module: "packages/rum-sdk/src/replay.ts",
     detail:
-      "rrweb, activé application par application, sur un canal séparé. Masqué par défaut : saisies, texte de la page et médias (images, vidéos, canvas, SVG) ; les blocs marqués par l'app ne sont jamais capturés. Plafonné à 2 minutes et 1 Mo par session.",
+      "rrweb, activé application par application, sur un canal séparé. Masqué par défaut : saisies, texte de la page et médias (images, vidéos, canvas, SVG). L'app peut démasquer une zone choisie (classe mip-rum-unmask ou option replayUnmask) : son texte et ses médias passent en clair ; ses champs natifs et contenteditable restent masqués. Les blocs marqués par l'app ne sont jamais capturés. Plafonné à 2 minutes et 1 Mo par session.",
   },
 ];
 
@@ -448,19 +448,16 @@ export interface AngleMort {
 
 export const ANGLES_MORTS: AngleMort[] = [
   {
-    label: "Conventions sémantiques OpenTelemetry",
-    // Ce qui reste de l'ancienne ligne « Spans OTLP plats », une fois les champs
-    // natifs (parentSpanId, kind, status) émis et la trace enracinée sur la page
-    // vue : la STRUCTURE est standard, le VOCABULAIRE ne l'est pas encore.
-    //
-    // La phrase « un backend tiers affichera donc le waterfall correctement » a
-    // été RETIRÉE d'ici le 09/09/2026 : elle était fausse. Un waterfall se
-    // dessine avec des durées, et nos spans n'en portent pas — cette limite-là
-    // vit maintenant dans le critère « Format sur le fil », où elle est prose et
-    // n'a pas à se falsifier par un marqueur d'absence.
+    label: "Conventions sémantiques OpenTelemetry du SDK React Native",
+    // Ce qui reste de l'ancienne ligne « Spans OTLP plats », puis de la ligne
+    // « Conventions sémantiques OpenTelemetry » : le SDK WEB a rejoint le
+    // vocabulaire standard le 01/10/2026 — attributs HTTP stables, erreur portée
+    // en événement « exception » (packages/rum-sdk/src/otel.ts), et des appels
+    // qui durent (realEmit, packages/rum-sdk/src/index.ts). Le SDK React Native
+    // n'a pas suivi : c'est lui que le marqueur surveille désormais.
     raison:
-      "Les spans sont standard dans leur structure — parenté, nature, issue — mais pas dans leur vocabulaire. Une erreur est émise comme un span nommé « exception » là où OpenTelemetry attend un événement porté par le span concerné, et les attributs HTTP suivent l'ancienne convention http.method / http.url, dépréciée au profit de http.request.method / url.full. Un backend tiers ne comptera donc pas nos erreurs comme des erreurs.",
-    marqueur: ["packages/rum-sdk/src", "http.request.method"],
+      "Le SDK web suit les conventions HTTP stables (http.request.method, url.full, http.response.status_code) et porte chaque erreur dans un événement « exception ». Le SDK React Native n'a pas suivi : ses appels réseau gardent l'ancienne convention http.method / http.url, et ses erreurs ne portent que leur statut d'erreur — un backend tiers les compte, sans en lire le type ni le message à l'endroit standard.",
+    marqueur: ["packages/rum-mobile/src", "http.request.method"],
   },
 ];
 

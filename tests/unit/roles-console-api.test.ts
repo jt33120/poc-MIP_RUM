@@ -25,6 +25,7 @@ const trie = (l: readonly string[]) => [...l].sort();
  * policy), et retirée de la comparaison avec v93.
  */
 const APRES_V93: Record<string, { version: number; privileges: string[] }> = {
+  alert_escalation_step: { version: 108, privileges: ["SELECT", "INSERT", "DELETE"] },
   collecte_fenetre: { version: 103, privileges: ["SELECT"] },
   signal_detecte: { version: 104, privileges: ["SELECT"] },
   sonde_battement: { version: 103, privileges: ["SELECT"] },

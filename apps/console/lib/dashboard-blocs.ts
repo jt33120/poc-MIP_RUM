@@ -62,7 +62,10 @@ export const CATALOGUES: readonly Catalogue[] = [
       { id: "decoupage", label: "Segments les plus dégradés", defaut: true, desc: "Routes, navigateurs, systèmes, pays estimés, appareils ou releases classés du plus dégradé au moins dégradé (p75 du vital choisi), avec l'effectif et l'écart à l'ensemble. Chaque ligne ouvre le détail." },
       { id: "historique", label: "Historique 14 jours", defaut: true, desc: "Heatmap jour × heure dans le fuseau de l'app : part de mesures « Bon », sur 14 jours fixes." },
       { id: "anomalies", label: "Anomalies détectées", defaut: true, desc: "Écarts statistiques sur le LCP, sans seuil à régler." },
-      { id: "versions", label: "Nouvelle release face à la précédente", defaut: true, desc: "Dernière release déployée face à la précédente, même fenêtre : sessions, LCP, INP et part de sessions en erreur. La règle de choix est écrite ; sous deux releases, la comparaison se tait et dit pourquoi." },
+      // « à mix de trafic égal » (nuit du 01/10/2026) : la ligne « Comparaison de versions
+      // à trafic comparable » a quitté les indisponibles — la pondération par route et
+      // par appareil existe (`@mip/stats/standardisation`).
+      { id: "versions", label: "Nouvelle release face à la précédente", defaut: true, desc: "Dernière release déployée face à la précédente, même fenêtre : sessions, LCP, INP et part de sessions en erreur, bruts et à mix de trafic égal (route × appareil), avec la couverture. La règle de choix est écrite ; sous deux releases, la comparaison se tait et dit pourquoi." },
     ],
     indisponibles: [
       {
@@ -71,18 +74,17 @@ export const CATALOGUES: readonly Catalogue[] = [
           "Exige une capture vidéo du rendu. C'est une mesure de laboratoire : elle n'est pas calculable chez le visiteur, quel que soit le capteur.",
       },
       {
+        // Relu le 02/10/2026 : l'ancienne raison (« résoudre l'adresse IP à l'ingestion,
+        // ce que l'engagement interdit ») était fausse — le pays se résout déjà ainsi,
+        // sans rien stocker (docs/CONFORMITE.md § 3.2). Ce qui manque est une base et
+        // une décision, et l'adresse elle-même pour les mesures relayées.
         label: "Opérateur réseau",
         raison:
-          "Aucun navigateur ne l'expose. L'obtenir demanderait de résoudre l'adresse IP à l'ingestion — ce que l'engagement « aucune adresse IP stockée » interdit.",
+          "Aucun navigateur ne l'expose : il ne donne au mieux qu'un type de lien estimé (4g, 3g…), que le SDK relève. Le déduire de l'adresse IP, comme le pays, demanderait une base adresse → opérateur et un traitement de plus à déclarer ; et les mesures relayées par la console n'en portent aucune, le relais ne transmettant pas l'adresse.",
       },
-      {
-        // La ligne d'avant — « aucun écran ne la restitue encore » — a été tenue
-        // le 09/09/2026 : le bloc « Comparaison par version » existe. Ce qui
-        // reste, c'est la comparabilité elle-même.
-        label: "Comparaison de versions à trafic comparable",
-        raison:
-          "Les versions sont comparées sur la MÊME fenêtre de temps, sans normalisation. Une version qui n'a tourné que la nuit est donc jugée sur un autre public, une autre répartition d'appareils et d'autres routes que celle qui a tourné aux heures de pointe. L'écart affiché mêle le code et le contexte ; les séparer demanderait une pondération par route et par appareil, qui n'existe pas.",
-      },
+      // « Comparaison de versions à trafic comparable » a quitté cette liste le
+      // 01/10/2026 : la comparaison de A et B porte ses lignes « à mix égal »
+      // (standardisation route × appareil, `@mip/stats/standardisation`).
     ],
   },
   {
@@ -117,17 +119,12 @@ export const CATALOGUES: readonly Catalogue[] = [
         // plusieurs personnes. Le SDK ne l'émet plus (migration-v57).
         label: "Identité du visiteur",
         raison:
-          "Jamais de personne nommée. Une session porte un identifiant de visiteur tiré au hasard, sans lien avec le terminal ni avec un compte, et les données personnelles sont retirées à la collecte comme à l'ingestion. C'est un engagement du produit, pas une fonctionnalité manquante.",
+          "Jamais de personne nommée. Une session porte un identifiant de visiteur tiré au hasard, sans lien avec le terminal ; l'identifiant de compte qu'une application déclare (setUser) est haché par application ou retiré, jamais stocké en clair, et les données personnelles sont retirées à la collecte comme à l'ingestion. C'est un engagement du produit, pas une fonctionnalité manquante.",
       },
-      {
-        // La ligne d'avant — « ne masque encore ni le texte ni les images » —
-        // est devenue fausse le 09/09/2026 : le rejeu masque par défaut les
-        // saisies, le texte ET les médias, vérifié dans un vrai navigateur.
-        // Ce qui manque à sa place, c'est le mouvement INVERSE.
-        label: "Démasquage sélectif au rejeu",
-        raison:
-          "Le masquage se règle par application — tout, les médias seuls, ou les saisies seules — mais pas élément par élément : on ne peut pas demander « montre ce tableau, cache cette colonne ». La version de rrweb utilisée n'expose pas de sélecteur de démasquage, seulement de masquage.",
-      },
+      // « Démasquage sélectif au rejeu » est retiré le 01/10/2026 : le SDK démasque
+      // une zone choisie (classe `mip-rum-unmask`, option `replayUnmask`) par le
+      // `maskTextFn` de rrweb, saisies et blocs marqués toujours masqués —
+      // vérifié dans un vrai Chromium (tests/e2e/rejeu-demasquage.spec.ts).
     ],
   },
   {
@@ -154,12 +151,16 @@ export const CATALOGUES: readonly Catalogue[] = [
         // Neon, puis payante à l'usage depuis le 27/09/2026, en attendant le choix de
         // la DSI de MIP) : ce catalogue statique dit la cible et renvoie à la ligne
         // qui lit la vraie valeur.
-        raison: `Le déclencheur des tâches planifiées passe à cadence fixe — ${CADENCE_TICK_MIN} minutes visées, davantage tant que la base reste provisoire (la ligne « Latence d'alerte » de la présentation dit la cadence réelle) : un budget peut donc être consommé pendant tout un intervalle avant que l'alerte ne parte. C'est une cadence, pas du temps réel — évaluer le SLO à chaque mesure écrite demanderait un déclencheur en base, pas un passage périodique.`,
+        raison: `Le déclencheur des tâches planifiées passe à cadence fixe — ${CADENCE_TICK_MIN} minutes visées, davantage tant que la base reste provisoire (la ligne « Latence d'alerte » de la présentation dit la cadence réelle)  : un budget peut donc être consommé pendant tout un intervalle avant que l'alerte ne parte, et l'envoi part à la passe suivante des notifications (sur la même grille tant que la base est provisoire). Évaluer le SLO à chaque mesure écrite ne servirait qu'avec une livraison réveillée à chaque événement — une base tenue éveillée : un choix de coût, pas de code.`,
       },
       {
-        label: "Politique d'escalade",
+        // L'escalade existe depuis migration-v108 (écran Alertes, section « Escalade ») :
+        // niveaux, délais, relance du dernier niveau, arrêt à l'acquittement horodaté.
+        // Ce qui manque encore, c'est l'ASTREINTE elle-même — la ligne d'avant
+        // (« sans niveaux, ni accusé de réception ») était devenue fausse.
+        label: "Astreinte (rotation, SMS)",
         raison:
-          "Les alertes partent en webhook sortant, sans niveaux, ni astreinte, ni accusé de réception. La console n'a pas de couche d'escalade.",
+          "Une alerte non acquittée s'escalade par niveaux et relance jusqu'à son plafond, réglés sur l'écran Alertes — mais vers les canaux déclarés seulement : webhook, Slack, e-mail. Ni rotation d'astreinte, ni SMS, ni outil d'astreinte tiers n'y est branché.",
       },
     ],
   },

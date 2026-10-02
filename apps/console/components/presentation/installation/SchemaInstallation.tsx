@@ -6,7 +6,8 @@
 //   · navigateur — le code de suivi ou l'extension, chacun en une phrase, et les
 //     navigateurs que l'extension prend en charge (cadenas sur les autres) ;
 //   · serveur — les langages dont l'agent OpenTelemetry officiel a une recette
-//     éprouvée en production, cadenas sur ceux qui ne l'ont pas encore.
+//     éprouvée en production, cadenas sur ceux qui ne l'ont pas encore (Go, PHP et
+//     Ruby : éprouvés en local le 01/10/2026, le cadenas le dit).
 // Les onglets sous le schéma mènent aux parcours (OngletsInstallation) : le schéma
 // décrit, il ne navigue pas.
 //
@@ -76,13 +77,13 @@ function Pastille({ marque, ouvert, taille = "h-9 w-9" }: { marque: Marque | "ed
   );
 }
 
-function Etat({ ouvert }: { ouvert: boolean }) {
+function Etat({ ouvert, ferme = "Pas encore disponible" }: { ouvert: boolean; ferme?: string }) {
   return ouvert ? (
     <span className="grid h-5 w-5 place-items-center rounded-full bg-[#f89101] text-[#040a1c]" title="Pris en charge">
       <Coche />
     </span>
   ) : (
-    <span className="grid h-5 w-5 place-items-center rounded-full bg-white/10 text-white/60" title="Pas encore disponible">
+    <span className="grid h-5 w-5 place-items-center rounded-full bg-white/10 text-white/60" title={ferme}>
       <Cadenas />
     </span>
   );
@@ -315,12 +316,12 @@ export function SchemaInstallation() {
                 >
                   <Pastille marque={l.marque} ouvert={l.ouvert} taille="h-8 w-8" />
                   <span className={`min-w-0 flex-1 text-xs font-semibold ${l.ouvert ? "text-white" : "text-white/45"}`}>{l.nom}</span>
-                  <Etat ouvert={l.ouvert} />
-                  {!l.ouvert && <span className="sr-only">(pas encore disponible)</span>}
+                  <Etat ouvert={l.ouvert} ferme="Éprouvé en local, pas en production" />
+                  {!l.ouvert && <span className="sr-only">(éprouvé en local, pas en production)</span>}
                 </li>
               ))}
             </ul>
-            <p className="mt-3 text-[11px] text-white/45">Cadenas : recette pas encore éprouvée en production.</p>
+            <p className="mt-3 text-[11px] text-white/45">Cadenas : éprouvé en local le 01/10/2026, pas encore en production.</p>
           </>
         }
       />

@@ -8,6 +8,10 @@
 // elles ne s'affichent pas — la page s'adresse à une DSI, pas à qui lit le code —
 // mais une affirmation se vérifie avant d'être écrite, et se re-vérifie en les
 // suivant. Une hypothèse levée sort de la liste, avec son commit.
+//
+// Relevé du 02/10/2026, après la nuit du 01/10 : H8 (escalade par niveaux, pas
+// d'astreinte) et H9 (veille du scheduler par le notifier) réécrites par leurs lots ;
+// les citations des fichiers que la nuit a modifiés (README du scheduler) recalées.
 
 export interface Hypothese {
   id: string;
@@ -21,7 +25,7 @@ export interface Hypothese {
   sources: readonly string[];
 }
 
-export const RELEVE_HYPOTHESES = "30/09/2026";
+export const RELEVE_HYPOTHESES = "02/10/2026";
 
 export const HYPOTHESES: readonly Hypothese[] = [
   {
@@ -41,7 +45,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     pourquoi: "Chaque passage réveille la base, et chaque réveil se paie : au quart d'heure, elle dort environ 63 % du temps.",
     production:
       "Un passage toutes les 5 minutes et des notifications toutes les 15 secondes : deux réglages, sans changement de code.",
-    sources: [".railway/railway.ts:366-372", ".railway/railway.ts:406-409", "packages/backend/jobs/cadence.mjs:27-38", "services/scheduler/README.md:20,61"],
+    sources: [".railway/railway.ts:366-372", ".railway/railway.ts:406-409", "packages/backend/jobs/cadence.mjs:27-38", "services/scheduler/README.md:20,63"],
   },
   {
     id: "H3",
@@ -76,7 +80,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     aujourdhui: "Les mesures sont purgées chaque nuit au-delà de 30 jours, sauf réglage propre à une application.",
     pourquoi: "Assez pour comparer des semaines, peu de stockage à payer.",
     production: "Une durée de conservation fixée au contrat de chaque client.",
-    sources: ["services/scheduler/README.md:22,42", "packages/db/sql/migration-v14.sql:9-11,52-59"],
+    sources: ["services/scheduler/README.md:22,61", "packages/db/sql/migration-v14.sql:9-11,52-59"],
   },
   {
     id: "H7",
@@ -91,19 +95,29 @@ export const HYPOTHESES: readonly Hypothese[] = [
     id: "H8",
     titre: "Des alertes par webhook, Slack ou e-mail d'essai",
     aujourdhui:
-      "Les alertes partent vers un webhook ou Slack ; l'e-mail passe par un domaine d'envoi d'essai, qui ne sert que des destinataires déclarés. Pas de SMS, pas d'outil d'astreinte.",
+      "Les alertes partent vers un webhook ou Slack ; l'e-mail passe par un domaine d'envoi d'essai, qui ne sert que des destinataires déclarés. Les étapes d'escalade réglées sur l'écran Alertes renvoient un incident non acquitté (règle, SLO ou issue) par niveaux et relancent au passage des travaux planifiés, jusqu'au plafond de chaque étape et 7 jours au plus ; sans étape créée, rien ne s'escalade. Pas de SMS, pas de rotation ni d'outil d'astreinte.",
     pourquoi: "Une seule équipe reçoit les alertes pendant le POC.",
     production: "Un domaine d'envoi vérifié, une signature propre à chaque canal, et le branchement sur l'astreinte de MIP.",
-    sources: [".railway/railway.ts:399-405", "services/notifier/README.md:32,59", "docs/ALERTING.md:60-74"],
+    sources: [
+      ".railway/railway.ts:399-405",
+      "services/notifier/README.md:34,61",
+      "docs/ALERTING.md:60-74",
+      "packages/db/sql/migration-v108.sql:34,109,197",
+    ],
   },
   {
     id: "H9",
     titre: "Une supervision de la supervision minimale",
     aujourdhui:
-      "Une sonde externe vérifie toutes les 15 minutes que le service répond, et prévient par e-mail les personnes qui suivent le dépôt. Les travaux planifiés et les notifications ne sont pas sondés de l'extérieur.",
+      "Une sonde externe vérifie toutes les 15 minutes que le service répond, et prévient par e-mail les personnes qui suivent le dépôt. Le service des notifications alerte quand les travaux planifiés se taisent, au troisième passage manqué (vers 46 minutes), vers les seuls canaux communs à toutes les applications : sans un tel canal, l'alerte ne se lit que dans l'écran Alertes. Lui-même n'est suivi que par son battement, affiché dans la console.",
     pourquoi: "Une panne de quelques heures ne prive aucun client pendant le POC.",
-    production: "Une supervision reliée à l'astreinte, et un signal qui alerte quand les travaux planifiés se taisent.",
-    sources: [".github/workflows/sonde-externe.yml:1-22", "docs/architecture/overview.md:116,131"],
+    production: "Une supervision reliée à l'astreinte, qui surveille aussi le service des notifications.",
+    sources: [
+      ".github/workflows/sonde-externe.yml:1-22",
+      "packages/backend/jobs/veille-ordonnanceur.mjs:16-27,50-51",
+      "services/notifier/README.md:26,28",
+      "docs/architecture/overview.md:116,131",
+    ],
   },
   {
     id: "H10",
@@ -191,7 +205,7 @@ export const CHANTIERS: readonly Chantier[] = [
     id: "X6",
     titre: "Des notifications de production",
     texte: "Vérifier le domaine d'envoi des e-mails, et signer chaque canal avec son propre secret.",
-    sources: ["docs/ALERTING.md:70-73", "services/notifier/README.md:59"],
+    sources: ["docs/ALERTING.md:70-73", "services/notifier/README.md:61"],
   },
   {
     id: "X7",

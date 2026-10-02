@@ -34,7 +34,7 @@ export interface FicheParcours {
 }
 
 /** Poids gzip, en Kio, des fichiers servis (remesurés par le test). */
-export const POIDS_KO = { sdk: 22.6, rejeu: 56.7, extension: 82 } as const;
+export const POIDS_KO = { sdk: 24.8, rejeu: 56.7, extension: 87 } as const;
 /** Le budget du cœur du SDK, que son build refuse de dépasser. */
 export const BUDGET_SDK_KO = 35;
 

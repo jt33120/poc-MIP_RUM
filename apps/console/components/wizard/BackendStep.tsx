@@ -70,7 +70,9 @@ export function BackendStep({ recettes, nomSecret }: { recettes: RecettesAgents;
         <details className={BLOC} data-testid="recette-autres">
           <summary className={RESUME}>
             Autre langage ({recettes.autres.map((a) => a.langage).join(", ")}…) —{" "}
-            <span className="text-ink-soft">non éprouvé en production</span>
+            <span className="text-ink-soft">
+              {recettes.autres.map((a) => a.langage).join(", ")} : {recettes.autres[0]?.etat}
+            </span>
           </summary>
           <div className="mt-2 grid gap-2">
             <p className={TEXTE}>
@@ -88,6 +90,11 @@ export function BackendStep({ recettes, nomSecret }: { recettes: RecettesAgents;
               les mêmes variables.
             </p>
             {code(recettes.socle)}
+            <ul className={`list-disc pl-5 ${TEXTE}`}>
+              {recettes.autres.map((a) => (
+                <li key={a.langage}>{a.piege}</li>
+              ))}
+            </ul>
           </div>
         </details>
         <details className={BLOC} data-testid="recette-collecteur">

@@ -73,7 +73,7 @@ fichiers change, le film doit être refait.
 
 | Affirmation à l'écran | Preuve |
 |---|---|
-| SDK web `mip-rum.js`, 22,6 Ko compressé ; rejeu en option | `docs/INTEGRATION.md` (poids gzip), `packages/rum-sdk/package.json` |
+| SDK web `mip-rum.js`, 24,8 Ko compressé ; rejeu en option | `docs/INTEGRATION.md` (poids gzip), `packages/rum-sdk/package.json` |
 | Extension Chrome, Manifest V3, en pilote | `apps/extension/manifest.json`, `docs/INTEGRATION.md` |
 | Côté serveur : agent OpenTelemetry officiel (Python, Node, Java, .NET), pas de capteur maison | `AGENTS.md`, `docs/capteurs-serveur.md` |
 | Mobile React Native « en préparation », jamais éprouvé | `packages/rum-mobile/MATRICE-RUNTIME.md` |

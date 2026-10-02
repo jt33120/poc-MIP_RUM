@@ -7,7 +7,8 @@
 //
 // En deux temps : les lectures de l'écran, chacune une section (F02, § 3.8) ; puis
 // les RELEASES COMPARÉES (§ 3.2) — celles de l'URL, sinon la règle du dernier
-// déploiement —, lues sous `cmp=release` pour les tuiles, le hero et la zone 8.
+// déploiement —, lues sous `cmp=release` pour les tuiles, le hero et la zone 8 (brute
+// et à mix de trafic égal).
 //
 // UN JOUR VOYAGE EN CLÉ « AAAA-MM-JJ » : la grille d'historique regroupe par
 // `date_trunc('day', … at time zone <app>)`, un `timestamp` sans fuseau que
@@ -35,7 +36,13 @@ import {
   type VitalSeriesPoint,
 } from "../queries";
 import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown } from "../queries-breakdowns";
-import { comparaisonVersions, latestDeployImpact, listDeploys } from "../queries-deploys";
+import {
+  comparaisonStandardisee,
+  comparaisonVersions,
+  latestDeployImpact,
+  listDeploys,
+  type ComparaisonStandardisee,
+} from "../queries-deploys";
 import { errorSeries, erreursNavigateur, listErrorGroups } from "../queries-errors";
 import { dailyLcpSeries, healthGrid, type DailyLcp } from "../queries-grid";
 import { engagementStats, observedVisitorsTrend } from "../queries-sessions";
@@ -213,7 +220,7 @@ export const chargerOverview = (async (principal, sp) => {
   // n'arrive, et si le serveur, lui, envoie encore (recette UTI du 28/09/2026). Lu
   // SEULEMENT dans ce cas : l'écran ordinaire ne paie pas cette lecture.
   const sansVisite = query.scope.requestedApp !== null && stats.ok && stats.data.sessions === 0;
-  const [[vitalsB, vitalsA], seriesRelease, releasesLues, vitauxReleasesLus, activite] = await Promise.all([
+  const [[vitalsB, vitalsA], seriesRelease, releasesLues, vitauxReleasesLus, standardise, activite] = await Promise.all([
     // `cmp=release` : les tuiles Web Vitals lisent la release B et la comparent à A.
     comparaison.mode === "release" && blocs.vitals && releases.ok
       ? Promise.all([
@@ -244,6 +251,11 @@ export const chargerOverview = (async (principal, sp) => {
     blocs.versions && releases.ok
       ? Promise.all([releases.relB, releases.relA].map((v) => section(() => vitalsP75(avecCondition(fToutesReleases, "release", v)))))
       : Promise.resolve(null),
+    // …et les mêmes À MIX DE TRAFIC ÉGAL (route × appareil) : lue SEULEMENT quand deux
+    // releases sont choisies, bornée à ces deux-là (le p75 pondéré se calcule en base).
+    blocs.versions && releases.ok
+      ? section(() => comparaisonStandardisee(fToutesReleases, releases.relA, releases.relB))
+      : sansSection<ComparaisonStandardisee | null>(null),
     sansVisite ? section(() => derniereActivite(f)) : sansSection<DerniereActivite | null>(null),
   ]);
 
@@ -292,6 +304,7 @@ export const chargerOverview = (async (principal, sp) => {
     seriesRelease,
     releasesLues,
     vitauxReleasesLus,
+    standardise,
     activite,
     retentionJours: retentionDays(),
   } as const;

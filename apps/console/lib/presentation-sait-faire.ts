@@ -174,7 +174,7 @@ export const CARTES: readonly CarteCapacite[] = [
       {
         id: "B2",
         texte:
-          "Les données antérieures à la migration v75 s'affichent « Inconnu » ; un iPad récent est compté comme ordinateur ; le pays est estimé depuis le fuseau horaire, ce n'est pas une géolocalisation.",
+          "Les données antérieures à la migration v75 s'affichent « Inconnu » ; un iPad récent n'est compté comme tablette qu'avec le SDK du 01/10/2026 — avant, comme ordinateur ; le pays est estimé depuis le fuseau horaire, ce n'est pas une géolocalisation.",
       },
       {
         id: "B3",
@@ -380,8 +380,8 @@ export const CARTES: readonly CarteCapacite[] = [
     sources: [
       { ligne: "D14" },
       { passage: 326 },
-      { fichier: "docs/CONFORMITE.md:127-130" },
-      { fichier: "docs/CONFORMITE.md:132-141" },
+      { fichier: "docs/CONFORMITE.md:135-141" },
+      { fichier: "docs/CONFORMITE.md:152-160" },
       { fichier: "docs/operations/relais-ingestion.md:317-321" },
     ],
   },

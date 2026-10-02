@@ -4,9 +4,10 @@
 // CE QUE L'ÉCRAN N'AFFIRME PAS.
 //   - « Livrée » ne veut pas dire « partie » : trois états conservés (v49), et une
 //     alerte transmise dont le code HTTP n'est pas connu n'est NI livrée ni perdue.
-//   - Le délai d'acquittement (MTTA) n'est pas affiché : `alert_event` ne garde
-//     qu'un booléen, pas d'horodatage d'acquittement (dépendance B50, § 6.3). La
-//     raison est dite à l'écran plutôt que remplacée par une estimation.
+//   - Le délai d'acquittement (MTTA) ne compte que les déclenchements nés après
+//     l'horodatage des acquittements (migration-v108, B50) : avant, la base ne
+//     gardait qu'un booléen. Il se calcule dans `lib/queries-escalade.ts` et se
+//     lit dans `lib/escalade-ecran.ts` ; aucune estimation pour les plus anciens.
 //   - L'état d'une règle est celui de sa DERNIÈRE évaluation, pas un historique :
 //     la base ne garde pas les évaluations (B51). D'où une frise de déclenchements
 //     (un marqueur = un événement), jamais une « state timeline ».
@@ -25,13 +26,6 @@ export { JOURS_DECLENCHEMENTS, PLAFOND_DECLENCHEMENTS, PLAFOND_FLUX } from "./al
 export { libelleSeverite } from "./alertes-metriques";
 import { JOURS_DECLENCHEMENTS } from "./alerting";
 import { pluriel } from "./format";
-
-/**
- * Pourquoi le délai d'acquittement n'est pas affiché (B50) : la base ne garde qu'un
- * booléen, pas l'heure (`alert_event.acknowledged_at` n'existe pas). Le nom de la
- * colonne reste ici : l'écran dit le manque en mots (recette du 26/09/2026).
- */
-export const MOTIF_MTTA = "Le délai d'acquittement n'est pas encore enregistré : seul le fait d'avoir acquitté est gardé, pas l'heure.";
 
 /**
  * Sévérité RAMENÉE aux trois sévérités du domaine (`ALERT_SEVERITIES`). La colonne

@@ -116,6 +116,40 @@ describe("ingestion — une requête qu'aucune route n'a servie n'invente pas de
     expect(flattenOtlp(lot([ancien]), { now: NOW }).spans[0].route).toBe(ROUTE_NON_TROUVEE);
   });
 
+  // docs/capteurs-serveur.md § 3 (Go) et § 4 : `otelhttp` 0.71.0 n'écrit jamais
+  // `http.route`, sa route n'est que dans le nom du span (motif du ServeMux de Go 1.22).
+  // Un motif à paramètre `{…}` vaut route résolue, même en 404/405 : un 404 métier
+  // garde sa route. Un chemin brut dans le nom, lui, n'est toujours pas cru (cas ci-dessus).
+  const go = (statut: number, nom = "GET /factures/{id}", chemin = "/factures/42") => {
+    const span = agentOfficiel(statut, {}, nom);
+    span.attributes = span.attributes.map((a) => (a.key === "url.path" ? kv("url.path", chemin) : a));
+    return flattenOtlp(lot([span]), { now: NOW });
+  };
+
+  it("Go (`otelhttp`) : un 404 ou un 405 sur une route résolue par le ServeMux garde sa route", () => {
+    for (const statut of [404, 405, 500, 200]) {
+      expect(go(statut).spans[0].route, String(statut)).toBe("/factures/:id");
+    }
+    expect(go(404, "DELETE /apps/{app}/cles/{cle}", "/apps/a1/cles/k9").spans[0].route).toBe("/apps/:app/cles/:cle");
+  });
+
+  it("Go (`otelhttp`) : sans motif résolu, le 404 reste `(non trouvée)`", () => {
+    // ServeMux sans route : `r.Pattern` est vide, le nom n'est que la méthode.
+    expect(go(404, "GET", "/wp-admin/admin-ajax.php").spans[0].route).toBe(ROUTE_NON_TROUVEE);
+    // Motif statique : indiscernable d'un chemin brut, il n'est pas cru.
+    expect(go(404, "GET /factures", "/factures").spans[0].route).toBe(ROUTE_NON_TROUVEE);
+    // Accolades dans le chemin REÇU : c'est le client qui les a écrites, pas un routeur.
+    expect(go(404, "GET /x/{a}", "/x/{a}").spans[0].route).toBe(ROUTE_NON_TROUVEE);
+  });
+
+  it("Go (`otelhttp`) : l'exception d'un 404 métier suit la route résolue", () => {
+    const span = {
+      ...agentOfficiel(404, {}, "GET /factures/{id}"),
+      events: [{ name: "exception", timeUnixNano: "1760000000001000000", attributes: [kv("exception.type", "*errors.errorString")] }],
+    };
+    expect(flattenOtlp(lot([span]), { now: NOW }).errors[0].route).toBe("/factures/:id");
+  });
+
   it("agent officiel : 404 avec `http.route` → route normalisée gardée", () => {
     const rows = flattenOtlp(lot([agentOfficiel(404, { "http.route": "/commandes/<int:commande_id>" })]), { now: NOW });
     expect(rows.spans[0].route).toBe("/commandes/:commande_id");

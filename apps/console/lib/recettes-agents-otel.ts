@@ -46,8 +46,12 @@ export interface RecettesAgents {
   /** Le socle commun seul, pour les langages sans recette dédiée. */
   socle: string;
   agents: RecetteAgent[];
-  /** Langages renvoyés à la documentation OpenTelemetry, avec le même socle. */
-  autres: { langage: string; documentation: string }[];
+  /**
+   * Langages renvoyés à la documentation OpenTelemetry, avec le même socle : éprouvés
+   * en local le 01/10/2026, pas en production (docs/capteurs-serveur.md § 2), d'où
+   * pas de recette dédiée. `piege` : celui qui casse la trace ou la perd (§ 3).
+   */
+  autres: { langage: string; documentation: string; etat: string; piege: string }[];
   /** Option : faire passer les agents par un Collector OpenTelemetry. */
   collecteur: string;
 }
@@ -199,10 +203,32 @@ export function recettesAgentsOtel({
     },
   ];
 
+  // Éprouvés en local le 01/10/2026 : conteneurs jetables, collecteur de développement,
+  // corps rejoués par tests/integration/otlp-agents-go-php-ruby-sql.test.ts. Les pièges
+  // sont ceux que l'essai a constatés (docs/capteurs-serveur.md § 3).
+  const EN_LOCAL = "éprouvé en local le 01/10/2026, pas en production";
   const autres = [
-    { langage: "Go", documentation: "https://opentelemetry.io/docs/languages/go/" },
-    { langage: "PHP", documentation: `${DOC}/php/` },
-    { langage: "Ruby", documentation: "https://opentelemetry.io/docs/languages/ruby/" },
+    {
+      langage: "Go",
+      documentation: "https://opentelemetry.io/docs/languages/go/",
+      etat: EN_LOCAL,
+      piege:
+        "Go : poser otel.SetTextMapPropagator(propagation.TraceContext{}) — sans lui, otelhttp ignore traceparent et la trace ne rejoint pas la session.",
+    },
+    {
+      langage: "PHP",
+      documentation: `${DOC}/php/`,
+      etat: EN_LOCAL,
+      piege:
+        "PHP : l'exportateur veut un client HTTP PSR-18 (autoriser le greffon Composer php-http/discovery) ; les journaux Monolog passent par open-telemetry/opentelemetry-auto-psr3 et OTEL_PHP_PSR3_MODE=export.",
+    },
+    {
+      langage: "Ruby",
+      documentation: "https://opentelemetry.io/docs/languages/ruby/",
+      etat: EN_LOCAL,
+      piege:
+        "Ruby : ajouter at_exit { OpenTelemetry.tracer_provider.shutdown } — sans lui, un arrêt par SIGTERM perd les derniers spans.",
+    },
   ];
 
   // Le Collector (open source) reste une option : il sert quand le serveur ne

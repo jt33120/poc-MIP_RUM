@@ -12,11 +12,13 @@ import {
   activerRegle,
   activerSlo,
   creerCanal,
+  creerEtapeEscalade,
   creerRegle,
   creerSlo,
   evaluerAlertes,
   modifierRegle,
   supprimerCanal,
+  supprimerEtapeEscalade,
   supprimerSlo,
 } from "./alertes";
 import { activerApplication, creerApplication, creerSite, majOrigines, renouvelerCle } from "./applications";
@@ -85,6 +87,8 @@ export const COMMANDES_CONSOLE = {
   creerCanal,
   activerCanal,
   supprimerCanal,
+  creerEtapeEscalade,
+  supprimerEtapeEscalade,
   creerSonde,
   activerSonde,
   supprimerSonde,

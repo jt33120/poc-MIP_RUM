@@ -12,9 +12,11 @@
 //     la plage de l'écran, et l'écran le dit : une règle s'évalue sur SA fenêtre.
 //   - « Livrée » ≠ « partie » : trois états conservés (v49). Une alerte transmise
 //     dont le code HTTP n'est pas connu n'est ni livrée ni perdue.
-//   - Le délai d'acquittement (MTTA) n'est pas affiché : `alert_event` n'a pas
-//     d'horodatage d'acquittement (B50, § 6.3). Le motif est écrit à l'écran, en
-//     mots : sans nom de colonne (recette du 26/09/2026).
+//   - Le délai d'acquittement (MTTA) ne compte que les déclenchements nés après
+//     l'horodatage des acquittements (migration-v108, B50) : la tuile le dit, et un
+//     déclenchement acquitté plus tôt reste « acquittée », sans heure inventée.
+//   - L'escalade se décide au passage du planificateur, pas à la minute : la
+//     section « Escalade » écrit la cadence lue à côté des délais.
 //   - Aucun bouton d'écriture n'est RENDU pour un viewer ou une démonstration (V9).
 //
 // CHAQUE SECTION LIT INDÉPENDAMMENT (F02, § 3.8) : `lire()` ne lève pas, et une
@@ -36,6 +38,7 @@ import { ChannelsSection } from "@/components/alerts/ChannelsSection";
 import { RuleFields } from "@/components/alerts/RuleFields";
 import { RAISON_DETECTION_RELEASE, RAISON_REGRESSION_RELEASE, type ModeRelease } from "@/components/alerts/RuleFields";
 import { RuleRow } from "@/components/alerts/RuleRow";
+import { EscaladeSection } from "@/components/alerts/EscaladeSection";
 import { SeverityBadge } from "@/components/alerts/SeverityBadge";
 import type { Fil } from "@mip/console-contract";
 import { chargerAlertes } from "@/lib/chargeurs/alertes";
@@ -62,7 +65,6 @@ import {
   fluxATraiter,
   grilleDesJours,
   JOURS_DECLENCHEMENTS,
-  MOTIF_MTTA,
   PLAFOND_DECLENCHEMENTS,
   PLAFOND_FLUX,
   comptesRegles,
@@ -73,7 +75,14 @@ import {
   titreEvenement,
   totalDeclenchements,
 } from "@/lib/alertes-ecran";
-import { ackEventAction, createRuleAction, evaluateNowAction } from "./actions";
+import { ligneAcquittement, ligneNiveau, tuileMtta } from "@/lib/escalade-ecran";
+import {
+  ackEventAction,
+  createEscalationStepAction,
+  createRuleAction,
+  deleteEscalationStepAction,
+  evaluateNowAction,
+} from "./actions";
 import { FUSEAU_AFFICHAGE } from "@/lib/fuseau-local";
 import { fenetresLues } from "@/lib/series";
 
@@ -87,6 +96,14 @@ const SOURCE_ALERTES = "Table alert_event : déclenchements écrits par l'évalu
 const SOURCE_LIVRAISONS =
   "Tables alert_event et alert_delivery : un déclenchement compte ici s'il n'a aucune livraison confirmée (2xx) ni en attente.";
 const SOURCE_REGLES = "Table alert_rule : état laissé par la dernière évaluation de chaque règle active.";
+const SOURCE_MTTA =
+  "Table alert_event : heure d'acquittement moins heure de déclenchement, médiane sur les déclenchements nés après l'horodatage des acquittements.";
+/** Ce que fait le bouton « Acquitter » depuis v108 (`acknowledgeAlertEvent`) : l'incident, pas la seule ligne. */
+const ACQUITTER_INCIDENT = "acquitte aussi les déclenchements ouverts de la même règle, du même SLO ou de la même issue";
+/** Le refus d'une étape d'escalade, par son code (`createEscalationStepAction`) : jamais le paramètre affiché tel quel. */
+const REFUS_ETAPE: Record<string, string> = {
+  canal: "le canal choisi n'est pas à la portée de l'étape : une étape d'application envoie vers un canal de cette application ou global, une étape globale vers un canal global.",
+};
 
 export default async function Alerts({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const sp = (await searchParams) ?? {};
@@ -102,6 +119,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
   const { etat: vue, ignores } = lireEtatDeVue("/alerts", lecteur, { estMetriqueAlerte: isAlertMetric });
 
   const { admin, plateforme, regles, evenements, nonAcquittees, apps, canaux, parJour, declenchements, releaseDetectee, fenetresCollecte } = ecran;
+  const { escalade, mtta, suivi, cadenceTick } = ecran;
   const modeRelease: ModeRelease = !releaseDetectee.ok
     ? { disponible: false, raison: RAISON_DETECTION_RELEASE }
     : releaseDetectee.data
@@ -125,6 +143,14 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
   // `alertEvents` ne rend pas l'issue d'un déclenchement SANS règle (notification
   // v73) ; `alertFirings` la porte. Jointure par identifiant d'événement.
   const sourceParEvenement = new Map(lignes.map((l) => [l.event_id, l]));
+  // L'escalade d'un déclenchement lu (v108) : heure d'acquittement, niveau atteint.
+  const suiviParEvenement = new Map((suivi.ok ? suivi.data : []).map((s) => [s.id, s]));
+  const mttaTuile = tuileMtta(mtta.ok ? mtta.data : null, JOURS_DECLENCHEMENTS);
+  const cadenceMin = cadenceTick.ok ? cadenceTick.data : null;
+  // v108 lue : l'acquittement vaut pour l'incident (les déclenchements ouverts de la source).
+  const escaladeLue = escalade.ok && escalade.data.disponible;
+  const etapeRefuseeRaw = Array.isArray(sp.etape_refusee) ? sp.etape_refusee[0] : sp.etape_refusee;
+  const etapeRefusee = etapeRefuseeRaw != null ? (REFUS_ETAPE[etapeRefuseeRaw] ?? "refus de la commande.") : null;
 
   const firedRaw = Array.isArray(sp.fired) ? sp.fired[0] : sp.fired;
   const fired = firedRaw != null && /^\d+$/.test(firedRaw) ? Number(firedRaw) : null;
@@ -237,10 +263,10 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
         </div>
       )}
 
-      {/* ── Zone 4 : les cinq chiffres clés (A1, A2, A3, A4, A4b), cases de même gabarit. ── */}
+      {/* ── Zone 4 : les six chiffres clés (A1, A2, A3, A4, MTTA, A4b), cases de même gabarit. ── */}
       {!rienCree && (
       <SectionErreur titre="Chiffres clés des alertes">
-        <div className="mb-4 grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-5" data-testid="kpi-alertes">
+        <div className="mb-4 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6" data-testid="kpi-alertes">
           <KpiTile
             label="Non acquittées"
             valeur={nonAcquittees.ok ? nonAcquittees.data : null}
@@ -286,6 +312,17 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
             source={SOURCE_REGLES}
             categorie="Règles"
             href="#regles"
+          />
+          <KpiTile
+            label={`Délai médian d'acquittement (${JOURS_DECLENCHEMENTS} j)`}
+            libelleCase={`Délai d'acquittement · ${JOURS_DECLENCHEMENTS} j`}
+            valeur={mttaTuile.valeur}
+            format="s-auto"
+            raisonNull={mttaTuile.raisonNull}
+            lecture={mttaTuile.lecture}
+            source={SOURCE_MTTA}
+            categorie="Déclenchements"
+            href="#a-traiter"
           />
           <KpiTile
             label="Canaux actifs"
@@ -386,13 +423,11 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                 {formater("count", flux.length)} déclenchement{flux.length > 1 ? "s" : ""} · non acquittés d&apos;abord
               </span>
             )}
-            {/* Pourquoi aucun délai d'acquittement : lu par un lecteur d'écran, au survol pour les autres. */}
-            <span className="sr-only" data-testid="motif-mtta">
-              Non acquittés d&apos;abord, puis les plus récents. {MOTIF_MTTA}
-            </span>
-            <span aria-hidden title={MOTIF_MTTA} className="ml-auto cursor-help text-[11px] text-ink-faint">
-              délai d&apos;acquittement non enregistré
-            </span>
+            {escalade.ok && escalade.data.disponible && escalade.data.etapes.length > 0 && (
+              <a href="#escalade" className="ml-auto text-[11px] text-ink-faint underline-offset-2 hover:underline">
+                {pluriel(escalade.data.etapes.length, "étape")} d&apos;escalade
+              </a>
+            )}
           </div>
           {!evenements.ok ? (
             <div className="p-3">
@@ -425,6 +460,9 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                   const cible = cibleMesure(e, regle?.window_minutes ?? null, source?.source === "issue" ? source.source_id : null);
                   const enEvidence = evtMisEnEvidence === e.id;
                   const titre = titreEvenement(e, source, regle);
+                  const escaladeEvt = suiviParEvenement.get(e.id);
+                  const acquittement = e.acknowledged ? ligneAcquittement(e.fired_at, escaladeEvt?.acknowledged_at) : null;
+                  const niveau = e.acknowledged ? null : ligneNiveau(escaladeEvt?.niveau, escaladeEvt?.relance);
                   return (
                     <div
                       key={e.id}
@@ -460,6 +498,15 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                       </div>
                       <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 pl-4 text-[11px] text-ink-soft">
                         {!e.acknowledged && <span className="font-semibold text-bad-ink">non acquittée</span>}
+                        {niveau && (
+                          <span
+                            className="rounded border border-bad/30 px-1.5 text-bad-ink"
+                            data-testid={`niveau-${e.id}`}
+                            title="Escalade en cours : niveau atteint, et rang de la dernière relance"
+                          >
+                            {niveau}
+                          </span>
+                        )}
                         <span className="font-mono text-ink-faint">#{e.id}</span>
                         {/* La route était renvoyée par la lecture sans jamais être affichée :
                             « LCP franchi » sans savoir où n'aide personne. */}
@@ -481,13 +528,31 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                           </Link>
                         )}
                         {e.acknowledged ? (
-                          <span className="rounded bg-panel2 px-1.5 text-ink-faint">acquittée</span>
+                          <span
+                            className="rounded bg-panel2 px-1.5 tabular-nums text-ink-faint"
+                            data-testid={`acquittement-${e.id}`}
+                            // L'auteur est une adresse de compte : pour l'administrateur seulement,
+                            // jamais pour un lecteur ni une session de démonstration (V9).
+                            title={
+                              acquittement
+                                ? `${acquittement}${admin && escaladeEvt?.acknowledged_by ? ` · par ${escaladeEvt.acknowledged_by}` : ""}`
+                                : "Acquittée avant l'horodatage des acquittements : l'heure n'est pas connue"
+                            }
+                          >
+                            {acquittement ?? "acquittée"}
+                          </span>
                         ) : admin ? (
                           <form action={ackEventAction} className="ml-auto">
                             <input type="hidden" name="id" value={e.id} />
                             <input type="hidden" name="app" value={e.app_id} />
-                            <button type="submit" data-testid={`ack-${e.id}`} className="btn-ghost px-2 py-0.5 text-[11px]">
+                            <button
+                              type="submit"
+                              data-testid={`ack-${e.id}`}
+                              className="btn-ghost px-2 py-0.5 text-[11px]"
+                              title={escaladeLue ? ACQUITTER_INCIDENT : undefined}
+                            >
                               Acquitter
+                              {escaladeLue && <span className="sr-only"> — {ACQUITTER_INCIDENT}</span>}
                             </button>
                           </form>
                         ) : null}
@@ -619,6 +684,28 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
         </div>
       ) : (
         <ChannelsSection channels={listeCanaux} apps={apps.ok ? apps.data : []} defaultApp={f.app ?? undefined} admin={admin} global={plateforme} />
+      )}
+
+      {/* ── Zone 9 : l'escalade (v108), une ligne par étape, détail au clic. Après les
+             canaux : une étape envoie vers l'un d'eux. ── */}
+      {!escalade.ok ? (
+        <div className="mt-6">
+          <EchecLecture titre="Escalade" />
+        </div>
+      ) : (
+        <EscaladeSection
+          disponible={escalade.data.disponible}
+          etapes={escalade.data.etapes}
+          canaux={listeCanaux}
+          apps={apps.ok ? apps.data : []}
+          defaultApp={f.app ?? undefined}
+          admin={admin}
+          global={plateforme}
+          cadenceMin={cadenceMin}
+          refus={admin ? etapeRefusee : null}
+          creer={createEscalationStepAction}
+          supprimer={deleteEscalationStepAction}
+        />
       )}
     </div>
   );

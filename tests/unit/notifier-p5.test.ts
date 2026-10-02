@@ -292,7 +292,8 @@ describe("scheduler — SCHEDULER_DELIVERY=off : le tick décide, il ne livre pl
   it("off : ni routage de l'outbox, ni webhooks, ni réconciliation", async () => {
     const dispatch = vi.fn();
     const bilan = await travaux(poolFactice() as never, { log: muet, dispatch, livraison: false }).tick();
-    expect(Object.keys(bilan.resultats)).toEqual(["check_alerts", "check_slo_burn", "uptime"]);
+    // L'escalade (v108) décide : elle reste au tick, le notifier livrera ce qu'elle met en file.
+    expect(Object.keys(bilan.resultats)).toEqual(["check_alerts", "check_slo_burn", "escalate_alerts", "uptime"]);
     expect(dispatch).not.toHaveBeenCalled();
   });
 
@@ -303,6 +304,7 @@ describe("scheduler — SCHEDULER_DELIVERY=off : le tick décide, il ne livre pl
       "check_alerts",
       "route_error_issue_notifications",
       "check_slo_burn",
+      "escalate_alerts",
       "uptime",
       "dispatch_alerts",
       "reconcile_deliveries",

@@ -29,6 +29,8 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | Opération | Méthode et chemin | Authentification | Portée | Démo | Secret client | Audit |
 |---|---|---|---|---|---|---|
 | `ops.jwks` | `GET /v1/.well-known/jwks.json` | aucune session | — | lecture | **non exigé** | — |
+| `alerts.createEscalationStep` | `POST /v1/alert-escalation-steps` | session administrateur | — | **refusée** | exigé | `alert_escalation_step.create` |
+| `alerts.deleteEscalationStep` | `DELETE /v1/alert-escalation-steps/{id}` | session administrateur | — | **refusée** | exigé | `alert_escalation_step.delete` |
 | `alerts.evaluate` | `POST /v1/alert-evaluations` | administrateur de la plateforme | — | **refusée** | exigé | `alert.evaluate` |
 | `alerts.acknowledgeEvent` | `POST /v1/alert-events/{id}/acknowledgement` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `alert_event.acknowledge` |
 | `alerts.createRule` | `POST /v1/alert-rules` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `alert_rule.create` |

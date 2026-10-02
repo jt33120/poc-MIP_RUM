@@ -69,6 +69,12 @@ export interface ApiSpanOptions {
   /** Snapshot causal pris au DÉPART de l'appel, jamais à sa réponse. */
   action?: () => Record<string, string | number | boolean>;
   /**
+   * Faux : l'appel part tel quel, sans en-tête ni span. Une session que l'accord
+   * fait tomber hors échantillon n'injecte pas `traceparent` sur chaque requête —
+   * le serveur tracerait pour une session qui n'existe pas. Absent : toujours actif.
+   */
+  actif?: () => boolean;
+  /**
    * Erreurs réseau (`captureErrors.network`) ; absent = aucune. `report` reçoit
    * les attributs de l'exception et l'horodatage de DÉPART de l'appel, celui de
    * son span : l'attribution causale reste celle du départ.
@@ -152,7 +158,13 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
           "http.url": scrubUrl(url),
           "http.method": method,
           "http.status_code": status,
+          // La DURÉE du span : `realEmit` le ferme à `tsMs` + cette valeur. Les
+          // attributs HTTP stables (http.request.method, url.full…) sont ajoutés
+          // à la fermeture, après beforeSend (otel.ts, `conventionsHttp`).
           "http.duration_ms": Math.round(performance.now() - startPerf),
+          // Échec sans réponse : la classe d'erreur au sens OpenTelemetry. Un
+          // abandon voulu par l'application n'en est pas une (cf. echecReseau).
+          ...(issue === "timeout" ? { "error.type": "TimeoutError" } : issue === "network" ? { "error.type": "NetworkError" } : {}),
         },
         tsMs,
       );
@@ -169,7 +181,7 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
         const rawUrl =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         const target = resolveTarget(rawUrl, opts);
-        if (!target || !cap.take()) return orig.call(this, input as RequestInfo, init);
+        if (!target || opts.actif?.() === false || !cap.take()) return orig.call(this, input as RequestInfo, init);
 
         const method = (
           init?.method ?? (input instanceof Request ? input.method : "GET")
@@ -226,7 +238,7 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
       try {
         const meta = this.__mip;
         const target = meta ? resolveTarget(meta.url, opts) : null;
-        if (meta && target && cap.take()) {
+        if (meta && target && opts.actif?.() !== false && cap.take()) {
           const traceId = opts.traceId?.() ?? randHex(16);
           const spanId = randHex(8);
           this.setRequestHeader("traceparent", traceparent(traceId, spanId));
@@ -235,13 +247,12 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
           const ts = Date.now();
           const actionAttrs = opts.action?.() ?? {};
           // error/timeout/abort précèdent toujours loadend : ils disent POURQUOI
-          // le statut vaut 0, que loadend seul ne dit pas.
+          // le statut vaut 0, que loadend seul ne dit pas. Écoutés même sans la
+          // voie d'erreurs réseau : l'issue du span (`error.type`) en dépend.
           let issue: IssueReseau | null = null;
-          if (opts.errors) {
-            this.addEventListener("error", () => { issue = "network"; }, { once: true });
-            this.addEventListener("timeout", () => { issue = "timeout"; }, { once: true });
-            this.addEventListener("abort", () => { issue = "abort"; }, { once: true });
-          }
+          this.addEventListener("error", () => { issue = "network"; }, { once: true });
+          this.addEventListener("timeout", () => { issue = "timeout"; }, { once: true });
+          this.addEventListener("abort", () => { issue = "abort"; }, { once: true });
           // loadend couvre load/error/abort/timeout ; status 0 = échec réseau
           this.addEventListener(
             "loadend",

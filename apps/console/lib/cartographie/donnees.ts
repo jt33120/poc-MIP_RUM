@@ -16,12 +16,12 @@ import { ELEMENTS_RAILWAY_TRAITEMENT, ELEMENTS_TIERS_TRAITEMENT, LIENS_TRAITEMEN
 import type { Cartographie, Lien, Zone } from "./types";
 
 export const CHIFFRES = {
-  tables: 70,
-  derniereMigration: 107,
+  tables: 71,
+  derniereMigration: 108,
   outilsMcp: 19,
   ecrans: 54,
   routesApiV1: 28,
-  operationsConsoleApi: 115,
+  operationsConsoleApi: 117,
   fichiersDeTests: FICHIERS_DE_TESTS,
 } as const;
 

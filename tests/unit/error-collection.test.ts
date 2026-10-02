@@ -65,6 +65,7 @@ vi.mock("../../packages/rum-sdk/src/session", () => ({
   getOrCreateSession: () => ({ sessionId: "session-p52", visitorId: "visiteur-p52" }),
   rotateSession: () => ({ sessionId: "session-p52-bis", visitorId: "visiteur-p52" }),
   touchSession: () => {},
+  echue: () => false,
 }));
 vi.mock("../../packages/rum-sdk/src/privacy", () => ({ readPrivacySignals: () => ({}), signalsOptOut: () => false }));
 vi.mock("../../packages/rum-sdk/src/sampling", async (importOriginal) => ({

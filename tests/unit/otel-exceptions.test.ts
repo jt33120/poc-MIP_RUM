@@ -17,6 +17,8 @@ import {
 } from "../../packages/backend/shared/otlp.mjs";
 // @ts-expect-error module JS partagé sans déclarations
 import { _resetColonnesCache, writeLogs, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
+import { evenementException } from "../../packages/rum-sdk/src/otel";
+import { buildResourceSpans, msToHr } from "../../packages/rum-sdk/src/otlp-encode";
 
 type Attrs = Record<string, unknown>;
 type Row = Record<string, unknown>;
@@ -236,6 +238,39 @@ describe("parseur — exceptions portées par un span", () => {
     expect(rows.errors[0]).toMatchObject({ span_id: SPAN, session_id: "s-web" });
     expect(rows.errors[0]).not.toHaveProperty("origin_signal");
   });
+
+  // 01/10/2026 : le SDK web porte désormais l'événement OpenTelemetry sur chacune
+  // de ses erreurs (packages/rum-sdk/src/otel.ts). Le cas ci-dessus devient le
+  // cas NOMINAL du navigateur : on le rejoue sur l'octet que le SDK encode.
+  it("le span « exception » tel que l'encode le SDK web : un événement, une seule erreur", () => {
+    const attrsWeb = { ...erreur(), "mip.session_id": "s-web", "mip.route": "/payer" };
+    const debut = msToHr(NOW - 1_000);
+    const ev = evenementException(attrsWeb, debut);
+    expect(ev).not.toBeNull();
+    const corps = buildResourceSpans({ "mip.app_id": APP, "service.name": "mip-rum-web" }, [{
+      name: "exception", traceId: TRACE, spanId: SPAN, startTime: debut, endTime: debut,
+      attributes: attrsWeb, events: [ev!],
+    }]) as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Row[] }> }> };
+    const [encode] = corps.resourceSpans[0].scopeSpans[0].spans;
+    expect(encode.events).toEqual([{
+      timeUnixNano: nanos(NOW - 1_000),
+      name: "exception",
+      attributes: attributs({
+        "exception.type": "ValueError",
+        "exception.message": "montant négatif",
+        "exception.stacktrace": erreur()["exception.stacktrace"],
+      }),
+    }]);
+    const rows = flattenOtlp(corps, { now: NOW });
+    expect(rows.errors).toHaveLength(1);
+    expect(rows.errors[0]).toMatchObject({ span_id: SPAN, session_id: "s-web", error_type: "ValueError" });
+    expect(rows.rejected).toBe(0);
+  });
+
+  it("sans type ni message, le SDK web n'invente pas d'événement", () => {
+    expect(evenementException({ "exception.stacktrace": "pile seule" }, msToHr(NOW))).toBeNull();
+    expect(evenementException({ "exception.type": "", "exception.message": "" }, msToHr(NOW))).toBeNull();
+  });
 });
 
 // 29/09/2026, constaté en production : l'agent Node officiel sous Express 5
@@ -293,7 +328,11 @@ describe("parseur — route d'une exception portée par un span non serveur", ()
 
   it("non-régression : l'exception du span SERVER garde la route de sa requête", () => {
     expect(routes([span()])).toEqual(["/invoices/:id"]);
-    expect(routes([span({}, { "http.route": undefined, "http.response.status_code": 404 })])).toEqual(["(non trouvée)"]);
+    // Sans `http.route`, un 404 garde la route que porte le NOM du span quand c'est un motif
+    // de routeur (`POST /invoices/{id}`, cas de Go, otelhttp) ; un nom qui n'est qu'un chemin
+    // brut reste « (non trouvée) » (otlp.mjs, motifDuNom).
+    expect(routes([span({}, { "http.route": undefined, "http.response.status_code": 404 })])).toEqual(["/invoices/:id"]);
+    expect(routes([span({ name: "GET /manager/html" }, { "http.route": undefined, "http.response.status_code": 404 })])).toEqual(["(non trouvée)"]);
     expect(routes([span({}, { "http.response.status_code": 404 })])).toEqual(["/invoices/:id"]);
     // `mip.route` d'un span navigateur (SDK web) prime toujours.
     expect(routes([gestionnaire({ "mip.route": "/page" })])).toEqual(["/page"]);

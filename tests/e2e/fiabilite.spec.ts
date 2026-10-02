@@ -675,7 +675,7 @@ test.describe("F64 — Écran Alertes", () => {
     expect(await figure.innerHTML()).not.toContain("fired=");
   });
 
-  test("le flux dit la route, les trois états de livraison, et le motif du MTTA absent", async ({ page }) => {
+  test("le flux dit la route, les trois états de livraison, et le délai d'acquittement", async ({ page }) => {
     await login(page);
     await page.goto(ecranF64(), { waitUntil: "domcontentloaded" });
     const lcp = page.getByTestId(`alert-event-${identifiants.evtLcp}`);
@@ -692,9 +692,11 @@ test.describe("F64 — Écran Alertes", () => {
     expect(ordre.indexOf(`alert-event-${identifiants.evtIssue}`)).toBeLessThan(
       ordre.indexOf(`alert-event-${identifiants.evtErreurs}`),
     );
-    // Le manque est dit en mots, sans le nom de la colonne absente (recette du 26/09/2026).
-    await expect(page.getByTestId("motif-mtta")).toContainText("délai d'acquittement n'est pas encore enregistré");
-    await expect(page.getByTestId("motif-mtta")).not.toContainText("acknowledged_at");
+    // Le délai d'acquittement (v108) : une tuile, jamais un 0 quand aucun acquittement
+    // n'est horodaté (la seed acquitte sans heure) ; la ligne acquittée sans heure le reste.
+    await expect(tuileF64(page, "Délai d'acquittement")).toHaveText("—");
+    await expect(page.getByTestId(`acquittement-${identifiants.evtErreurs}`)).toHaveText("acquittée");
+    await expect(page.getByTestId("kpi-alertes")).not.toContainText("acknowledged_at");
   });
 
   test("« Voir la mesure » porte from/to = la fenêtre ÉVALUÉE, pas la plage de l'écran", async ({ page }) => {

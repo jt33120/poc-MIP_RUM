@@ -95,12 +95,42 @@ function texteDeRegle(d) {
  * Corps d'une livraison, selon ce qui l'a déclenchée : la charge minimale d'une
  * notification d'issue telle que l'outbox l'a figée, le payload d'une règle, ou,
  * pour un événement sans règle (nouvelle erreur, SLO, uptime), son message.
- * @param {{notification?: object|null, metric?: string|null, severity?: string, message?: string|null}} d
+ *
+ * Une livraison d'ESCALADE (migration-v108, `escalate_alerts`) porte le même corps,
+ * marqué de son niveau et de son rang de relance — dans le texte, qu'un humain lit
+ * (« Relance 2 / niveau 3 »), et dans `escalation`, qu'un outil lit.
+ * @param {{notification?: object|null, metric?: string|null, severity?: string, message?: string|null,
+ *          escalation_level?: number|null, escalation_relance?: number|null}} d
  */
 export function payloadOf(d) {
+  const charge = chargeNominale(d);
+  if (d.escalation_level == null) return charge;
+  const niveau = Number(d.escalation_level);
+  const relance = Number(d.escalation_relance ?? 0);
+  return { ...charge, text: texteEscalade(charge.text ?? "", niveau, relance), escalation: { level: niveau, relance } };
+}
+
+function chargeNominale(d) {
   if (d.notification) return d.notification;
   if (d.metric) return buildPayload(d);
   return { source: "mip-rum", severity: d.severity, text: `[MIP RUM] ${d.message ?? ""}` };
+}
+
+const PREFIXE = "[MIP RUM] ";
+
+/**
+ * Le texte d'un envoi d'escalade : « [MIP RUM] Niveau 2, non acquittée — … » pour le
+ * premier envoi d'un niveau, « [MIP RUM] Relance 1 / niveau 2, non acquittée — … »
+ * pour une relance. La marque suit le préfixe : un filtre de messagerie qui trie
+ * sur « [MIP RUM] » continue de trier.
+ * @param {string} texte  le texte nominal
+ * @param {number} niveau
+ * @param {number} relance  0 : premier envoi du niveau
+ */
+export function texteEscalade(texte, niveau, relance) {
+  const corps = texte.startsWith(PREFIXE) ? texte.slice(PREFIXE.length) : texte;
+  const marque = relance > 0 ? `Relance ${relance} / niveau ${niveau}` : `Niveau ${niveau}`;
+  return `${PREFIXE}${marque}, non acquittée — ${corps}`;
 }
 
 /** Le dispatcher ne sait poster qu'en HTTP(S) : une adresse e-mail n'est pas une URL. */
@@ -137,6 +167,10 @@ export function decideStatus(ok, attemptsBefore, maxAttempts = MAX_ATTEMPTS) {
  * Réservation de la prochaine livraison à tenter : 'queued' + 'failed' éligibles au
  * rejeu (sous le plafond ET passé le backoff de 30 s × 2^attempts). Une ligne à la
  * fois : elle reste verrouillée le temps de son POST, puis sa transaction valide.
+ *
+ * Le niveau et le rang d'une livraison d'escalade (migration-v108) sont lus par
+ * `to_jsonb(d)` : une clé absente vaut NULL, là où nommer la colonne ferait échouer
+ * TOUTE la livraison si le livreur se déploie avant la migration.
  * @param {boolean} v73  migration-v73 appliquée (événements sans règle livrables)
  */
 export function selectionSql(v73) {
@@ -145,7 +179,9 @@ export function selectionSql(v73) {
        left join error_issue_notification n on n.alert_event_id = e.id
        left join alert_config c on c.singleton`
     : "join alert_rule r on r.id = e.rule_id";
-  return `select d.id, d.target, d.attempts, e.value, e.message, e.severity,
+  return `select d.id, d.target, d.attempts, e.value, e.message, e.severity, e.acknowledged,
+                 (to_jsonb(d)->>'escalation_level')::int as escalation_level,
+                 (to_jsonb(d)->>'escalation_relance')::int as escalation_relance,
                  r.app_id, r.metric, r.route, r.threshold, r.window_minutes, r.comparator, r.mode,
                  ${v73 ? "n.payload" : "null::jsonb"} as notification
             from alert_delivery d
@@ -234,6 +270,13 @@ async function livrerMail(client, d, resteMs, bilan, { email, fetchMail }) {
  * @returns {Promise<{ canal: "email"|"webhook"|"autre", status: string }>}
  */
 async function livrer(client, d, resteMs, bilan, { fetchImpl, email, fetchMail, secretSignature }) {
+  // L'acquittement arrête l'escalade, y compris l'envoi mis en file au tick et pas
+  // encore parti : relancer quelqu'un pour une alerte déjà prise en charge serait
+  // du bruit. Le routage nominal, lui, part quoi qu'il arrive.
+  if (d.escalation_level != null && d.acknowledged) {
+    await solderSkipped(client, d, "déclenchement acquitté avant l'envoi : l'escalade s'arrête", bilan);
+    return { canal: estAdresseMail(d.target) ? "email" : cibleHttp(d.target) ? "webhook" : "autre", status: "skipped" };
+  }
   if (estAdresseMail(d.target)) {
     return { canal: "email", status: await livrerMail(client, d, resteMs, bilan, { email, fetchMail }) };
   }

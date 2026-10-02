@@ -91,6 +91,8 @@ const LIBELLES: Record<string, string> = {
   notify_channel_create: "Canal de notification créé",
   notify_channel_set_active: "Canal de notification activé ou désactivé",
   notify_channel_delete: "Canal de notification supprimé",
+  alert_escalation_step_create: "Étape d'escalade créée",
+  alert_escalation_step_delete: "Étape d'escalade supprimée",
   uptime_check_create: "Sonde de disponibilité créée",
   uptime_check_set_enabled: "Sonde de disponibilité activée ou désactivée",
   uptime_check_toggle: "Sonde de disponibilité activée ou désactivée",

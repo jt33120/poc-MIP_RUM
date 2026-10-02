@@ -161,8 +161,8 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
         texte: "Seul migrateur, au pré-déploiement : un échec garde l'ancien déploiement en service.",
         sources: ["services/scheduler/migrate.mjs:17-33", "packages/db/migrate.mjs:100-106"],
       },
-      { texte: "Il ne livre plus rien : la livraison est passée au notifier.", sources: [`${BACK}/jobs/planifie.mjs:367-372`] },
-      { texte: "Ses sondes HTTP refusent le réseau privé et les métadonnées du cloud.", sources: [`${BACK}/jobs/planifie.mjs:199-218`] },
+      { texte: "Il ne livre plus rien : la livraison est passée au notifier.", sources: [".railway/railway.ts:384", `${BACK}/jobs/planifie.mjs:373`, `${BACK}/jobs/planifie.mjs:390`] },
+      { texte: "Ses sondes HTTP refusent le réseau privé et les métadonnées du cloud.", sources: [`${BACK}/jobs/planifie.mjs:194-222`] },
       { texte: "Une réplique, aucun domaine public.", sources: ["docs/TOPOLOGIE_BACKEND.md:27"] },
     ],
     liste: {
@@ -171,6 +171,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
         { nom: "tick · canari", role: "un faux lot par la console et en direct, relu en base" },
         { nom: "tick · check_alerts", role: "les règles d'alerte : seuil, habitude, release" },
         { nom: "tick · check_slo_burn", role: "la consommation des objectifs de service" },
+        { nom: "tick · escalate_alerts", role: "les niveaux et relances des incidents non acquittés" },
         { nom: "tick · uptime", role: "les vérifications HTTP des sites, 10 en parallèle" },
         { nom: "heure · refresh_rum_rollups", role: "les agrégats horaires des 26 dernières heures" },
         { nom: "heure · refresh_metric_histogram", role: "les histogrammes des Web Vitals" },
@@ -185,7 +186,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
     },
     x: 50,
     y: 1780,
-    hauteur: 330,
+    hauteur: 350,
   },
   {
     id: "notifier",
@@ -199,13 +200,18 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
     faits: [
       {
         texte: "Une passe toutes les 15 minutes, 45 s après le tick ; pas de LISTEN/NOTIFY, qui ne traverse pas le pooler de Neon.",
-        sources: [`${BACK}/jobs/livreur.mjs:37-81`, "docs/architecture/adr/0014-base-gratuite.md:38"],
+        sources: [`${BACK}/jobs/livreur.mjs:76-89`, "docs/architecture/adr/0014-base-gratuite.md:38"],
       },
-      { texte: "Réservation en SKIP LOCKED : un même envoi ne part jamais deux fois.", sources: [`${BACK}/lib/dispatch-alerts.mjs:142-162`] },
-      { texte: "Cinq tentatives au plus, avec un recul qui double à chaque fois.", sources: [`${BACK}/lib/dispatch-alerts.mjs:118-134`] },
+      { texte: "Réservation en SKIP LOCKED : un même envoi ne part jamais deux fois.", sources: [`${BACK}/lib/dispatch-alerts.mjs:176-197`] },
+      { texte: "Cinq tentatives au plus, avec un recul qui double à chaque fois.", sources: [`${BACK}/lib/dispatch-alerts.mjs:146-148`, `${BACK}/lib/dispatch-alerts.mjs:190-193`] },
       {
         texte: "Les e-mails partent par l'API Resend, en mode test tant que le domaine d'envoi n'est pas vérifié ; pas de SMTP.",
         sources: [`${BACK}/lib/net/resend.mjs:34`, "services/notifier/worker.mjs:69-71"],
+      },
+      {
+        texte:
+          "Il veille sur le scheduler : à la première passe au-delà de 2 × cadence + 5 min sans tick abouti (vers 46 min au quart d'heure), une alerte critique part aux canaux globaux, une par épisode. Personne ne veille sur lui.",
+        sources: [`${BACK}/jobs/veille-ordonnanceur.mjs:16-36`, `${BACK}/jobs/veille-ordonnanceur.mjs:50-55`, `${BACK}/jobs/livreur.mjs:186-191`],
       },
     ],
     x: 370,
@@ -301,7 +307,7 @@ export const ELEMENTS_TIERS_TRAITEMENT: readonly Element[] = [
     resume: "Le service d'e-mail qui porte les alertes adressées à une personne ; déclaré comme sous-traitant.",
     faits: [
       { texte: "Appel à l'API Resend, avec une clé d'idempotence par livraison.", sources: [`${BACK}/lib/net/resend.mjs:34`] },
-      { texte: "Déclaré sous-traitant dans les pages légales.", sources: ["apps/console/lib/legal.ts:280"] },
+      { texte: "Déclaré sous-traitant dans les pages légales.", sources: ["apps/console/lib/legal.ts:312-318"] },
     ],
     x: -440,
     y: 1780,
@@ -322,7 +328,7 @@ export const ELEMENTS_TIERS_TRAITEMENT: readonly Element[] = [
     titre: "Sites surveillés",
     sousTitre: "vérifications HTTP",
     resume: "Les adresses que les clients font vérifier : le scheduler les appelle à chaque tick et note si elles répondent.",
-    faits: [{ texte: "Un échec est confirmé par un second essai une seconde plus tard.", sources: [`${BACK}/jobs/planifie.mjs:183-185`] }],
+    faits: [{ texte: "Un échec est confirmé par un second essai une seconde plus tard.", sources: [`${BACK}/jobs/planifie.mjs:188-189`, `${BACK}/jobs/planifie.mjs:247-276`] }],
     x: -440,
     y: 2140,
   },

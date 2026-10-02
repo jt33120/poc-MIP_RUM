@@ -11,6 +11,7 @@ import {
   statutPour,
   type Attributes,
   type EmitSpan,
+  type HrTime,
   msToHr,
 } from "./otlp-encode";
 import {
@@ -23,7 +24,13 @@ import {
 } from "./retry";
 import type { MIPRumConfig } from "./types";
 
-const SDK_VERSION = "0.4.0";
+type SpanEvent = NonNullable<EmitSpan["events"]>[number];
+
+// Suit packages/rum-sdk/package.json (vérifié par tests/unit/specs.test.ts) : elle
+// restait à 0.4.0 pendant que le paquet passait 0.4.3, et un changement de
+// comportement (sessions de 4 h, consentement sur le terminal, bfcache : 0.5.0)
+// ne se distinguait pas dans ce que le SDK émet.
+const SDK_VERSION = "0.5.0";
 const MAX_BATCH = 64; // même plafond que l'ancien BatchSpanProcessor
 
 /** Interface minimale d'un span (sous-ensemble de l'API OTel réellement utilisé). */
@@ -103,6 +110,59 @@ export function newPageTrace(): string {
   pageSpanId = hexId(8);
   racineCreee = false;
   return pageTraceId;
+}
+
+// --- Conventions sémantiques OpenTelemetry ----------------------------------
+// Les attributs historiques (http.method, http.url, http.status_code) restent
+// émis : l'ingestion MIP les lit, et un SDK déjà posé chez un client continue de
+// les envoyer. Les attributs STABLES sont ajoutés à côté, pour un backend tiers.
+//
+// Dérivés À LA FERMETURE, donc APRÈS `beforeSend` : une application dont le hook
+// réécrit `http.url` (un identifiant dans le chemin) retrouve la même réécriture
+// dans `url.full`. Posés à l'émission, ils auraient ouvert un second chemin que
+// son filtre ne connaît pas.
+
+/** Méthodes HTTP connues de la convention ; toute autre devient `_OTHER`. */
+const METHODE_CONNUE = /^(?:GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH)$/;
+
+/** Ajoute à un span `http.client` les attributs HTTP stables, sans écraser un attribut posé. */
+export function conventionsHttp(a: Record<string, unknown>): void {
+  const methode = a["http.method"];
+  const url = a["http.url"];
+  const statut = a["http.status_code"];
+  if (typeof methode === "string" && a["http.request.method"] == null) {
+    const connue = METHODE_CONNUE.test(methode);
+    a["http.request.method"] = connue ? methode : "_OTHER";
+    if (!connue) a["http.request.method_original"] = methode;
+  }
+  if (typeof url === "string" && a["url.full"] == null) a["url.full"] = url;
+  // Statut 0 = aucune réponse : la convention veut alors l'attribut ABSENT.
+  if (typeof statut === "number" && statut > 0 && a["http.response.status_code"] == null) {
+    a["http.response.status_code"] = statut;
+    // Un 4xx ou un 5xx est une erreur pour un span CLIENT ; `error.type` en dit la classe.
+    if (statut >= 400 && a["error.type"] == null) a["error.type"] = String(statut);
+  }
+}
+
+/**
+ * Événement `exception` d'un span `exception`, tel qu'OpenTelemetry l'attend :
+ * c'est là qu'un backend tiers lit le type, le message et la pile. Recopié des
+ * attributs FINAUX du span (après `beforeSend` et ses nettoyages) : l'événement
+ * ne porte jamais rien que le span ne porte pas déjà.
+ *
+ * L'ingestion MIP ignore les événements d'un span nommé « exception » — le span
+ * EST l'exception (packages/backend/shared/otlp.mjs, `spanEventExceptions`) : une
+ * erreur reste une seule ligne.
+ */
+export function evenementException(a: Record<string, unknown>, time: HrTime): SpanEvent | null {
+  const attributes: Attributes = {};
+  for (const cle of ["exception.type", "exception.message", "exception.stacktrace"]) {
+    const v = a[cle];
+    if (typeof v === "string" && v) attributes[cle] = v;
+  }
+  // La convention exige le type OU le message : sans l'un ni l'autre, pas d'événement.
+  if (!attributes["exception.type"] && !attributes["exception.message"]) return null;
+  return { name: "exception", time, attributes };
 }
 
 /**
@@ -305,6 +365,11 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
           if (typeof a["mip.trace_id"] === "string") span.traceId = a["mip.trace_id"];
           if (typeof a["mip.span_id"] === "string") span.spanId = a["mip.span_id"];
           if (typeof a["mip.parent_span_id"] === "string") span.parentSpanId = a["mip.parent_span_id"];
+          if (span.name === "http.client") conventionsHttp(a);
+          if (span.name === "exception") {
+            const ev = evenementException(a, span.startTime);
+            if (ev) span.events = [ev];
+          }
           // L'issue ne se connaît qu'à la fermeture : le code HTTP d'un appel
           // arrive avec la réponse, pas à l'ouverture du span.
           const statut = statutPour(span.name, span.attributes);
