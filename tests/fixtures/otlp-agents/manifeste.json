@@ -41,7 +41,8 @@
         "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp": "1.46.0",
         "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp": "0.71.0"
       },
-      "application": "net/http (ServeMux à motifs de Go 1.22+), otelhttp.NewHandler et otelhttp.NewTransport, propagateur W3C posé par otel.SetTextMapPropagator"
+      "application": "net/http (ServeMux à motifs de Go 1.22+), otelhttp.NewHandler et otelhttp.NewTransport, propagateur W3C posé par otel.SetTextMapPropagator ; échec enregistré par span.RecordError(err, trace.WithStackTrace(true))",
+      "source": "applications/go/main.go"
     },
     "php": {
       "image": "php:8.4-cli (PHP 8.4.26)",
@@ -57,7 +58,8 @@
         "monolog/monolog": "3.12.1",
         "symfony/http-client": "8.1.8"
       },
-      "application": "Slim 4 sous php -S, PDO SQLite, Monolog ; OTEL_PHP_AUTOLOAD_ENABLED=true et OTEL_PHP_PSR3_MODE=export ; aucune ligne OpenTelemetry dans le code"
+      "application": "Slim 4 sous php -S, PDO SQLite, Monolog ; OTEL_PHP_AUTOLOAD_ENABLED=true et OTEL_PHP_PSR3_MODE=export ; aucune ligne OpenTelemetry dans le code",
+      "source": "applications/php/index.php"
     },
     "ruby": {
       "image": "ruby:3.4 (Ruby 3.4.11)",
@@ -72,7 +74,8 @@
         "sinatra": "4.2.1",
         "webrick": "1.9.2"
       },
-      "application": "Sinatra 4 sous rackup + WEBrick, sous-appel Net::HTTP ; l'initialiseur de la doc officielle et at_exit { OpenTelemetry.tracer_provider.shutdown }"
+      "application": "Sinatra 4 sous rackup + WEBrick, sous-appel Net::HTTP ; l'initialiseur de la doc officielle et at_exit { OpenTelemetry.tracer_provider.shutdown }",
+      "source": "applications/ruby/config.ru"
     }
   },
   "corps": [

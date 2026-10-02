@@ -122,10 +122,10 @@ tableau. Un journal d'agent ne porte pas la session : il se relie à elle par sa
   et `tracestate` — chaque requête ouvre une nouvelle trace, sans session, et le
   sous-appel part dans une trace à lui (constaté avec `otelhttp` 0.71.0). `otelhttp`
   0.71.0 n'écrit pas `http.route` : la route vient du nom du span (`GET /factures/{id}`,
-  motifs du `ServeMux` de Go 1.22 et plus), **sauf en 404 et en 405** : la console n'y
-  croit que `http.route` (§ 4). Un 404 ou un 405 renvoyé par un gestionnaire Go perd donc
-  sa route et compte en `(non trouvée)`, même sur une route que le `ServeMux` a résolue
-  (une facture absente sous `/factures/{id}`). À l'essai, l'exception s'enregistrait dans
+  motifs du `ServeMux` de Go 1.22 et plus), y compris en 404 et en 405 (§ 4) : un 404
+  métier (une facture absente sous `/factures/{id}`) garde sa route. Un motif sans
+  paramètre (`GET /factures`) ne se distingue pas d'un chemin brut : renvoyé en 404 ou en
+  405 par son gestionnaire, il compte en `(non trouvée)`. À l'essai, l'exception s'enregistrait dans
   le gestionnaire, `span.RecordError` puis `span.SetStatus(codes.Error, …)`, avec
   l'option `trace.WithStackTrace(true)` : le corps capturé porte une pile, que le SDK Go
   n'écrit qu'avec elle. **Cette pile se lit mal** : seules ses frames inlinées (sans
@@ -161,9 +161,12 @@ tableau. Un journal d'agent ne porte pas la session : il se relie à elle par sa
   deviennent `:commande_id` et `:id`. Sans `http.route` (`otelhttp` en Go), la route
   vient du nom du span : `GET /factures/{id}` devient `/factures/:id`. Un serveur sans
   modèle de route (`com.sun.net.httpserver` en Java) ne donne que son contexte. Un 404 ou
-  un 405 sans `http.route` prend la route fixe `(non trouvée)`, jamais le chemin brut ni
-  le nom du span : en Go, tout 404 ou 405 y tombe, route résolue ou non (§ 3). Un 5xx
-  sans `http.route` ni motif dans son nom garde, lui, le chemin brut.
+  un 405 sans route résolue prend la route fixe `(non trouvée)`, jamais le chemin brut.
+  Est résolue une route déclarée par `http.route`, ou un motif à paramètre `{…}` dans le
+  nom du span qui diffère du chemin reçu (Go, § 3) ; un nom qui recopie le chemin
+  (`GET /manager/html`) n'en est pas une (`packages/backend/shared/otlp.mjs`,
+  `sansRouteResolue`). Un 5xx sans `http.route` ni motif dans son nom garde, lui, le
+  chemin brut.
 - **Exceptions.** Une exception publiée à la fois par le span et par un journal ne compte
   qu'une fois. Deux cas comptent encore double : un span enfant et son parent envoyés
   dans deux lots, un journal émis dans un span enfant pour l'exception de son parent.
