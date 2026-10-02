@@ -163,19 +163,34 @@ livraisons.
   plafond 1 à 48. Une étape globale n'envoie qu'à un **canal global** ; une étape
   d'application, à un canal de cette application ou global — jamais les alertes d'une
   application vers le canal d'une autre. Supprimer un canal supprime ses étapes.
+- **L'incident, pas le déclenchement.** Une règle qui reste franchie et non acquittée lève
+  un déclenchement par fenêtre (pilier 3) : escalader chacun enverrait chaque niveau autant
+  de fois. L'escalade se fait donc par **incident** : les déclenchements ouverts d'une même
+  **source** (la règle, le SLO, ou l'issue d'une notification sans règle), chacun à moins de
+  24 h du précédent ; un écart de plus de 24 h ouvre un nouvel incident. Un incident
+  s'escalade **une fois**, depuis son premier déclenchement, à la plus haute sévérité de
+  ses déclenchements, et ses envois s'attachent à ce premier déclenchement.
 - **`escalate_alerts(p_maintenant)`**, étape du tick du scheduler juste après
-  `check_slo_burn` : pour chaque déclenchement **non acquitté**, de moins de 7 jours,
-  **né après la création de l'étape** (pas d'avalanche sur l'arriéré), une livraison
-  `queued` par niveau échu (`alert_delivery.escalation_level`, rang de relance 0). L'étape
-  du **dernier niveau** qui s'applique au déclenchement relance ensuite toutes les
-  `repeat_minutes`, `repeat_max` fois au plus (rang 1, 2…). Un tick manqué ne rattrape
-  pas les relances sautées : il envoie la plus récente due. Un index unique
-  (déclenchement, étape, rang) interdit le double envoi entre deux passes concurrentes.
+  `check_slo_burn` : pour chaque incident **non acquitté**, de moins de 7 jours, **né après
+  la création de l'étape** (pas d'avalanche sur l'arriéré), une livraison `queued` par
+  niveau échu (`alert_delivery.escalation_level`, rang de relance 0). L'étape du **dernier
+  niveau** dont le canal est **actif** relance ensuite toutes les `repeat_minutes`,
+  `repeat_max` fois au plus (rang 1, 2…) : un canal désactivé au dernier niveau laisse le
+  niveau actif d'en dessous relancer. Une passe envoie le rang qui suit le dernier envoyé,
+  dès qu'il est dû : aucun rang n'est sauté, et une relance plus rapprochée que le tick part
+  au rythme des ticks, une par passage. Un index unique (déclenchement, étape, rang)
+  interdit le double envoi entre deux passes concurrentes.
+- **Ce que l'escalade ne regarde pas** : la sévérité minimale du **canal**
+  (`notify_channel.severity_min`, qui règle le routage nominal) — c'est celle de l'**étape**
+  qui compte : un canal réglé sur « critique » reçoit l'escalade d'un avertissement si une
+  étape le vise. Ni l'état de la règle : une règle désactivée ne lève plus rien, mais ses
+  déclenchements déjà ouverts s'escaladent jusqu'à leur acquittement, leur plafond ou
+  7 jours.
 - **Quels déclenchements** : ceux qu'on peut **acquitter** depuis la console — nés d'une
   règle, d'un SLO ou d'une notification d'issue. Les alertes sans application connue de
   la base (uptime, absence de collecte, nouvelle erreur historique) ne s'escaladent pas :
   elles relanceraient jusqu'au plafond sans que personne puisse les arrêter.
-- **Le grain est le tick** (15 min en production) : un délai de 5 min part au passage
+- **Le grain est le tick** (15 min en production) : chaque délai part au premier passage
   qui suit son échéance. La section « Escalade » de `/alerts` écrit la cadence lue.
 - **Le livreur** (`dispatch-alerts.mjs`) envoie une livraison d'escalade comme les
   autres, son texte marqué : `[MIP RUM] Niveau 2, non acquittée — …`, puis
@@ -184,7 +199,10 @@ livraisons.
   acquitté entre sa mise en file et son envoi est soldé `skipped`, sans tentative.
 - **Acquittement horodaté** : `alert_event.acknowledged_at` et `acknowledged_by`, posés par
   la console (commande `acquitterEvenement`) une seule fois — un second acquittement ne
-  les réécrit pas. L'acquittement d'un déclenchement d'issue est désormais possible
+  les réécrit pas. Acquitter une ligne acquitte, à la même heure et par le même auteur,
+  tous les déclenchements ouverts de la même source : l'acquittement arrête l'incident
+  entier. Si la règle reste franchie, le déclenchement suivant ouvre un nouvel incident,
+  qui s'escalade à son tour. L'acquittement d'un déclenchement d'issue est désormais possible
   (son application vient de la notification). `/alerts` affiche « acquittée à HH:MM,
   après N min » et, sur un déclenchement ouvert, le niveau atteint.
 - **MTTA** : la tuile « Délai d'acquittement · 30 j » de `/alerts` est la médiane de
@@ -198,7 +216,9 @@ livraisons.
 - **Ce qui n'existe pas** : ni rotation d'astreinte, ni SMS, ni outil d'astreinte tiers —
   des niveaux vers les canaux déjà déclarés.
 - **Preuves** : `tests/integration/escalade-sql.test.ts` (niveau 1 puis 2 aux délais,
-  relances jusqu'au plafond, plus rien après l'acquittement, passes concurrentes, livreur),
+  relances jusqu'au plafond sans rang sauté, plus rien après l'acquittement, huit
+  déclenchements d'une même règle pour un seul incident, rechute après 24 h, passes
+  concurrentes, livreur),
   `tests/unit/escalade-*.test.ts`.
 
 ## Sécurité / exploitation

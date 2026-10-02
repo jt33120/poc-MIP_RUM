@@ -372,8 +372,8 @@ export function travaux(pool, { log = console, dispatch = null, livraison = true
           sql("check_alerts", "check_alerts()"),
           ...(livraison ? [l.route] : []),
           sql("check_slo_burn", "check_slo_burn()"),
-          // L'escalade (v108) : une livraison 'queued' par niveau échu de chaque
-          // déclenchement non acquitté, et les relances du dernier niveau. Elle
+          // L'escalade (v108) : une livraison 'queued' par niveau échu de chaque INCIDENT
+          // non acquitté (une source, migration-v108), et les relances du dernier niveau. Elle
           // DÉCIDE, comme check_alerts : elle tourne même quand le notifier livre.
           // Présente seulement avec sa migration : le code peut la précéder.
           {

@@ -105,7 +105,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     id: "H9",
     titre: "Une supervision de la supervision minimale",
     aujourdhui:
-      "Une sonde externe vérifie toutes les 15 minutes que le service répond, et prévient par e-mail les personnes qui suivent le dépôt. Le service des notifications alerte quand les travaux planifiés se taisent, au-delà de deux passages manqués ; lui-même n'est suivi que par son battement, affiché dans la console.",
+      "Une sonde externe vérifie toutes les 15 minutes que le service répond, et prévient par e-mail les personnes qui suivent le dépôt. Le service des notifications alerte quand les travaux planifiés se taisent, au troisième passage manqué (vers 46 minutes), vers les seuls canaux communs à toutes les applications : sans un tel canal, l'alerte ne se lit que dans l'écran Alertes. Lui-même n'est suivi que par son battement, affiché dans la console.",
     pourquoi: "Une panne de quelques heures ne prive aucun client pendant le POC.",
     production: "Une supervision reliée à l'astreinte, qui surveille aussi le service des notifications.",
     sources: [
