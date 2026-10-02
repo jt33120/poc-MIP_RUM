@@ -328,7 +328,11 @@ describe("parseur — route d'une exception portée par un span non serveur", ()
 
   it("non-régression : l'exception du span SERVER garde la route de sa requête", () => {
     expect(routes([span()])).toEqual(["/invoices/:id"]);
-    expect(routes([span({}, { "http.route": undefined, "http.response.status_code": 404 })])).toEqual(["(non trouvée)"]);
+    // Sans `http.route`, un 404 garde la route que porte le NOM du span quand c'est un motif
+    // de routeur (`POST /invoices/{id}`, cas de Go, otelhttp) ; un nom qui n'est qu'un chemin
+    // brut reste « (non trouvée) » (otlp.mjs, motifDuNom).
+    expect(routes([span({}, { "http.route": undefined, "http.response.status_code": 404 })])).toEqual(["/invoices/:id"]);
+    expect(routes([span({ name: "GET /manager/html" }, { "http.route": undefined, "http.response.status_code": 404 })])).toEqual(["(non trouvée)"]);
     expect(routes([span({}, { "http.response.status_code": 404 })])).toEqual(["/invoices/:id"]);
     // `mip.route` d'un span navigateur (SDK web) prime toujours.
     expect(routes([gestionnaire({ "mip.route": "/page" })])).toEqual(["/page"]);
