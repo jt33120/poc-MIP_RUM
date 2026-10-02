@@ -26,7 +26,7 @@ export const ELEMENTS_CLIENT: readonly Element[] = [
     faits: [
       {
         texte: "Aucun code MIP à installer : l'agent officiel, réglé par des variables OTEL_*.",
-        sources: [`${RECETTES}:74-84`],
+        sources: [`${RECETTES}:78-88`],
       },
       {
         texte: "S'il ne sort pas sur Internet, un Collector OpenTelemetry local peut relayer.",
@@ -74,9 +74,12 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
     faits: [
       {
         texte: "OTLP/HTTP en protobuf, compressé en gzip ; traces et journaux, pas de métriques.",
-        sources: [`${RECETTES}:74-84`],
+        sources: [`${RECETTES}:78-88`],
       },
-      { texte: "Go, PHP et Ruby : renvoyés à la documentation de l'agent, sans recette éprouvée.", sources: [`${RECETTES}:202-206`] },
+      {
+        texte: "Go, PHP et Ruby : éprouvés en local le 01/10/2026, pas en production ; même socle, renvoyés à la documentation de l'agent.",
+        sources: [`${RECETTES}:206-232`, "docs/capteurs-serveur.md:73-86"],
+      },
       {
         texte: "Les capteurs serveur maison (FastAPI, agent Node, Express) sont archivés depuis le 29/09/2026.",
         sources: ["docs/archive/capteurs-serveur-maison.md"],

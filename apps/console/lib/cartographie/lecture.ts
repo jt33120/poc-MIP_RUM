@@ -179,7 +179,7 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
       "Chaque écriture de la console (tableaux, alertes, comptes, RGPD…) est une commande avec sa règle d'accès, et son audit écrit dans la même transaction.",
     etiquettes: ["55 commandes", "audit"],
     faits: [
-      { texte: "55 commandes, une par opération d'écriture du contrat.", sources: [`${CONSOLE}/lib/commandes/index.ts:53-114`] },
+      { texte: "57 commandes, une par opération d'écriture du contrat.", sources: [`${CONSOLE}/lib/commandes/index.ts:55-118`] },
       { texte: "L'audit s'écrit dans la même transaction que l'écriture.", sources: [`${CONSOLE}/lib/commandes/commun.ts:4-8`] },
     ],
     x: 2650,

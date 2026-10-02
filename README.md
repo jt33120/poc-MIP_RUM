@@ -67,7 +67,7 @@ flowchart TB
 | `console-api` | Railway, groupe 2 · Restitution | le backend de la console ; la connexion passe par lui depuis le 27/09/2026 |
 | `mcp` | Railway, groupe 2 · Restitution | serveur MCP en lecture seule, qui passe par `api` sur le réseau privé ; aucun accès à la base |
 | `scheduler` | Railway, groupe 3 · Traitements | travaux planifiés sous bail, toutes les 15 minutes ; seul migrateur, au pré-déploiement |
-| `notifier` | Railway, groupe 3 · Traitements | livre les alertes (webhooks signés, e-mails) ; seul détenteur des secrets sortants |
+| `notifier` | Railway, groupe 3 · Traitements | livre les alertes (webhooks signés, e-mails) et leurs escalades ; alerte quand les travaux planifiés se taisent ; seul détenteur des secrets sortants |
 | PostgreSQL | Neon, aws-eu-central-1 (Francfort), offre payante Launch depuis le 27/09/2026 | à l'usage, calcul plafonné à 0,25 CU, veille active. Un palier : la base d'un vrai produit se choisira selon le standard de la DSI de MIP ([ADR-0014](docs/architecture/adr/0014-base-gratuite.md), remplacée) |
 
 Le schéma de production est à `migration-v96` : le redéploiement du scheduler du 27/09/2026 a appliqué v87 → v96.
@@ -173,7 +173,7 @@ En cas de désaccord entre ces documents, [docs/RUM_PARITY_STATUS.md](docs/RUM_P
 | [docs/capteurs-serveur.md](docs/capteurs-serveur.md) · [capteurs-serveur.csv](docs/capteurs-serveur.csv) | Côté serveur : l'agent OpenTelemetry officiel de chaque langage, sa commande, ce qui est éprouvé (l'agent Node et le middleware FastAPI maison sont archivés : [docs/archive/capteurs-serveur-maison.md](docs/archive/capteurs-serveur-maison.md)) |
 | [packages/rum-mobile/README.md](packages/rum-mobile/README.md) | SDK React Native (crashes, écrans, réseau, événements) |
 | [docs/API_CONSOLE.md](docs/API_CONSOLE.md) · [docs/RUM_READ_API.md](docs/RUM_READ_API.md) | API de lecture v1 (ITSM/CI-CD) + résumé partenaire |
-| [docs/MULTITENANT.md](docs/MULTITENANT.md) · [docs/ALERTING.md](docs/ALERTING.md) | Multi-tenant / RBAC · alerting (webhook/Slack ; e-mail par le service `notifier`, Resend en mode test — [services/notifier/README.md](services/notifier/README.md)) |
+| [docs/MULTITENANT.md](docs/MULTITENANT.md) · [docs/ALERTING.md](docs/ALERTING.md) | Multi-tenant / RBAC · alerting (webhook/Slack ; e-mail par le service `notifier`, Resend en mode test ; escalade par niveaux des alertes non acquittées — [services/notifier/README.md](services/notifier/README.md)) |
 | [docs/CONFORMITE.md](docs/CONFORMITE.md) · [docs/DPA.md](docs/DPA.md) | Conformité RGPD (résidence UE, DSAR, scrub PII) · modèle de DPA (art. 28) |
 | [docs/DOCUMENTS-HORS-DEPOT.md](docs/DOCUMENTS-HORS-DEPOT.md) | **Ce qui n'est pas ici** : documents commerciaux (offre, démo, scan marché) et documents d'un client nommé. Présents sur le poste, hors dépôt, et listés avec leur contenu |
 | [docs/LIMITES.md](docs/LIMITES.md) | Limites du produit : liste du 10/06/2026 (v0.1 à v0.3), mises à jour du 18/09 (P8.8) et du 26/09/2026 |

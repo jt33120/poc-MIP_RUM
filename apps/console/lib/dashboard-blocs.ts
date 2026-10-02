@@ -74,9 +74,13 @@ export const CATALOGUES: readonly Catalogue[] = [
           "Exige une capture vidéo du rendu. C'est une mesure de laboratoire : elle n'est pas calculable chez le visiteur, quel que soit le capteur.",
       },
       {
+        // Relu le 02/10/2026 : l'ancienne raison (« résoudre l'adresse IP à l'ingestion,
+        // ce que l'engagement interdit ») était fausse — le pays se résout déjà ainsi,
+        // sans rien stocker (docs/CONFORMITE.md § 3.2). Ce qui manque est une base et
+        // une décision, et l'adresse elle-même pour les mesures relayées.
         label: "Opérateur réseau",
         raison:
-          "Aucun navigateur ne l'expose. L'obtenir demanderait de résoudre l'adresse IP à l'ingestion — ce que l'engagement « aucune adresse IP stockée » interdit.",
+          "Aucun navigateur ne l'expose : il ne donne au mieux qu'un type de lien estimé (4g, 3g…), que le SDK relève. Le déduire de l'adresse IP, comme le pays, demanderait une base adresse → opérateur et un traitement de plus à déclarer ; et les mesures relayées par la console n'en portent aucune, le relais ne transmettant pas l'adresse.",
       },
       // « Comparaison de versions à trafic comparable » a quitté cette liste le
       // 01/10/2026 : la comparaison de A et B porte ses lignes « à mix égal »
@@ -115,7 +119,7 @@ export const CATALOGUES: readonly Catalogue[] = [
         // plusieurs personnes. Le SDK ne l'émet plus (migration-v57).
         label: "Identité du visiteur",
         raison:
-          "Jamais de personne nommée. Une session porte un identifiant de visiteur tiré au hasard, sans lien avec le terminal ni avec un compte, et les données personnelles sont retirées à la collecte comme à l'ingestion. C'est un engagement du produit, pas une fonctionnalité manquante.",
+          "Jamais de personne nommée. Une session porte un identifiant de visiteur tiré au hasard, sans lien avec le terminal ; l'identifiant de compte qu'une application déclare (setUser) est haché par application ou retiré, jamais stocké en clair, et les données personnelles sont retirées à la collecte comme à l'ingestion. C'est un engagement du produit, pas une fonctionnalité manquante.",
       },
       // « Démasquage sélectif au rejeu » est retiré le 01/10/2026 : le SDK démasque
       // une zone choisie (classe `mip-rum-unmask`, option `replayUnmask`) par le
@@ -147,7 +151,7 @@ export const CATALOGUES: readonly Catalogue[] = [
         // Neon, puis payante à l'usage depuis le 27/09/2026, en attendant le choix de
         // la DSI de MIP) : ce catalogue statique dit la cible et renvoie à la ligne
         // qui lit la vraie valeur.
-        raison: `Le déclencheur des tâches planifiées passe à cadence fixe — ${CADENCE_TICK_MIN} minutes visées, davantage tant que la base reste provisoire (la ligne « Latence d'alerte » de la présentation dit la cadence réelle) : un budget peut donc être consommé pendant tout un intervalle avant que l'alerte ne parte. C'est une cadence, pas du temps réel — évaluer le SLO à chaque mesure écrite demanderait un déclencheur en base, pas un passage périodique.`,
+        raison: `Le déclencheur des tâches planifiées passe à cadence fixe — ${CADENCE_TICK_MIN} minutes visées, davantage tant que la base reste provisoire (la ligne « Latence d'alerte » de la présentation dit la cadence réelle)  : un budget peut donc être consommé pendant tout un intervalle avant que l'alerte ne parte, et l'envoi part à la passe suivante des notifications (sur la même grille tant que la base est provisoire). Évaluer le SLO à chaque mesure écrite ne servirait qu'avec une livraison réveillée à chaque événement — une base tenue éveillée : un choix de coût, pas de code.`,
       },
       {
         // L'escalade existe depuis migration-v108 (écran Alertes, section « Escalade ») :

@@ -79,6 +79,15 @@ describe("recettes serveur : le socle commun, prérempli", () => {
     expect(recettes.autres.map((a) => a.langage)).toEqual(["Go", "PHP", "Ruby"]);
     for (const a of recettes.autres) expect(a.documentation).toMatch(/^https:\/\/opentelemetry\.io\/docs\//);
   });
+
+  it("Go, PHP et Ruby : éprouvés en local, pas en production, comme le dit docs/capteurs-serveur.md", () => {
+    const doc = readFileSync(join(__dirname, "../../docs/capteurs-serveur.md"), "utf8");
+    for (const a of recettes.autres) {
+      expect(a.etat).toBe("éprouvé en local le 01/10/2026, pas en production");
+      expect(doc).toContain(`| ${a.langage} | éprouvé en local le 01/10/2026 |`);
+      expect(a.piege.startsWith(`${a.langage} : `)).toBe(true);
+    }
+  });
 });
 
 describe("recettes serveur : la clé remise remplace le repère", () => {

@@ -8,6 +8,10 @@
 // elles ne s'affichent pas — la page s'adresse à une DSI, pas à qui lit le code —
 // mais une affirmation se vérifie avant d'être écrite, et se re-vérifie en les
 // suivant. Une hypothèse levée sort de la liste, avec son commit.
+//
+// Relevé du 02/10/2026, après la nuit du 01/10 : H8 (escalade par niveaux, pas
+// d'astreinte) et H9 (veille du scheduler par le notifier) réécrites par leurs lots ;
+// les citations des fichiers que la nuit a modifiés (README du scheduler) recalées.
 
 export interface Hypothese {
   id: string;
@@ -21,7 +25,7 @@ export interface Hypothese {
   sources: readonly string[];
 }
 
-export const RELEVE_HYPOTHESES = "30/09/2026";
+export const RELEVE_HYPOTHESES = "02/10/2026";
 
 export const HYPOTHESES: readonly Hypothese[] = [
   {
@@ -41,7 +45,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     pourquoi: "Chaque passage réveille la base, et chaque réveil se paie : au quart d'heure, elle dort environ 63 % du temps.",
     production:
       "Un passage toutes les 5 minutes et des notifications toutes les 15 secondes : deux réglages, sans changement de code.",
-    sources: [".railway/railway.ts:366-372", ".railway/railway.ts:406-409", "packages/backend/jobs/cadence.mjs:27-38", "services/scheduler/README.md:20,61"],
+    sources: [".railway/railway.ts:366-372", ".railway/railway.ts:406-409", "packages/backend/jobs/cadence.mjs:27-38", "services/scheduler/README.md:20,63"],
   },
   {
     id: "H3",
@@ -76,7 +80,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     aujourdhui: "Les mesures sont purgées chaque nuit au-delà de 30 jours, sauf réglage propre à une application.",
     pourquoi: "Assez pour comparer des semaines, peu de stockage à payer.",
     production: "Une durée de conservation fixée au contrat de chaque client.",
-    sources: ["services/scheduler/README.md:22,42", "packages/db/sql/migration-v14.sql:9-11,52-59"],
+    sources: ["services/scheduler/README.md:22,61", "packages/db/sql/migration-v14.sql:9-11,52-59"],
   },
   {
     id: "H7",

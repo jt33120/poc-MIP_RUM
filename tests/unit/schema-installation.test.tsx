@@ -23,6 +23,8 @@ describe("le schéma d'installation", () => {
   it("les langages sous cadenas sont ceux renvoyés à la documentation", () => {
     const fermes = LANGAGES.filter((l) => !l.ouvert).map((l) => l.nom).sort();
     expect(fermes).toEqual(recettes.autres.map((a) => a.langage).sort());
+    // Le cadenas d'un langage dit « éprouvé en local » : c'est l'état des recettes.
+    for (const a of recettes.autres) expect(a.etat, a.langage).toMatch(/^éprouvé en local le 01\/10\/2026, pas en production$/);
   });
 
   it("l'extension : Chrome et Edge, Firefox hors périmètre, comme le cadrage", () => {
@@ -37,9 +39,8 @@ describe("le schéma d'installation", () => {
     const html = renderToStaticMarkup(<SchemaInstallation />);
     expect(html.match(/data-ouvert="false"[^>]*data-testid|data-testid="schema-(navigateur|serveur)"[^>]*data-ouvert="false"/g)?.length).toBe(2);
     expect(html).not.toContain("<a ");
-    expect(html.split("(pas encore disponible)").length - 1).toBe(
-      LANGAGES.filter((l) => !l.ouvert).length + NAVIGATEURS_EXTENSION.filter((n) => !n.ouvert).length,
-    );
+    expect(html.split("(pas encore disponible)").length - 1).toBe(NAVIGATEURS_EXTENSION.filter((n) => !n.ouvert).length);
+    expect(html.split("(éprouvé en local, pas en production)").length - 1).toBe(LANGAGES.filter((l) => !l.ouvert).length);
   });
 
   it("les sous-onglets : la vue d'ensemble puis les trois parcours, l'onglet courant marqué", () => {

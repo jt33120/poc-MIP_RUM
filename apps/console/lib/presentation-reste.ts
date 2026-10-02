@@ -159,7 +159,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     sources: [
       "D14",
       `${DOC}:763-769`,
-      "docs/CONFORMITE.md:132-141",
+      "docs/CONFORMITE.md:143-152",
       "apps/console/lib/ingest-relay.ts:173-181",
       "docs/architecture/adr/0005-relais-ingestion.md:21",
       ".railway/railway.ts:232-241",
@@ -191,7 +191,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
       ".railway/railway.ts:221-228",
       "scripts/ops/provisionner-cles.mjs:1-7",
       "docs/CONFORMITE.md:24-26",
-      "docs/CONFORMITE.md:198-201",
+      "docs/CONFORMITE.md:209-212",
     ],
   },
   {
@@ -243,7 +243,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
       "docs/architecture/adr/0014-base-gratuite.md:40-54",
       ".railway/railway.ts:365",
       ".railway/railway.ts:402",
-      "services/scheduler/README.md:28-41",
+      "services/scheduler/README.md:50-63",
       "packages/backend/jobs/cadence.mjs:6-26",
       "apps/console/lib/etat-latence.ts:20-29",
     ],
