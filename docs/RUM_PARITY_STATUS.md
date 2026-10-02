@@ -774,8 +774,8 @@ l'exploitation. Aucun verdict ne change (règle ci-dessus) : les lignes concern�
 - **Backends** (`A4`, `C5`, `C6`). #338 : l'ingestion lit l'OTLP/HTTP protobuf ; #342 : les agents
   officiels Python, Java et .NET éprouvés en production (`docs/capteurs-serveur.md` § 2, « Par langage ») ;
   #345 : une panne, une occurrence (`A4`), et les routes Flask, Django, ASP.NET, Express et Rails
-  ramenées à `:nom`. **Reste** : Go, PHP et Ruby, jamais essayés ; le SDK Node officiel, éprouvé
-  seulement en test automatique ; aucun service Node n'émet vers la production (`C5`). Depuis, le 29/09/2026 : FastAPI et Node (traces) éprouvés en production sous leur agent officiel (`C5`, `C6`). Le 01/10/2026 : Go, PHP et Ruby éprouvés en local, pas en production (`docs/capteurs-serveur.md` § 2).
+  ramenées à `:nom`. Depuis : FastAPI et Node (traces) éprouvés en production sous leur agent officiel le 29/09/2026 (`C5`, `C6`) ; Go, PHP et Ruby éprouvés en local le 01/10/2026 (`docs/capteurs-serveur.md` § 2,
+  `tests/integration/otlp-agents-go-php-ruby-sql.test.ts`), où un 404 métier Go garde la route de son motif (§ 4). **Reste** : Go, PHP et Ruby n'ont encore rien envoyé à la collecte de production.
 
 Le prochain relevé revoit `D7`, `D8` et `D9` (avec `F1` et `F3`, § 13.1), et dit ce que la recette
 change à la colonne « éprouvé sur donnée réelle », qu'aucun verdict ne porte encore (§ 1).

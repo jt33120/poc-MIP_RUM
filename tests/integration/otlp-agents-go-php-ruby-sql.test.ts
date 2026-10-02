@@ -50,6 +50,9 @@ const sha256 = (s: string | Buffer) => createHash("sha256").update(s).digest("he
 const TABLES_APP = [
   "rum_event_index", "rum_action", "rum_metric", "rum_error", "rum_resource", "rum_longtask", "rum_breadcrumb",
   "rum_event", "rum_span", "rum_log", "rum_pageview", "rum_session", "tenant_usage_daily", "rate_counter",
+  // Écrites par l'ingestion des routes : sans elles, chaque passage laissait des lignes
+  // orphelines une fois `app_registry` vidé.
+  "route_registry", "route_cardinality",
 ];
 
 interface Corps {
@@ -218,7 +221,8 @@ suite("R11 — corps des agents Go, PHP et Ruby → dev-server du collector → 
           resourceSpans: [{
             resource: { attributes: [attr("mip.app_id", app(l)), attr("mip.api_key", cle(l))] },
             scopeSpans: [{ spans: [{
-              name: "pageview", traceId: trace(l, 1).replace(/0001$/, "0000"), spanId: "e11c000000000001",
+              // Un span par langage : un spanId partagé ferait d'une ancre le doublon d'une autre.
+              name: "pageview", traceId: trace(l, 1).replace(/0001$/, "0000"), spanId: `e11c00000000000${LANGAGES.indexOf(l) + 1}`,
               startTimeUnixNano: t, endTimeUnixNano: t,
               attributes: [attr("mip.session_id", session(l)), attr("mip.url", "https://factures.exemple.fr/factures/42")],
             }] }],
@@ -245,6 +249,25 @@ suite("R11 — corps des agents Go, PHP et Ruby → dev-server du collector → 
     await nettoyer();
     for (const l of LANGAGES) await pool.query("delete from app_registry where app_id = $1", [app(l)]);
     await pool.end();
+  });
+
+  // « Clé exigée » : le dev-server refuse bien une clé fausse ou absente. Sans ce cas, un
+  // serveur qui ignorerait REQUIRE_API_KEY laisserait passer tous les tests ci-dessous.
+  it("clé exigée : une clé fausse ou absente est refusée en 403", async () => {
+    const attr = (key: string, value: string) => ({ key, value: { stringValue: value } });
+    for (const l of LANGAGES) {
+      for (const ressource of [
+        [attr("mip.app_id", app(l)), attr("mip.api_key", `${cle(l)}-fausse`)],
+        [attr("mip.app_id", app(l))],
+      ]) {
+        const r = await fetch(`${base}/v1/traces`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ resourceSpans: [{ resource: { attributes: ressource }, scopeSpans: [{ spans: [] }] }] }),
+        });
+        expect(r.status, l).toBe(403);
+      }
+    }
   });
 
   // Ce qui vaut pour les trois : la 404 sans route, et la route en échec.
@@ -308,7 +331,9 @@ suite("R11 — corps des agents Go, PHP et Ruby → dev-server du collector → 
     }
   });
 
-  it("ruby — Sinatra : route `http.route`, sous-appel Net::HTTP en détail ; Go et Ruby n'émettent aucun journal", async () => {
+  // « Aucun journal » pour Go et Ruby est un constat de la capture (leurs agents n'ont
+  // envoyé aucun corps de journaux, manifeste), pas une propriété que ce test démontre.
+  it("ruby — Sinatra : route `http.route`, sous-appel Net::HTTP en détail ; aucun corps de journaux capturé pour Go ni Ruby", async () => {
     const lignes = await spans("ruby", 1);
     expect(lignes.filter((s) => s.tier === "back")).toEqual([
       { tier: "back", kind: "server", session_id: session("ruby"), method: "GET", status_code: 200, route: "/factures/:id", name: "/factures/:id", service: "factures-ruby", env: "recette" },

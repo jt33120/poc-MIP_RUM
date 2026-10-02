@@ -159,7 +159,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     sources: [
       "D14",
       `${DOC}:763-769`,
-      "docs/CONFORMITE.md:143-152",
+      "docs/CONFORMITE.md:152-160",
       "apps/console/lib/ingest-relay.ts:173-181",
       "docs/architecture/adr/0005-relais-ingestion.md:21",
       ".railway/railway.ts:232-241",
@@ -191,7 +191,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
       ".railway/railway.ts:221-228",
       "scripts/ops/provisionner-cles.mjs:1-7",
       "docs/CONFORMITE.md:24-26",
-      "docs/CONFORMITE.md:209-212",
+      "docs/CONFORMITE.md:215-218",
     ],
   },
   {

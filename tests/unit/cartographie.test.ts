@@ -14,7 +14,8 @@ import { describe, expect, it } from "vitest";
 import { TABLES_CARTE } from "@/lib/cartographie/base";
 import { CARTOGRAPHIE, CHIFFRES } from "@/lib/cartographie/donnees";
 import { HAUTEUR_ELEMENT, LARGEUR_ELEMENT, idLien, type Element } from "@/lib/cartographie/types";
-import { SDK_GZIP_KO, koTexte } from "@/lib/sdk-poids";
+import { POIDS_KO } from "@/lib/installation-faits";
+import { FEEDBACK_GZIP_KO, REPLAY_GZIP_KO, SDK_GZIP_KO, koTexte } from "@/lib/sdk-poids";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (chemin: string) => readFileSync(join(RACINE, chemin), "utf8");
@@ -228,6 +229,15 @@ describe("les chiffres affichés se recomptent", () => {
     const poids = [...textes.matchAll(/(\d+(?:,\d+)?) Ko gzip/g)].map((m) => m[1]);
     expect(poids.length).toBeGreaterThan(0);
     for (const p of poids) expect(p).toBe(koTexte(SDK_GZIP_KO));
+  });
+
+  // Même garde pour les autres poids écrits à la main dans la carte : l'archive de
+  // l'extension (85 Ko restés après la refonte des zips à 87 Ko), le rejeu, le widget.
+  it("les poids du rejeu, du widget d'avis et de l'extension : ceux de l'installateur", () => {
+    const sousTitre = (id: string) => PAR_ID.get(id)!.sousTitre ?? "";
+    expect(sousTitre("rejeu")).toContain(`${koTexte(REPLAY_GZIP_KO)} Ko gzip`);
+    expect(sousTitre("avis")).toContain(`${koTexte(FEEDBACK_GZIP_KO)} Ko gzip`);
+    expect(sousTitre("extension")).toContain(`${koTexte(POIDS_KO.extension)} Ko`);
   });
 
   it("les fichiers de tests, suite par suite", () => {

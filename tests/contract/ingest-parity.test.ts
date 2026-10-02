@@ -427,6 +427,31 @@ function rafaleScanner(app: App) {
   };
 }
 
+// 01/10/2026 : `otelhttp` (Go) n'écrit pas `http.route` ; sa route n'est que dans le
+// nom du span, motif du ServeMux. Un 404 métier garde ce motif, des deux côtés.
+const GO_404 = { traceId: `e2809${"0".repeat(24)}b01`, spanId: "e2809000000000b1" };
+function notFoundMetierGo(app: App) {
+  return {
+    resourceSpans: [{
+      resource: { attributes: [attr("mip.app_id", app.id), attr("service.name", "factures-go"), ...(app.cle ? [attr("mip.api_key", app.cle)] : [])] },
+      scopeSpans: [{
+        scope: { name: "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp" },
+        spans: [{
+          ...GO_404,
+          kind: 2,
+          name: "GET /factures/{id}",
+          startTimeUnixNano: nanos(T0 + 32_000),
+          endTimeUnixNano: nanos(T0 + 32_002),
+          attributes: [
+            attr("http.request.method", "GET"), attr("url.path", "/factures/42"),
+            { key: "http.response.status_code", value: { intValue: "404" } },
+          ],
+        }],
+      }],
+    }],
+  };
+}
+
 /** Chunk rrweb gzip, tel que le SDK l'envoie. */
 function chunk(evenements = 3) {
   const liste = Array.from({ length: evenements }, (_, i) => ({ type: 3, data: { source: 1, i }, timestamp: T0 + i }));
@@ -1241,6 +1266,11 @@ const CAS: Cas[] = [
     envoi: { chemin: "/api/ingest/v1/traces", ...json(rafaleScanner(APP.a)) },
     statut: 200,
   },
+  {
+    nom: "01/10 — Go, 404 métier sans http.route, motif dans le nom du span → 200, route du motif",
+    envoi: { chemin: "/api/ingest/v1/traces", ...json(notFoundMetierGo(APP.a)) },
+    statut: 200,
+  },
 ];
 
 // ─────────────────────────────── Exécution ─────────────────────────────────
@@ -1351,6 +1381,8 @@ suite("contrat de parité — console (routes Next) ↔ collector (creerReceveur
       const registre = await base.query(
         "select route from route_registry where app_id = $1 and route = any($2::text[])", [APP.a.id, CHEMINS_SCANNER]);
       expect(registre.rows).toEqual([]);
+      const go = await base.query("select route, status_code from rum_span where app_id = $1 and trace_id = $2", [APP.a.id, GO_404.traceId]);
+      expect(go.rows).toEqual([{ route: "/factures/:id", status_code: 404 }]);
     }
   }, DELAI);
 

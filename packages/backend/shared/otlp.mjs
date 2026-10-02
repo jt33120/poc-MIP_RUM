@@ -963,8 +963,8 @@ function sessionRevendiquee(value) {
 // les capteurs prenaient le CHEMIN BRUT pour route, et le chemin est choisi par
 // le client HTTP — donc par n'importe qui.
 //
-// La règle : un span serveur en 404 ou 405 qui ne porte PAS `http.route` n'a
-// pas de route ; il prend la route fixe ROUTE_NON_TROUVEE, une seule entrée du
+// La règle : un span serveur en 404 ou 405 qui ne porte PAS `http.route` (ni
+// motif de routeur dans son nom, exception Go ci-dessous) n'a pas de route ; il prend la route fixe ROUTE_NON_TROUVEE, une seule entrée du
 // registre pour toutes. `http.route` est l'attribut par lequel un framework dit
 // qu'il a résolu la requête (conventions sémantiques OpenTelemetry) : présent,
 // un 404 métier (`GET /commandes/:id` sur une commande absente) garde sa
@@ -973,13 +973,29 @@ function sessionRevendiquee(value) {
 //
 // Le chemin brut n'est pas perdu : il reste dans `url` (épuré) et dans le nom
 // du span, qui ne sont pas des dimensions bornées par le registre.
+//
+// Exception, constatée le 01/10/2026 sur Go : `otelhttp` 0.71.0 n'écrit jamais
+// `http.route` ; le routeur ne se dit que par le nom du span, `GET /factures/{id}`
+// (motif du ServeMux de Go 1.22). Sans elle, un 404 métier sur une route que le
+// ServeMux a bien résolue partait en `(non trouvée)`. Le nom ne vaut route résolue
+// que s'il porte un paramètre `{…}` et diffère du chemin reçu : un chemin brut
+// choisi par le client (`GET /manager/html`) reste refusé, comme avant.
 export const ROUTE_NON_TROUVEE = "(non trouvée)";
 
-/** 404/405 sans `http.route` : aucune route n'a servi la requête. */
-function sansRouteResolue(a) {
+/** Motif de routeur porté par le nom d'un span serveur, ou null (voir ci-dessus). */
+function motifDuNom(name, a) {
+  const motif = routeFromOtelName(name);
+  if (motif == null || !/\{[^/{}]+\}/.test(motif)) return null;
+  return motif === a["url.path"] ? null : motif;
+}
+
+/** 404/405 sans `http.route` ni motif de routeur dans le nom : aucune route n'a servi la requête. */
+function sansRouteResolue(a, name) {
   const statut = Number(a["http.response.status_code"] ?? a["http.status_code"]);
   const route = a["http.route"];
-  return (statut === 404 || statut === 405) && (typeof route !== "string" || route.trim() === "");
+  return (statut === 404 || statut === 405) &&
+    (typeof route !== "string" || route.trim() === "") &&
+    motifDuNom(name, a) == null;
 }
 
 /**
@@ -995,7 +1011,7 @@ function sansRouteResolue(a) {
  */
 function routeDuSpanPorteur(span, a, routeServeurDuLot = () => null) {
   if (!isServerKind(span.kind)) return a["mip.route"] ?? routeDeclaree(a["http.route"]) ?? routeServeurDuLot();
-  if (sansRouteResolue(a)) return ROUTE_NON_TROUVEE;
+  if (sansRouteResolue(a, span.name)) return ROUTE_NON_TROUVEE;
   return a["mip.route"] ?? routeServeurOtel(span, a);
 }
 
@@ -1060,7 +1076,7 @@ function routeServeurDeLaTrace(lot, appId, traceId, spanId) {
 
 /** Route d'un span serveur OTel : template, puis nom du span, puis chemin. */
 function routeServeurOtel(span, a) {
-  if (sansRouteResolue(a)) return ROUTE_NON_TROUVEE;
+  if (sansRouteResolue(a, span.name)) return ROUTE_NON_TROUVEE;
   return normalizeRouteTemplate(a["http.route"]) ??
     normalizeRouteTemplate(routeFromOtelName(span.name)) ??
     (a["url.path"] ?? null);

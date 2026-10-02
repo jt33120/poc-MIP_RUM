@@ -380,8 +380,8 @@ export const CARTES: readonly CarteCapacite[] = [
     sources: [
       { ligne: "D14" },
       { passage: 326 },
-      { fichier: "docs/CONFORMITE.md:138-141" },
-      { fichier: "docs/CONFORMITE.md:143-152" },
+      { fichier: "docs/CONFORMITE.md:135-141" },
+      { fichier: "docs/CONFORMITE.md:152-160" },
       { fichier: "docs/operations/relais-ingestion.md:317-321" },
     ],
   },
