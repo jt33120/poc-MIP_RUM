@@ -1,32 +1,10 @@
-// Échantillonnage intelligent biaisé-erreurs (A1).
-//
-// Avant : `if (Math.random() >= sampleRate) return;` — une session non
-// échantillonnée ne renvoyait RIEN, erreurs comprises. On perdait donc des
-// sessions à incident, justement les plus précieuses.
-//
-// Maintenant, trois modes décidés une fois par session (persistés, donc stables
-// au fil des pageviews/reloads dans la fenêtre de session) :
-//   - "full"         : session entièrement collectée (fraction `sampleRate`).
-//   - "error-biased" : télémétrie de routine supprimée (vitals, pageviews,
-//                      resources, longtasks, breadcrumbs, track, spans API),
-//                      MAIS les erreurs passent toujours ; la 1re erreur
-//                      « promeut » la session en "full" pour la suite (on
-//                      capture le contexte post-erreur). Fraction
-//                      `errorSampleRate` des sessions non « full ».
-//   - "off"          : rien n'est collecté (comportement historique, opt-in via
-//                      keepOnError:false).
-//
-// Résultat : on garde 100 % (configurable) des sessions à erreur tout en
-// échantillonnant le trafic nominal — volume maîtrisé, zéro incident perdu.
-//
-// Module pur + persistance résiliente : la décision (decideMode) et le
-// contrôleur (createSampler) sont testés unitairement sans navigateur.
-//
-// SOUS CONSENTEMENT (finding 1.11). Le mode est mémorisé dans le stockage local :
-// avec `requireConsent`, il ne peut donc être ni lu ni écrit avant l'accord. Le
-// SDK ne le décide alors qu'à l'accord, pour la session retenue, et l'applique au
-// tampon d'un bloc (index.ts) — c'est ce qui garde la décision stable d'une page
-// à l'autre pour un visiteur qui a déjà consenti.
+// Échantillonnage biaisé vers les erreurs, décidé une fois par session et persisté :
+//   - "full"         : tout est collecté (fraction `sampleRate`) ;
+//   - "error-biased" : seules les erreurs passent, la première promeut la session
+//                      en "full" pour garder la suite (fraction `errorSampleRate`) ;
+//   - "off"          : rien (le reste, ou tout hors "full" si keepOnError:false).
+// Sous `requireConsent`, le mode n'est décidé qu'à l'accord et appliqué au tampon
+// d'un bloc (index.ts), le stockage étant inaccessible avant (finding 1.11).
 import { accesTerminalAutorise, CLE_ECHANTILLONNAGE } from "./consent";
 import type { MIPRumConfig } from "./types";
 
@@ -38,11 +16,7 @@ const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
 const isMode = (m: unknown): m is SampleMode =>
   m === "full" || m === "error-biased" || m === "off";
 
-/**
- * Décide le mode d'échantillonnage d'une session. Pur : `rand`/`rand2` sont
- * injectables pour les tests (deux tirages indépendants : appartenance à la
- * fraction `full`, puis à la fraction `errorSampleRate`).
- */
+/** Décide le mode d'une session ; deux tirages indépendants, injectables pour les tests. */
 export function decideMode(
   cfg: Pick<MIPRumConfig, "sampleRate" | "errorSampleRate" | "keepOnError">,
   rand: number = Math.random(),
@@ -62,10 +36,7 @@ export interface Sampler {
   notifyError(): void;
 }
 
-/**
- * Contrôleur d'émission. `onPromote` est appelé une seule fois, au passage
- * "error-biased" -> "full" (utile pour persister la promotion).
- */
+/** Contrôleur d'émission ; `onPromote` est appelé une fois, au passage en "full". */
 export function createSampler(initial: SampleMode, onPromote?: () => void): Sampler {
   let mode = initial;
   return {
@@ -75,7 +46,7 @@ export function createSampler(initial: SampleMode, onPromote?: () => void): Samp
     passes(spanName) {
       if (mode === "full") return true;
       if (mode === "off") return false;
-      return spanName === "exception"; // error-biased : seules les erreurs passent
+      return spanName === "exception";
     },
     notifyError() {
       if (mode === "error-biased") {
@@ -85,8 +56,6 @@ export function createSampler(initial: SampleMode, onPromote?: () => void): Samp
     },
   };
 }
-
-// --- persistance (stabilité du mode sur la durée de vie de la session) -------
 
 /** Mode déjà décidé pour cette session, ou null (storage indispo / autre session). */
 export function loadMode(sessionId: string): SampleMode | null {

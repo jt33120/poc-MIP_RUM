@@ -1,11 +1,6 @@
-// Form Analytics (Lot 7) — instrumentation des formulaires AU NIVEAU DU CHAMP,
-// façon Matomo : ordre de remplissage, temps par champ, champ modifié, dernier
-// champ touché (point d'abandon), soumission vs abandon.
-//
-// CONFIDENTIALITÉ : on ne capte JAMAIS la valeur d'un champ — uniquement un
-// identifiant (name/id/type) et des durées/compteurs. Les champs de type password
-// sont réduits à "[password]". Le cœur (FormTracker) est PUR et testé ; le câblage
-// DOM (initForms) ne fait que traduire les évènements navigateur en appels au cœur.
+// Analyse des formulaires au niveau du champ : ordre, temps, modification, point
+// d'abandon. Jamais la valeur d'un champ : un identifiant (name/id/type, "[password]"
+// pour un mot de passe), des durées et des compteurs.
 import type { Emit } from "./errors";
 
 /** Statistique d'un champ, dans l'ordre de première interaction. */
@@ -33,22 +28,19 @@ interface FieldState {
 
 const MAX_FIELDS = 40; // garde-fou anti-formulaire géant
 
-/**
- * Agrège les interactions d'UN formulaire. Piloté par des horodatages fournis
- * (ms) : testable sans DOM ni horloge réelle.
- */
+/** Agrège les interactions d'un formulaire, d'après des horodatages fournis (ms). */
 export class FormTracker {
   private fields = new Map<string, FieldState>();
   private order = 0;
   private focused: { key: string; ts: number } | null = null;
   private last: string | null = null;
 
-  /** Entrée dans un champ (focus). Clôt d'abord le champ précédent encore ouvert. */
+  /** Entrée dans un champ ; clôt d'abord le précédent encore ouvert. */
   focus(key: string, ts: number): void {
     if (this.focused) this.blur(ts);
     let st = this.fields.get(key);
     if (!st) {
-      if (this.fields.size >= MAX_FIELDS) return; // cap : on ignore les champs au-delà
+      if (this.fields.size >= MAX_FIELDS) return;
       st = { order: ++this.order, timeMs: 0, changed: false, refocus: 0 };
       this.fields.set(key, st);
     } else {
@@ -58,7 +50,7 @@ export class FormTracker {
     this.focused = { key, ts };
   }
 
-  /** Sortie du champ courant (blur) : cumule le temps passé. */
+  /** Sortie du champ courant : cumule le temps passé. */
   blur(ts: number): void {
     if (!this.focused) return;
     const st = this.fields.get(this.focused.key);
@@ -66,7 +58,6 @@ export class FormTracker {
     this.focused = null;
   }
 
-  /** Saisie dans un champ : marque « modifié ». */
   input(key: string): void {
     const st = this.fields.get(key);
     if (st) st.changed = true;
@@ -90,8 +81,6 @@ export class FormTracker {
     };
   }
 }
-
-// --- Câblage DOM -------------------------------------------------------------
 
 const MAX_FORMS = 20;
 
@@ -128,9 +117,8 @@ function isTrackedField(el: Element): el is HTMLElement {
 }
 
 /**
- * Instrumente les formulaires de la page. Émet `track.form.submit` à la soumission
- * et `track.form.abandon` quand la page passe en arrière-plan avec un formulaire
- * entamé mais non soumis. Opt-out via cfg.forms=false (géré par l'appelant).
+ * Émet `track.form.submit` à la soumission, et `track.form.abandon` pour tout
+ * formulaire entamé quand la page passe en arrière-plan.
  */
 export function initForms(emit: Emit, now: () => number = () => Date.now()): void {
   const trackers = new Map<string, FormTracker>();
@@ -209,7 +197,6 @@ export function initForms(emit: Emit, now: () => number = () => Date.now()): voi
     true,
   );
 
-  // Abandon : à la mise en arrière-plan, tout formulaire entamé non soumis.
   const flushAbandons = () => {
     if (document.visibilityState !== "hidden") return;
     for (const [key, t] of trackers) send(key, "abandon", t);

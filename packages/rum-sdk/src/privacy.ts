@@ -1,13 +1,7 @@
-// Signaux navigateur d'opt-out (souveraineté / RGPD — Lot 5) : Do Not Track
-// (DNT, historique) et Global Privacy Control (GPC, standard actuel, à valeur
-// légale sous CCPA/CPRA et reconnu comme signal de refus RGPD).
-//
-// Logique PURE et testée : décide, à partir d'un objet navigator/window-like,
-// si l'utilisateur a signalé un refus de suivi. Câblée dans init() : si
-// `honorDNT` (défaut) et qu'un signal est présent, on ne collecte RIEN (aucun
-// listener, aucune requête réseau). Une app qui recueille elle-même un
-// consentement affirmatif — susceptible de primer le signal — passe
-// `honorDNT: false` et pilote la collecte via MIPRum.consent().
+// Signaux d'opt-out du navigateur : Do Not Track (historique) et Global Privacy
+// Control (valeur légale sous CCPA/CPRA, reconnu comme refus RGPD). Avec
+// `honorDNT` (défaut), un signal coupe toute collecte ; une app qui recueille son
+// propre consentement passe `honorDNT: false` et pilote `MIPRum.consent()`.
 
 /** Sous-ensemble de Navigator/Window qu'on lit — testable avec un mock. */
 export interface PrivacySignalSource {
@@ -36,9 +30,8 @@ export function signalsOptOut(src: PrivacySignalSource): boolean {
 }
 
 /**
- * Lit les signaux depuis l'environnement réel du navigateur en fusionnant les
- * emplacements connus (navigator standard, window.doNotTrack ancien Firefox,
- * navigator.msDoNotTrack IE). Renvoie une source neutre hors navigateur.
+ * Lit les signaux à leurs emplacements connus (navigator, window.doNotTrack de
+ * l'ancien Firefox, msDoNotTrack d'IE) ; source neutre hors navigateur.
  */
 export function readPrivacySignals(
   nav: Navigator | undefined,

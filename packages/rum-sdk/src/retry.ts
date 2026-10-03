@@ -1,14 +1,8 @@
-// File de retry/offline (LIMITES §4) — best-effort documenté :
-// décorateur de SpanExporter ; si l'export échoue (FAILED), les spans sont
-// sérialisés (name + attributs + timestamps) dans localStorage et ré-émis au
-// prochain init() avec leurs timestamps ET identifiants OTLP d'origine. Un faux
-// négatif réseau est donc absorbé par les clés idempotentes de l'ingestion.
-// Limite connue : un envoi sendBeacon « accepté » par le navigateur mais perdu
-// ensuite n'est pas détectable — seuls les échecs remontés par l'exporter
-// (réseau down, 4xx/5xx en XHR/fetch) alimentent la file.
-// Types d'export locaux (ex-@opentelemetry/core + sdk-trace-web) : le SDK OTel a
-// été retiré (Chantier A, allègement du bundle) — on ne garde que le contrat
-// minimal réellement utilisé par le décorateur et l'émetteur maison (otel.ts).
+// File de rejeu hors ligne, best-effort (docs/LIMITES.md §4) : un export échoué
+// est gardé dans localStorage et réémis au prochain init() avec ses horodatages
+// et identifiants OTLP d'origine, que l'ingestion déduplique. Un sendBeacon
+// accepté puis perdu reste indétectable. Types d'export minimaux, repris du SDK
+// OpenTelemetry retiré du bundle.
 import { accesTerminalAutorise } from "./consent";
 
 export enum ExportResultCode {
@@ -20,55 +14,28 @@ export interface ExportResult {
   error?: Error;
   /** Annulation volontaire (retrait de consentement) : ne rien persister. */
   discarded?: boolean;
-  /**
-   * L'échec vaut-il la peine d'être rejoué ? `false` = définitif, on jette.
-   *
-   * Absent vaut « oui », pour que tout exporteur tiers non averti garde le
-   * comportement d'avant. Voir `classerReponse`.
-   */
+  /** `false` = échec définitif, on jette ; absent vaut « oui » (exporteurs tiers). */
   retryable?: boolean;
   /** Délai demandé par le serveur (en-tête `Retry-After`), en millisecondes. */
   retryAfterMs?: number | null;
 }
 
-// ═══════════════ Ce qui mérite d'être rejoué, et quand ════════════════════════
-//
-// Finding 2.2 de docs/AUDIT_RUM_EXTERNE.md — bloquant.
-//
-// CE QUI ÉTAIT EN PLACE : `cb({ code: res.ok ? SUCCESS : FAILED })`. TOUT ce qui
-// n'est pas 2xx était un échec réessayable — 400 (JSON invalide), 403 (clé
-// refusée), 413 (charge trop grosse) compris. Trois scénarios très ordinaires
-// devenaient des boucles :
-//
-//   • une clé d'API mal saisie (403) rejouait indéfiniment, à chaque page, pour
-//     rien, jusqu'à saturer les 50 Ko de la file ;
-//   • un incident d'ingestion (503) faisait converger TOUS les navigateurs vers
-//     un rejeu simultané à la reprise — le retour de service recevait un pic
-//     supérieur au trafic nominal ;
-//   • l'en-tête `retry-after: 60` que l'ingestion prend soin de renvoyer sur un
-//     429 n'était lu par personne.
+// Ne rejouer que ce qui peut réussir, et pas tous à la même seconde
+// (finding 2.2 de docs/AUDIT_RUM_EXTERNE.md).
 
 /** Statuts qu'il est utile de retenter : le serveur dit « plus tard », pas « non ». */
 const REJOUABLES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
-/**
- * Classe une réponse HTTP. PURE, donc testable sans réseau.
- *
- * Un échec RÉSEAU (pas de réponse du tout) est rejouable : c'est le cas nominal
- * du mode hors-ligne, celui pour lequel cette file existe.
- */
+/** Classe une réponse HTTP ; sans réponse (hors ligne), l'échec est rejouable. */
 export function classerReponse(status: number | null): { retryable: boolean } {
-  if (status == null) return { retryable: true }; // pas de réponse : réseau
-  if (status >= 200 && status < 300) return { retryable: false }; // succès
+  if (status == null) return { retryable: true };
+  if (status >= 200 && status < 300) return { retryable: false };
   if (REJOUABLES.has(status)) return { retryable: true };
   if (status >= 500) return { retryable: true }; // 5xx inconnu : le serveur a un souci
   return { retryable: false }; // 4xx : la requête est en tort, la rejouer ne l'améliore pas
 }
 
-/**
- * Lit `Retry-After`, en secondes ou en date HTTP. Rend `null` si absent ou
- * illisible, et JAMAIS une valeur négative.
- */
+/** Lit `Retry-After` (secondes ou date HTTP) en ms ; `null` si absent, illisible ou passé. */
 export function lireRetryAfter(valeur: string | null, maintenant: number = Date.now()): number | null {
   if (!valeur) return null;
   const secondes = Number(valeur.trim());
@@ -87,15 +54,9 @@ export const RETRY_MAX_MS = 30 * 60_000;
 export const RETRY_MAX_TENTATIVES = 6;
 
 /**
- * Délai avant la prochaine tentative, avec BRUIT.
- *
- * Le bruit n'est pas un ornement : sans lui, tous les navigateurs qui ont échoué
- * pendant un incident reviennent à la même seconde, et le retour de service
- * reçoit un pic supérieur au trafic nominal. C'est l'incident qui se reproduit
- * tout seul.
- *
- * Quand le serveur a dit `Retry-After`, le bruit ne fait que DISPERSER le
- * retour : il ne raccourcit jamais l'attente demandée.
+ * Délai avant la prochaine tentative, bruité : sans bruit, tous les navigateurs
+ * reviennent à la même seconde après un incident. Le bruit n'écourte jamais un
+ * `Retry-After`.
  */
 export function delaiProchainEssai(
   tentatives: number,
@@ -128,9 +89,8 @@ export const RETRY_REVOKED_ACTIONS_KEY = "mip_rum_retry_revoked_actions";
 export const RETRY_MAX_SPANS = 100;
 export const RETRY_MAX_BYTES = 50_000; // ~50 Ko sérialisés
 const RETRY_MAX_REVOKED_ACTIONS = 200;
-// Non borné uniquement pendant la vie de la page : les requêtes encore en vol
-// peuvent terminer après plus de 200 évictions. Après reload elles n'existent
-// plus; le miroir localStorage peut donc rester borné.
+// Non borné en mémoire : des requêtes en vol peuvent finir après plus de 200
+// évictions. Le miroir localStorage reste borné, elles meurent au rechargement.
 const revokedRootsMemory = new Set<string>();
 
 export type RetryAttrs = Record<string, string | number | boolean>;
@@ -161,21 +121,18 @@ export function serializeSpan(span: {
 }): RetrySpan {
   const a: RetryAttrs = {};
   for (const [k, v] of Object.entries(span.attributes)) {
-    // Les identifiants métier bruts ne doivent jamais atteindre localStorage.
-    // Ils sont transportés une seule fois vers le port d'ingestion, qui les
-    // remplace par un HMAC avant toute file/persistance serveur.
+    // Identifiants métier bruts : jamais dans localStorage ; seule l'ingestion
+    // les reçoit, et les remplace par un HMAC.
     if (k === "mip.identity.user_id" || k === "mip.identity.account_id") continue;
     if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") a[k] = v;
   }
-  // Le rejeu reconstruit un span via otel.ts. Ces attributs sont recopiés dans
-  // les champs natifs à end(), afin que le receiver retrouve la même clé et
-  // applique ses ON CONFLICT au lieu de compter un faux doublon.
+  // otel.ts recopie ces attributs dans les champs natifs au rejeu : l'ingestion
+  // retrouve la même clé (ON CONFLICT) au lieu de compter un doublon.
   if (typeof span.traceId === "string" && !("mip.trace_id" in a)) a["mip.trace_id"] = span.traceId;
   if (typeof span.spanId === "string" && !("mip.span_id" in a)) a["mip.span_id"] = span.spanId;
   if (!("mip.parent_span_id" in a)) {
-    // L'absence de parent fait partie de l'identité native du span. Sans ce
-    // marqueur, un rejeu lancé après la pageview hériterait à tort du parent
-    // de la page courante tout en conservant son ancien traceId.
+    // Parent vide explicite : sinon un rejeu après la pageview hériterait du
+    // parent de la page courante.
     a["mip.parent_span_id"] = typeof span.parentSpanId === "string" ? span.parentSpanId : "";
   }
   return { n: span.name, a, s: hrToMs(span.startTime), e: hrToMs(span.endTime) };
@@ -232,13 +189,7 @@ export function appendRetry(
   return merged;
 }
 
-/**
- * Ce que la file garde entre deux chargements de page.
- *
- * La version 1 stockait un tableau nu. On la lit encore — un navigateur peut
- * porter une file écrite par le SDK d'avant — et on la traite comme échue,
- * c'est-à-dire rejouable tout de suite : c'était son comportement.
- */
+/** Ce que la file garde entre deux pages. Un tableau nu (format v1) se lit encore, comme une file échue. */
 export interface FileRejeu {
   spans: RetrySpan[];
   /** Epoch ms avant lequel on ne rejoue pas. */
@@ -249,11 +200,9 @@ export interface FileRejeu {
 
 const FILE_VIDE: FileRejeu = { spans: [], notBefore: 0, tentatives: 0 };
 
-// SOUS CONSENTEMENT (finding 1.11). La file ne se remplit qu'après un envoi, donc
-// après l'accord ; mais un lot en vol peut échouer juste après un refus. Lire et
-// écrire la file suivent donc le même interrupteur que la session : sans accès au
-// terminal, la file n'existe pas. L'EFFACER, en revanche, reste toujours permis —
-// c'est ce que fait un refus (`purgeRetryQueue`).
+// Sous consentement (finding 1.11) : un lot en vol peut échouer juste après un
+// refus, donc lire et écrire la file exigent `accesTerminalAutorise`. L'effacer
+// reste toujours permis (`purgeRetryQueue`).
 function loadRevokedRoots(): Set<string> {
   if (!accesTerminalAutorise()) return revokedRootsMemory;
   try {
@@ -332,12 +281,9 @@ export function purgeRetryQueue(): void {
 }
 
 /**
- * Rejoue la file si son échéance est passée. Rend le nombre de spans rejoués —
- * zéro si la file est vide OU si elle n'est pas encore due.
- *
- * On purge AVANT de réémettre : si le rejeu échoue à son tour, le décorateur
- * réalimentera la file, avec une tentative de plus donc une échéance plus
- * lointaine. Ne pas purger produirait un doublement à chaque tour.
+ * Rejoue la file si elle est due ; rend le nombre de spans rejoués. Purge avant
+ * de réémettre : un nouvel échec la réalimente avec une échéance plus lointaine
+ * au lieu de la doubler.
  */
 export function replayRetryQueue(
   emitRaw: (name: string, attrs: RetryAttrs, startMs: number, endMs: number) => void,
@@ -345,24 +291,18 @@ export function replayRetryQueue(
 ): number {
   const file = loadRetryQueue();
   if (file.spans.length === 0) return 0;
-  // PAS ENCORE DUE. On se tait, et surtout on ne purge pas : la file doit
-  // survivre à ce chargement de page pour être rejouée au bon moment.
+  // Pas encore due : surtout ne pas purger.
   if (file.notBefore > maintenant) return 0;
-  // Les tombstones survivent au rejeu : un effet lent d'une racine déjà
-  // évincée peut encore arriver dans un lot ultérieur.
+  // Les tombstones survivent : un enfant lent d'une racine évincée peut encore arriver.
   clearRetryFile();
   for (const s of file.spans) emitRaw(s.n, s.a, s.s, s.e);
   return file.spans.length;
 }
 
 /**
- * Décorateur : persiste les spans quand l'export échoue ET que l'échec vaut la
- * peine d'être rejoué.
- *
- * TROIS SORTIES, LÀ OÙ IL N'Y EN AVAIT QU'UNE. Succès : rien. Échec définitif
- * (4xx hors 429) : on JETTE, en le journalisant une fois — rejouer une clé
- * refusée ne la fera pas accepter. Échec rejouable : on met en file avec une
- * échéance, dispersée par du bruit.
+ * Décorateur d'export qui met en file les échecs rejouables, avec une échéance
+ * bruitée. Un échec définitif est jeté et signalé une fois : rejouer une clé
+ * refusée ne la fera pas accepter.
  */
 export class RetryExporter implements SpanExporter {
   private abandonSignale = false;
@@ -374,8 +314,8 @@ export class RetryExporter implements SpanExporter {
 
   export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
     const revokedRoots = loadRevokedRoots();
-    // Une racine réellement réémise restaure la cohérence; sinon tout enfant
-    // d'une racine abandonnée/évincée est délié AVANT même un export réussi.
+    // Une racine réémise lève sa révocation ; tout enfant d'une racine abandonnée
+    // ou évincée est délié avant l'export.
     for (const span of spans) {
       if (span.name === "rum.action" && span.attributes["mip.event_type"] === "action") {
         const id = span.attributes["mip.action_id"];
@@ -393,17 +333,14 @@ export class RetryExporter implements SpanExporter {
 
     this.inner.export(outbound, (result) => {
       if (result.code === ExportResultCode.FAILED && result.discarded) {
-        // L'utilisateur a explicitement demandé la destruction de ce lot.
-        // Ni retry ni tombstone ne doit survivre à cette décision.
+        // Lot détruit à la demande de l'utilisateur : ni rejeu ni tombstone.
       } else if (result.code === ExportResultCode.FAILED && result.retryable !== false) {
         try {
           const file = loadRetryQueue();
           const tentatives = file.tentatives + 1;
           const serialized = outbound.map(serializeSpan);
           if (tentatives > RETRY_MAX_TENTATIVES) {
-            // Six échecs successifs : ce lot ne passera pas. Le garder
-            // remplirait la file au détriment de spans plus récents, qui eux
-            // ont une chance.
+            // Ce lot ne passera pas : le garder évincerait des spans plus récents.
             clearRetryFile();
             revokeRootsFrom(serialized, revokedRoots);
             saveRevokedRoots(revokedRoots);
@@ -418,9 +355,8 @@ export class RetryExporter implements SpanExporter {
               tentatives,
             });
             if (!saved) revokeRootsFrom(serialized, revokedRoots);
-            // Tant que la racine n'a pas été réellement réémise, les lots
-            // live suivants continuent sans elle mais sont déliés. On préserve
-            // ainsi la télémétrie d'une SPA longue sans créer d'orphelins.
+            // Tant que la racine n'est pas réémise, les lots suivants partent
+            // déliés : la télémétrie continue, sans orphelins.
             revokeRootsFrom(serialized, revokedRoots);
             saveRevokedRoots(revokedRoots);
           }

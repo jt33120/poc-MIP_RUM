@@ -1,14 +1,7 @@
-// Tracing distribué (v0.4) : instrumentation fetch + XMLHttpRequest.
-// - Génère un contexte W3C par appel API (trace_id 16 o / span_id 8 o), injecte
-//   `traceparent` (+ `tracestate: mip=s:<session>`) sur les requêtes same-origin
-//   et les origins de cfg.trace — jamais vers l'ingestion MIP elle-même.
-// - Émet un span 'http.client' (méthode, url scrubbée, statut, durée) via le
-//   pipeline normal (consent gate, beforeSend, retry) ; la corrélation avec le
-//   span backend 'http.server' se fait par mip.trace_id (table rum_span).
-// XHR est patché car axios (G-IT) repose dessus ; fetch couvre le reste.
-// P5.2 : ces mêmes wrappers signalent, sur option, les appels en échec comme
-// erreurs `network` — jamais un appel non instrumenté, donc ni l'ingestion MIP ni
-// une origine hors liste.
+// Tracing distribué : fetch et XHR (axios repose sur XHR) injectent `traceparent`
+// sur le même site et les origines de cfg.trace, jamais vers l'ingestion MIP, et
+// émettent un span 'http.client' corrélé au span serveur par mip.trace_id.
+// Sur option, les échecs deviennent des erreurs `network` (appels instrumentés seulement).
 import { makeCap, type PageCap } from "./caps";
 import { scrubUrl } from "./context";
 import { urlNettoyee } from "./error-capture";
@@ -26,17 +19,9 @@ export interface NetworkErrorPolicy {
 }
 
 /**
- * L'appel est-il une erreur à signaler ? PURE. `null` = non.
- *
- * Un abandon volontaire (AbortController, requête annulée par l'application)
- * n'est pas un incident : classé à part, il n'est signalé que sur demande. Un
- * délai dépassé en est un. Un 4xx dit souvent « pas trouvé » ou « pas autorisé »
- * au sens métier : sur demande aussi. Un statut 0 SANS échec — réponse opaque
- * `no-cors` — n'est pas un échec.
- *
- * Le statut entre dans le TYPE (« HTTP 503 ») et pas seulement dans le message :
- * l'empreinte serveur remplace les chiffres d'un message, et 500 et 404
- * tomberaient sinon dans le même groupe.
+ * L'appel est-il une erreur à signaler ? `null` = non. Abandons et 4xx (souvent
+ * métier) seulement sur demande ; statut 0 sans échec = réponse opaque `no-cors`.
+ * Le statut va dans le TYPE : l'empreinte serveur efface les chiffres du message.
  */
 export function echecReseau(
   status: number,
@@ -57,28 +42,18 @@ export interface ApiSpanOptions {
   extraOrigins: string[];
   /** Origins à ne JAMAIS instrumenter (endpoints d'ingestion MIP : boucle interdite). */
   denyOrigins: string[];
-  /** Peut être dynamique : P2 ouvre une nouvelle session quand l'identité change. */
+  /** Fonction quand la session change avec l'identité. */
   sessionId: string | (() => string);
-  /**
-   * traceId de la page vue courante (E0). Rattache l'appel API à la trace de la
-   * page plutôt que d'ouvrir une trace par requête : le span serveur rejoint
-   * alors la même trace que le pageview et les autres appels de la page.
-   * Omis (tests unitaires) -> une trace par appel, comportement historique.
-   */
+  /** traceId de la page vue : les appels rejoignent sa trace. Omis : une trace par appel. */
   traceId?: () => string;
   /** Snapshot causal pris au DÉPART de l'appel, jamais à sa réponse. */
   action?: () => Record<string, string | number | boolean>;
   /**
-   * Faux : l'appel part tel quel, sans en-tête ni span. Une session que l'accord
-   * fait tomber hors échantillon n'injecte pas `traceparent` sur chaque requête —
-   * le serveur tracerait pour une session qui n'existe pas. Absent : toujours actif.
+   * Faux : ni en-tête ni span, pour qu'une session hors échantillon ne fasse pas
+   * tracer le serveur pour rien. Absent : toujours actif.
    */
   actif?: () => boolean;
-  /**
-   * Erreurs réseau (`captureErrors.network`) ; absent = aucune. `report` reçoit
-   * les attributs de l'exception et l'horodatage de DÉPART de l'appel, celui de
-   * son span : l'attribution causale reste celle du départ.
-   */
+  /** Erreurs réseau (`captureErrors.network`) ; absent = aucune. `ts` = départ de l'appel. */
   errors?: NetworkErrorPolicy & {
     report: (attrs: Record<string, string | number | boolean>, ts: number) => void;
   };
@@ -96,10 +71,8 @@ export function traceparent(traceId: string, spanId: string): string {
 }
 
 /**
- * Cible instrumentable -> URL absolue, sinon null (cross-origin hors liste,
- * origin d'ingestion MIP, ou URL invalide). On ne mesure QUE ce vers quoi on
- * propage : un span front sans jumeau back possible n'apporte rien de plus que
- * l'observer resources existant.
+ * URL absolue si l'appel est instrumentable, sinon null. On ne mesure que ce vers
+ * quoi on propage : sans span serveur possible, l'observer resources suffit.
  */
 export function resolveTarget(rawUrl: string, opts: ApiSpanOptions): string | null {
   try {
@@ -158,12 +131,10 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
           "http.url": scrubUrl(url),
           "http.method": method,
           "http.status_code": status,
-          // La DURÉE du span : `realEmit` le ferme à `tsMs` + cette valeur. Les
-          // attributs HTTP stables (http.request.method, url.full…) sont ajoutés
-          // à la fermeture, après beforeSend (otel.ts, `conventionsHttp`).
+          // Durée du span ; les attributs HTTP stables s'ajoutent après beforeSend
+          // (otel.ts, `conventionsHttp`).
           "http.duration_ms": Math.round(performance.now() - startPerf),
-          // Échec sans réponse : la classe d'erreur au sens OpenTelemetry. Un
-          // abandon voulu par l'application n'en est pas une (cf. echecReseau).
+          // `error.type` OpenTelemetry ; un abandon voulu n'en est pas un.
           ...(issue === "timeout" ? { "error.type": "TimeoutError" } : issue === "network" ? { "error.type": "NetworkError" } : {}),
         },
         tsMs,
@@ -204,9 +175,7 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
             return resp;
           },
           (err) => {
-            // Rejet : délai (AbortSignal.timeout), abandon volontaire — le motif
-            // passé à abort() peut être n'importe quelle valeur, d'où le signal —
-            // ou réseau coupé.
+            // Le motif d'abort() peut être n'importe quelle valeur : le signal tranche.
             const nom = (err as { name?: unknown } | null)?.name;
             const issue: IssueReseau =
               nom === "TimeoutError" ? "timeout" : nom === "AbortError" || signal?.aborted ? "abort" : "network";
@@ -246,14 +215,12 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
           const startPerf = performance.now();
           const ts = Date.now();
           const actionAttrs = opts.action?.() ?? {};
-          // error/timeout/abort précèdent toujours loadend : ils disent POURQUOI
-          // le statut vaut 0, que loadend seul ne dit pas. Écoutés même sans la
-          // voie d'erreurs réseau : l'issue du span (`error.type`) en dépend.
+          // error/timeout/abort précèdent loadend et disent pourquoi le statut vaut 0 ;
+          // écoutés même sans erreurs réseau, car `error.type` en dépend.
           let issue: IssueReseau | null = null;
           this.addEventListener("error", () => { issue = "network"; }, { once: true });
           this.addEventListener("timeout", () => { issue = "timeout"; }, { once: true });
           this.addEventListener("abort", () => { issue = "abort"; }, { once: true });
-          // loadend couvre load/error/abort/timeout ; status 0 = échec réseau
           this.addEventListener(
             "loadend",
             () => record(target, meta.method, traceId, spanId, this.status, issue, startPerf, ts, actionAttrs),

@@ -130,7 +130,7 @@ partiellement propriétaire sur ce signal — le standard n'existe pas encore.**
 cela interdit de promettre une portabilité totale.
 
 **② Le contexte de trace W3C, lui, est stable — et nous ne le respectons pas.**
-`packages/rum-sdk/src/otel.ts:109-110` génère un `traceId` et un `spanId` **aléatoires
+`packages/rum-sdk/src/otel.ts:80-81` génère un `traceId` et un `spanId` **aléatoires
 pour chaque span** :
 
 ```ts
@@ -144,7 +144,7 @@ promesse « OTel-native, donc réversible et corrélable ».
 
 *Corrigé le 29/07/2026 (commit `b950a898`, E0) : un `traceId` par page vue,
 partagé par tous les spans de la page, et le span d'appel API propage son
-`spanId` dans `traceparent` (`packages/rum-sdk/src/otel.ts:61-73`).*
+`spanId` dans `traceparent` (`packages/rum-sdk/src/otel.ts:57-57`).*
 
 **③ Les seuils Core Web Vitals ne sont pas ceux de web.dev.** Trois fichiers portent
 la même valeur erronée pour le LCP — `packages/rum-sdk/src/vitals.ts`,
@@ -162,17 +162,17 @@ pas transmis, ce qui empêche l'agrégation correcte des mesures successives d'u
 même métrique sur une même page.
 
 *Corrigé le 29/07/2026 (commit `b950a898`) : `LCP: [2500, 4000]` dans les trois
-copies (`packages/rum-sdk/src/vitals.ts:18`, `packages/backend/shared/otlp.mjs:24`,
+copies (`packages/rum-sdk/src/vitals.ts:15`, `packages/backend/shared/otlp.mjs:24`,
 `apps/console/lib/rating.ts:11`), et `webvital.delta` est émis
-(`packages/rum-sdk/src/vitals.ts:52`).*
+(`packages/rum-sdk/src/vitals.ts:46`).*
 
 **④ Le masquage du rejeu de session est en deçà du standard 2026.**
-`packages/rum-sdk/src/replay.ts:190` active `maskAllInputs: true` et une classe de
+`packages/rum-sdk/src/replay.ts:136` active `maskAllInputs: true` et une classe de
 blocage — mais pas le masquage du texte par défaut. Or « masqué par défaut » est
 devenu table-stakes chez tous les acteurs comparés.
 
 *Corrigé le 09/09/2026 (commit `0b3aa37e`) : le niveau par défaut `all` masque
-aussi le texte et les médias (`packages/rum-sdk/src/replay.ts:201-211`).*
+aussi le texte et les médias (`packages/rum-sdk/src/replay.ts:137-146`).*
 
 ---
 
