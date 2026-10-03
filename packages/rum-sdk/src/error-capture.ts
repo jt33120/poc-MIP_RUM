@@ -1,24 +1,6 @@
-// Collecte d'erreurs élargie du navigateur (P5.2) : console, ressources et CSP.
-// La voie réseau vit dans apispans.ts, au plus près des wrappers fetch/XHR.
-//
-// OPT-IN, VOIE PAR VOIE (`captureErrors`). Les exceptions non interceptées et les
-// promesses rejetées restent collectées quoi qu'il arrive. Ces voies-ci changent
-// le volume d'une application du jour au lendemain — une page peut écrire cent
-// `console.error` par minute sans que personne ne l'ait remarqué — : les activer
-// est une décision explicite, jamais un défaut.
-//
-// UN SEUL CHEMIN. Chaque voie fabrique les attributs d'une exception et les remet
-// à `ErrorCollector.report` : plafond de la voie, silence par empreinte, drain,
-// puis l'émission commune — sampling et promotion error-biased, attribution
-// causale, beforeSend, consentement. Aucune voie ne parle au réseau elle-même.
-//
-// Ce qu'une voie NE transmet PAS compte autant que ce qu'elle transmet :
-//   - console : jamais un objet sans borne — profondeur, entrées, longueur et
-//     cycles bornés, valeurs des clés sensibles masquées dès le navigateur ;
-//   - ressources : l'URL sans query, fragment ni identifiants, et jamais un
-//     statut HTTP que le navigateur n'a pas donné ;
-//   - CSP : la directive et l'origine bloquée, jamais l'extrait (`sample`) ni le
-//     texte de la politique.
+// Voies d'erreur opt-in (`captureErrors`) : console, ressources, CSP (la voie réseau
+// vit dans apispans.ts). Opt-in parce qu'elles changent le volume d'une app du jour
+// au lendemain. Toutes passent par `ErrorCollector.report`, jamais par le réseau.
 import { MIP_UI_ATTR } from "./breadcrumbs";
 import { boundedName } from "./event-context";
 import type { ErrorCollector } from "./errors";
@@ -27,15 +9,10 @@ import type { ErrorCollector } from "./errors";
 const CHEMIN_MAX = 500;
 
 /**
- * URL nettoyée : `source` (origine + chemin, pour la colonne source) et `cible`
- * (hôte + chemin, pour le message). Ni query, ni fragment, ni identifiants
- * `user:pass@`. Hors http(s), seul le schéma reste : une URL `data:` porte le
- * contenu lui-même.
- *
- * POURQUOI UNE CIBLE SANS SCHÉMA. L'empreinte serveur remplace toute URL absolue
- * d'un message par « # » : « img https://a/x.png » et « img https://b/y.png »
- * tomberaient dans le même groupe. Sans schéma, hôte et chemin restent
- * discriminants, et l'algorithme de regroupement n'a pas à changer.
+ * URL sans query, fragment ni `user:pass@` : `source` (origine + chemin) et `cible`
+ * (hôte + chemin, pour le message). Hors http(s), seul le schéma reste (une URL
+ * `data:` porte le contenu). La cible est sans schéma car l'empreinte serveur
+ * remplace toute URL absolue d'un message par « # ».
  */
 export function urlNettoyee(brute: string): { source: string; cible: string } | null {
   try {
@@ -66,11 +43,9 @@ function estErreur(valeur: unknown): valeur is Error {
 }
 
 /**
- * Arguments de `console.error` → message borné, séparés par une espace comme
- * dans la console. Chaîne telle quelle, Error en « Nom: message », objet en JSON
- * borné : cycles en `[Circular]`, nœuds DOM en `[NOM]`, getter qui jette en
- * `[?]`. Le budget est vérifié PENDANT le parcours : un objet d'un million de
- * clés n'est jamais énuméré en entier pour être tronqué ensuite.
+ * Arguments de `console.error` → message borné : Error en « Nom: message », objet
+ * en JSON borné (`[Circular]`, `[NOM]` pour un nœud DOM, `[?]` pour un getter qui
+ * jette), clés sensibles masquées. Le budget se vérifie pendant le parcours.
  */
 export function formaterConsole(args: readonly unknown[]): string {
   let out = "";
@@ -152,8 +127,7 @@ function capturerConsole(errors: ErrorCollector, args: readonly unknown[]): void
   if (!message) return;
   errors.report("console", {
     "mip.error_kind": "console",
-    // L'application a vu l'erreur et l'a journalisée : elle n'est pas remontée
-    // jusqu'au gestionnaire global.
+    // Journalisée par l'app, l'erreur n'a pas atteint le gestionnaire global.
     "mip.error_handled": true,
     "exception.type": (erreur && boundedName(erreur.name)) || "console.error",
     "exception.message": message,
@@ -162,12 +136,9 @@ function capturerConsole(errors: ErrorCollector, args: readonly unknown[]): void
 }
 
 /**
- * Enveloppe `console.error`. Rend les API absentes : la voie est alors muette.
- *
- * L'original est appelé EXACTEMENT une fois par appel, que la capture réussisse,
- * soit ignorée ou jette. Un appel émis PENDANT l'enveloppe — un beforeSend qui
- * journalise, une console tierce qui se rappelle — va à l'original sans être
- * capturé : le SDK ne se mesure jamais lui-même et ne peut pas boucler.
+ * Enveloppe `console.error` ; rend les API absentes. L'original est appelé une
+ * fois par appel, quoi qu'il arrive à la capture ; un appel émis pendant la
+ * capture (beforeSend qui journalise) n'est pas capturé, pour ne jamais boucler.
  */
 export function initConsoleErrors(errors: ErrorCollector): string[] {
   if (typeof console === "undefined" || typeof console.error !== "function") return ["console.error"];
@@ -195,14 +166,10 @@ export function initConsoleErrors(errors: ErrorCollector): string[] {
 type ElementRessource = Element & { currentSrc?: unknown; src?: unknown; href?: unknown; data?: unknown };
 
 /**
- * Échecs de chargement (img, script, link, média…) → erreur `resource`.
- *
- * Ces événements ne remontent pas : seul un écouteur en CAPTURE sur window les
- * voit. Il voit aussi les exceptions JS, qui arrivent SUR window : elles
- * appartiennent à la voie `uncaught`, et leur cible sans `tagName` les écarte.
- *
- * AUCUN STATUT HTTP. L'événement n'en porte pas, et un échec DNS, un blocage CSP
- * ou un 404 produisent le même : un « 404 » supposé serait une donnée inventée.
+ * Échecs de chargement (img, script, link, média…) → erreur `resource`. Ils ne
+ * remontent pas : seul un écouteur en capture sur window les voit, et les
+ * exceptions JS, sans `tagName`, en sont écartées. Aucun statut HTTP : l'événement
+ * n'en porte pas (échec DNS, blocage CSP et 404 se confondent).
  */
 export function initResourceErrors(errors: ErrorCollector): void {
   addEventListener(
@@ -266,16 +233,11 @@ const entierPositif = (v: unknown): number | null =>
   typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null;
 
 /**
- * Violations CSP → erreur `csp`. Rend les API absentes.
- *
- * DEUX CANAUX, UN INCIDENT. L'événement `securitypolicyviolation` est synchrone ;
- * ReportingObserver livre plus tard, et rattrape les violations survenues avant
- * le chargement du SDK (`buffered`). Chromium signale la même violation par les
- * deux : chaque canal consomme d'abord ce que l'autre a déjà signalé sous la
- * même clé. Le total reste juste même quand un navigateur n'en sert qu'un.
- *
- * Le blocage de l'ingestion MIP elle-même est ignoré : signalé, il repartirait
- * vers l'origine bloquée et se reproduirait à chaque envoi.
+ * Violations CSP → erreur `csp`, sans l'extrait (`sample`) ni le texte de la
+ * politique ; rend les API absentes. Chromium signale une violation par l'événement
+ * ET par ReportingObserver (qui rattrape aussi celles d'avant le SDK) : chaque canal
+ * consomme d'abord ce que l'autre a déjà signalé sous la même clé. Le blocage de
+ * l'ingestion MIP est ignoré, sinon il se reproduirait à chaque envoi.
  */
 export function initCspErrors(errors: ErrorCollector, denyOrigins: readonly string[]): string[] {
   const nonSupportees: string[] = [];

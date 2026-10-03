@@ -1,44 +1,25 @@
-// Session replay (ROADMAP v0.3 B2). Le cœur reste léger : rrweb vit dans le
-// bundle séparé dist/mip-rum-replay.js (global MIPRumReplay), lazy-loadé ici
-// uniquement si replay activé + session échantillonnée + consent acquis.
-// Chunks : events rrweb -> JSON -> gzip (CompressionStream) -> POST binaire
-// /v1/replay (headers x-mip-session / x-mip-app / x-mip-seq).
+// Session replay. rrweb vit dans le bundle séparé dist/mip-rum-replay.js (global
+// MIPRumReplay), chargé seulement si le rejeu est activé, la session échantillonnée
+// et le consentement acquis : le cœur reste léger.
 import type { recordOptions } from "rrweb";
 import { MIP_UI_ATTR } from "./breadcrumbs";
 import { classerReponse, lireRetryAfter } from "./retry";
 import type { MIPRumConfig } from "./types";
 
-export const REPLAY_MAX_MS = 120_000; // stop après 2 min d'enregistrement
-export const REPLAY_MAX_COMPRESSED_BYTES = 1024 * 1024; // stop après 1 Mo gzip cumulé
-export const CHUNK_FLUSH_MS = 10_000; // flush périodique
-export const CHUNK_MAX_RAW_BYTES = 256 * 1024; // flush anticipé (taille brute)
+export const REPLAY_MAX_MS = 120_000;
+export const REPLAY_MAX_COMPRESSED_BYTES = 1024 * 1024; // gzip cumulé
+export const CHUNK_FLUSH_MS = 10_000;
+export const CHUNK_MAX_RAW_BYTES = 256 * 1024; // taille JSON brute : déclenche un envoi anticipé
 export const REPLAY_BUNDLE = "mip-rum-replay.js";
 
-// ───────────────────────────── Masquage du rejeu ──────────────────────────────
-//
-// CE QUI ÉTAIT ENREGISTRÉ EN CLAIR. Le rejeu masquait les SAISIES
-// (`maskAllInputs`) et excluait les blocs marqués `.mip-rum-block` par l'app.
-// Tout le reste partait tel quel : le texte de la page — un nom sur une fiche
-// client, un montant, un numéro de dossier — et les médias, dont l'URL d'une
-// pièce jointe ou d'un justificatif. Un formulaire vide était protégé ; la même
-// donnée, une fois AFFICHÉE par l'application, ne l'était plus.
-//
-// Le standard 2026 attend l'inverse par défaut : on masque, et on démasque ce
-// qu'on a décidé de montrer. C'est ce que fait `"all"`.
+// Masquage : tout est masqué par défaut (`"all"`), l'application démasque ce
+// qu'elle décide de montrer.
 
 /**
- * Éléments porteurs de CONTENU, remplacés par un cadre de même taille.
- *
- * `svg` en fait partie, et c'est le choix qui coûte : les icônes d'une
- * interface sont presque toujours des SVG en ligne, et le rejeu perd donc ses
- * pictogrammes. On l'assume — un graphique SVG porte des chiffres de client
- * aussi sûrement qu'un `canvas`, et un masquage par défaut qui laisse passer
- * une catégorie entière n'est pas un masquage par défaut. Les apps qui veulent
- * leurs icônes choisissent `"media"` ou `"inputs"` en connaissance de cause.
- *
- * `iframe` n'y figure PAS : rrweb enregistre le contenu d'une iframe de même
- * origine comme un document à part, auquel les mêmes règles de masquage
- * s'appliquent — la bloquer perdrait l'enregistrement au lieu de le protéger.
+ * Éléments porteurs de contenu, remplacés par un cadre de même taille. `svg` y
+ * est, au prix des icônes : un graphique SVG porte des chiffres client comme un
+ * `canvas`. `iframe` n'y est pas : rrweb masque une iframe de même origine avec
+ * les mêmes règles, la bloquer perdrait l'enregistrement.
  */
 export const SELECTEUR_MEDIAS = "img,video,audio,canvas,svg,picture,object,embed";
 
@@ -46,29 +27,16 @@ export const SELECTEUR_MEDIAS = "img,video,audio,canvas,svg,picture,object,embed
 export const CLASSE_BLOC = "mip-rum-block";
 
 /**
- * Classe que l'application pose pour DÉMASQUER une zone, sous `"all"` et
- * `"media"` : son texte est enregistré en clair, ses médias ne sont plus
- * remplacés par un cadre. C'est le mouvement inverse du masquage par défaut —
- * « montre ce tableau, cache le reste » — et il ne se fait que sur décision
- * explicite de l'application, élément par élément.
- *
- * rrweb 2.0.1 n'a pas de sélecteur de démasquage (seulement `maskTextSelector`
- * et `blockSelector`). Le démasquage passe donc par ses deux points d'entrée
- * existants : `maskTextFn(texte, élément)`, appelé pour tout texte à masquer
- * avec son élément parent — à l'instantané comme aux mutations —, et un
- * `blockSelector` qui exclut la zone démasquée (`selecteurMediasBloques`).
+ * Classe qui démasque une zone sous `"all"` et `"media"`. rrweb 2.0.1 n'a pas de
+ * sélecteur de démasquage : on passe par `maskTextFn` et par un `blockSelector`
+ * qui exclut la zone (`selecteurMediasBloques`).
  */
 export const CLASSE_DEMASQUE = "mip-rum-unmask";
 
 /**
- * Ce qui reste masqué DANS une zone démasquée : le plancher, redit pour le texte.
- *
- * `maskAllInputs` masque la VALEUR d'un champ, pas le texte d'un
- * `contenteditable` ni celui d'une liste déroulante : ce sont des nœuds de texte
- * comme les autres, qu'une zone démasquée laisserait passer en clair. Un bloc
- * `mip-rum-block` n'est jamais sérialisé — rrweb s'arrête à lui —, il figure ici
- * pour que la règle ne dépende pas de ce détail d'implémentation. Une page en
- * `designMode` est éditable sans attribut : `estDemasque` la traite à part.
+ * Ce qui reste masqué dans une zone démasquée : `maskAllInputs` masque la valeur
+ * d'un champ, pas le texte d'un `contenteditable` ni d'un `select`. `designMode`
+ * est traité dans `estDemasque`.
  */
 export const SELECTEUR_TOUJOURS_MASQUE =
   `.${CLASSE_BLOC},textarea,select,[contenteditable]:not([contenteditable=false])`;
@@ -91,20 +59,11 @@ export interface OptionsMasquage {
 export interface Demasquage {
   /** La classe réservée, plus le sélecteur `replayUnmask` de l'application s'il est valide. */
   selecteur: string;
-  /**
-   * Le navigateur comprend `:is()` et un `:not()` à sélecteurs complexes
-   * (Chrome 88, Firefox 84, Safari 14 : 2021 et après). Sinon les médias d'une
-   * zone démasquée restent bloqués : le repli masque, il ne démasque jamais.
-   */
+  /** Faux sans `:is()`/`:not()` complexes (avant Chrome 88, Firefox 84, Safari 14) : les médias restent bloqués. */
   medias: boolean;
 }
 
-/**
- * Médias à bloquer : tous, sauf ceux d'une zone démasquée.
- *
- * `:is(zone) *` et non `zone *` : un sélecteur d'application peut être une liste
- * (`.a, .b`), et `.a, .b *` ne voudrait pas dire « dans .a ou dans .b ».
- */
+/** Médias à bloquer, sauf ceux d'une zone démasquée ; `:is(zone) *` car la zone peut être une liste (`.a, .b`). */
 export function selecteurMediasBloques(selecteurDemasque: string): string {
   return `:is(${SELECTEUR_MEDIAS}):not(:is(${selecteurDemasque}),:is(${selecteurDemasque}) *)`;
 }
@@ -120,12 +79,9 @@ export function selecteurValide(selecteur: string): boolean {
 }
 
 /**
- * Un sélecteur que le navigateur ACCEPTE peut rester inopérant, sans erreur : un
- * pseudo-élément (`::before`, `:after`…) ne désigne aucun élément, donc aucune
- * zone ; un commentaire `/*` laissé ouvert avale, une fois le sélecteur composé
- * dans `:is()`/`:not()`, la suite du sélecteur de médias — le texte se
- * démasquerait, pas les médias. Les chaînes entre guillemets sont écartées
- * d'abord : `[title="a::b"]` est un sélecteur ordinaire.
+ * Sélecteur accepté par le navigateur mais sans effet : un pseudo-élément ne
+ * désigne aucune zone, et un `/*` ouvert avale la suite du sélecteur de médias
+ * une fois composé. Les chaînes entre guillemets sont écartées d'abord.
  */
 export function selecteurInoperant(selecteur: string): boolean {
   return /\/\*|::|:(?:before|after|first-line|first-letter)(?![\w-])/i.test(
@@ -134,13 +90,9 @@ export function selecteurInoperant(selecteur: string): boolean {
 }
 
 /**
- * Résout l'option `replayUnmask` en zones démasquées.
- *
- * Un sélecteur invalide est IGNORÉ, avec un avertissement : le transmettre tel
- * quel ferait lever `matches()` dans rrweb, qui avale l'exception et répond
- * « non bloqué » — un sélecteur mal tapé démasquerait alors TOUS les médias.
- * Un sélecteur valide mais inopérant (`selecteurInoperant`) l'est de même : il
- * vaut mieux un avertissement qu'une zone qui ne se démasque pas sans le dire.
+ * Résout `replayUnmask` en zones démasquées. Un sélecteur invalide ou inopérant
+ * est ignoré avec un avertissement : rrweb avale l'exception de `matches()` et
+ * répond « non bloqué », ce qui démasquerait tous les médias.
  */
 export function resoudreDemasquage(
   replayUnmask: unknown,
@@ -157,12 +109,8 @@ export function resoudreDemasquage(
 }
 
 /**
- * L'élément est-il dans une zone démasquée, hors de tout ce qui reste masqué ?
- * Toute exception vaut « non » : dans le doute, on masque.
- *
- * `designMode = "on"` rend tout le document éditable sans poser d'attribut : ce
- * qu'on y tape devient du texte ordinaire, qu'aucun sélecteur ne distingue. Le
- * document entier compte alors comme une saisie.
+ * L'élément est-il dans une zone démasquée, hors de ce qui reste masqué ? Toute
+ * exception vaut « non ». Sous `designMode = "on"`, tout le document est une saisie.
  */
 export function estDemasque(element: Element | null, selecteurDemasque: string): boolean {
   if (!element) return false;
@@ -177,34 +125,21 @@ export function estDemasque(element: Element | null, selecteurDemasque: string):
   }
 }
 
-/**
- * `maskTextFn` : en clair dans une zone démasquée, sinon le masquage de rrweb À
- * L'IDENTIQUE (chaque caractère visible devient `*`, les blancs restent) — le
- * rejeu garde la forme des textes masqués, rien de plus.
- */
+/** `maskTextFn` : en clair dans une zone démasquée, sinon le masquage de rrweb à l'identique. */
 export function masquerTexteHors(selecteurDemasque: string): MasqueTexte {
   return (texte, element) => (estDemasque(element, selecteurDemasque) ? texte : texte.replace(/[\S]/g, "*"));
 }
 
 /**
- * Options rrweb correspondant à un niveau de masquage.
- *
- * `maskAllInputs` et `blockClass` sont dans les TROIS niveaux : une saisie n'est
- * jamais enregistrée, et un bloc que l'application a marqué comme sensible n'est
- * jamais capturé, quel que soit le réglage. Aucun niveau ne peut donc les
- * désactiver — c'est le plancher, pas une option. Le démasquage n'y touche pas
- * non plus : il ne règle ni `maskAllInputs` ni `blockClass`.
- *
- * Sans `demasquage`, le masquage est entier. `"inputs"` l'ignore : il n'y a
- * rien à démasquer là où rien n'est masqué au-delà du plancher.
+ * Options rrweb d'un niveau de masquage. `maskAllInputs` et `blockClass` valent
+ * pour les trois niveaux, démasquage compris : c'est le plancher, pas une option.
  */
 export function optionsMasquage(niveau: NiveauMasquage = "all", demasquage?: Demasquage): OptionsMasquage {
   const base: OptionsMasquage = { maskAllInputs: true, blockClass: CLASSE_BLOC };
   if (niveau === "inputs") return base;
   const blockSelector = demasquage?.medias ? selecteurMediasBloques(demasquage.selecteur) : SELECTEUR_MEDIAS;
   if (niveau === "media") return { ...base, blockSelector };
-  // "all" : le texte aussi. `*` couvre tout élément, donc tout nœud de texte ;
-  // `maskTextFn` décide ensuite, texte par texte, de ce qui reste en clair.
+  // `*` couvre tout nœud de texte ; `maskTextFn` décide ce qui reste en clair.
   const options: OptionsMasquage = { ...base, maskTextSelector: "*", blockSelector };
   if (demasquage) options.maskTextFn = masquerTexteHors(demasquage.selecteur);
   return options;
@@ -215,7 +150,7 @@ export function isReplaySampled(
   replay: boolean | number | undefined,
   rnd: number = Math.random(),
 ): boolean {
-  if (!replay) return false; // false / 0 / undefined
+  if (!replay) return false;
   return replay === true || rnd < replay;
 }
 
@@ -283,21 +218,16 @@ export class ReplayBuffer {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Contrôleur DOM (non couvert par les tests unitaires : validé par
-// tests/e2e/rum-flow.spec.ts, démo headless avec replay:true)
-// ---------------------------------------------------------------------------
+// Contrôleur DOM : couvert par tests/e2e/rum-flow.spec.ts, pas par les tests unitaires.
 
-// src du script principal, capturé au chargement du bundle (document.currentScript
-// est nul une fois le script exécuté — init() arrive trop tard)
+// Capturé au chargement : document.currentScript est nul quand init() s'exécute.
 const mainScriptSrc =
   typeof document !== "undefined"
     ? ((document.currentScript as HTMLScriptElement | null)?.src ?? null)
     : null;
 
-// Typé sur les options de `record()` de rrweb (type seul, effacé au build : rrweb
-// n'entre pas dans le cœur). tsc vérifie ainsi que `optionsMasquage` — dont
-// `maskTextFn` — parle la langue de la version de rrweb réellement embarquée.
+// Type seul, effacé au build : tsc vérifie `optionsMasquage` contre la version de
+// rrweb embarquée sans faire entrer rrweb dans le cœur.
 type RecordFn = (options: recordOptions<unknown>) => (() => void) | undefined;
 
 /** Lazy-load du bundle rrweb (IIFE MIPRumReplay) depuis l'origine du script principal. */
@@ -320,11 +250,8 @@ function loadReplayBundle(url: string): Promise<RecordFn> {
   });
 }
 
-// `Uint8Array<ArrayBuffer>` et non `Uint8Array` tout court : depuis TypeScript 5.7
-// le type est générique sur son tampon, et `BodyInit` n'accepte qu'un tampon non
-// partagé. La précision dit la vérité plutôt qu'elle ne la force — `arrayBuffer()`
-// rend toujours un ArrayBuffer ordinaire — et elle rend ce corps de requête
-// assignable sans assertion.
+// `Uint8Array<ArrayBuffer>` : depuis TypeScript 5.7, `BodyInit` exige un tampon non
+// partagé, et `arrayBuffer()` en rend toujours un.
 async function gzip(text: string): Promise<Uint8Array<ArrayBuffer>> {
   const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
@@ -337,16 +264,10 @@ const REPLAY_ATTENTE_MAX_MS = 10_000;
 const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
- * Envoie un chunk et le REPREND tant que le collector dit « plus tard ».
- *
- * Sous la barrière RGPD, un chunk arrivé avant l'ancre de sa session (le premier
- * lot de traces, envoyé toutes les 3 s) reçoit 425 + `retry-after: 5`. Ignorer la
- * réponse perdait le chunk 0 — l'instantané complet de la page, sans lequel le
- * rejeu est illisible (relevé en production le 30/09/2026). Même classement que
- * la file des traces (`classerReponse`) : 425, 429, 5xx et panne réseau se
- * reprennent, un 4xx (clé refusée, session effacée) jamais. Borné en tentatives
- * et en attente : la chaîne `posting` qui garde l'ordre des seq ne reste jamais
- * bloquée longtemps.
+ * Envoie un chunk et le reprend tant que le collector répond « plus tard ». Sous
+ * la barrière RGPD, un chunk arrivé avant l'ancre de sa session reçoit 425 ; or le
+ * chunk 0 porte l'instantané complet, sans lequel le rejeu est illisible. Borné,
+ * pour ne pas bloquer la chaîne `posting` qui garde l'ordre des seq.
  */
 export async function posterAvecReprise(
   envoyer: () => Promise<Response>,
@@ -379,17 +300,10 @@ export function flushReplayBoundary(): void {
 }
 
 /**
- * Démarre l'enregistrement replay (appelé par init() une fois la session
- * échantillonnée ET le consent acquis). Masquage : `optionsMasquage` (saisies,
- * texte et médias par défaut ; zones `mip-rum-unmask` / `replayUnmask` en
- * clair). Caps : 2 min ou 1 Mo gzip cumulé.
- *
- * Rend l'arrêt à appeler au refus de consentement : l'enregistrement cesse, et
- * ce qui n'est pas encore parti — morceau en cours, morceaux en file, reprises en
- * attente — est jeté. Sans lui, rrweb enregistrait et postait jusqu'au plafond de
- * 2 minutes après un `consent(false)`. Un accord ultérieur sur la même page ne
- * relance pas l'enregistrement : il faudrait un nouvel instantané complet, que
- * seul un chargement redonne.
+ * Démarre l'enregistrement (session échantillonnée, consentement acquis), plafonné
+ * à 2 min ou 1 Mo gzip. Rend l'arrêt à appeler au refus de consentement : il jette
+ * ce qui n'est pas parti. Un accord ultérieur ne relance pas : il faudrait un
+ * nouvel instantané complet, que seul un chargement redonne.
  */
 export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string)): () => void {
   if (started) return () => arret?.();
@@ -427,8 +341,8 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string
     if (refuse) return;
     const chunk = buffer.take();
     if (!chunk) return;
-    // Capture la session AVANT d'enfiler la compression asynchrone. Une
-    // rotation suivante ne peut donc pas rattacher l'ancien chunk au nouvel ID.
+    // Session lue avant la compression asynchrone : une rotation ne rattache pas
+    // ce chunk au nouvel ID.
     const chunkSessionId = typeof sessionId === "function" ? sessionId() : sessionId;
     posting = posting.then(async () => {
       if (refuse) return;
@@ -441,9 +355,8 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string
             "x-mip-session": chunkSessionId,
             "x-mip-app": cfg.appId,
             "x-mip-seq": String(chunk.seq),
-            // clé d'API pour les apps qui en exigent une (l'ingestion replay
-            // partage l'auth de /v1/traces). fetch porte des en-têtes, contrairement
-            // au beacon OTLP qui passe la clé en attribut resource mip.api_key.
+            // Même auth que /v1/traces ; le beacon OTLP, sans en-têtes, passe la
+            // clé en attribut resource mip.api_key.
             ...(cfg.apiKey ? { "x-mip-key": cfg.apiKey } : {}),
           },
           body: bytes,
@@ -451,9 +364,9 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string
           keepalive: bytes.length < 60_000,
         }), dormir, () => refuse);
         // Seul un chunk accepté compte dans le plafond : un refus n'a rien stocké.
-        if (envoye && buffer.addCompressed(bytes.length)) stop(); // cap 1 Mo gzip cumulé
+        if (envoye && buffer.addCompressed(bytes.length)) stop();
       } catch {
-        /* best effort : compression impossible, chunk perdu, le suivant repart */
+        /* compression impossible : chunk perdu, le suivant repart */
       }
     });
   };
@@ -464,15 +377,11 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string
       if (buffer.stopped) return;
       stopRecording = record({
         emit: (event: unknown) => {
-          if (buffer.add(event)) flush(); // ≥ 256 Ko brut -> flush anticipé
+          if (buffer.add(event)) flush();
         },
-        // Masqué PAR DÉFAUT, y compris le texte et les médias : démasquer est
-        // une décision que l'application prend, zone par zone, pas un réglage
-        // qu'elle oublie.
         ...optionsMasquage(cfg.replayMask, resoudreDemasquage(cfg.replayUnmask)),
       });
       timer = setInterval(flush, CHUNK_FLUSH_MS);
-      // cap 2 min : flush final puis stop
       setTimeout(() => {
         flush();
         stop();

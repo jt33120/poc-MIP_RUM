@@ -24,7 +24,7 @@ import { classerParGravite, estFaible, SEUIL_ECHANTILLON_FAIBLE } from "./impact
 
 export { SEUIL_ECHANTILLON_FAIBLE };
 
-/** Plafond de champs suivis par le SDK (`packages/rum-sdk/src/forms.ts:L34`). */
+/** Plafond de champs suivis par le SDK (`packages/rum-sdk/src/forms.ts:L29`). */
 export const MAX_CHAMPS_SDK = 40;
 
 export interface FormFieldProps {

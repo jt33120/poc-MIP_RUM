@@ -1,13 +1,6 @@
-// Encodage OTLP/HTTP JSON du SDK web — remplace le SDK @opentelemetry (~52 Ko
-// minifiés du bundle cœur).
-//
-// La table de correspondance elle-même vit désormais dans `@mip/rum-core` : le
-// format de fil est le MÊME pour le web, React Native et l'agent Node, et
-// l'ingestion (`flattenOtlp`) n'en connaît qu'un. Trois copies d'un encodeur
-// AnyValue, c'est trois occasions d'envoyer un `intValue` en nombre d'un côté et
-// en chaîne de l'autre.
-//
-// Ce module ne garde que ce qui est propre au web : son SCOPE d'émetteur.
+// Encodage OTLP/HTTP JSON du SDK web, sans le SDK @opentelemetry (~52 Ko minifiés).
+// L'encodeur vit dans `@mip/rum-core`, partagé par les capteurs : l'ingestion
+// (`flattenOtlp`) ne connaît qu'un format de fil. Ici, seul le scope du web.
 import { buildResourceSpans as buildResourceSpansCore, type Attributes, type EmitSpan } from "@mip/rum-core";
 
 export {

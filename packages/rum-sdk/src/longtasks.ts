@@ -1,5 +1,4 @@
-// Long tasks (LIMITES §2) : span 'longtask' par tâche > 50 ms (seuil natif
-// du Long Tasks API), cap 30/page.
+// Un span 'longtask' par tâche > 50 ms (seuil natif du Long Tasks API).
 import { makeCap, type PageCap } from "./caps";
 import type { Emit } from "./errors";
 

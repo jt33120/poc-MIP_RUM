@@ -1,10 +1,5 @@
-// Émetteur OTLP/HTTP JSON maison — remplace @opentelemetry/{api,core,resources,
-// sdk-trace-web,exporter-trace-otlp-http} (Chantier A : ~52 Ko minifiés retirés
-// du bundle cœur). Surface publique identique à l'ancienne intégration OTel :
-// `initOtel(cfg) -> Tracer`, `tracer.startSpan(name, {startTime})`, `span
-// .setAttributes()`, `span.end(ts)`, `forceFlush()`. Le batch, le flush au
-// pagehide/visibilitychange et la file de retry durable (localStorage, via le
-// décorateur RetryExporter) sont conservés à l'identique.
+// Émetteur OTLP/HTTP JSON maison : remplace les paquets @opentelemetry/* (~52 Ko
+// minifiés de moins) avec le sous-ensemble d'API OTel que le SDK utilise.
 import {
   buildResourceSpans,
   kindPour,
@@ -26,12 +21,10 @@ import type { MIPRumConfig } from "./types";
 
 type SpanEvent = NonNullable<EmitSpan["events"]>[number];
 
-// Suit packages/rum-sdk/package.json (vérifié par tests/unit/specs.test.ts) : elle
-// restait à 0.4.0 pendant que le paquet passait 0.4.3, et un changement de
-// comportement (sessions de 4 h, consentement sur le terminal, bfcache : 0.5.0)
-// ne se distinguait pas dans ce que le SDK émet.
+// Suit packages/rum-sdk/package.json (tests/unit/specs.test.ts), pour qu'un
+// changement de comportement se distingue dans ce que le SDK émet.
 const SDK_VERSION = "0.5.0";
-const MAX_BATCH = 64; // même plafond que l'ancien BatchSpanProcessor
+const MAX_BATCH = 64; // plafond du BatchSpanProcessor OTel
 
 /** Interface minimale d'un span (sous-ensemble de l'API OTel réellement utilisé). */
 export interface Span {
@@ -58,40 +51,18 @@ function hexId(bytes: number): string {
   return Array.from(a, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// --- Contexte de trace W3C (E0) ---------------------------------------------
-// AVANT : chaque span portait un traceId ET un spanId tirés au hasard. Résultat,
-// aucun span n'était rattachable à un autre : un backend OTel recevant notre
-// OTLP voyait autant de traces que de spans, et la promesse « OTel-native, donc
-// corrélable » était fausse dans les champs natifs (seuls les attributs
-// propriétaires mip.trace_id portaient la corrélation front↔back).
-//
-// MAINTENANT : un traceId par PAGE VUE (chargement initial + chaque navigation
-// SPA), partagé par tous les spans de cette page. Les spans d'appel API portent
-// en plus leur propre spanId, celui-là même propagé dans l'en-tête `traceparent`
-// — le span serveur devient donc leur enfant, dans la MÊME trace que la page.
-// Rotation par page vue (et non par session) : une trace doit rester bornée.
+// Un traceId par page vue (chargement et navigation SPA), partagé par ses spans :
+// le span serveur, enfant du `traceparent` d'un appel API, tombe dans la même
+// trace. Par page vue et non par session, pour qu'une trace reste bornée.
 let pageTraceId = hexId(16);
 
-// --- Span RACINE de la page vue ---------------------------------------------
-// Une trace sans racine n'est pas une trace : chaque span de la page était un
-// orphelin, et un backend OTel tiers affichait autant de branches détachées que
-// de mesures. Le span `pageview` devient donc le parent de tout ce que la page
-// produit ensuite — c'est la relation vraie, pas une convention : une métrique,
-// une erreur ou un appel réseau ont bien lieu PENDANT cette page vue.
-//
-// L'identifiant est tiré à l'ouverture de la trace, avant que le span pageview
-// n'existe, parce que les enfants doivent pouvoir le désigner.
+// Span racine `pageview`, parent de tout ce que la page produit. Son identifiant
+// est tiré dès l'ouverture de la trace, pour que les enfants puissent le désigner.
 let pageSpanId = hexId(8);
 
-// Le span racine a-t-il été RÉELLEMENT créé pour la trace courante ?
-//
-// Ce drapeau évite un parent fantôme, et il en évite deux sortes :
-//   - un span émis AVANT le pageview (une erreur au tout début du chargement) ;
-//   - une page vue dont le span racine n'est jamais parti — consentement refusé,
-//     ou session en mode « error-biased » où seules les erreurs passent.
-// Dans les deux cas le span reste racine plutôt que de pointer vers un parent
-// qui n'arrivera jamais. Un backend afficherait sinon une trace en attente d'un
-// span perpétuellement manquant.
+// La racine est-elle réellement partie ? Sinon (span émis avant le pageview,
+// consentement refusé, session « error-biased »), un span reste racine plutôt que
+// de pointer vers un parent qui n'arrivera jamais.
 let racineCreee = false;
 
 /** traceId de la page vue courante — injecté dans `traceparent` par apispans. */
@@ -112,15 +83,9 @@ export function newPageTrace(): string {
   return pageTraceId;
 }
 
-// --- Conventions sémantiques OpenTelemetry ----------------------------------
-// Les attributs historiques (http.method, http.url, http.status_code) restent
-// émis : l'ingestion MIP les lit, et un SDK déjà posé chez un client continue de
-// les envoyer. Les attributs STABLES sont ajoutés à côté, pour un backend tiers.
-//
-// Dérivés À LA FERMETURE, donc APRÈS `beforeSend` : une application dont le hook
-// réécrit `http.url` (un identifiant dans le chemin) retrouve la même réécriture
-// dans `url.full`. Posés à l'émission, ils auraient ouvert un second chemin que
-// son filtre ne connaît pas.
+// Conventions OTel : les attributs historiques (http.method, http.url…), lus par
+// l'ingestion MIP, restent ; les stables s'y ajoutent pour un backend tiers. Dérivés
+// à la fermeture, donc après `beforeSend`, pour hériter de ses réécritures d'URL.
 
 /** Méthodes HTTP connues de la convention ; toute autre devient `_OTHER`. */
 const METHODE_CONNUE = /^(?:GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH)$/;
@@ -145,14 +110,9 @@ export function conventionsHttp(a: Record<string, unknown>): void {
 }
 
 /**
- * Événement `exception` d'un span `exception`, tel qu'OpenTelemetry l'attend :
- * c'est là qu'un backend tiers lit le type, le message et la pile. Recopié des
- * attributs FINAUX du span (après `beforeSend` et ses nettoyages) : l'événement
- * ne porte jamais rien que le span ne porte pas déjà.
- *
- * L'ingestion MIP ignore les événements d'un span nommé « exception » — le span
- * EST l'exception (packages/backend/shared/otlp.mjs, `spanEventExceptions`) : une
- * erreur reste une seule ligne.
+ * Événement `exception` où un backend OTel tiers lit type, message et pile, recopié
+ * des attributs finaux du span (après `beforeSend`). L'ingestion MIP l'ignore : le
+ * span est déjà l'exception (packages/backend/shared/otlp.mjs).
  */
 export function evenementException(a: Record<string, unknown>, time: HrTime): SpanEvent | null {
   const attributes: Attributes = {};
@@ -166,18 +126,13 @@ export function evenementException(a: Record<string, unknown>, time: HrTime): Sp
 }
 
 /**
- * Exporter HTTP OTLP/JSON : POST keepalive.
- *
- * TROIS ISSUES, pas deux (finding 2.2). Un 403 sur une clé mal saisie et un 503
- * pendant un incident ne demandent pas la même chose : le premier ne s'arrangera
- * jamais, le second s'arrangera tout seul. Les confondre faisait rejouer
- * indéfiniment une requête en tort, à chaque page, pour rien.
+ * Exporter OTLP/JSON en POST keepalive, à trois issues (finding 2.2) : succès,
+ * échec rejouable (5xx, réseau) ou définitif (4xx, comme une clé erronée).
  */
 function httpExporter(url: string): SpanExporter {
   return {
     export(spans, cb) {
-      // les objets sont des EmitSpan (surensemble de ReadableSpan) : on rebâtit
-      // l'enveloppe OTLP à partir du lot + des attributs de resource courants.
+      // Le lot porte des EmitSpan (surensemble de ReadableSpan), d'où le transtypage.
       const body = JSON.stringify(buildResourceSpans(resourceAttrs, spans as unknown as EmitSpan[]));
       const controller = typeof AbortController === "undefined" ? null : new AbortController();
       if (controller) activeExports.add(controller);
@@ -193,8 +148,8 @@ function httpExporter(url: string): SpanExporter {
         headers: { "content-type": "application/json" },
         body,
         ...(controller ? { signal: controller.signal } : {}),
-        // keepalive : la requête survit à l'unload (cap navigateur ~64 Ko) ;
-        // au-delà, envoi normal (le pagehide aura déjà tenté un flush plus tôt).
+        // keepalive survit à l'unload mais le navigateur le plafonne à ~64 Ko ;
+        // au-delà, envoi normal (le pagehide aura déjà tenté un flush).
         keepalive: body.length < 60_000,
       })
         .then((res) => {
@@ -203,17 +158,14 @@ function httpExporter(url: string): SpanExporter {
           finish({
             code: ExportResultCode.FAILED,
             retryable,
-            // L'ingestion renvoie `retry-after` sur ses 429 depuis toujours ;
-            // personne ne le lisait.
+            // L'ingestion accompagne ses 429 d'un `retry-after`.
             retryAfterMs: lireRetryAfter(res.headers.get("retry-after")),
           });
         })
-        // Pas de réponse du tout : réseau coupé, onglet fermé, DNS. C'est le cas
-        // nominal du mode hors-ligne, celui pour lequel la file existe.
+        // Pas de réponse (réseau coupé, onglet fermé, DNS) : le cas pour lequel la file existe.
         .catch(() => finish({
           code: ExportResultCode.FAILED,
-          // Un refus de consentement annule l'envoi : ce lot ne doit surtout
-          // pas revenir par la file offline après sa purge.
+          // Annulé par un refus de consentement : ce lot ne doit pas revenir par la file.
           retryable: controller?.signal.aborted ? false : true,
           discarded: controller?.signal.aborted === true,
           retryAfterMs: null,
@@ -223,33 +175,21 @@ function httpExporter(url: string): SpanExporter {
   };
 }
 
-// La page a été quittée (`pagehide`) et pas encore restaurée (`pageshow`, retour
-// par le cache avant/arrière). Safari a longtemps déchargé une page sans émettre
-// `visibilitychange` : `pagehide` est alors le seul signal.
+// Page quittée (`pagehide`) et pas encore restaurée du bfcache (`pageshow`). Safari
+// peut décharger une page sans `visibilitychange` : `pagehide` est alors le seul signal.
 let pageQuittee = false;
 
-/**
- * Plus aucune réponse réseau n'est garantie : la page est masquée ou quittée, et
- * le navigateur peut la détruire à la fin de la tâche en cours.
- */
+/** Page masquée ou quittée : le navigateur peut la détruire avant toute réponse. */
 function envoiSansAttente(): boolean {
   return pageQuittee || (typeof document !== "undefined" && document.visibilityState === "hidden");
 }
 
 /**
- * Vide le buffer courant vers l'exporter (décorateur retry).
- *
- * Page visible : les envois sont SÉRIALISÉS — un lot attend la réponse du
- * précédent, pour qu'un enfant ne dépasse jamais sa racine.
- *
- * Page masquée ou quittée : le lot part TOUT DE SUITE, dans la tâche en cours.
- * C'est le moment où `web-vitals` finalise LCP, CLS et INP, une métrique à la
- * fois, chacune suivie d'un flush (index.ts). Chaînés sur la réponse du lot
- * précédent, ils attendaient une réponse qui n'arrive jamais quand la page se
- * ferme, et se perdaient sans même atteindre la file de rejeu : 70 FCP pour
- * 5 LCP, 23 CLS et 3 INP en 24 h (audit du 28/09/2026, T2). L'ordre cède ici
- * devant la perte : un lot en échec retombe dans la file de rejeu, un lot jamais
- * parti n'existe plus.
+ * Vide le buffer vers l'exporter. Page visible : envois sérialisés, pour qu'un
+ * enfant ne dépasse jamais sa racine. Page masquée ou quittée : envoi immédiat,
+ * car web-vitals y finalise LCP, CLS et INP un flush à la fois et la réponse
+ * attendue n'arriverait pas ; un lot en échec retombe dans la file, un lot jamais
+ * parti est perdu.
  */
 function flushBatch(): Promise<void> {
   if (!exporter || buffer.length === 0) return pending;
@@ -257,8 +197,8 @@ function flushBatch(): Promise<void> {
   buffer = [];
   const epoch = discardEpoch;
   const envoyer = () => new Promise<void>((resolve) => {
-    // Un refus de consentement survenu pendant l'attente annule ce lot avant
-    // toute requête réseau. Un export déjà parti ne peut pas être rappelé.
+    // Un refus de consentement pendant l'attente annule ce lot ; un export déjà
+    // parti ne peut pas être rappelé.
     if (epoch !== discardEpoch) return resolve();
     exporter!.export(batch as unknown as ReadableSpan[], () => resolve());
   });
@@ -290,20 +230,13 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
     "mip.client_id": cfg.clientId ?? "",
     "mip.user_agent": navigator.userAgent,
     "deployment.environment.name": cfg.env ?? "dev",
-    // release pour la dé-minification des stacks (association à la source map)
+    // release : associe les piles à leur source map (dé-minification)
     ...(cfg.release ? { "mip.release": cfg.release } : {}),
     // sendBeacon/keepalive ne portent pas de headers : la clé voyage en resource
     ...(cfg.apiKey ? { "mip.api_key": cfg.apiKey } : {}),
-    // ÉCHANTILLONNAGE — les deux taux, pas seulement le premier.
-    //
-    // Sans eux, un backend ne peut pas repondérer : il voit un échantillon et le
-    // prend pour la population. Et `sampleRate` SEUL ne suffit pas, parce que
-    // l'échantillonnage de ce SDK n'est pas uniforme mais biaisé-erreurs (voir
-    // sampling.ts). Une session sans erreur n'apparaît qu'avec une probabilité
-    // `sampleRate` ; une session AVEC erreur apparaît avec
-    // `sampleRate + (1 - sampleRate) × errorSampleRate`. Les deux nombres sont
-    // donc nécessaires pour reconstruire la probabilité d'inclusion, et c'est
-    // elle — pas le taux — qui donne le poids. Détail dans migration-v58.
+    // Les deux taux, pour repondérer : l'échantillonnage est biaisé-erreurs, une
+    // session avec erreur est incluse avec la probabilité
+    // sampleRate + (1 − sampleRate) × errorSampleRate (sampling.ts, migration-v58).
     "mip.sample_rate": String(cfg.sampleRate ?? 1),
     "mip.error_sample_rate": String((cfg.keepOnError ?? true) ? (cfg.errorSampleRate ?? 1) : 0),
   };
@@ -314,15 +247,14 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
   if (flushTimer != null) clearInterval(flushTimer);
   flushTimer = setInterval(() => void flushBatch(), delay);
 
-  // les valeurs finales (INP/CLS) sont émises au passage en hidden : on flush
-  // juste après pour que la requête keepalive parte avant l'unload
+  // INP et CLS finaux sont émis au passage en hidden : flush aussitôt, pour que
+  // la requête keepalive parte avant l'unload
   const flush = () => void flushBatch();
   addEventListener("pagehide", () => {
     pageQuittee = true;
     flush();
   });
-  // Restaurée depuis le cache avant/arrière : la page vit de nouveau, les
-  // réponses arriveront, l'ordre des lots redevient la règle.
+  // Restaurée du bfcache : les réponses arriveront, les lots se sérialisent de nouveau.
   addEventListener("pageshow", () => {
     pageQuittee = false;
   });
@@ -333,10 +265,9 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
   return {
     startSpan(name, opts) {
       const startMs = opts?.startTime ?? Date.now();
-      // Le PREMIER pageview de la trace en est la racine : il prend l'identifiant
-      // réservé, et n'a pas de parent. Les suivants — le rejeu de la file de
-      // retry peut en produire un second — reçoivent un identifiant neuf, sans
-      // quoi deux spans porteraient la même clé et l'ingestion en jetterait un.
+      // Le premier pageview de la trace en est la racine (identifiant réservé, sans
+      // parent). Un second, possible au rejeu de la file, prend un identifiant neuf :
+      // l'ingestion jetterait un doublon de clé.
       const estRacine = name === "pageview" && !racineCreee;
       if (estRacine) racineCreee = true;
       const span: EmitSpan = {
@@ -355,12 +286,10 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
           Object.assign(span.attributes, attrs);
         },
         end(epochMs) {
-          if (ended) return; // end() idempotent
+          if (ended) return;
           ended = true;
-          // Les spans d'appel API (http.client) ont déjà un contexte W3C : c'est
-          // celui qui part dans `traceparent`, donc celui que le serveur voit.
-          // On le recopie dans les champs NATIFS pour que les deux vues (attributs
-          // propriétaires et OTLP standard) désignent le même span.
+          // Un span http.client porte déjà le contexte W3C parti dans `traceparent` :
+          // recopié dans les champs natifs, il désigne le span que le serveur voit.
           const a = span.attributes as Record<string, unknown>;
           if (typeof a["mip.trace_id"] === "string") span.traceId = a["mip.trace_id"];
           if (typeof a["mip.span_id"] === "string") span.spanId = a["mip.span_id"];

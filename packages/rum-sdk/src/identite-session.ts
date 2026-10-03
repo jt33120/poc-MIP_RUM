@@ -1,25 +1,7 @@
-// ───────────────────── Identité métier et session technique ─────────────────────
-//
-// L'INTENTION (spec rum-browser-context-identity, 15/09/2026) : « une identité
-// DIFFÉRENTE ouvre une session technique distincte sans changer le visiteur » —
-// une session ne mélange jamais l'activité de A et celle de B (poste partagé,
-// changement de compte).
-//
-// CE QUI ÉTAIT FAUX (recette du 26/09/2026). L'identité ne vivait qu'en mémoire.
-// Dans une application MULTIPAGE, chaque chargement de page repart d'une identité
-// vide ; l'application rappelle `setUser(A)` après `init()`, le SDK y voyait un
-// changement (rien → A) et ouvrait une NOUVELLE session à chaque page. Une visite
-// de cinq pages faisait cinq sessions d'une page.
-//
-// CE QUI DÉCIDE MAINTENANT : la marque de l'identité, PERSISTÉE avec la session.
-//   - session anonyme, identité posée → l'identité s'y RATTACHE (connexion en cours
-//     de visite : c'est la même visite) ;
-//   - même marque → rien (page suivante de la même personne) ;
-//   - marque différente, ou identité effacée (déconnexion) → nouvelle session.
-// La marque n'est jamais l'identifiant brut (qui ne quitte pas la mémoire) : une
-// empreinte FNV-1a de 32 bits, salée par l'identifiant de session, qui ne sert qu'à
-// comparer deux chargements de la MÊME session. Deux identités distinctes n'ont
-// qu'une chance sur quatre milliards de la partager.
+// Une identité différente ouvre une session distincte sans changer le visiteur
+// (spec rum-browser-context-identity). La marque est persistée avec la session :
+// en multipage, `setUser(A)` rappelé à chaque chargement ne doit pas faire tourner
+// la session. Ce n'est jamais l'identifiant brut, qui ne quitte pas la mémoire.
 
 export interface MarquesIdentite {
   user?: string | null;
@@ -36,15 +18,14 @@ function fnv1a32(texte: string): string {
   return h.toString(16).padStart(8, "0");
 }
 
-/** Marque d'une identité pour CETTE session ; `null` = aucune identité. */
+/** Marque d'une identité, salée par la session ; `null` = aucune identité. */
 export function marqueIdentite(sessionId: string, genre: "user" | "account", id: string | null): string | null {
   return id === null ? null : fnv1a32(`${sessionId}\u0000${genre}\u0000${id}`);
 }
 
 /**
- * Ce que fait un changement d'identité, d'après la marque rattachée à la session :
- * `rattacher` (session anonyme), `rien` (même identité) ou `rotation` (autre
- * identité, ou identité effacée alors que la session en portait une).
+ * `rattacher` (session anonyme : connexion en cours de visite), `rien` (même identité)
+ * ou `rotation` (autre identité, ou déconnexion d'une session identifiée).
  */
 export function decisionIdentite(avant: string | null | undefined, apres: string | null): "rien" | "rattacher" | "rotation" {
   if ((avant ?? null) === apres) return "rien";

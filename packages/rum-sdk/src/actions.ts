@@ -40,11 +40,9 @@ export interface ActionTrackerOptions {
 }
 
 /**
- * Horloge causale bornée, indépendante de l'enveloppe métier P2.
- *
- * Une racine refusée reste un candidat uniquement pour le rejeu error-biased.
- * Aucun autre effet ne reçoit son identifiant tant que cette racine n'a pas été
- * effectivement prise en charge par sampling/beforeSend/consent.
+ * Horloge causale bornée des actions. Une racine refusée n'est candidate qu'au
+ * rejeu error-biased : aucun effet ne reçoit son identifiant avant qu'elle passe
+ * l'échantillonnage, beforeSend et le consentement.
  */
 export class ActionTracker {
   private roots: ActionRoot[] = [];
@@ -124,9 +122,8 @@ export class ActionTracker {
     for (let i = this.roots.length - 1; i >= 0; i--) {
       const root = this.roots[i];
       if (root.startedAt > at) continue;
-      // Le dernier clic gagne aussi lorsqu'il est rejeté : retomber sur une
-      // action plus ancienne attribuerait la même requête différemment entre
-      // fetch/XHR (snapshot courant) et ResourceTiming (timestamp de départ).
+      // Le dernier clic gagne même rejeté : sinon fetch/XHR et ResourceTiming
+      // attribueraient la même requête à deux actions différentes.
       if ((!root.accepted && !root.replayable) || !this.within(root, at) || !this.rootStillValid(root)) return null;
       return this.publicLink(root);
     }
@@ -171,7 +168,7 @@ export class ActionTracker {
     this.currentRoot = null;
   }
 
-  /** Le refus purge les candidats; le ré-accord ne ressuscite jamais un clic refusé. */
+  /** Le refus purge les candidats ; le ré-accord ne ressuscite jamais un clic refusé. */
   consent(granted: boolean): void {
     if (!granted) {
       this.enabled = false;
@@ -186,11 +183,7 @@ export class ActionTracker {
     }
   }
 
-  /**
-   * Contrôle tardif des snapshots fetch/XHR/drain. On conserve route/session/
-   * contexte d'origine, mais on retire le lien causal si sa racine a été
-   * révoquée par consentement ou rotation de session.
-   */
+  /** Contrôle tardif d'un snapshot : retire le lien causal si sa racine a été révoquée (consentement, rotation de session). */
   validate(attrs: ActionAttrs, preserveEpoch = false, allowUnaccepted = false): ActionAttrs {
     const out = { ...attrs };
     const id = typeof out["mip.action_id"] === "string" ? out["mip.action_id"] : null;
@@ -220,13 +213,9 @@ export class ActionTracker {
   }
 
   private trim(_at: number): void {
-    // Les attributs asynchrones portent eux-mêmes époque + session : même si le
-    // détail d'une vieille racine acceptée sort de ce cache, validate() peut
-    // encore vérifier son snapshot sans le réattribuer au clic courant. Une
-    // racine refusée reste toutefois une barrière chronologique : la retirer
-    // ferait retomber une ResourceTiming lente sur l'action acceptée précédente.
-    // Le cap garde cet historique borné; si une barrière en sort, toutes les
-    // racines plus anciennes en sont déjà sorties avec elle.
+    // Coupe par nombre, pas par âge : une racine refusée sert de barrière, sinon une
+    // ResourceTiming lente retomberait sur l'action acceptée précédente. Les
+    // snapshots portant époque et session, validate() se passe des racines sorties.
     if (this.roots.length > 200) this.roots = this.roots.slice(-200);
   }
 
@@ -270,7 +259,7 @@ export function automaticActionName(el: Element): string | null {
 
 export interface AutomaticActionWatch { stop(): void }
 
-/** Clic primaire interactif, phase capture; les clics synthétiques de label sont dédupliqués. */
+/** Clic primaire interactif, en capture ; le clic synthétique d'un label est dédupliqué. */
 export function initAutomaticActions(tracker: ActionTracker): AutomaticActionWatch {
   if (typeof document === "undefined") return { stop() {} };
   let forwardedControl: Element | null = null;

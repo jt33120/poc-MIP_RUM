@@ -1,5 +1,4 @@
-// Breadcrumbs (LIMITES §1) : trail du parcours utilisateur — clics, navigations,
-// erreurs, événements custom. Span 'breadcrumb' avec type/label/seq, cap 50/page.
+// Fil d'Ariane du parcours : clics, navigations, erreurs, événements custom.
 import { makeCap, type PageCap } from "./caps";
 import { accesTerminalAutorise, CLE_SEQUENCE } from "./consent";
 import type { Emit } from "./errors";
@@ -18,7 +17,7 @@ export interface BreadcrumbTrail {
   cap: PageCap;
 }
 
-/** Label de clic : tag + texte tronqué 40c (aria-label en secours pour les boutons-icônes). */
+/** Libellé de clic : balise + texte tronqué (aria-label pour les boutons-icônes). */
 export function formatClickLabel(
   tag: string,
   text: string | null,
@@ -30,13 +29,8 @@ export function formatClickLabel(
 }
 
 /**
- * Libellé borné pour le fil, sans jamais y laisser un mot COUPÉ.
- *
- * L'ingestion masque un JWT, une clé ou un email entiers ; la moitié d'un jeton
- * ne ressemble plus à rien et passerait telle quelle. Or un libellé d'erreur peut
- * porter un chemin d'URL (erreur réseau, P5.2) : au-delà de la borne, le dernier
- * mot ou segment de chemin entamé devient « … » plutôt qu'un fragment. Le « / »
- * compte comme une frontière : une route longue garde ses premiers segments.
+ * Libellé borné sans mot ni segment de chemin coupé : l'ingestion ne reconnaît
+ * plus la moitié d'un jeton pour la masquer. Le mot entamé devient « … ».
  */
 export function boundedWireLabel(label: string, max: number = BREADCRUMB_WIRE_MAX): string {
   if (label.length <= max) return label;
@@ -45,14 +39,9 @@ export function boundedWireLabel(label: string, max: number = BREADCRUMB_WIRE_MA
 }
 
 /**
- * Compteur incrémental de session, persisté en localStorage (monotone : ne
- * redémarre pas à zéro au reload, l'ordre intra-session reste garanti).
- *
- * Le stockage n'est lu qu'au premier pas où l'accès au terminal est autorisé
- * (finding 1.11) : avant l'accord, le compteur ne vit qu'en mémoire. La
- * monotonie ne tient donc plus sous `requireConsent` : les fils tamponnés d'une
- * deuxième page repartent de 1, sous ceux de la première. La console ne lit pas
- * `seq` (relu le 01/10/2026) ; un futur tri par `seq` devra en tenir compte.
+ * Compteur de session persisté, monotone d'un rechargement à l'autre. Avant l'accord
+ * il vit en mémoire : sous `requireConsent`, une deuxième page repart de 1
+ * (la console ne trie pas par `seq`).
  */
 export function createSeq(key: string = SEQ_KEY): () => number {
   let seq = 0;

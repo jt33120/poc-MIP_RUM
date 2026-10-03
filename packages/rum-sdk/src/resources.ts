@@ -1,5 +1,4 @@
-// Resource timings (LIMITES §2) : un span 'resource' par ressource lente
-// (duration >= slowResourceMs) OU render-blocking, cap 20/page.
+// Un span 'resource' par ressource lente (>= slowResourceMs) ou bloquant le rendu.
 import { makeCap, type PageCap } from "./caps";
 import { scrubUrl } from "./context";
 import type { Emit } from "./errors";
@@ -21,7 +20,7 @@ export function initResources(
   try {
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries() as PerformanceResourceTiming[]) {
-        // exclut les exports OTLP du SDK lui-même (boucle de rétroaction)
+        // Pas les exports du SDK lui-même : boucle de rétroaction.
         if (entry.name.startsWith(endpointBase) || entry.name.includes("/v1/traces")) continue;
         const blocking =
           (entry as { renderBlockingStatus?: string }).renderBlockingStatus === "blocking";
