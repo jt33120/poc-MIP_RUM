@@ -25,6 +25,8 @@ export const PLAFONDS_PAR_VOIE: Readonly<Record<ErrorCategory, number>> = {
   resources: 20,
   csp: 10,
   network: 20,
+  workers: 10,
+  websockets: 10,
 };
 
 /** Silence entre deux transmissions d'une MÊME empreinte, en millisecondes. */

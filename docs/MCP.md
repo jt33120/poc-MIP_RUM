@@ -37,7 +37,7 @@ Le dépôt a déjà payé le prix d'une règle d'accès écrite deux fois : il a
 **trois** implémentations de l'ingestion, et le serveur de développement
 acceptait une app sans clé là où la production la rejetait.
 
-**Lecture seule.** Dix-huit des dix-neuf outils sont des `GET`. Le dix-neuvième,
+**Lecture seule.** Vingt-deux des vingt-trois outils sont des `GET`. Le vingt-troisième,
 `mip_rum_query_explorer`, poste son AST sur `POST /api/v1/explorer/query` — parce
 qu'une requête analytique ne tient pas dans une query string, **pas** parce qu'elle
 écrit : cette route n'écrit rien et s'authentifie exactement comme les `GET`.
@@ -115,17 +115,20 @@ les dimensions du contrat — navigateur, système, environnement, service, rele
 route, pays — en égalité exacte. `mip_rum_mobile_summary` (P7.5) en porte trois —
 `device`, `release` et `platform` — et REFUSE les autres : une route ou un service
 filtreraient les occurrences sans filtrer la cohorte, et son taux n'aurait plus le
-même dénominateur que son numérateur.
+même dénominateur que son numérateur. Les quatre outils des signaux de vue (04/10/2026)
+naissent sous le contrat commun : ils portent `env`, `release` et `route`, appliqués à
+la mesure elle-même.
 
 ---
 
-## 3. Les dix-neuf outils
+## 3. Les vingt-trois outils
 
 Tous acceptent un `format` (`json` par défaut, ou `markdown`). Tous, sauf
 `mip_rum_list_apps` et `mip_rum_get_session`, portent les filtres communs `app`,
 `period` (`1h` / `24h` / `7d`) et `device` — à deux exceptions près, dites par leur
 schéma : `mip_rum_get_trends` n'a pas de `period` (fenêtre fixe de 14 jours complets),
 `mip_rum_list_detections` pas de `device` (un épisode ne se découpe pas par appareil).
+Les quatre outils des signaux de vue portent en plus `env`, `release`, `route` et `limit`.
 
 | Outil | Endpoint | Pour répondre à |
 |---|---|---|
@@ -147,7 +150,11 @@ schéma : `mip_rum_get_trends` n'a pas de `period` (fenêtre fixe de 14 jours co
 | `mip_rum_get_trends` | `/trends` | « ça se dégrade ? depuis quand ? quand franchira-t-on le seuil ? » — ou ce qui manque pour le dire, en chiffres |
 | `mip_rum_list_detections` | `/detections` | « qu'est-ce qui sort de l'ordinaire, et par rapport à quelle plage habituelle ? » |
 | `mip_rum_get_error_overrepresentation` | `/errors/{fingerprint}/overrepresentation` | « cette erreur touche-t-elle surtout un navigateur, un système, une release ? » — test publié, ou refus chiffré |
-| `mip_rum_query_explorer` | `POST /explorer/query` | « et cette mesure-là, découpée comme ça ? » — la question qu'aucun des dix-huit autres ne couvre |
+| `mip_rum_get_engagement` | `/engagement` | « les visiteurs restent-ils, et lisent-ils jusqu'en bas ? » — temps passé visible et défilement, par route |
+| `mip_rum_get_spa_loads` | `/spa-loads` | « la navigation dans l'application monopage est-elle rapide ? » — par route d'arrivée |
+| `mip_rum_get_page_weight` | `/page-weight` | « quelles pages sont lourdes ? » — ressources et octets par vue |
+| `mip_rum_list_user_timings` | `/user-timings` | « combien de temps prennent les étapes que l'équipe mesure ? » — `performance.mark`, `performance.measure`, `addTiming` |
+| `mip_rum_query_explorer` | `POST /explorer/query` | « et cette mesure-là, découpée comme ça ? » — la question qu'aucun des vingt-deux autres ne couvre |
 
 ### `mip_rum_get_trends`, `mip_rum_list_detections`, `mip_rum_get_error_overrepresentation` : la statistique des écrans, et ses refus
 
@@ -199,7 +206,7 @@ capacité déclarée active dit ce que le SDK croit avoir installé, pas qu'un s
 
 ### `mip_rum_query_explorer` : composer une mesure, pas en choisir une
 
-Les dix-huit autres outils répondent chacun à une question fixée d'avance.
+Les vingt-deux autres outils répondent chacun à une question fixée d'avance.
 L'Explorer laisse le modèle **composer** la sienne : quel jeu de données
 (`dataset`), quelle mesure (`measure`, sous la forme `champ:agrégation`), quel
 découpage (`group_by`, deux dimensions au plus) et sous quelle forme
@@ -249,6 +256,21 @@ les ignore comble les trous par des suppositions :
   `overview`, `vitals`, `pages`, `tracing` et `health-grid` ;
 - aucune donnée personnelle : les utilisateurs sont des empreintes.
 
+### `mip_rum_get_engagement`, `mip_rum_get_spa_loads`, `mip_rum_get_page_weight`, `mip_rum_list_user_timings` : les signaux de vue
+
+Quatre outils ajoutés le 04/10/2026, sur quatre routes servies par le service `api`
+seul (`docs/API_CONSOLE.md`, « Signaux de vue du SDK web »). Ils rendent ce que le
+SDK web ≥ 0.6 mesure à chaque page vue, avec les lectures de l'écran /pages
+(`apps/console/lib/queries-engagement.ts`). Ce que leur description dit au modèle :
+
+- **Sous 13 mesures, `null` et `manque`** (« 7 vues, 13 requises ») : à répéter tel
+  quel, jamais à lire comme un zéro. Aucune mesure du tout : un SDK antérieur à 0.6,
+  pas des visiteurs qui ne lisent pas.
+- **Un mark n'est pas un measure** : l'un est un instant depuis le début de la vue,
+  l'autre une durée ; ils ne s'additionnent pas.
+- **Les octets sont un plancher** : le navigateur compte 0 pour une ressource servie
+  du cache, ou d'une autre origine sans `Timing-Allow-Origin`.
+
 ### `json` ou `markdown`
 
 Le défaut est **`json`** — l'enveloppe de l'API telle quelle, sans
@@ -256,8 +278,8 @@ transformation. La convention MCP recommande l'inverse ; ici la valeur du
 produit est l'exactitude d'un chiffre, et toute mise en forme est une occasion
 d'en perdre un.
 
-Le rendu `markdown` existe et reste **générique** : une fonction pour les dix-neuf
-outils, pas dix-neuf gabarits. Un gabarit oublié n'échoue pas — il affiche l'ancienne
+Le rendu `markdown` existe et reste **générique** : une fonction pour les vingt-trois
+outils, pas vingt-trois gabarits. Un gabarit oublié n'échoue pas — il affiche l'ancienne
 colonne comme si elle était toute la vérité.
 
 En JSON, ce que le serveur MCP a constaté est rangé à part, sous `_mcp`
@@ -394,7 +416,7 @@ Un `POST /mcp` sans `Authorization` doit répondre `401` avec un en-tête
 
 ## 7. Limites connues
 
-- **Dix-neuf outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
+- **Vingt-trois outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
   exposé : SLO, alertes, tableaux de bord, replay, logs. Les ajouter passe
   par l'API d'abord, jamais par un accès direct depuis le serveur MCP.
 - **Pas de total sur les sessions.** L'API n'en fournit pas ; le serveur ne

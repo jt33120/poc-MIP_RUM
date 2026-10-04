@@ -99,7 +99,8 @@ beforeEach(() => {
   vi.stubGlobal("navigator", { userAgent: "vitest" });
   vi.stubGlobal("location", { href: "https://app.test/dossiers/42", pathname: "/dossiers/42" });
   vi.stubGlobal("history", { pushState: () => {}, replaceState: () => {} });
-  vi.stubGlobal("performance", { getEntriesByType: () => [entreeNavigation] });
+  // `now` : chaque page vue date le début de sa vue (temps passé, SPA_LOAD).
+  vi.stubGlobal("performance", { getEntriesByType: () => [entreeNavigation], now: () => 0 });
   vi.stubGlobal("addEventListener", ecouter(ecouteursFenetre));
 });
 

@@ -152,6 +152,18 @@ autre. Sur une fenêtre glissante (`period`), une donnée inchangée revalide en
 
 ## Journal des changements
 
+### 04/10/2026 — les signaux de vue du SDK web, servis par l'API
+
+Quatre routes de lecture s'ajoutent, sans rien changer aux autres : `GET /api/v1/engagement` (temps
+passé visible et défilement, par route), `GET /api/v1/spa-loads` (changements d'écran d'une application
+monopage), `GET /api/v1/page-weight` (ressources et octets par vue) et `GET /api/v1/user-timings`
+(repères `performance.mark` / `performance.measure` et `addTiming`, par nom). Elles rendent les mesures
+que le SDK web ≥ 0.6 envoie à chaque page vue, avec les lectures de l'écran /pages
+(`apps/console/lib/queries-engagement.ts`) : l'API ne recalcule rien. Comme les statistiques du
+30/09/2026, elles sont **servies par le service de lecture seul** (au jeton ; `401` `jeton_requis` à une
+session, `503` `service_indisponible` si le service est injoignable). Le serveur MCP les expose en
+quatre outils (`docs/MCP.md`).
+
 ### 30/09/2026 — les statistiques des écrans, servies par l'API
 
 Trois routes de lecture s'ajoutent, sans rien changer aux autres : `GET /api/v1/trends` (tendances des
@@ -630,6 +642,134 @@ défaut des 48 dernières heures (`packages/backend/shared/plage-habituelle.mjs`
   « aucun épisode ».
 - Lue par le service `api` sous `mip_api` depuis la migration v106 (droit de lecture sur
   `signal_detecte` et `deploy_marker`).
+
+### Signaux de vue du SDK web (04/10/2026)
+
+Quatre routes, une même règle. Le SDK web ≥ 0.6 envoie, pour chaque page vue (initiale, changement
+d'écran, retour du cache), des mesures sur le canal des Web Vitals (`rum_metric`, une ligne par vue et
+par nom, le SDK envoyant des **cumuls**) et des repères (`rum_event`, `event_type = 'timing'`). Ces
+routes rendent les lectures de l'écran /pages (`apps/console/lib/queries-engagement.ts`), telles quelles.
+
+- **Au jeton seulement**, servies par le service de lecture (implémentations :
+  `apps/console/lib/api/service/{engagement,spa-loads,page-weight,user-timings}.ts`) ; la console les
+  transmet (`401` à une session, `503` si le service est injoignable).
+- **Filtres** : ceux du contrat (`app`, `period` ou `from`/`to`, `device`, `browser`, `os`, `env`,
+  `release`, `route`, `country`, `seg`, `bots`, `internal`). `release` et `env` sont ceux de la
+  mesure. `service` est refusé (`400` `unsupported_dimension`) : ni les mesures ni les repères ne le
+  portent.
+- **`limit`** (1..200, défaut 50) : lignes rendues, les plus mesurées d'abord ; `tronque: true` quand
+  d'autres existent, `routesTotal` (ou `total`) les compte. La ligne `ensemble` couvre toujours toutes
+  les routes, vues sans route comprises.
+- **« Pas assez de données » plutôt qu'un zéro** : sous `requis` mesures (13, le plus petit effectif
+  pour lequel la p75 a un intervalle à 95 %), percentiles et parts valent `null`, et `manque` le dit
+  (« 7 vues, 13 requises »). Une app dont le SDK est antérieur à 0.6 n'a aucune de ces mesures : des
+  listes vides et des effectifs à 0.
+
+### `GET /api/v1/engagement` — temps passé et défilement, par route
+`data = { ensemble: EngagementRoute, routes: EngagementRoute[], routesTotal, tronque, requis }` (lecture
+`engagementParRoute`, schémas `Engagement` et `EngagementRoute` de la spec OpenAPI).
+
+- `vues` : vues portant un temps passé (`TIME_SPENT`) ; `temps_p50_ms`, `temps_p75_ms` : temps
+  passé **visible** sur la vue (onglet au premier plan), en ms.
+- `defilement_n` : vues portant une profondeur de défilement (`SCROLL_DEPTH`) ; `defilement_p50_pct` :
+  médiane de la profondeur **maximale** atteinte (0-100, 100 pour une page qui ne défile pas) ;
+  `part_defilement_profond` (0..1) : part des vues qui atteignent 75 %.
+- Classées par `vues` décroissantes.
+
+```jsonc
+{
+  "meta": { "app": "uti-plateforme", "period": "7d", "device": "all", /* … */ },
+  "data": {
+    "ensemble": {
+      "route": null, "vues": 1840, "temps_p50_ms": 42300, "temps_p75_ms": 118000, "manque": null,
+      "defilement_n": 1840, "defilement_p50_pct": 64, "part_defilement_profond": 0.31, "manque_defilement": null
+    },
+    "routes": [
+      { "route": "/dossiers", "vues": 612, "temps_p50_ms": 61000, "temps_p75_ms": 152400, "manque": null,
+        "defilement_n": 612, "defilement_p50_pct": 72, "part_defilement_profond": 0.44, "manque_defilement": null },
+      { "route": "/aide", "vues": 7, "temps_p50_ms": null, "temps_p75_ms": null, "manque": "7 vues, 13 requises",
+        "defilement_n": 7, "defilement_p50_pct": null, "part_defilement_profond": null, "manque_defilement": "7 vues, 13 requises" }
+    ],
+    "routesTotal": 2, "tronque": false, "requis": 13
+  }
+}
+```
+
+### `GET /api/v1/spa-loads` — changements d'écran d'une application monopage
+`data = { ensemble: SpaLoadRoute, routes: SpaLoadRoute[], routesTotal, tronque, requis }` (lecture
+`chargementsSpaParRoute`, schémas `SpaLoads` et `SpaLoadRoute`).
+
+- Une mesure (`SPA_LOAD`) par changement d'écran (`pushState`, `replaceState`, `popstate`), rangée sous
+  la route d'**arrivée** : du changement d'URL à la dernière activité suivie de 100 ms sans mutation du
+  DOM ni requête `fetch`/XHR en cours. Au-delà de 10 s, ou si l'utilisateur clique, tape ou repart
+  avant la fin, rien n'est mesuré.
+- `n`, `p50_ms`, `p75_ms` ; classées par `n` décroissant. Une application qui recharge ses pages n'a
+  aucune mesure.
+
+```jsonc
+{
+  "meta": { "app": "uti-plateforme", "period": "24h", "device": "all", /* … */ },
+  "data": {
+    "ensemble": { "route": null, "n": 524, "p50_ms": 310, "p75_ms": 690, "manque": null },
+    "routes": [
+      { "route": "/dossiers/:id", "n": 301, "p50_ms": 420, "p75_ms": 880, "manque": null },
+      { "route": "/parametres", "n": 4, "p50_ms": null, "p75_ms": null, "manque": "4 chargements, 13 requis" }
+    ],
+    "routesTotal": 2, "tronque": false, "requis": 13
+  }
+}
+```
+
+### `GET /api/v1/page-weight` — ressources et octets par vue, par route
+`data = { ensemble: PageWeightRoute, routes: PageWeightRoute[], routesTotal, tronque, requis }` (lecture
+`poidsDesVuesParRoute`, schémas `PageWeight` et `PageWeightRoute`).
+
+- Le SDK résume **toutes** les ressources chargées pendant la vue (envois de MIP exclus), pas seulement
+  les lentes qu'il envoie une à une. `vues`, `ressources_p50` : médiane du nombre de ressources par
+  vue (`RESOURCE_COUNT`) ; `octets_n`, `octets_p75` : p75 des octets transférés par vue
+  (`RESOURCE_BYTES`, somme des `transferSize` — le navigateur rend 0 pour une ressource servie du
+  cache, ou d'une autre origine sans `Timing-Allow-Origin` : c'est un plancher).
+- Classées par `vues` décroissantes.
+
+```jsonc
+{
+  "meta": { "app": "uti-plateforme", "period": "7d", "device": "all", /* … */ },
+  "data": {
+    "ensemble": { "route": null, "vues": 1902, "ressources_p50": 38, "manque": null,
+                  "octets_n": 1902, "octets_p75": 1480000, "manque_octets": null },
+    "routes": [
+      { "route": "/dossiers", "vues": 640, "ressources_p50": 44, "manque": null,
+        "octets_n": 640, "octets_p75": 2210000, "manque_octets": null }
+    ],
+    "routesTotal": 1, "tronque": false, "requis": 13
+  }
+}
+```
+
+### `GET /api/v1/user-timings` — repères du développeur, par nom
+`data = { reperes: UserTiming[], total, tronque, requis }` (lecture `reperesParNom`, schémas
+`UserTimings` et `UserTiming`).
+
+- `nom` tel qu'émis, et `source` : `mark` (`mark:<nom>`, un `performance.mark` relevé par le SDK ;
+  la valeur est l'**instant** depuis le début de la vue), `measure` (`measure:<nom>`, un
+  `performance.measure` ; la valeur est une **durée**) ou `manuel` (un `addTiming` de l'application ;
+  une durée). Les repères des outils (React, Next.js, webpack, MIP…) ne sont pas relevés.
+- `n`, `p50_ms`, `p75_ms` ; classés par `n` décroissant. Les démarrages de l'application mobile, aussi
+  des repères, restent sur `/api/v1/mobile/summary`.
+
+```jsonc
+{
+  "meta": { "app": "uti-plateforme", "period": "7d", "device": "all", /* … */ },
+  "data": {
+    "reperes": [
+      { "nom": "measure:recherche-dossiers", "source": "measure", "n": 412, "p50_ms": 180, "p75_ms": 340, "manque": null },
+      { "nom": "mark:tableau-pret", "source": "mark", "n": 388, "p50_ms": 1240, "p75_ms": 2010, "manque": null },
+      { "nom": "export_pdf", "source": "manuel", "n": 9, "p50_ms": null, "p75_ms": null, "manque": "9 mesures, 13 requises" }
+    ],
+    "total": 3, "tronque": false, "requis": 13
+  }
+}
+```
 
 ---
 

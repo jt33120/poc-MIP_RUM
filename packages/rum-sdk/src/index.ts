@@ -10,7 +10,14 @@ import {
   type BufferedEvent,
 } from "./consent";
 import { currentRoute, initNavigation, scrubUrl } from "./context";
-import { initConsoleErrors, initCspErrors, initResourceErrors } from "./error-capture";
+import {
+  initConsoleErrors,
+  initCspErrors,
+  initResourceErrors,
+  initWebSocketErrors,
+  initWorkerErrors,
+} from "./error-capture";
+import { initEngagement } from "./engagement";
 import { initErrors, type Emit } from "./errors";
 import { initForms } from "./forms";
 import { initFrustration, type FrustrationWatch } from "./frustration";
@@ -31,6 +38,8 @@ import type {
   MIPRumConfig,
 } from "./types";
 import { initNavTiming } from "./navtiming";
+import { initSpaLoad } from "./spa-load";
+import { initUserTimings } from "./user-timings";
 import { initVitals } from "./vitals";
 import { applyBeforeSend, validateIdentity } from "@mip/rum-core";
 import {
@@ -427,9 +436,13 @@ export function init(cfg: MIPRumConfig): void {
   emitter = emit;
 
   trail = createBreadcrumbTrail(emit);
+  // Temps passé, défilement et poids de chaque vue ; les ressources le nourrissent.
+  const engagement = initEngagement(emit);
   const resourceCap = initResources(emit, {
     slowResourceMs: cfg.slowResourceMs ?? DEFAULT_SLOW_RESOURCE_MS,
     endpoint: cfg.endpoint,
+    all: cfg.resources === "all",
+    onEntry: engagement.ressource,
     actionAt: (at) => ({ ...collectionOrigin(at), ...actionAttrs(causalActions!.atTimestamp(at)) }),
   });
   // LoAF sinon Long Tasks, jamais les deux : un blocage produirait une entrée de
@@ -447,6 +460,7 @@ export function init(cfg: MIPRumConfig): void {
   // Décomposition réseau (DNS/TCP/TLS/requête/réponse) + qualité du lien : la
   // CAUSE derrière le TTFB, qui n'en donnait que le symptôme.
   initNavTiming(emit);
+  const userTimings = cfg.userTimings !== false ? initUserTimings(emit) : null;
   // Instrumentation champ par champ ; opt-out par cfg.forms=false
   if (cfg.forms !== false) initForms(emit);
 
@@ -514,6 +528,8 @@ export function init(cfg: MIPRumConfig): void {
     resources: Boolean(capture.resources),
     csp: Boolean(capture.csp),
     network: Boolean(network),
+    workers: capture.workers !== false,
+    websockets: capture.websockets !== false,
   };
   const unsupported: Record<ErrorCategory, string[]> = {
     uncaught: [],
@@ -526,6 +542,8 @@ export function init(cfg: MIPRumConfig): void {
           ...(typeof XMLHttpRequest === "function" ? [] : ["XMLHttpRequest"]),
         ]
       : [],
+    workers: enabled.workers ? initWorkerErrors(errorCap) : [],
+    websockets: enabled.websockets ? initWebSocketErrors(errorCap, denyOrigins) : [],
   };
   if (enabled.resources) initResourceErrors(errorCap);
   errorStats = () => {
@@ -563,7 +581,16 @@ export function init(cfg: MIPRumConfig): void {
     });
   }
 
+  // Fin de chargement des vues SPA ; ses requêtes suivies hors ingestion MIP.
+  const spaLoad = initSpaLoad(emit, { denyOrigins });
+
   initNavigation((navType) => {
+    // La vue qui finit part d'abord avec son cumul et sa route. La vue initiale part
+    // du début de la navigation (de l'affichage, pour une page prérendue).
+    const debutVue = navType === "spa" || navType === "bfcache" ? performance.now() : debutNavigation();
+    engagement.nouvelleVue(currentRoute(), debutVue);
+    spaLoad?.nouvelleVue(navType === "spa" ? { route: currentRoute(), id: engagement.vueId(), debut: debutVue } : null);
+    userTimings?.nouvelleVue(debutVue);
     // Après le bfcache, la session a pu échoir : comme un chargement (finding 2.5).
     if (navType === "bfcache") passerA(reconcilierIdentites(getOrCreateSession(session!)));
     causalActions!.close();
@@ -663,6 +690,12 @@ export function init(cfg: MIPRumConfig): void {
     consentementEnAttente = null;
     consent(decision);
   }
+}
+
+/** Début de la vue initiale en temps `performance` : 0, ou l'affichage d'une page prérendue. */
+function debutNavigation(): number {
+  const nav = performance.getEntriesByType?.("navigation")[0] as { activationStart?: number } | undefined;
+  return typeof nav?.activationStart === "number" && nav.activationStart > 0 ? nav.activationStart : 0;
 }
 
 /**

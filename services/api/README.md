@@ -44,6 +44,12 @@ décommission de la console (C12) : **`GET /api/v1/trends`** (tendances des cinq
 habituelle) et **`GET /api/v1/errors/{fingerprint}/overrepresentation`** (valeurs de session
 sur-représentées parmi les sessions touchées par un groupe d'erreurs). Elles servent le calcul partagé
 de la statistique (`packages/stats`, `@mip/stats`) — celui des écrans « Tendances » et Vue d'ensemble.
+Le 04/10/2026, quatre autres les rejoignent, les signaux de vue du SDK web ≥ 0.6 lus par l'écran
+/pages (`apps/console/lib/queries-engagement.ts`) : **`GET /api/v1/engagement`** (temps passé et
+défilement), **`GET /api/v1/spa-loads`** (changements d'écran d'une application monopage),
+**`GET /api/v1/page-weight`** (ressources et octets par vue) et **`GET /api/v1/user-timings`**
+(repères du développeur). Leurs tables (`rum_metric`, `rum_event`, `rum_session`) étaient déjà dans
+la liste blanche de `mip_api`.
 
 - La table `ROUTES_SERVICE_SEUL` (`routeur.mjs`) nomme, pour chaque chemin, l'implémentation que le
   build compile **à la place** du fichier de route de la console (`apps/console/lib/api/service/*.ts`).

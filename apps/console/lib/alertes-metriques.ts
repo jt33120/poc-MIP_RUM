@@ -79,6 +79,14 @@ export const MESURE_MIP_DE_METRIQUE: Record<string, MesureMip> = {
   browser_error_session_rate: "BROWSER_ERRORS",
 };
 
+/**
+ * Les mesures de `SEUILS_MIP` qu'aucune métrique d'alerte ne surveille : leur note
+ * reste de l'affichage. `SPA_LOAD` (04/10/2026) : la branche générique de
+ * `check_alerts` saurait en lire le p75, mais l'ouvrir aux règles (champs, libellés,
+ * API) est un lot à part.
+ */
+export const MESURES_MIP_SANS_ALERTE: readonly MesureMip[] = ["SPA_LOAD"];
+
 // `hasOwnProperty` et non un accès direct : « constructor » n'est pas une métrique.
 const propre = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 

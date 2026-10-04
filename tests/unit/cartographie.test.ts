@@ -138,7 +138,7 @@ describe("les sources citées existent", () => {
       "packages/rum-sdk/src/replay.ts:137-146": ["function optionsMasquage", "maskAllInputs: true", 'maskTextSelector: "*"'],
       "packages/rum-sdk/src/replay.ts:9-11": ["REPLAY_MAX_MS = 120_000", "REPLAY_MAX_COMPRESSED_BYTES = 1024 * 1024", "CHUNK_FLUSH_MS = 10_000"],
       "packages/rum-sdk/src/replay.ts:353-361": ['"x-mip-session"', '"x-mip-app"', '"x-mip-seq"', '"x-mip-key"'],
-      "packages/rum-sdk/src/types.ts:104-116": ["interface CaptureErrorsConfig", "console?:", "resources?:", "csp?:", "network?:"],
+      "packages/rum-sdk/src/types.ts:112-128": ["interface CaptureErrorsConfig", "console?:", "resources?:", "csp?:", "network?:", "workers?:", "websockets?:"],
     };
     const citees = new Set(CARTOGRAPHIE.elements.flatMap((e) => e.faits.flatMap((f) => f.sources)));
     const fautes: string[] = [];

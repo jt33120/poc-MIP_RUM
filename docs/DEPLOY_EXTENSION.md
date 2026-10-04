@@ -66,12 +66,12 @@ Fichier `update.xml`, hébergé sur une URL accessible du parc client :
 <?xml version="1.0" encoding="UTF-8"?>
 <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
   <app appid="gglpcalhlkfhgipfmemfiedjomifefba">
-    <updatecheck codebase="https://<votre-hébergement>/mip-rum-extension.crx" version="0.5.0" />
+    <updatecheck codebase="https://<votre-hébergement>/mip-rum-extension.crx" version="0.6.0" />
   </app>
 </gupdate>
 ```
 
-`version` est celle de `manifest.json` au moment de l'empaquetage (0.5.0 au 01/10/2026).
+`version` est celle de `manifest.json` au moment de l'empaquetage (0.6.0 au 04/10/2026).
 Elle suit la version du SDK (`packages/rum-sdk/package.json`) : `check:sync`, rejoué en CI,
 échoue si le manifest ou `apps/extension/package.json` en diverge. À chaque nouvelle version
 de l'extension : ré-empaqueter, mettre à jour `version` dans `update.xml` — Chrome/Edge

@@ -20,8 +20,17 @@ describe("flattenOtlp — snapshot du contrat de sortie", () => {
   it("couvre tous les types de lignes (repères avant le snapshot)", () => {
     expect(rows.sessions).toHaveLength(1);
     expect(rows.pageviews).toHaveLength(1);
-    expect(rows.metrics).toHaveLength(1);
-    expect(rows.errors).toHaveLength(1);
+    // + TIME_SPENT, SCROLL_DEPTH, RESOURCE_COUNT, RESOURCE_BYTES, SPA_LOAD (SDK 0.6.0)
+    expect(rows.metrics).toHaveLength(6);
+    expect(rows.metrics.slice(1).map((m) => m.name)).toEqual([
+      "TIME_SPENT", "SCROLL_DEPTH", "RESOURCE_COUNT", "RESOURCE_BYTES", "SPA_LOAD",
+    ]);
+    // + une erreur de worker et une de WebSocket (SDK 0.6.0)
+    expect(rows.errors).toHaveLength(3);
+    expect(rows.errors.slice(1).map((e) => [e.kind, e.message])).toEqual([
+      ["error", "[Worker] Uncaught TypeError: x is not a function"],
+      ["network", "WebSocket app.demo.fr/temps-reel : 1006"],
+    ]);
     expect(rows.resources).toHaveLength(1);
     // longtask ET loaf : le MÊME fait — le fil principal a bloqué — rangé dans
     // la même table, avec `source` pour dire laquelle des deux API a parlé.
@@ -33,7 +42,12 @@ describe("flattenOtlp — snapshot du contrat de sortie", () => {
     // et son URL nettoyée de son jeton — un sourceURL est une URL comme une autre
     expect(rows.longtasks[1].script_url).toBe("https://app.demo.fr/static/panier.js");
     expect(rows.breadcrumbs).toHaveLength(1);
-    expect(rows.events).toHaveLength(2); // track.signup + frustration (P1)
+    // track.signup + frustration (P1) + repères mark:/measure: (SDK 0.6.0)
+    expect(rows.events).toHaveLength(4);
+    expect(rows.events.slice(2).map((e) => [e.event_type, e.name, e.timing_ms])).toEqual([
+      ["timing", "mark:resultats-affiches", 1840],
+      ["timing", "measure:filtrage", 88],
+    ]);
     expect(rows.spans).toHaveLength(3); // http.client + http.server + OTel server
     expect(rows.rejected).toBe(1); // le 2e resourceSpans (sans mip.app_id)
     // L'identité du visiteur voyage jusqu'à la ligne de session, et la colonne

@@ -11,6 +11,7 @@ import {
   estPartDeMetrique,
   libelleCourtMetrique,
   MESURE_MIP_DE_METRIQUE,
+  MESURES_MIP_SANS_ALERTE,
   METRIQUES_MIP_ALERTE,
   METRIQUES_RESEAU_ALERTE,
   METRIQUES_SEUIL_SEUL,
@@ -91,7 +92,11 @@ describe("vague 4 — métriques d'alerte des mesures MIP", () => {
     for (const m of [...METRIQUES_RESEAU_ALERTE, ...METRIQUES_MIP_ALERTE]) {
       expect(SEUILS_MIP[MESURE_MIP_DE_METRIQUE[m]]).toBeTruthy();
     }
-    expect(new Set(Object.values(MESURE_MIP_DE_METRIQUE))).toEqual(new Set(Object.keys(SEUILS_MIP)));
+    // Les mesures sans alerte sont NOMMÉES (MESURES_MIP_SANS_ALERTE), jamais oubliées.
+    for (const m of MESURES_MIP_SANS_ALERTE) expect(Object.values(MESURE_MIP_DE_METRIQUE)).not.toContain(m);
+    expect(new Set([...Object.values(MESURE_MIP_DE_METRIQUE), ...MESURES_MIP_SANS_ALERTE])).toEqual(
+      new Set(Object.keys(SEUILS_MIP)),
+    );
   });
 
   it("le seuil proposé est la borne « mauvais » : web.dev pour un vital, SEUILS_MIP sinon", () => {

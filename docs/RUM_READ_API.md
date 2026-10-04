@@ -193,6 +193,9 @@ passer par `/api/v1/*` (jeton `CONSOLE_API_TOKENS@gip-plateforme`, cf. `docs/API
   sessions touchées par un groupe d'erreurs → `GET /api/v1/errors/{fingerprint}/overrepresentation`. Le
   calcul des écrans (paquet `@mip/stats`), servi par le service de lecture : au jeton seulement (depuis
   le 30/09/2026)
+- **Engagement, changements d'écran, poids des vues, repères** (SDK web ≥ 0.6, écran /pages) →
+  `GET /api/v1/engagement`, `/spa-loads`, `/page-weight`, `/user-timings` : au jeton seulement, servis
+  par le service de lecture (depuis le 04/10/2026)
 - **Détail IA** (coût par jour/route, appels récents, gouvernance) → **console xSOM AI
   Guard** : la supervision IA a quitté mip-rum (ADR-0001) ; `/api/v1/ai*` n'existe plus.
 

@@ -588,6 +588,363 @@
                   }
                 }
               ]
+            },
+            {
+              "spanId": "ts1",
+              "name": "webvital.TIME_SPENT",
+              "startTimeUnixNano": "1760000008100000000",
+              "attributes": [
+                {
+                  "key": "mip.session_id",
+                  "value": {
+                    "stringValue": "sess-1"
+                  }
+                },
+                {
+                  "key": "mip.route",
+                  "value": {
+                    "stringValue": "/home"
+                  }
+                },
+                {
+                  "key": "webvital.name",
+                  "value": {
+                    "stringValue": "TIME_SPENT"
+                  }
+                },
+                {
+                  "key": "webvital.value",
+                  "value": {
+                    "intValue": "48250"
+                  }
+                },
+                {
+                  "key": "webvital.id",
+                  "value": {
+                    "stringValue": "vue-1760000009"
+                  }
+                }
+              ]
+            },
+            {
+              "spanId": "sd1",
+              "name": "webvital.SCROLL_DEPTH",
+              "startTimeUnixNano": "1760000008200000000",
+              "attributes": [
+                {
+                  "key": "mip.session_id",
+                  "value": {
+                    "stringValue": "sess-1"
+                  }
+                },
+                {
+                  "key": "mip.route",
+                  "value": {
+                    "stringValue": "/home"
+                  }
+                },
+                {
+                  "key": "webvital.name",
+                  "value": {
+                    "stringValue": "SCROLL_DEPTH"
+                  }
+                },
+                {
+                  "key": "webvital.value",
+                  "value": {
+                    "intValue": "72"
+                  }
+                },
+                {
+                  "key": "webvital.id",
+                  "value": {
+                    "stringValue": "vue-1760000009"
+                  }
+                }
+              ]
+            },
+            {
+              "spanId": "rc1",
+              "name": "webvital.RESOURCE_COUNT",
+              "startTimeUnixNano": "1760000008300000000",
+              "attributes": [
+                {
+                  "key": "mip.session_id",
+                  "value": {
+                    "stringValue": "sess-1"
+                  }
+                },
+                {
+                  "key": "mip.route",
+                  "value": {
+                    "stringValue": "/home"
+                  }
+                },
+                {
+                  "key": "webvital.name",
+                  "value": {
+                    "stringValue": "RESOURCE_COUNT"
+                  }
+                },
+                {
+                  "key": "webvital.value",
+                  "value": {
+                    "intValue": "34"
+                  }
+                },
+                {
+                  "key": "webvital.id",
+                  "value": {
+                    "stringValue": "vue-1760000009"
+                  }
+                }
+              ]
+            },
+            {
+              "spanId": "rb1",
+              "name": "webvital.RESOURCE_BYTES",
+              "startTimeUnixNano": "1760000008400000000",
+              "attributes": [
+                {
+                  "key": "mip.session_id",
+                  "value": {
+                    "stringValue": "sess-1"
+                  }
+                },
+                {
+                  "key": "mip.route",
+                  "value": {
+                    "stringValue": "/home"
+                  }
+                },
+                {
+                  "key": "webvital.name",
+                  "value": {
+                    "stringValue": "RESOURCE_BYTES"
+                  }
+                },
+                {
+                  "key": "webvital.value",
+                  "value": {
+                    "intValue": "612480"
+                  }
+                },
+                {
+                  "key": "webvital.id",
+                  "value": {
+                    "stringValue": "vue-1760000009"
+                  }
+                }
+              ]
+            },
+            {
+              "spanId": "spa1",
+              "name": "webvital.SPA_LOAD",
+              "startTimeUnixNano": "1760000008500000000",
+              "attributes": [
+                {
+                  "key": "mip.session_id",
+                  "value": {
+                    "stringValue": "sess-1"
+                  }
+                },
+                {
+                  "key": "mip.route",
+                  "value": {
+                    "stringValue": "/aos/:id"
+                  }
+                },
+                {
+                  "key": "webvital.name",
+                  "value": {
+                    "stringValue": "SPA_LOAD"
+                  }
+                },
+                {
+                  "key": "webvital.value",
+                  "value": {
+                    "intValue": "640"
+                  }
+                },
+                {
+                  "key": "webvital.id",
+                  "value": {
+                    "stringValue": "vue-1760000010"
+                  }
+                }
+              ]
+            },
+            {
+              "spanId": "mk1",
+              "name": "rum.timing",
+              "startTimeUnixNano": "1760000008600000000",
+              "attributes": [
+                {
+                  "key": "mip.session_id",
+                  "value": {
+                    "stringValue": "sess-1"
+                  }
+                },
+                {
+                  "key": "mip.route",
+                  "value": {
+                    "stringValue": "/home"
+                  }
+                },
+                {
+                  "key": "mip.event_type",
+                  "value": {
+                    "stringValue": "timing"
+                  }
+                },
+                {
+                  "key": "mip.event_name",
+                  "value": {
+                    "stringValue": "mark:resultats-affiches"
+                  }
+                },
+                {
+                  "key": "mip.timing_ms",
+                  "value": {
+                    "intValue": "1840"
+                  }
+                }
+              ]
+            },
+            {
+              "spanId": "ms1",
+              "name": "rum.timing",
+              "startTimeUnixNano": "1760000008700000000",
+              "attributes": [
+                {
+                  "key": "mip.session_id",
+                  "value": {
+                    "stringValue": "sess-1"
+                  }
+                },
+                {
+                  "key": "mip.route",
+                  "value": {
+                    "stringValue": "/home"
+                  }
+                },
+                {
+                  "key": "mip.event_type",
+                  "value": {
+                    "stringValue": "timing"
+                  }
+                },
+                {
+                  "key": "mip.event_name",
+                  "value": {
+                    "stringValue": "measure:filtrage"
+                  }
+                },
+                {
+                  "key": "mip.timing_ms",
+                  "value": {
+                    "intValue": "88"
+                  }
+                }
+              ]
+            },
+            {
+              "spanId": "wk1",
+              "name": "exception",
+              "startTimeUnixNano": "1760000008800000000",
+              "attributes": [
+                {
+                  "key": "mip.session_id",
+                  "value": {
+                    "stringValue": "sess-1"
+                  }
+                },
+                {
+                  "key": "mip.route",
+                  "value": {
+                    "stringValue": "/home"
+                  }
+                },
+                {
+                  "key": "mip.error_kind",
+                  "value": {
+                    "stringValue": "error"
+                  }
+                },
+                {
+                  "key": "exception.type",
+                  "value": {
+                    "stringValue": "TypeError"
+                  }
+                },
+                {
+                  "key": "exception.message",
+                  "value": {
+                    "stringValue": "[Worker] Uncaught TypeError: x is not a function"
+                  }
+                },
+                {
+                  "key": "mip.error_source",
+                  "value": {
+                    "stringValue": "https://app.demo.fr/workers/calcul.js"
+                  }
+                },
+                {
+                  "key": "mip.error_lineno",
+                  "value": {
+                    "intValue": "12"
+                  }
+                },
+                {
+                  "key": "mip.error_colno",
+                  "value": {
+                    "intValue": "7"
+                  }
+                }
+              ]
+            },
+            {
+              "spanId": "ws1",
+              "name": "exception",
+              "startTimeUnixNano": "1760000008900000000",
+              "attributes": [
+                {
+                  "key": "mip.session_id",
+                  "value": {
+                    "stringValue": "sess-1"
+                  }
+                },
+                {
+                  "key": "mip.route",
+                  "value": {
+                    "stringValue": "/home"
+                  }
+                },
+                {
+                  "key": "mip.error_kind",
+                  "value": {
+                    "stringValue": "network"
+                  }
+                },
+                {
+                  "key": "exception.type",
+                  "value": {
+                    "stringValue": "WebSocketError"
+                  }
+                },
+                {
+                  "key": "exception.message",
+                  "value": {
+                    "stringValue": "WebSocket app.demo.fr/temps-reel : 1006"
+                  }
+                },
+                {
+                  "key": "mip.error_source",
+                  "value": {
+                    "stringValue": "wss://app.demo.fr/temps-reel"
+                  }
+                }
+              ]
             }
           ]
         }

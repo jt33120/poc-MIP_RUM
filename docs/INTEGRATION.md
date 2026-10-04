@@ -85,7 +85,12 @@ de la même fiche : le pays y reste estimé.
   simple (annexe C).
 
 Rien d'autre à coder : Web Vitals, erreurs, sessions et appels réseau sont mesurés, et les appels vers la même origine portent l'en-tête `traceparent`
-qui les relie au serveur (§ 3). Tout le reste est optionnel (annexe A).
+qui les relie au serveur (§ 3). Depuis le SDK 0.6.0 (04/10/2026), chaque vue donne aussi
+son temps passé visible, sa profondeur de défilement, le nombre et le poids de ses
+ressources et, pour un changement d'écran SPA, son temps de chargement ; les
+`performance.mark` / `performance.measure` de l'application deviennent des timings, et
+les erreurs des Web Workers et des WebSockets sont captées. Tout le reste est optionnel
+(annexe A).
 
 ### L'extension : sans toucher au site, pour les navigateurs qui l'ont
 
@@ -194,11 +199,13 @@ curl -s https://mip-rum-console.vercel.app/api/ingest/v1/traces \
 | `keepOnError`, `errorSampleRate` | `true`, 1 | hors échantillon, garder les sessions qui ont une erreur |
 | `flushIntervalMs` | 3000 | intervalle d'envoi des lots |
 | `slowResourceMs` | 300 | seuil d'une ressource lente |
+| `resources` | `"slow"` | spans de ressource : `"slow"` les lentes et les bloquantes (20 par page), `"all"` toutes (150 par page) |
+| `userTimings` | `true` | relève `performance.mark` et `performance.measure` de l'application |
 | `requireConsent`, `honorDNT` | `false`, `true` | consentement et refus du navigateur (annexe B) |
 | `beforeSend` | — | dernier filtre des attributs de chaque span ; `null` jette le span |
 | `replay`, `replayMask`, `replayUnmask`, `replayEndpoint` | `false`, `"all"`, aucune zone | rejeu de session : `true` ou un taux 0..1 ; masquage ; zones démasquées (annexe B) |
 | `trace` | `true` | `traceparent` sur la même origine ; une liste ajoute d'autres origines |
-| `captureErrors` | — | voies d'erreurs opt-in (annexe D) |
+| `captureErrors` | — | voies d'erreurs : quatre sur option, workers et WebSockets actifs par défaut (annexe D) |
 | `frustration`, `forms` | `true`, `true` | clics rageurs et morts ; formulaires champ par champ, sans les valeurs |
 | `collectionSource` | `"sdk"` | `"extension"` quand l'extension injecte le SDK |
 | `feedback` | `false` | bouton « Votre avis ? » (note de 1 à 5) |
@@ -209,6 +216,19 @@ Précisions :
   signal ; au-delà, ignorée (« Inconnue »). C'est la clé des source maps.
 - **`replayEndpoint`** : par défaut, `endpoint` dont `/v1/traces` devient `/v1/replay`.
 - **`trace: false`** coupe le tracing, et avec lui la voie `network` de `captureErrors`.
+- **Mesures de vue** (toujours actives) : `TIME_SPENT` (ms visibles, en cumul),
+  `SCROLL_DEPTH` (le % le plus profond atteint, la fenêtre ou le plus grand conteneur qui
+  défile, 100 pour une page qui ne défile pas), `RESOURCE_COUNT` et `RESOURCE_BYTES`
+  (ressources de la vue, exports MIP exclus) partent au passage en arrière-plan, au
+  départ de la page et à la vue suivante. `SPA_LOAD` mesure un changement d'écran SPA,
+  du `pushState` à la dernière mutation du DOM ou requête suivie de 100 ms de calme ;
+  un clic, une touche ou une autre navigation avant la fin l'annulent, et rien ne part
+  au-delà de 10 s. Une vue = un identifiant, partagé par ses mesures.
+- **`resources: "all"`** fait monter le volume de `rum_resource` et le p75 des
+  ressources, qui ne porte plus sur les seules lentes : l'alerte `resource_p75` en dépend.
+- **`userTimings`** : un mark vaut son instant depuis le début de la vue, un measure sa
+  durée (`mark:<nom>`, `measure:<nom>`, 100 caractères au plus) ; 30 par vue. Les repères
+  des outils (React, Next.js, webpack, le SDK lui-même…) sont ignorés.
 - **`feedback`** accepte aussi un objet : `label`, `accent`, `offset`, `onlyPaths`,
   `exceptPaths`, `cooldownDays` (60 par défaut), `once`, `compact`, `compactBelow`,
   `discreet`. La note part en `MIPRum.track("feedback", { score })`.
@@ -336,8 +356,10 @@ l'écran des sessions le dit (onglet « Pays estimé »).
 ## Annexe D — Collecte d'erreurs du navigateur
 
 Les exceptions non interceptées et les promesses rejetées sont toujours collectées.
-Les autres voies s'allument une à une (`captureErrors`), parce qu'elles peuvent changer
-le volume d'une application du jour au lendemain. Chaque voie a son plafond d'erreurs
+Depuis le SDK 0.6.0, les erreurs des Web Workers et des WebSockets aussi, sauf
+`captureErrors.workers: false` / `captureErrors.websockets: false` : elles sont rares et
+disent toujours une panne. Les autres voies s'allument une à une (`captureErrors`),
+parce qu'elles peuvent changer le volume d'une application du jour au lendemain. Chaque voie a son plafond d'erreurs
 **distinctes** par page ; une même erreur répétée est comptée, et transmise au plus une
 fois toutes les 10 s avec son nombre d'occurrences.
 
@@ -348,6 +370,8 @@ fois toutes les 10 s avec son nombre d'occurrences.
 | `resources` | `captureErrors.resources` | échecs de chargement (image, script, feuille, média) | 20 |
 | `csp` | `captureErrors.csp` | violations CSP, dédupliquées | 10 |
 | `network` | `captureErrors.network` | échecs réseau, délais, réponses 5xx des appels suivis ; `{ clientErrors, aborts }` ajoute les 4xx et les abandons | 20 |
+| `workers` | active ; `captureErrors.workers: false` la coupe | erreur non interceptée dans un `Worker` ou un `SharedWorker`, ou échec de chargement de son script ; message préfixé `[Worker] `, source `browser_js` | 10 |
+| `websockets` | active ; `captureErrors.websockets: false` la coupe | WebSocket en erreur ou fermée anormalement (1002, 1003, 1006, 1007 à 1011, 1015) ; `WebSocketError`, message `WebSocket <hôte/chemin> : <code>`, source `browser_network` | 10 |
 
 `MIPRum.getErrorCollectionStats()` rend, voie par voie, ce qui a été émis, tu par le
 plafond ou refusé (`beforeSend`, consentement). Ces compteurs restent dans le navigateur.
@@ -356,7 +380,9 @@ Ce qui ne part jamais : query string, fragment, corps ni en-têtes d'un appel ou
 ressource ; l'extrait de code d'une violation CSP ; les valeurs des clés sensibles d'un
 objet passé à `console.error`. La voie `network` n'observe que les appels suivis par le
 tracing (même origine et origines de `trace`, 100 par page au plus), jamais la collecte
-de MIP. `console.error(err)` suivi de `throw err` ne fait qu'un incident.
+de MIP. `console.error(err)` suivi de `throw err` ne fait qu'un incident. Une WebSocket
+n'est nommée que par son hôte et son chemin, jamais sa requête (où passent souvent les
+jetons), et jamais celle de la collecte MIP.
 
 ## Annexe E — Échantillonnage
 
@@ -420,13 +446,14 @@ vieux : c'est ce qu'un redémarrage emporterait.
 
 ## Annexe H — Poids et impact sur la page
 
-- `mip-rum.js` : **24,8 Ko gzip** (70,3 Ko brut, build du 02/10/2026), sous le budget de
+- `mip-rum.js` : **27,1 Ko gzip** (77,2 Ko brut, SDK 0.6.0, build du 04/10/2026), sous le budget de
   35 Ko gzip que `packages/rum-sdk/build.mjs` fait respecter. Le rejeu est un second
   fichier (`mip-rum-replay.js`, 56,7 Ko gzip), chargé seulement si `replay` est allumé.
 - Envoi par lots (toutes les `flushIntervalMs`), vidés par `sendBeacon` quand la page
   passe en arrière-plan : aucune requête bloquante pendant la navigation.
-- Plafonds par page : 20 ressources lentes, 30 tâches longues, 50 fils d'Ariane, 50
-  erreurs distinctes, plus ceux des voies d'erreurs (annexe D).
+- Plafonds par page : 20 ressources lentes (150 avec `resources: "all"`), 30 tâches
+  longues, 50 fils d'Ariane, 50 erreurs distinctes, plus ceux des voies d'erreurs
+  (annexe D) ; par vue, 30 repères `performance.mark` / `measure`.
 
 ## Annexe I — Injection sans toucher au code
 

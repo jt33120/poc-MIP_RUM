@@ -84,6 +84,18 @@ function lot(app: string, session: string, decalageMin: number) {
               span("webvital.CLS", { "webvital.name": "CLS", "webvital.value": 0.05, "webvital.id": `cls-${session}` }),
               span("exception", { "exception.type": "TypeError", "exception.message": "x is undefined", "exception.stacktrace": "TypeError: x is undefined\n    at panier (https://parite.test/main.js:1:40)" }),
               span("rum.action", { "mip.event_type": "action", "mip.event_name": "ajouter-au-panier", "mip.action_id": `act-${session}` }, 30),
+              // Signaux de vue du SDK web ≥ 0.6 : sans eux, /engagement, /spa-loads,
+              // /page-weight et /user-timings seraient vides des deux côtés.
+              ...(
+                [
+                  ["TIME_SPENT", 42_000 + decalageMin],
+                  ["SCROLL_DEPTH", 40 + (decalageMin % 60)],
+                  ["SPA_LOAD", 300 + (decalageMin % 500)],
+                  ["RESOURCE_COUNT", 20 + (decalageMin % 30)],
+                  ["RESOURCE_BYTES", 500_000 + decalageMin],
+                ] as const
+              ).map(([nom, valeur]) => span(`webvital.${nom}`, { "webvital.name": nom, "webvital.value": valeur, "webvital.id": `vue-${session}` })),
+              span("rum.timing", { "mip.event_type": "timing", "mip.event_name": "measure:parite", "mip.timing_ms": 120 + (decalageMin % 500) }),
             ],
           },
         ],
@@ -284,6 +296,12 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
     `/api/v1/trends?app=all&device=desktop`,
     `/api/v1/detections?app=${A}&period=7d`,
     `/api/v1/detections?app=all`,
+    // Les signaux de vue du SDK web (04/10/2026) : lectures de l'écran /pages, sous `mip_api`.
+    `/api/v1/engagement?app=${A}&period=7d`,
+    `/api/v1/engagement?app=all&release=1.2.0&limit=5`,
+    `/api/v1/spa-loads?app=${A}`,
+    `/api/v1/page-weight?app=${A}&device=desktop`,
+    `/api/v1/user-timings?app=${A}&period=7d`,
   ];
 
   it.each(LECTURES)("GET %s : même statut, même corps, même ETag", async (chemin) => {

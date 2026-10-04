@@ -69,6 +69,20 @@ function arr(items: unknown) {
 function ref(name: string) {
   return { $ref: `#/components/schemas/${name}` };
 }
+/** Un classement par route avec sa ligne d'ensemble (`ParRoute`, lib/queries-engagement.ts). */
+function parRoute(ligne: string) {
+  return o(
+    {
+      // OpenAPI 3.0 ignore les voisins d'un `$ref` : la description passe par `allOf`.
+      ensemble: { allOf: [ref(ligne)], description: "toutes routes, y compris les vues sans route ; indépendante de `limit`" },
+      routes: arr(ref(ligne)),
+      routesTotal: { ...int, description: "routes distinctes mesurées sur la fenêtre, avant la limite" },
+      tronque: bool,
+      requis: { ...int, description: "effectif sous lequel un percentile ou une part vaut null (13)" },
+    },
+    ["ensemble", "routes", "routesTotal", "tronque", "requis"],
+  );
+}
 /** Enveloppe { meta, data } commune à toutes les réponses de données. */
 function envelope(dataSchema: unknown) {
   return o({ meta: ref("Meta"), data: dataSchema }, ["meta", "data"]);
@@ -163,6 +177,11 @@ export function buildOpenApi(): Record<string, unknown> {
   const pageParams = [
     { $ref: "#/components/parameters/limit" },
     { $ref: "#/components/parameters/offset" },
+  ];
+  // Signaux de vue : `rum_metric` et `rum_event` ne portent pas `service`.
+  const signalVueParams = [
+    ...commonFilters.filter((p) => p.$ref !== "#/components/parameters/service"),
+    { $ref: "#/components/parameters/signalLimit" },
   ];
   const eventPageParams = [
     { $ref: "#/components/parameters/limit" },
@@ -484,6 +503,41 @@ export function buildOpenApi(): Record<string, unknown> {
           },
         ),
       },
+      // Les signaux de vue du SDK web ≥ 0.6 : les lectures de l'écran /pages, servies par
+      // le service de lecture seul (au jeton). `service` est refusé (400
+      // unsupported_dimension) : ni les mesures ni les repères ne le portent.
+      "/engagement": {
+        get: get(
+          "Engagement par route : temps passé visible p50/p75, défilement maximal p50, part des vues qui défilent à 75 % — ou ce qui manque, en chiffres",
+          "rum",
+          ref("Engagement"),
+          { jetonSeul: true, extraResponses: { "503": ref0("ReadServiceUnavailable") }, params: signalVueParams },
+        ),
+      },
+      "/spa-loads": {
+        get: get(
+          "Changements d'écran d'une application monopage, par route d'arrivée : nombre, durée jusqu'au calme du DOM et du réseau p50/p75",
+          "rum",
+          ref("SpaLoads"),
+          { jetonSeul: true, extraResponses: { "503": ref0("ReadServiceUnavailable") }, params: signalVueParams },
+        ),
+      },
+      "/page-weight": {
+        get: get(
+          "Poids des vues par route : ressources chargées par vue p50, octets transférés par vue p75",
+          "rum",
+          ref("PageWeight"),
+          { jetonSeul: true, extraResponses: { "503": ref0("ReadServiceUnavailable") }, params: signalVueParams },
+        ),
+      },
+      "/user-timings": {
+        get: get(
+          "Repères du développeur par nom (performance.mark, performance.measure, addTiming) : nombre, p50/p75 en ms",
+          "rum",
+          ref("UserTimings"),
+          { jetonSeul: true, extraResponses: { "503": ref0("ReadServiceUnavailable") }, params: signalVueParams },
+        ),
+      },
       "/health-grid": {
         get: get(
           "Carte de santé (jour × heure) et trafic quotidien",
@@ -585,6 +639,8 @@ export function buildOpenApi(): Record<string, unknown> {
         issueLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "entrées par page (borné 1..100)" },
         issueCursor: { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "curseur opaque renvoyé dans data.next_cursor, avec les mêmes filtres ; un curseur modifié reçoit 400" },
         detectionLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "épisodes rendus, les plus prioritaires d'abord (borné 1..100) ; data.tronque dit si la limite est atteinte" },
+        // Recopiés de lib/api/signaux-vue.ts (cette spec n'importe rien) ; tests/unit/api-v1-signaux-vue.test.ts les compare.
+        signalLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 200, default: 50 }, description: "lignes rendues (routes, ou noms de repère), les plus mesurées d'abord (borné 1..200) ; data.tronque dit si d'autres existent. La ligne `ensemble` (signaux de vue par route) couvre toujours toutes les routes" },
         activityLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "activités par page (borné 1..100)" },
         platform: { name: "platform", in: "query", schema: { type: "string", enum: ["ios", "android"] }, description: "plateforme mobile ; traduite en condition `os` du contrat et INTERSECTÉE avec un `os=` déjà présent (jamais un remplacement). Absente = les deux" },
       },
@@ -884,6 +940,69 @@ export function buildOpenApi(): Record<string, unknown> {
             "id", "app", "detecteur", "entite", "vital", "route", "debut", "fin", "statut", "priorite",
             "phrase", "plageHabituelle", "observe", "methode", "preuves", "impact",
           ],
+        ),
+        // ─── Signaux de vue du SDK web ≥ 0.6 : /engagement, /spa-loads, /page-weight, /user-timings ───
+        // DTO de lib/queries-engagement.ts, rendus tels quels. Une ligne par vue et par nom
+        // dans `rum_metric` (le SDK envoie des cumuls). Sous `requis` mesures (13), un
+        // percentile ou une part vaut null et `manque` le dit — jamais 0.
+        Engagement: parRoute("EngagementRoute"),
+        EngagementRoute: o(
+          {
+            route: nul({ type: "string", description: "null pour la ligne `ensemble`" }),
+            vues: { ...int, description: "vues portant un temps passé (TIME_SPENT)" },
+            temps_p50_ms: nul({ type: "number", description: "temps passé VISIBLE sur la vue, médiane, en ms" }),
+            temps_p75_ms: nul(num),
+            manque: nul({ type: "string", description: "« 7 vues, 13 requises » ; null quand l'effectif suffit" }),
+            defilement_n: { ...int, description: "vues portant une profondeur de défilement (SCROLL_DEPTH)" },
+            defilement_p50_pct: nul({ type: "number", minimum: 0, maximum: 100, description: "médiane de la profondeur MAXIMALE atteinte, en %" }),
+            part_defilement_profond: nul({ type: "number", minimum: 0, maximum: 1, description: "part des vues dont le défilement atteint 75 %" }),
+            manque_defilement: nul(str),
+          },
+          ["route", "vues", "temps_p50_ms", "temps_p75_ms", "manque", "defilement_n", "defilement_p50_pct", "part_defilement_profond", "manque_defilement"],
+        ),
+        SpaLoads: parRoute("SpaLoadRoute"),
+        SpaLoadRoute: o(
+          {
+            route: nul({ type: "string", description: "route d'ARRIVÉE ; null pour la ligne `ensemble`" }),
+            n: { ...int, description: "changements d'écran mesurés (SPA_LOAD)" },
+            p50_ms: nul({ type: "number", description: "du changement d'URL à la dernière activité avant 100 ms sans mutation du DOM ni requête en cours" }),
+            p75_ms: nul(num),
+            manque: nul(str),
+          },
+          ["route", "n", "p50_ms", "p75_ms", "manque"],
+        ),
+        PageWeight: parRoute("PageWeightRoute"),
+        PageWeightRoute: o(
+          {
+            route: nul({ type: "string", description: "null pour la ligne `ensemble`" }),
+            vues: { ...int, description: "vues portant un nombre de ressources (RESOURCE_COUNT)" },
+            ressources_p50: nul({ type: "number", description: "médiane du nombre de ressources chargées par vue (envois de MIP exclus)" }),
+            manque: nul(str),
+            octets_n: { ...int, description: "vues portant un poids transféré (RESOURCE_BYTES)" },
+            octets_p75: nul({ type: "number", description: "p75 des octets transférés par vue (somme des transferSize ; le navigateur rend 0 pour une ressource servie du cache, ou d'une autre origine sans Timing-Allow-Origin)" }),
+            manque_octets: nul(str),
+          },
+          ["route", "vues", "ressources_p50", "manque", "octets_n", "octets_p75", "manque_octets"],
+        ),
+        UserTimings: o(
+          {
+            reperes: arr(ref("UserTiming")),
+            total: { ...int, description: "noms distincts sur la fenêtre, avant la limite" },
+            tronque: bool,
+            requis: { ...int, description: "effectif sous lequel p50 et p75 valent null" },
+          },
+          ["reperes", "total", "tronque", "requis"],
+        ),
+        UserTiming: o(
+          {
+            nom: { type: "string", description: "tel qu'émis : `mark:<nom>`, `measure:<nom>`, ou le nom d'un addTiming" },
+            source: { type: "string", enum: ["mark", "measure", "manuel"] },
+            n: int,
+            p50_ms: nul({ type: "number", description: "mark : instant depuis le début de la vue ; measure et manuel : durée" }),
+            p75_ms: nul(num),
+            manque: nul(str),
+          },
+          ["nom", "source", "n", "p50_ms", "p75_ms", "manque"],
         ),
         OverviewStats: o({ sessions: int, errors: int, pageviews: int }, ["sessions", "errors", "pageviews"]),
         SeriesRow: o({ bucket: str, p75: num }, ["bucket", "p75"]),

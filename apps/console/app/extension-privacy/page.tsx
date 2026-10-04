@@ -39,12 +39,18 @@ export default function ExtensionPrivacy() {
       <LegalSection n="1" title="Données collectées">
         <ul className="list-disc space-y-1.5 pl-5">
           <li>
-            <strong>Mesures de performance</strong> (Core Web Vitals&nbsp;: LCP, INP, CLS, FCP, TTFB) et temps de
-            chargement des ressources.
+            <strong>Mesures de performance</strong> (Core Web Vitals&nbsp;: LCP, INP, CLS, FCP, TTFB), temps de
+            chargement des ressources et des changements d&apos;écran, et repères de mesure posés par le code du site.
           </li>
           <li>
-            <strong>Erreurs techniques JavaScript</strong> (message, type, pile d&apos;appel, fichier source)&nbsp;;
-            la chaîne de requête des adresses est retirée avant stockage.
+            <strong>Mesures d&apos;usage de chaque page</strong>&nbsp;: temps passé page affichée, profondeur de
+            défilement atteinte (un pourcentage), nombre et poids des ressources chargées. Des durées, des positions
+            et des comptes&nbsp;: jamais le contenu affiché ni ce que vous saisissez.
+          </li>
+          <li>
+            <strong>Erreurs techniques JavaScript</strong> (message, type, pile d&apos;appel, fichier source), y
+            compris celles des Web Workers et des connexions WebSocket&nbsp;; la chaîne de requête des adresses est
+            retirée avant stockage.
           </li>
           <li>
             <strong>Contexte de page</strong>&nbsp;: adresse ou route normalisée, référent d&apos;origine, type
@@ -139,8 +145,9 @@ export default function ExtensionPrivacy() {
       <section lang="en">
         <h2 className="mb-2 text-base font-semibold text-ink">English summary</h2>
         <p className="text-ink-soft">
-          The «&nbsp;{ORG.produit}&nbsp;» browser extension measures web performance (Core Web Vitals) and technical
-          JavaScript errors, only on domains registered by your organisation and only after you grant permission per
+          The «&nbsp;{ORG.produit}&nbsp;» browser extension measures web performance (Core Web Vitals), page usage
+          (time on page, scroll depth as a percentage, resource count and size) and technical JavaScript errors,
+          only on domains registered by your organisation and only after you grant permission per
           domain. It collects performance data tied to random session and visitor identifiers (pseudonymous, not
           anonymous) — <strong>no name, no email, no keystrokes, no form content, no IP address stored</strong>.
           Measurement data is stored and processed in the European Union (Frankfurt and Amsterdam) by hosting

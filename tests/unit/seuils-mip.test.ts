@@ -23,6 +23,7 @@ import {
 const NBSP = " ";
 
 describe("SEUILS_MIP : les valeurs décidées le 29/09/2026", () => {
+  // SPA_LOAD : ajouté le 04/10/2026 avec les signaux de vue du SDK web 0.6.
   it("chaque mesure porte les bornes du plan de la vague 4", () => {
     const attendu: Record<string, [number, number]> = {
       REDIRECT: [0, 300],
@@ -37,6 +38,7 @@ describe("SEUILS_MIP : les valeurs décidées le 29/09/2026", () => {
       LOAF: [100, 250],
       RESOURCE: [300, 1000],
       API: [300, 1000],
+      SPA_LOAD: [1000, 2500],
       RAGE_CLICKS: [0.01, 0.05],
       DEAD_CLICKS: [0.02, 0.08],
       BROWSER_ERRORS: [0.01, 0.05],
@@ -150,6 +152,7 @@ describe("texteRegleMip et texteSeuilsMip", () => {
     expect(texteRegleMip("DNS")).toBe(`règle MIP : DNS > 150${NBSP}ms`);
     expect(texteRegleMip("TCP")).toBe(`règle MIP : Connexion TCP > 300${NBSP}ms`);
     expect(texteRegleMip("API")).toBe(`règle MIP : Appel API > 1${NBSP}s`);
+    expect(texteRegleMip("SPA_LOAD")).toBe(`règle MIP : Changement d'écran (SPA) > 2,5${NBSP}s`);
   });
 
   it("DOWNLINK s'écrit avec « < » : c'est un débit trop BAS qui est mauvais", () => {
