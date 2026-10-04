@@ -9,11 +9,8 @@ import {
 import type { Emit } from "./errors";
 import type { VitalName } from "./types";
 
-// Seuils Core Web Vitals — bornes [good, needs-improvement].
-// ALIGNÉS sur la référence web.dev (E0) : le LCP était noté [2000, 2500], ce qui
-// classait « à améliorer » des pages que Google classe « bonnes ». Toute
-// divergence ici rend nos notes inexplicables face à PageSpeed/CrUX.
-// Miroir strict de shared/otlp.mjs (ingestion) et lib/rating.ts (console).
+// Bornes [good, needs-improvement] de web.dev, pour des notes cohérentes avec
+// PageSpeed/CrUX (miroirs : shared/otlp.mjs, lib/rating.ts).
 const THRESHOLDS: Record<VitalName, [number, number]> = {
   LCP: [2500, 4000],
   INP: [200, 500],
@@ -44,11 +41,8 @@ export function initVitals(emit: Emit): void {
     emit(`webvital.${name}`, {
       "webvital.name": name,
       "webvital.value": metric.value,
-      // delta = écart depuis le DERNIER rapport de cette métrique (web-vitals
-      // rapporte plusieurs fois : CLS et INP s'aggravent au fil de la page).
-      // Sans lui, un consommateur ne peut pas sommer les rapports successifs
-      // sans double-comptage — c'est le champ que la bibliothèque expose
-      // explicitement pour l'agrégation (E0).
+      // Écart depuis le dernier rapport (CLS et INP sont rapportés plusieurs
+      // fois) : seul moyen de sommer sans double-compter.
       "webvital.delta": metric.delta,
       "webvital.rating": rating2026(name, metric.value),
       "webvital.id": metric.id,

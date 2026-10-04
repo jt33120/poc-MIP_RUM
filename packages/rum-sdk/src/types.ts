@@ -1,145 +1,93 @@
 import type { EventMeta } from "./event-context";
 
 export interface MIPRumConfig {
-  /** OTLP/HTTP JSON endpoint, ex: https://<ingest>/v1/traces */
+  /** Endpoint OTLP/HTTP JSON, ex. https://<ingest>/v1/traces */
   endpoint: string;
-  /** Application identifier, ex: 'gip-plateforme' */
+  /** Identifiant de l'application, ex. 'gip-plateforme' */
   appId: string;
-  /** Client identifier, ex: 'groupement-it' */
+  /** Identifiant du client, ex. 'groupement-it' */
   clientId?: string;
   env?: string;
-  /** Version/release de l'app (ex. git SHA, "1.4.2") — envoyé en attribut resource
-   *  mip.release. Sert à associer les erreurs à la bonne source map (dé-minification). */
+  /** Version de l'app (SHA git, "1.4.2"), envoyée en mip.release pour retrouver la source map des erreurs. */
   release?: string;
-  /** 0..1, fraction of sessions fully sampled (default 1.0) */
+  /** 0..1, part des sessions collectées en entier (défaut 1). */
   sampleRate?: number;
   /**
-   * Échantillonnage biaisé-erreurs (A1) : si true (défaut), les sessions hors
-   * fraction `sampleRate` ne sont pas jetées mais passent en mode « error-biased »
-   * — la télémétrie de routine est supprimée, mais toute erreur est conservée et
-   * promeut la session en collecte complète pour la suite. Mettre false pour
-   * l'ancien comportement (session non échantillonnée = rien n'est collecté).
+   * true (défaut) : une session hors `sampleRate` n'envoie que ses erreurs, et la
+   * première la fait passer en collecte complète. false : elle n'envoie rien.
    */
   keepOnError?: boolean;
-  /** 0..1, fraction des sessions hors `sampleRate` gardées sur erreur (default 1.0) */
+  /** 0..1, part des sessions hors `sampleRate` gardées sur erreur (défaut 1). */
   errorSampleRate?: number;
-  /** Batch flush interval in ms (default 3000) */
+  /** Intervalle d'envoi des lots, en ms (défaut 3000). */
   flushIntervalMs?: number;
-  /** Per-app API key, sent as OTLP resource attribute mip.api_key (sendBeacon carries no headers) */
+  /** Clé d'API de l'app, envoyée en attribut de resource mip.api_key (sendBeacon ne porte pas d'en-têtes). */
   apiKey?: string;
-  /** Slow resource threshold in ms for 'resource' spans (default 300) */
+  /** Seuil en ms au-delà duquel une ressource donne un span 'resource' (défaut 300). */
   slowResourceMs?: number;
-  /** RGPD: if true, buffer everything in memory until MIPRum.consent(true) (default false) */
+  /** RGPD : true garde tout en mémoire jusqu'à MIPRum.consent(true) (défaut false). */
   requireConsent?: boolean;
   /**
-   * Souveraineté / RGPD (Lot 5) : honorer les signaux navigateur d'opt-out
-   * Do Not Track (DNT) et Global Privacy Control (GPC). true (défaut) = si le
-   * navigateur signale un refus, aucune collecte n'a lieu (0 session, 0 requête).
-   * false = ignore le signal — à réserver aux apps qui recueillent elles-mêmes un
-   * consentement affirmatif et pilotent la collecte via MIPRum.consent().
+   * RGPD : true (défaut) respecte Do Not Track et Global Privacy Control, sans
+   * aucune collecte sur refus. false : réservé aux apps qui recueillent elles-mêmes
+   * le consentement et pilotent la collecte via MIPRum.consent().
    */
   honorDNT?: boolean;
-  /** Last-chance PII filter applied to every span's attributes; return null to drop */
+  /** Dernier filtre de données personnelles sur les attributs de chaque span ; rendre null pour le jeter. */
   beforeSend?: (
     attributes: Record<string, unknown>,
     meta?: EventMeta,
   ) => Record<string, unknown> | null;
-  /** Session replay (v0.3) : false (défaut) | true (toutes les sessions) | taux 0..1 */
+  /** Rejeu de session : false (défaut), true (toutes les sessions) ou taux 0..1. */
   replay?: boolean | number;
-  /** Replay endpoint override; default = endpoint with /v1/traces replaced by /v1/replay */
+  /** Endpoint du rejeu ; défaut : `endpoint` avec /v1/traces remplacé par /v1/replay. */
   replayEndpoint?: string;
   /**
-   * Ce que le rejeu MASQUE. Défaut : `"all"`.
-   *
-   *   "all"    saisies + texte + médias (images, vidéos, canvas, SVG).
-   *            Le standard 2026 : on masque, et l'app démasque ce qu'elle a
-   *            décidé de montrer.
-   *   "media"  saisies + médias ; le texte de la page reste lisible. Pour une
-   *            application interne dont l'écran ne porte pas de donnée
-   *            personnelle, mais dont les pièces jointes en portent.
-   *   "inputs" saisies seulement — le comportement d'avant. À ne choisir qu'en
-   *            connaissance de cause : tout ce que l'application AFFICHE est
-   *            alors enregistré en clair.
-   *
-   * Dans les trois cas, les saisies sont masquées et un bloc marqué
-   * `.mip-rum-block` par l'application n'est jamais capturé.
+   * Ce que le rejeu masque (défaut "all") : "all" saisies, texte et médias ;
+   * "media" saisies et médias, texte lisible ; "inputs" saisies seulement, tout ce
+   * que l'app affiche part en clair. Les saisies restent toujours masquées et
+   * `.mip-rum-block` n'est jamais capturé.
    */
   replayMask?: "all" | "media" | "inputs";
   /**
-   * Zones que le rejeu DÉMASQUE, sous `"all"` et `"media"` : un sélecteur CSS
-   * (`"#tableau-commandes, [data-rejeu-clair]"`), qui s'ajoute à la classe
-   * réservée `.mip-rum-unmask`. Le texte d'une zone démasquée et de ses
-   * descendants est enregistré en clair ; ses médias ne sont plus remplacés par
-   * un cadre. Défaut : aucune zone, tout reste masqué.
-   *
-   * Le plancher ne bouge pas : dans la zone, les champs natifs (`input`,
-   * `textarea`, `select`), le texte d'un `contenteditable` et une page en
-   * `designMode` restent masqués, et `.mip-rum-block` l'emporte toujours. Un
-   * widget de saisie maison (valeur affichée dans des `div`, éditeur de code,
-   * code à usage unique en cases) écrit du texte ordinaire : le marquer
-   * `.mip-rum-block`. Un sélecteur refusé par le navigateur, ou inopérant
-   * (pseudo-élément, commentaire), est ignoré avec un avertissement en console.
-   * Sur un navigateur d'avant 2021 (sans `:is()`), le texte se démasque mais les
-   * médias restent bloqués.
-   *
-   * Démasquer, c'est enregistrer en clair : un choix du responsable de
-   * traitement, à faire zone par zone, sur ce qui ne porte pas de donnée
-   * personnelle.
+   * Sélecteur CSS des zones démasquées sous "all" et "media", en plus de
+   * `.mip-rum-unmask` (défaut : aucune). Leur texte et leurs médias partent en
+   * clair, sauf champs natifs, `contenteditable`, `designMode` et `.mip-rum-block`.
+   * Un widget de saisie maison écrit du texte ordinaire : le marquer `.mip-rum-block`.
+   * Sélecteur invalide : ignoré avec un avertissement. Sans `:is()` (navigateurs
+   * d'avant 2021), seul le texte se démasque.
    */
   replayUnmask?: string;
   /**
-   * Tracing distribué (v0.4) : false = off ; true (défaut) = propagation
-   * traceparent sur les appels same-origin ; string[] = origins SUPPLÉMENTAIRES
-   * (ex. 'https://api.exemple.fr') en plus du same-origin.
+   * Tracing distribué : true (défaut) propage `traceparent` aux appels same-origin ;
+   * string[] y ajoute des origines (ex. 'https://api.exemple.fr') ; false le coupe.
    */
   trace?: boolean | string[];
   /**
-   * Collecte d'erreurs élargie (P5.2). Les exceptions non interceptées et les
-   * promesses rejetées sont TOUJOURS collectées ; chaque voie ci-dessous est
-   * opt-in, parce qu'elle peut changer le volume d'une application du jour au
-   * lendemain. Détail, plafonds et limites : docs/INTEGRATION.md.
+   * Voies d'erreur opt-in, car chacune peut changer le volume du jour au lendemain ;
+   * exceptions et rejets non interceptés sont toujours collectés (docs/INTEGRATION.md).
    */
   captureErrors?: CaptureErrorsConfig;
-  /** Signaux de frustration (P1) : rage clicks & dead clicks. true (défaut) | false pour désactiver. */
+  /** Signaux de frustration (rage clicks, dead clicks) : true (défaut) ou false. */
   frustration?: boolean;
   /**
-   * Form analytics (Lot 7) : instrumentation des formulaires au niveau du champ
-   * (ordre, temps par champ, abandon). true (défaut) | false pour désactiver.
-   * Ne capte JAMAIS les valeurs saisies (identifiants + durées seulement ;
-   * champs password réduits à "[password]").
+   * Analyse des formulaires par champ (ordre, temps, abandon) : true (défaut) ou
+   * false. Jamais les valeurs saisies, seulement identifiants et durées.
    */
   forms?: boolean;
   /**
-   * Mode de collecte (Ext-A) : 'sdk' (défaut) quand le script est posé dans le
-   * code de l'app par le développeur ; 'extension' quand le SDK est injecté par
-   * l'extension navigateur MIP RUM. Porté en attribut mip.collection_source et
-   * persisté sur rum_session.collection_source — permet de segmenter/comparer les
-   * deux capteurs dans la console. N'affecte PAS la collecte, juste son étiquette.
+   * Étiquette du capteur, portée en mip.collection_source : 'sdk' (défaut, script
+   * posé dans l'app) ou 'extension' (injecté par l'extension). Ne change pas la collecte.
    */
   collectionSource?: "sdk" | "extension";
   /**
-   * Widget d'avis (CSAT) : false (défaut) = rien. true = charge en lazy le
-   * bouton flottant « Votre avis ? » (script mip-rum-feedback.js, même origine
-   * que ce SDK) ; l'utilisateur note 1–5 → MIPRum.track('feedback', {score}).
-   * Objet = mêmes options que window.MIPRumFeedback ({ label, accent, offset,
-   * cooldownDays, once }).
-   * `onlyPaths` restreint l'affichage à des préfixes de chemin (ex. pages
-   * authentifiées) — ré-évalué à la navigation, SPA comprise ; absent = partout.
-   * `offset` (px, défaut 20) écarte le bouton du coin bas-droit : à augmenter
-   * quand l'application y place déjà une pastille flottante (chat, aide…).
-   * Aucun script séparé à poser côté site : une ligne de config suffit.
-   *
-   * `cooldownDays` (défaut 60) est la période de SILENCE qui suit un avis
-   * envoyé : le lanceur n'est pas monté tant qu'elle court, cloisonnée par appId
-   * (deux apps du même navigateur ne se masquent pas l'une l'autre). 0 = aucun
-   * silence. `once: true` rend le silence définitif — à réserver aux
-   * intégrations qui veulent vraiment un avis unique : un CSAT mesure une
-   * satisfaction dans le temps, et « une fois pour toutes » plafonne le nombre
-   * d'avis au nombre d'utilisateurs, pour la vie du produit.
-   *
-   * Le widget marque ses racines avec `data-mip-rum-ui` : ses propres clics sont
-   * donc exclus du détecteur de frustration (cf. frustration.ts), sans quoi
-   * chaque ouverture du panneau polluerait les clics morts de l'application.
+   * Widget d'avis (CSAT) : false (défaut) ; true charge en différé le bouton
+   * « Votre avis ? » (mip-rum-feedback.js, même origine que le SDK), note 1–5 →
+   * MIPRum.track('feedback', {score}) ; objet : options de window.MIPRumFeedback.
+   * `onlyPaths` : préfixes de chemin où l'afficher (réévalués à chaque navigation).
+   * `offset` (px, défaut 20) : écart au coin bas-droit, face à une autre pastille.
+   * `cooldownDays` (défaut 60, 0 = aucun) : silence après un avis, par appId ;
+   * `once: true` le rend définitif et plafonne les avis au nombre d'utilisateurs.
    */
   feedback?:
     | boolean
@@ -161,10 +109,8 @@ export interface CaptureErrorsConfig {
   /** Violations CSP (événement + ReportingObserver, dédupliqués) → erreur `csp`. Défaut false. */
   csp?: boolean;
   /**
-   * Appels fetch/XHR instrumentés par le tracing (`trace`) → erreur `network`.
-   * true = échecs réseau, délais dépassés et réponses 5xx. L'objet ajoute les
-   * 4xx (`clientErrors`) et les abandons volontaires (`aborts`), tous deux
-   * désactivés par défaut. Défaut false.
+   * Appels fetch/XHR tracés (`trace`) → erreur `network` : true = échecs réseau,
+   * délais et 5xx ; l'objet ajoute les 4xx (`clientErrors`) et les abandons (`aborts`). Défaut false.
    */
   network?: boolean | { clientErrors?: boolean; aborts?: boolean };
 }
@@ -191,10 +137,9 @@ export type ErrorCollectionStats = Record<ErrorCategory, ErrorCategoryStats>;
 /** Troisième argument de `addError`. */
 export interface AddErrorOptions {
   /**
-   * Clé de regroupement opaque, sans donnée personnelle, 100 caractères au plus.
-   * Transmise en `mip.error_fingerprint` ; prioritaire dans le regroupement v2
-   * des issues, qui n'en garde qu'une empreinte propre à l'app. Une clé invalide
-   * est ignorée, l'erreur part quand même.
+   * Clé de regroupement opaque, sans donnée personnelle, 100 caractères au plus,
+   * envoyée en `mip.error_fingerprint` et prioritaire au regroupement. Invalide :
+   * ignorée, l'erreur part quand même.
    */
   fingerprint?: string;
 }

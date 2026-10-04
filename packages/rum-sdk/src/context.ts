@@ -24,11 +24,8 @@ export function scrubUrl(url: string): string {
 }
 
 /**
- * Type de la navigation initiale. Une page PRÉRENDUE puis affichée porte un
- * `activationStart` positif : on la dit `prerender`, comme web-vitals le fait pour
- * ses mesures (`webvital.navigation_type`) — ses temps de chargement se comptent
- * depuis l'affichage, pas depuis la requête. Le prérendu jamais affiché, lui,
- * n'émet rien du tout (index.ts diffère la collecte jusqu'à l'activation).
+ * Type de la navigation initiale ; `prerender` si `activationStart` > 0, comme
+ * web-vitals (ses temps se comptent alors depuis l'affichage).
  */
 export function typeNavigationInitiale(entree: PerformanceNavigationTiming | undefined): string {
   const activation = (entree as { activationStart?: number } | undefined)?.activationStart;
@@ -47,12 +44,9 @@ export function initNavigation(onPageview: (navType: string) => void): void {
   )[0] as PerformanceNavigationTiming | undefined;
   onPageview(typeNavigationInitiale(navEntry));
 
-  // RESTAURATION DEPUIS LE BFCACHE (finding 2.5). La page revient telle qu'on l'a
-  // quittée, sans rechargement : le script ne se réexécute pas, et rien d'autre
-  // que `pageshow` (persisted) ne le dit. Sans page vue ici, les mesures que
-  // web-vitals rapporte après la restauration (LCP, CLS, INP remis à zéro)
-  // s'accrochaient à la trace de la visite précédente, et un retour arrière ne
-  // comptait pas comme une page vue. C'en est une : l'utilisateur voit la page.
+  // Une restauration bfcache ne réexécute pas le script ; seul `pageshow` (persisted)
+  // la signale. Sans page vue ici, les web-vitals remis à zéro s'accrocheraient à la
+  // trace précédente (finding 2.5).
   addEventListener("pageshow", (event: Event) => {
     if (!(event as PageTransitionEvent).persisted) return;
     route = normalizeRoute(location.pathname);

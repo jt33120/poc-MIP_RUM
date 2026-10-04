@@ -6,50 +6,18 @@ export type AttrValue = string | number | boolean;
 /** ts optionnel : timestamp d'origine (epoch ms) pour les rejeux consent/retry. */
 export type Emit = (name: string, attrs: Record<string, AttrValue>, ts?: number) => void;
 
-// ══════════════════ Plafond et déduplication des erreurs ══════════════════════
-//
-// Finding 2.1 de docs/AUDIT_RUM_EXTERNE.md — bloquant, « à faire avant le
-// premier client réel ».
-//
-// CE QUI ÉTAIT EN PLACE. Tous les collecteurs du SDK sont plafonnés par page —
-// 20 ressources, 30 tâches longues, 50 fils d'Ariane, 100 appels API — via
-// `makeCap`. `initErrors` était LE SEUL sans plafond : deux `addEventListener`
-// qui émettaient un span par occurrence, sans compteur, sans déduplication,
-// sans fenêtre de silence.
-//
-// LA BOUCLE D'AMPLIFICATION. Une erreur dans un `requestAnimationFrame`, un
-// rendu React qui reboucle ou un `setInterval` produit des centaines
-// d'exceptions par seconde. Chacune :
-//
-//   1. passe l'échantillonnage QUOI QU'IL ARRIVE — `sampler.passes` laisse
-//      toujours passer « exception », et la première erreur PROMEUT la session
-//      en collecte complète ;
-//   2. remplit le tampon de 64 spans, qui déclenche un POST immédiat ;
-//   3. si l'ingestion répond 429 — ce qui arrivera, la limite est de 600
-//      requêtes/minute/app — le lot part en file de rejeu, pour être rejoué au
-//      prochain chargement de page.
-//
-// Un seul client en boucle sature donc sa propre limite de débit, puis rejoue
-// son retard à chaque navigation. Et comme l'écriture est synchrone sur un pool
-// partagé par tous les locataires, la limite est par application mais la
-// contention est globale.
-//
-// CE QU'ON FAIT. Un plafond par page comme partout ailleurs, PLUS une
-// déduplication par empreinte avec fenêtre de silence : une même erreur répétée
-// est COMPTÉE, pas transmise mille fois. Le compte part dans `mip.error_count`,
-// et l'ingestion le somme — sans quoi le plafond client fausserait les
-// compteurs, ce qui reviendrait à soigner le symptôme en cassant la mesure.
+// Plafond et déduplication des erreurs (finding 2.1, docs/AUDIT_RUM_EXTERNE.md).
+// Une erreur en boucle (rAF, rendu qui reboucle) passe toujours l'échantillonnage,
+// sature la limite de débit de l'ingestion puis se rejoue à chaque page. Une même
+// erreur répétée est donc COMPTÉE (`mip.error_count`, que l'ingestion somme pour
+// garder des compteurs justes), pas transmise mille fois.
 
 /** Erreurs distinctes transmises par page. Au-delà, on compte sans émettre. */
 export const ERREURS_PAR_PAGE = 50;
 
 /**
- * Erreurs distinctes transmises par page, VOIE PAR VOIE (P5.2).
- *
- * Chaque voie opt-in a son propre plafond, distinct de celui des exceptions :
- * une page qui inonde sa console, ou dont vingt vignettes échouent, ne doit
- * jamais faire taire une vraie exception. Le plafond historique reste celui des
- * exceptions non interceptées.
+ * Erreurs distinctes par page, voie par voie : une console bavarde ou des
+ * vignettes en échec ne font jamais taire une vraie exception.
  */
 export const PLAFONDS_PAR_VOIE: Readonly<Record<ErrorCategory, number>> = {
   uncaught: ERREURS_PAR_PAGE,
@@ -63,13 +31,9 @@ export const PLAFONDS_PAR_VOIE: Readonly<Record<ErrorCategory, number>> = {
 export const FENETRE_SILENCE_MS = 10_000;
 
 /**
- * Empreinte locale d'une erreur : type + message + première ligne de pile.
- *
- * DÉLIBÉRÉMENT PLUS GROSSIÈRE que celle de l'ingestion (`errorFingerprint`).
- * Ici on ne cherche pas à regrouper pour l'affichage, mais à reconnaître « la
- * même erreur qui se répète à l'instant ». Une empreinte trop fine laisserait
- * passer la boucle qu'on veut arrêter — c'est précisément le cas d'une erreur
- * dont le message contient un compteur ou un horodatage.
+ * Empreinte locale : type + message + première ligne de pile. Plus grossière que
+ * celle de l'ingestion (`errorFingerprint`) : elle doit reconnaître la même erreur
+ * qui se répète, même si son message porte un compteur ou un horodatage.
  */
 export function empreinteLocale(type: string, message: string, stack: string): string {
   const premiere = (stack.split("\n")[1] ?? "").trim().slice(0, 120);
@@ -79,32 +43,20 @@ export function empreinteLocale(type: string, message: string, stack: string): s
 }
 
 export interface Etranglement {
-  /**
-   * Décide du sort d'une occurrence. Rend le nombre d'occurrences à annoncer
-   * (≥ 1) si le span doit partir, ou `null` s'il faut se taire.
-   */
+  /** Rend le nombre d'occurrences à annoncer (≥ 1) si le span part, sinon `null`. */
   admettre(empreinte: string, maintenant: number): number | null;
   /**
-   * Rend les répétitions tues depuis la dernière transmission, puis remet leur
-   * compteur à zéro. Le plafond reste intact : vider avant pagehide ne donne
-   * jamais de nouveaux slots à une page bruyante.
+   * Rend les répétitions tues depuis la dernière transmission et remet leur
+   * compteur à zéro, sans rendre de slot au plafond.
    */
   drainer(maintenant: number): Array<{ empreinte: string; occurrences: number }>;
   reset(): void;
 }
 
 /**
- * Compteur par empreinte avec fenêtre de silence.
- *
- * Une occurrence est transmise si son empreinte est nouvelle sur cette page, ou
- * si la dernière transmission remonte à plus de `fenetreMs`. Sinon elle est
- * accumulée, et le compte accumulé voyage avec la PROCHAINE transmission — donc
- * aucune occurrence n'est perdue pour le comptage, seulement pour le détail.
- *
- * LE PLAFOND PORTE SUR LES EMPREINTES DISTINCTES, pas sur les occurrences. Cent
- * répétitions d'un même bug consomment un slot ; cinquante bugs différents les
- * consomment tous. C'est la bonne unité : ce qu'on veut borner, c'est le nombre
- * de causes rapportées, pas la mesure de leur fréquence.
+ * Compteur par empreinte avec fenêtre de silence : une répétition dans la fenêtre
+ * est comptée et voyage avec la transmission suivante. Le plafond porte sur les
+ * empreintes distinctes (les causes), pas sur les occurrences.
  */
 export function creerEtranglement(
   plafond: number = ERREURS_PAR_PAGE,
@@ -155,27 +107,16 @@ export type VoieObjet = "console" | "uncaught" | "manual";
 
 export interface ErrorCollector {
   /**
-   * Chemin commun de toutes les voies : plafond de la voie, silence par
-   * empreinte, drain, puis l'émission (sampling, causalité, beforeSend,
-   * consentement). `ts` = horodatage d'origine quand l'erreur n'est constatée
-   * qu'après coup, comme la réponse d'un appel réseau ; défaut : maintenant.
+   * Chemin commun des voies : plafond, silence par empreinte, drain, puis émission.
+   * `ts` : horodatage d'origine d'une erreur constatée après coup (réponse réseau).
    */
   report(voie: ErrorCategory, attrs: Record<string, AttrValue>, ts?: number): void;
   /**
-   * Vrai si la capture de cet objet doit être ignorée ; sinon il est mémorisé
-   * jusqu'à la fin de la tâche courante.
-   *
-   * UN OBJET, UNE OPÉRATION, UN INCIDENT. `console.error(err)` suivi de
-   * `throw err`, ou deux journalisations du même objet dans un même `catch`,
-   * décrivent une seule erreur. La première capture gagne : la console ignore un
-   * objet déjà vu par n'importe quelle voie, une exception non interceptée
-   * ignore un objet déjà journalisé. `addError` marque son objet mais émet
-   * toujours — un appel explicite n'est jamais ignoré en silence. Hors console,
-   * rien ne change : une même exception relancée deux fois reste deux
-   * occurrences, comme avant.
-   *
-   * La tâche se termine au prochain macrotask (`setTimeout` 0) : un microtask
-   * ne suffirait pas, un rejet non géré est signalé après leur vidage.
+   * Vrai si la capture de cet objet est à ignorer ; sinon il est mémorisé jusqu'à
+   * la fin de la tâche. Un objet journalisé puis levé est un seul incident : la
+   * console ignore un objet déjà vu, une exception non interceptée un objet déjà
+   * journalisé ; `addError` émet toujours. La tâche finit au prochain macrotask :
+   * un rejet non géré n'est signalé qu'après le vidage des microtasks.
    */
   dejaCapture(objet: unknown, voie: VoieObjet): boolean;
   drainer(maintenant: number): Array<{ empreinte: string; occurrences: number }>;
@@ -185,12 +126,9 @@ export interface ErrorCollector {
 }
 
 /**
- * Branche la collecte d'erreurs. Rend le collecteur pour que la boucle de
- * pageview le remette à zéro, exactement comme les autres plafonds, et pour que
- * les voies opt-in (error-capture.ts, apispans.ts) le rejoignent.
- *
- * `emit` rend `false` quand l'émission refuse l'erreur : c'est ce qui alimente
- * le compteur `rejected`. Toute autre valeur vaut prise en charge.
+ * Branche la collecte d'erreurs et rend le collecteur, que le pageview remet à
+ * zéro et que rejoignent les voies opt-in (error-capture.ts, apispans.ts).
+ * `emit` rend `false` quand l'émission refuse l'erreur (compteur `rejected`).
  */
 export function initErrors(
   emit: (name: string, attrs: Record<string, AttrValue>, ts?: number) => unknown,
@@ -200,14 +138,11 @@ export function initErrors(
   type Detail = { attrs: Record<string, AttrValue>; ts: number };
   interface Voie {
     etr: Etranglement;
-    // Les deux maps restent bornées par le plafond de la voie : on ne mémorise
-    // une empreinte que si `admettre` lui a effectivement réservé un slot. En
-    // particulier, une nouvelle empreinte refusée par le cap ne peut pas remplir
-    // cette mémoire latérale avec du texte tiers.
+    // Bornées par le plafond : seule une empreinte qui a obtenu un slot y entre,
+    // jamais le texte d'une empreinte refusée.
     details: Map<string, Detail>;
-    // Première occurrence tue après une émission : c'est son contexte, et non
-    // celui de la destination (navigation SPA/pagehide), qui doit être conservé
-    // quand le lot compacté est finalement envoyé.
+    // Première occurrence tue après une émission : c'est son contexte, et non celui
+    // d'une navigation ou d'un pagehide ultérieur, qui part avec le lot compacté.
     pendingDetails: Map<string, Detail>;
     compteurs: CompteursVoie;
   }
@@ -234,18 +169,15 @@ export function initErrors(
       String(attrs["exception.stacktrace"] ?? ""),
     );
     const detail: Detail = {
-      // `realEmit` apporte aussi la route courante par défaut. La poser ici
-      // capture la route de l'erreur, avant toute navigation qui déclenche le
-      // drain, et l'attribut explicite a priorité dans le merge.
+      // La route de l'erreur, figée ici : au drain, après une navigation, celle que
+      // `realEmit` pose par défaut serait la nouvelle.
       attrs: { ...action(ts), ...attrs, "mip.route": currentRoute() },
       ts,
     };
     const n = voie.etr.admettre(empreinte, ts);
     if (n == null) {
-      // `null` couvre une répétition silencieuse ET une empreinte nouvelle
-      // refusée par le cap. Seule la première possède déjà un slot/document :
-      // elle peut avoir besoin d'un drain, la seconde ne doit pas être stockée —
-      // elle est seulement comptée comme perdue.
+      // `null` : répétition tue (elle a un slot, gardée pour le drain) ou empreinte
+      // refusée par le cap (comptée perdue, jamais stockée).
       if (!voie.details.has(empreinte)) voie.compteurs.capped++;
       else if (!voie.pendingDetails.has(empreinte)) voie.pendingDetails.set(empreinte, detail);
       return;
@@ -253,8 +185,7 @@ export function initErrors(
     const original = n > 1 ? (voie.pendingDetails.get(empreinte) ?? detail) : detail;
     voie.pendingDetails.delete(empreinte);
     voie.details.set(empreinte, detail);
-    // `mip.error_count` n'est posé que lorsqu'il dépasse 1 : sur le cas courant
-    // — une erreur isolée — l'attribut n'existe pas et le payload ne grossit pas.
+    // `mip.error_count` seulement au-delà de 1 : une erreur isolée n'alourdit pas le lot.
     emettre(voie, n > 1 ? { ...original.attrs, "mip.error_count": n } : original.attrs, original.ts, n);
   };
 
@@ -315,8 +246,7 @@ export function initErrors(
           const detail = voie.pendingDetails.get(queued.empreinte) ?? voie.details.get(queued.empreinte);
           if (!detail) continue;
           emettre(voie, { ...detail.attrs, "mip.error_count": queued.occurrences }, detail.ts, queued.occurrences);
-          // Le prochain groupe silencieux doit capturer sa propre première
-          // occurrence plutôt que de réutiliser le contexte de ce groupe-ci.
+          // Le prochain groupe tu gardera sa propre première occurrence.
           voie.pendingDetails.delete(queued.empreinte);
         }
       }

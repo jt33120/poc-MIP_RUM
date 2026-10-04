@@ -47,14 +47,11 @@ export type { EventContext, EventMeta, IdentityInput } from "./event-context";
 
 let session: Session | null = null;
 let initialized = false;
-// Identités métier en cours, BRUTES et en mémoire seulement : elles ne sont jamais
-// persistées ni émises telles quelles hors de l'enveloppe (HMAC côté serveur). Seule
-// leur marque (./identite-session.ts) accompagne la session dans le stockage.
+// Identités brutes, en mémoire seulement (HMAC côté serveur) ; seule leur marque
+// est persistée avec la session (./identite-session.ts).
 let identites: { user: string | null; account: string | null } = { user: null, account: null };
-// appId de la session courante, lu par le widget d'avis (MIPRum.appId()) pour
-// cloisonner sa période de silence PAR APPLICATION. Renseigné avant toute
-// sortie anticipée d'init() : deux apps du même navigateur ne doivent pas se
-// masquer l'une l'autre, y compris quand la collecte est refusée.
+// Lu par le widget d'avis (MIPRum.appId()) pour cloisonner sa période de silence
+// par application ; posé avant toute sortie anticipée d'init(), même en cas de refus.
 let appIdValue = "";
 let emitter: ((name: string, attrs: Parameters<Emit>[1], ts?: number) => boolean) | null = null;
 let trail: BreadcrumbTrail | null = null;
@@ -70,13 +67,12 @@ let errorStats: (() => ErrorCollectionStats) | null = null;
 let causalActions: ActionTracker | null = null;
 let collectionOrigin: (at?: number) => Record<string, string | number | boolean> = () => ({});
 let updateCollectionConsent: ((granted: boolean) => void) | null = null;
-// L'accord ouvre le terminal et rend ce que le tampon doit devenir (./consent.ts) ;
-// le refus le referme. Posés par init(), appelés par consent().
+// Posés par init(), appelés par consent() : l'accord ouvre le terminal et filtre le
+// tampon (./consent.ts), le refus le referme.
 let accorder: (() => ((tampon: readonly BufferedEvent[]) => readonly BufferedEvent[]) | undefined) | null = null;
 let refuser: (() => void) | null = null;
-// Page prérendue : init() attend son affichage. Un accord ou un refus donné
-// entre-temps (l'outil de consentement tourne, lui, dans le prérendu) est gardé
-// pour être appliqué au démarrage réel, sans quoi il serait perdu.
+// Page prérendue : l'outil de consentement y tourne déjà, sa décision est gardée
+// pour le démarrage réel d'init().
 let collecteDifferee = false;
 let consentementEnAttente: boolean | null = null;
 
@@ -99,7 +95,7 @@ function causalOnly(attributes: Record<string, unknown>): Record<string, string 
   return captured;
 }
 
-/** Fusion P2 : contexte d'action puis contexte local d'erreur, le plus local gagne. */
+/** Contexte d'action puis contexte local d'erreur : le plus local gagne. */
 function mergeSerializedContexts(actionRaw: unknown, localRaw: unknown): string | undefined {
   const parse = (value: unknown): EventContext => {
     if (typeof value !== "string") return {};
@@ -115,21 +111,15 @@ function mergeSerializedContexts(actionRaw: unknown, localRaw: unknown): string 
 }
 
 /**
- * Couture pure du hook public : compatibilité un argument + champs SDK immuables.
- *
- * L'implémentation vit dans `@mip/rum-core` — React Native applique exactement
- * la même règle de restauration des attributs structurels. Le web l'appelle SANS
- * garde d'isolation : son contrat historique laisse remonter une exception du
- * hook à l'appelant, et le changer ici modifierait le comportement d'un SDK déjà
- * posé chez des clients.
+ * Hook public `beforeSend` (`@mip/rum-core`, commun avec React Native) : les champs SDK
+ * restent immuables. Sans garde d'isolation : une exception du hook remonte à
+ * l'appelant, comportement déjà en place chez les clients.
  */
 export { applyBeforeSend };
 
 /**
- * Une seule couture pour tous les chemins qui vident les répétitions d'erreur.
- * Exposée pour couvrir le vrai câblage navigateur sans démarrer tout le SDK :
- * pagehide/visibilitychange, navigation SPA et MIPRum.flush() doivent drainer
- * exactement une fois, avant l'export correspondant.
+ * Draine les répétitions d'erreur exactement une fois avant chaque export (pagehide,
+ * visibilitychange, navigation SPA, MIPRum.flush()). Exposé pour les tests.
  */
 export function wireErrorDrainLifecycle(
   drain: () => void,
@@ -146,16 +136,14 @@ export function wireErrorDrainLifecycle(
   return { onSpaNavigation: beforeExport, onPublicFlush: drain };
 }
 
-// src du script SDK, capturé au CHARGEMENT du module (document.currentScript est
-// nul une fois le script exécuté) — sert à résoudre mip-rum-feedback.js à la même
-// origine/dossier que le SDK, comme le bundle replay.
+// Capturé au chargement : document.currentScript est nul ensuite. Sert à charger
+// mip-rum-feedback.js depuis le dossier du SDK.
 const sdkScriptSrc =
   typeof document !== "undefined"
     ? ((document.currentScript as HTMLScriptElement | null)?.src ?? null)
     : null;
 
-/** Charge en lazy le widget d'avis (mip-rum-feedback.js) depuis l'origine du SDK.
- *  Idempotent : le widget se garde lui-même via window.__mipRumFeedbackMounted. */
+/** Charge le widget d'avis depuis l'origine du SDK ; idempotent (__mipRumFeedbackMounted). */
 function loadFeedbackWidget(opt: boolean | { label?: string; accent?: string }): void {
   if (typeof document === "undefined") return;
   const w = window as unknown as { __mipRumFeedbackMounted?: boolean; MIPRumFeedback?: unknown };
@@ -181,11 +169,8 @@ export function init(cfg: MIPRumConfig): void {
     return;
   }
   appIdValue = cfg.appId;
-  // Souveraineté / RGPD (Lot 5) : on honore les signaux navigateur d'opt-out
-  // (DNT/GPC). Si un refus est signalé, on ne collecte RIEN — aucune session
-  // n'est créée, aucun listener posé, aucune requête émise. Désactivable via
-  // honorDNT:false pour les apps qui pilotent un consentement affirmatif
-  // (MIPRum.consent()) susceptible de primer le signal.
+  // DNT/GPC : rien n'est collecté. `honorDNT: false` pour les apps dont le
+  // consentement affirmatif (MIPRum.consent()) prime le signal.
   if (
     cfg.honorDNT !== false &&
     signalsOptOut(
@@ -197,13 +182,8 @@ export function init(cfg: MIPRumConfig): void {
   ) {
     return;
   }
-  // PRÉRENDU (finding 2.5). Une page prérendue par le navigateur (Speculation
-  // Rules) exécute ses scripts sans être affichée, et peut ne l'être jamais. Y
-  // démarrer créait une session et une page vue pour une page que personne n'a
-  // vue — les volumes montaient, et les mesures d'une page jamais affichée
-  // entraient dans les percentiles. La collecte attend donc l'affichage
-  // (`prerenderingchange`) : un prérendu abandonné ne laisse rien, ni session, ni
-  // page vue, ni écriture sur le terminal.
+  // Une page prérendue (Speculation Rules) peut ne jamais être affichée : la collecte
+  // attend `prerenderingchange`, sans session ni écriture d'ici là (finding 2.5).
   if (typeof document !== "undefined" && (document as { prerendering?: boolean }).prerendering === true) {
     if (!collecteDifferee) {
       collecteDifferee = true;
@@ -211,16 +191,13 @@ export function init(cfg: MIPRumConfig): void {
     }
     return;
   }
-  // CONSENTEMENT ET TERMINAL (finding 1.11). Avec `requireConsent`, rien n'est lu
-  // ni écrit dans le stockage local avant l'accord : la session et le visiteur
-  // sont tirés en mémoire, et le mode d'échantillonnage — qui se mémorise par
-  // session — n'est décidé qu'à l'accord (`accorder`, plus bas). D'ici là, tout va
-  // au tampon de consentement, qui ne fait partir aucune requête.
+  // Avec `requireConsent`, rien sur le terminal avant l'accord : session et visiteur
+  // vivent en mémoire, l'échantillonnage se décide dans `accorder` (finding 1.11).
   const accordAttendu = Boolean(cfg.requireConsent);
   autoriserAccesTerminal(!accordAttendu);
   let sessionEnMemoire = accordAttendu;
-  // Échantillonnage intelligent (A1) : décision par session, persistée pour
-  // rester stable au fil des pageviews/reloads. "off" => on ne collecte rien.
+  // Échantillonnage tiré par session et persisté, stable d'une page à l'autre ;
+  // "off" : rien n'est collecté.
   session = reconcilierIdentites(getOrCreateSession());
   let mode0: SampleMode = "full"; // en attente d'accord : provisoire, tout va au tampon
   if (!accordAttendu) {
@@ -237,14 +214,9 @@ export function init(cfg: MIPRumConfig): void {
   let sampler = createSampler(mode0, promouvoir);
 
   /**
-   * La page passe à une autre session sans se recharger : inactivité, durée
-   * maximale atteinte, ou retour depuis le cache du navigateur après expiration.
-   * Comme pour un changement d'identité : l'action en cours est close (ses effets
-   * tardifs restent dans l'ancienne session) et le rejeu vide son morceau courant
-   * AVANT le changement, pour qu'il parte sous l'ancienne session. La session
-   * suivante garde le mode d'échantillonnage de la page, mémorisé pour elle s'il
-   * ne l'est pas déjà (un autre onglet a pu l'ouvrir) — sans quoi la page suivante
-   * le tirerait de nouveau au sort.
+   * Changement de session sans rechargement : l'action en cours et le morceau de rejeu
+   * se closent AVANT, sous l'ancienne. La suivante hérite du mode d'échantillonnage,
+   * sinon la page suivante le retirerait au sort.
    */
   const passerA = (nouvelle: Session): Session => {
     const avant = session;
@@ -257,25 +229,17 @@ export function init(cfg: MIPRumConfig): void {
     return nouvelle;
   };
 
-  // DURÉE MAXIMALE (finding 2.12 b) ET INACTIVITÉ. Une session ne se prolonge pas
-  // au-delà de son échéance (4 h après son début, ./session.ts), ni après
-  // 30 minutes sans événement, même si l'onglet ne se ferme jamais.
-  //
-  // La suite se cherche d'abord dans le STOCKAGE, comme au chargement d'une page :
-  // un autre onglet du même visiteur a pu y ouvrir la session suivante. En tirer
-  // une ici sans regarder séparait les onglets — deux onglets ouverts sur S0
-  // passaient l'un sur Sa, l'autre sur Sb, puis réécrivaient tour à tour
-  // `mip_rum_session` : N onglets comptaient N sessions par tranche de 4 h.
+  // Une session échoit après 4 h ou 30 min sans événement (./session.ts, finding 2.12 b).
+  // La suite se cherche d'abord dans le stockage : un autre onglet a pu l'ouvrir, et
+  // en tirer une ici ferait une session par onglet.
   const sessionCourante = (): Session => {
     const s = session!;
     if (!echue(s, Date.now())) return s;
     return passerA(reconcilierIdentites(getOrCreateSession(s)));
   };
 
-  // Identifiants tirés en mémoire avant l'accord, et ceux qui les remplacent
-  // quand l'accord reprend la session que le stockage gardait déjà. Un effet
-  // tardif (appel réseau, erreur compactée) peut encore porter l'ancien : il est
-  // réécrit à l'envoi, pour ne jamais faire naître une session fantôme.
+  // Identifiants mémoire remplacés à l'accord par ceux du stockage : un effet tardif
+  // qui porte l'ancien est réécrit à l'envoi, sans session fantôme.
   const renommes = new Map<string, string>();
   const renommer = (attrs: Record<string, unknown>): Record<string, unknown> => {
     if (renommes.size === 0) return attrs;
@@ -287,17 +251,13 @@ export function init(cfg: MIPRumConfig): void {
   };
 
   const tracer = initOtel(cfg);
-  // fuseau horaire (B1 : mapping tz -> geo_country à l'ingestion, zéro IP stockée)
+  // Le pays se déduit du fuseau à l'ingestion : aucune IP stockée.
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  // Classe d'appareil, lue une fois : ni l'user-agent ni l'écran tactile ne
-  // changent pendant la page (finding 2.13, ./appareil.ts).
+  // Lue une fois : ni l'user-agent ni l'écran tactile ne changent (finding 2.13).
   const appareil = classeAppareil(navigator.userAgent, navigator.maxTouchPoints ?? 0);
 
-  // émission réelle : crée le span OTel (ts optionnel = rejeu consent/retry).
-  // Un appel réseau DURE : son span s'ouvre au départ de la requête et se ferme
-  // à sa réponse, `http.duration_ms` plus tard (finding 1.4). Il se fermait à
-  // son ouverture, et un backend tiers dessinait une cascade plate. Les autres
-  // signaux restent des instants.
+  // `ts` : rejeu consent/retry. Un appel réseau dure `http.duration_ms`, pour une
+  // cascade lisible dans un backend tiers (finding 1.4) ; le reste est instantané.
   const realEmit: Emit = (name, attrs, ts) => {
     const debut = ts ?? Date.now();
     const duree = name === "http.client" ? attrs["http.duration_ms"] : 0;
@@ -330,12 +290,9 @@ export function init(cfg: MIPRumConfig): void {
     collectionAllowed = granted;
     consentHistory.push({ at: Date.now(), epoch: collectionEpoch, allowed: collectionAllowed });
   };
-  // échantillonnage : en "error-biased", seules les erreurs passent ; la 1re
-  // erreur promeut la session en "full" (le reste de la session est alors capté).
-  // Renvoie true si l'événement a été PRIS EN CHARGE (livré ou bufferisé en
-  // attente de consentement), false s'il a été jeté — par l'échantillonnage ou
-  // par un refus de consentement. `Emit` déclare `void` : un retour booléen lui
-  // reste assignable, et les appelants qui l'ignorent ne changent pas.
+  // "error-biased" : seules les erreurs passent, la première promeut la session en
+  // "full". Les émetteurs rendent true si l'événement est livré ou retenu, false s'il
+  // est jeté ; `Emit` déclare `void`, un booléen lui reste assignable.
   const prepareBase = (
     name: string,
     attrs: Parameters<Emit>[1],
@@ -406,10 +363,8 @@ export function init(cfg: MIPRumConfig): void {
 
   causalActions = new ActionTracker({
     emitRoot: (attrs, ts) => emitBaseDecision("rum.action", attrs, ts),
-    // L'action se rattache à la session où elle naît : si la précédente a fini,
-    // elle tourne ICI, avant que l'action ne soit posée comme courante — tourner
-    // plus tard (à l'émission de la racine) l'aurait close à peine ouverte, et la
-    // racine serait partie sous l'identifiant de l'ancienne session.
+    // La session échue tourne ICI, avant que l'action soit courante : plus tard, elle
+    // la fermerait à peine ouverte et la racine partirait sous l'ancienne session.
     rootSnapshot: (context) => {
       const current = sessionCourante();
       const envelope = eventContext.envelope(context);
@@ -463,9 +418,8 @@ export function init(cfg: MIPRumConfig): void {
     }
     const actionId = prepared["mip.action_id"];
     if (typeof actionId === "string" && causalActions!.markError(actionId)) {
-      // Le nom original du contrôle peut avoir été pseudonymisé par beforeSend.
-      // La jointure action_id restitue déjà le libellé filtré côté console : ne
-      // dupliquons jamais ici le texte DOM pré-hook.
+      // beforeSend a pu pseudonymiser le libellé : ne jamais recopier le texte DOM
+      // d'avant le hook, la jointure action_id le restitue filtré.
       frustrationWatch?.error?.(causalOnly(prepared), "action", ts);
     }
     return submitBase(name, prepared, ts);
@@ -478,16 +432,13 @@ export function init(cfg: MIPRumConfig): void {
     endpoint: cfg.endpoint,
     actionAt: (at) => ({ ...collectionOrigin(at), ...actionAttrs(causalActions!.atTimestamp(at)) }),
   });
-  // Blocage du fil principal : LoAF si le navigateur le connaît, Long Tasks
-  // sinon. JAMAIS LES DEUX — un même blocage produit une entrée de chaque côté,
-  // et les compter tous les deux doublerait le nombre de blocages affiché. LoAF
-  // est le successeur : il porte en plus le script responsable, ce qui est la
-  // seule information dont on puisse faire un correctif.
+  // LoAF sinon Long Tasks, jamais les deux : un blocage produirait une entrée de
+  // chaque côté. LoAF nomme en plus le script responsable.
   const longtaskCap = initLoaf(emit) ?? initLongTasks(emit);
   // Ordre volontaire : la racine s'ouvre avant le breadcrumb du même clic.
   initAutomaticActions(causalActions);
   initClickBreadcrumbs(trail, () => actionAttrs(causalActions!.current()));
-  // signaux de frustration (P1) : rage/dead clicks ; opt-out via cfg.frustration=false
+  // Rage et dead clicks ; opt-out par cfg.frustration=false
   frustrationWatch = initFrustration(emit, {
     enabled: cfg.frustration !== false,
     action: () => ({ ...collectionOrigin(), ...actionAttrs(causalActions!.origin()) }),
@@ -496,17 +447,15 @@ export function init(cfg: MIPRumConfig): void {
   // Décomposition réseau (DNS/TCP/TLS/requête/réponse) + qualité du lien : la
   // CAUSE derrière le TTFB, qui n'en donnait que le symptôme.
   initNavTiming(emit);
-  // form analytics (Lot 7) : instrumentation champ par champ ; opt-out via cfg.forms=false
+  // Instrumentation champ par champ ; opt-out par cfg.forms=false
   if (cfg.forms !== false) initForms(emit);
 
-  // chaque erreur laisse aussi un breadcrumb (parcours menant à l'erreur)
-  // `errorCap` : plafond par page ET déduplication par empreinte (finding 2.1).
-  // Il rejoint les autres plafonds remis à zéro à chaque page vue, ci-dessous.
+  // Chaque erreur laisse aussi un breadcrumb. `errorCap` plafonne par page et
+  // déduplique par empreinte (finding 2.1).
   const errorCap = initErrors((name, attrs, ts) => {
     if (!emit(name, attrs, ts)) return false;
-    // Le breadcrumb d'erreur est un enfant causal lui aussi. On ne lui recopie
-    // que l'enveloppe figée à l'occurrence (jamais message/stack), afin qu'un
-    // drain après un nouveau clic ne le réattribue pas à l'action courante.
+    // Seule l'enveloppe figée à l'occurrence est recopiée (jamais message ni stack) :
+    // un drain après un nouveau clic ne la rattache pas à l'action courante.
     trail?.add(
       "error",
       String(attrs["exception.message"] ?? "error"),
@@ -514,9 +463,8 @@ export function init(cfg: MIPRumConfig): void {
     );
     return true;
   }, Date.now, (at) => {
-    // Une répétition peut être drainée après un changement de contexte ou
-    // d'identité. Figer ici l'enveloppe complète de l'occurrence évite de la
-    // réétiqueter avec la session/utilisateur courant au moment du drain.
+    // Enveloppe figée à l'occurrence : un drain après changement de contexte ou
+    // d'identité ne doit pas la réétiqueter.
     const current = sessionCourante();
     const envelope = eventContext.envelope();
     return {
@@ -556,8 +504,8 @@ export function init(cfg: MIPRumConfig): void {
     }
   }
 
-  // Collecte élargie (P5.2) : chaque voie est opt-in et rejoint errorCap. La voie
-  // réseau vit dans les wrappers du tracing : sans eux, elle n'existe pas.
+  // Chaque voie est opt-in et passe par errorCap ; la voie réseau vit dans les
+  // wrappers du tracing, sans lesquels elle n'existe pas.
   const capture = cfg.captureErrors ?? {};
   const network = cfg.trace !== false ? capture.network : undefined;
   const enabled: Record<ErrorCategory, boolean> = {
@@ -589,7 +537,7 @@ export function init(cfg: MIPRumConfig): void {
     return stats;
   };
 
-  // tracing distribué (v0.4) : fetch/XHR -> traceparent + span 'http.client'.
+  // Tracing distribué : fetch/XHR -> traceparent + span 'http.client'.
   let apiCap: ReturnType<typeof initApiSpans> | null = null;
   if (cfg.trace !== false) {
     apiCap = initApiSpans(emit, {
@@ -601,7 +549,7 @@ export function init(cfg: MIPRumConfig): void {
       sessionId: () => sessionCourante().sessionId,
       // Session hors échantillon (tirage « off » à l'accord) : ni en-tête ni span.
       actif: () => sampler.mode !== "off",
-      traceId: currentTraceId, // même trace que la page vue (E0)
+      traceId: currentTraceId, // même trace que la page vue
       action: () => ({ ...collectionOrigin(), ...actionAttrs(causalActions!.origin()) }),
       ...(network
         ? {
@@ -616,13 +564,10 @@ export function init(cfg: MIPRumConfig): void {
   }
 
   initNavigation((navType) => {
-    // Retour depuis le cache du navigateur (finding 2.5) : la page a pu y dormir
-    // plus de 30 minutes, ou franchir les 4 heures. Comme un chargement, elle
-    // reprend la session si elle vaut encore, en ouvre une neuve sinon.
+    // Après le bfcache, la session a pu échoir : comme un chargement (finding 2.5).
     if (navType === "bfcache") passerA(reconcilierIdentites(getOrCreateSession(session!)));
     causalActions!.close();
-    // nouvelle page vue = nouvelle trace W3C (E0) : ouverte AVANT le span
-    // pageview pour qu'il en soit le premier span. Borne la taille des traces.
+    // Une trace W3C par page vue, ouverte AVANT le span pageview : borne la taille des traces.
     newPageTrace();
     const vue = eventContext.currentView();
     if (!vue || vue.route !== currentRoute()) eventContext.startView(currentRoute(), currentRoute());
@@ -653,9 +598,8 @@ export function init(cfg: MIPRumConfig): void {
     });
   };
 
-  // session replay (B2) : échantillonné une fois à l'init, démarré seulement
-  // quand le consent est acquis (lazy-load du bundle séparé mip-rum-replay.js).
-  // Une session que l'accord a fait tomber hors échantillon ne s'enregistre pas.
+  // Rejeu tiré à l'init, démarré à l'accord (bundle mip-rum-replay.js chargé à la
+  // demande), jamais pour une session hors échantillon.
   replayArm = isReplaySampled(cfg.replay)
     ? () => {
         if (sampler.mode !== "off") arreterReplay = startReplay(cfg, () => session!.sessionId) ?? null;
@@ -663,15 +607,10 @@ export function init(cfg: MIPRumConfig): void {
     : null;
 
   /**
-   * L'accord, quand la session vivait en mémoire. Le stockage s'ouvre ; on y
-   * reprend la session d'un visiteur qui a déjà consenti sur une page précédente
-   * (sinon chaque page serait une session, et chaque visiteur un nouveau), ou l'on
-   * y écrit celle de la mémoire. Le mode d'échantillonnage se décide alors pour
-   * cette session, et s'applique au tampon d'un bloc :
-   *   - « full » : tout part ;
-   *   - « error-biased » : tout part si le tampon porte une erreur — la session est
-   *     alors promue, et retenue entière ; rien sinon ;
-   *   - « off » : rien ne part, et la suite de la page non plus.
+   * L'accord reprend la session du stockage (consentie sur une page précédente) ou y
+   * écrit celle de la mémoire, puis tire le mode, appliqué au tampon d'un bloc :
+   * « full » tout part ; « error-biased » tout part s'il porte une erreur (session
+   * promue), rien sinon ; « off » rien, ni la suite de la page.
    */
   accorder = () => {
     autoriserAccesTerminal(true);
@@ -698,11 +637,9 @@ export function init(cfg: MIPRumConfig): void {
   };
 
   /**
-   * Le refus : le terminal se referme, et ce que le SDK y avait posé est effacé
-   * (session, visiteur, mode d'échantillonnage, compteur de fil d'Ariane ; la file
-   * de rejeu, par `purgeRetryQueue`). Les identifiants effacés ne reviennent pas :
-   * la page continue avec une session tirée en mémoire, que seul un nouvel accord
-   * écrira — le visiteur y est alors un nouveau visiteur.
+   * Le refus referme le terminal et efface ce que le SDK y avait posé (la file de
+   * rejeu : `purgeRetryQueue`). La page continue en mémoire ; un nouvel accord
+   * l'écrira sous un nouveau visiteur.
    */
   refuser = () => {
     autoriserAccesTerminal(false);
@@ -717,8 +654,7 @@ export function init(cfg: MIPRumConfig): void {
     replayArm?.();
   }
 
-  // widget d'avis (opt-in) : chargé en lazy à la même origine que le SDK. Le
-  // retour part par MIPRum.track('feedback') -> passe donc par le gate de consent.
+  // Ses envois passent par MIPRum.track('feedback'), donc par le consentement.
   if (cfg.feedback) loadFeedbackWidget(cfg.feedback);
 
   // Accord ou refus donné pendant le prérendu : appliqué maintenant.
@@ -730,11 +666,8 @@ export function init(cfg: MIPRumConfig): void {
 }
 
 /**
- * Consent mode RGPD : MIPRum.consent(true) débloque la collecte et rejoue le
- * buffer mémoire (+ la file retry) ; consent(false) purge et désactive.
- *
- * Le terminal suit (finding 1.11) : l'accord écrit session, visiteur et mode
- * d'échantillonnage dans le stockage local, le refus les en efface.
+ * RGPD : consent(true) débloque la collecte et rejoue le tampon et la file retry ;
+ * consent(false) purge, désactive et efface le stockage local du SDK.
  */
 export function consent(granted: boolean): void {
   if (!gate || !deliver) {
@@ -745,14 +678,12 @@ export function consent(granted: boolean): void {
   updateCollectionConsent?.(granted);
   causalActions?.consent(granted);
   if (!granted) {
-    // Le buffer de consentement n'est pas la seule mémoire du SDK : les erreurs
-    // compactées et la file offline attendent aussi un drain futur. Un refus
-    // explicite doit les rendre irrécupérables, pas les rejouer au ré-accord.
+    // Erreurs compactées et file offline aussi : un refus explicite les rend
+    // irrécupérables, au lieu de les rejouer au ré-accord.
     resetErrors?.();
     purgeRetryQueue();
     discardPendingSpans();
-    // Le rejeu aussi : sans cet arrêt, rrweb enregistrait et postait encore
-    // jusqu'à 2 minutes après le refus.
+    // Sinon rrweb enregistre et poste encore jusqu'à 2 minutes après le refus.
     arreterReplay?.();
     refuser?.();
   } else {
@@ -768,21 +699,17 @@ export function consent(granted: boolean): void {
 }
 
 /**
- * Événement métier : MIPRum.track("partner_search", {results: 12}).
- * Émis comme span 'track.<name>' avec mip.props (JSON) — persisté en v0.2
- * dans rum_event — et laisse un breadcrumb 'custom'.
+ * Événement métier : MIPRum.track("partner_search", {results: 12}) émet un span
+ * 'track.<name>' (mip.props en JSON) et un breadcrumb 'custom'.
  */
 export function track(
   name: string,
   props: Record<string, unknown> = {},
   context: EventContext = {},
 ): boolean {
-  // Le retour dit si l'événement est PARTI (ou a été bufferisé pour partir), et
-  // non s'il a été « accepté par l'API ». false = jeté avant toute émission :
-  // init() jamais appelé, opt-out DNT/GPC, session "off", ou mode
-  // "error-biased" — où seules les erreurs passent. Un appelant qui affiche une
-  // confirmation à l'utilisateur DOIT le consulter : sans lui, le widget d'avis
-  // annonçait « envoyé » sur un avis silencieusement jeté.
+  // true : parti ou retenu jusqu'à l'accord, pas « accepté par l'API ». false : jeté
+  // (sans init, DNT/GPC, session "off" ou "error-biased"). À consulter avant
+  // d'afficher une confirmation.
   const safeName = boundedName(name);
   if (!safeName) return false;
   const envelope = eventContext.envelope({}, { ...props, ...context });
@@ -814,10 +741,8 @@ export function clearGlobalContext(): void { eventContext.setGlobal({}); }
 export function getGlobalContext(): Readonly<EventContext> { return eventContext.getGlobal(); }
 
 /**
- * Au démarrage, les identités posées AVANT `init()` rencontrent la session reprise :
- * même identité → rien ; session anonyme → rattachement ; autre identité → nouvelle
- * session, avant tout événement. Une identité encore vide n'est PAS une déconnexion :
- * l'application ne l'a simplement pas encore reposée sur cette page.
+ * Confronte les identités posées avant `init()` à la session reprise. Une identité
+ * vide n'est pas une déconnexion : la page ne l'a pas encore reposée.
  */
 function reconcilierIdentites(s: Session): Session {
   const marques = { ...s.identites };
@@ -836,13 +761,7 @@ function reconcilierIdentites(s: Session): Session {
   return s;
 }
 
-/**
- * Une identité métier change (ou est reposée). La session ne tourne que si elle
- * portait une AUTRE identité, ou si l'identité est effacée alors qu'elle en portait
- * une : reposer la même identité à chaque page d'une application multipage ne
- * fragmente plus la visite (recette du 26/09/2026), et une identité posée sur une
- * session anonyme s'y rattache. Règle et raison : ./identite-session.ts.
- */
+/** Changement d'identité : rien, rattachement ou rotation (./identite-session.ts). */
 function appliquerIdentite(genre: "user" | "account", id: string | null): void {
   identites = { ...identites, [genre]: id };
   if (!initialized || !session) return; // init() rattachera
@@ -928,12 +847,8 @@ export function addFeatureFlagEvaluation(name: string, value: string | number | 
 }
 
 /**
- * Signale explicitement une erreur en réutilisant la voie exception existante.
- *
- * `options.fingerprint` : clé de regroupement opaque, bornée comme un nom (100
- * caractères). Elle voyage en `mip.error_fingerprint` : prioritaire dans le
- * regroupement v2 des issues, sans rien changer à la signature historique ; une
- * clé invalide est ignorée, jamais l'erreur.
+ * Signale une erreur par la voie exception. `options.fingerprint` (≤ 100 caractères)
+ * prime dans le regroupement des issues ; invalide, elle est ignorée, pas l'erreur.
  */
 export function addError(
   error: Error | string,
@@ -960,25 +875,22 @@ export function addError(
 }
 
 /**
- * Métriques de la collecte d'erreurs, voie par voie, depuis init() : occurrences
- * émises, tues par le plafond de page, refusées (beforeSend, consentement), et
- * API navigateur absentes. `null` tant que la collecte n'a pas démarré.
+ * Compteurs de la collecte d'erreurs par voie depuis init() (émises, plafonnées,
+ * refusées, API absentes) ; `null` avant le démarrage.
  */
 export function getErrorCollectionStats(): ErrorCollectionStats | null {
   return errorStats?.() ?? null;
 }
 
 /**
- * Identifiant d'application de la session courante, ou "" si init() n'a pas
- * (encore) été appelé avec une configuration valide. Renseigné même quand la
- * collecte est ensuite refusée (DNT/GPC, session non échantillonnée) : le widget
- * d'avis s'en sert comme clé de stockage, et cette clé doit rester stable.
+ * appId courant, ou "" avant un init() valide. Posé même si la collecte est refusée :
+ * le widget d'avis en fait une clé de stockage stable.
  */
 export function appId(): string {
   return appIdValue;
 }
 
-/** Force the export of pending spans (used by tests and before unload). */
+/** Force l'export des spans en attente (tests, avant déchargement). */
 export function flush(): Promise<void> {
   drainErrors?.();
   return forceFlush();

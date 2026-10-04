@@ -1,22 +1,12 @@
-// Consent mode RGPD (LIMITES §3) : tant que le consentement n'est pas donné,
-// aucun span n'est créé (donc aucune requête réseau) — les événements sont
-// bufferisés en mémoire et rejoués à consent(true), purgés à consent(false).
+// RGPD (LIMITES §3) : sans consentement, aucun span ni requête réseau ; les
+// événements attendent en mémoire, rejoués à consent(true), purgés à consent(false).
 import type { AttrValue, Emit } from "./errors";
 
 export const CONSENT_BUFFER_CAP = 200;
 
-// ═══════════════════════ Le terminal, sous le même accord ═══════════════════════
-//
-// Finding 1.11 de docs/AUDIT_RUM_EXTERNE.md. La barrière ci-dessous ne retenait que
-// le RÉSEAU : l'identifiant de session, celui du visiteur et le mode
-// d'échantillonnage étaient écrits dans le stockage local AVANT elle, et
-// survivaient au refus. Or l'article 82 de la loi Informatique et Libertés vise
-// toute lecture ou écriture sur le terminal, stockage local compris.
-//
-// Désormais, avec `requireConsent`, aucun module du SDK ne lit ni n'écrit le
-// stockage local tant que l'accord manque : ils interrogent tous cet
-// interrupteur. Un refus le referme, et efface ce que le SDK avait posé.
-// Sans `requireConsent`, il reste ouvert du début à la fin : rien ne change.
+// L'article 82 de la loi Informatique et Libertés vise toute lecture ou écriture
+// sur le terminal, stockage local compris : avec `requireConsent`, chaque module
+// interroge cet interrupteur avant d'y toucher (finding 1.11).
 let accesTerminal = true;
 
 /** Le SDK peut-il lire ou écrire le stockage local du navigateur ? */
@@ -29,9 +19,8 @@ export function autoriserAccesTerminal(autorise: boolean): void {
 }
 
 /**
- * Tout ce que le SDK pose sur le terminal, hors file de rejeu (`retry.ts` la
- * purge lui-même : ses clés sont lues par ses propres tests). Une clé ajoutée
- * ailleurs sans figurer ici survivrait à un refus.
+ * Clés que le SDK pose sur le terminal, hors file de rejeu (purgée par `retry.ts`).
+ * Une clé absente d'ici survivrait à un refus.
  */
 export const CLE_SESSION = "mip_rum_session";
 export const CLE_VISITEUR = "mip_rum_visitor";
@@ -91,13 +80,8 @@ export class ConsentGate {
   }
 
   /**
-   * Passe l'événement si consenti, le bufferise si en attente, le jette si refusé.
-   *
-   * Retourne true quand l'événement est PRIS EN CHARGE — livré, ou bufferisé
-   * pour être rejoué au consentement. false uniquement quand il est jeté.
-   * L'appelant peut ainsi savoir si un envoi a réellement eu lieu : le widget
-   * d'avis s'en sert pour ne pas afficher « envoyé » sur un événement perdu,
-   * ni armer sa période de silence sur un avis qui n'est jamais parti.
+   * Livre l'événement si consenti, le retient si en attente, le jette si refusé.
+   * Retourne false seulement s'il est jeté : le widget d'avis n'affiche alors pas « envoyé ».
    */
   submit(name: string, attrs: Record<string, AttrValue>, deliver: Emit, ts?: number): boolean {
     const actionId = typeof attrs["mip.action_id"] === "string" ? attrs["mip.action_id"] : null;
@@ -123,9 +107,8 @@ export class ConsentGate {
         this.buffer = this.buffer.filter((event) => event.attrs["mip.action_id"] !== evictedId);
       }
     }
-    // En attente de consentement, aucun enfant ne peut survivre sans sa racine
-    // dans le même buffer. On vérifie APRÈS l'éviction FIFO : si celle-ci vient
-    // de retirer la racine, l'effet reste collectable mais devient non lié.
+    // Un enfant sans sa racine dans le tampon est délié ; vérifié APRÈS l'éviction,
+    // qui a pu retirer la racine.
     if (actionId && !isRoot && !this.hasBufferedRoot(actionId)) {
       bufferedAttrs = { ...attrs };
       delete bufferedAttrs["mip.action_id"];
@@ -135,11 +118,9 @@ export class ConsentGate {
   }
 
   /**
-   * consent(true) : rejoue le buffer (timestamps d'origine) ; consent(false) : purge + désactive.
-   *
-   * `retenir` voit le tampon entier avant le rejeu. Il sert aux décisions que
-   * l'accord seul permet de prendre — le mode d'échantillonnage, l'identifiant de
-   * session repris du stockage — et qui portent sur la page entière.
+   * true : rejoue le tampon à ses horodatages d'origine ; false : purge et désactive.
+   * `retenir` filtre le tampon avant le rejeu, pour les décisions que seul l'accord
+   * permet (échantillonnage, session reprise du stockage).
    */
   set(
     granted: boolean,
