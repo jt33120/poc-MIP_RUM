@@ -36,6 +36,11 @@ export const ROUTES_SERVICE_SEUL = Object.freeze([
     chemin: "/api/v1/errors/[fingerprint]/overrepresentation",
     module: "apps/console/lib/api/service/surrepresentation.ts",
   }),
+  // Les signaux de vue du SDK web ≥ 0.6 (04/10/2026) : les lectures de l'écran /pages.
+  Object.freeze({ chemin: "/api/v1/engagement", module: "apps/console/lib/api/service/engagement.ts" }),
+  Object.freeze({ chemin: "/api/v1/spa-loads", module: "apps/console/lib/api/service/spa-loads.ts" }),
+  Object.freeze({ chemin: "/api/v1/page-weight", module: "apps/console/lib/api/service/page-weight.ts" }),
+  Object.freeze({ chemin: "/api/v1/user-timings", module: "apps/console/lib/api/service/user-timings.ts" }),
 ]);
 const METHODES_LECTURE = new Set(["GET", "HEAD", "OPTIONS"]);
 

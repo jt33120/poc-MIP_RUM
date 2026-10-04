@@ -23,7 +23,7 @@ type SpanEvent = NonNullable<EmitSpan["events"]>[number];
 
 // Suit packages/rum-sdk/package.json (tests/unit/specs.test.ts), pour qu'un
 // changement de comportement se distingue dans ce que le SDK émet.
-const SDK_VERSION = "0.5.0";
+const SDK_VERSION = "0.6.0";
 const MAX_BATCH = 64; // plafond du BatchSpanProcessor OTel
 
 /** Interface minimale d'un span (sous-ensemble de l'API OTel réellement utilisé). */

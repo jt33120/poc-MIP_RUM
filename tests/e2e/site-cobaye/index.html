@@ -62,6 +62,10 @@
     Bloc exclu du replay (classe <code>mip-rum-block</code>) — ex. données patient/IBAN.
   </p>
 
+  <!-- SDK 0.6.0 — page plus haute que la fenêtre : la profondeur de défilement
+       (webvital.SCROLL_DEPTH) a quelque chose à mesurer -->
+  <div id="bas-de-page" style="height:2000px;padding-top:1rem;color:#666">Suite de la page (défilement mesuré).</div>
+
   <script>
     // layout shift volontaire (~600 ms après le load, hors interaction) -> CLS réel mesurable
     setTimeout(() => {
@@ -70,6 +74,10 @@
       banner.style.cssText = "padding:1.5rem;background:#fde68a;margin-bottom:1rem;";
       document.body.prepend(banner);
     }, 600);
+
+    // SDK 0.6.0 — repères de l'app, relevés sans appel au SDK (rum.timing mark:/measure:)
+    performance.mark("demo-pret");
+    performance.measure("demo-chargement", { start: 0, end: "demo-pret" });
 
     // simulated SPA: History API navigation, content swap
     function render(route) {

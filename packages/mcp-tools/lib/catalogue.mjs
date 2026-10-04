@@ -348,6 +348,64 @@ export const OUTILS = [
     chemin: "/errors/{fingerprint}/overrepresentation",
     params: [...FILTRES, "fingerprint"],
   },
+  // Les signaux de vue du SDK web ≥ 0.6 : les lectures de l'écran /pages. Sous 13
+  // mesures, une valeur vaut null et `manque` le dit — la règle est répétée dans
+  // chaque description, parce que le modèle lit un outil à la fois.
+  {
+    nom: "mip_rum_get_engagement",
+    titre: "Engagement par route",
+    resume: "Temps passé visible et défilement par route : p50/p75, part des vues qui défilent à 75 %.",
+    description:
+      "Répond à « les visiteurs restent-ils, lisent-ils jusqu'en bas ? ». Par route et pour l'ensemble (`data.ensemble`, toutes " +
+      "routes) : `vues`, temps passé VISIBLE sur la vue (onglet au premier plan) `temps_p50_ms` et `temps_p75_ms`, profondeur de " +
+      "défilement MAXIMALE `defilement_p50_pct` (0-100 ; 100 pour une page qui ne défile pas) et `part_defilement_profond` (0..1, " +
+      "vues qui atteignent 75 %). Sous `requis` mesures (13), la valeur vaut null et `manque` dit ce qui manque (« 7 vues, 13 " +
+      "requises ») : le dire tel quel, ce n'est PAS zéro. Aucune mesure du tout : le SDK web de l'app est antérieur à 0.6, ou " +
+      "l'app n'a pas de trafic — ne pas conclure que personne ne lit. Routes classées par `vues` ; `tronque` dit si d'autres existent.",
+    chemin: "/engagement",
+    params: [...FILTRES, "env", "release", "route", "limit"],
+  },
+  {
+    nom: "mip_rum_get_spa_loads",
+    titre: "Changements d'écran (SPA)",
+    resume: "Durée des changements d'écran d'une application monopage, par route d'arrivée : nombre, p50/p75.",
+    description:
+      "Répond à « la navigation dans l'application est-elle rapide ? » pour une application monopage (React, Angular, Vue…), dont " +
+      "les changements d'écran ne rechargent pas la page et échappent donc au LCP. Une mesure par changement d'écran, rangée sous la " +
+      "route d'ARRIVÉE : du changement d'URL à la dernière activité suivie de 100 ms sans mutation du DOM ni requête en cours " +
+      "(plafond 10 s ; un clic ou une touche avant la fin annule la mesure). `n`, `p50_ms`, `p75_ms`, par route et pour " +
+      "`data.ensemble`. Sous 13 mesures, null et `manque` (« 4 chargements, 13 requis ») : le répéter, ce n'est PAS zéro. " +
+      "Une application qui recharge ses pages n'a aucune mesure : ce n'est pas une anomalie.",
+    chemin: "/spa-loads",
+    params: [...FILTRES, "env", "release", "route", "limit"],
+  },
+  {
+    nom: "mip_rum_get_page_weight",
+    titre: "Poids des vues par route",
+    resume: "Ressources chargées par vue (p50) et octets transférés par vue (p75), par route.",
+    description:
+      "Répond à « quelles pages sont lourdes ? ». Le SDK résume TOUTES les ressources chargées pendant une vue (envois de MIP " +
+      "exclus) : `ressources_p50` (médiane du nombre de ressources par vue) et `octets_p75` (p75 des octets transférés par vue). " +
+      "Les octets sont un PLANCHER : le navigateur compte 0 pour une ressource servie du cache, ou d'une autre origine sans " +
+      "Timing-Allow-Origin. Par route et pour `data.ensemble`. Sous 13 mesures, null et `manque` : le répéter, ce n'est PAS zéro. " +
+      "Pour les ressources LENTES une à une, utiliser mip_rum_query_explorer sur le jeu `resources`.",
+    chemin: "/page-weight",
+    params: [...FILTRES, "env", "release", "route", "limit"],
+  },
+  {
+    nom: "mip_rum_list_user_timings",
+    titre: "Repères du développeur",
+    resume: "performance.mark, performance.measure et addTiming par nom : nombre, p50/p75 en ms.",
+    description:
+      "Répond à « combien de temps prennent les étapes que l'équipe a choisi de mesurer ? ». Liste, par nom, les repères posés par " +
+      "l'application : `source: \"mark\"` (`mark:<nom>`, un performance.mark — la valeur est l'INSTANT depuis le début de la vue), " +
+      "`\"measure\"` (`measure:<nom>`, un performance.measure — une DURÉE) ou `\"manuel\"` (un addTiming — une durée). Ne pas " +
+      "additionner un mark et un measure : l'un est un instant, l'autre une durée. `n`, `p50_ms`, `p75_ms` ; sous 13 mesures, null " +
+      "et `manque`, à répéter tel quel. Les repères des outils (React, Next.js, webpack…) ne sont pas relevés ; les démarrages de " +
+      "l'application mobile sont dans mip_rum_mobile_summary. Une liste vide : l'application ne pose aucun repère, ou son SDK web est antérieur à 0.6.",
+    chemin: "/user-timings",
+    params: [...FILTRES, "env", "release", "route", "limit"],
+  },
   {
     nom: "mip_rum_query_explorer",
     titre: "Explorer générique",

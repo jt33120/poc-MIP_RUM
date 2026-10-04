@@ -216,6 +216,145 @@
                 { "key": "mip.route", "value": { "stringValue": "/partners/search" } },
                 { "key": "mip.props", "value": { "stringValue": "{\"query\":\"assurance habitation\",\"results\":12}" } }
               ]
+            },
+            {
+              "traceId": "0000000000000000000000000000a001",
+              "spanId": "00000000000000ae",
+              "name": "webvital.TIME_SPENT",
+              "kind": 1,
+              "startTimeUnixNano": "1781100013000000000",
+              "endTimeUnixNano": "1781100013000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-v2-session-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/search" } },
+                { "key": "webvital.name", "value": { "stringValue": "TIME_SPENT" } },
+                { "key": "webvital.value", "value": { "intValue": "48250" } },
+                { "key": "webvital.id", "value": { "stringValue": "vue-fixture2-1" } }
+              ]
+            },
+            {
+              "traceId": "0000000000000000000000000000a001",
+              "spanId": "00000000000000af",
+              "name": "webvital.SCROLL_DEPTH",
+              "kind": 1,
+              "startTimeUnixNano": "1781100014000000000",
+              "endTimeUnixNano": "1781100014000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-v2-session-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/search" } },
+                { "key": "webvital.name", "value": { "stringValue": "SCROLL_DEPTH" } },
+                { "key": "webvital.value", "value": { "intValue": "72" } },
+                { "key": "webvital.id", "value": { "stringValue": "vue-fixture2-1" } }
+              ]
+            },
+            {
+              "traceId": "0000000000000000000000000000a001",
+              "spanId": "00000000000000b0",
+              "name": "webvital.RESOURCE_COUNT",
+              "kind": 1,
+              "startTimeUnixNano": "1781100015000000000",
+              "endTimeUnixNano": "1781100015000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-v2-session-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/search" } },
+                { "key": "webvital.name", "value": { "stringValue": "RESOURCE_COUNT" } },
+                { "key": "webvital.value", "value": { "intValue": "34" } },
+                { "key": "webvital.id", "value": { "stringValue": "vue-fixture2-1" } }
+              ]
+            },
+            {
+              "traceId": "0000000000000000000000000000a001",
+              "spanId": "00000000000000b1",
+              "name": "webvital.RESOURCE_BYTES",
+              "kind": 1,
+              "startTimeUnixNano": "1781100016000000000",
+              "endTimeUnixNano": "1781100016000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-v2-session-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/search" } },
+                { "key": "webvital.name", "value": { "stringValue": "RESOURCE_BYTES" } },
+                { "key": "webvital.value", "value": { "intValue": "612480" } },
+                { "key": "webvital.id", "value": { "stringValue": "vue-fixture2-1" } }
+              ]
+            },
+            {
+              "traceId": "0000000000000000000000000000a001",
+              "spanId": "00000000000000b2",
+              "name": "webvital.SPA_LOAD",
+              "kind": 1,
+              "startTimeUnixNano": "1781100017000000000",
+              "endTimeUnixNano": "1781100017000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-v2-session-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/:id" } },
+                { "key": "webvital.name", "value": { "stringValue": "SPA_LOAD" } },
+                { "key": "webvital.value", "value": { "intValue": "640" } },
+                { "key": "webvital.id", "value": { "stringValue": "vue-fixture2-2" } }
+              ]
+            },
+            {
+              "traceId": "0000000000000000000000000000a001",
+              "spanId": "00000000000000b3",
+              "name": "rum.timing",
+              "kind": 1,
+              "startTimeUnixNano": "1781100018000000000",
+              "endTimeUnixNano": "1781100018000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-v2-session-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/search" } },
+                { "key": "mip.event_type", "value": { "stringValue": "timing" } },
+                { "key": "mip.event_name", "value": { "stringValue": "mark:resultats-affiches" } },
+                { "key": "mip.timing_ms", "value": { "intValue": "1840" } }
+              ]
+            },
+            {
+              "traceId": "0000000000000000000000000000a001",
+              "spanId": "00000000000000b4",
+              "name": "rum.timing",
+              "kind": 1,
+              "startTimeUnixNano": "1781100019000000000",
+              "endTimeUnixNano": "1781100019000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-v2-session-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/search" } },
+                { "key": "mip.event_type", "value": { "stringValue": "timing" } },
+                { "key": "mip.event_name", "value": { "stringValue": "measure:filtrage" } },
+                { "key": "mip.timing_ms", "value": { "intValue": "88" } }
+              ]
+            },
+            {
+              "traceId": "0000000000000000000000000000a001",
+              "spanId": "00000000000000b5",
+              "name": "exception",
+              "kind": 1,
+              "startTimeUnixNano": "1781100020000000000",
+              "endTimeUnixNano": "1781100020000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-v2-session-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/search" } },
+                { "key": "mip.error_kind", "value": { "stringValue": "error" } },
+                { "key": "exception.type", "value": { "stringValue": "TypeError" } },
+                { "key": "exception.message", "value": { "stringValue": "[Worker] Uncaught TypeError: x is not a function" } },
+                { "key": "mip.error_source", "value": { "stringValue": "https://demo.mip.local/workers/calcul.js" } },
+                { "key": "mip.error_lineno", "value": { "intValue": "12" } },
+                { "key": "mip.error_colno", "value": { "intValue": "7" } }
+              ]
+            },
+            {
+              "traceId": "0000000000000000000000000000a001",
+              "spanId": "00000000000000b6",
+              "name": "exception",
+              "kind": 1,
+              "startTimeUnixNano": "1781100021000000000",
+              "endTimeUnixNano": "1781100021000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-v2-session-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/search" } },
+                { "key": "mip.error_kind", "value": { "stringValue": "network" } },
+                { "key": "exception.type", "value": { "stringValue": "WebSocketError" } },
+                { "key": "exception.message", "value": { "stringValue": "WebSocket demo.mip.local/temps-reel : 1006" } },
+                { "key": "mip.error_source", "value": { "stringValue": "wss://demo.mip.local/temps-reel" } }
+              ]
             }
           ]
         }

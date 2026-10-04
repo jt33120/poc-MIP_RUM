@@ -53,7 +53,7 @@ export {
 } from "./sdk-poids";
 
 /** Version de l'extension, telle qu'elle est dans apps/extension/manifest.json. */
-export const EXT_VERSION = "0.5.0";
+export const EXT_VERSION = "0.6.0";
 /** Ses permissions, dans l'ordre du manifeste. */
 export const EXT_PERMISSIONS = ["scripting", "webNavigation", "storage", "activeTab"] as const;
 
@@ -305,6 +305,40 @@ export const MESURES: Mesure[] = [
     detail:
       "Redirection, DNS, TCP, TLS, requête, réponse. C'est la cause d'un TTFB lent, pas seulement son symptôme : trois problèmes opposés produisent le même TTFB. Sans note de qualité — Google ne publie pas de seuil par phase.",
   },
+  // SDK web 0.6.0 (04/10/2026) : trois mesures de vue sur le canal des vitals, un
+  // même identifiant par vue et des valeurs cumulées (l'ingestion garde la plus grande).
+  {
+    quoi: "Temps passé sur une vue",
+    otlp: "webvital.",
+    table: "rum_metric",
+    module: "packages/rum-sdk/src/engagement.ts",
+    detail:
+      "Le temps où la vue était réellement affichée — un onglet en arrière-plan ne compte pas —, envoyé en cumul au passage en arrière-plan, au départ de la page et à la vue suivante. Médianes et p75 par route : où les utilisateurs restent, où ils ne font que passer.",
+  },
+  {
+    quoi: "Profondeur de défilement",
+    otlp: "webvital.",
+    table: "rum_metric",
+    module: "packages/rum-sdk/src/engagement.ts",
+    detail:
+      "Le point le plus bas atteint sur la vue, en pourcentage de sa hauteur : la fenêtre, ou le plus grand conteneur qui défile quand l'application fait défiler un panneau plutôt que la page. Une page qui ne défile pas compte comme vue jusqu'en bas. Jamais ce qui est affiché, seulement des positions.",
+  },
+  {
+    quoi: "Poids de chaque vue",
+    otlp: "webvital.",
+    table: "rum_metric",
+    module: "packages/rum-sdk/src/engagement.ts",
+    detail:
+      "Le nombre de ressources chargées pendant la vue et les octets transférés, exports de MIP exclus. Une ressource servie par le cache, ou par un tiers qui ne publie pas ses temps, compte sans octets.",
+  },
+  {
+    quoi: "Chargement d'un changement d'écran SPA",
+    otlp: "webvital.SPA_LOAD",
+    table: "rum_metric",
+    module: "packages/rum-sdk/src/spa-load.ts",
+    detail:
+      "Du pushState à la dernière mutation de la page ou requête suivie de 100 ms de calme, la méthode des outils RUM du marché. La page vue d'une navigation SPA est instantanée : sans cette mesure, un écran qui met 4 s à se remplir passe pour immédiat. Un clic ou une touche avant la fin l'annule ; au-delà de 10 s, rien n'est envoyé.",
+  },
   {
     quoi: "Pages vues et routes",
     otlp: "pageview",
@@ -338,12 +372,20 @@ export const MESURES: Mesure[] = [
       "Activées voie par voie, jamais par défaut : console.error, ressources qui échouent à charger, violations CSP, appels fetch/XHR en échec, en délai dépassé ou en 5xx — les 4xx et les abandons volontaires seulement sur demande. Chaque voie a son plafond par page, et ses pertes sont comptées dans le navigateur, pas encore à l'ingestion. Ni query string, ni corps, ni en-tête de requête ; ni l'extrait inline d'une violation CSP ; aucun statut HTTP deviné pour une ressource.",
   },
   {
+    quoi: "Erreurs des Web Workers et des WebSockets",
+    otlp: "exception",
+    table: "rum_error",
+    module: "packages/rum-sdk/src/error-capture.ts",
+    detail:
+      "Actives par défaut depuis le SDK 0.6.0, coupables une à une : l'erreur non interceptée d'un worker, qui n'atteint jamais le gestionnaire global de la page, et la WebSocket qui échoue ou se ferme anormalement. Dix par page et par voie. Une WebSocket n'est nommée que par son hôte et son chemin, jamais par sa requête, où passent souvent les jetons.",
+  },
+  {
     quoi: "Ressources lentes",
     otlp: "resource",
     table: "rum_resource",
     module: "packages/rum-sdk/src/resources.ts",
     detail:
-      "Au-delà de 300 ms par défaut : type, taille transférée, blocage du rendu. De quoi désigner le script tiers ou l'image qui retarde la page.",
+      "Au-delà de 300 ms par défaut : type, taille transférée, blocage du rendu. De quoi désigner le script tiers ou l'image qui retarde la page. Sur option, tout ce que la page charge, 150 par page.",
   },
   {
     quoi: "Blocage du fil principal, attribué",
@@ -420,6 +462,14 @@ export const MESURES: Mesure[] = [
     module: "packages/rum-sdk/src/index.ts",
     detail:
       "MIPRum.track() pour ce que l'app veut compter, et la note de 1 à 5 du widget d'avis. Les propriétés passent au même filtre des données personnelles que le reste.",
+  },
+  {
+    quoi: "Repères du développeur",
+    otlp: "rum.timing",
+    table: "rum_event",
+    module: "packages/rum-sdk/src/user-timings.ts",
+    detail:
+      "Les performance.mark et performance.measure que l'application pose déjà, relevés sans ligne de code de plus : l'instant d'un repère depuis le début de la vue, la durée d'une mesure. Ceux des outils (React, Next.js, webpack…) sont écartés ; 30 par vue.",
   },
   {
     quoi: "Rejeu de session",

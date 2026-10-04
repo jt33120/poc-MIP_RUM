@@ -168,6 +168,15 @@ export const SEUILS_MIP = {
   // règles est connu (29/09/2026) et se tranche avec les écrans (lot 4b).
   API: { bon: 300, mauvais: 1000, unite: "ms", sens: "haut-mauvais", statistique: "p75", libelle: "Appel API" },
 
+  // ─────────────────────────── Navigation dans l'application ─────────────────────
+  // `SPA_LOAD` (SDK web ≥ 0.6, 04/10/2026) : d'un pushState / popstate au calme de la
+  // page (100 ms sans mutation du DOM ni requête en cours), méthode « loading time »
+  // de Datadog. 1 000 : la limite au-delà de laquelle l'utilisateur perd le fil de
+  // son action (même repère que `API`, J. Nielsen). 2 500 : la borne « bon » du LCP
+  // (`THRESHOLDS.LCP`) — un changement d'écran aussi lent qu'un chargement complet
+  // a perdu ce qu'une application monopage devait apporter.
+  SPA_LOAD: { bon: 1000, mauvais: 2500, unite: "ms", sens: "haut-mauvais", statistique: "p75", libelle: "Changement d'écran (SPA)" },
+
   // ──────────────────────────── Comportement et erreurs ──────────────────────────
   // Des PARTS de sessions touchées, jamais des nombres : un compte grandit avec le
   // trafic et ne se compare pas d'une période à l'autre. Le tableau de relecture

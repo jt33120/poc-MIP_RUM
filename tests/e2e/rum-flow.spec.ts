@@ -49,8 +49,12 @@ test("flux RUM bout-en-bout : vitals + erreur arrivent en base puis en console",
   await page.goto("http://localhost:8080/", { waitUntil: "load" });
   await page.waitForTimeout(1200); // layout shift CLS
   await page.click("#btn-error");
-  await page.click("#btn-nav-list");
+  // SDK 0.6.0 : défiler jusqu'en bas de l'accueil (relevé espacé de 100 ms), puis
+  // une navigation pushState, sans clic pendant son chargement (SPA_LOAD).
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await page.waitForTimeout(300);
+  await page.click("#btn-nav-list");
+  await page.waitForTimeout(600);
 
   const sid = await page.evaluate(
     () => JSON.parse(localStorage.getItem("mip_rum_session")!).sid,
@@ -68,6 +72,38 @@ test("flux RUM bout-en-bout : vitals + erreur arrivent en base puis en console",
   const names = metrics.map((m) => m.name);
   expect(names).toContain("LCP");
   expect(names).toContain("TTFB");
+
+  // SDK 0.6.0 : les signaux de vue, sur le canal des vitals (rum_metric).
+  const signauxVue = await pollRows(
+    `select name, route, max(value) as value from rum_metric
+      where session_id = $1
+        and name in ('TIME_SPENT', 'SCROLL_DEPTH', 'RESOURCE_COUNT', 'RESOURCE_BYTES', 'SPA_LOAD')
+      group by name, route`,
+    [sid],
+    6,
+  );
+  const signal = (name: string, route: string) =>
+    signauxVue.find((r) => r.name === name && r.route === route);
+  // L'accueil, clos par la navigation SPA : temps passé, défilement jusqu'en bas, ressources.
+  expect(Number(signal("TIME_SPENT", "/")?.value)).toBeGreaterThan(1000);
+  expect(Number(signal("SCROLL_DEPTH", "/")?.value)).toBeGreaterThanOrEqual(95);
+  expect(Number(signal("RESOURCE_COUNT", "/")?.value)).toBeGreaterThan(0);
+  expect(signal("RESOURCE_BYTES", "/")).toBeDefined();
+  // /partners : son chargement SPA, puis son temps passé jusqu'au départ de la page.
+  expect(Number(signal("SPA_LOAD", "/partners")?.value)).toBeGreaterThanOrEqual(0);
+  expect(Number(signal("SPA_LOAD", "/partners")?.value)).toBeLessThan(10_000);
+  expect(Number(signal("TIME_SPENT", "/partners")?.value)).toBeGreaterThan(0);
+
+  // Les repères performance.mark / measure du site, relevés sans appel au SDK.
+  const reperes = await pollRows(
+    "select name, timing_ms from rum_event where session_id = $1 and event_type = 'timing'",
+    [sid],
+    2,
+  );
+  expect(reperes.map((r) => r.name)).toEqual(
+    expect.arrayContaining(["mark:demo-pret", "measure:demo-chargement"]),
+  );
+  for (const r of reperes) expect(Number(r.timing_ms)).toBeGreaterThanOrEqual(0);
 
   const errors = await pollRows(
     "select kind, message from rum_error where session_id = $1",

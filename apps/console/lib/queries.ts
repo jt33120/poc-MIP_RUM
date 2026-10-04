@@ -12,6 +12,7 @@ import { bucketStarts, previousRange, type ResolvedRange } from "./query-contrac
 import { alignerSeaux, isoSansMs } from "./series";
 import { dimensionSchema } from "./query-schema";
 import { sqlContext, type SqlContext } from "./query-sql";
+import { sqlHorsMesuresDeVue } from "./signaux-vue";
 import type { SessionCursor, SessionSearch } from "./sessions-search";
 import {
   SEUIL_RANGS_NORMAUX,
@@ -85,7 +86,8 @@ async function agregatsAvecIntervalle<T extends { n: number }>(
        select m.name, m.value
        from rum_metric m
        ${sessionJoin("m", "s")}
-       where true${where}
+       -- Les mesures de vue (temps passé, défilement…) ne sont pas des vitals.
+       where true${sqlHorsMesuresDeVue("m.name")}${where}
      ), agg as (
        select name,
               ${agregats},
@@ -422,7 +424,7 @@ export async function samplingVitals(f: FiltersLike): Promise<EchantillonnageSes
        select distinct m.app_id, m.session_id
          from rum_metric m
          ${sessionJoin("m", "s")}
-        where m.session_id is not null${where}
+        where m.session_id is not null${sqlHorsMesuresDeVue("m.name")}${where}
      )
      select ${agregatEchantillonnage(debut)}
        from population p
@@ -502,7 +504,7 @@ export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
               percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'CLS') as cls_p75
          from rum_metric m
          ${sessionJoin("m", "s")}
-        where m.route is not null${vitals}
+        where m.route is not null${sqlHorsMesuresDeVue("m.name")}${vitals}
         group by m.route
      )
      select v.route,
@@ -546,7 +548,7 @@ export async function nombreDeRoutes(f: Filters): Promise<number> {
     `select count(distinct m.route)::int as n
        from rum_metric m
        ${sessionJoin("m", "s")}
-      where m.route is not null${where}`,
+      where m.route is not null${sqlHorsMesuresDeVue("m.name")}${where}`,
     sql.params,
   );
   return r?.n ?? 0;
@@ -784,7 +786,7 @@ export async function sessionTimeline(id: string, appId: string): Promise<Timeli
            from rum_pageview where session_id = $1 and app_id = $2
            union all
            select 'vital', ts, name, route, value, rating, null, null, app_id
-           from rum_metric where session_id = $1 and app_id = $2
+           from rum_metric where session_id = $1 and app_id = $2${sqlHorsMesuresDeVue("name")}
            union all
            select 'action', ts, name, type || coalesce(' · ' || route, ''), null, null, action_id, name, app_id
            from rum_action where session_id = $1 and app_id = $2
@@ -848,7 +850,7 @@ export async function sessionTimeline(id: string, appId: string): Promise<Timeli
        from rum_pageview where session_id = $1 and app_id = $2
        union all
        select 'vital', ts, name, route, value, rating
-       from rum_metric where session_id = $1 and app_id = $2
+       from rum_metric where session_id = $1 and app_id = $2${sqlHorsMesuresDeVue("name")}
        union all
        select 'error', ts, coalesce(error_type, kind), message, null, null
        from rum_error where session_id = $1 and app_id = $2

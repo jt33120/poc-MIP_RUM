@@ -25,6 +25,13 @@ export interface MIPRumConfig {
   apiKey?: string;
   /** Seuil en ms au-delà duquel une ressource donne un span 'resource' (défaut 300). */
   slowResourceMs?: number;
+  /**
+   * Spans 'resource' : "slow" (défaut) les lentes et les bloquantes, 20 par page ;
+   * "all" toutes, 150 par page. Le résumé par vue (nombre, octets) part toujours.
+   */
+  resources?: "slow" | "all";
+  /** performance.mark / performance.measure de l'app → timings `mark:` / `measure:` (défaut true). */
+  userTimings?: boolean;
   /** RGPD : true garde tout en mémoire jusqu'à MIPRum.consent(true) (défaut false). */
   requireConsent?: boolean;
   /**
@@ -64,8 +71,9 @@ export interface MIPRumConfig {
    */
   trace?: boolean | string[];
   /**
-   * Voies d'erreur opt-in, car chacune peut changer le volume du jour au lendemain ;
-   * exceptions et rejets non interceptés sont toujours collectés (docs/INTEGRATION.md).
+   * Voies d'erreur en plus des exceptions et rejets non interceptés : console,
+   * ressources, CSP et réseau sur option ; workers et WebSockets actifs par défaut,
+   * coupables (docs/INTEGRATION.md).
    */
   captureErrors?: CaptureErrorsConfig;
   /** Signaux de frustration (rage clicks, dead clicks) : true (défaut) ou false. */
@@ -113,10 +121,14 @@ export interface CaptureErrorsConfig {
    * délais et 5xx ; l'objet ajoute les 4xx (`clientErrors`) et les abandons (`aborts`). Défaut false.
    */
   network?: boolean | { clientErrors?: boolean; aborts?: boolean };
+  /** Erreur non interceptée dans un Web Worker → erreur `[Worker] …`. Défaut true. */
+  workers?: boolean;
+  /** WebSocket en erreur ou fermée anormalement (1006, 1011…) → erreur réseau. Défaut true. */
+  websockets?: boolean;
 }
 
 /** Voie de capture d'une erreur ; `uncaught` = exceptions et rejets non interceptés. */
-export type ErrorCategory = "uncaught" | "console" | "resources" | "csp" | "network";
+export type ErrorCategory = "uncaught" | "console" | "resources" | "csp" | "network" | "workers" | "websockets";
 
 /** Compteurs d'une voie depuis init(), en occurrences. */
 export interface ErrorCategoryStats {

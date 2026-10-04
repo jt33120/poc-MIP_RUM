@@ -16,6 +16,9 @@
 // plus l'écran — elle OUVRE la route à côté du classement, qui reste lisible ;
 // « Ouvrir en page » (dans le panneau) garde le drill-down d'avant.
 //
+// 04/10/2026 : quatre sections des signaux de vue du SDK web ≥ 0.6 (engagement,
+// changements d'écran, poids des vues, repères), dans `components/perf/SignauxDeVue.tsx`.
+//
 // PAS DE `<Suspense>` AUTOUR DE L'ÉCRAN, ni de `loading.tsx` (F02) : une frontière
 // au-dessus de la page bloque les navigations qui ne changent que la query
 // (sélecteur de vital, période, comparaison). Les frontières restent par section.
@@ -33,6 +36,7 @@ import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { SelecteurVital } from "@/components/perf/SelecteurVital";
+import { SectionChangementsEcran, SectionEngagement, SectionPoidsVues, SectionReperes } from "@/components/perf/SignauxDeVue";
 import { CATEGORIE_VITAL, SOURCE_TRAFIC, SOURCE_VITAL } from "@/components/perf/sources";
 import { texteSeuils } from "@/lib/rating";
 import { lireVital } from "@/lib/vital-lecture";
@@ -99,6 +103,10 @@ const SOMMAIRE = [
   { ancre: "reseau", libelle: "Réseau" },
   { ancre: "fil-principal", libelle: "Fil principal" },
   { ancre: "ressources", libelle: "Ressources" },
+  { ancre: "engagement", libelle: "Engagement" },
+  { ancre: "changements-ecran", libelle: "Changements d'écran" },
+  { ancre: "poids-vues", libelle: "Poids des vues" },
+  { ancre: "reperes", libelle: "Repères" },
 ] as const;
 
 /** La première couverture incomplète d'une rangée de sources, sinon « complète ». */
@@ -628,6 +636,21 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
           )}
         </SectionErreur>
       </div>
+
+      {/* 9 — Signaux de vue du SDK web ≥ 0.6 (04/10/2026) : engagement, changements
+          d'écran SPA, poids des vues, repères du développeur. Une route ouvre son panneau. */}
+      <SectionErreur titre="Engagement">
+        <SectionEngagement lecture={ecran.engagement} plage={period.label} lienRoute={panneauRoute} />
+      </SectionErreur>
+      <SectionErreur titre="Changements d'écran">
+        <SectionChangementsEcran lecture={ecran.chargementsSpa} plage={period.label} lienRoute={panneauRoute} />
+      </SectionErreur>
+      <SectionErreur titre="Poids des vues">
+        <SectionPoidsVues lecture={ecran.poidsVues} plage={period.label} lienRoute={panneauRoute} />
+      </SectionErreur>
+      <SectionErreur titre="Repères du développeur">
+        <SectionReperes lecture={ecran.reperes} plage={period.label} />
+      </SectionErreur>
 
       {/* Panneau route (F17, § 5.2.3) : ouvert par l'URL, il lit ses propres blocs.
           Rendu APRÈS l'écran pour que l'ordre de tabulation aille de la liste au

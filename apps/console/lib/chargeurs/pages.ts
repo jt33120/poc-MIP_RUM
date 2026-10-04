@@ -8,7 +8,9 @@
 //      percentiles lus, d'où une seconde lecture ;
 //   3. la COMPARAISON DE RELEASES (§ 3.2) : B contre A, choisies dans l'URL ou par
 //      la règle (dernier déploiement déclaré…), lues sous `cmp=release`.
-// Et le panneau d'une route (`panel=route:<r>`, F17), lu avec l'écran.
+// Et le panneau d'une route (`panel=route:<r>`, F17), lu avec l'écran ; et les
+// signaux de vue du SDK web ≥ 0.6 (engagement, changements d'écran, poids des vues,
+// repères), quatre sections de plus dans le premier temps.
 import { datasetAvailability } from "../breakdowns";
 import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "../comparaison";
 import { HISTO_BUCKETS } from "../distribution";
@@ -32,6 +34,7 @@ import {
 } from "../queries";
 import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown, type BreakdownResult, type VitalsBreakdownRow } from "../queries-breakdowns";
 import { comparaisonVersions, listDeploys } from "../queries-deploys";
+import { chargementsSpaParRoute, engagementParRoute, poidsDesVuesParRoute, reperesParNom } from "../queries-engagement";
 import { longtaskSeries, worstLongtasks } from "../queries-longtasks";
 import { resourcesVue } from "../queries-resources";
 import { dimensionSupport } from "../query-compiler";
@@ -105,6 +108,10 @@ export const chargerPages = (async (principal, sp) => {
     blocages,
     pires,
     fenetresCollecte,
+    engagement,
+    chargementsSpa,
+    poidsVues,
+    reperes,
     panneauLu,
   ] = await Promise.all([
     classement.disponible ? section(() => vitalsBreakdown(f, "route", ROUTES_MAX)) : sansSection<BreakdownResult<VitalsBreakdownRow> | null>(null),
@@ -132,6 +139,10 @@ export const chargerPages = (async (principal, sp) => {
     section(() => worstLongtasks(f)),
     // Les fenêtres hors collecte : hachures « non mesuré » de la série des blocages.
     sectionFenetresCollecte(query),
+    section(() => engagementParRoute(f)),
+    section(() => chargementsSpaParRoute(f)),
+    section(() => poidsDesVuesParRoute(f)),
+    section(() => reperesParNom(f)),
     // Le panneau d'une route (F17), lu avec l'écran — jamais sans panneau.
     panneau ? lirePanneauRoute(panneau, f, query, vital) : Promise.resolve(null),
   ]);
@@ -203,6 +214,10 @@ export const chargerPages = (async (principal, sp) => {
     blocages,
     pires,
     fenetresCollecte,
+    engagement,
+    chargementsSpa,
+    poidsVues,
+    reperes,
     distributions,
     histos,
     choix,

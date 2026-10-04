@@ -73,7 +73,7 @@ fichiers change, le film doit être refait.
 
 | Affirmation à l'écran | Preuve |
 |---|---|
-| SDK web `mip-rum.js`, 24,8 Ko compressé ; rejeu en option | `docs/INTEGRATION.md` (poids gzip), `packages/rum-sdk/package.json` |
+| SDK web `mip-rum.js`, 27,1 Ko compressé ; rejeu en option | `docs/INTEGRATION.md` (poids gzip), `packages/rum-sdk/package.json` |
 | Extension Chrome, Manifest V3, en pilote | `apps/extension/manifest.json`, `docs/INTEGRATION.md` |
 | Côté serveur : agent OpenTelemetry officiel (Python, Node, Java, .NET), pas de capteur maison | `AGENTS.md`, `docs/capteurs-serveur.md` |
 | Mobile React Native « en préparation », jamais éprouvé | `packages/rum-mobile/MATRICE-RUNTIME.md` |
@@ -90,6 +90,11 @@ fichiers change, le film doit être refait.
 | Console Next.js 15 (Vercel, Francfort) ; collector et 5 autres services (Railway, Amsterdam) ; PostgreSQL 17 (Neon, Francfort) | `apps/console/package.json`, `services/README.md`, `.railway/railway.ts`, `docs/architecture/overview.md` |
 | Ingestion relayée par la console au collector ; les écrans lisent la base | `docs/architecture/overview.md`, `AGENTS.md` |
 | 70 tables, 6 services, 54 écrans, 28 routes API v1, 19 outils MCP, 550 fichiers de tests | `apps/console/lib/cartographie/donnees.ts` et `qualite.ts`, gardés par `tests/unit/cartographie.test.ts` ; les tests comptés sont des fichiers |
+
+> **Note du 04/10/2026** : les chiffres du film datent du 01/10/2026. Depuis, l'API v1 compte
+> 32 routes et le serveur MCP 23 outils (les signaux de vue du SDK web : engagement, changements
+> d'écran, poids des vues, repères) ; `apps/console/lib/cartographie/donnees.ts` fait foi. Le film
+> n'est pas refait pour autant.
 
 Le film évite volontairement certains mots, selon la règle de la vitrine
 (`tests/unit/couverture-site.test.ts`) : « souverain », « temps réel », « 100 % ».

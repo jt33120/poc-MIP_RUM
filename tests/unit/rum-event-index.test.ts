@@ -84,9 +84,12 @@ describe("flattenOtlp — rum_event_index", () => {
     for (const event of rows.eventIndex) {
       // P6.1 : la release déclarée par la resource (mip.release) suit chaque ligne
       // source ; la fixture ne déclare ni environnement ni service.
+      // Un timing porte en plus son type et sa durée (colonnes de migration-v66) :
+      // la fixture en a deux depuis les repères du SDK 0.6.0.
+      const timing = event.event_type === "timing" ? ["event_type", "timing_ms"] : [];
       expect(Object.keys(event).sort()).toEqual([
-        "app_id", "kind", "release", "route", "session_id", "source_name", "source_span_id", "ts",
-      ]);
+        "app_id", "kind", "release", "route", "session_id", "source_name", "source_span_id", "ts", ...timing,
+      ].sort());
       expect(event.release).toBe("1.4.2");
       expect(event.source_span_id).toBeTruthy();
     }

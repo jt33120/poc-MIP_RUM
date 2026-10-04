@@ -102,6 +102,7 @@ const MOTS_MIP: Record<MesureMip, RegExp> = {
   LOAF: /\bloaf\b|animation longue|animation frame/i,
   RESOURCE: /ressource|resource/i,
   API: /\bapi\b|http\.duration|\bappels?\b/i,
+  SPA_LOAD: /spa_load|\bspa\b|changements? d'écran/i,
   RAGE_CLICKS: /\brage|rageur/i,
   DEAD_CLICKS: /\bdead\b|clics? morts?/i,
   BROWSER_ERRORS: /erreur|error/i,

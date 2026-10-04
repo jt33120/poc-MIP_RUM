@@ -8,6 +8,7 @@ import { isValidEventName } from "./queries-events";
 import { binder, bucketExpr, compileScope, sessionJoin } from "./query-compiler";
 import type { AnalyticsQuery } from "./query-contract";
 import { sqlContext, type SqlContext } from "./query-sql";
+import { sqlHorsMesuresDeVue } from "./signaux-vue";
 import { EFFECTIF_MIN_HEURE, ecrireSerie } from "./correlation-serie";
 import { THRESHOLDS, type Rating } from "./rating";
 import { ALERT_METRICS, ISSUE_METRIC, metricLabel } from "./alertes-metriques";
@@ -677,7 +678,7 @@ function correlationSources(sql: SqlContext, grain: "fenetre" | "heure" | "jour"
               count(*) filter (where m.name = 'LCP')::int as rum_lcp_n
        from rum_metric m
        ${sessionJoin("m", "ms")}
-       where true${reel}
+       where true${sqlHorsMesuresDeVue("m.name")}${reel}
        group by ${groupe}
      ),
      syn as (

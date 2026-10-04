@@ -61,19 +61,22 @@ describe("errorFingerprint — famille d'erreurs", () => {
 describe("flattenOtlp v0.2 — fixture otlp-sample-v2", () => {
   const rows = flattenOtlp(fixture);
 
-  it("comptes : 5 vitals, 2 erreurs, 1 resource, 1 longtask, 2 breadcrumbs, 1 event", () => {
-    expect(rows.metrics).toHaveLength(5);
-    expect(rows.errors).toHaveLength(2);
+  // Depuis le SDK 0.6.0 (04/10/2026), la fixture porte aussi ses six signaux de vue :
+  // cinq mesures, deux repères, une erreur de worker et une de WebSocket.
+  it("comptes : 10 mesures, 4 erreurs, 1 resource, 1 longtask, 2 breadcrumbs, 3 events", () => {
+    expect(rows.metrics).toHaveLength(10);
+    expect(rows.errors).toHaveLength(4);
     expect(rows.resources).toHaveLength(1);
     expect(rows.longtasks).toHaveLength(1);
     expect(rows.breadcrumbs).toHaveLength(2);
-    expect(rows.events).toHaveLength(1);
+    expect(rows.events).toHaveLength(3);
     expect(rows.sessions).toHaveLength(1);
     expect(rows.rejected).toBe(0);
   });
 
   it("les 5 vitals sont présents et notés", () => {
-    expect(rows.metrics.map((m) => m.name).sort()).toEqual(["CLS", "FCP", "INP", "LCP", "TTFB"]);
+    const vitals = rows.metrics.filter((m) => ["CLS", "FCP", "INP", "LCP", "TTFB"].includes(m.name));
+    expect(vitals.map((m) => m.name).sort()).toEqual(["CLS", "FCP", "INP", "LCP", "TTFB"]);
     // 2650,5 ms : « à améliorer » avec les bornes web.dev [2500, 4000] (E0)
     expect(rows.metrics.find((m) => m.name === "LCP").rating).toBe("needs-improvement");
     expect(rows.metrics.find((m) => m.name === "INP").rating).toBe("good");
@@ -109,8 +112,48 @@ describe("flattenOtlp v0.2 — fixture otlp-sample-v2", () => {
     ]);
   });
 
+  it("SDK 0.6.0 : temps passé, défilement, ressources et SPA_LOAD -> rum_metric, sans note", () => {
+    const parNom = Object.fromEntries(
+      rows.metrics
+        .filter((m) => ["TIME_SPENT", "SCROLL_DEPTH", "RESOURCE_COUNT", "RESOURCE_BYTES", "SPA_LOAD"].includes(m.name))
+        .map((m) => [m.name, m]),
+    );
+    expect(Object.keys(parNom).sort()).toEqual(["RESOURCE_BYTES", "RESOURCE_COUNT", "SCROLL_DEPTH", "SPA_LOAD", "TIME_SPENT"]);
+    expect(parNom.TIME_SPENT).toMatchObject({ value: 48250, rating: null, metric_uid: "vue-fixture2-1", route: "/partners/search" });
+    expect(parNom.SCROLL_DEPTH).toMatchObject({ value: 72, metric_uid: "vue-fixture2-1" });
+    expect(parNom.RESOURCE_COUNT).toMatchObject({ value: 34, metric_uid: "vue-fixture2-1" });
+    expect(parNom.RESOURCE_BYTES).toMatchObject({ value: 612480, metric_uid: "vue-fixture2-1" });
+    expect(parNom.SPA_LOAD).toMatchObject({ value: 640, rating: null, metric_uid: "vue-fixture2-2", route: "/partners/:id" });
+  });
+
+  it("SDK 0.6.0 : repères mark:/measure: -> rum_event timing", () => {
+    const timings = rows.events.filter((e) => e.event_type === "timing");
+    expect(timings.map((e) => [e.name, e.timing_ms])).toEqual([
+      ["mark:resultats-affiches", 1840],
+      ["measure:filtrage", 88],
+    ]);
+  });
+
+  it("SDK 0.6.0 : erreurs de worker (browser_js) et de WebSocket (browser_network)", () => {
+    const [worker, ws] = rows.errors.slice(2);
+    expect(worker).toMatchObject({
+      kind: "error",
+      error_source: "browser_js",
+      message: "[Worker] Uncaught TypeError: x is not a function",
+      source: "https://demo.mip.local/workers/calcul.js",
+      lineno: 12,
+    });
+    expect(ws).toMatchObject({
+      kind: "network",
+      error_source: "browser_network",
+      error_type: "WebSocketError",
+      message: "WebSocket demo.mip.local/temps-reel : 1006",
+      source: "wss://demo.mip.local/temps-reel",
+    });
+  });
+
   it("track.partner_search -> rum_event avec props parsées (jsonb)", () => {
-    const ev = rows.events[0];
+    const ev = rows.events.find((e) => e.name === "partner_search");
     expect(ev.name).toBe("partner_search");
     expect(ev.props).toEqual({ query: "assurance habitation", results: 12 });
   });

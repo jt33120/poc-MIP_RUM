@@ -6,6 +6,7 @@ import { q } from "./db";
 import { type FiltersLike } from "./filters";
 import { bucketExpr, bucketSeriesSql, sessionJoin } from "./query-compiler";
 import { sqlContext } from "./query-sql";
+import { sqlHorsMesuresDeVue } from "./signaux-vue";
 
 export interface MapNodeRow {
   tier: "front" | "back";
@@ -158,7 +159,7 @@ export async function mapPages(f: FiltersLike): Promise<MapPageRow[]> {
        (percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'LCP'))::float8 as lcp_p75
      from rum_metric m
      ${sessionJoin("m", "s")}
-     where m.route is not null${where}
+     where m.route is not null${sqlHorsMesuresDeVue("m.name")}${where}
      group by m.route
      order by count(distinct m.session_id) desc
      limit 12`,

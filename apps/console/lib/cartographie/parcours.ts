@@ -121,7 +121,7 @@ export const PARCOURS: readonly Parcours[] = [
     etapes: [
       {
         titre: "L'assistant appelle un outil MCP",
-        texte: "Claude, Cursor ou un autre assistant appelle l'un des 19 outils du serveur MCP, avec le jeton de son utilisateur.",
+        texte: "Claude, Cursor ou un autre assistant appelle l'un des 23 outils du serveur MCP, avec le jeton de son utilisateur.",
         elements: ["assistants-ia", "mcp"],
       },
       {

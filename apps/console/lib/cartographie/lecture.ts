@@ -7,7 +7,7 @@ import type { Element, Lien } from "./types";
 
 const CONSOLE = "apps/console";
 
-/** Les 19 outils du serveur MCP (packages/mcp-tools/lib/catalogue.mjs), et ce qu'ils lisent. */
+/** Les 23 outils du serveur MCP (packages/mcp-tools/lib/catalogue.mjs), et ce qu'ils lisent. */
 const OUTILS_MCP: readonly { nom: string; role: string }[] = [
   { nom: "mip_rum_list_apps", role: "/apps : les applications du jeton" },
   { nom: "mip_rum_get_overview", role: "/overview : la vue d'ensemble" },
@@ -27,6 +27,10 @@ const OUTILS_MCP: readonly { nom: string; role: string }[] = [
   { nom: "mip_rum_get_trends", role: "/trends : les tendances" },
   { nom: "mip_rum_list_detections", role: "/detections : les constats détectés" },
   { nom: "mip_rum_get_error_overrepresentation", role: "/errors/{empreinte}/overrepresentation : où l'erreur se concentre" },
+  { nom: "mip_rum_get_engagement", role: "/engagement : temps passé et défilement par route" },
+  { nom: "mip_rum_get_spa_loads", role: "/spa-loads : les changements d'écran d'une SPA" },
+  { nom: "mip_rum_get_page_weight", role: "/page-weight : le poids des vues par route" },
+  { nom: "mip_rum_list_user_timings", role: "/user-timings : les repères du développeur" },
   { nom: "mip_rum_query_explorer", role: "POST /explorer/query : une requête de l'Explorer" },
 ];
 
@@ -247,7 +251,7 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
     famille: "interface",
     zone: "vercel",
     titre: "API v1",
-    sousTitre: "28 routes · lecture au jeton",
+    sousTitre: "32 routes · lecture au jeton",
     resume:
       "L'API REST de lecture des mesures, pour les machines : scripts, CI, partenaires, et le serveur MCP. Les lectures au jeton sont relayées au service api.",
     etiquettes: ["OpenAPI 3.0", "Swagger", "CORS en liste"],
@@ -268,7 +272,7 @@ export const ELEMENTS_RAILWAY_LECTURE: readonly Element[] = [
     famille: "service",
     zone: "railway",
     titre: "mcp",
-    sousTitre: "19 outils en lecture pour les agents IA",
+    sousTitre: "23 outils en lecture pour les agents IA",
     resume:
       "Le serveur MCP : il expose l'API v1 à un assistant IA sous forme d'outils en lecture seule. Il n'a pas accès à la base, et relaie le jeton de l'appelant.",
     etiquettes: ["stdio · HTTP", "lecture seule", "0 accès base"],

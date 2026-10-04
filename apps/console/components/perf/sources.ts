@@ -39,3 +39,19 @@ export const SOURCE_AVIS =
 
 export const SOURCE_MOBILE =
   "SDK React Native MIP RUM (couche JavaScript) : sessions React Native commencées sur la plage.";
+
+// Signaux de vue du SDK web ≥ 0.6 (04/10/2026) : une mesure par vue, envoyée en cumul.
+export const SOURCE_TEMPS_PASSE =
+  "SDK web MIP RUM ≥ 0.6 : temps pendant lequel la vue était visible à l'écran (document.visibilityState), cumulé jusqu'à la fin de la vue ; une mesure par vue (TIME_SPENT).";
+
+export const SOURCE_DEFILEMENT =
+  "SDK web MIP RUM ≥ 0.6 : profondeur maximale atteinte sur la vue, (haut visible + hauteur visible) / hauteur du contenu défilant, conteneur défilant de la page compris ; 100 % pour une page qui ne défile pas (SCROLL_DEPTH).";
+
+export const SOURCE_SPA_LOAD =
+  "SDK web MIP RUM ≥ 0.6 : d'un changement de route (pushState, replaceState, popstate) jusqu'au calme de la page — 100 ms sans mutation du DOM ni requête en cours ; abandonné sur un clic, une touche ou une nouvelle navigation (SPA_LOAD).";
+
+export const SOURCE_POIDS_VUE =
+  "SDK web MIP RUM ≥ 0.6 : ressources chargées pendant la vue (Resource Timing, envois MIP exclus) et somme de leurs octets transférés (transferSize) ; une ressource d'une autre origine sans Timing-Allow-Origin compte 0 octet (RESOURCE_COUNT, RESOURCE_BYTES).";
+
+export const SOURCE_REPERES =
+  "SDK web MIP RUM ≥ 0.6 : performance.mark (instant depuis le début de la vue) et performance.measure (durée) relevés automatiquement, repères des outils écartés ; et les timings envoyés par addTiming.";

@@ -1,6 +1,7 @@
-// Voies d'erreur opt-in (`captureErrors`) : console, ressources, CSP (la voie réseau
-// vit dans apispans.ts). Opt-in parce qu'elles changent le volume d'une app du jour
-// au lendemain. Toutes passent par `ErrorCollector.report`, jamais par le réseau.
+// Voies d'erreur de `captureErrors` : console, ressources, CSP sur option (la voie
+// réseau vit dans apispans.ts), parce qu'elles changent le volume d'une app du jour
+// au lendemain ; workers et WebSockets par défaut, rares et toujours des pannes.
+// Toutes passent par `ErrorCollector.report`, jamais par le réseau.
 import { MIP_UI_ATTR } from "./breadcrumbs";
 import { boundedName } from "./event-context";
 import type { ErrorCollector } from "./errors";
@@ -295,4 +296,113 @@ export function initCspErrors(errors: ErrorCollector, denyOrigins: readonly stri
     nonSupportees.push("ReportingObserver");
   }
   return nonSupportees;
+}
+
+// ═══════════════════════════════════ Workers ══════════════════════════════════
+
+/** « Uncaught TypeError: x » → « TypeError » ; le worker ne transmet que ce texte. */
+function typeDepuisMessage(message: string): string {
+  return /^(?:Uncaught )?([A-Z][A-Za-z]*(?:Error|Exception))\b/.exec(message)?.[1] ?? "Error";
+}
+
+/**
+ * Erreur non interceptée dans un Web Worker : elle n'atteint jamais `window.onerror`,
+ * seulement l'événement `error` de l'objet Worker. Les constructeurs sont remplacés
+ * par une sous-classe (instanceof et constantes intacts) ; rend les API absentes.
+ */
+export function initWorkerErrors(errors: ErrorCollector): string[] {
+  if (typeof window === "undefined") return ["Worker", "SharedWorker"];
+  const absentes: string[] = [];
+  const racine = window as unknown as Record<string, unknown>;
+  for (const nom of ["Worker", "SharedWorker"]) {
+    const Natif = racine[nom] as (new (url: string | URL, options?: unknown) => EventTarget) | undefined;
+    if (typeof Natif !== "function") {
+      absentes.push(nom);
+      continue;
+    }
+    racine[nom] = class extends Natif {
+      constructor(url: string | URL, options?: unknown) {
+        super(url, options);
+        const script = urlNettoyee(String(url));
+        try {
+          this.addEventListener("error", (event: Event) => {
+            const e = event as Partial<ErrorEvent>;
+            // Sans message, l'événement est un échec de chargement du script.
+            const texte = typeof e.message === "string" && e.message
+              ? e.message.slice(0, 1000)
+              : `Échec de chargement ${script?.cible ?? "inconnu"}`;
+            const fichier = typeof e.filename === "string" && e.filename ? urlNettoyee(e.filename) : script;
+            errors.report("workers", {
+              "mip.error_kind": "error",
+              "exception.type": typeDepuisMessage(texte),
+              // Même préfixe pour SharedWorker : la console filtre sur « [Worker] ».
+              "exception.message": `[Worker] ${texte}`,
+              ...(fichier ? { "mip.error_source": fichier.source } : {}),
+              ...(entierPositif(e.lineno) != null ? { "mip.error_lineno": e.lineno as number } : {}),
+              ...(entierPositif(e.colno) != null ? { "mip.error_colno": e.colno as number } : {}),
+            });
+          });
+        } catch {
+          /* la capture ne casse jamais la création du worker */
+        }
+      }
+    };
+  }
+  return absentes;
+}
+
+// ═════════════════════════════════ WebSockets ═════════════════════════════════
+
+/** Fermetures qui disent une panne : coupure sans trame (1006), protocole, données, serveur, TLS. */
+export const FERMETURES_ANORMALES: ReadonlySet<number> = new Set([1002, 1003, 1006, 1007, 1008, 1009, 1010, 1011, 1015]);
+
+/** `ws(s)://hôte/chemin` sans requête ni identifiants ; `origin` en http(s) pour la liste d'exclusion. */
+export function cibleWebSocket(brute: string): { source: string; cible: string; origin: string } | null {
+  try {
+    const u = new URL(brute, location.href);
+    const http = u.protocol === "wss:" || u.protocol === "https:" ? "https:" : u.protocol === "ws:" || u.protocol === "http:" ? "http:" : null;
+    if (!http) return null;
+    const chemin = u.pathname.slice(0, CHEMIN_MAX);
+    return { source: `${u.protocol}//${u.host}${chemin}`, cible: u.host + chemin, origin: `${http}//${u.host}` };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * WebSocket en erreur ou fermée anormalement → erreur réseau, une par connexion :
+ * l'événement `error` est toujours suivi d'un `close`, qui porte le code. Jamais
+ * l'ingestion MIP ; rend les API absentes.
+ */
+export function initWebSocketErrors(errors: ErrorCollector, denyOrigins: readonly string[]): string[] {
+  if (typeof window === "undefined") return ["WebSocket"];
+  const racine = window as unknown as Record<string, unknown>;
+  const Natif = racine.WebSocket as (new (url: string | URL, protocols?: string | string[]) => EventTarget) | undefined;
+  if (typeof Natif !== "function") return ["WebSocket"];
+  racine.WebSocket = class extends Natif {
+    constructor(url: string | URL, protocols?: string | string[]) {
+      super(url, protocols);
+      const cible = cibleWebSocket(String(url));
+      if (!cible || denyOrigins.includes(cible.origin)) return;
+      let erreur = false;
+      try {
+        this.addEventListener("error", () => {
+          erreur = true;
+        });
+        this.addEventListener("close", (event: Event) => {
+          const code = (event as CloseEvent).code;
+          if (!erreur && !FERMETURES_ANORMALES.has(code)) return;
+          errors.report("websockets", {
+            "mip.error_kind": "network",
+            "exception.type": "WebSocketError",
+            "exception.message": `WebSocket ${cible.cible} : ${typeof code === "number" ? code : "erreur"}`,
+            "mip.error_source": cible.source,
+          });
+        });
+      } catch {
+        /* la capture ne casse jamais la connexion de l'app */
+      }
+    }
+  };
+  return [];
 }

@@ -1,6 +1,6 @@
 # Inventaire de la console, pour la piste C
 
-> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-10-01, sur `HEAD`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
+> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-10-04, sur `HEAD`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
 
 ## En chiffres
 
@@ -9,11 +9,11 @@
 | Écrans (`page.tsx`) | 60 | **47** |
 | Fichiers d'actions serveur (`"use server"`) | 20 (58 actions) | **18** |
 | Actions déclarées dans un écran | 0 | — |
-| Routes (`route.ts`) | 46 | **37** |
+| Routes (`route.ts`) | 50 | **37** |
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
-| Modules `lib/queries*.ts` | 49 (217 fonctions exportées) | — |
-| Sections `lire()` (appels) | 308 | — |
+| Modules `lib/queries*.ts` | 50 (221 fonctions exportées) | — |
+| Sections `lire()` (appels) | 312 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 5 / 0 | — |
 | Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 55 | — |
 | Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 45 | **45** / 47 |
@@ -70,7 +70,7 @@
 | `/map` | C4 | **oui** | map | collecte, deploys, explorer, map, mobile, sessions, tracing | 6 | noeud | oui |
 | `/mobile` | C3 | **oui** | mobile | queries, accounts, alerting, collecte, dashboards, deploys, dsar, errors, escalade, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, tracing, uptime, v2 | 8 | — | oui |
 | `/` | C4 | **oui** | detections-accueil, overview | queries, breakdowns, collecte, deploys, detections, errors, events, explorer, grid, heatmap, mobile, sessions, tracing, v2 | 38 | — | oui |
-| `/pages` | C4 | **oui** | pages | queries, breakdowns, collecte, deploys, errors, events, explorer, longtasks, mobile, resources, sessions, tracing, v2 | 22 | route | oui |
+| `/pages` | C4 | **oui** | pages | queries, breakdowns, collecte, deploys, engagement, errors, events, explorer, longtasks, mobile, resources, sessions, tracing, v2 | 26 | route | oui |
 | `/paths` | C5 | **oui** | paths | queries, collecte, deploys, explorer, funnel, mobile, paths, sessions, tracing | 9 | — | oui |
 | `/presentation/a-faire` | à classer | non | — | — | — | — | oui |
 | `/presentation/graphe-technique` | à classer | **oui** | — | planifie | — | — | oui |
@@ -143,6 +143,7 @@
 | `/api/v1/deploys` | POST | jeton ou session | **oui** | collector, jetons de CI (C11) |
 | `/api/v1/detections` | GET, OPTIONS | — | non | api (P4, relais #292) |
 | `/api/v1/docs` | GET | — | non | api (P4, relais #292) |
+| `/api/v1/engagement` | GET, OPTIONS | — | non | api (P4, relais #292) |
 | `/api/v1/errors/[fingerprint]/overrepresentation` | GET, OPTIONS | — | non | api (P4, relais #292) |
 | `/api/v1/errors/[fingerprint]` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/errors` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
@@ -158,12 +159,15 @@
 | `/api/v1/mobile/summary` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/openapi` | GET, OPTIONS | — | non | api (P4, relais #292) |
 | `/api/v1/overview` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
+| `/api/v1/page-weight` | GET, OPTIONS | — | non | api (P4, relais #292) |
 | `/api/v1/pages` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/sessions/[id]` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/sessions` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
+| `/api/v1/spa-loads` | GET, OPTIONS | — | non | api (P4, relais #292) |
 | `/api/v1/tracing` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/api/v1/trends` | GET, OPTIONS | — | non | api (P4, relais #292) |
+| `/api/v1/user-timings` | GET, OPTIONS | — | non | api (P4, relais #292) |
 | `/api/v1/vitals` | GET, OPTIONS | jeton ou session (lecture) | **oui** | api (P4, relais #292) |
 | `/demo` | GET | émet la session | **oui** | console-api (C1 identité) |
 | `/logout` | GET, POST | session | **oui** | console-api (C1 identité) |
@@ -203,6 +207,7 @@
 | `lib/queries-detections.ts` | 2 | 1 |
 | `lib/queries-dimensions.ts` | 1 | 0 |
 | `lib/queries-dsar.ts` | 9 | 18 |
+| `lib/queries-engagement.ts` | 4 | 1 |
 | `lib/queries-errors.ts` | 13 | 26 |
 | `lib/queries-escalade.ts` | 6 | 18 |
 | `lib/queries-events.ts` | 3 | 31 |
