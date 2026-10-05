@@ -20,6 +20,8 @@ import { paramReader, requestedAppOf, resolveScope } from "../query-contract";
 import type { FilterProblem } from "../filtres-ecran";
 import { configInstallation, sondeInstallation } from "../queries-customers";
 import { domainesExtensionDe } from "../queries-extension-scope";
+import { listReadTokens } from "../queries-read-tokens";
+import { listSourcemapTokens } from "../queries-sourcemap-tokens";
 import { section, type Chargeur } from "./commun";
 
 export const chargerInstaller = (async (principal, sp) => {
@@ -36,13 +38,25 @@ export const chargerInstaller = (async (principal, sp) => {
   const app = scope.value.requestedApp;
   // Toutes les applications à la fois n'ont pas de sens ici : on installe UNE application.
   if (!app) return { etat: "sans_app" } as const;
-  const [config, domaines, sonde] = await Promise.all([
+  const administrable =
+    !!principal && principal.role === "admin" && !principal.demo && (principal.apps === null || principal.apps.includes(app));
+  const [config, domaines, sonde, jetons] = await Promise.all([
     section(() => configInstallation(app)),
     section(() => domainesExtensionDe(app)),
     section(() => sondeInstallation(app)),
+    // Les échéances des jetons (kit d'installation) : l'affaire de l'administrateur de
+    // l'application, qui seul peut les renouveler. Les autres n'en lisent rien.
+    section(async () => {
+      if (!administrable) return null;
+      const [ci, lecture] = await Promise.all([listSourcemapTokens(app), listReadTokens()]);
+      return [
+        ...ci.map((t) => ({ nom: t.name, nature: t.scope === "deploys:write" ? "déploiements" : "source maps", expiresAt: t.expiresAt, revokedAt: t.revokedAt })),
+        ...lecture
+          .filter((t) => t.app_id === app && t.expires_at !== null)
+          .map((t) => ({ nom: t.label ?? `jeton n° ${t.id}`, nature: "lecture", expiresAt: t.expires_at as string, revokedAt: t.revoked_at })),
+      ];
+    }),
   ]);
   if (config.ok && config.data === null) return { etat: "introuvable", app } as const;
-  const administrable =
-    !!principal && principal.role === "admin" && !principal.demo && (principal.apps === null || principal.apps.includes(app));
-  return { etat: "ok", app, administrable, config, domaines, sonde } as const;
+  return { etat: "ok", app, administrable, config, domaines, sonde, jetons } as const;
 }) satisfies Chargeur<unknown>;

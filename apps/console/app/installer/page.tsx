@@ -19,6 +19,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { InfoTip } from "@/components/InfoTip";
 import { PageHeader } from "@/components/PageHeader";
 import { ChoixParcours } from "@/components/installer/ChoixParcours";
+import { KitInstallation } from "@/components/installer/KitInstallation";
 import { ParcoursExtension, ParcoursServeur, ParcoursSnippet, type ContexteParcours } from "@/components/installer/Parcours";
 import { ParcoursInstallation } from "@/components/installer/ParcoursInstallation";
 import { TableauPersonnalisation } from "@/components/installer/TableauPersonnalisation";
@@ -42,6 +43,7 @@ import {
   type Parcours,
   type SondeInstallation,
 } from "@/lib/installer";
+import { jetonsARenouveler, type JetonEcheance } from "@/lib/kit-installation";
 import { buildInjectionArtifacts, buildSnippet } from "@/lib/onboarding";
 import { promptExtension, promptSdk, promptServeur } from "@/lib/prompts-ia";
 import { recettesAgentsOtel } from "@/lib/recettes-agents-otel";
@@ -74,7 +76,7 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
     );
   }
 
-  const { app, administrable, config, domaines, sonde } = ecran;
+  const { app, administrable, config, domaines, sonde, jetons } = ecran;
   // Sans sa configuration, la page n'a rien de juste à préremplir. (Une application
   // absente du registre est déjà rendue « introuvable » par le chargeur.)
   const c = config.ok ? config.data : null;
@@ -150,6 +152,12 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
     }),
     serveur: recettes.agents.map((r) => ({ id: r.id, langage: r.titre.replace(/ \(.*\)$/, ""), prompt: promptServeur(r, c.name) })),
   };
+  // Le kit d'installation : les jetons proches de l'échéance (administrateur seul),
+  // relus à chaque rendu — le préavis se compte depuis maintenant.
+  const aRenouveler =
+    jetons.ok && jetons.data
+      ? jetonsARenouveler(jetons.data as JetonEcheance[], Date.now()).map((j) => ({ nom: j.nom, nature: j.nature, joursRestants: j.joursRestants }))
+      : null;
   const contexte = (p: Parcours): ContexteParcours => ({
     app,
     nomSecret: cleDe(app),
@@ -224,6 +232,28 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
               ),
               serveur: <ParcoursServeur ctx={contexte("serveur")} recettes={recettes} promptsIA={prompts.serveur} />,
             }}
+          />
+        </section>
+
+        {/* « À faire » X11 : ce que le code de suivi ne règle pas seul — consentement, rejeu
+            et masquage, données personnelles, échantillonnage, version et source maps,
+            mention de confidentialité —, écrit pour le client à ses valeurs. */}
+        <section className="mt-4" aria-labelledby="titre-kit">
+          <h2 id="titre-kit" className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-soft">
+            Réglages, conformité et source maps
+          </h2>
+          <KitInstallation
+            app={app}
+            nomSecret={cleDe(app)}
+            nomSite={c.name}
+            sdkUrl={sdkUrl}
+            endpoint={endpoint}
+            clientId={c.client_id}
+            urlSourcemaps={`${proto}://${host}/api/sourcemaps`}
+            retentionJours={c.retention_days}
+            sessions24h={lueSonde ? lueSonde.sessions_sdk_24h : null}
+            jetons={aRenouveler}
+            administrable={administrable}
           />
         </section>
       </div>

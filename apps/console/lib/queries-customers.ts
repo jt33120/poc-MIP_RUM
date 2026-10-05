@@ -73,6 +73,8 @@ export interface ConfigInstallation {
   suspendue: boolean;
   has_key: boolean;
   allowed_origins: string[];
+  /** Conservation des données, en jours (`app_registry.retention_days`, 30 par défaut) : la mention de confidentialité la cite. */
+  retention_days: number;
 }
 
 /**
@@ -85,7 +87,8 @@ export async function configInstallation(appId: string): Promise<ConfigInstallat
     `select name, client_id, active,
             (ingestion_suspended_at is not null) as suspendue,
             (api_key_hash is not null) as has_key,
-            coalesce(allowed_origins, '{}') as allowed_origins
+            coalesce(allowed_origins, '{}') as allowed_origins,
+            coalesce(retention_days, 30)::int as retention_days
      from app_registry where app_id = $1`,
     [appId],
   );
