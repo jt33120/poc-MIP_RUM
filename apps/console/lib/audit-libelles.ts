@@ -49,6 +49,7 @@ const LIBELLES: Record<string, string> = {
   app_rotate_key: "Nouvelle clé d'API générée",
   app_provision_key: "Clé d'API attribuée",
   app_update_origins: "Domaines autorisés modifiés",
+  app_attest_replay: "Base légale du rejeu attestée",
   extension_scope_create: "Domaine de l'extension enregistré",
   extension_scope_set_active: "Domaine de l'extension activé ou désactivé",
   extension_scope_toggle: "Domaine de l'extension activé ou désactivé",

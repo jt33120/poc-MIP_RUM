@@ -21,7 +21,7 @@ import {
   supprimerEtapeEscalade,
   supprimerSlo,
 } from "./alertes";
-import { activerApplication, creerApplication, creerSite, majOrigines, renouvelerCle } from "./applications";
+import { activerApplication, attesterRejeu, creerApplication, creerSite, majOrigines, renouvelerCle } from "./applications";
 import { activerCompte, creerCompte, reinitialiserMotDePasse } from "./comptes";
 import { commenterIssue, trierGroupe, trierIssue } from "./issues";
 import { activerObjectif, creerObjectif, supprimerObjectif } from "./objectifs";
@@ -101,6 +101,7 @@ export const COMMANDES_CONSOLE = {
   renouvelerCle,
   activerApplication,
   majOrigines,
+  attesterRejeu,
   creerJetonLecture,
   revoquerJetonLecture,
   creerJetonSourcemap,

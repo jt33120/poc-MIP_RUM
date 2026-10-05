@@ -37,6 +37,8 @@ import {
   type OutilConsentement,
   type ReglagesKit,
 } from "@/lib/kit-installation";
+import { BASES_LEGALES_REJEU, LIBELLE_BASE_LEGALE, type AttestationRejeu } from "@/lib/attestation-rejeu";
+import { fmtInstant } from "@/lib/format";
 import { REPERE_CLE_API } from "@/lib/recettes-agents-otel";
 
 export interface JetonARenouveler {
@@ -59,6 +61,63 @@ export interface ProprietesKit {
   /** Seulement pour l'administrateur de l'application : les jetons proches de l'échéance. */
   jetons: JetonARenouveler[] | null;
   administrable: boolean;
+  /** « À faire » X10 : la dernière base légale du rejeu attestée, `null` si aucune. */
+  attestation: AttestationRejeu | null;
+  /** La server action qui inscrit une attestation (administrateur de l'application seul). */
+  attester: (fd: FormData) => Promise<void>;
+}
+
+/** « À faire » X10 : avant d'activer le rejeu chez lui, le gestionnaire en atteste la base légale. */
+function AttestationRejeuBloc({ p, taux, masquage }: { p: ProprietesKit; taux: number; masquage: NiveauMasquage }) {
+  const a = p.attestation;
+  return (
+    <div className="grid min-w-0 gap-2" data-testid="kit-attestation">
+      {a ? (
+        <p data-testid="kit-attestation-etat">
+          Base légale attestée le <span className="font-medium text-ink">{fmtInstant(a.le, { annee: true })}</span>
+          {a.par ? ` par ${a.par}` : ""} : {a.base ? LIBELLE_BASE_LEGALE[a.base].toLowerCase() : "base non lue"}
+          {a.taux ? ` · rejeu à ${pourcent(Number(a.taux))}` : ""}
+          {a.masquage ? ` · masquage « ${a.masquage} »` : ""}.
+        </p>
+      ) : (
+        <CadreEtat ton="attention" role="status" compact testId="kit-attestation-manquante">
+          Aucune base légale attestée pour le rejeu de {p.app}. Le rejeu enregistre les visites : il demande une base légale, que le
+          gestionnaire de l&apos;application atteste ici avant de l&apos;activer.
+        </CadreEtat>
+      )}
+      {p.administrable ? (
+        <form action={p.attester} className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+          <input type="hidden" name="app" value={p.app} />
+          <input type="hidden" name="taux" value={String(taux)} />
+          <input type="hidden" name="masquage" value={masquage} />
+          <Reglage libelle="Base légale">
+            <select name="base" className="field w-full min-w-0" defaultValue="consentement" data-testid="kit-attestation-base">
+              {BASES_LEGALES_REJEU.map((b) => (
+                <option key={b} value={b}>
+                  {LIBELLE_BASE_LEGALE[b]}
+                </option>
+              ))}
+            </select>
+          </Reglage>
+          <Reglage libelle="Note (facultatif)">
+            <input name="note" maxLength={500} className="field w-full min-w-0" placeholder="Référence du registre, du bandeau…" />
+          </Reglage>
+          <label className="flex items-start gap-2 text-xs sm:col-span-3">
+            <input type="checkbox" required className="mt-0.5 shrink-0" data-testid="kit-attestation-case" />
+            <span className="min-w-0">
+              J&apos;atteste que {p.nomSite} dispose de cette base légale pour enregistrer {pourcent(taux)} des sessions en rejeu, masquage «{" "}
+              {masquage} ». L&apos;attestation est inscrite au journal, à mon nom.
+            </span>
+          </label>
+          <button type="submit" className="btn-accent sm:col-span-3 sm:justify-self-start" data-testid="kit-attestation-envoyer">
+            Attester
+          </button>
+        </form>
+      ) : (
+        <p>L&apos;attestation se fait par l&apos;administrateur de l&apos;application, sur cette page.</p>
+      )}
+    </div>
+  );
 }
 
 function Reglage({ libelle, aide, children }: { libelle: string; aide?: string; children: ReactNode }) {
@@ -204,7 +263,7 @@ export function KitInstallation(p: ProprietesKit) {
         </div>
       </div>
 
-      <Bloc titre="1 · Le fichier de configuration" resume={`${FICHIER_INIT}, servi par votre site à côté de ses pages`} ouvert testId="kit-bloc-init">
+      <Bloc titre="Le fichier de configuration" resume={`${FICHIER_INIT}, servi par votre site à côté de ses pages`} ouvert testId="kit-bloc-init">
         <p>Dans l&apos;en-tête de chaque page, à la place du code de suivi de l&apos;onglet « SDK JavaScript » :</p>
         <CopyBlock code={balisesEnTete(p.sdkUrl)} />
         <p>
@@ -216,7 +275,18 @@ export function KitInstallation(p: ProprietesKit) {
       </Bloc>
 
       {rejeu && (
-        <Bloc titre="2 · Rejeu : marquer les zones" resume="facultatif : montrer un menu, exclure un bloc sensible" testId="kit-bloc-zones">
+        <Bloc
+          titre="Rejeu : base légale"
+          resume={p.attestation ? "attestée" : "à attester avant d'activer le rejeu"}
+          ouvert={!p.attestation}
+          testId="kit-bloc-attestation"
+        >
+          <AttestationRejeuBloc p={p} taux={r.rejeu} masquage={r.masquage} />
+        </Bloc>
+      )}
+
+      {rejeu && (
+        <Bloc titre="Rejeu : marquer les zones" resume="facultatif : montrer un menu, exclure un bloc sensible" testId="kit-bloc-zones">
           <p>
             Sous « {LIBELLE_MASQUAGE[r.masquage]} », deux classes affinent ce que le rejeu montre. Les champs de saisie restent masqués quoi
             qu&apos;il arrive.
@@ -226,7 +296,7 @@ export function KitInstallation(p: ProprietesKit) {
       )}
 
       {r.release && (
-        <Bloc titre={`${rejeu ? 3 : 2} · Version déployée et source maps`} resume="une erreur lue dans votre code source, pas dans le bundle minifié" testId="kit-bloc-sourcemaps">
+        <Bloc titre="Version déployée et source maps" resume="une erreur lue dans votre code source, pas dans le bundle minifié" testId="kit-bloc-sourcemaps">
           <p>
             <code className="chip-mono">{reglageBuild.fichier}</code> : produire les maps sans les publier.
           </p>
@@ -263,7 +333,7 @@ export function KitInstallation(p: ProprietesKit) {
       )}
 
       <Bloc
-        titre={`${1 + (rejeu ? 1 : 0) + (r.release ? 1 : 0) + 1} · Mention de confidentialité`}
+        titre="Mention de confidentialité"
         resume={`à ajouter à la politique de ${p.nomSite} ; suit vos réglages`}
         testId="kit-bloc-mention"
       >

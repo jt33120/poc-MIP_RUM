@@ -21,6 +21,7 @@ import { gzipSync } from "node:zlib";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { COMMANDES, ECRANS, ECRANS_ADMIN, ECRANS_SESSION, operation } from "@mip/console-contract";
+import { lireDetailAttestation, motifAttestation } from "../../apps/console/lib/attestation-rejeu";
 import { poolsSousRoles, sousRole } from "../fixtures/roles-c13";
 import {
   chargerTrousseau,
@@ -246,6 +247,7 @@ const CORPS: Record<string, unknown> = {
   "apps.createSite": { name: "authz c9 site", url: "https://authz-c9-site.exemple.fr", mode: "sdk" },
   "apps.setActive": { active: true },
   "apps.updateOrigins": { origins: "https://authz.exemple.fr" },
+  "apps.attestReplay": { base: "consentement", taux: "0.1", masquage: "all", note: "matrice" },
   "readTokens.create": { label: "authz" },
   "sourcemapTokens.create": { name: "authz" },
   "extensionScopes.create": { domain: "authz-a.exemple.fr" },
@@ -861,6 +863,14 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
     const cle = await appeler("renouvelerCle", "admin", { app: A });
     expect(cle).toMatchObject({ etat: "ok", app: A });
     expect(String(cle.cle)).toMatch(/^mip_[0-9a-f]{32}$/);
+    // X10 — la base légale du rejeu : attestée par l'administrateur de l'app, lue par l'écran.
+    expect(await appeler("attesterRejeu", "admin", { app: A, corps: { base: "consentement", taux: "0.1", masquage: "all", note: "C9" } })).toEqual({ etat: "ok" });
+    const attestee = await pool.query<{ user_email: string; detail: string }>(
+      "select user_email, detail from audit_log where action = 'app.attest_replay' and detail like $1 order by id desc limit 1",
+      [motifAttestation(A)],
+    );
+    expect(attestee.rows[0].user_email).toBe(EMAILS.admin);
+    expect(lireDetailAttestation(attestee.rows[0].detail)).toEqual({ base: "consentement", taux: "0.1", masquage: "all", note: "C9" });
     // Un jeton d'accès et un jeton de CI de l'app A : créés, puis révoqués dans elle.
     const lecture = await appeler("creerJetonLecture", "admin", { app: A, corps: { label: "C9" } });
     const idLecture = (await pool.query<{ id: string }>("select id::text as id from read_tokens where app_id = $1 and label = 'C9'", [A])).rows[0].id;
@@ -913,6 +923,7 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
       "user.set_active",
       "user.reset_password",
       "app.rotate_key",
+      "app.attest_replay",
       "read_token.create",
       "read_token.revoke",
       "sourcemap_token.create",

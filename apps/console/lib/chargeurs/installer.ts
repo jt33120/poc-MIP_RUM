@@ -20,6 +20,7 @@ import { paramReader, requestedAppOf, resolveScope } from "../query-contract";
 import type { FilterProblem } from "../filtres-ecran";
 import { configInstallation, sondeInstallation } from "../queries-customers";
 import { domainesExtensionDe } from "../queries-extension-scope";
+import { derniereAttestationRejeu } from "../queries-attestation-rejeu";
 import { listReadTokens } from "../queries-read-tokens";
 import { listSourcemapTokens } from "../queries-sourcemap-tokens";
 import { section, type Chargeur } from "./commun";
@@ -40,7 +41,7 @@ export const chargerInstaller = (async (principal, sp) => {
   if (!app) return { etat: "sans_app" } as const;
   const administrable =
     !!principal && principal.role === "admin" && !principal.demo && (principal.apps === null || principal.apps.includes(app));
-  const [config, domaines, sonde, jetons] = await Promise.all([
+  const [config, domaines, sonde, jetons, attestation] = await Promise.all([
     section(() => configInstallation(app)),
     section(() => domainesExtensionDe(app)),
     section(() => sondeInstallation(app)),
@@ -56,7 +57,9 @@ export const chargerInstaller = (async (principal, sp) => {
           .map((t) => ({ nom: t.label ?? `jeton n° ${t.id}`, nature: "lecture", expiresAt: t.expires_at as string, revokedAt: t.revoked_at })),
       ];
     }),
+    // « À faire » X10 : la dernière base légale du rejeu attestée pour l'application.
+    section(() => derniereAttestationRejeu(app)),
   ]);
   if (config.ok && config.data === null) return { etat: "introuvable", app } as const;
-  return { etat: "ok", app, administrable, config, domaines, sonde, jetons } as const;
+  return { etat: "ok", app, administrable, config, domaines, sonde, jetons, attestation } as const;
 }) satisfies Chargeur<unknown>;

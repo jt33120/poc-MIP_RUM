@@ -424,6 +424,9 @@ export const COMMANDES = Object.freeze({
   renouvelerCle: commande("apps.rotateKey", "POST", "/v1/app/key-rotations"),
   activerApplication: commande("apps.setActive", "PUT", "/v1/app/active"),
   majOrigines: commande("apps.updateOrigins", "PUT", "/v1/app/origins"),
+  // « À faire » X10 : le gestionnaire de l'application atteste la base légale du
+  // rejeu de session avant de l'activer chez lui. Une ligne au journal, rien d'autre.
+  attesterRejeu: commande("apps.attestReplay", "POST", "/v1/app/replay-attestations"),
   creerJetonLecture: commande("readTokens.create", "POST", "/v1/read-tokens"),
   revoquerJetonLecture: commande<{ id: string }>("readTokens.revoke", "DELETE", "/v1/read-tokens/{id}"),
   creerJetonSourcemap: commande("sourcemapTokens.create", "POST", "/v1/sourcemap-tokens"),
