@@ -95,6 +95,23 @@ jobs:
       - name: Tests unitaires (vitest)
         run: pnpm test:unit
 
+      # ADR-0016 : la sortie de l'émetteur OTLP du SDK, relue par le collecteur
+      # OpenTelemetry OFFICIEL (version figée). Sans lui, la seule relecture de
+      # cette sortie était le décodeur de MIP.
+      - name: Conformité OTLP — collecteur OpenTelemetry officiel
+        run: |
+          mkdir -p /tmp/otelcol && chmod 777 /tmp/otelcol
+          docker run -d --rm --name otelcol -p 4318:4318 \
+            -v "$PWD/tests/fixtures/otelcol-conformite.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+            -v /tmp/otelcol:/sortie otel/opentelemetry-collector-contrib:0.161.0
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null -X POST -H 'content-type: application/json' -d '{}' http://localhost:4318/v1/traces && break
+            sleep 1
+          done
+          MIP_OTELCOL_URL=http://localhost:4318 MIP_OTELCOL_SORTIE=/tmp/otelcol/traces.json \
+            pnpm exec vitest run tests/unit/otlp-collecteur-officiel.test.ts
+          docker stop otelcol
+
   # R9 — CONSTRUIRE LE DÉPÔT COMME UN NOUVEL ARRIVANT LE FERAIT.
   #
   # `pnpm -r build` (le script racine `build`) échouait sur un dépôt fraîchement
