@@ -12,6 +12,10 @@
 // Relevé du 02/10/2026, après la nuit du 01/10 : H8 (escalade par niveaux, pas
 // d'astreinte) et H9 (veille du scheduler par le notifier) réécrites par leurs lots ;
 // les citations des fichiers que la nuit a modifiés (README du scheduler) recalées.
+//
+// Relevé du 05/10/2026, veille de la réunion : H14 (l'émetteur OTLP du SDK, ADR-0016,
+// proposé à la validation de l'équipe), H15 (où le SDK est servi) et X9 (le backend
+// d'UTI, encore sur l'ancien capteur maison).
 
 export interface Hypothese {
   id: string;
@@ -25,7 +29,7 @@ export interface Hypothese {
   sources: readonly string[];
 }
 
-export const RELEVE_HYPOTHESES = "02/10/2026";
+export const RELEVE_HYPOTHESES = "05/10/2026";
 
 export const HYPOTHESES: readonly Hypothese[] = [
   {
@@ -154,6 +158,31 @@ export const HYPOTHESES: readonly Hypothese[] = [
     production: "Un domaine de MIP, et un échantillonnage réglé sur le trafic de chaque site.",
     sources: ["docs/architecture/overview.md:124", "docs/INTEGRATION.md:193"],
   },
+  {
+    id: "H14",
+    titre: "Le SDK écrit lui-même son enveloppe OpenTelemetry",
+    aujourdhui:
+      "Le SDK parle le format standard d'OpenTelemetry sans en embarquer les bibliothèques : MIP a écrit l'émetteur. La mesure, elle, vient du navigateur et de la bibliothèque web-vitals de Google. Les évolutions de la norme se suivent à la main : les conventions HTTP l'ont été le 01/10/2026.",
+    pourquoi:
+      "Le SDK pèse deux fois moins lourd (27 → 12 Ko compressés le 15/07/2026), sur chaque page des sites surveillés. Les SDK de Datadog et de Sentry font le même choix.",
+    production:
+      "La validation de ce choix par l'équipe (ADR-0016), un test qui fait relire la sortie du SDK par un outil OpenTelemetry officiel, et une relecture de la norme à chaque version.",
+    sources: [
+      "docs/architecture/adr/0016-emetteur-otlp-maison.md:18-25,35-55",
+      "packages/rum-sdk/src/otel.ts:1-2,94-110",
+      "tests/unit/otlp-emitter.test.ts:1-5",
+    ],
+  },
+  {
+    id: "H15",
+    titre: "Le SDK servi par la console, sous un nom sans version",
+    aujourdhui:
+      "Les sites chargent mip-rum.js depuis l'adresse de la console : une seule adresse pour toutes les versions. Une nouvelle version arrive chez tous les clients au même moment.",
+    pourquoi: "Un seul site client (UTI), et une mise à jour qui le suit sans qu'il ait rien à changer.",
+    production:
+      "Une adresse de diffusion de MIP, des fichiers versionnés (mip-rum-0.6.0.js) que chaque client choisit de suivre, et une empreinte d'intégrité dans la balise.",
+    sources: ["docs/INTEGRATION.md:56,83-85", "packages/rum-sdk/package.json:3"],
+  },
 ];
 
 export interface Chantier {
@@ -218,5 +247,12 @@ export const CHANTIERS: readonly Chantier[] = [
     titre: "Mettre à jour la base de géolocalisation",
     texte: "La livraison actuelle de la base qui situe les adresses IP devra être remplacée avant fin février 2027.",
     sources: ["docs/operations/runbook.md:104"],
+  },
+  {
+    id: "X9",
+    titre: "Passer le backend d'UTI à l'agent officiel",
+    texte:
+      "Le serveur d'UTI garde une copie de l'ancien capteur maison. Le remplacer par l'agent OpenTelemetry officiel pour Python, éprouvé en production sous FastAPI le 29/09/2026.",
+    sources: ["docs/RUM_PARITY_STATUS.md:336", "docs/capteurs-serveur.md:54"],
   },
 ];
