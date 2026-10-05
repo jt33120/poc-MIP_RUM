@@ -15,7 +15,7 @@
 //
 // Relevé du 05/10/2026, veille de la réunion : H14 (l'émetteur OTLP du SDK, ADR-0016,
 // proposé à la validation de l'équipe), H15 (où le SDK est servi) et X9 (le backend
-// d'UTI, encore sur l'ancien capteur maison).
+// d'UTI, encore sur l'ancien capteur maison), X10 (case de consentement du rejeu).
 
 export interface Hypothese {
   id: string;
@@ -256,5 +256,12 @@ export const CHANTIERS: readonly Chantier[] = [
     texte:
       "Le serveur d'UTI garde une copie de l'ancien capteur maison. Le remplacer par l'agent OpenTelemetry officiel pour Python, éprouvé en production sous FastAPI le 29/09/2026.",
     sources: ["docs/RUM_PARITY_STATUS.md:336", "docs/capteurs-serveur.md:54"],
+  },
+  {
+    id: "X10",
+    titre: "Une case de consentement pour le rejeu",
+    texte:
+      "Le rejeu de session demande le consentement des visiteurs, et c'est au site client de le recueillir. Avant d'activer le rejeu d'une application, la console doit faire cocher à son gestionnaire qu'il en a la base légale, et garder la trace de qui l'a coché et quand.",
+    sources: ["docs/CONFORMITE.md:52", "packages/rum-sdk/src/types.ts:48-58"],
   },
 ];
