@@ -1,6 +1,6 @@
 # ADR-0016 — Le SDK web émet l'OTLP lui-même, sans les paquets OpenTelemetry
 
-- **Statut** : proposée à l'équipe (05/10/2026) ; en œuvre depuis le 15/07/2026 (commit `2b193107`)
+- **Statut** : proposée à l'équipe (05/10/2026), conformité contrôlée le jour même ; en œuvre depuis le 15/07/2026 (commit `2b193107`)
 - **Date** : 2026-10-05
 - **Portée** : SDK web (`packages/rum-sdk`), extension, ingestion
 
@@ -25,6 +25,11 @@ inchangé.
 La **mesure** ne change pas : elle vient des interfaces du navigateur et de la
 bibliothèque `web-vitals` de Google. Seule l'**enveloppe** est écrite par MIP.
 
+Le choix est **réversible** : l'émetteur a gardé l'interface des paquets officiels
+(`initOtel` rend un traceur, `startSpan` / `setAttributes` / `end`, `forceFlush`).
+Revenir aux bibliothèques officielles ne toucherait que `otel.ts` et `otlp-encode.ts`,
+pas les capteurs.
+
 ## Ce que ça apporte
 
 - Le cœur du SDK est passé de 27,4 à 11,7 Ko compressés (−57 %) le 15/07/2026. Il pèse
@@ -45,15 +50,23 @@ bibliothèque `web-vitals` de Google. Seule l'**enveloppe** est écrite par MIP.
   `actions.ts`, `longtasks.ts`).
 - **Un seul format.** OTLP/HTTP JSON, traces seulement (erreurs et vitals sont des
   spans) ; pas de protobuf, pas de signal de logs depuis le navigateur.
-- **Une conformité prouvée à moitié.** `tests/unit/otlp-emitter.test.ts` relit la sortie
-  du SDK avec le décodeur de MIP (`flattenOtlp`), pas avec un outil OpenTelemetry tiers.
-  Rien ne prouve encore qu'un collecteur OpenTelemetry officiel l'accepterait sans perte.
 
-## À faire
+## Conformité : deux contrôles extérieurs à MIP (05/10/2026)
 
-- Un test qui donne la sortie du SDK à un décodeur OpenTelemetry officiel. Les paquets
-  sont déjà dans les dépendances de développement (`package.json`,
-  `@opentelemetry/otlp-transformer`) : le test coûte peu.
+- `tests/unit/otlp-conformite-officielle.test.ts` : pour un même lot, la sortie du SDK et
+  celle du sérialiseur officiel (`@opentelemetry/otlp-transformer`) sont le même message
+  OTLP, champ par champ ; aucun champ du SDK n'est inconnu de l'officiel ; et l'ingestion
+  de MIP lit la sortie du SDK comme le protobuf officiel du même lot. Seul écart permis :
+  le SDK n'écrit pas `flags` (absent, il vaut « inconnu » selon la spec).
+- `tests/unit/otlp-collecteur-officiel.test.ts`, en CI (étape « Conformité OTLP ») : la
+  sortie du SDK est envoyée au collecteur OpenTelemetry officiel (0.161.0), qui l'accepte
+  sans rejet ; ce qu'il en réécrit est ce que le SDK a envoyé.
+
+Les deux contrôles échouent si l'on casse l'émetteur (essayé : identifiants en base64,
+attributs entiers en chaîne, champ renommé).
+
+## Reste à faire
+
 - Relire les conventions sémantiques d'OpenTelemetry à chaque version mineure du SDK.
 
 ## Écarté

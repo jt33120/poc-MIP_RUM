@@ -1,0 +1,20 @@
+# Collecteur OpenTelemetry OFFICIEL (contrib) pour le contrôle de conformité de
+# l'émetteur du SDK web (tests/unit/otlp-collecteur-officiel.test.ts, ADR-0016) :
+# il reçoit l'OTLP/HTTP JSON du SDK, le décode avec le décodeur officiel (Go,
+# protojson), et le réécrit dans un fichier que le test compare à l'envoi.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  file:
+    path: /sortie/traces.json
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [file]
+  telemetry:
+    metrics:
+      level: none

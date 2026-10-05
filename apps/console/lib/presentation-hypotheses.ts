@@ -166,11 +166,13 @@ export const HYPOTHESES: readonly Hypothese[] = [
     pourquoi:
       "Le SDK pèse deux fois moins lourd (27 → 12 Ko compressés le 15/07/2026), sur chaque page des sites surveillés. Les SDK de Datadog et de Sentry font le même choix.",
     production:
-      "La validation de ce choix par l'équipe (ADR-0016), un test qui fait relire la sortie du SDK par un outil OpenTelemetry officiel, et une relecture de la norme à chaque version.",
+      "La validation de ce choix par l'équipe (ADR-0016) et une relecture de la norme à chaque version. La conformité est contrôlée depuis le 05/10/2026 : le sérialiseur et le collecteur OpenTelemetry officiels relisent la sortie du SDK à chaque modification.",
     sources: [
       "docs/architecture/adr/0016-emetteur-otlp-maison.md:18-25,35-55",
       "packages/rum-sdk/src/otel.ts:1-2,94-110",
       "tests/unit/otlp-emitter.test.ts:1-5",
+      "tests/unit/otlp-conformite-officielle.test.ts:1-12",
+      "tests/unit/otlp-collecteur-officiel.test.ts:1-6",
     ],
   },
   {
