@@ -12,6 +12,8 @@
 // l'audit.
 import { createHash, randomBytes } from "node:crypto";
 import { booleen, chaine, facultatif, objet, parmi } from "@mip/console-contract";
+import { BASES_LEGALES_REJEU } from "../attestation-rejeu";
+import { NIVEAUX_MASQUAGE } from "../kit-installation";
 import { tx } from "../db";
 import { formatApiKey, parseOrigins, validateAppId } from "../onboarding";
 import { createExtensionScope } from "../queries-extension-scope";
@@ -153,4 +155,34 @@ export const majOrigines = commande(
       return { etat: "ok" } as const;
     });
   },
+);
+
+/**
+ * « À faire » X10 — la base légale du rejeu de session. Le rejeu se règle dans le
+ * code du client (`init-mip-rum.js`) : la console ne l'allume pas, mais son
+ * gestionnaire atteste, avant de l'activer, qu'il en a la base légale. La trace est
+ * une ligne au journal (qui, quand, quoi), relue par la page « Installer »
+ * (`derniereAttestationRejeu`). L'application ouvre le détail : la ligne se retrouve
+ * même sans la colonne `app_id` du journal (migration-v90).
+ */
+export const attesterRejeu = commande(
+  {
+    regle: { auth: "admin", portee: "app", audit: "app.attest_replay" },
+    corps: objet({
+      base: parmi(BASES_LEGALES_REJEU),
+      taux: chaine({ min: 1, max: 8 }),
+      masquage: parmi(NIVEAUX_MASQUAGE),
+      note: chaine({ min: 0, max: 500 }),
+    }),
+  },
+  async ({ app, corps, auditer }) =>
+    tx(async (c) => {
+      const { rowCount } = await c.query("select 1 from app_registry where app_id = $1", [app]);
+      if (!rowCount) return { etat: "introuvable" } as const;
+      await auditer(
+        c,
+        JSON.stringify({ app, base: corps.base, taux: corps.taux, masquage: corps.masquage, note: corps.note.trim() || null }),
+      );
+      return { etat: "ok" } as const;
+    }),
 );

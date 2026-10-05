@@ -141,6 +141,10 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
       { texte: "Une page prérendue ne collecte rien tant qu'elle n'est pas affichée.", sources: [`${SDK}/src/index.ts:196-202`] },
       { texte: "Requêtes et fragments retirés de toutes les URL.", sources: [`${SDK}/src/context.ts:22-24`] },
       { texte: "Rejeu : texte masqué, médias bloqués, saisies masquées par défaut.", sources: [`${SDK}/src/replay.ts:137-146`] },
+      {
+        texte: "La page « Installer » écrit le fichier de configuration du client : le pont vers Axeptio, Didomi ou tarteaucitron, et un beforeSend qui retire e-mails et longs numéros.",
+        sources: ["apps/console/lib/kit-installation.ts:117-135", "apps/console/lib/kit-installation.ts:136-192", "apps/console/lib/kit-installation.ts:194-235"],
+      },
     ],
     x: 1180,
     y: 520,
@@ -193,6 +197,10 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
       {
         texte: "Il démarre dès l'initialisation si le site n'exige pas le consentement.",
         sources: [`${SDK}/src/index.ts:630-634`, `${SDK}/src/index.ts:679-682`],
+      },
+      {
+        texte: "Avant de l'activer, le gestionnaire de l'application en atteste la base légale sur la page « Installer » ; l'attestation est inscrite au journal, à son nom.",
+        sources: ["apps/console/lib/commandes/applications.ts:159-188", "apps/console/lib/queries-attestation-rejeu.ts:1-17"],
       },
     ],
     x: 1840,

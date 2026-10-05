@@ -62,3 +62,16 @@ export async function updateOriginsAction(fd: FormData): Promise<void> {
   revalidatePath(`/admin/customers/${appId}`);
   redirect(`/admin/customers/${appId}`);
 }
+
+/**
+ * « À faire » X10 — la base légale du rejeu, attestée par l'administrateur de
+ * l'application depuis la page « Installer » (`attesterRejeu`). Une ligne au journal.
+ */
+export async function attesterRejeuAction(fd: FormData): Promise<void> {
+  const r = await executerCommande("attesterRejeu", {
+    app: champ(fd, "app"),
+    corps: { base: champ(fd, "base"), taux: champ(fd, "taux"), masquage: champ(fd, "masquage"), note: champ(fd, "note") },
+  });
+  if (!r.ok) apresRefus(r);
+  revalidatePath("/installer");
+}

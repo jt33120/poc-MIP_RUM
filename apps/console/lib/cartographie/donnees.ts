@@ -21,7 +21,7 @@ export const CHIFFRES = {
   outilsMcp: 23,
   ecrans: 54,
   routesApiV1: 32,
-  operationsConsoleApi: 117,
+  operationsConsoleApi: 118,
   fichiersDeTests: FICHIERS_DE_TESTS,
 } as const;
 

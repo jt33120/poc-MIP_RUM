@@ -51,7 +51,7 @@ const ECRANS: readonly { nom: string; role: string }[] = [
   { nom: "/mobile", role: "couche JavaScript React Native" },
   { nom: "/explorer · /dashboards", role: "Explorer, vues enregistrées, tableaux de bord" },
   { nom: "/alerts · /slo", role: "alertes et objectifs de service" },
-  { nom: "/installer", role: "l'installation des trois capteurs, vérifiée en direct" },
+  { nom: "/installer", role: "les trois capteurs vérifiés en direct, et le kit : consentement, rejeu, source maps, mention" },
   { nom: "/logs · /ai", role: "capacités fermées" },
   { nom: "/admin/*", role: "13 écrans : comptes, santé, postes, audit, consommation, jetons, RGPD…" },
   { nom: "/select", role: "le choix du projet, l'ajout d'un site" },
@@ -183,7 +183,7 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
       "Chaque écriture de la console (tableaux, alertes, comptes, RGPD…) est une commande avec sa règle d'accès, et son audit écrit dans la même transaction.",
     etiquettes: ["55 commandes", "audit"],
     faits: [
-      { texte: "57 commandes, une par opération d'écriture du contrat.", sources: [`${CONSOLE}/lib/commandes/index.ts:55-118`] },
+      { texte: "58 commandes, une par opération d'écriture du contrat.", sources: [`${CONSOLE}/lib/commandes/index.ts:55-119`] },
       { texte: "L'audit s'écrit dans la même transaction que l'écriture.", sources: [`${CONSOLE}/lib/commandes/commun.ts:4-8`] },
     ],
     x: 2650,
@@ -310,12 +310,12 @@ export const ELEMENTS_RAILWAY_LECTURE: readonly Element[] = [
     famille: "service",
     zone: "railway",
     titre: "console-api",
-    sousTitre: "le backend de la console · 117 opérations",
+    sousTitre: "le backend de la console · 118 opérations",
     resume:
       "Le service que seul le serveur de la console appelle : identité, sessions, inscription, et à terme tous les écrans et toutes les écritures. Il sert déjà la connexion.",
-    etiquettes: ["117 opérations", "sessions révocables"],
+    etiquettes: ["118 opérations", "sessions révocables"],
     faits: [
-      { texte: "117 opérations : exploitation, identité (dont l'inscription), 48 écrans et 57 commandes.", sources: ["packages/console-api/src/table.ts", "docs/api/console-api.md"] },
+      { texte: "118 opérations : exploitation, identité (dont l'inscription), 48 écrans et 58 commandes.", sources: ["packages/console-api/src/table.ts", "docs/api/console-api.md"] },
       {
         texte: "Chaque opération déclare son accès, sa portée, la démo et l'audit ; une écriture sans audit empêche le démarrage.",
         sources: ["packages/console-api/src/politique.ts:15-77", "packages/console-api/src/politique.ts:110-154"],

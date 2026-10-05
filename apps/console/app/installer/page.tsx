@@ -18,6 +18,7 @@ import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { InfoTip } from "@/components/InfoTip";
 import { PageHeader } from "@/components/PageHeader";
+import { attesterRejeuAction } from "@/app/admin/customers/actions";
 import { ChoixParcours } from "@/components/installer/ChoixParcours";
 import { KitInstallation } from "@/components/installer/KitInstallation";
 import { ParcoursExtension, ParcoursServeur, ParcoursSnippet, type ContexteParcours } from "@/components/installer/Parcours";
@@ -76,7 +77,7 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
     );
   }
 
-  const { app, administrable, config, domaines, sonde, jetons } = ecran;
+  const { app, administrable, config, domaines, sonde, jetons, attestation } = ecran;
   // Sans sa configuration, la page n'a rien de juste à préremplir. (Une application
   // absente du registre est déjà rendue « introuvable » par le chargeur.)
   const c = config.ok ? config.data : null;
@@ -254,6 +255,8 @@ export default async function Installer({ searchParams }: { searchParams?: Promi
             sessions24h={lueSonde ? lueSonde.sessions_sdk_24h : null}
             jetons={aRenouveler}
             administrable={administrable}
+            attestation={attestation.ok ? attestation.data : null}
+            attester={attesterRejeuAction}
           />
         </section>
       </div>

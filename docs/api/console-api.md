@@ -39,6 +39,7 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `apps.setActive` | `PUT /v1/app/active` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `app.set_active` |
 | `apps.rotateKey` | `POST /v1/app/key-rotations` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `app.rotate_key` |
 | `apps.updateOrigins` | `PUT /v1/app/origins` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `app.update_origins` |
+| `apps.attestReplay` | `POST /v1/app/replay-attestations` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `app.attest_replay` |
 | `apps.create` | `POST /v1/apps` | administrateur de la plateforme | — | **refusée** | exigé | `app.create` |
 | `auth.signup` | `POST /v1/auth/accounts` | aucune session | — | **refusée** | exigé | `auth.signup` |
 | `auth.demo` | `POST /v1/auth/demo-sessions` | aucune session | — | **refusée** | exigé | `auth.demo` |
