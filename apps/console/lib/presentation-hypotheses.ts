@@ -15,7 +15,7 @@
 //
 // Relevé du 05/10/2026, veille de la réunion : H14 (l'émetteur OTLP du SDK, ADR-0016,
 // proposé à la validation de l'équipe), H15 (où le SDK est servi) et X9 (le backend
-// d'UTI, encore sur l'ancien capteur maison), X10 (case de consentement du rejeu).
+// d'UTI, encore sur l'ancien capteur maison), X10 (case de consentement du rejeu), X11 (kit d'installation).
 
 export interface Hypothese {
   id: string;
@@ -263,5 +263,16 @@ export const CHANTIERS: readonly Chantier[] = [
     texte:
       "Le rejeu de session demande le consentement des visiteurs, et c'est au site client de le recueillir. Avant d'activer le rejeu d'une application, la console doit faire cocher à son gestionnaire qu'il en a la base légale, et garder la trace de qui l'a coché et quand.",
     sources: ["docs/CONFORMITE.md:52", "packages/rum-sdk/src/types.ts:48-58"],
+  },
+  {
+    id: "X11",
+    titre: "Un kit d'installation qui écrit le code du client",
+    texte:
+      "L'écran « Installer » guide l'application, le code de suivi, la CSP, l'extension et l'agent serveur. Le consentement, le rejeu et son masquage, les source maps, le filtre des données personnelles et la mention de confidentialité ne sont que dans la documentation. Les y ajouter : un réglage guidé dans la console, et le code de configuration généré pour chaque client, prêt à coller.",
+    sources: [
+      "apps/console/lib/installer.ts:303-313",
+      "docs/INTEGRATION.md:206,262-270,323-324",
+      "docs/integration/sourcemaps-ci.md:1-12",
+    ],
   },
 ];
