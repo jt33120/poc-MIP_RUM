@@ -18,7 +18,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
     titre: "collector",
     sousTitre: "reçoit, contrôle, écrit · 2 répliques",
     resume:
-      "Le service qui reçoit ce que les capteurs envoient, relayé par la console : il contrôle la clé et le débit, pseudonymise l'identité et écrit les mesures dans la base.",
+      "Le service qui reçoit ce que les capteurs envoient, en direct depuis le 06/10/2026 (ou relayé par la console pour l'ancienne adresse) : il contrôle la clé et le débit, déduit le pays de l'adresse sans la garder, pseudonymise l'identité et écrit les mesures dans la base.",
     etiquettes: ["JSON · protobuf", "gzip · deflate", "2 répliques"],
     faits: [
       {

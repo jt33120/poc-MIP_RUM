@@ -64,10 +64,10 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
     famille: "service",
     zone: "vercel",
     titre: "Réception des mesures",
-    sousTitre: "/api/ingest/v1/* · relais vers le collector",
+    sousTitre: "/api/ingest/v1/* · relais pur, pour l'ancienne adresse",
     resume:
-      "L'adresse que visent les capteurs des clients : la console reçoit traces, journaux, rejeux et battements, les relaie au collector, et ne les écrit elle-même qu'en repli, avec le même code.",
-    etiquettes: ["tout le trafic relayé", "repli local", "8 s", "disjoncteur"],
+      "L'adresse que visent encore les sites qui n'ont pas changé la leur, une CSP figée par exemple : la console relaie tout au collector et, depuis le 06/10/2026, n'écrit plus rien elle-même. Les nouveaux sites, et UTI, envoient au collector en direct.",
+    etiquettes: ["relais pur", "06/10/2026", "8 s", "503 sans repli"],
     faits: [
       { texte: "Relais allumé pour tout le trafic depuis le 28/09/2026, 07:10 UTC.", sources: ["docs/architecture/overview.md:13"] },
       {
@@ -75,13 +75,13 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
         sources: [`${CONSOLE}/lib/ingest-relay.ts:35-59`],
       },
       {
-        texte: "8 s de délai ; 5 échecs en 30 s coupent le relais 60 s, et la console écrit elle-même.",
-        sources: [`${CONSOLE}/lib/ingest-relay.ts:125-131`, `${CONSOLE}/lib/ingest-relay.ts:234-248`],
+        texte: "Relais pur depuis le 06/10/2026 : plus d'écriture locale ; un collector injoignable rend 503, que le SDK rejoue.",
+        sources: [`${CONSOLE}/lib/ingest-relay.ts:567-572`, "docs/architecture/overview.md:12"],
       },
       { texte: "Un corps trop gros est refusé avant d'être lu, puis pendant la lecture.", sources: [`${CONSOLE}/app/api/ingest/v1/traces/route.ts:58-80`] },
       {
-        texte: "Envoi direct des sites au collector : code prêt, mise en service pas avant le 05/10/2026.",
-        sources: ["docs/architecture/overview.md:20"],
+        texte: "Envoi direct des sites au collector en service depuis le 06/10/2026 ; UTI y envoie navigateur et serveur.",
+        sources: ["docs/architecture/overview.md:14", `${CONSOLE}/lib/ingest-endpoint.ts:93-99`],
       },
     ],
     x: 2650,

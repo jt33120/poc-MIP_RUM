@@ -38,18 +38,20 @@ const ZONES: readonly Zone[] = [
   { id: "github", titre: "GitHub", sousTitre: "le dépôt, les tests, le déploiement", x: 0, y: 2980, largeur: LARGEUR, hauteur: 480 },
 ];
 
-/** Chaque mesure arrive à la réception de la console. */
+/**
+ * Chaque mesure va au collector en direct depuis le 06/10/2026 ; seul le battement du
+ * parc d'extensions passe encore par la console.
+ */
 const VERS_RECEPTION: readonly Lien[] = ELEMENTS_MESURES.map((m) => ({
   de: m.id,
-  vers: "reception",
+  vers: m.id === "m-parc" ? "reception" : "collector",
   nature: "mesure" as const,
   libelle: m.id === "m-journaux" ? "OTLP/HTTP · /v1/logs" : m.id === "m-rejeu" ? "/v1/replay" : m.id === "m-parc" ? "/api/extension/*" : "OTLP/HTTP · /v1/traces",
 }));
 
 /** Les liens qui traversent les parties : réception, écrans et services vers la base. */
 const LIENS_CROISES: readonly Lien[] = [
-  { de: "reception", vers: "collector", nature: "appel", libelle: "relais signé, tout le trafic" },
-  { de: "reception", vers: "base-mesures", nature: "ecrit", libelle: "en repli seulement" },
+  { de: "reception", vers: "collector", nature: "appel", libelle: "relais pur, ancienne adresse" },
   { de: "console", vers: "reception", nature: "embarque" },
   { de: "console", vers: "console-ecrans", nature: "embarque" },
   { de: "console", vers: "api-v1", nature: "embarque" },
