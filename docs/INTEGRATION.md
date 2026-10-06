@@ -504,3 +504,63 @@ Dans tous les cas, l'origine du site va dans les domaines autorisés (§ 1).
   posé les mêmes variables en `$env:…`.
 - **Python avant 1.40.0** : les journaux de `logging` ne partent qu'avec
   `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true`.
+
+## Annexe K — Java, .NET et Python : les recettes prouvées en CI
+
+Depuis le 06/10/2026, les recettes Java, .NET et Python de la page Installer ne sont plus
+seulement éprouvées une fois en production (28/09/2026) : leur agent officiel tourne en CI
+(`.github/workflows/agents-otlp.yml`), sous le socle tel que la page l'écrit (`socleOtel`,
+`apps/console/lib/recettes-agents-otel.ts`), clé d'API comprise. Trois applications d'essai
+(`tests/fixtures/otlp-agents/applications/`), sans une ligne OpenTelemetry dans leur code,
+sont appelées comme par un navigateur porteur du SDK web (`traceparent`, `tracestate`) ; ce
+que l'agent envoie passe par le collecteur (clé exigée) et une vraie base, puis est vérifié
+(`tests/integration/otlp-agents-java-dotnet-python-sql.test.ts`). La capture versionnée se
+rejoue à chaque PR dans `test:sql`.
+
+| Langage | Agent, version prouvée | Application d'essai | Lancement |
+|---|---|---|---|
+| Java | `opentelemetry-javaagent.jar` 2.31.1 (SDK 1.65.0), empreinte SHA-256 vérifiée | Spring Boot 4.1.1, Java 21 | `java -javaagent:opentelemetry-javaagent.jar -jar app.jar` |
+| .NET | instrumentation automatique 1.17.0 (SDK 1.19.1), archive vérifiée par son empreinte | ASP.NET Core, API minimale, .NET 10 | `. "$OTEL_DOTNET_AUTO_HOME/instrument.sh"` puis `dotnet Factures.dll` |
+| Python | `opentelemetry-distro` 0.66b0, SDK et exportateur 1.45.0 | Flask 3.1.3, Python 3.13 | `opentelemetry-instrument flask --app app run` |
+
+Les variables, pour les trois : le socle du § 3 (`OTEL_SERVICE_NAME`,
+`OTEL_RESOURCE_ATTRIBUTES` avec `mip.app_id` et `mip.api_key`, `http/protobuf`, `gzip`, une
+adresse par signal, `OTEL_TRACES_EXPORTER=otlp`, `OTEL_LOGS_EXPORTER=otlp`,
+`OTEL_METRICS_EXPORTER=none`) ; pour .NET, en plus, `OTEL_DOTNET_AUTO_LOG_DIRECTORY`. Les
+trois agents ont envoyé du protobuf compressé en gzip, accepté en 200.
+
+**Ce qui est prouvé**, pour chacun : les spans serveur gardent leur `http.route`, ramenée à
+`:nom` (`/factures/{id}`, `/factures/<int:id>` → `/factures/:id`) ; ils sont dans la trace du
+navigateur et rattachés à sa session ; le sous-appel HTTP devient un span de détail ; le
+journal applicatif (`facture lue`) est écrit et relié à sa trace ; l'exception de la route
+en échec compte une fois.
+
+**Pièges constatés à la capture** :
+
+- **Erreurs sans session ni route (les trois).** L'exception non rattrapée est comptée par
+  le journal ERROR que le framework écrit (Tomcat, Kestrel, Flask), porteur
+  d'`exception.type` : les agents exportent leurs journaux (toutes les secondes) avant
+  leurs spans (toutes les 5 s), et un journal ne porte ni session ni route. Le span
+  serveur (500) les porte, lui : la session et la route se lisent dans le Tracing, pas
+  dans le groupe d'erreurs. C'est une limite de la collecte, que le test fige.
+- **Java, Spring Boot : une 404 sous `/**`.** Un chemin inconnu tombe dans le gestionnaire
+  de fichiers statiques, dont le motif est `/**` ; le javaagent l'écrit en `http.route`, et
+  la 404 est rangée sous `/**`, pas sous `(non trouvée)`. Une application qui ne sert pas de
+  fichiers statiques peut couper ce gestionnaire (`spring.web.resources.add-mappings=false`,
+  non éprouvé ici).
+- **Java : les journaux de démarrage partent aussi** (Logback, instrumenté par l'agent) :
+  quelques lignes par démarrage dans Journaux.
+- **.NET : l'exception n'est pas enregistrée sur le span** (1.17.0, réglages par défaut) :
+  seul le journal de Kestrel la porte. Les journaux d'`ILogger` partent tous, ceux
+  d'ASP.NET Core compris (plusieurs par requête au niveau Information).
+- **.NET dans une image sans `gh`** : le script d'installation ne peut pas vérifier la
+  release. Vérifier soi-même l'archive par l'empreinte SHA-256 que GitHub publie, puis la
+  remettre au script : `LOCAL_PATH=<archive> SKIP_RELEASE_VERIFICATION=true sh
+  otel-dotnet-auto-install.sh` (`tests/fixtures/otlp-agents/applications/dotnet/Dockerfile`).
+- **Python : le niveau du journal racine.** Les journaux INFO ne partent que si
+  l'application met le journal racine au niveau INFO ; `logging.basicConfig()` ne fait rien
+  quand la racine a déjà un gestionnaire.
+- **Python, Flask : pas de `http.response.status_code`.** L'instrumentation Flask 0.66b0
+  écrit encore `http.status_code` (anciennes conventions) ; la collecte lit les deux.
+
+Refaire la capture (Docker requis) : `tests/fixtures/otlp-agents/README.md`.

@@ -1,6 +1,6 @@
 // Une valeur notée par une RÈGLE MIP (vague 4, amendement de R-S du 29/09/2026).
 //
-// POURQUOI UN COMPOSANT. L'amendement de R-S (`docs/product/plan-frontend-dashboard.md`
+// POURQUOI UN COMPOSANT. L'amendement de R-S (plan de la refonte du frontend, hors dépôt,
 // § 1.5) autorise vert / ambre / rouge sur une mesure sans seuil publié à trois
 // conditions, qu'aucun écran ne doit pouvoir oublier une à une :
 //   1. la note vient de `noteMip` (`lib/seuils.ts`), jamais d'une borne recopiée ;

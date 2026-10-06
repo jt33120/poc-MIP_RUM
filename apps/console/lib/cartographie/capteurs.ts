@@ -78,7 +78,11 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
       },
       {
         texte: "Go, PHP et Ruby : éprouvés en local le 01/10/2026, pas en production ; même socle, renvoyés à la documentation de l'agent.",
-        sources: [`${RECETTES}:206-232`, "docs/capteurs-serveur.md:73-86"],
+        sources: [`${RECETTES}:220-246`, "docs/capteurs-serveur.md:73-86"],
+      },
+      {
+        texte: "Java, .NET et Python (Flask) : leur agent, à version figée, tourne en CI sous le socle de la recette, et ce qu'il envoie est vérifié en base.",
+        sources: [".github/workflows/agents-otlp.yml", "tests/integration/otlp-agents-java-dotnet-python-sql.test.ts:1-30"],
       },
       {
         texte: "Les capteurs serveur maison (FastAPI, agent Node, Express) sont archivés depuis le 29/09/2026.",

@@ -1,7 +1,7 @@
 "use client";
 
 // Premier écran de la vitrine : le film d'accueil en plein cadre, titres incrustés au
-// montage (scripts/monter-film-accueil.mjs). Dessous, toujours rendu, le même message
+// montage, hors du dépôt. Dessous, toujours rendu, le même message
 // en texte sur un fond animé : les fils lumineux qui montent des écrans vers la
 // console. Le film ne le recouvre qu'une fois qu'il JOUE ; tant qu'il charge, ou si
 // le navigateur refuse la lecture automatique (économie d'énergie, réglage du

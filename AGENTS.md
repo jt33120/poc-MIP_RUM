@@ -148,3 +148,5 @@ ordre et sur quelles bases.
   les bascules et leurs drapeaux.
 - `services/README.md` et le `README.md` de chaque service (`mcp` : `docs/MCP.md`).
 - `docs/api/console-api.md` : les opérations de `console-api` (généré).
+- `docs/README.md` : l'index de la documentation, une ligne par document. La doc de
+  chantier (plans, cadrages, rapports) n'entre pas dans le dépôt.

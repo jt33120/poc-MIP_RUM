@@ -4,7 +4,7 @@
 import type { Element, Lien } from "./types";
 
 /** Les fichiers de chaque suite, recomptés par le test : une suite qui grandit le fait échouer. */
-export const FICHIERS_DE_TESTS = { unit: 447, integration: 74, contract: 5, e2e: 58 } as const;
+export const FICHIERS_DE_TESTS = { unit: 447, integration: 75, contract: 5, e2e: 58 } as const;
 
 const WF = ".github/workflows";
 
@@ -156,7 +156,23 @@ export const ELEMENTS_GITHUB: readonly Element[] = [
       "Chaque image de service est construite et démarrée : migration, /health, une requête de référence, utilisateur non-root, arrêt propre sur SIGTERM.",
     etiquettes: ["6 images", "SIGTERM"],
     faits: [{ texte: "Une matrice des six services, sur PR et sur master.", sources: [`${WF}/docker-smoke.yml`] }],
-    x: 350,
+    x: 100,
+    y: 3270,
+  },
+  {
+    id: "workflow-agents-otlp",
+    famille: "qualite",
+    zone: "github",
+    titre: "Agents serveur officiels",
+    sousTitre: "agents-otlp.yml · Java, .NET, Python",
+    resume:
+      "Trois petites applications tournent sous l'agent OpenTelemetry officiel de leur langage, réglées par la seule recette de la page Installer ; ce qu'elles envoient passe par le collecteur et une vraie base, puis est vérifié.",
+    etiquettes: ["javaagent", ".NET auto", "opentelemetry-instrument"],
+    faits: [
+      { texte: "Capture puis rejeu, sur les PR qui touchent les applications, la recette ou la collecte.", sources: [`${WF}/agents-otlp.yml`] },
+      { texte: "La capture versionnée se rejoue dans test:sql.", sources: ["tests/integration/otlp-agents-java-dotnet-python-sql.test.ts"] },
+    ],
+    x: 680,
     y: 3270,
   },
   {
@@ -174,7 +190,7 @@ export const ELEMENTS_GITHUB: readonly Element[] = [
       { texte: "Après la fusion, le plan épinglé s'applique, sans exécutions concurrentes.", sources: [`${WF}/railway-config.yml:147-193`] },
       { texte: "Jamais --include-variables : les secrets restent sur Railway.", sources: [`${WF}/railway-config.yml:26-29`] },
     ],
-    x: 950,
+    x: 1260,
     y: 3270,
   },
   {
@@ -186,7 +202,7 @@ export const ELEMENTS_GITHUB: readonly Element[] = [
     resume: "Depuis GitHub, toutes les 15 minutes, chaque service exposé doit répondre ; le scheduler et le notifier, sans domaine, ne sont pas sondés.",
     etiquettes: ["cron", "/live · /health"],
     faits: [{ texte: "Aux minutes 7, 22, 37 et 52 de chaque heure.", sources: [`${WF}/sonde-externe.yml:20-23`] }],
-    x: 1550,
+    x: 1840,
     y: 3270,
   },
   {
@@ -203,7 +219,7 @@ export const ELEMENTS_GITHUB: readonly Element[] = [
       { texte: "Jamais vercel env pull dans le dépôt, jamais .env sourcé.", sources: ["AGENTS.md:112-113"] },
       { texte: "Un script qui écrit refuse une base distante, sauf dérogation qui nomme l'hôte.", sources: ["scripts/lib/cible-locale.mjs:1-23"] },
     ],
-    x: 2150,
+    x: 2420,
     y: 3270,
   },
   {
@@ -220,7 +236,7 @@ export const ELEMENTS_GITHUB: readonly Element[] = [
       { texte: "Le dossier de conformité se déclare le reflet de ce code.", sources: ["docs/CONFORMITE.md:10-16"] },
       { texte: "Un test confronte sous-traitants, régions et affirmations.", sources: ["tests/unit/conformite.test.ts:48-66"] },
     ],
-    x: 2750,
+    x: 3000,
     y: 3270,
   },
 ];
@@ -228,6 +244,7 @@ export const ELEMENTS_GITHUB: readonly Element[] = [
 export const LIENS_QUALITE: readonly Lien[] = [
   { de: "depot", vers: "workflow-ci", nature: "declenche", libelle: "push, PR" },
   { de: "depot", vers: "workflow-docker-smoke", nature: "declenche", libelle: "chemins des services" },
+  { de: "depot", vers: "workflow-agents-otlp", nature: "declenche", libelle: "applications d'essai, recette" },
   { de: "depot", vers: "workflow-railway-config", nature: "declenche", libelle: ".railway, lockfile" },
   { de: "depot", vers: "railway-projet", nature: "deploie", libelle: "build des Dockerfile depuis master" },
   { de: "depot", vers: "console", nature: "deploie", libelle: "déploiement Vercel" },

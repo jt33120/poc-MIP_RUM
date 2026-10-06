@@ -4,7 +4,7 @@
 // POURQUOI CE FICHIER. Jusqu'au 29/09/2026, seules les cinq Web Vitals portaient
 // une couleur de verdict : leurs bornes sont publiées par web.dev et vivent dans
 // `lib/rating.ts`. Tout le reste restait neutre par la règle R-S
-// (`docs/product/plan-frontend-dashboard.md` § 1.5) : aucun seuil publié n'existe
+// du plan de la refonte du frontend (hors dépôt) : aucun seuil publié n'existe
 // pour une phase DNS, une durée d'appel API ou une part de clics rageurs.
 // L'utilisateur a décidé le 29/09/2026 (vague 4 de la refonte du monitoring) de
 // colorer AUSSI ces mesures, à une condition : la règle est écrite à l'écran à

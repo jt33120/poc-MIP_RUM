@@ -6,7 +6,7 @@
     "precisionsNpm : ce qu'un paquet npm devient dans le dépôt (copié, embarqué dans un script servi). Chaque fichier cité doit exister ; `verifierVersion` exige que le fichier porte la version installée.",
     "composants : ce qui n'apparaît dans aucun manifeste de paquets (agents recommandés aux clients, base GeoIP téléchargée à la construction). Versions et dépôts relus le 29/09/2026 sur PyPI, npm et GitHub. Une entrée qui porte `manifeste` lit sa version et sa licence dans ce fichier : la base GeoIP change de livraison chaque mois."
   ],
-  "releveLe": "30/09/2026",
+  "releveLe": "06/10/2026",
   "horsNpm": {
     "outil:node": {
       "licence": "MIT",

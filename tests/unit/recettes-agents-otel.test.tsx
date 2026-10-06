@@ -15,7 +15,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { BackendStep } from "@/components/wizard/BackendStep";
 import { porterSecret } from "@/components/secret/SecretUnique";
-import { REPERE_CLE_API, recettesAgentsOtel } from "@/lib/recettes-agents-otel";
+import { REPERE_CLE_API, VERSIONS_EPROUVEES, recettesAgentsOtel } from "@/lib/recettes-agents-otel";
 
 const RACINE = join(__dirname, "..", "..");
 const CAPTEUR_MAISON =
@@ -70,9 +70,30 @@ describe("recettes serveur : le socle commun, prérempli", () => {
 
   it("l'état dit ce qui a été éprouvé en production, et seulement cela", () => {
     const etat = Object.fromEntries(recettes.agents.map((a) => [a.id, a.etat]));
-    expect(etat.python).toBe("éprouvé en production (Flask le 28/09/2026, FastAPI le 29/09/2026)");
+    expect(etat.python).toBe("éprouvé en production (Flask le 28/09/2026, FastAPI le 29/09/2026), Flask prouvé en CI");
     expect(etat.node).toBe("éprouvé en production le 29/09/2026 (traces)");
-    for (const id of ["java", "dotnet"]) expect(etat[id]).toBe("éprouvé en production le 28/09/2026");
+    for (const id of ["java", "dotnet"]) expect(etat[id]).toBe("éprouvé en production le 28/09/2026, prouvé en CI");
+  });
+
+  // « Prouvé en CI » n'est vrai que si la CI fait tourner CES versions, sous CE socle :
+  // les Dockerfile des applications d'essai et le manifeste de la capture versionnée.
+  it("prouvé en CI : les versions de la recette sont celles que la CI fait tourner", () => {
+    const lire = (f: string) => readFileSync(join(RACINE, f), "utf8");
+    const app = "tests/fixtures/otlp-agents/applications";
+    expect(lire(`${app}/java/Dockerfile`)).toContain(`ARG OTEL_JAVAAGENT_VERSION=${VERSIONS_EPROUVEES.javaagent}`);
+    expect(lire(`${app}/dotnet/Dockerfile`)).toContain(`ARG OTEL_DOTNET_AUTO_VERSION=${VERSIONS_EPROUVEES.dotnetAuto}`);
+    expect(lire(`${app}/python/Dockerfile`)).toContain(`ARG OTEL_DISTRO_VERSION=${VERSIONS_EPROUVEES.pythonDistro}`);
+    expect(lire(`${app}/python/Dockerfile`)).toContain(`ARG OTEL_SDK_VERSION=${VERSIONS_EPROUVEES.pythonSdk}`);
+    const manifeste = JSON.parse(lire("tests/fixtures/otlp-agents/manifeste.json"));
+    expect(manifeste.langages.java.ressource["telemetry.distro.version"]).toBe(VERSIONS_EPROUVEES.javaagent);
+    expect(manifeste.langages.dotnet.ressource["telemetry.distro.version"]).toBe(VERSIONS_EPROUVEES.dotnetAuto);
+    expect(manifeste.langages.python.ressource["telemetry.auto.version"]).toBe(VERSIONS_EPROUVEES.pythonDistro);
+    expect(manifeste.langages.python.ressource["telemetry.sdk.version"]).toBe(VERSIONS_EPROUVEES.pythonSdk);
+    expect(lire(".github/workflows/agents-otlp.yml")).toContain("capturer.mjs java dotnet python");
+    const code = Object.fromEntries(recettes.agents.map((a) => [a.id, a.code]));
+    expect(code.java).toContain(`/download/v${VERSIONS_EPROUVEES.javaagent}/opentelemetry-javaagent.jar`);
+    expect(code.dotnet).toContain(`/download/v${VERSIONS_EPROUVEES.dotnetAuto}/otel-dotnet-auto-install.sh`);
+    expect(code.python).toContain(`opentelemetry-distro==${VERSIONS_EPROUVEES.pythonDistro}`);
   });
 
   it("Go, PHP et Ruby renvoient à la documentation OpenTelemetry", () => {

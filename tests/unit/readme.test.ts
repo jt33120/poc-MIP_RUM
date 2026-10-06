@@ -82,8 +82,8 @@ function sectionsHorsCode(texte: string): Map<string, { numero: number; ligne: s
 }
 
 describe("2 — lexique des sections « Pourquoi celui-là », « Architecture » et « Statut »", () => {
-  // Hors de ces trois sections, le README peut nommer une ancienne version dans un
-  // lien d'archive (docs/archive/ROADMAP_V02.md…) : la limitation est voulue.
+  // Hors de ces trois sections, le README peut nommer une ancienne version (un
+  // historique, une limite datée) : la limitation est voulue.
   const TITRES = ["Pourquoi celui-là", "Architecture", "Statut"];
   const INTERDITS = [/Supabase/, /\bDeno\b/, /edge function/i, /\bv0\.\d\b/, /\bsouverain\b/i];
 

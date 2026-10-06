@@ -9,7 +9,7 @@
 // la prise, commit et jeu de données de chaque image. La légende de la vitrine lit sa
 // date dans ce manifeste (lib/portail-manifeste.ts) ; sans lui, elle n'en porte aucune.
 //
-// ── Ce qui doit tourner AVANT (prérequis de scripts/record-console-tour.mjs:6-12) ──
+// ── Ce qui doit tourner AVANT ──
 //
 //   1. Postgres local migré (postgres://postgres:postgres@localhost:5433/mip_rum),
 //      l'ingestion sur :4318 et le mini-site de démo sur :8080 — la pile que
@@ -261,7 +261,7 @@ async function principal() {
     process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {},
   );
   try {
-    // 1) Connexion HORS capture (record-console-tour.mjs:44-50), projet posé par cookie.
+    // 1) Connexion HORS capture, projet posé par cookie.
     const reglage = await browser.newContext({ viewport: { width: LARGEUR, height: HAUTEUR } });
     const accueil = await reglage.newPage();
     await accueil.goto(`${BASE}/login`, { waitUntil: "networkidle" });
