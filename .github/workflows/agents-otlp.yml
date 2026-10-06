@@ -1,0 +1,93 @@
+# AGENTS OPENTELEMETRY OFFICIELS — JAVA, .NET, PYTHON (R11).
+#
+# Lance pour de vrai les trois applications d'essai de tests/fixtures/otlp-agents/
+# applications/ sous l'agent officiel de leur langage (version et empreinte figées dans
+# leur Dockerfile), configurées par le seul socle de la page Installer, et les fait
+# exporter vers le collecteur de développement branché sur une base Postgres de service :
+# `capturer.mjs` garde chaque corps et refuse tout statut autre que 200. Puis le test de
+# rejeu vérifie sur cette capture fraîche ce qu'il vérifie dans `test:sql` sur la
+# capture versionnée : routes `:nom`, 404 → « (non trouvée) », exception comptée une
+# fois, session du navigateur retrouvée par le `traceparent` et le `tracestate`.
+#
+# La capture est conservée en artefact : c'est elle qu'on versionne quand une version
+# d'agent ou une application change (tests/fixtures/otlp-agents/README.md).
+#
+# Hors du workflow CI à dessein : construire les images Java et .NET prend plusieurs
+# minutes, pour un résultat qui ne dépend que des chemins ci-dessous. Le rejeu de la
+# capture versionnée, lui, tourne à chaque PR dans `test:sql`.
+name: Agents OpenTelemetry (Java, .NET, Python)
+
+on:
+  pull_request:
+    paths:
+      - "tests/fixtures/otlp-agents/**"
+      - "tests/integration/otlp-agents-java-dotnet-python-sql.test.ts"
+      - "apps/console/lib/recettes-agents-otel.ts"
+      - "services/collector/**"
+      - "packages/backend/shared/otlp*.mjs"
+      - ".github/workflows/agents-otlp.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agents-otlp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    name: Capture et rejeu (agents officiels)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mip_rum
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mip_rum"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install (lockfile gelé)
+        run: pnpm install --frozen-lockfile
+
+      - name: Schéma par le migrateur de production
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum
+        run: node services/scheduler/migrate.mjs
+
+      - name: Capture — Java, .NET, Python sous leur agent officiel
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum
+        run: node tests/fixtures/otlp-agents/capturer.mjs java dotnet python --journaux "$RUNNER_TEMP/journaux-agents"
+
+      - name: Rejeu de la capture fraîche (collector, vraie base)
+        env:
+          SQL_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum
+        run: pnpm exec vitest run tests/integration/otlp-agents-java-dotnet-python-sql.test.ts
+
+      - name: Capture conservée (corps, manifeste, journaux des applications)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: capture-agents-otlp
+          path: |
+            tests/fixtures/otlp-agents/*.pb*
+            tests/fixtures/otlp-agents/manifeste.json
+            ${{ runner.temp }}/journaux-agents/
+          retention-days: 30

@@ -66,6 +66,11 @@ interface Corps {
   sha256: string;
 }
 const MANIFESTE = JSON.parse(readFileSync(join(FIXTURES, "manifeste.json"), "utf8")) as { corps: Corps[] };
+/**
+ * Les corps de CE fichier : le manifeste porte aussi ceux de Java, de .NET et de Python,
+ * capturés par `capturer.mjs` et rejoués par otlp-agents-java-dotnet-python-sql.test.ts.
+ */
+const CORPS = MANIFESTE.corps.filter((c) => (LANGAGES as readonly string[]).includes(c.langage));
 const lireCorps = (c: Corps) => readFileSync(join(FIXTURES, c.fichier));
 
 const valeur = (a: { value?: Record<string, unknown> }) => (a.value ? Object.values(a.value)[0] : undefined);
@@ -76,9 +81,10 @@ const attributs = (l: { key: string; value?: Record<string, unknown> }[] | undef
 // rien sur l'agent ; l'empreinte du manifeste l'empêche.
 describe("R11 — fixtures des agents Go, PHP et Ruby", () => {
   it("le manifeste couvre tous les corps du dossier, empreintes comprises", () => {
-    const fichiers = readdirSync(FIXTURES).filter((f) => f.endsWith(".pb.gz")).sort();
+    // Tous les corps du dossier, tous langages : un fichier hors manifeste n'a pas de provenance.
+    const fichiers = readdirSync(FIXTURES).filter((f) => /\.pb(\.[a-z]+)?$/.test(f)).sort();
     expect(MANIFESTE.corps.map((c) => c.fichier).sort()).toEqual(fichiers);
-    for (const c of MANIFESTE.corps) {
+    for (const c of CORPS) {
       const brut = lireCorps(c);
       expect(brut.length, c.fichier).toBe(c.octets);
       expect(sha256(brut), c.fichier).toBe(c.sha256);
@@ -86,11 +92,11 @@ describe("R11 — fixtures des agents Go, PHP et Ruby", () => {
       expect(c.contentType).toBe("application/x-protobuf");
       expect(c.contentEncoding).toBe("gzip");
     }
-    expect(new Set(MANIFESTE.corps.map((c) => c.langage))).toEqual(new Set(LANGAGES));
+    expect(new Set(CORPS.map((c) => c.langage))).toEqual(new Set(LANGAGES));
   });
 
   it("chaque corps porte la ressource du socle : app, clé, service, environnement", () => {
-    for (const c of MANIFESTE.corps) {
+    for (const c of CORPS) {
       const brut = decompresserOtlp(lireCorps(c), c.contentEncoding);
       const lot = c.signal === "logs" ? decoderLogsProtobuf(brut) : decoderTracesProtobuf(brut);
       const ressources = (lot.resourceSpans ?? lot.resourceLogs) as { resource?: { attributes?: never } }[];
@@ -233,7 +239,7 @@ suite("R11 — corps des agents Go, PHP et Ruby → dev-server du collector → 
     }
 
     // Les corps, dans l'ordre de leur capture (PHP envoie ses journaux avant ses spans).
-    for (const c of MANIFESTE.corps) {
+    for (const c of CORPS) {
       const r = await rejouer(c);
       expect(r.status, `${c.fichier}\n${journal.join("")}`).toBe(200);
       // La réponse que l'exportateur a lue comme un succès à la capture : protobuf.
@@ -341,13 +347,13 @@ suite("R11 — corps des agents Go, PHP et Ruby → dev-server du collector → 
     ]);
     expect(lignes.filter((s) => s.tier === "detail").map((s) => s.name).sort()).toEqual(["GET", "connect"]);
     expect((await erreurs("ruby"))[0].error_type).toBe("RuntimeError");
-    expect(MANIFESTE.corps.filter((c) => c.signal === "logs").map((c) => c.langage)).toEqual(["php", "php"]);
+    expect(CORPS.filter((c) => c.signal === "logs").map((c) => c.langage)).toEqual(["php", "php"]);
     const { rows } = await pool.query("select count(*)::int n from rum_log where app_id = any($1)", [[app("go"), app("ruby")]]);
     expect(rows[0].n).toBe(0);
   });
 
   it("rejouer les mêmes corps n'ajoute aucune exception", async () => {
-    for (const c of MANIFESTE.corps) expect((await rejouer(c)).status).toBe(200);
+    for (const c of CORPS) expect((await rejouer(c)).status).toBe(200);
     for (const l of LANGAGES) expect(await erreurs(l), l).toHaveLength(1);
   }, 30_000);
 });
