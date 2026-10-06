@@ -4,7 +4,7 @@
 
 ## 1. Le trajet d'une mesure
 
-### Aujourd'hui : la console reçoit et écrit
+### Historique (jusqu'au relais, 28/09/2026) : la console recevait et écrivait
 
 ```mermaid
 sequenceDiagram
@@ -20,9 +20,9 @@ sequenceDiagram
   V-->>N: 200 partialSuccess
 ```
 
-Le relais vers le collector est livré (P3) et **éteint** : ni `CONSOLE_INGEST_RELAY_URL` ni `EDGE_PROXY_SECRET` ne sont posées sur Vercel, et la table `platform_flag` (v87) n'existe pas encore en production — le pourcentage retombe sur son défaut, 0. Le collector lui-même n'est pas encore créé.
+Ce trajet n'existe plus : le relais porte 100 % depuis le 28/09/2026, et depuis C12 (06/10/2026) la console n'a plus aucun chemin d'écriture de la collecte. La collecte directe des clients, ouverte le même jour, va du navigateur au collector sans passer par la console.
 
-### Avec le relais : la console reçoit, le collector écrit
+### Par la console : elle relaie, le collector écrit
 
 ```mermaid
 sequenceDiagram
@@ -32,7 +32,7 @@ sequenceDiagram
   participant C as collector (Railway)
   participant B as Neon
   N->>V: POST OTLP (même URL qu'avant : aucun client ne change)
-  V->>V: tirage du pourcentage (platform_flag, cache 30 s), disjoncteur fermé ?
+  V->>V: lecture bornée ; collector en bonne santé ? (GET /health, cache 60 s ; sinon 503)
   V->>C: corps OCTET POUR OCTET, en-têtes par liste exacte,<br/>x-mip-edge-auth (secret) + x-mip-edge-country (pays, JAMAIS l'IP) + x-mip-edge-origin (origine de la page) — délai 8 s
   C->>C: bord de confiance en temps constant ; identité hachée (HMAC, secret Railway seul)
   C->>B: même transaction qu'avant, sous une échéance DURE de 4 s
@@ -43,12 +43,12 @@ sequenceDiagram
 
 **Les délais s'emboîtent** : collector 4 s < relais 8 s < fonction Vercel 30 s (`maxDuration`). Le collector répond donc toujours avant que le relais n'abandonne, 503 compris.
 
-**Qui décide du repli.** Une réponse **signée** (`x-mip-collector: 1`) est celle du collector : elle est rendue telle quelle, sans repli, quel que soit son statut — lui seul sait ce qu'il a écrit. Une réponse **non signée** vient du routeur Railway :
+**Plus de repli (C12, 06/10/2026).** Une réponse **signée** (`x-mip-collector: 1`) est celle du collector : elle est rendue telle quelle, quel que soit son statut — lui seul sait ce qu'il a écrit. Tout le reste rend **503 + `retry-after`**, et la console n'écrit rien :
 
-- 404, 405, 502, 504 ou erreur réseau : la requête n'a atteint aucun collector, **repli local** (la console écrit, identité retirée) — sauf pour les logs, seuls non idempotents : un 502 ou 504 non signé, ou une connexion perdue après l'envoi, rend 503 + `retry-after` ;
-- délai de 8 s dépassé : **503 + `retry-after`**, sans repli (le collector a peut-être écrit).
+- 404, 405, 502, 504 **non signés** (routeur Railway), erreur réseau, délai de 8 s dépassé ;
+- relais non configuré, ou `/health` du collector en échec (vérifié toutes les 60 s par instance).
 
-Un disjoncteur par instance coupe le relais 60 s après 5 échecs en 30 s. Le geste d'urgence est unique : `update platform_flag set value = '0' where key = 'ingest_relay_pct'`, effectif en 30 s. Mode d'emploi : [docs/operations/relais-ingestion.md](../operations/relais-ingestion.md).
+Il n'y a plus de coupe-circuit en base (`ingest_relay_pct` n'est plus lu) : la collecte ne va qu'au collector. Mode d'emploi : [docs/operations/relais-ingestion.md](../operations/relais-ingestion.md).
 
 **Le cas qu'aucun délai ne tranche** : le collector a envoyé le COMMIT, la base l'a validé, la réponse se perd. Le collector ne peut pas savoir ; il rend 503 « outcome unknown » et le journalise. Le SDK rejoue : les traces et métriques sont idempotentes (`on conflict`), les logs n'ont pas de clé naturelle — c'est leur seule source de doublon, mesurée à 1 ou 2 cas sur 42 au banc sous 10 s de latence injectée.
 

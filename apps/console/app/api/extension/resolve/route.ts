@@ -3,57 +3,34 @@
 // bundle d'une extension distribuée est lisible par l'utilisateur, donc pas de
 // jeton à y mettre. Le modèle de sécurité repose sur le registre serveur
 // (extension_scope) : un domaine non enregistré (ou inactif) renvoie 404, et
-// l'extension n'injecte STRICTEMENT rien dans ce cas (jamais de <all_urls>
-// silencieux). CORS permissif (GET, sans credentials) : c'est un mapping
-// domaine -> app_id, zéro PII.
+// l'extension n'injecte STRICTEMENT rien dans ce cas. CORS permissif (GET, sans
+// credentials) : c'est un mapping domaine -> app_id, zéro PII.
 //
-// C11 — le collector sert la même route (`/v1/extension/resolve`, la même
-// requête : `@mip/backend/lib/extension-parc.mjs`). Ici, le relais d'ingestion
-// la lui transmet quand il est allumé ; éteint (l'état d'aujourd'hui), la
-// console répond elle-même, comme avant.
+// Depuis C12 (06/10/2026), la console RELAIE la résolution au collector, qui
+// sert la même route (`/v1/extension/resolve`) et lit le registre ; elle ne
+// fait que compléter l'`endpoint` de sa réponse (`lib/extension-resolution.ts`).
 import { NextResponse, type NextRequest } from "next/server";
-import { LIMITES_EXTENSION, lireDomaine } from "@mip/backend/lib/extension-parc.mjs";
-import { rateLimit } from "@/lib/api/ratelimit";
-import { completerResolutionRelayee, endpointExtension } from "@/lib/extension-resolution";
+import { lireDomaine } from "@mip/backend/lib/extension-parc.mjs";
+import { completerResolutionRelayee } from "@/lib/extension-resolution";
 import { relayer } from "@/lib/ingest-relay";
-import { resolveExtensionScope } from "@/lib/queries-extension-scope";
 
 export const dynamic = "force-dynamic";
-
-const LIMIT = Number(process.env.EXTENSION_RESOLVE_RATE_LIMIT ?? LIMITES_EXTENSION.resolveParMinute); // req/min/domaine
-const WINDOW_MS = 60_000;
 
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, OPTIONS",
 };
 
-function err(status: number, message: string, extra: Record<string, string> = {}): NextResponse {
-  return NextResponse.json({ error: message }, { status, headers: { ...CORS, ...extra } });
-}
-
 export async function OPTIONS(): Promise<NextResponse> {
   return new NextResponse(null, { status: 204, headers: CORS });
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
-  // Un nom d'hôte, ou rien : une chaîne arbitraire ne devient pas une clé de débit.
-  const domain = lireDomaine(new URL(req.url).searchParams.get("domain"));
-  if (!domain) return err(400, "domain requis");
-
+  // Un nom d'hôte, ou rien : une chaîne arbitraire ne part pas à Railway.
+  if (!lireDomaine(new URL(req.url).searchParams.get("domain"))) {
+    return NextResponse.json({ error: "domain requis" }, { status: 400, headers: CORS });
+  }
   // P6b.G : collecte directe ouverte, l'adresse du collector remplace un
-  // `endpoint` vide — relayée ou non (`lib/extension-resolution.ts`).
-  const relayee = await relayer("extensionResolve", req, new Uint8Array(), CORS);
-  if (relayee) return completerResolutionRelayee(relayee);
-
-  const rl = rateLimit(`ext-resolve:${domain}`, LIMIT, WINDOW_MS, Date.now());
-  if (!rl.ok) return err(429, "trop de requêtes", { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) });
-
-  const scope = await resolveExtensionScope(domain);
-  if (!scope) return err(404, "domaine non enregistré");
-
-  return NextResponse.json(
-    { app_id: scope.app_id, endpoint: endpointExtension(scope.endpoint), active: scope.active },
-    { headers: { ...CORS, "cache-control": "public, max-age=60" } },
-  );
+  // `endpoint` vide dans la réponse relayée.
+  return completerResolutionRelayee(await relayer("extensionResolve", req, new Uint8Array(), CORS));
 }

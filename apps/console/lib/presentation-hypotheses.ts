@@ -214,7 +214,7 @@ export const CHANTIERS: readonly Chantier[] = [
     titre: "Une collecte qui ne passe plus que par le collecteur",
     texte:
       "Le relais vers le collecteur est à plein depuis le 28/09/2026 ; après sept jours sans repli, retirer l'écriture de secours de la console.",
-    sources: ["docs/operations/relais-ingestion.md:301,309-314"],
+    sources: ["docs/operations/relais-ingestion.md:186,191-194"],
   },
   {
     id: "X3",
@@ -233,7 +233,7 @@ export const CHANTIERS: readonly Chantier[] = [
     titre: "Une préproduction, et ses exercices",
     texte:
       "Créer l'environnement, puis y répéter les redéploiements sous charge, les retours arrière chronométrés et la panne des notifications.",
-    sources: ["docs/operations/presentation-dsi.md:16-26", "docs/operations/relais-ingestion.md:307"],
+    sources: ["docs/operations/presentation-dsi.md:16-26", "docs/operations/relais-ingestion.md:190"],
   },
   {
     id: "X6",

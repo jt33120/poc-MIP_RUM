@@ -20,7 +20,7 @@ Prérequis : l'environnement Railway `staging` sur une branche Neon **nettoyée*
 | Exercice | Geste | Ce qu'on attend |
 |---|---|---|
 | Redéploiement sous charge | `node scripts/load-bench.mjs` vers le collector de staging, puis `railway redeploy --service collector` | aucune 5xx vue par le générateur (drainage 15 s, deux répliques), `/ready` à 503 dès SIGTERM |
-| Retour arrière de la collecte | `update platform_flag set value = '0' where key = 'ingest_relay_pct'` | la console reprend le chemin local en moins de 30 s (cache du drapeau) |
+| Panne du collector | Railway → `collector` → 0 réplique, puis 2 | la console rend 503 + `retry-after` sans rien écrire (plus de chemin local depuis C12, 06/10/2026) ; les SDK rejouent au retour |
 | Retour arrière de l'API | même geste sur `api_relay_pct` | idem |
 | Vrai déploiement du scheduler | `railway redeploy --service scheduler --from-source` | le pré-déploiement journalise « migrations à jour », puis un tick `ok=true` |
 | Panne du notifier | Railway → `notifier` → Settings → 0 réplique, puis 1 | les livraisons attendent `queued`, rien ne se perd, `/ready` dit l'arriéré |

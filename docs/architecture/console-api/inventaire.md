@@ -1,23 +1,23 @@
 # Inventaire de la console, pour la piste C
 
-> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-10-04, sur `HEAD`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
+> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-10-06, sur `HEAD`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
 
 ## En chiffres
 
 | | Nombre | Atteignent la base |
 |---|---|---|
 | Écrans (`page.tsx`) | 60 | **47** |
-| Fichiers d'actions serveur (`"use server"`) | 20 (58 actions) | **18** |
+| Fichiers d'actions serveur (`"use server"`) | 20 (59 actions) | **18** |
 | Actions déclarées dans un écran | 0 | — |
-| Routes (`route.ts`) | 50 | **37** |
+| Routes (`route.ts`) | 50 | **32** |
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
-| Modules `lib/queries*.ts` | 50 (221 fonctions exportées) | — |
-| Sections `lire()` (appels) | 312 | — |
+| Modules `lib/queries*.ts` | 51 (221 fonctions exportées) | — |
+| Sections `lire()` (appels) | 314 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 5 / 0 | — |
 | Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 55 | — |
 | Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 45 | **45** / 47 |
-| Fichiers d'actions passés par une commande (`lib/commandes/`, C6 → C9) | 15 (53 commandes) | **15** / 18 |
+| Fichiers d'actions passés par une commande (`lib/commandes/`, C6 → C9) | 15 (54 commandes) | **15** / 18 |
 
 **Le cliquet** (`cliquet.json`) liste nominativement ce qui atteint la base. `tests/unit/inventaire-console.test.ts` refuse toute entrée nouvelle, et demande de le resserrer quand une entrée disparaît.
 
@@ -60,7 +60,7 @@
 | `/forms` | C5 | **oui** | forms | collecte, deploys, explorer, form-analytics, mobile, sessions, tracing | 3 | — | oui |
 | `/goals` | C5 | **oui** | goals | queries, accounts, alerting, collecte, dashboards, deploys, dsar, errors, escalade, events, explorer, extension-installs, extension-scope, frustration, goals, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, tracing, uptime, v2 | 4 | — | oui |
 | `/inscription` | C1–C2 identité, sélection | non | — | — | — | — | oui |
-| `/installer` | C5 | **oui** | installer | collecte, customers, deploys, explorer, extension-scope | 3 | — | non |
+| `/installer` | C5 | **oui** | installer | queries, accounts, alerting, attestation-rejeu, collecte, customers, dashboards, deploys, dsar, errors, escalade, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, tracing, uptime, v2 | 5 | — | non |
 | `/legal/cgu` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/cgv` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/confidentialite` | statique ou vitrine | non | — | — | — | — | oui |
@@ -95,7 +95,7 @@
 | Fichier | Actions | Base | Commandes | Auditée |
 |---|---|---|---|---|
 | `app/actions-dashboard.ts` | reglerBlocsAction | non | — | non |
-| `app/admin/customers/actions.ts` | createCustomerAction, rotateKeyAction, toggleAppAction, updateOriginsAction | **oui** | activerApplication, creerApplication, majOrigines, renouvelerCle | par règle |
+| `app/admin/customers/actions.ts` | createCustomerAction, rotateKeyAction, toggleAppAction, updateOriginsAction, attesterRejeuAction | **oui** | activerApplication, attesterRejeu, creerApplication, majOrigines, renouvelerCle | par règle |
 | `app/admin/extension-installs/actions.ts` | forgetInstallAction | **oui** | oublierPoste | par règle |
 | `app/admin/extension-scope/actions.ts` | createExtensionScopeAction, toggleExtensionScopeAction | **oui** | activerDomaineExtension, creerDomaineExtension | par règle |
 | `app/admin/privacy/actions.ts` | searchIdentityAction, eraseIdentityAction, eraseUserAction | **oui** | effacerIdentite, effacerVisiteur, rechercherIdentite | par règle |
@@ -126,11 +126,11 @@
 | `/api/auth/oidc/callback` | GET | émet la session | **oui** | console-api (C1 identité) |
 | `/api/auth/oidc/login` | GET | — | non | console-api (C1 identité) |
 | `/api/dashboards/[id]/export` | GET | — | **oui** | console-api (C6) |
-| `/api/extension/heartbeat` | POST, OPTIONS | — | **oui** | collector (C11) |
-| `/api/extension/resolve` | GET, OPTIONS | — | **oui** | collector (C11) |
-| `/api/ingest/v1/logs` | GET, POST, OPTIONS | — | **oui** | collector (relais P3 ; relais pur en C11) |
-| `/api/ingest/v1/replay` | POST, OPTIONS | — | **oui** | collector (relais P3 ; relais pur en C11) |
-| `/api/ingest/v1/traces` | GET, POST, OPTIONS | — | **oui** | collector (relais P3 ; relais pur en C11) |
+| `/api/extension/heartbeat` | POST, OPTIONS | — | non | collector (C11) |
+| `/api/extension/resolve` | GET, OPTIONS | — | non | collector (C11) |
+| `/api/ingest/v1/logs` | GET, POST, OPTIONS | — | non | collector (relais P3 ; relais pur en C11) |
+| `/api/ingest/v1/replay` | POST, OPTIONS | — | non | collector (relais P3 ; relais pur en C11) |
+| `/api/ingest/v1/traces` | GET, POST, OPTIONS | — | non | collector (relais P3 ; relais pur en C11) |
 | `/api/live` | GET | — | non | à classer |
 | `/api/metrics` | GET | jeton de métriques | **oui** | à supprimer (supervision par les /metrics des services) |
 | `/api/releases` | GET | — | **oui** | reste sur Vercel, relais serveur (C11) |
@@ -193,53 +193,54 @@
 
 | Module | Fonctions exportées | Écrans qui l'atteignent |
 |---|---|---|
-| `lib/queries-accounts.ts` | 1 | 18 |
+| `lib/queries-accounts.ts` | 1 | 19 |
 | `lib/queries-acquisition.ts` | 2 | 1 |
 | `lib/queries-actions.ts` | 3 | 1 |
-| `lib/queries-alerting.ts` | 9 | 18 |
+| `lib/queries-alerting.ts` | 9 | 19 |
+| `lib/queries-attestation-rejeu.ts` | 1 | 1 |
 | `lib/queries-breakdowns.ts` | 2 | 4 |
 | `lib/queries-chaine.ts` | 1 | 10 |
 | `lib/queries-cohorts.ts` | 1 | 1 |
 | `lib/queries-collecte.ts` | 1 | 45 |
 | `lib/queries-customers.ts` | 5 | 13 |
-| `lib/queries-dashboards.ts` | 6 | 18 |
+| `lib/queries-dashboards.ts` | 6 | 19 |
 | `lib/queries-deploys.ts` | 5 | 45 |
 | `lib/queries-detections.ts` | 2 | 1 |
 | `lib/queries-dimensions.ts` | 1 | 0 |
-| `lib/queries-dsar.ts` | 9 | 18 |
+| `lib/queries-dsar.ts` | 9 | 19 |
 | `lib/queries-engagement.ts` | 4 | 1 |
-| `lib/queries-errors.ts` | 13 | 26 |
-| `lib/queries-escalade.ts` | 6 | 18 |
-| `lib/queries-events.ts` | 3 | 31 |
+| `lib/queries-errors.ts` | 13 | 27 |
+| `lib/queries-escalade.ts` | 6 | 19 |
+| `lib/queries-events.ts` | 3 | 32 |
 | `lib/queries-experience.ts` | 7 | 1 |
 | `lib/queries-explorer.ts` | 2 | 45 |
-| `lib/queries-extension-installs.ts` | 3 | 22 |
+| `lib/queries-extension-installs.ts` | 2 | 23 |
 | `lib/queries-extension-scope.ts` | 7 | 24 |
 | `lib/queries-form-analytics.ts` | 1 | 1 |
-| `lib/queries-frustration.ts` | 5 | 19 |
+| `lib/queries-frustration.ts` | 5 | 20 |
 | `lib/queries-funnel.ts` | 2 | 1 |
 | `lib/queries-goals.ts` | 3 | 1 |
-| `lib/queries-grid.ts` | 4 | 20 |
+| `lib/queries-grid.ts` | 4 | 21 |
 | `lib/queries-health.ts` | 1 | 10 |
 | `lib/queries-heatmap.ts` | 1 | 1 |
 | `lib/queries-histogramme.ts` | 1 | 0 |
 | `lib/queries-logs.ts` | 5 | 1 |
 | `lib/queries-longtasks.ts` | 2 | 1 |
 | `lib/queries-map.ts` | 4 | 1 |
-| `lib/queries-mobile.ts` | 7 | 38 |
+| `lib/queries-mobile.ts` | 7 | 39 |
 | `lib/queries-paths.ts` | 3 | 1 |
 | `lib/queries-planifie.ts` | 3 | 14 |
 | `lib/queries-projects.ts` | 1 | 2 |
-| `lib/queries-read-tokens.ts` | 5 | 22 |
+| `lib/queries-read-tokens.ts` | 5 | 23 |
 | `lib/queries-resources.ts` | 1 | 1 |
-| `lib/queries-saved-views.ts` | 7 | 18 |
-| `lib/queries-sessions.ts` | 7 | 38 |
-| `lib/queries-sourcemap-tokens.ts` | 3 | 22 |
+| `lib/queries-saved-views.ts` | 7 | 19 |
+| `lib/queries-sessions.ts` | 7 | 39 |
+| `lib/queries-sourcemap-tokens.ts` | 3 | 23 |
 | `lib/queries-sourcemap.ts` | 3 | 10 |
 | `lib/queries-summary.ts` | 1 | 0 |
 | `lib/queries-surrepresentation.ts` | 1 | 0 |
-| `lib/queries-tracing.ts` | 8 | 39 |
-| `lib/queries-uptime.ts` | 4 | 18 |
+| `lib/queries-tracing.ts` | 8 | 40 |
+| `lib/queries-uptime.ts` | 4 | 19 |
 | `lib/queries-usage.ts` | 1 | 10 |
-| `lib/queries-v2.ts` | 22 | 24 |
-| `lib/queries.ts` | 22 | 34 |
+| `lib/queries-v2.ts` | 22 | 25 |
+| `lib/queries.ts` | 22 | 35 |

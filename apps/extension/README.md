@@ -90,11 +90,11 @@ staging en production.
 
 **Côté serveur, aujourd'hui** : les deux routes (`/api/extension/resolve` et
 `/api/extension/heartbeat`) sont servies par la console, sur Vercel. Depuis C11, le
-collector (`services/collector`) sait servir les mêmes sous `/v1/extension/*`, et la console
-peut les lui relayer (`apps/console/lib/ingest-relay.ts`, drapeau `ingest_relay_pct`, 0 par
-défaut). C'est inerte tant que le relais n'est pas allumé et que le collector n'est pas créé
-sur Railway (au 26/09/2026, il ne l'est pas). L'extension n'a rien à changer le jour de la
-bascule : elle continue de viser la console.
+collector (`services/collector`) sait servir les mêmes sous `/v1/extension/*`, et depuis
+C12 (06/10/2026) la console les lui relaie toujours (`apps/console/lib/ingest-relay.ts`), sans
+plus lire ni écrire la base elle-même : collector injoignable, 503. L'extension n'a rien eu à
+changer : elle vise la console, ou le collector quand la résolution le lui indique
+(collecte directe).
 
 Le libellé lisible d'un poste vient de `chrome.storage.managed` (clé `poste`, déclarée
 dans `managed-schema.json`), donc de la policy d'entreprise du client — l'extension ne

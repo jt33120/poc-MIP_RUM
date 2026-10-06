@@ -11,8 +11,8 @@ l'équipe du client, pas seulement par un administrateur (30/09/2026).
 
 Toute la collecte arrive sur la console, `https://mip-rum-console.vercel.app/api/ingest/v1/`
 (`traces`, `logs`, `replay`), qui la relaie au service `collector` (Railway,
-`ingest_relay_pct` à 100 % depuis le 28/09/2026) et l'écrit elle-même si le relais
-échoue. Pour le client, une seule adresse.
+tout depuis le 28/09/2026) sans plus jamais l'écrire elle-même depuis le 06/10/2026 :
+collector injoignable, 503 et le SDK rejoue. Pour le client, une seule adresse.
 
 **La collecte directe, quand elle sera ouverte** (P6b.G : code prêt le 30/09/2026,
 mise en service pas avant le 05/10/2026). Le navigateur du site écrit alors

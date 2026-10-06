@@ -1,68 +1,45 @@
-// P2 — CONTRAT DE PARITÉ DE LA COLLECTE : la console (routes Next) et le
-// collector (`creerReceveur`) rendent le MÊME statut et écrivent les MÊMES
-// lignes, pour la même requête.
+// CONTRAT DE PARITÉ DE LA COLLECTE, depuis C12 (06/10/2026) : la même requête,
+// envoyée à la console (routes Next, qui la RELAIENT) et au collector en direct
+// (`creerReceveur`), rend le MÊME statut et écrit les MÊMES lignes.
 //
-// POURQUOI CE TEST. En P3, la console relaie chaque beacon vers le collector et
-// ne garde son propre chemin d'écriture qu'en REPLI (erreur de connexion, 502,
-// 504…). Pendant des semaines, une même requête peut donc être traitée par l'un
-// OU par l'autre, selon un pourcentage tiré en base. Si les deux ne répondaient
-// pas pareil, le SDK verrait deux contrats à la fois (un 500 ici, un 503 là ; un
-// 413 d'un côté, un 200 de l'autre), et les écrans liraient deux jeux de lignes
-// qui ne se recoupent pas. Les deux copies de la couche HTTP (plan, « Faits
-// vérifiés », Collecte) ont déjà divergé une fois ; ce fichier est ce qui les
-// empêche de recommencer sans que personne le voie.
+// POURQUOI CE TEST. Jusqu'à C12, la console avait son propre chemin d'écriture,
+// et ce contrat comparait deux implémentations. Elle n'en a plus : elle borne le
+// corps et le transmet au collector (`lib/ingest-relay.ts`). Ce qui reste à
+// prouver, c'est que le RELAIS EST TRANSPARENT — qu'un client resté sur l'adresse
+// de la console voit le même contrat (statut, `retry-after`, corps, format) et
+// laisse les mêmes lignes qu'un client passé en collecte directe. Une liste
+// d'en-têtes trop courte, une réponse mal reconstruite ou un refus local de trop
+// se verraient ici.
 //
 // COMMENT. Deux bases Postgres 17 migrées par le migrateur de production
 // (`services/scheduler/migrate.mjs`), UNE PAR CÔTÉ, amorcées à l'identique.
 // Chaque cas envoie les MÊMES octets aux deux côtés, puis compare : statut,
 // `retry-after`, corps JSON de la réponse, et ce que l'envoi a changé dans
 // TOUTES les tables (delta entre deux instantanés complets de chaque base).
-// Comparer tout — et pas « la table que le cas est censé écrire » — attrape
-// aussi l'écriture parasite : un compteur, une ligne de session minimale, une
-// trace d'audit que l'un des deux côtés ajouterait seul.
 //
 //   - Côté console : les route handlers appelés comme par Next, avec une
-//     `Request` web (même méthode que `identity-ingest-ports.test.ts`), sur le
-//     VRAI `@/lib/db` pointé sur sa base. Aucun module n'est simulé.
+//     `Request` web ; le relais vise un SECOND receveur (`creerReceveur`, réponses
+//     signées comme par le kit du service), branché sur la base « console ».
+//     Aucun module n'est simulé. La console ne garde d'écriture que hors collecte
+//     (session admin des source maps, jeton historique des marqueurs).
 //   - Côté collector : `creerReceveur` derrière un vrai `node:http`, requêtes
 //     envoyées par `http.request` pour maîtriser les en-têtes au bit près
 //     (`content-length` annoncé, ou corps en flux sans longueur). Le chemin
 //     envoyé est le chemin HISTORIQUE de la console (`/api/ingest/v1/*`,
-//     `/api/sourcemaps`) : c'est celui que le relais de P3 et les clients
-//     existants emprunteront.
+//     `/api/sourcemaps`).
 //
-// CE QUI N'EST PAS COMPARÉ, ET POURQUOI (plan, P2 « Tests ») :
-//   - les colonnes GÉO de `rum_session` : la console lit l'en-tête pays du CDN,
-//     le collector ne le croit que relayé et signé (bord de confiance) et fait
-//     son propre GeoIP — deux provenances par construction ;
-//   - les HORODATAGES D'ÉCRITURE (`COLONNES_EXCLUES`, chacun justifié) : ils
-//     disent QUAND un côté a écrit, pas CE qu'il a écrit, et les deux côtés
-//     n'écrivent pas à la même milliseconde ;
-//   - `rate_counter` ligne à ligne : il est rangé par minute d'ARRIVÉE ; on
-//     compare à la place le total de coups par app (même nombre de beacons
-//     comptés des deux côtés, y compris ceux refusés en 429) ;
+// CE QUI N'EST PAS COMPARÉ, ET POURQUOI :
+//   - les colonnes GÉO de `rum_session` : relayé, le pays vient du bord de
+//     confiance ; en direct, du GeoIP — deux provenances par construction ;
+//   - les HORODATAGES D'ÉCRITURE (`COLONNES_EXCLUES`, chacun justifié) ;
+//   - `rate_counter` ligne à ligne : on compare le total de coups par app ;
 //   - `schema_migration` : écrit par le migrateur, jamais par l'ingestion.
 //
-// ÉCARTS VOULUS, un cas chacun en fin de fichier (bloc « écarts voulus ») :
-// source map au-delà de 4 Mio (plafond Vercel), upload sans jeton (porte admin
-// de la console), secret d'identité vide sur Vercel (décision du 23/09) ; plus
-// le nommage `/v1/*` que seul le collector sert (cas « logs nominaux »).
-//
-// ÉCARTS CORRIGÉS grâce à ce contrat (la console s'aligne sur le collector) :
-//   - corps OTLP sans longueur annoncée au-delà de 2 Mo : 200 console, 413
-//     collector → lecture bornée partagée (`shared/limits.mjs`, `lireCorpsBorne`) ;
-//   - base injoignable au moment d'écrire : 500 console, 503 + retry-after
-//     collector → prédicat partagé (`shared/retry.mjs`, `estIndisponibilite`),
-//     branché dans `refusIngestion` (`apps/console/lib/ingest.ts`).
-//
-// R11 — OTLP/HTTP PROTOBUF : des exports du SDK OpenTelemetry officiel
-// (`tests/fixtures/otlp-officiel.ts`), en clair et en gzip, plus les refus
-// (400, 403, 413, 415). Même statut, même `content-type` de réponse (protobuf
-// pour une requête protobuf), mêmes lignes des deux côtés.
-//
-// DÉFAUT COMMUN CORRIGÉ DES DEUX CÔTÉS : un chunk de rejeu sans `x-mip-seq`
-// partait en séquence 0 (`Number(null) === 0`) → 400 partout, par le même
-// `lireSequenceReplay` ; et la console lit le corps du rejeu borné.
+// ÉCARTS VOULUS : un rejeu au-delà du plafond est refusé par la console AVANT
+// relais (il n'y a plus d'octets entiers à transmettre) — même 413, mais le
+// collector, qui garde avant de lire, a compté le beacon (`refusLocal`) ; et, en
+// fin de fichier, source map au-delà de 4 Mio (plafond Vercel), upload sans jeton
+// (porte admin de la console), jeton historique des marqueurs.
 //
 // LANCEMENT (Docker, jamais la production — le test REFUSE un hôte non local) :
 //   docker run -d --rm --name mip-parite -e POSTGRES_PASSWORD=postgres -p 55451:5432 postgres:17
@@ -79,9 +56,8 @@ import { gzipSync } from "node:zlib";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-// AVANT TOUT IMPORT DE LA CONSOLE. `@/lib/db` lit DATABASE_URL, et `@/lib/ingest`
-// lit REQUIRE_API_KEY et RATE_LIMIT_PER_MIN, AU CHARGEMENT du module : les poser
-// après les imports n'aurait aucun effet. DATABASE_URL est écrasée même quand
+// AVANT TOUT IMPORT DE LA CONSOLE. `@/lib/db` lit DATABASE_URL AU CHARGEMENT du
+// module : la poser après les imports n'aurait aucun effet. DATABASE_URL est écrasée même quand
 // le contrat est ignoré — une variable héritée du shell (le `.env` de
 // production, par exemple) ne doit jamais atteindre un pool que ce fichier
 // importe, même inutilisé.
@@ -104,10 +80,14 @@ const ENV = vi.hoisted(() => {
   process.env.REQUIRE_API_KEY = "true";
   process.env.RATE_LIMIT_PER_MIN = "600";
   process.env.IDENTITY_HASH_SECRET = "parite-secret-identite";
+  // Le secret du bord de confiance, partagé par la console et le receveur relayé.
+  process.env.EDGE_PROXY_SECRET = "parite-secret-de-bord-".padEnd(48, "x");
+  // Posée quand le receveur relayé écoute (`beforeAll`).
+  delete process.env.CONSOLE_INGEST_RELAY_URL;
   // C11 — un jeton d'API HISTORIQUE (CONSOLE_API_TOKENS), scopé sur l'app A : la
   // console l'accepte encore pour un marqueur de déploiement, le collector non.
   process.env.CONSOLE_API_TOKENS = "parite-jeton-historique@parite-a";
-  return { next, collector, secret: "parite-secret-identite", limite: 600 };
+  return { next, collector, secret: "parite-secret-identite", limite: 600, bord: process.env.EDGE_PROXY_SECRET };
 });
 
 import { POST as POST_LOGS } from "../../apps/console/app/api/ingest/v1/logs/route";
@@ -121,7 +101,7 @@ import { pool as poolConsole } from "../../apps/console/lib/db";
 // @ts-expect-error module ESM partagé, sans déclarations
 import { VERROU_INGESTION_NS } from "../../packages/backend/lib/privacy-barriere.mjs";
 // @ts-expect-error module ESM partagé, sans déclarations
-import { creerReceveur } from "../../packages/backend/lib/receiver.mjs";
+import { creerReceveur, ENTETE_COLLECTOR } from "../../packages/backend/lib/receiver.mjs";
 // @ts-expect-error module ESM partagé, sans déclarations
 import { genererJetonUpload } from "../../packages/backend/lib/sourcemap-upload.mjs";
 import { logsOfficiels, tracesOfficielles } from "../fixtures/otlp-officiel";
@@ -808,6 +788,12 @@ interface Cas {
   /** Préparation propre à chaque côté (verrou tenu, base coupée…) ; rend sa remise en état. */
   pendant?: (cote: Cote, base: pg.Pool) => Promise<() => Promise<void>>;
   delai?: number;
+  /**
+   * La console refuse AVANT de relayer (corps au-delà du plafond, qu'elle n'a
+   * plus en entier) : même statut, mais seul le collector, qui garde avant de
+   * lire, compte le beacon au débit.
+   */
+  refusLocal?: true;
 }
 
 const SESSION = (n: number) => `parite-session-${n}`;
@@ -1026,13 +1012,14 @@ const CAS: Cas[] = [
     nom: "replay à 2 Mio + 1 octet → 413",
     envoi: { chemin: "/api/ingest/v1/replay", entetes: rejeu(SESSION(1), APP.a, 6), corps: chunkExact(2 * 1024 * 1024 + 1) },
     statut: 413,
+    refusLocal: true,
   },
   {
-    // La console lisait `req.arrayBuffer()` en entier AVANT de mesurer ; elle
-    // lit désormais bornée, comme le collector (`lireCorpsBorne`).
+    // La console lit bornée, comme le collector (`lireCorpsBorne`).
     nom: "replay à 2 Mio + 1 octet, en flux SANS longueur annoncée → 413",
     envoi: { chemin: "/api/ingest/v1/replay", entetes: rejeu(SESSION(1), APP.a, 9), corps: chunkExact(2 * 1024 * 1024 + 1), sansLongueur: true },
     statut: 413,
+    refusLocal: true,
   },
   {
     nom: "replay au corps vide → 413",
@@ -1058,33 +1045,33 @@ const CAS: Cas[] = [
   },
   // ── 503 ───────────────────────────────────────────────────────────────────
   {
-    // La console attend sa stratégie par défaut (5 s × 3 ≈ 15,6 s), le
-    // collector son budget (1,5 s × 2 ≈ 3,1 s) : même refus, pas même délai.
+    // Les deux receveurs attendent leur budget (1,5 s × 2 ≈ 3,1 s), sous le
+    // délai du relais (8 s).
     nom: "traces pendant qu'un effacement tient le verrou de l'app → 503 + retry-after",
     envoi: { chemin: "/api/ingest/v1/traces", ...json(traces(APP.verrou, SESSION(9), 13)) },
     statut: 503,
     pendant: (_cote, base) => tenirVerrou(base, APP.verrou.id),
     delai: 60_000,
   },
-  // Base injoignable au moment d'écrire : les trois signaux, parce que le
-  // correctif (`refusIngestion` ← `estIndisponibilite`) sert les trois routes.
+  // Base injoignable au moment d'écrire : les trois signaux (côté console, la
+  // base du receveur relayé).
   {
     nom: "traces quand la base refuse toute nouvelle connexion → 503 + retry-after",
     envoi: { chemin: "/api/ingest/v1/traces", ...json(traces(APP.a, SESSION(10), 14)) },
     statut: 503,
-    pendant: async (cote) => couperConnexions(cote === "console" ? poolConsole : poolCollector),
+    pendant: async (cote) => couperConnexions(cote === "console" ? poolRelaye : poolCollector),
   },
   {
     nom: "logs quand la base refuse toute nouvelle connexion → 503 + retry-after",
     envoi: { chemin: "/api/ingest/v1/logs", ...json(logs(APP.a, SESSION(10), 16)) },
     statut: 503,
-    pendant: async (cote) => couperConnexions(cote === "console" ? poolConsole : poolCollector),
+    pendant: async (cote) => couperConnexions(cote === "console" ? poolRelaye : poolCollector),
   },
   {
     nom: "replay quand la base refuse toute nouvelle connexion → 503 + retry-after",
     envoi: { chemin: "/api/ingest/v1/replay", entetes: rejeu(SESSION(1), APP.a, 8), corps: chunk() },
     statut: 503,
-    pendant: async (cote) => couperConnexions(cote === "console" ? poolConsole : poolCollector),
+    pendant: async (cote) => couperConnexions(cote === "console" ? poolRelaye : poolCollector),
   },
   // ── Source maps par jeton (branche jeton de /api/sourcemaps) ──────────────
   {
@@ -1278,7 +1265,9 @@ const CAS: Cas[] = [
 let baseConsole: pg.Pool;
 let baseCollector: pg.Pool;
 let poolCollector: pg.Pool;
+let poolRelaye: pg.Pool;
 let serveur: Server | undefined;
+let serveurRelaye: Server | undefined;
 let port = 0;
 
 async function envoyerDesDeuxCotes(envoi: Envoi, pendant?: Cas["pendant"]) {
@@ -1299,7 +1288,7 @@ async function envoyerDesDeuxCotes(envoi: Envoi, pendant?: Cas["pendant"]) {
   return { console: reponseConsole, collector: reponseCollector };
 }
 
-suite("contrat de parité — console (routes Next) ↔ collector (creerReceveur)", () => {
+suite("contrat de parité — console (routes Next, relais) ↔ collector en direct (creerReceveur)", () => {
   beforeAll(async () => {
     // Pools d'OBSERVATION, distincts de ceux des deux côtés : un cas qui coupe
     // les connexions d'un côté ne doit pas aveugler l'instantané.
@@ -1315,23 +1304,40 @@ suite("contrat de parité — console (routes Next) ↔ collector (creerReceveur
     expect(ecarts(await instantane(baseConsole), await instantane(baseCollector)), "amorce").toEqual([]);
 
     poolCollector = new pg.Pool({ connectionString: ENV.collector!, max: 4, application_name: "parite-collector" });
+    poolRelaye = new pg.Pool({ connectionString: ENV.next!, max: 4, application_name: "parite-relaye" });
     const muet = { debug() {}, info() {}, warn() {}, error() {} };
-    const receveur = creerReceveur(poolCollector, {
-      requireApiKey: true,
-      rateLimitPerMin: ENV.limite,
-      identityHashSecret: ENV.secret,
-      nom: "collector",
-      log: muet,
-      env: {},
-    });
-    serveur = createServer(receveur.handler);
-    await new Promise<void>((r) => serveur!.listen(0, "127.0.0.1", r));
-    port = (serveur.address() as { port: number }).port;
+    const ecouter = async (pool: pg.Pool, bord: string[] | undefined) => {
+      const receveur = creerReceveur(pool, {
+        requireApiKey: true,
+        rateLimitPerMin: ENV.limite,
+        identityHashSecret: ENV.secret,
+        nom: "collector",
+        log: muet,
+        env: {},
+        edgeSecrets: bord,
+      });
+      // La signature que le kit du service pose sur TOUTES les réponses : sans
+      // elle, le relais de la console ne transmet rien (santé non signée).
+      const s = createServer((req, res) => {
+        res.setHeader(ENTETE_COLLECTOR, "1");
+        return receveur.handler(req, res);
+      });
+      await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
+      return { s, port: (s.address() as { port: number }).port };
+    };
+    const direct = await ecouter(poolCollector, undefined);
+    serveur = direct.s;
+    port = direct.port;
+    // Le receveur que la console vise : même configuration, plus le bord de confiance.
+    const relaye = await ecouter(poolRelaye, [ENV.bord!]);
+    serveurRelaye = relaye.s;
+    process.env.CONSOLE_INGEST_RELAY_URL = `http://127.0.0.1:${relaye.port}`;
   }, 60_000);
 
   afterAll(async () => {
-    await new Promise<void>((r) => (serveur ? serveur.close(() => r()) : r()));
-    await Promise.all([poolCollector?.end(), baseConsole?.end(), baseCollector?.end(), poolConsole.end()]);
+    delete process.env.CONSOLE_INGEST_RELAY_URL;
+    for (const s of [serveur, serveurRelaye]) await new Promise<void>((r) => (s ? s.close(() => r()) : r()));
+    await Promise.all([poolCollector?.end(), poolRelaye?.end(), baseConsole?.end(), baseCollector?.end(), poolConsole.end()]);
   });
 
   for (const cas of CAS) {
@@ -1350,8 +1356,22 @@ suite("contrat de parité — console (routes Next) ↔ collector (creerReceveur
         expect(r.collector.type, "content-type de réponse").toBe(r.console.type);
       }
       expect(ecartsDuCas(avant, apres), "lignes écrites par ce cas").toEqual([]);
-      expect(coupsAjoutes(avant.coupsCollector, apres.coupsCollector), "coups de débit de ce cas")
-        .toEqual(coupsAjoutes(avant.coupsConsole, apres.coupsConsole));
+      if (cas.refusLocal) {
+        expect(coupsAjoutes(avant.coupsConsole, apres.coupsConsole), "refus local : aucun coup côté console").toEqual(
+          coupsAjoutes(new Map(), new Map()),
+        );
+        // Réalignement : le coup que seul le collector a compté, retiré de sa minute.
+        for (const [app, n] of Object.entries(coupsAjoutes(avant.coupsCollector, apres.coupsCollector))) {
+          await baseCollector.query(
+            `update rate_counter set hits = hits - $2
+              where app_id = $1 and minute = (select max(minute) from rate_counter where app_id = $1)`,
+            [app, n],
+          );
+        }
+      } else {
+        expect(coupsAjoutes(avant.coupsCollector, apres.coupsCollector), "coups de débit de ce cas")
+          .toEqual(coupsAjoutes(avant.coupsConsole, apres.coupsConsole));
+      }
     }, cas.delai ?? DELAI);
   }
 
@@ -1454,53 +1474,6 @@ suite("contrat de parité — console (routes Next) ↔ collector (creerReceveur
       // Réalignement : le marqueur que seule la console a accepté ; plus rien ne diffère.
       await baseConsole.query("delete from deploy_marker where app_id = $1 and version = 'historique'", [APP.a.id]);
       await baseConsole.query("select setval('deploy_marker_id_seq', (select coalesce(max(id), 1) from deploy_marker))");
-      expect(ecartsDuCas(avant, await releve())).toEqual([]);
-    }, DELAI);
-
-    it("identité : secret VIDE sur Vercel (23/09), posé sur le collector — donnée manquante, jamais incohérente", async () => {
-      // POURQUOI C'EST VOULU (plan, P2 « Identité »). `IDENTITY_HASH_SECRET` est
-      // vide sur Vercel et y restera : la console RETIRE l'identité, le collector
-      // la HACHE. Le même lot laisse donc `user_id_hash` nul d'un côté, haché de
-      // l'autre — et RIEN d'autre ne diffère. C'est un écart de CONFIGURATION :
-      // à secret égal, tous les cas plus haut prouvent le même hachage.
-      const envoi = { chemin: "/api/ingest/v1/traces", ...json(traces(APP.identite, SESSION(20), 20)) };
-      const { rows: tables } = await baseConsole.query<{ table_name: string }>(
-        "select table_name from information_schema.columns where table_schema = 'public' and column_name = 'user_id_hash'",
-      );
-      const sansIdentite = Object.fromEntries(tables.map((t) => [t.table_name, ["user_id_hash"]]));
-      const sans = async () => ({
-        console: await instantane(baseConsole, sansIdentite),
-        collector: await instantane(baseCollector, sansIdentite),
-      });
-      const avant = await releve();
-      const avantSans = await sans();
-      const secret = process.env.IDENTITY_HASH_SECRET;
-      process.env.IDENTITY_HASH_SECRET = "";
-      let r: Awaited<ReturnType<typeof envoyerDesDeuxCotes>>;
-      try {
-        r = await envoyerDesDeuxCotes(envoi);
-      } finally {
-        process.env.IDENTITY_HASH_SECRET = secret;
-      }
-      expect({ console: r.console.statut, collector: r.collector.statut }).toEqual({ console: 200, collector: 200 });
-
-      // L'identité de l'action atterrit sur la session (`rum_session.user_id_hash`).
-      const lire = (db: pg.Pool) =>
-        db.query<{ user_id_hash: string | null }>(
-          "select user_id_hash from rum_session where app_id = $1 and session_id = $2",
-          [APP.identite.id, SESSION(20)],
-        );
-      expect((await lire(baseConsole)).rows).toEqual([{ user_id_hash: null }]);
-      expect((await lire(baseCollector)).rows[0]?.user_id_hash).toMatch(/^[0-9a-f]{64}$/);
-
-      // Tout le reste est identique : mêmes lignes écrites, `user_id_hash` mis à part.
-      const apresSans = await sans();
-      expect(ecarts(delta(avantSans.console, apresSans.console), delta(avantSans.collector, apresSans.collector))).toEqual([]);
-
-      // Réalignement : l'identité que seul le collector a hachée ; plus rien ne diffère.
-      for (const { table_name: table } of tables) {
-        await baseCollector.query(`update "${table}" set user_id_hash = null where app_id = $1`, [APP.identite.id]);
-      }
       expect(ecartsDuCas(avant, await releve())).toEqual([]);
     }, DELAI);
   });

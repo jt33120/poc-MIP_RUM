@@ -57,10 +57,10 @@ lecture ») n'ont **aucun** droit d'upload.
 | Console (Vercel) — **le seul en service au 26/09/2026** | `https://<console>/api/sourcemaps` | ≤ 4 Mio (plafond Vercel publié : 4,5 Mo) | ≤ 4 Mio en pratique | ≤ 3 Mio par défaut |
 | Backend direct : le service `collector` (Railway) — **pas encore créé** | `https://<collector>/v1/sourcemaps` | ≤ 20 Mio | ≤ 15 Mio | ≤ 20 Mio |
 
-Bornes : `LIMITES_UPLOAD`, `packages/backend/lib/sourcemap-upload.mjs`. Quand le relais d'ingestion
-de la console (`apps/console/lib/ingest-relay.ts`, drapeau `ingest_relay_pct`, à 0 par défaut)
-sera allumé, un upload **au jeton** reçu par la console pourra partir au collector ; les bornes
-restent celles du port console.
+Bornes : `LIMITES_UPLOAD`, `packages/backend/lib/sourcemap-upload.mjs`. Depuis C12 (06/10/2026),
+un upload **au jeton** reçu par la console part toujours au collector, qui seul l'écrit
+(`apps/console/lib/ingest-relay.ts`) ; les bornes restent celles du port console. L'envoi depuis
+l'écran (session admin) reste écrit par la console.
 
 Ce que fait le CLI, **avant** le premier envoi :
 - relie chaque bundle `.js/.mjs/.cjs` à sa map (commentaire `sourceMappingURL` relatif, sinon

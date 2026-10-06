@@ -24,18 +24,6 @@ const { queries, errors, testPool } = vi.hoisted(() => {
   return { queries, errors, testPool: { query, connect: async () => client } };
 });
 
-vi.mock("@/lib/db", () => ({ pool: testPool }));
-vi.mock("@/lib/ingest", () => ({
-  corsFor: async () => ({}),
-  guardApps: async () => null,
-  json: (body: unknown, status: number, headers: Record<string, string>) =>
-    new Response(JSON.stringify(body), { status, headers }),
-  log: { info() {}, warn() {}, error(...args: unknown[]) { errors.push(args); } },
-  // Requêtes JSON ici : la réponse passe telle quelle (la conversion protobuf a ses tests).
-  formaterReponseOtlp: async (_req: Request, res: Response) => res,
-}));
-
-import { POST } from "../../apps/console/app/api/ingest/v1/traces/route";
 // @ts-expect-error module JS partagé sans déclarations
 import { creerReceveur } from "../../packages/backend/lib/receiver.mjs";
 
@@ -77,21 +65,11 @@ function assertSecured(value: unknown) {
 afterEach(() => {
   queries.length = 0;
   errors.length = 0;
-  delete process.env.IDENTITY_HASH_SECRET;
 });
 
-describe("identité aux deux ports d'ingestion actifs", () => {
-  it("sécurise le brut dans la route Next avant writeRows", async () => {
-    process.env.IDENTITY_HASH_SECRET = SECRET;
-    const response = await POST(new Request("http://console.test/api/ingest/v1/traces", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload()),
-    }));
-    expect(response.status, JSON.stringify(errors)).toBe(200);
-    assertSecured(queries);
-  });
-
+// Depuis C12 (06/10/2026), le receveur du collector est le SEUL port qui écrit :
+// la console relaie les octets sans les lire (`tests/unit/ingest-relay.test.ts`).
+describe("identité au port d'ingestion", () => {
   it("sécurise le brut dans le receveur Node avant writeRows", async () => {
     const { handler } = creerReceveur(testPool, {
       identityHashSecret: SECRET,

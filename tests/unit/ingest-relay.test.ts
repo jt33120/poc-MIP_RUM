@@ -1,68 +1,63 @@
-// P3 — relais d'ingestion de la console vers le collector (`lib/ingest-relay.ts`)
-// et drapeau de plateforme (`lib/platform-flag.ts`).
+// C12 — la console RELAIE la collecte au collector, et ne l'écrit plus jamais
+// (`lib/ingest-relay.ts`, ADR 0005 point 5). Et le lecteur de drapeaux de
+// plateforme (`lib/platform-flag.ts`), qui sert encore les autres relais.
 //
 // Ce que ce fichier tient, sans réseau ni base :
-//   · la MATRICE DE REPLI, chaque statut × chaque signal × signé ou non
-//     (`x-mip-collector: 1`) : une réponse SIGNÉE est rendue telle quelle, sans
-//     échec compté (404 métier des source maps compris) ; seuls 404/405/502/504
-//     NON signés (routeur Railway) replient — et les logs, non idempotents, ne
-//     se replient ni sur un 502/504 ni sur une connexion perdue après l'envoi ;
+//   · configuration absente ou invalide : 503 + retry-after, aucun appel réseau ;
 //   · `http:` refusé hors de localhost : secret et clés ne partent pas en clair ;
-//   · le délai de 8 s : 503 + retry-after pour TOUS les signaux, sans repli ;
-//   · le disjoncteur : 5 échecs en 30 s → contournement 60 s, puis retour ;
-//   · la LISTE D'EN-TÊTES EXACTE : aucune adresse ne sort, jamais ;
-//   · la réponse reconstruite avec les CORS LOCAUX ;
-//   · le drapeau : table absente, base en erreur, ligne absente → défaut
-//     d'environnement, jamais d'exception ; cache 30 s ;
-//   · 0 % (ou URL absente) = aucun fetch, aucune lecture de drapeau.
-// Le chemin complet (route → collector réel → ligne en base) est prouvé par
-// `tests/contract/relais-ingestion.test.ts`, sur Postgres Docker.
+//   · santé du collector (cache 60 s) : en échec, 503 sans POST ;
+//   · la MATRICE DES RÉPONSES, chaque statut × chaque signal × signé ou non
+//     (`x-mip-collector: 1`) : signée, rendue telle quelle ; NON signée 404, 405,
+//     502, 504 (routeur Railway), 503 + retry-after ; erreur réseau ou délai, 503 ;
+//   · la LISTE D'EN-TÊTES EXACTE : le pays, jamais une adresse ;
+//   · le corps octet pour octet ;
+//   · par les routes : relais, CORS du collector, refus de taille locaux, et
+//     AUCUNE requête à la base — ni lecture, ni écriture.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const simul = vi.hoisted(() => ({
-  // Requête du pool de la console : par défaut, la table n'existe pas encore
-  // (fenêtre de déploiement : le code part avant v87).
+  // Le pool de la console : les routes de collecte ne doivent jamais l'appeler.
   query: vi.fn(async (_sql: string, _params?: unknown[]): Promise<{ rows: unknown[] }> => {
     throw Object.assign(new Error('relation "platform_flag" does not exist'), { code: "42P01" });
   }),
   journal: [] as Array<{ niveau: string; msg: string; champs?: object }>,
 }));
 
-vi.mock("@/lib/db", () => ({ pool: { query: simul.query } }));
+vi.mock("@/lib/db", () => ({ pool: { query: simul.query }, q: simul.query }));
 
-import {
-  _resetPlatformFlagCache,
-  creerLecteurDrapeaux,
-  lirePourcentage,
-  pourcentageParDefaut,
-  pourcentageRelais,
-} from "../../apps/console/lib/platform-flag";
+import { creerLecteurDrapeaux, lirePourcentage } from "../../apps/console/lib/platform-flag";
 import {
   _resetRelais,
   CHEMINS,
+  collectorAbsent,
   creerRelais,
   DELAIS,
   ENTETE_COLLECTOR,
   ENTETES_SOURCEMAPS,
   ENTETES_TRANSMIS,
-  IDEMPOTENTS,
-  issueReponse,
   lireConfigRelais,
   RETRY_AFTER_DELAI_S,
   type Signal,
 } from "../../apps/console/lib/ingest-relay";
 // @ts-expect-error module ESM partagé, sans déclarations
 import { ENTETE_COLLECTOR as ENTETE_DU_RECEVEUR } from "../../packages/backend/lib/receiver.mjs";
-import { OPTIONS as OPTIONS_TRACES, POST as POST_TRACES } from "../../apps/console/app/api/ingest/v1/traces/route";
+import { GET as GET_TRACES, OPTIONS as OPTIONS_TRACES, POST as POST_TRACES } from "../../apps/console/app/api/ingest/v1/traces/route";
 import { POST as POST_LOGS } from "../../apps/console/app/api/ingest/v1/logs/route";
-import { POST as POST_REPLAY } from "../../apps/console/app/api/ingest/v1/replay/route";
+import { OPTIONS as OPTIONS_REPLAY, POST as POST_REPLAY } from "../../apps/console/app/api/ingest/v1/replay/route";
 import { POST as POST_SOURCEMAPS } from "../../apps/console/app/api/sourcemaps/route";
+import { POST as POST_HEARTBEAT } from "../../apps/console/app/api/extension/heartbeat/route";
+import { GET as GET_RESOLVE } from "../../apps/console/app/api/extension/resolve/route";
+import { POST as POST_DEPLOYS } from "../../apps/console/app/api/v1/deploys/route";
 
 const URL_COLLECTOR = "https://collector.test.internal";
 const SECRET = "s".repeat(40);
-const SIGNAUX: Signal[] = ["traces", "logs", "replay", "sourcemaps"];
+/** Un jeton de CI au format réel (`msu_<id>_<secret>`) : la route des marqueurs le reconnaît. */
+const JETON_CI = `Bearer msu_${"a".repeat(32)}_${"b".repeat(64)}`;
+const SIGNAUX: Signal[] = ["traces", "logs", "replay", "sourcemaps", "extensionHeartbeat", "deploys"];
+const NAVIGATEUR: Signal[] = ["traces", "logs", "replay"];
 const IP = "203.0.113.77";
 const ORIGINE = "http://localhost:3000"; // dans le socle CORS statique
+const ORIGINE_CLIENT = "https://app.client.fr"; // connue du seul registre du collector
 
 const journal = {
   info: (msg: string, champs?: object) => simul.journal.push({ niveau: "info", msg, champs }),
@@ -72,10 +67,10 @@ const journal = {
 type AppelFetch = { url: string; init: RequestInit };
 
 /**
- * Faux collector : `/health` conforme, et une réponse programmable pour le POST.
- * Comme le vrai, il SIGNE ses réponses (`x-mip-collector: 1`) ; `postSigne:
- * false` simule le routeur Railway (réponse que le collector n'a pas émise),
- * `santeSignee: false` un collector antérieur à la signature.
+ * Faux collector : `/health` conforme, et une réponse programmable pour le reste.
+ * Comme le vrai, il SIGNE ses réponses (`x-mip-collector: 1`) et pose ses CORS ;
+ * `postSigne: false` simule le routeur Railway, `santeSignee: false` un collector
+ * antérieur à la signature.
  */
 function fauxCollector(opts: {
   sante?: () => Response | Promise<Response>;
@@ -102,7 +97,7 @@ function fauxCollector(opts: {
     return signer(
       opts.post
         ? await opts.post(url, init)
-        : Response.json({ partialSuccess: {} }, { headers: { "access-control-allow-origin": "https://malveillant.test" } }),
+        : Response.json({ partialSuccess: {} }, { headers: { "access-control-allow-origin": ORIGINE_CLIENT } }),
       opts.postSigne !== false,
     );
   });
@@ -111,25 +106,20 @@ function fauxCollector(opts: {
 
 function relais(opts: {
   env?: Record<string, string | undefined>;
-  pct?: number;
-  aleatoire?: () => number;
   horloge?: { t: number };
   collector?: ReturnType<typeof fauxCollector>;
   delais?: Partial<typeof DELAIS>;
 } = {}) {
   const collector = opts.collector ?? fauxCollector();
   const horloge = opts.horloge ?? { t: 1_000_000 };
-  const pourcentage = vi.fn(async () => opts.pct ?? 100);
   const r = creerRelais({
     env: () => opts.env ?? { CONSOLE_INGEST_RELAY_URL: URL_COLLECTOR, EDGE_PROXY_SECRET: SECRET },
     fetch: collector.fetch as unknown as typeof fetch,
     maintenant: () => horloge.t,
-    aleatoire: opts.aleatoire ?? (() => 0),
-    pourcentage,
     log: journal,
     delais: opts.delais,
   });
-  return { r, collector, horloge, pourcentage };
+  return { r, collector, horloge };
 }
 
 /** Requête entrante telle que Vercel la présente : avec TOUS les en-têtes qu'on ne doit pas transmettre. */
@@ -178,53 +168,46 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   _resetRelais();
-  _resetPlatformFlagCache();
 });
 
 // ─────────────────────────────── Configuration ──────────────────────────────
 
-describe("configuration — URL du collector et secret du relais", () => {
-  it("URL absente : relais éteint QUEL QUE SOIT le drapeau, sans lire le drapeau ni appeler le réseau", async () => {
-    const { r, collector, pourcentage } = relais({ env: { EDGE_PROXY_SECRET: SECRET }, pct: 100 });
-    for (const s of SIGNAUX) expect(await r.choisir(s)).toBeNull();
-    expect(pourcentage).not.toHaveBeenCalled();
-    expect(collector.fetch).not.toHaveBeenCalled();
-    // État normal avant la bascule : rien au journal.
-    expect(simul.journal).toEqual([]);
-  });
-
+describe("configuration — sans URL ni secret valides, 503 et rien d'écrit", () => {
   it.each([
-    ["secret absent", undefined],
-    ["secret trop court", "court"],
-    ["deux valeurs (la rotation se fait côté collector)", `${SECRET},${"t".repeat(40)}`],
-  ])("%s : relais éteint, une ligne de journal qui ne cite pas le secret", async (_nom, secret) => {
-    const { r, collector } = relais({ env: { CONSOLE_INGEST_RELAY_URL: URL_COLLECTOR, EDGE_PROXY_SECRET: secret } });
-    expect(await r.choisir("traces")).toBeNull();
-    expect(await r.choisir("traces")).toBeNull();
+    ["URL absente", { EDGE_PROXY_SECRET: SECRET }],
+    ["secret absent", { CONSOLE_INGEST_RELAY_URL: URL_COLLECTOR }],
+    ["secret trop court", { CONSOLE_INGEST_RELAY_URL: URL_COLLECTOR, EDGE_PROXY_SECRET: "court" }],
+    ["deux valeurs (la rotation se fait côté collector)", { CONSOLE_INGEST_RELAY_URL: URL_COLLECTOR, EDGE_PROXY_SECRET: `${SECRET},${"t".repeat(40)}` }],
+  ])("%s : 503 + retry-after, aucun appel réseau, une ligne de journal qui ne cite pas le secret", async (_nom, env) => {
+    const { r, collector } = relais({ env });
+    for (const s of SIGNAUX) {
+      const rep = await r.relayer(s, entrante(), corps, CORS);
+      expect(rep.status, s).toBe(503);
+      expect(rep.headers.get("retry-after")).toBe(RETRY_AFTER_DELAI_S);
+      expect(await rep.json()).toMatchObject({ retry: true });
+    }
     expect(collector.fetch).not.toHaveBeenCalled();
-    expect(simul.journal.filter((l) => l.msg === "relay disabled")).toHaveLength(1);
+    expect(simul.journal.filter((l) => l.msg === "relay not configured")).toHaveLength(1);
     expect(JSON.stringify(simul.journal)).not.toContain(SECRET);
   });
 
-  it("URL invalide ou hors http(s) : éteint", () => {
+  it("URL invalide ou hors http(s) : refusée ; barre finale retirée", () => {
     expect(lireConfigRelais({ CONSOLE_INGEST_RELAY_URL: "pas une url", EDGE_PROXY_SECRET: SECRET }).config).toBeNull();
     expect(lireConfigRelais({ CONSOLE_INGEST_RELAY_URL: "ftp://x.test", EDGE_PROXY_SECRET: SECRET }).config).toBeNull();
     expect(lireConfigRelais({ CONSOLE_INGEST_RELAY_URL: `${URL_COLLECTOR}/`, EDGE_PROXY_SECRET: SECRET }).config)
       .toEqual({ url: URL_COLLECTOR, secret: SECRET });
   });
 
-  it("http: hors de la machine : éteint — le secret de bord, les clés et le jeton ne partent pas en clair", async () => {
+  it("http: hors de la machine : refusé — le secret de bord, les clés et le jeton ne partent pas en clair", async () => {
     for (const url of ["http://collector.up.railway.app", "http://10.0.0.5:8080", "http://127.0.0.2", "http://localhost.evil.test"]) {
       const lu = lireConfigRelais({ CONSOLE_INGEST_RELAY_URL: url, EDGE_PROXY_SECRET: SECRET });
       expect(lu.config, url).toBeNull();
       expect("raison" in lu && lu.raison, url).toMatch(/https/);
     }
-    // Journalisé UNE fois, quel que soit le nombre de requêtes ; aucun appel réseau.
     const { r, collector } = relais({ env: { CONSOLE_INGEST_RELAY_URL: "http://collector.up.railway.app", EDGE_PROXY_SECRET: SECRET } });
-    for (let i = 0; i < 20; i++) expect(await r.choisir("traces")).toBeNull();
+    for (let i = 0; i < 20; i++) expect((await r.relayer("traces", entrante(), corps, CORS)).status).toBe(503);
     expect(collector.fetch).not.toHaveBeenCalled();
-    expect(simul.journal.filter((l) => l.msg === "relay disabled")).toHaveLength(1);
-    expect(JSON.stringify(simul.journal)).not.toContain(SECRET);
+    expect(simul.journal.filter((l) => l.msg === "relay not configured")).toHaveLength(1);
   });
 
   it("http: permis sur la machine elle-même (localhost, 127.0.0.1, ::1) — tests et collector local", () => {
@@ -235,43 +218,19 @@ describe("configuration — URL du collector et secret du relais", () => {
   });
 });
 
-// ─────────────────────────────── Pourcentage ────────────────────────────────
-
-describe("pourcentage — tirage par requête", () => {
-  it("0 % : JAMAIS de fetch, ni santé ni POST, sur mille requêtes", async () => {
-    const { r, collector } = relais({ pct: 0, aleatoire: Math.random });
-    for (let i = 0; i < 1000; i++) expect(await r.relayer("traces", entrante(), corps, CORS)).toBeNull();
-    expect(collector.fetch).not.toHaveBeenCalled();
-  });
-
-  it("10 % : relayé sous le seuil tiré, local au-dessus", async () => {
-    let tirage = 0.05;
-    const { r } = relais({ pct: 10, aleatoire: () => tirage });
-    expect(await r.choisir("traces")).not.toBeNull();
-    tirage = 0.1;
-    expect(await r.choisir("traces")).toBeNull();
-    tirage = 0.99;
-    expect(await r.choisir("traces")).toBeNull();
-  });
-
-  it("100 % : toujours relayé, sans dépendre du tirage", async () => {
-    const { r } = relais({ pct: 100, aleatoire: () => 0.999999 });
-    expect(await r.choisir("logs")).not.toBeNull();
-  });
-});
-
 // ─────────────────────────────── Santé du collector ─────────────────────────
 
 describe("vérification du collector — GET /health, cache 60 s", () => {
   it("une seule sonde pour de nombreuses requêtes, renouvelée après 60 s", async () => {
     const { r, collector, horloge } = relais();
-    for (let i = 0; i < 20; i++) await r.choisir("traces");
+    for (let i = 0; i < 20; i++) await r.relayer("traces", entrante(), corps, CORS);
     expect(collector.appels.filter((a) => a.url === `${URL_COLLECTOR}/health`)).toHaveLength(1);
+    expect(collector.posts()).toHaveLength(20);
     horloge.t += 59_000;
-    await r.choisir("traces");
+    await r.relayer("traces", entrante(), corps, CORS);
     expect(collector.appels.filter((a) => a.url.endsWith("/health"))).toHaveLength(1);
     horloge.t += 2_000;
-    await r.choisir("traces");
+    await r.relayer("traces", entrante(), corps, CORS);
     expect(collector.appels.filter((a) => a.url.endsWith("/health"))).toHaveLength(2);
   });
 
@@ -281,184 +240,110 @@ describe("vérification du collector — GET /health, cache 60 s", () => {
     ["collector en 503", () => Response.json({ status: "unavailable", edge_protocol: "mip-edge/1", edge_trust: true }, { status: 503 })],
     ["corps illisible", () => new Response("<html>", { status: 200 })],
     ["collector injoignable", () => { throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } }); }],
-  ])("%s : contournement, et l'échec est mis en cache 60 s", async (_nom, sante) => {
+  ])("%s : 503 + retry-after sans POST, et l'échec est mis en cache 60 s", async (_nom, sante) => {
     const collector = fauxCollector({ sante });
     const { r, horloge } = relais({ collector });
-    expect(await r.choisir("traces")).toBeNull();
-    expect(await r.choisir("replay")).toBeNull();
+    for (const s of ["traces", "replay"] as Signal[]) {
+      const rep = await r.relayer(s, entrante(), corps, CORS);
+      expect(rep.status).toBe(503);
+      expect(rep.headers.get("retry-after")).toBe(RETRY_AFTER_DELAI_S);
+      expect(rep.headers.get("access-control-allow-origin")).toBe(ORIGINE);
+    }
     expect(collector.appels).toHaveLength(1);
-    expect(simul.journal.filter((l) => l.msg === "relay bypass: collector health")).toHaveLength(1);
+    expect(simul.journal.filter((l) => l.msg === "relay: collector unhealthy")).toHaveLength(1);
     horloge.t += 61_000;
-    await r.choisir("traces");
+    await r.relayer("traces", entrante(), corps, CORS);
     expect(collector.appels).toHaveLength(2);
   });
 
-  it("/health SANS signature x-mip-collector (collector antérieur) : contournement — ses 404 métier seraient pris pour un routage raté", async () => {
+  it("/health SANS signature x-mip-collector (collector antérieur) : 503 — ses 404 métier seraient pris pour un routage raté", async () => {
     const collector = fauxCollector({ santeSignee: false });
     const { r } = relais({ collector });
-    expect(await r.choisir("sourcemaps")).toBeNull();
-    const avis = simul.journal.find((l) => l.msg === "relay bypass: collector health");
+    expect((await r.relayer("sourcemaps", entrante(), corps, {})).status).toBe(503);
+    const avis = simul.journal.find((l) => l.msg === "relay: collector unhealthy");
     expect(avis?.champs).toEqual({ raison: `réponse sans ${ENTETE_COLLECTOR}` });
   });
 
   it("la signature est celle que le receveur du collector pose (ENTETE_COLLECTOR)", () => {
     expect(ENTETE_COLLECTOR).toBe(ENTETE_DU_RECEVEUR);
   });
-
-  it("id_fp n'est PAS comparé (Vercel ne hache plus, décision du 23/09)", async () => {
-    const collector = fauxCollector({
-      sante: () => Response.json({ status: "ok", edge_protocol: "mip-edge/1", edge_trust: true, identity: "active", id_fp: "0123456789ab" }),
-    });
-    expect(await relais({ collector }).r.choisir("traces")).not.toBeNull();
-  });
 });
 
-// ─────────────────────────────── Matrice de repli ───────────────────────────
+// ─────────────────────────────── Matrice des réponses ───────────────────────
 
-describe("matrice de repli — chaque statut × chaque signal × signé ou non", () => {
-  const STATUTS = [200, 400, 401, 403, 404, 405, 409, 410, 413, 425, 429, 500, 502, 503, 504];
+describe("matrice des réponses — chaque statut × chaque signal × signé ou non", () => {
+  const STATUTS = [200, 201, 400, 401, 403, 404, 405, 409, 410, 413, 425, 429, 500, 502, 503, 504];
 
-  /** La règle du plan, écrite indépendamment du code. */
-  const attendu = (signal: Signal, statut: number, signee: boolean) => {
-    if (signee) return "collector";
-    if ([404, 405].includes(statut)) return "repli";
-    if ([502, 504].includes(statut)) return signal === "logs" ? "incertain" : "repli";
-    return "collector";
-  };
-  /** Échec compté au disjoncteur : jamais sur une réponse signée. */
-  const echecAttendu = (signal: Signal, statut: number, signee: boolean) =>
-    !signee && (attendu(signal, statut, signee) !== "collector" || statut >= 500);
-
-  it("les logs et les marqueurs de déploiement sont les SEULS non idempotents", () => {
-    expect(IDEMPOTENTS).toEqual({
-      traces: true,
-      replay: true,
-      sourcemaps: true,
-      logs: false,
-      // C11 — une lecture, un upsert ; un marqueur est un insert sans clé naturelle.
-      extensionResolve: true,
-      extensionHeartbeat: true,
-      deploys: false,
-    });
-  });
+  /** La règle, écrite indépendamment du code. */
+  const indisponible = (statut: number, signee: boolean) => !signee && [404, 405, 502, 504].includes(statut);
 
   for (const signee of [true, false]) {
     for (const signal of SIGNAUX) {
       for (const statut of STATUTS) {
-        const issue = attendu(signal, statut, signee);
-        it(`${signal} × ${statut} ${signee ? "signé" : "NON signé"} → ${issue}`, async () => {
+        const attendu = indisponible(statut, signee) ? "503" : "rendue telle quelle";
+        it(`${signal} × ${statut} ${signee ? "signé" : "NON signé"} → ${attendu}`, async () => {
           const collector = fauxCollector({
             postSigne: signee,
             post: () =>
               new Response(JSON.stringify({ statut }), {
                 status: statut,
-                headers: { "content-type": "application/json", "retry-after": "7", "access-control-allow-origin": "*" },
+                headers: { "content-type": "application/json", "retry-after": "7", "access-control-allow-origin": ORIGINE_CLIENT },
               }),
           });
           const { r } = relais({ collector });
           const rep = await r.relayer(signal, entrante(), corps, CORS);
-          expect(issueReponse(signal, statut, signee)).toBe(issue);
-          if (issue === "repli") {
-            expect(rep).toBeNull();
-            expect(simul.journal.some((l) => l.msg === "relay fallback")).toBe(true);
-          } else if (issue === "incertain") {
-            expect(rep!.status).toBe(503);
-            expect(rep!.headers.get("retry-after")).toBe("5");
-            expect(rep!.headers.get("access-control-allow-origin")).toBe(ORIGINE);
-            expect(await rep!.json()).toMatchObject({ retry: true });
+          expect(collectorAbsent(statut, signee)).toBe(indisponible(statut, signee));
+          if (indisponible(statut, signee)) {
+            expect(rep.status).toBe(503);
+            expect(rep.headers.get("retry-after")).toBe(RETRY_AFTER_DELAI_S);
+            expect(rep.headers.get("access-control-allow-origin")).toBe(ORIGINE);
+            expect(await rep.json()).toMatchObject({ retry: true });
           } else {
-            expect(rep).not.toBeNull();
-            expect(rep!.status).toBe(statut);
-            expect(await rep!.json()).toEqual({ statut });
-            expect(rep!.headers.get("retry-after")).toBe("7");
-            // CORS LOCAUX, jamais ceux du collector.
-            expect(rep!.headers.get("access-control-allow-origin")).toBe(ORIGINE);
+            expect(rep.status).toBe(statut);
+            expect(await rep.json()).toEqual({ statut });
+            expect(rep.headers.get("retry-after")).toBe("7");
+            // CORS du collector sur une réponse SIGNÉE d'un signal navigateur ; sinon ceux de la route.
+            const cors = signee && NAVIGATEUR.includes(signal) ? ORIGINE_CLIENT : ORIGINE;
+            expect(rep.headers.get("access-control-allow-origin")).toBe(cors);
           }
-          expect(r.etat().echecs).toBe(echecAttendu(signal, statut, signee) ? 1 : 0);
           expect(collector.posts()[0].url).toBe(`${URL_COLLECTOR}${CHEMINS[signal]}`);
         });
       }
     }
   }
 
-  it("sourcemaps : 404 MÉTIER signé (app inconnue), rejoué en boucle → rendu tel quel, disjoncteur intact", async () => {
-    const collector = fauxCollector({
-      post: () => Response.json({ error: "application inconnue : app-supprimee" }, { status: 404 }),
-    });
-    const { r } = relais({ collector });
-    for (let i = 0; i < 12; i++) {
-      const rep = await r.relayer("sourcemaps", entrante(), corps, CORS);
-      expect(rep!.status).toBe(404);
-      expect(await rep!.json()).toEqual({ error: "application inconnue : app-supprimee" });
-    }
-    expect(r.etat()).toEqual({ echecs: 0, contourne: false });
-    expect(simul.journal.some((l) => l.msg === "relay fallback" || l.msg === "relay circuit open")).toBe(false);
-    // Et les autres signaux passent toujours par le relais.
-    expect(await r.choisir("traces")).not.toBeNull();
-  });
-
-  it("404 SANS signature (routeur Railway : service absent) → repli local, échec compté", async () => {
-    const collector = fauxCollector({ postSigne: false, post: () => new Response("Not Found", { status: 404 }) });
-    const { r } = relais({ collector });
-    expect(await r.relayer("sourcemaps", entrante(), corps, CORS)).toBeNull();
-    expect(r.etat().echecs).toBe(1);
-    expect(simul.journal.some((l) => l.msg === "relay fallback")).toBe(true);
-  });
-
   it("réponse rendue en application/json + nosniff, quel que soit le content-type reçu", async () => {
     const collector = fauxCollector({
       post: () => new Response("<script>alert(1)</script>", { status: 200, headers: { "content-type": "text/html" } }),
     });
     const rep = await relais({ collector }).r.relayer("traces", entrante(), corps, CORS);
-    expect(rep!.headers.get("content-type")).toBe("application/json");
-    expect(rep!.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(rep.headers.get("content-type")).toBe("application/json");
+    expect(rep.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
-  it("R11 — réponse SIGNÉE en application/x-protobuf (OTLP protobuf) : ce type conservé, nosniff toujours", async () => {
-    const collector = fauxCollector({
-      post: () => new Response(new Uint8Array(0), { status: 200, headers: { "content-type": "application/x-protobuf" } }),
+  it("R11 — réponse SIGNÉE en application/x-protobuf : ce type conservé ; NON signée : application/json imposé", async () => {
+    const proto = (signee: boolean) => fauxCollector({
+      postSigne: signee,
+      post: () => new Response(new Uint8Array(0), { status: 400, headers: { "content-type": "application/x-protobuf" } }),
     });
-    const rep = await relais({ collector }).r.relayer("traces", entrante(), corps, CORS);
-    expect(rep!.headers.get("content-type")).toBe("application/x-protobuf");
-    expect(rep!.headers.get("x-content-type-options")).toBe("nosniff");
+    expect((await relais({ collector: proto(true) }).r.relayer("traces", entrante(), corps, CORS)).headers.get("content-type"))
+      .toBe("application/x-protobuf");
+    expect((await relais({ collector: proto(false) }).r.relayer("traces", entrante(), corps, CORS)).headers.get("content-type"))
+      .toBe("application/json");
   });
 
-  it("R11 — application/x-protobuf NON signé (pas le collector) : application/json imposé", async () => {
-    const collector = fauxCollector({
-      postSigne: false,
-      post: () => new Response("x", { status: 400, headers: { "content-type": "application/x-protobuf" } }),
-    });
-    const rep = await relais({ collector }).r.relayer("traces", entrante(), corps, CORS);
-    expect(rep!.headers.get("content-type")).toBe("application/json");
-  });
-
-  it("erreur de CONNEXION (requête jamais partie) : repli pour tous les signaux, logs compris", async () => {
-    for (const code of ["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]) {
-      for (const signal of SIGNAUX) {
-        const collector = fauxCollector({
-          post: () => { throw Object.assign(new TypeError("fetch failed"), { cause: { code } }); },
-        });
-        expect(await relais({ collector }).r.relayer(signal, entrante(), corps, CORS)).toBeNull();
-      }
-    }
-  });
-
-  it("connexion PERDUE après l'envoi : repli pour les idempotents, 503 + retry-after pour les logs", async () => {
-    for (const code of ["ECONNRESET", "UND_ERR_SOCKET", undefined]) {
+  it("erreur réseau, avant ou après l'envoi : 503 + retry-after pour tous les signaux, jamais d'écriture locale", async () => {
+    for (const code of ["ECONNREFUSED", "ENOTFOUND", "ECONNRESET", "UND_ERR_SOCKET", undefined]) {
       for (const signal of SIGNAUX) {
         const collector = fauxCollector({
           post: () => { throw Object.assign(new TypeError("fetch failed"), { cause: code ? { code } : undefined }); },
         });
         const rep = await relais({ collector }).r.relayer(signal, entrante(), corps, CORS);
-        if (IDEMPOTENTS[signal]) {
-          expect(rep).toBeNull();
-        } else {
-          expect(rep!.status).toBe(503);
-          expect(rep!.headers.get("retry-after")).toBeTruthy();
-          expect(rep!.headers.get("access-control-allow-origin")).toBe(ORIGINE);
-        }
+        expect(rep.status).toBe(503);
+        expect(rep.headers.get("retry-after")).toBe(RETRY_AFTER_DELAI_S);
       }
     }
+    expect(simul.query).not.toHaveBeenCalled();
   });
 });
 
@@ -469,7 +354,7 @@ describe("délai du relais", () => {
     expect(DELAIS.relaisMs).toBe(8_000);
   });
 
-  it("dépassé (vrai AbortSignal) : 503 + retry-after pour TOUS les signaux, sans repli", async () => {
+  it("dépassé (vrai AbortSignal) : 503 + retry-after pour TOUS les signaux", async () => {
     for (const signal of SIGNAUX) {
       const collector = fauxCollector({
         // Un collector qui ne répond jamais : seul le signal d'abandon le libère.
@@ -478,134 +363,66 @@ describe("délai du relais", () => {
             init.signal!.addEventListener("abort", () => ko(init.signal!.reason));
           }),
       });
-      const { r } = relais({ collector, delais: { relaisMs: 30 } });
-      const rep = await r.relayer(signal, entrante(), corps, CORS);
-      expect(rep).not.toBeNull();
-      expect(rep!.status).toBe(503);
-      expect(rep!.headers.get("retry-after")).toBe("5");
-      expect(rep!.headers.get("access-control-allow-origin")).toBe(ORIGINE);
-      expect(await rep!.json()).toMatchObject({ retry: true });
-    }
-  });
-});
-
-// ─────────────────────────────── Disjoncteur ────────────────────────────────
-
-describe("disjoncteur — 5 échecs en 30 s → contournement 60 s", () => {
-  // 502 du ROUTEUR Railway : non signé.
-  const en502 = () => fauxCollector({ postSigne: false, post: () => new Response("Bad Gateway", { status: 502 }) });
-
-  it("s'ouvre au 5e échec, contourne 60 s SANS appel réseau, puis se referme", async () => {
-    const collector = en502();
-    const { r, horloge } = relais({ collector });
-    for (let i = 0; i < 5; i++) {
-      expect(await r.relayer("traces", entrante(), corps, CORS)).toBeNull();
-      horloge.t += 1_000;
-    }
-    expect(collector.posts()).toHaveLength(5);
-    expect(r.etat().contourne).toBe(true);
-    expect(simul.journal.filter((l) => l.msg === "relay circuit open")).toHaveLength(1);
-
-    horloge.t += 50_000;
-    for (let i = 0; i < 10; i++) expect(await r.choisir("traces")).toBeNull();
-    expect(collector.posts()).toHaveLength(5);
-
-    horloge.t += 11_000; // 61 s après l'ouverture
-    expect(await r.choisir("traces")).not.toBeNull();
-  });
-
-  it("5 échecs étalés sur PLUS de 30 s : reste fermé", async () => {
-    const { r, horloge } = relais({ collector: en502() });
-    for (let i = 0; i < 5; i++) {
-      await r.relayer("replay", entrante(), corps, CORS);
-      horloge.t += 8_000;
-    }
-    expect(r.etat().contourne).toBe(false);
-  });
-
-  it("les délais dépassés comptent comme des échecs", async () => {
-    const collector = fauxCollector({
-      post: (_u, init) => new Promise<Response>((_ok, ko) => init.signal!.addEventListener("abort", () => ko(init.signal!.reason))),
-    });
-    const { r } = relais({ collector, delais: { relaisMs: 5 } });
-    for (let i = 0; i < 5; i++) await r.relayer("logs", entrante(), corps, CORS);
-    expect(r.etat().contourne).toBe(true);
-  });
-
-  it("une réponse SIGNÉE du collector (400, 403, 404, 429, 500, 503) n'est PAS un échec", async () => {
-    for (const statut of [400, 403, 404, 429, 500, 503]) {
-      const { r } = relais({ collector: fauxCollector({ post: () => new Response("{}", { status: statut }) }) });
-      for (let i = 0; i < 10; i++) await r.relayer("traces", entrante(), corps, CORS);
-      expect(r.etat()).toEqual({ echecs: 0, contourne: false });
+      const rep = await relais({ collector, delais: { relaisMs: 30 } }).r.relayer(signal, entrante(), corps, CORS);
+      expect(rep.status).toBe(503);
+      expect(rep.headers.get("retry-after")).toBe("5");
+      expect(await rep.json()).toMatchObject({ error: "ingestion relay timeout, retry", retry: true });
     }
   });
 });
 
 // ─────────────────────────────── En-têtes ───────────────────────────────────
 
-describe("en-têtes transmis — liste EXACTE, jamais une adresse", () => {
-  it("la liste est celle du plan, sans plus", () => {
+describe("en-têtes transmis — liste EXACTE, le pays et jamais l'adresse", () => {
+  it("les listes sont celles du plan, sans plus", () => {
     expect([...ENTETES_TRANSMIS]).toEqual([
-      "content-type", "content-encoding", "x-mip-session", "x-mip-app", "x-mip-seq", "x-mip-key",
+      "content-type", "content-encoding", "x-mip-session", "x-mip-app", "x-mip-seq", "x-mip-key", "origin",
     ]);
-    expect([...ENTETES_SOURCEMAPS]).toEqual([...ENTETES_TRANSMIS, "authorization"]);
+    expect([...ENTETES_SOURCEMAPS]).toEqual(["content-type", "content-encoding", "authorization"]);
   });
 
-  for (const signal of SIGNAUX) {
+  for (const signal of NAVIGATEUR) {
     it(`${signal} : exactement la liste + le bord de confiance ; ni IP, ni x-forwarded-for, ni en-tête forgé`, async () => {
       const { r, collector } = relais();
       await r.relayer(signal, entrante(), corps, CORS);
       const envoyes = new Headers(collector.posts()[0].init.headers);
-      const noms = [...envoyes.keys()].sort();
       const attendus = [
-        ...(signal === "sourcemaps" ? ENTETES_SOURCEMAPS : ENTETES_TRANSMIS),
+        ...ENTETES_TRANSMIS,
         "x-mip-edge-auth",
         "x-mip-edge-country",
-        // 30/09/2026 : l'origine de la page, là où les gardes du collector la lisent.
+        // L'origine de la page, là où les gardes du collector la lisent (extension sans clé).
         ...(signal === "traces" || signal === "logs" ? ["x-mip-edge-origin"] : []),
       ].sort();
-      expect(noms).toEqual(attendus);
-      // Le secret du relais, pas la valeur forgée par le client.
+      expect([...envoyes.keys()].sort()).toEqual(attendus);
+      // Le secret du relais, pas la valeur forgée par le client ; le pays de VERCEL.
       expect(envoyes.get("x-mip-edge-auth")).toBe(SECRET);
-      if (envoyes.has("x-mip-edge-origin")) expect(envoyes.get("x-mip-edge-origin")).toBe(ORIGINE);
-      // Le pays de VERCEL, pas celui forgé par le client.
       expect(envoyes.get("x-mip-edge-country")).toBe("FR");
+      expect(envoyes.get("origin")).toBe(ORIGINE);
       for (const nom of ["x-forwarded-for", "x-real-ip", "x-vercel-forwarded-for", "forwarded", "cf-connecting-ip",
-        "true-client-ip", "x-mip-edge-ip", "x-vercel-ip-country", "x-vercel-ip-city", "cookie", "origin"]) {
+        "true-client-ip", "x-mip-edge-ip", "x-vercel-ip-country", "x-vercel-ip-city", "cookie", "authorization"]) {
         expect(envoyes.has(nom), nom).toBe(false);
       }
-      // Aucune valeur transmise ne contient l'adresse, sous quelque nom que ce soit.
       for (const [, v] of envoyes) expect(v).not.toContain(IP);
-      if (signal !== "sourcemaps") expect(envoyes.has("authorization")).toBe(false);
     });
   }
+
+  it("sourcemaps : le contenu et le jeton, rien de la page", async () => {
+    const { r, collector } = relais();
+    await r.relayer("sourcemaps", entrante(), corps, {});
+    const envoyes = new Headers(collector.posts()[0].init.headers);
+    expect([...envoyes.keys()].sort()).toEqual([...ENTETES_SOURCEMAPS, "x-mip-edge-auth", "x-mip-edge-country"].sort());
+    for (const [, v] of envoyes) expect(v).not.toContain(IP);
+  });
 
   it("pays Vercel absent ou mal formé : pas de x-mip-edge-country (jamais un pays inventé)", async () => {
     for (const pays of [undefined, "fr", "FRA", ""]) {
       const { r, collector } = relais();
-      const req = entrante();
-      const h = new Headers(req.headers);
+      const h = new Headers(entrante().headers);
       if (pays === undefined) h.delete("x-vercel-ip-country");
       else h.set("x-vercel-ip-country", pays);
-      await r.relayer("traces", new Request(req.url, { method: "POST", headers: h, body: "{}" }), corps, CORS);
+      await r.relayer("traces", new Request("https://c.test/api/ingest/v1/traces", { method: "POST", headers: h, body: "{}" }), corps, CORS);
       expect(new Headers(collector.posts()[0].init.headers).has("x-mip-edge-country")).toBe(false);
     }
-  });
-
-  it("origine de la page : transmise pour traces et logs seulement, et jamais inventée", async () => {
-    for (const signal of SIGNAUX) {
-      const { r, collector } = relais();
-      await r.relayer(signal, entrante({ origin: "https://app.client.fr" }), corps, CORS);
-      const envoyes = new Headers(collector.posts()[0].init.headers);
-      expect(envoyes.get("x-mip-edge-origin"), signal).toBe(signal === "traces" || signal === "logs" ? "https://app.client.fr" : null);
-    }
-    // Sans `Origin` (un agent serveur, un outil) : rien à transmettre.
-    const { r, collector } = relais();
-    const req = entrante();
-    const h = new Headers(req.headers);
-    h.delete("origin");
-    await r.relayer("traces", new Request(req.url, { method: "POST", headers: h, body: "{}" }), corps, CORS);
-    expect(new Headers(collector.posts()[0].init.headers).has("x-mip-edge-origin")).toBe(false);
   });
 
   it("le corps part octet pour octet", async () => {
@@ -614,33 +431,61 @@ describe("en-têtes transmis — liste EXACTE, jamais une adresse", () => {
     await r.relayer("replay", entrante(), octets, CORS);
     expect(Buffer.from(collector.posts()[0].init.body as Uint8Array)).toEqual(Buffer.from(octets));
   });
+
+  it("résolution d'un domaine : un GET, la requête transmise, aucun en-tête du client, le cache rendu", async () => {
+    const collector = fauxCollector({
+      post: () => Response.json({ app_id: "a" }, { headers: { "cache-control": "public, max-age=60" } }),
+    });
+    const req = new Request("https://mip-rum-console.vercel.app/api/extension/resolve?domain=a.exemple.fr", {
+      headers: { "user-agent": "UA", cookie: "mip_session=x", "x-forwarded-for": IP },
+    });
+    const res = await relais({ collector }).r.relayer("extensionResolve", req, new Uint8Array(), { "access-control-allow-origin": "*" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("public, max-age=60");
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    const [appel] = collector.posts();
+    expect(appel.url).toBe(`${URL_COLLECTOR}/v1/extension/resolve?domain=a.exemple.fr`);
+    expect(appel.init.method).toBe("GET");
+    expect(appel.init.body).toBeUndefined();
+    expect([...new Headers(appel.init.headers).keys()].sort()).toEqual(["x-mip-edge-auth"]);
+  });
+
+  it("battement d'un poste : content-type et User-Agent ; marqueur : le jeton de la CI", async () => {
+    const { r, collector } = relais();
+    await r.relayer("extensionHeartbeat", entrante(), corps, {});
+    await r.relayer("deploys", entrante(), corps, {});
+    const [battement, marqueur] = collector.posts().map((p) => [...new Headers(p.init.headers).keys()].sort());
+    expect(battement).toEqual(["content-type", "user-agent", "x-mip-edge-auth", "x-mip-edge-country"]);
+    expect(marqueur).toEqual(["authorization", "content-type", "x-mip-edge-auth", "x-mip-edge-country"]);
+  });
 });
 
 // ─────────────────────────────── Drapeau de plateforme ──────────────────────
 
 describe("platform_flag — lecture en cache 30 s, jamais d'exception", () => {
+  const CLE = "api_relay_pct";
   const lecteur = (requete: (sql: string, p: unknown[]) => Promise<{ rows: Array<{ value: unknown }> }>, horloge = { t: 0 }) =>
     ({ l: creerLecteurDrapeaux({ requete: vi.fn(requete), maintenant: () => horloge.t, delaiMs: 20 }), horloge });
 
   it("table ABSENTE (42P01, avant v87) : null, sans exception", async () => {
     const { l } = lecteur(async () => { throw Object.assign(new Error("absente"), { code: "42P01" }); });
-    await expect(l.lire("ingest_relay_pct")).resolves.toBeNull();
+    await expect(l.lire(CLE)).resolves.toBeNull();
   });
 
-  it("base en erreur : null, et l'échec est mis en cache 30 s (la base n'est pas relancée à chaque beacon)", async () => {
+  it("base en erreur : null, et l'échec est mis en cache 30 s", async () => {
     const requete = vi.fn(async () => { throw Object.assign(new Error("quota"), { code: "XX000" }); });
     const horloge = { t: 0 };
     const l = creerLecteurDrapeaux({ requete, maintenant: () => horloge.t });
-    for (let i = 0; i < 10; i++) expect(await l.lire("ingest_relay_pct")).toBeNull();
+    for (let i = 0; i < 10; i++) expect(await l.lire(CLE)).toBeNull();
     expect(requete).toHaveBeenCalledTimes(1);
     horloge.t += 30_001;
-    await l.lire("ingest_relay_pct");
+    await l.lire(CLE);
     expect(requete).toHaveBeenCalledTimes(2);
   });
 
   it("base qui ne répond pas : abandon au délai, null", async () => {
     const { l } = lecteur(() => new Promise(() => {}));
-    await expect(l.lire("ingest_relay_pct")).resolves.toBeNull();
+    await expect(l.lire(CLE)).resolves.toBeNull();
   });
 
   it("valeur lue, gardée 30 s, puis relue (effet d'un update < 30 s)", async () => {
@@ -648,97 +493,86 @@ describe("platform_flag — lecture en cache 30 s, jamais d'exception", () => {
     const requete = vi.fn(async () => ({ rows: [{ value: valeur }] }));
     const horloge = { t: 0 };
     const l = creerLecteurDrapeaux({ requete, maintenant: () => horloge.t });
-    expect(await l.lire("ingest_relay_pct")).toBe("25");
+    expect(await l.lire(CLE)).toBe("25");
     valeur = "0";
     horloge.t += 29_000;
-    expect(await l.lire("ingest_relay_pct")).toBe("25");
+    expect(await l.lire(CLE)).toBe("25");
     horloge.t += 1_001;
-    expect(await l.lire("ingest_relay_pct")).toBe("0");
+    expect(await l.lire(CLE)).toBe("0");
   });
 
   it("cinquante lectures simultanées : UNE requête", async () => {
     const requete = vi.fn(async () => ({ rows: [{ value: "10" }] }));
     const l = creerLecteurDrapeaux({ requete });
-    const v = await Promise.all(Array.from({ length: 50 }, () => l.lire("ingest_relay_pct")));
+    const v = await Promise.all(Array.from({ length: 50 }, () => l.lire(CLE)));
     expect(new Set(v)).toEqual(new Set(["10"]));
     expect(requete).toHaveBeenCalledTimes(1);
   });
 
   it("ligne absente : null", async () => {
     const { l } = lecteur(async () => ({ rows: [] }));
-    expect(await l.lire("ingest_relay_pct")).toBeNull();
+    expect(await l.lire(CLE)).toBeNull();
   });
 
   it("forme du pourcentage : la même règle que la contrainte de v87", () => {
     for (const [brut, v] of [["0", 0], ["7", 7], ["10", 10], ["100", 100], [" 50 ", 50]] as const) expect(lirePourcentage(brut)).toBe(v);
     for (const brut of ["101", "-1", "10%", "1.5", "010", "", "abc", null, undefined]) expect(lirePourcentage(brut)).toBeNull();
   });
-
-  it("défaut d'environnement INGEST_RELAY_PCT : 0 s'il est absent ou invalide", () => {
-    expect(pourcentageParDefaut({})).toBe(0);
-    expect(pourcentageParDefaut({ INGEST_RELAY_PCT: "100" })).toBe(100);
-    expect(pourcentageParDefaut({ INGEST_RELAY_PCT: "beaucoup" })).toBe(0);
-  });
-
-  it("pourcentageRelais : table absente → défaut d'env ; valeur en base → elle prime", async () => {
-    vi.stubEnv("INGEST_RELAY_PCT", "30");
-    await expect(pourcentageRelais()).resolves.toBe(30);
-    _resetPlatformFlagCache();
-    simul.query.mockImplementationOnce(async () => ({ rows: [{ value: "0" }] }));
-    await expect(pourcentageRelais()).resolves.toBe(0);
-    _resetPlatformFlagCache();
-    simul.query.mockImplementationOnce(async () => ({ rows: [] }));
-    await expect(pourcentageRelais()).resolves.toBe(30);
-  });
 });
 
 // ─────────────────────────────── Par les routes ─────────────────────────────
 
-describe("par les route handlers — branchement réel", () => {
+describe("par les route handlers — la console relaie, n'écrit rien, ne lit pas la base", () => {
+  const BASE = "https://mip-rum-console.vercel.app";
   const post = (chemin: string, headers: Record<string, string>, body: BodyInit) =>
-    new Request(`https://mip-rum-console.vercel.app${chemin}`, { method: "POST", headers, body });
+    new Request(`${BASE}${chemin}`, { method: "POST", headers, body });
+  /** Les routes Next lisent `nextUrl` et `cookies` : la forme minimale d'une NextRequest. */
+  const next = (req: Request) =>
+    Object.assign(req, { nextUrl: new URL(req.url), cookies: { get: () => undefined } }) as never;
 
-  function brancher(opts: { pct?: string; sans?: boolean; collector?: ReturnType<typeof fauxCollector> } = {}) {
+  function brancher(opts: { sans?: boolean; collector?: ReturnType<typeof fauxCollector> } = {}) {
     if (!opts.sans) {
       vi.stubEnv("CONSOLE_INGEST_RELAY_URL", URL_COLLECTOR);
       vi.stubEnv("EDGE_PROXY_SECRET", SECRET);
+    } else {
+      vi.stubEnv("CONSOLE_INGEST_RELAY_URL", "");
     }
-    vi.stubEnv("INGEST_RELAY_PCT", opts.pct ?? "100");
     const collector = opts.collector ?? fauxCollector();
     vi.stubGlobal("fetch", collector.fetch);
     return collector;
   }
 
-  it("URL absente (état de la production à la fusion) : aucun fetch, aucune lecture du drapeau", async () => {
+  afterEach(() => {
+    // Aucune route de collecte n'interroge le pool de la console.
+    expect(simul.query).not.toHaveBeenCalled();
+  });
+
+  it("configuration absente : chaque route répond 503 + retry-after, sans appel réseau ni base", async () => {
     const collector = brancher({ sans: true });
-    await POST_TRACES(post("/api/ingest/v1/traces", { "content-type": "application/json" }, "{}"));
-    expect(collector.fetch).not.toHaveBeenCalled();
-    expect(simul.query.mock.calls.some(([sql]) => String(sql).includes("platform_flag"))).toBe(false);
-  });
-
-  it("drapeau à 0 en base : aucun fetch, même avec INGEST_RELAY_PCT=100", async () => {
-    simul.query.mockImplementation(async (sql: string) =>
-      sql.includes("platform_flag") ? { rows: [{ value: "0" }] } : { rows: [] });
-    try {
-      const collector = brancher({ pct: "100" });
-      await POST_TRACES(post("/api/ingest/v1/traces", { "content-type": "application/json" }, "{}"));
-      expect(collector.fetch).not.toHaveBeenCalled();
-    } finally {
-      simul.query.mockReset();
-      simul.query.mockImplementation(async () => {
-        throw Object.assign(new Error("absente"), { code: "42P01" });
-      });
+    const reponses = [
+      await POST_TRACES(post("/api/ingest/v1/traces", { "content-type": "application/json", origin: ORIGINE }, "{}")),
+      await POST_LOGS(post("/api/ingest/v1/logs", { "content-type": "application/json" }, "{}")),
+      await POST_REPLAY(post("/api/ingest/v1/replay", { "x-mip-session": "s", "x-mip-app": "a", "x-mip-seq": "0" }, new Uint8Array([1]))),
+      await POST_SOURCEMAPS(next(post("/api/sourcemaps", { authorization: "Bearer msu_x", "content-type": "application/json" }, "{}"))),
+      await POST_HEARTBEAT(next(post("/api/extension/heartbeat", { "content-type": "application/json" }, "{}"))),
+      await GET_RESOLVE(next(new Request(`${BASE}/api/extension/resolve?domain=a.exemple.fr`))),
+      await POST_DEPLOYS(post("/api/v1/deploys", { authorization: JETON_CI, "content-type": "application/json" }, "{}")),
+    ];
+    for (const rep of reponses) {
+      expect(rep.status).toBe(503);
+      expect(rep.headers.get("retry-after")).toBe(RETRY_AFTER_DELAI_S);
     }
+    expect(collector.fetch).not.toHaveBeenCalled();
   });
 
-  it("table absente + INGEST_RELAY_PCT=100 : traces relayées, réponse du collector avec les CORS LOCAUX", async () => {
+  it("traces relayées octet pour octet ; la réponse porte les CORS du COLLECTOR (registre des origines)", async () => {
     const collector = brancher();
     const rep = await POST_TRACES(post("/api/ingest/v1/traces", {
-      "content-type": "application/json", origin: ORIGINE, "x-forwarded-for": IP,
+      "content-type": "application/json", origin: ORIGINE_CLIENT, "x-forwarded-for": IP,
     }, '{"resourceSpans":[]}'));
     expect(rep.status).toBe(200);
     expect(await rep.json()).toEqual({ partialSuccess: {} });
-    expect(rep.headers.get("access-control-allow-origin")).toBe(ORIGINE);
+    expect(rep.headers.get("access-control-allow-origin")).toBe(ORIGINE_CLIENT);
     const [envoi] = collector.posts();
     expect(envoi.url).toBe(`${URL_COLLECTOR}/v1/traces`);
     expect(Buffer.from(envoi.init.body as Uint8Array).toString()).toBe('{"resourceSpans":[]}');
@@ -751,10 +585,9 @@ describe("par les route handlers — branchement réel", () => {
         post: () => new Response(new Uint8Array(0), { status: 200, headers: { "content-type": "application/x-protobuf" } }),
       }),
     });
-    const brut = new Uint8Array([0x1f, 0x8b, 0x08, 0x00]);
     const rep = await POST_TRACES(post("/api/ingest/v1/traces", {
       "content-type": "application/x-protobuf", "content-encoding": "gzip", origin: ORIGINE,
-    }, brut));
+    }, new Uint8Array([0x1f, 0x8b, 0x08, 0x00])));
     expect(rep.status).toBe(200);
     expect(rep.headers.get("content-type")).toBe("application/x-protobuf");
     expect((await rep.arrayBuffer()).byteLength).toBe(0);
@@ -765,9 +598,7 @@ describe("par les route handlers — branchement réel", () => {
 
   it("R11 — relais expiré sur une requête protobuf : le 503 part en google.rpc.Status, retry-after gardé", async () => {
     brancher({
-      collector: fauxCollector({
-        post: () => Promise.reject(Object.assign(new Error("timeout"), { name: "TimeoutError" })),
-      }),
+      collector: fauxCollector({ post: () => Promise.reject(Object.assign(new Error("timeout"), { name: "TimeoutError" })) }),
     });
     const rep = await POST_LOGS(post("/api/ingest/v1/logs", { "content-type": "application/x-protobuf" }, new Uint8Array(0)));
     expect(rep.status).toBe(503);
@@ -778,25 +609,22 @@ describe("par les route handlers — branchement réel", () => {
     expect(octets.subarray(2).toString()).toBe("ingestion relay timeout, retry");
   });
 
-  it("un corps au-delà du plafond reste refusé LOCALEMENT (413), sans relais", async () => {
+  it("un corps au-delà du plafond est refusé LOCALEMENT (413), sans relais", async () => {
     const collector = brancher();
-    const rep = await POST_LOGS(post("/api/ingest/v1/logs", { "content-length": String(50 * 1024 * 1024) }, "{}"));
-    expect(rep.status).toBe(413);
-    expect(collector.posts()).toHaveLength(0);
+    expect((await POST_LOGS(post("/api/ingest/v1/logs", { "content-length": String(50 * 1024 * 1024) }, "{}"))).status).toBe(413);
+    expect((await POST_REPLAY(post("/api/ingest/v1/replay", {}, new Uint8Array(3 * 1024 * 1024)))).status).toBe(413);
+    expect(collector.fetch).not.toHaveBeenCalled();
   });
 
   it("logs : un 500 du collector est rendu tel quel (pas de second essai local)", async () => {
     const collector = brancher({ collector: fauxCollector({ post: () => Response.json({ error: "internal error" }, { status: 500 }) }) });
     const rep = await POST_LOGS(post("/api/ingest/v1/logs", { origin: ORIGINE }, '{"resourceLogs":[]}'));
     expect(rep.status).toBe(500);
-    expect(rep.headers.get("access-control-allow-origin")).toBe(ORIGINE);
     expect(collector.posts()).toHaveLength(1);
   });
 
-  it("replay : relayé AVANT toute garde locale (ni clé ni débit en base), en-têtes x-mip-* transmis", async () => {
-    const collector = brancher({
-      collector: fauxCollector({ post: () => Response.json({ ok: true, seq: 3, events: 2 }) }),
-    });
+  it("replay : relayé sans garde locale, en-têtes x-mip-* transmis", async () => {
+    const collector = brancher({ collector: fauxCollector({ post: () => Response.json({ ok: true, seq: 3, events: 2 }) }) });
     const rep = await POST_REPLAY(post("/api/ingest/v1/replay", {
       "content-type": "application/octet-stream", "x-mip-session": "s1", "x-mip-app": "a1", "x-mip-seq": "3", "x-mip-key": "k1", origin: ORIGINE,
     }, new Uint8Array([1, 2, 3])));
@@ -804,110 +632,59 @@ describe("par les route handlers — branchement réel", () => {
     expect(await rep.json()).toEqual({ ok: true, seq: 3, events: 2 });
     const h = new Headers(collector.posts()[0].init.headers);
     expect([h.get("x-mip-session"), h.get("x-mip-app"), h.get("x-mip-seq"), h.get("x-mip-key")]).toEqual(["s1", "a1", "3", "k1"]);
-    // Seules lectures : le drapeau, et le registre d'apps qui nourrit les CORS
-    // LOCAUX (cache 60 s). Ni clé, ni débit (`rate_check`), ni écriture.
-    const lectures = simul.query.mock.calls.map(([sql]) => String(sql));
-    expect(lectures.every((sql) => sql.includes("platform_flag") || sql.includes("app_registry")), lectures.join("\n")).toBe(true);
   });
 
-  it("sourcemaps, branche JETON : relayée avec le jeton ; sans jeton (admin) : jamais relayée", async () => {
-    const collector = brancher({ collector: fauxCollector({ post: () => Response.json({ uploaded: 1 }, { status: 201 }) }) });
-    const avecJeton = Object.assign(post("/api/sourcemaps", { authorization: "Bearer msu_x", "content-type": "application/json" }, '{"appId":"a"}'), {
-      nextUrl: new URL("https://mip-rum-console.vercel.app/api/sourcemaps"),
-      cookies: { get: () => undefined },
+  it("préflight et diagnostic relayés : le collector répond, avec ses CORS", async () => {
+    const collector = brancher({
+      collector: fauxCollector({
+        post: (_u, init) => init.method === "OPTIONS"
+          ? new Response(null, { status: 204, headers: { "access-control-allow-origin": ORIGINE_CLIENT, "access-control-allow-headers": "content-type,x-mip-session" } })
+          : Response.json({ status: "ok", service: "v1-traces" }),
+      }),
     });
-    const rep = await POST_SOURCEMAPS(avecJeton as never);
+    const options = await OPTIONS_TRACES(new Request(`${BASE}/api/ingest/v1/traces`, { method: "OPTIONS", headers: { origin: ORIGINE_CLIENT } }));
+    expect(options.status).toBe(204);
+    expect(options.headers.get("access-control-allow-origin")).toBe(ORIGINE_CLIENT);
+    const replay = await OPTIONS_REPLAY(new Request(`${BASE}/api/ingest/v1/replay`, { method: "OPTIONS", headers: { origin: ORIGINE_CLIENT } }));
+    expect(replay.headers.get("access-control-allow-headers")).toBe("content-type,x-mip-session");
+    const diag = await GET_TRACES(new Request(`${BASE}/api/ingest/v1/traces`, { headers: { origin: ORIGINE } }));
+    expect(await diag.json()).toEqual({ status: "ok", service: "v1-traces" });
+    expect(collector.posts().map((p) => [p.init.method, p.init.body])).toEqual([["OPTIONS", undefined], ["OPTIONS", undefined], ["GET", undefined]]);
+  });
+
+  it("sourcemaps, branche JETON : relayée avec le jeton ; corps trop gros refusé avant", async () => {
+    const collector = brancher({ collector: fauxCollector({ post: () => Response.json({ uploaded: 1 }, { status: 201 }) }) });
+    const rep = await POST_SOURCEMAPS(next(post("/api/sourcemaps", { authorization: "Bearer msu_x", "content-type": "application/json" }, '{"appId":"a"}')));
     expect(rep.status).toBe(201);
     expect(new Headers(collector.posts()[0].init.headers).get("authorization")).toBe("Bearer msu_x");
-
-    const sansJeton = Object.assign(post("/api/sourcemaps", { "content-type": "application/json" }, "{}"), {
-      nextUrl: new URL("https://mip-rum-console.vercel.app/api/sourcemaps"),
-      cookies: { get: () => undefined },
-    });
-    await POST_SOURCEMAPS(sansJeton as never);
+    const gros = await POST_SOURCEMAPS(next(post("/api/sourcemaps", { authorization: "Bearer msu_x", "content-length": String(50 * 1024 * 1024) }, "{}")));
+    expect(gros.status).toBe(413);
     expect(collector.posts()).toHaveLength(1);
   });
 
-  it("OPTIONS reste local : aucun fetch", async () => {
-    const collector = brancher();
-    const rep = await OPTIONS_TRACES(new Request("https://mip-rum-console.vercel.app/api/ingest/v1/traces", {
-      method: "OPTIONS", headers: { origin: ORIGINE },
-    }));
-    expect(rep.status).toBe(204);
-    expect(collector.fetch).not.toHaveBeenCalled();
-  });
-});
-
-
-// C11 — les routes machine passent par le même relais, chacune avec SA liste
-// d'en-têtes et sa méthode.
-describe("routes machine (C11)", () => {
-  it("résolution d'un domaine : un GET, la requête transmise, aucun en-tête du client, le cache rendu", async () => {
-    const collector = fauxCollector({
-      post: () => Response.json({ app_id: "a" }, { headers: { "cache-control": "public, max-age=60" } }),
+  it("extension : battement et résolution relayés ; l'endpoint vide est complété si la collecte directe est ouverte", async () => {
+    vi.stubEnv("NEXT_PUBLIC_DIRECT_COLLECTOR_URL", "https://collector.exemple.fr");
+    const collector = brancher({
+      collector: fauxCollector({
+        post: (url) => url.includes("resolve")
+          ? Response.json({ app_id: "a", endpoint: null, active: true })
+          : Response.json({ ok: true }),
+      }),
     });
-    const { r } = relais({ collector });
-    const req = new Request("https://mip-rum-console.vercel.app/api/extension/resolve?domain=a.exemple.fr", {
-      headers: { "user-agent": "UA", cookie: "mip_session=x", "x-forwarded-for": IP },
-    });
-    const res = await r.relayer("extensionResolve", req, new Uint8Array(), { "access-control-allow-origin": "*" });
-    expect(res?.status).toBe(200);
-    expect(res?.headers.get("cache-control")).toBe("public, max-age=60");
-    const [appel] = collector.posts();
-    expect(appel.url).toBe(`${URL_COLLECTOR}/v1/extension/resolve?domain=a.exemple.fr`);
-    expect(appel.init.method).toBe("GET");
-    expect(appel.init.body).toBeUndefined();
-    const transmis = [...new Headers(appel.init.headers).keys()].sort();
-    expect(transmis).toEqual(["x-mip-edge-auth"]);
+    const battement = await POST_HEARTBEAT(next(post("/api/extension/heartbeat", { "content-type": "application/json", "user-agent": "Chrome/126" }, "{}")));
+    expect(battement.status).toBe(200);
+    expect(battement.headers.get("access-control-allow-origin")).toBe("*");
+    const resolution = await GET_RESOLVE(next(new Request(`${BASE}/api/extension/resolve?domain=a.exemple.fr`)));
+    expect(await resolution.json()).toMatchObject({ app_id: "a", endpoint: "https://collector.exemple.fr/v1/traces" });
+    const invalide = await GET_RESOLVE(next(new Request(`${BASE}/api/extension/resolve?domain=`)));
+    expect(invalide.status).toBe(400);
+    expect(collector.posts()).toHaveLength(2);
   });
 
-  it("battement d'un poste : content-type et User-Agent, rien d'autre", async () => {
-    const collector = fauxCollector({ post: () => Response.json({ ok: true }) });
-    const { r } = relais({ collector });
-    const req = new Request("https://mip-rum-console.vercel.app/api/extension/heartbeat", {
-      method: "POST",
-      headers: { "content-type": "application/json", "user-agent": "Chrome/126", cookie: "c=1", "x-forwarded-for": IP },
-      body: "{}",
-    });
-    expect((await r.relayer("extensionHeartbeat", req, new TextEncoder().encode("{}"), {}))?.status).toBe(200);
-    const entetes = new Headers(collector.posts()[0].init.headers);
-    expect([...entetes.keys()].sort()).toEqual(["content-type", "user-agent", "x-mip-edge-auth"]);
-    expect(entetes.get("user-agent")).toBe("Chrome/126");
-  });
-
-  it("marqueur de déploiement : le jeton de la CI transmis ; un 502 non signé n'est JAMAIS rejoué (503)", async () => {
-    const collector = fauxCollector({ post: () => new Response("bad gateway", { status: 502 }), postSigne: false });
-    const { r } = relais({ collector });
-    const req = new Request("https://mip-rum-console.vercel.app/api/v1/deploys", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer msu_x", "x-forwarded-for": IP },
-      body: "{}",
-    });
-    const res = await r.relayer("deploys", req, new TextEncoder().encode("{}"), {});
-    expect(res?.status).toBe(503);
-    expect(res?.headers.get("retry-after")).toBeTruthy();
-    expect([...new Headers(collector.posts()[0].init.headers).keys()].sort()).toEqual(["authorization", "content-type", "x-mip-edge-auth"]);
-  });
-});
-
-// C11 — relais PUR : plus de chemin local pour la collecte.
-describe("relais pur (CONSOLE_INGEST_RELAY_STRICT=1)", () => {
-  const STRICT = { CONSOLE_INGEST_RELAY_URL: URL_COLLECTOR, EDGE_PROXY_SECRET: SECRET, CONSOLE_INGEST_RELAY_STRICT: "1" };
-
-  it("le pourcentage est ignoré : à 0 %, le beacon part au collector", async () => {
-    const { r, collector } = relais({ env: STRICT, pct: 0 });
-    expect((await r.relayer("traces", entrante(), new Uint8Array([123, 125]), {}))?.status).toBe(200);
-    expect(collector.posts()).toHaveLength(1);
-  });
-
-  it("collector absent (404 du routeur) ou en mauvaise santé : 503 + retry-after, jamais le chemin local", async () => {
-    const absent = fauxCollector({ post: () => new Response("", { status: 404 }), postSigne: false });
-    let res = await relais({ env: STRICT, collector: absent }).r.relayer("traces", entrante(), new Uint8Array([123, 125]), {});
-    expect(res?.status).toBe(503);
-    expect(res?.headers.get("retry-after")).toBeTruthy();
-    const malade = fauxCollector({ sante: () => new Response("", { status: 503 }) });
-    res = await relais({ env: STRICT, collector: malade }).r.relayer("replay", entrante(), new Uint8Array([1]), {});
-    expect(res?.status).toBe(503);
-    expect(malade.posts()).toHaveLength(0);
+  it("marqueur de déploiement, jeton de CI : relayé, rendu tel quel", async () => {
+    const collector = brancher({ collector: fauxCollector({ post: () => Response.json({ ok: true }, { status: 201 }) }) });
+    const rep = await POST_DEPLOYS(post("/api/v1/deploys", { authorization: JETON_CI, "content-type": "application/json" }, '{"appId":"a"}'));
+    expect(rep.status).toBe(201);
+    expect(collector.posts()[0].url).toBe(`${URL_COLLECTOR}/v1/deploys`);
   });
 });

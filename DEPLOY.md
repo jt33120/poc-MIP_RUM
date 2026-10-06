@@ -218,12 +218,12 @@ celui de l'appelant.
 > planification ; il ne règle **pas** la question de la souveraineté, qui reste
 > listée comme bloquante sur la page de présentation.
 
-### Bascule de l'ingestion (livrée, éteinte)
+### Bascule de l'ingestion (relais seul depuis C12, 06/10/2026)
 
-Le SDK et les extraits client continuent de viser la console : c'est elle qui
-relaie vers le `collector` (P3, `apps/console/lib/ingest-relay.ts`), dès que
-`CONSOLE_INGEST_RELAY_URL` et `EDGE_PROXY_SECRET` sont posées sur Vercel et que
-le drapeau `platform_flag.ingest_relay_pct` monte (0 par défaut). Mode d'emploi :
+Ce qui vise encore la console lui est relayé en entier vers le `collector`
+(`apps/console/lib/ingest-relay.ts`), qui seul écrit. Sans `CONSOLE_INGEST_RELAY_URL`
+et `EDGE_PROXY_SECRET` valides sur Vercel, la collecte reçue par la console répond
+503 : il n'y a plus de chemin local, ni de drapeau `ingest_relay_pct`. Mode d'emploi :
 `docs/operations/relais-ingestion.md`.
 
 ---
