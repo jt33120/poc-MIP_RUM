@@ -1,5 +1,5 @@
 # IP-Label / Ekara — RUM et supervision unifiée : documentation et comparaison à notre console
-> **État au 26/09/2026.** Notes rédigées du 18 au 21/09/2026, avant la refonte de la console : le § 3 décrit la console d'avant les vagues 0 à 8, ses `fichier:ligne` ont bougé, et les notes voisines qu'il cite (`console-ecrans-1.md`…) sont hors du dépôt (encadré de [plan-frontend-dashboard.md](plan-frontend-dashboard.md)). La vitrine cite ce fichier par numéro de ligne (`apps/console/components/presentation/Positionnement.tsx`) : n'y ajouter ni n'y retirer aucune ligne.
+> **État au 26/09/2026.** Notes rédigées du 18 au 21/09/2026, avant la refonte de la console : le § 3 décrit la console d'avant les vagues 0 à 8, ses `fichier:ligne` ont bougé, et les notes voisines qu'il cite (`console-ecrans-1.md`…) sont hors du dépôt, comme le plan de la refonte qui les accompagnait. La vitrine cite ce fichier par numéro de ligne (`apps/console/components/presentation/Positionnement.tsx`) : n'y ajouter ni n'y retirer aucune ligne.
 ## 0. Méthode, sources, et limites de fiabilité (à lire avant tout le reste)
 
 **Ce que j'ai utilisé.** Aucun accès direct à une capture d'écran du dashboard Ekara : le dossier fourni

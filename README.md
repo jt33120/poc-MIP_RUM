@@ -104,10 +104,10 @@ artefacts (`.claude/`, `.agents/`, `.codex/`, `_bmad/`, `_bmad-output/`, `.mcp.j
 **ne sont pas dans le dépôt** : ils ne décrivent pas le produit, et ils pesaient un tiers
 des fichiers suivis. Un clone neuf n'en a pas besoin et ne les verra pas.
 
-Ce qui devait survivre à ce retrait a été déplacé dans `docs/` : le plan de la refonte
-frontend ([docs/product/plan-frontend-dashboard.md](docs/product/plan-frontend-dashboard.md)),
-les quatre journaux de livraison ([docs/archive/delivery/](docs/archive/delivery/)) et les
-notes de lecture qui servent de source à la vitrine
+La documentation de chantier (plans, cadrages, rapports, journaux de livraison, textes de
+présentation) a suivi le même chemin le 06/10/2026 : le dépôt ne garde que ce qui sert à
+installer, intégrer, exploiter et comprendre le produit ([docs/README.md](docs/README.md)).
+Seules restent les notes de lecture qui servent de source à la vitrine
 ([docs/product/notes-lecture-ekara.md](docs/product/notes-lecture-ekara.md)).
 
 Le seul outil que le dépôt suppose installé est **graft**, et seulement pour qui travaille
@@ -160,6 +160,8 @@ Les zones générées de ce README se régénèrent par `node scripts/readme-sec
 
 En cas de désaccord entre ces documents, [docs/RUM_PARITY_STATUS.md](docs/RUM_PARITY_STATUS.md) et [docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md) font foi : la vitrine et les zones générées de ce README en tirent leurs verdicts et leurs faits d'exploitation.
 
+L'index complet de `docs/` est [docs/README.md](docs/README.md) ; ce tableau en tire l'essentiel.
+
 | Document | Contenu |
 |---|---|
 | [docs/RUM_PARITY_STATUS.md](docs/RUM_PARITY_STATUS.md) | **Document de couverture** : capacité par capacité, son verdict, sa preuve et sa limite (lots P5 à P8) |
@@ -168,7 +170,6 @@ En cas de désaccord entre ces documents, [docs/RUM_PARITY_STATUS.md](docs/RUM_P
 | [docs/architecture/adr/](docs/architecture/adr/README.md) | **Décisions d'architecture** : rôles, migrations, relais, MCP sans base, IaC, scheduler unique, blobs en base, base gratuite (remplacée le 27/09/2026) |
 | [docs/operations/runbook.md](docs/operations/runbook.md) | **Exploitation** : déployer, revenir en arrière, rejouer un travail, tenir le quota de la base gratuite, tourner un secret, rafraîchir le GeoIP, restaurer sans ressusciter des données effacées ; à côté, le mode d'emploi de chaque bascule ([docs/operations/](docs/operations/)) |
 | [services/README.md](services/README.md) · [infra/docker/README.md](infra/docker/README.md) | Les six services, leurs images et leurs variables (un README par service, `services/<x>/README.md`) · les mêmes images en auto-hébergement, par profil compose |
-| [docs/context/](docs/context/) | **Contexte produit** : maturité par service (RUM, supervision IA, Logs), grille d'évaluation, écarts et critères de sortie |
 | [docs/INTEGRATION.md](docs/INTEGRATION.md) · [docs/integration/sourcemaps-ci.md](docs/integration/sourcemaps-ci.md) | Guide d'intégration client : snippet, options, consent mode, CSP, RGPD, dépannage · envoyer ses source maps depuis GitHub Actions ou GitLab CI |
 | [docs/capteurs-serveur.md](docs/capteurs-serveur.md) · [capteurs-serveur.csv](docs/capteurs-serveur.csv) | Côté serveur : l'agent OpenTelemetry officiel de chaque langage, sa commande, ce qui est éprouvé (l'agent Node et le middleware FastAPI maison sont archivés : [docs/archive/capteurs-serveur-maison.md](docs/archive/capteurs-serveur-maison.md)) |
 | [packages/rum-mobile/README.md](packages/rum-mobile/README.md) | SDK React Native (crashes, écrans, réseau, événements) |
@@ -178,8 +179,6 @@ En cas de désaccord entre ces documents, [docs/RUM_PARITY_STATUS.md](docs/RUM_P
 | [docs/DOCUMENTS-HORS-DEPOT.md](docs/DOCUMENTS-HORS-DEPOT.md) | **Ce qui n'est pas ici** : documents commerciaux (offre, démo, scan marché) et documents d'un client nommé. Présents sur le poste, hors dépôt, et listés avec leur contenu |
 | [docs/LIMITES.md](docs/LIMITES.md) | Limites du produit : liste du 10/06/2026 (v0.1 à v0.3), mises à jour du 18/09 (P8.8) et du 26/09/2026 |
 | [DEPLOY.md](DEPLOY.md) | Mise en place d'origine (Neon + Railway + Vercel), snippet d'intégration et recette ; corrigé le 26/09/2026 mais **supplanté** : l'exploitation courante est dans le [runbook](docs/operations/runbook.md) |
-| [docs/archive/](docs/archive/) | Rapports de sprint & plans historiques (PLAN, ROADMAP_V02/V03, RAPPORT_NUIT/V04/V05) — non maintenus, valeur d'archive |
-
 ## Statut
 
 <!-- genere:readme-statut -->
