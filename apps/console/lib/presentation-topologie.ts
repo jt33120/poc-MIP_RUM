@@ -10,8 +10,8 @@
 // entière plutôt que d'en inventer un morceau.
 //
 // LES FAITS D'EXPLOITATION PORTENT LEUR DATE. Ils viennent de
-// docs/TOPOLOGIE_BACKEND.md et des §§ 2-3 du document de couverture
-// (docs/RUM_PARITY_STATUS.md), qui ne les a pas revérifiés en direct : la vitrine
+// le relevé de topologie et des §§ 2-3 du document de couverture
+// (le relevé de couverture), qui ne les a pas revérifiés en direct : la vitrine
 // dit donc QUAND ils ont été relevés, jamais « aujourd'hui ». Le test vérifie que
 // chaque date citée ici se lit encore dans ces deux documents.
 import { HOSTS } from "./legal";
@@ -97,20 +97,20 @@ export const HEBERGEMENT: readonly LigneHebergement[] = [
 
 // ─────────────────────── PS3 — le chemin de la mesure ───────────────────────
 
-/** Date de suppression du service Railway `ingest` (TOPOLOGIE_BACKEND.md:81-85 ; RUM_PARITY_STATUS.md:85, :103-106). */
+/** Date de suppression du service Railway `ingest` (le relevé de topologie ; le relevé de couverture). */
 export const INGEST_SUPPRIME_LE = "21/09/2026";
 
 /**
  * Le `scheduler` applique les migrations au pré-déploiement : constaté dans les
- * journaux d'un vrai déploiement (TOPOLOGIE_BACKEND.md:75-79 ; RUM_PARITY_STATUS.md:86).
+ * journaux d'un vrai déploiement (le relevé de topologie ; le relevé de couverture).
  */
 export const MIGRATIONS_CONSTATEES = { le: "18/09/2026", deploiement: "03850b30" } as const;
 
 /**
  * Quand la topologie a été relevée par les hébergeurs eux-mêmes : les API Railway et
- * Vercel le 18/09 (RUM_PARITY_STATUS.md:84-87), l'API Railway le 21/09 après la
+ * Vercel le 18/09 (le relevé de couverture), l'API Railway le 21/09 après la
  * suppression d'`ingest`, le 23/09 après la vague 8 (deux services), puis le 28/09
- * (TOPOLOGIE_BACKEND.md, « Relevé du 28/09/2026 ») : six services en ligne depuis
+ * (le relevé de topologie, « Relevé du 28/09/2026 ») : six services en ligne depuis
  * l'apply du 27/09, et la console qui relaie une part de la collecte au `collector`.
  * Vercel n'a pas été relevé par son API depuis le 18/09 : d'où les deux dates.
  */
@@ -136,7 +136,7 @@ export interface Piece {
 const lieuCourt = (h: Hebergeur): string[] => (h.lieu ? [`${h.lieu.region} · ${h.lieu.ville}`] : []);
 const regionAlt = (h: Hebergeur): string => (h.lieu ? `${h.lieu.region} — ${h.lieu.ville}, ${h.lieu.pays}` : h.phrase);
 
-// Rôles : docs/TOPOLOGIE_BACKEND.md, « Les trois hébergeurs » et « Les services Railway
+// Rôles : le relevé de topologie, « Les trois hébergeurs » et « Les services Railway
 // en production » (relevé du 28/09/2026) ; E1 (API /api/v1) ; le relais : ce que la
 // console transmet au collector, sans adresse (apps/console/lib/ingest-relay.ts,
 // ENTETES_TRANSMIS) ; le MCP passe par le service `api` sur le réseau privé

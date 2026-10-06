@@ -7,7 +7,7 @@
 // échoue (une lecture se rejoue sans risque — même règle que le relais de l'API
 // v1). La lecture locale et son repli disparaissent dans la PR qui suit la mise en
 // service : c'est elle qui fera sortir `/presentation` du cliquet de la piste C
-// (docs/architecture/console-api/cliquet.json).
+// (scripts/dev/cliquet-console.json).
 import { ETAT_PLATEFORME, type EtatPlateforme, type Fil, type LecturePlanifie } from "@mip/console-contract";
 import { backend } from "./backend";
 import { dernierPassagePlanifie, dernierTickScheduler } from "./queries-planifie";

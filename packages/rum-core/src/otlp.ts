@@ -1,7 +1,7 @@
 // Encodage OTLP/HTTP JSON — primitives PURES partagées par les runtimes MIP
 // (web, React Native). Elles vivaient auparavant en copies séparées
 // (`rum-sdk/otlp-encode.ts`, `rum-mobile/core.ts`, et l'agent Node maison,
-// archivé le 29/09/2026 : docs/archive/capteurs-serveur-maison.md) qui
+// archivé le 29/09/2026 : l'archive des capteurs maison) qui
 // pouvaient diverger sans qu'aucun test ne s'en aperçoive : un `intValue` encodé
 // en nombre d'un côté et en chaîne de l'autre produit deux vérités pour le même
 // événement. Une seule table de correspondance, ici, verrouillée par le

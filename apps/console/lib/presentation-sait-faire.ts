@@ -1,8 +1,8 @@
 // Partie 2 de la vitrine — « Ce qu'il sait faire » : ce que la page affiche, et
 // d'où vient chaque phrase (plan § 8.2, PS7 et PS8 ; lot P**.4).
 //
-// RÈGLE DE LA PARTIE (§ 8.0). Rien ici ne dépasse le document de couverture
-// (docs/RUM_PARITY_STATUS.md) :
+// RÈGLE DE LA PARTIE (§ 8.0). Rien ici ne dépasse le relevé de couverture
+// (couverture.json) :
 //   - une carte ne montre que des lignes au verdict « déployé, non éprouvé », et
 //     chaque identifiant y porte SA limite, en une puce qui garde la réserve
 //     principale de sa ligne (relue à la main, puce par puce, par P**.8) ;
@@ -45,11 +45,9 @@
 // puces B1 (K6) et D5 (K12) suivent : plus de lecture SVI, et la réserve de D5 — des
 // tables que la purge ne couvrait pas — est levée avec leur suppression.
 //
-// SOURCES. `{ ligne }` = une ligne de capacité, par identifiant ; `{ passage }` = le
-// numéro d'une ligne du document hors des tables de capacités ; `{ fichier }` =
+// SOURCES. `{ ligne }` = une ligne de capacité, par identifiant ; `{ fichier }` =
 // « chemin:ligne » ou « chemin:début-fin » d'un fichier du dépôt, relatif à la
-// racine ou à apps/console. Le relevé du 23/09 a gardé, ligne pour ligne, la
-// numérotation des §§ 1 à 11 du relevé du 18/09 : les numéros du plan valent encore.
+// racine ou à apps/console.
 import { CAPACITES, VERDICTS, type Capacite, type Verdict } from "./couverture";
 import { TEXTE_SEUIL_COLLECTE_RESSOURCE } from "./resources";
 import type { CarteCapacite, Source } from "./couverture-controle";
@@ -89,12 +87,9 @@ export const CARTES: readonly CarteCapacite[] = [
           "Quand l'identité est inconnue, l'impact s'affiche « Inconnu », et une erreur de service backend sans session n'a aucun impact utilisateur.",
       },
     ],
-    // § 6.3 : les populations ne s'additionnent pas ; « Inconnu » : le formatage des
-    // compteurs d'impact de l'écran des erreurs.
+    // « Inconnu » : le formatage des compteurs d'impact de l'écran des erreurs.
     sources: [
       { ligne: "A2" },
-      { passage: 312 },
-      { passage: 313 },
       { fichier: "lib/error-view.ts:90-93" },
     ],
   },
@@ -187,17 +182,11 @@ export const CARTES: readonly CarteCapacite[] = [
           `Seules les ressources retenues par le SDK (plus de ${TEXTE_SEUIL_COLLECTE_RESSOURCE}, 20 par page vue) sont mesurées : un échantillon biaisé vers le lent, jamais extrapolé ; aucune somme des blocages.`,
       },
     ],
-    // § 6.4 : le pays vient du fuseau horaire du terminal ; « Pays estimé »
-    // partout ; ce n'est pas une géolocalisation.
     sources: [
       { ligne: "B1" },
       { ligne: "B2" },
       { ligne: "B3" },
       { ligne: "B4" },
-      { passage: 317 },
-      { passage: 318 },
-      { passage: 319 },
-      { passage: 320 },
     ],
   },
   {
@@ -245,7 +234,7 @@ export const CARTES: readonly CarteCapacite[] = [
     id: "K9",
     // 29/09/2026 : plus de capteur serveur maison. L'agent Node et le middleware FastAPI
     // sont archivés (tag archive/capteurs-serveur-maison) ; le service tourne sous
-    // l'agent OpenTelemetry officiel de son langage (docs/capteurs-serveur.md). Les
+    // l'agent OpenTelemetry officiel de son langage (la fiche des capteurs serveur). Les
     // lignes C5 et C6 du document de couverture le disent depuis le 29/09/2026, avec les
     // preuves du jour : FastAPI éprouvé en production, Node pour les traces.
     titre: "Relier le navigateur à un service serveur, et en capter les erreurs",
@@ -271,8 +260,7 @@ export const CARTES: readonly CarteCapacite[] = [
           "Le middleware FastAPI maison est archivé depuis le 29/09/2026 : une API FastAPI passe par l'agent officiel Python, éprouvé en production le même jour, sans les journaux d'uvicorn ; un seul saut de trace éprouvé, sans propagation d'un service à un autre.",
       },
     ],
-    // § 6.5, sous le tableau des runtimes : un seul saut de tracing éprouvé.
-    sources: [{ ligne: "A4" }, { ligne: "C5" }, { ligne: "C6" }, { passage: 340 }, { passage: 341 }],
+    sources: [{ ligne: "A4" }, { ligne: "C5" }, { ligne: "C6" }],
   },
   {
     id: "K10",
@@ -350,12 +338,10 @@ export const CARTES: readonly CarteCapacite[] = [
           "L'isolation est prouvée en base, mais la connexion de production utilise encore un rôle propriétaire qui contourne ces règles : elle repose aujourd'hui sur le code de la console.",
       },
     ],
-    // Le rôle propriétaire de la production : la procédure de déploiement le dit, et
-    // l'onglet « Écart au marché » des Specs le reprend (le plan citait ses lignes
-    // 160-163 ; le texte est aujourd'hui aux lignes 172-176).
+    // Le rôle propriétaire de la production : l'onglet « Écart au marché » des Specs
+    // le dit (le plan citait ses lignes 160-163 ; le texte est aujourd'hui aux lignes 172-176).
     sources: [
       { ligne: "D6" },
-      { fichier: "DEPLOY.md:272-278" },
       { fichier: "components/presentation/Specs.tsx:172-176" },
     ],
   },
@@ -375,14 +361,12 @@ export const CARTES: readonly CarteCapacite[] = [
           "Allumé le 28/09/2026 pour le seul capteur de la console : les sites des clients passent encore par le relais, qui ne transmet que le pays (voir R6). Le pays seulement, et rien de rétrospectif : l'adresse des visites passées n'a jamais été gardée.",
       },
     ],
-    // § 6.4 : aucune adresse IP n'est stockée ; la conformité : ce que le collecteur lit
-    // et n'écrit pas, et le seul périmètre allumé ; le mode d'emploi de la collecte directe.
+    // La ligne D14 ; le seul périmètre allumé, dans l'IaC du collecteur ; ce que les pages
+    // légales déclarent de l'adresse lue et jamais écrite.
     sources: [
       { ligne: "D14" },
-      { passage: 326 },
-      { fichier: "docs/CONFORMITE.md:135-141" },
-      { fichier: "docs/CONFORMITE.md:152-160" },
-      { fichier: "docs/operations/relais-ingestion.md:197-201" },
+      { fichier: ".railway/railway.ts:247" },
+      { fichier: "lib/legal.ts:323-336" },
     ],
   },
   {
@@ -430,11 +414,9 @@ export const CARTES: readonly CarteCapacite[] = [
           "Le JavaScript du backend (paquets et services en .mjs) n'est typé par rien ; et la vérification n'arrête une fusion que si l'on attend son verdict sur le commit de fusion.",
       },
     ],
-    // § 7 : attendre le verdict de la CI du commit de fusion ; l'étape « Typage des
-    // paquets publiés et de l'extension » de la CI, et ce qu'elle laisse hors typage.
-    // Les passages :503-504 du § 8.4 (« seule l'extension […] n'est typée par aucun
-    // workflow ») ne sont plus cités : la CI les a rendus faux.
-    sources: [{ ligne: "F2" }, { passage: 390 }, { fichier: ".github/workflows/ci.yml:78-93" }],
+    // L'étape « Typage des paquets publiés et de l'extension » de la CI, et ce
+    // qu'elle laisse hors typage.
+    sources: [{ ligne: "F2" }, { fichier: ".github/workflows/ci.yml:71-86" }],
   },
 ];
 
@@ -506,28 +488,27 @@ export const METHODE: readonly EnonceMethode[] = [
     titre: "Inconnu n'est pas zéro.",
     texte:
       "Une valeur qu'on ne connaît pas s'affiche « Inconnu » ; une mesure sans dénominateur n'a pas de valeur ; seul un compteur réellement vide vaut 0.",
-    // § 6.3 ; B2 (« affichées « Inconnu » ») ; contrat de l'API : un dénombrement
-    // réellement vide vaut 0, une mesure sans échantillon vaut null.
-    sources: [{ passage: 312 }, { passage: 313 }, { ligne: "B2" }, { fichier: "docs/API_CONSOLE.md:600-601" }],
+    // B2 (« affichées « Inconnu » ») ; le formatage des compteurs d'impact.
+    sources: [{ ligne: "B2" }, { fichier: "lib/error-view.ts:90-93" }],
   },
   {
     titre: "Une capacité absente n'affiche pas de zéro.",
     texte:
       "Il n'existe aucune table de crash natif : l'écran mobile dit « Non collecté » plutôt qu'un taux sans crash qui ne reposerait sur rien.",
-    // § 1, seconde règle de lecture ; C7.
-    sources: [{ passage: 43 }, { passage: 44 }, { ligne: "C7" }],
+    // C7.
+    sources: [{ ligne: "C7" }],
   },
   {
     titre: "L'échantillonnage est dit, pas corrigé.",
     texte:
       "Les comptes sont ceux reçus, sans multiplicateur ; l'écran indique la probabilité qu'une erreur avait d'être retenue.",
-    // § 5.3.
-    sources: [{ passage: 253 }, { passage: 254 }, { passage: 255 }],
+    // Ce que l'écran des erreurs dit de l'échantillon : la probabilité d'inclusion, sans extrapolation.
+    sources: [{ fichier: "lib/queries-errors.ts:383-396" }],
   },
   {
     titre: "Aucune adresse IP de visiteur n'est conservée.",
     texte: "Le pays est estimé, et nommé « Pays estimé » partout.",
-    // § 6.4.
-    sources: [{ passage: 319 }, { passage: 326 }],
+    // D14 ; le libellé de la dimension, « Pays estimé », partout.
+    sources: [{ ligne: "D14" }, { fichier: "lib/geo.ts:23-24" }],
   },
 ];

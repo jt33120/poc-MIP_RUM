@@ -16,7 +16,7 @@
 // Les lots d'un service Node sont produits par le SDK OpenTelemetry OFFICIEL et
 // sérialisés par ses propres encodeurs (`@opentelemetry/otlp-transformer`), comme
 // le ferait un service sous l'agent officiel. Jusqu'au 29/09/2026, ces octets
-// venaient de l'agent Node maison (archivé : docs/archive/capteurs-serveur-maison.md).
+// venaient de l'agent Node maison (archivé : l'archive des capteurs maison).
 // Les exceptions gardent les attributs qu'il posait (`mip.exception_id`,
 // `mip.error_handled`, `mip.error_fatal`) : ils sont le contrat de l'ingestion,
 // qu'une application peut poser par l'API OpenTelemetry, pas celui d'un capteur.

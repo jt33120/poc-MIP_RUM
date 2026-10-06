@@ -1,5 +1,5 @@
 // Application d'essai Go : SDK OpenTelemetry + otelhttp + exportateur OTLP/HTTP.
-// Configuration : les seules variables du socle (docs/capteurs-serveur.md § 1).
+// Configuration : les seules variables du socle (la fiche des capteurs serveur § 1).
 package main
 
 import (

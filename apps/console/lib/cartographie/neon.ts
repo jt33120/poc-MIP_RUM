@@ -31,7 +31,7 @@ const TETE: readonly Omit<Element, "x" | "y">[] = [
     faits: [
       { texte: "70 tables, créées par schema.sql puis 99 migrations additives, jusqu'à la v107.", sources: [`${SQL}/schema.sql`, `${SQL}/migration-v107.sql`] },
       { texte: "Une migration fusionnée ne se modifie plus ; seul le scheduler migre, au pré-déploiement.", sources: ["scripts/ci/migrations-figees.mjs", "packages/db/migrate.mjs:101"] },
-      { texte: "Neon est payé à l'usage depuis le 27/09/2026 : chaque réveil de la base se paie.", sources: ["AGENTS.md:129-131"] },
+      { texte: "Neon est payé à l'usage depuis le 27/09/2026 : chaque réveil de la base se paie.", sources: ["AGENTS.md:127-129"] },
     ],
   },
   {

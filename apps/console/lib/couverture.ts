@@ -1,15 +1,15 @@
-// Le document de couverture (docs/RUM_PARITY_STATUS.md), lisible par le code.
+// Le relevé de couverture, lisible par le code : capacité par capacité, son verdict,
+// sa preuve et sa limite (relevé du 23/09/2026, tenu à jour ligne par ligne depuis).
 //
-// RÈGLE DE LA VITRINE : rien sur le site ne dépasse ce document. Chaque chiffre de
+// RÈGLE DE LA VITRINE : rien sur le site ne dépasse ce relevé. Chaque chiffre de
 // couverture (nombre de capacités, de déployées, date et SHA du relevé, nombres de
-// tests) est CALCULÉ ici depuis l'extraction versionnée, jamais tapé dans un
-// `.tsx` : un nouveau relevé met la vitrine à jour au build suivant.
+// tests) est CALCULÉ ici depuis le JSON versionné, jamais tapé dans un `.tsx` :
+// changer une ligne du relevé met la vitrine à jour au build suivant.
 //
-// Le JSON est produit par `node scripts/couverture-extraire.mjs`, et
-// `tests/unit/couverture-site.test.ts` échoue s'il n'est plus l'extraction du
-// document. Même principe que le poids du SDK (lib/sdk-poids.ts) : une valeur
-// affichée est remesurée, pas recopiée.
-import donnees from "./couverture.generated.json";
+// `tests/unit/couverture-site.test.ts` vérifie que les cartes et les points de la
+// vitrine ne dépassent pas ces lignes. Même principe que le poids du SDK
+// (lib/sdk-poids.ts) : une valeur affichée est calculée, pas recopiée.
+import donnees from "./couverture.json";
 
 /** Les sept verdicts du § 1 du document. `deploye_non_eprouve` est le meilleur. */
 export type Verdict =
@@ -53,8 +53,6 @@ export interface Capacite {
   preuve: string;
   /** Cellule « Limite », en Markdown brut. */
   limite: string;
-  /** Numéro de ligne dans le document : une source citée par numéro s'y résout. */
-  ligne: number;
 }
 
 /** Date du relevé, « JJ/MM/AAAA ». */

@@ -19,7 +19,7 @@ export const runtime = "nodejs";
 // croissante — collector 4 s (budget dur, 503) < sonde /health (2 s) + relais
 // 8 s (`DELAIS`) < fonction. Sans ce plafond, le défaut du projet tuerait la
 // fonction AVANT le 503 du relais — un 504 FUNCTION_INVOCATION_TIMEOUT muet,
-// sans « relay timeout » au journal. Voir docs/operations/relais-ingestion.md.
+// sans « relay timeout » au journal. Voir le mode d'emploi du relais d'ingestion.
 export const maxDuration = 30;
 
 // Préflight et diagnostic : relayés aussi, le collector seul connaît les

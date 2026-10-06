@@ -3,7 +3,7 @@
 // La table (`table.ts`) est ce qu'une DSI relit : chaque ligne dit l'authentification
 // exigée, la portée vérifiée AVANT le traitement, le sort d'une session de démo,
 // et l'action d'audit d'une écriture. La matrice d'autorisations
-// (`tests/contract/console-api-authz.test.ts`) et la doc (`docs/api/console-api.md`)
+// (`tests/contract/console-api-authz.test.ts`) et la doc (la table des opérations de console-api)
 // en sont GÉNÉRÉES : elles ne peuvent pas diverger d'elle.
 //
 // Les règles de `verifierTable` sont vérifiées AU DÉMARRAGE : un service dont la

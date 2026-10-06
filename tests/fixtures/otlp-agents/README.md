@@ -15,7 +15,7 @@ les versions de chaque langage.
   (`go/main.go`, `php/index.php`, `ruby/config.ru`), **sans** `go.mod`, `composer.lock` ni
   `Gemfile.lock` : ce seraient des dépendances du dépôt. Les versions des paquets sont dans
   `manifeste.json`.
-- **Configuration** : le seul socle de `docs/capteurs-serveur.md` § 1 (`OTEL_SERVICE_NAME`,
+- **Configuration** : le seul socle de la recette serveur (`apps/console/lib/recettes-agents-otel.ts`) (`OTEL_SERVICE_NAME`,
   `OTEL_RESOURCE_ATTRIBUTES` avec `mip.app_id` et `mip.api_key`, protocole `http/protobuf`,
   compression `gzip`, un endpoint par signal, `OTEL_METRICS_EXPORTER=none`), plus ce que le
   tableau du § 2 demande par langage.
@@ -23,7 +23,7 @@ les versions de chaque langage.
   - Go : `net/http`, `otelhttp.NewHandler` et `otelhttp.NewTransport`, propagateur W3C ;
     `GET /factures/{id}` appelle `GET /stock/{id}` ; l'échec est enregistré par
     `span.RecordError(err, trace.WithStackTrace(true))`, d'où la pile du corps capturé
-    (`docs/capteurs-serveur.md` § 3, Go).
+    (piège constaté avec Go).
   - PHP : Slim 4 sous `php -S`, `OTEL_PHP_AUTOLOAD_ENABLED=true`, auto-instrumentations
     Slim, PDO et PSR-3 (`OTEL_PHP_PSR3_MODE=export`) ; `GET /factures/{id}` lit une base
     SQLite et écrit un journal Monolog ; l'échec écrit un journal ERROR puis lève

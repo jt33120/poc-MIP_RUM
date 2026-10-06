@@ -50,7 +50,7 @@ export const GET = handle(async () => ({
       // Compté sur le catalogue réellement enregistré : écrit en dur, ce nombre
       // annonçait encore 11 outils après l'ajout du douzième.
       `Ces mêmes endpoints sont exposés en outils MCP pour un agent IA (${OUTILS.length} outils, lecture seule). Le serveur MCP relaie le jeton de l'appelant : il n'élargit aucun droit.`,
-    doc: "docs/MCP.md",
+    doc: "/api-docs#mcp",
   },
   endpoints: endpointsDeclares(),
   // L'Explorer générique (P6.4) est une LECTURE en POST : son AST ne tient pas dans

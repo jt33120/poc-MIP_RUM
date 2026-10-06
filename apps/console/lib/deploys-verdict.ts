@@ -2,7 +2,7 @@
 // de régression, référence, taux et écarts —, SANS la base.
 //
 // Séparé de `queries-deploys.ts` le 24/09/2026 (cliquet de la piste C,
-// docs/architecture/console-api/README.md) : le panneau de déploiement et la table
+// le cadrage de console-api) : le panneau de déploiement et la table
 // des versions jugent des chiffres déjà lus. Tant qu'ils importaient ces fonctions
 // depuis `queries-deploys.ts`, leur graphe d'import atteignait `lib/db.ts`.
 

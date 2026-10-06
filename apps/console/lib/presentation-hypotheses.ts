@@ -42,7 +42,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
       "Postgres chez Neon, à Francfort, sur une offre payée à l'usage depuis le 27/09/2026, calcul plafonné à 0,25 unité et mise en veille dès que personne ne s'en sert.",
     pourquoi: "Peu de trafic : une base qui dort entre deux passages ne coûte presque rien.",
     production: "La base que retiendra la DSI de MIP, dimensionnée pour un vrai trafic.",
-    sources: ["docs/architecture/adr/0014-base-gratuite.md:40-54", "docs/architecture/overview.md:16", "AGENTS.md:129-131"],
+    sources: ["AGENTS.md:127-129"],
   },
   {
     id: "H2",
@@ -71,7 +71,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     pourquoi: "L'objectif de trafic du POC, 500 événements par jour, en est très loin.",
     production:
       "Une écriture en un seul aller-retour vers la base, obligatoire avant qu'un client dépasse quelques visiteurs simultanés, et des plafonds réglés par client.",
-    sources: ["docs/architecture/overview.md:130", "docs/operations/banc-collecteur-2026-09-24.md:17-34", "services/collector/server.mjs:42"],
+    sources: ["services/collector/server.mjs:42"],
   },
   {
     id: "H5",
@@ -79,7 +79,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     aujourdhui: "Les enregistrements de session et les source maps sont stockés dans Postgres, avec les mesures.",
     pourquoi: "Une seule sauvegarde, une seule purge, un seul effacement à la demande d'un visiteur.",
     production: "Un stockage objet en Union européenne, au-delà de 5 Go ou de la moitié du stockage.",
-    sources: ["docs/architecture/adr/0009-blobs-en-postgres.md:9-15"],
+    sources: ["packages/db/sql/migration-v03.sql:5"],
   },
   {
     id: "H6",
@@ -96,7 +96,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
       "La base se restaure à n'importe quel instant des 24 dernières heures. La procédure a été répétée sur une copie, pas sur la base de production ; il n'y a pas d'environnement de préproduction.",
     pourquoi: "Pas de donnée client irremplaçable pendant le POC.",
     production: "Une fenêtre de restauration plus longue, un exercice sur la production, et une préproduction.",
-    sources: ["docs/operations/runbook.md:115,119,212", "docs/operations/presentation-dsi.md:16-18", ".railway/railway.ts:23"],
+    sources: [".railway/railway.ts:23"],
   },
   {
     id: "H8",
@@ -108,7 +108,6 @@ export const HYPOTHESES: readonly Hypothese[] = [
     sources: [
       ".railway/railway.ts:399-405",
       "services/notifier/README.md:34,61",
-      "docs/ALERTING.md:60-74",
       "packages/db/sql/migration-v108.sql:34,109,197",
     ],
   },
@@ -123,7 +122,6 @@ export const HYPOTHESES: readonly Hypothese[] = [
       ".github/workflows/sonde-externe.yml:1-22",
       "packages/backend/jobs/veille-ordonnanceur.mjs:16-27,50-51",
       "services/notifier/README.md:26,28",
-      "docs/architecture/overview.md:116,131",
     ],
   },
   {
@@ -133,7 +131,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
       "Un administrateur crée les comptes ; pas de mot de passe oublié en libre-service. La connexion d'entreprise (SSO) existe dans le code mais n'est pas branchée sur l'annuaire de MIP.",
     pourquoi: "Une poignée d'utilisateurs, tous connus.",
     production: "La connexion par l'annuaire de MIP, obligatoire, et la gestion des comptes qui va avec.",
-    sources: ["apps/console/app/login/page.tsx:164-169", "docs/architecture/overview.md:117", "docs/SSO.md:14-25"],
+    sources: ["apps/console/app/login/page.tsx:164-169"],
   },
   {
     id: "H11",
@@ -142,7 +140,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
       "Chaque requête filtre sur l'application du client. Les rôles restreints de la base, et leurs règles par ligne, sont créés mais pas encore branchés.",
     pourquoi: "Peu de clients, et un code qui passe par un seul chemin d'accès.",
     production: "Des rôles restreints en service, pour que la base elle-même refuse de mélanger deux clients.",
-    sources: ["docs/architecture/adr/0003-roles-et-tenancy.md:9,21", "docs/MULTITENANT.md:13,52", "docs/operations/runbook.md:92-100"],
+    sources: ["packages/db/roles/console-api.mjs:1-10"],
   },
   {
     id: "H12",
@@ -150,7 +148,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     aujourdhui: "L'extension s'installe par politique d'entreprise ou à la main, depuis l'archive servie par la console.",
     pourquoi: "Un pilote sur quelques postes n'a pas besoin du Store.",
     production: "Une publication au Store, ou un déploiement par stratégie de groupe avec un identifiant stable.",
-    sources: ["apps/console/lib/specs.ts:214-219", "docs/CHROME_WEB_STORE.md:5-10", "docs/DEPLOY_EXTENSION.md:13-15"],
+    sources: ["apps/console/lib/specs.ts:214-219"],
   },
   {
     id: "H13",
@@ -159,7 +157,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
       "Les services répondent sur des adresses générées par leurs hébergeurs ; le code de suivi mesure chaque session, sans échantillonnage.",
     pourquoi: "Aucun client ne dépend encore d'une adresse, et le trafic est faible.",
     production: "Un domaine de MIP, et un échantillonnage réglé sur le trafic de chaque site.",
-    sources: ["docs/architecture/overview.md:124", "docs/INTEGRATION.md:193"],
+    sources: [".railway/railway.ts:54-55", "packages/rum-sdk/src/types.ts:14"],
   },
   {
     id: "H14",
@@ -169,9 +167,8 @@ export const HYPOTHESES: readonly Hypothese[] = [
     pourquoi:
       "Le SDK pèse deux fois moins lourd (27 → 12 Ko compressés le 15/07/2026), sur chaque page des sites surveillés. Les SDK de Datadog et de Sentry font le même choix.",
     production:
-      "La validation de ce choix par l'équipe (ADR-0016) et une relecture de la norme à chaque version. La conformité est contrôlée depuis le 05/10/2026 : le sérialiseur et le collecteur OpenTelemetry officiels relisent la sortie du SDK à chaque modification.",
+      "La validation de ce choix par l'équipe et une relecture de la norme à chaque version. La conformité est contrôlée depuis le 05/10/2026 : le sérialiseur et le collecteur OpenTelemetry officiels relisent la sortie du SDK à chaque modification.",
     sources: [
-      "docs/architecture/adr/0016-emetteur-otlp-maison.md:18-25,35-55",
       "packages/rum-sdk/src/otel.ts:1-2,94-110",
       "tests/unit/otlp-emitter.test.ts:1-5",
       "tests/unit/otlp-conformite-officielle.test.ts:1-12",
@@ -186,7 +183,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     pourquoi: "Un seul site client (UTI), et une mise à jour qui le suit sans qu'il ait rien à changer.",
     production:
       "Une adresse de diffusion de MIP, des fichiers versionnés (mip-rum-0.6.0.js) que chaque client choisit de suivre, et une empreinte d'intégrité dans la balise.",
-    sources: ["docs/INTEGRATION.md:56,83-85", "packages/rum-sdk/package.json:3"],
+    sources: ["packages/rum-sdk/package.json:3"],
   },
 ];
 
@@ -207,58 +204,58 @@ export const CHANTIERS: readonly Chantier[] = [
     titre: "Faire passer les écrans par le backend",
     texte:
       "La console lit encore la base directement. Le backend qui doit la remplacer est en service mais éteint : l'ouvrir par paliers (10 %, 50 %, puis tout), puis retirer à la console son accès à la base.",
-    sources: ["docs/operations/bascule-console-api.md:28,54-62", "docs/architecture/overview.md:19,22,88"],
+    sources: ["apps/console/lib/aiguillage-console-api.ts:6-18", "scripts/ci/console-sans-base.mjs"],
   },
   {
     id: "X2",
     titre: "Une collecte qui ne passe plus que par le collecteur",
     texte:
       "Le relais vers le collecteur est à plein depuis le 28/09/2026 ; après sept jours sans repli, retirer l'écriture de secours de la console.",
-    sources: ["docs/operations/relais-ingestion.md:186,191-194"],
+    sources: ["apps/console/lib/ingest-relay.ts:13-21"],
   },
   {
     id: "X3",
     titre: "Brancher les rôles restreints de la base",
     texte: "Donner au backend de la console ses deux rôles limités, et lui retirer l'accès propriétaire (voir l'hypothèse sur le cloisonnement).",
-    sources: ["docs/operations/runbook.md:92-100"],
+    sources: ["packages/db/roles/console-api.mjs:1-10"],
   },
   {
     id: "X4",
     titre: "Accélérer l'écriture des mesures",
     texte: "Une fonction de la base qui écrit un lot en un seul aller-retour, pour lever le plafond de la collecte.",
-    sources: ["docs/architecture/overview.md:130"],
+    sources: ["services/collector/server.mjs:42"],
   },
   {
     id: "X5",
     titre: "Une préproduction, et ses exercices",
     texte:
       "Créer l'environnement, puis y répéter les redéploiements sous charge, les retours arrière chronométrés et la panne des notifications.",
-    sources: ["docs/operations/presentation-dsi.md:16-26", "docs/operations/relais-ingestion.md:190"],
+    sources: [".railway/railway.ts:23"],
   },
   {
     id: "X6",
     titre: "Des notifications de production",
     texte: "Vérifier le domaine d'envoi des e-mails, et signer chaque canal avec son propre secret.",
-    sources: ["docs/ALERTING.md:70-73", "services/notifier/README.md:61"],
+    sources: ["services/notifier/README.md:61"],
   },
   {
     id: "X7",
     titre: "Un stockage objet pour les rejeux",
     texte: "Préparer la sortie des enregistrements de session vers un stockage objet, à déclencher au seuil fixé.",
-    sources: ["docs/architecture/adr/0009-blobs-en-postgres.md:14-15"],
+    sources: ["packages/db/sql/migration-v03.sql:5"],
   },
   {
     id: "X8",
     titre: "Mettre à jour la base de géolocalisation",
     texte: "La livraison actuelle de la base qui situe les adresses IP devra être remplacée avant fin février 2027.",
-    sources: ["docs/operations/runbook.md:104"],
+    sources: ["packages/backend/data/dbip-country-lite.manifest.json", "scripts/fetch-geoip-db.mjs:6-10"],
   },
   {
     id: "X9",
     titre: "Passer le backend d'UTI à l'agent officiel",
     texte:
       "Le serveur d'UTI garde une copie de l'ancien capteur maison. Le remplacer par l'agent OpenTelemetry officiel pour Python, éprouvé en production sous FastAPI le 29/09/2026.",
-    sources: ["docs/RUM_PARITY_STATUS.md:336", "docs/capteurs-serveur.md:54"],
+    sources: ["apps/console/lib/recettes-agents-otel.ts:127-148"],
   },
   {
     id: "X10",

@@ -12,7 +12,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CAPACITES, type Capacite } from "../../apps/console/lib/couverture";
 import {
-  BANC_CLICKHOUSE,
   FAMILLES_API_V1,
   OUTILS_MCP,
   RESERVES_CHAINE,
@@ -85,11 +84,3 @@ describe("2 — « Ce que ces chiffres ne disent pas » suit le verdict de F2 et
   });
 });
 
-describe("3 — le banc ClickHouse cité est celui des notes d'infrastructure", () => {
-  it("date, égalité des p75 à 1 ms près, ×15 à données identiques", () => {
-    const notes = lire("labs/clickhouse/NOTES.md");
-    expect(notes).toContain(`## Bench réel (${BANC_CLICKHOUSE.le}, local)`);
-    expect(notes).toContain("tolérance 1 ms sur les p75");
-    expect(notes).toContain(`**×${BANC_CLICKHOUSE.compacite}** plus compact à données identiques`);
-  });
-});

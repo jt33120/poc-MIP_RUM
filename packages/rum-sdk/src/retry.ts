@@ -1,4 +1,4 @@
-// File de rejeu hors ligne, best-effort (docs/LIMITES.md §4) : un export échoué
+// File de rejeu hors ligne, best-effort (la liste des limites §4) : un export échoué
 // est gardé dans localStorage et réémis au prochain init() avec ses horodatages
 // et identifiants OTLP d'origine, que l'ingestion déduplique. Un sendBeacon
 // accepté puis perdu reste indétectable. Types d'export minimaux, repris du SDK
@@ -21,7 +21,7 @@ export interface ExportResult {
 }
 
 // Ne rejouer que ce qui peut réussir, et pas tous à la même seconde
-// (finding 2.2 de docs/AUDIT_RUM_EXTERNE.md).
+// (finding 2.2 de l'audit RUM externe).
 
 /** Statuts qu'il est utile de retenter : le serveur dit « plus tard », pas « non ». */
 const REJOUABLES = new Set([408, 425, 429, 500, 502, 503, 504]);

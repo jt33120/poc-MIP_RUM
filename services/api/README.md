@@ -8,11 +8,11 @@
 | Point d'entrée | `node services/api/dist/server.mjs`, construit par `node services/api/build.mjs` depuis `server.mjs` (câblage seul, sur `@mip/service-kit`) |
 | Logique | **les routes de la console** (`apps/console/app/api/v1/**/route.ts`, `app/api/rum/summary`) et ce qu'elles lisent (`apps/console/lib/…`), compilées dans le bundle |
 | Exposition | public (domaine généré) et privé (le serveur MCP, par le réseau privé Railway) |
-| Rôle BDD | **`mip_api`**, lecture seule (migration v89, [ADR-0003](../../docs/architecture/adr/0003-roles-et-tenancy.md)) : liste blanche de [`packages/db/roles/mip-api.mjs`](../../packages/db/roles/mip-api.mjs), vérifiée en CI contre la base et contre ce bundle (`scripts/ci/verify-db-roles.mjs`) ; pool de 6 par réplique, `application_name = mip-api` |
+| Rôle BDD | **`mip_api`**, lecture seule (migration v89, ADR 0003) : liste blanche de [`packages/db/roles/mip-api.mjs`](../../packages/db/roles/mip-api.mjs), vérifiée en CI contre la base et contre ce bundle (`scripts/ci/verify-db-roles.mjs`) ; pool de 6 par réplique, `application_name = mip-api` |
 | Réplicas | 2 (sans état : le débit par principal est compté par réplique) |
 | Image | `services/api/Dockerfile` — `dist/server.mjs` et `pg`, rien d'autre |
 
-État au 26/09/2026 : **pas encore créé** sur Railway — déclaré dans `.railway/railway.ts`, il attend ses variables partagées (dont `API_DATABASE_URL`) et un apply approuvé. Le rôle `mip_api` arrive avec migration-v89, pas encore appliquée en production. L'API v1 est servie par la console Vercel ; le relais de la console vers ce service est livré (`apps/console/lib/api-relay.ts`, #292) et éteint : `CONSOLE_API_RELAY_URL` non posée sur Vercel, drapeau `platform_flag.api_relay_pct` à 0 ([mode d'emploi](../../docs/operations/relais-api.md)).
+État au 26/09/2026 : **pas encore créé** sur Railway — déclaré dans `.railway/railway.ts`, il attend ses variables partagées (dont `API_DATABASE_URL`) et un apply approuvé. Le rôle `mip_api` arrive avec migration-v89, pas encore appliquée en production. L'API v1 est servie par la console Vercel ; le relais de la console vers ce service est livré (`apps/console/lib/api-relay.ts`, #292) et éteint : `CONSOLE_API_RELAY_URL` non posée sur Vercel, drapeau `platform_flag.api_relay_pct` à 0 (`apps/console/lib/api-relay.ts`).
 
 ## Pourquoi un bundle des routes de la console
 
@@ -74,7 +74,7 @@ Réponses : l'enveloppe de la console (`{ meta, data }`, ETag faible, `Cache-Con
 
 | Variable | Obligatoire | Rôle |
 |---|---|---|
-| `DATABASE_URL` | **oui** (secret) | Postgres, **en `mip_api`** — la variable partagée `API_DATABASE_URL` ([runbook](../../docs/operations/runbook.md#le-rôle-de-lapi--mip_api)). Le service fonctionne aussi en propriétaire, mais perd ce qui suit. |
+| `DATABASE_URL` | **oui** (secret) | Postgres, **en `mip_api`** — la variable partagée `API_DATABASE_URL`. Le service fonctionne aussi en propriétaire, mais perd ce qui suit. |
 | `CONSOLE_API_TOKENS` | non (secret) | jetons machine, `jeton` ou `jeton@app1;app2` — **la même valeur que la console**. Les jetons en base (écran « Jetons de lecture ») valent aussi. |
 | `CONSOLE_API_ALLOWED_ORIGINS` | non | origines CORS, **la même valeur que la console** |
 | `CONSOLE_API_RATE_LIMIT` | non | requêtes par minute et par principal, par réplique (défaut 120) |
@@ -99,7 +99,7 @@ Sans état : chaque requête lit la base. Le débit par principal est compté **
 
 ## Coût, sur la base gratuite
 
-Le service ne réveille la base que quand on l'appelle : aucune boucle, et le pool ferme ses connexions inactives après 30 s. Une supervision externe vise `/live`, jamais `/health` ([ADR-0014](../../docs/architecture/adr/0014-base-gratuite.md)).
+Le service ne réveille la base que quand on l'appelle : aucune boucle, et le pool ferme ses connexions inactives après 30 s. Une supervision externe vise `/live`, jamais `/health` (ADR 0014).
 
 ## Lancement local
 

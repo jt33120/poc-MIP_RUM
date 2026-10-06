@@ -6,7 +6,7 @@
 // de pouvoir VÉRIFIER les parties externes qu'on utilise. Une liste écrite à la main
 // dérive au premier `pnpm add` ; celle-ci est relue dans les manifestes du dépôt, et
 // `tests/unit/composants-open-source.test.ts` échoue si le JSON versionné n'est plus
-// ce que le script produit aujourd'hui. Même modèle que scripts/couverture-extraire.mjs.
+// ce que le script produit aujourd'hui.
 //
 // CE QUI EST LU, ET D'OÙ :
 //   - npm : les dépendances DIRECTES de chaque espace de travail (pnpm-workspace.yaml,
@@ -22,7 +22,6 @@
 //   - Node.js (`.nvmrc`) et pnpm (`packageManager`).
 //   Le reste — ce qu'aucun manifeste ne porte — est tenu à la main dans
 //   scripts/composants-open-source.externes.json, avec sa raison.
-//   labs/ n'est pas lu : des expériences hors produit, qu'aucun service ne lance.
 //
 // DÉTERMINISTE ET HORS LIGNE. Aucun horodatage (la date affichée est celle du relevé,
 // posée dans le fichier des externes : une date tirée de git rendrait `--verifier`
@@ -398,7 +397,7 @@ function composantsActions(horsNpm) {
   });
 }
 
-const ECARTES = new Set(["node_modules", ".git", ".claude", ".next", ".venv", "venv", "__pycache__", "dist", "labs"]);
+const ECARTES = new Set(["node_modules", ".git", ".claude", ".next", ".venv", "venv", "__pycache__", "dist"]);
 
 function trouverRequirements(dossier = "", acc = []) {
   for (const e of readdirSync(join(RACINE, dossier || ".")).sort(trier)) {

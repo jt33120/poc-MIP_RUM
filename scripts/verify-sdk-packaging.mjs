@@ -18,7 +18,7 @@
 // Prérequis : pnpm --filter "@mip/rum-core" --filter "@mip/rum-sdk" \
 //             --filter "@mip/rum-mobile" build
 // (L'agent Node maison, archivé le 29/09/2026, n'a plus de bundle à vérifier :
-// docs/archive/capteurs-serveur-maison.md.)
+// l'archive des capteurs maison.)
 
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

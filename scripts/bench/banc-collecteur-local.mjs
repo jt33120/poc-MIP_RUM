@@ -8,7 +8,7 @@
 // LATENCE par aller-retour, injectée par toxiproxy entre le collector et un
 // Postgres 17 de conteneur. Le reste (CPU de Neon, pooler PgBouncer, disque,
 // réseau Railway) n'est PAS reproduit : c'est la limite du chiffre, dite dans
-// docs/operations/banc-collecteur-2026-09-24.md.
+// le banc collecteur du 24/09/2026.
 //
 // CE QU'IL FAIT, dans l'ordre, et défait toujours à la fin :
 //   1. réseau Docker + Postgres 17 (pg_stat_statements chargé) SANS port publié,

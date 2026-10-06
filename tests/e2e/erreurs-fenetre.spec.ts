@@ -1,5 +1,5 @@
 // E2E — les compteurs de l'écran Erreurs suivent la fenêtre annoncée.
-// Finding 1.1 de docs/AUDIT_RUM_EXTERNE.md.
+// Finding 1.1 de l'audit RUM externe.
 //
 // POURQUOI UN E2E. Le défaut n'était PAS une erreur de calcul : chaque requête
 // rendait un nombre exact. Il était dans l'écart entre le NOMBRE et son

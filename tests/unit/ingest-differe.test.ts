@@ -45,10 +45,6 @@ describe("le compromis de durabilité est écrit, pas sous-entendu", () => {
     expect(SERVICE).toContain("details: receveur.infosSante");
     expect(SERVICE).toContain("ingest_deferred: config.INGEST_DEFERRED");
   });
-
-  it("la documentation d'intégration porte le même avertissement", () => {
-    expect(lire("docs/INTEGRATION.md")).toContain("INGEST_DEFERRED");
-  });
 });
 
 describe("la file ne peut pas devenir une porte ouverte", () => {

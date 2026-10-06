@@ -1,6 +1,6 @@
 // Le fuseau dans lequel une application découpe ses JOURNÉES.
 //
-// Finding 2.8 de docs/AUDIT_RUM_EXTERNE.md. Trente `date_trunc` dans ce dossier,
+// Finding 2.8 de l'audit RUM externe. Trente `date_trunc` dans ce dossier,
 // aucun `at time zone`, et aucune fixation de fuseau sur la connexion : les
 // bornes étaient celles du serveur PostgreSQL, en pratique UTC — sous une
 // interface entièrement en français.

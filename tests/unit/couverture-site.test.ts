@@ -1,11 +1,8 @@
-// P**.0 — La vitrine ne dit rien que le document de couverture ne dise.
+// P**.0 — La vitrine ne dit rien que le relevé de couverture ne dise.
 //
-// Le document (docs/RUM_PARITY_STATUS.md) est extrait par
-// scripts/couverture-extraire.mjs vers apps/console/lib/couverture.generated.json,
-// que lit lib/couverture.ts. Ce fichier vérifie :
-//   0. que l'extracteur découpe les cellules comme le document les écrit ;
-//   1. que le JSON versionné EST l'extraction du document d'aujourd'hui ;
-//   2. que les décomptes calculés égalent ceux que le document écrit en toutes lettres ;
+// Le relevé (apps/console/lib/couverture.json) est lu par lib/couverture.ts. Ce
+// fichier vérifie :
+//   2. que les décomptes calculés sont ceux du relevé du 23/09/2026, tenu à jour ;
 //   3. et 4. que les contrôles de provenance des cartes nomment ce qui est faux
 //      (branchés sur les vraies cartes par P**.4 et P**.5) ;
 //   5. que le lexique de la vitrine n'affirme ni souveraineté, ni complétude, ni effet sur les ventes ;
@@ -35,110 +32,27 @@ import {
 import { GLOSSARY } from "../../apps/console/lib/glossary";
 import { POINTS_FAITS, POINTS_RESTE } from "../../apps/console/lib/presentation-reste";
 import { CARTES } from "../../apps/console/lib/presentation-sait-faire";
-import {
-  DOCUMENT,
-  SORTIE,
-  VERDICTS as VERDICTS_EXTRACTEUR,
-  cellules,
-  extraireCouverture,
-  serialiser,
-} from "../../scripts/couverture-extraire.mjs";
-
 const RACINE = join(__dirname, "..", "..");
 const CONSOLE = join(RACINE, "apps/console");
 const lire = (chemin: string) => readFileSync(join(RACINE, chemin), "utf8");
-const DOC = lire(DOCUMENT);
-const FIXTURE = lire("tests/fixtures/couverture-cellules.md");
 
-describe("0 — l'extracteur découpe les cellules comme le document les écrit", () => {
-  it("un tube dans du code ou échappé ne sépare pas deux colonnes", () => {
-    const ligne = FIXTURE.split("\n").find((l) => l.startsWith("| A1 "))!;
-    const c = cellules(ligne);
-    expect(c).toHaveLength(5);
-    expect(c[3]).toBe('`grep -E "a|b" fichier.ts` ; tests `x.test.ts`');
-    expect(c[4]).toBe("Un tube échappé | ne sépare rien ; `c|d` non plus.");
-  });
-
-  it("extrait la fixture entière : relevé, décomptes, capacités numérotées, rien hors du § 4", () => {
-    const x = extraireCouverture(FIXTURE);
-    expect(x.releve).toBe("03/03/2026");
-    expect(x.sha).toBe("abc1234");
-    expect(x.testsUnitaires).toEqual({ fichiers: 12, tests: 1234 });
-    expect(x.testsSql).toEqual({ fichiers: 3, tests: 45, ignores: { fichiers: 1, tests: 4 } });
-    expect(x.capacites.map((c: { id: string }) => c.id)).toEqual(["A1", "A2"]);
-    const numeroA1 = FIXTURE.split("\n").findIndex((l) => l.startsWith("| A1 ")) + 1;
-    expect(x.capacites[0]).toMatchObject({ famille: "Cellules piégées", verdict: "deploye_non_eprouve", ligne: numeroA1 });
-  });
-
-  it("le décompte unitaire vient de la ligne de la commande vitest, pas d'un journal cité", () => {
-    // La fixture cite d'abord « **22 fichiers, 314 tests verts » : il ne doit pas être retenu.
-    expect(extraireCouverture(FIXTURE).testsUnitaires).toEqual({ fichiers: 12, tests: 1234 });
-  });
-
-  it("les tests SQL ignorés sont lus sur la ligne du total ; sans eux, ou sans suite verte, l'extraction échoue", () => {
-    const numeroSql = FIXTURE.split("\n").findIndex((l) => l.includes("au total")) + 1;
-    // Ne rien dire des ignorés n'est pas en déclarer zéro.
-    const sansIgnores = FIXTURE.replace(", dont 1 fichier et 4 tests ignorés : un banc", "");
-    expect(() => extraireCouverture(sansIgnores)).toThrow(`${DOCUMENT}:${numeroSql} — décompte des tests SQL ignorés introuvable`);
-    // Une suite qui n'est pas dite verte : ses verts ne se déduisent pas du total.
-    const rouge = FIXTURE.replace("**vert** —", "**rouge** —");
-    expect(() => extraireCouverture(rouge)).toThrow(`${DOCUMENT}:${numeroSql} — la suite SQL n'y est pas dite **vert**`);
-    // Le pluriel se lit aussi.
-    const pluriel = FIXTURE.replace("dont 1 fichier et 4 tests", "dont 2 fichiers et 13 tests");
-    expect(extraireCouverture(pluriel).testsSql.ignores).toEqual({ fichiers: 2, tests: 13 });
-  });
-
-  it("une ligne à six cellules fait échouer l'extraction avec son numéro", () => {
-    const lignes = FIXTURE.split("\n");
-    const apres = lignes.findIndex((l) => l.startsWith("| A2 "));
-    lignes.splice(apres + 1, 0, "| A3 | Six | `non_commence` | — | Une | de trop |");
-    expect(() => extraireCouverture(lignes.join("\n"))).toThrow(`${DOCUMENT}:${apres + 2} — A3 : 6 cellules trouvées, 5 attendues`);
-  });
-
-  it("un verdict inconnu fait échouer l'extraction : un humain décide", () => {
-    const texte = FIXTURE.replace("`non_commence`", "`eprouve_sur_donnee_reelle`");
-    expect(() => extraireCouverture(texte)).toThrow("A2 : verdict inconnu « eprouve_sur_donnee_reelle »");
-  });
-
-  it("les sept verdicts de l'extracteur sont ceux du § 1 du document, et ceux du type", () => {
-    const section = DOC.slice(DOC.indexOf("## 1."), DOC.indexOf("## 2."));
-    const duDocument = [...section.matchAll(/^\| `(\w+)` \|/gm)].map((m) => m[1]);
-    expect(duDocument).toEqual(VERDICTS_EXTRACTEUR);
-    expect([...VERDICTS]).toEqual(VERDICTS_EXTRACTEUR);
-  });
-});
-
-describe("1 — le JSON versionné est l'extraction du document d'aujourd'hui", () => {
-  it("aucun écart", () => {
-    const attendu = serialiser(extraireCouverture(DOC));
-    const versionne = lire(SORTIE);
-    expect(versionne === attendu, `${SORTIE} n'est plus l'extraction de ${DOCUMENT} : relancer \`node scripts/couverture-extraire.mjs\``).toBe(true);
-  });
-});
-
-describe("2 — les décomptes calculés sont ceux que le document écrit", () => {
-  const section4 = DOC.slice(DOC.indexOf("## 4."));
-
-  it("le nombre de capacités", () => {
-    const total = Number(/\*\*(\d+) capacités\*\*/.exec(section4)![1]);
-    expect(CAPACITES.length).toBe(total);
+describe("2 — les décomptes calculés sont ceux du relevé", () => {
+  it("le nombre de capacités, et leur répartition sans reste", () => {
     expect(CAPACITES.length).toBe(49); // relevé du 23/09/2026 ; un nouveau relevé met à jour ce repère
+    expect(VERDICTS.reduce((n, v) => n + compte(v), 0)).toBe(CAPACITES.length);
+    expect(parFamille().reduce((n, f) => n + f.capacites.length, 0)).toBe(CAPACITES.length);
+    expect(new Set(CAPACITES.map((c) => c.id)).size).toBe(CAPACITES.length);
   });
 
-  it("la répartition des verdicts", () => {
-    const phrase = section4.slice(section4.indexOf("Répartition des verdicts"), section4.indexOf("Le verdict `en_revue`"));
-    const ecrits = Object.fromEntries([...phrase.matchAll(/`(\w+)` \*\*(\d+)\*\*/g)].map((m) => [m[1], Number(m[2])]));
-    for (const v of VERDICTS) expect(compte(v), v).toBe(ecrits[v] ?? 0);
-  });
-
-  it("la répartition par famille, dans l'ordre du document", () => {
-    const phrase = section4.slice(section4.indexOf("en six familles"), section4.indexOf("Répartition des verdicts"));
-    const ecrits = [...phrase.matchAll(/\((\d+)\)/g)].map((m) => Number(m[1]));
-    expect(parFamille().map((f) => f.capacites.length)).toEqual(ecrits);
+  it("chaque capacité porte un verdict du vocabulaire et une famille du relevé", () => {
+    const familles = new Set(parFamille().map((f) => f.famille));
+    for (const c of CAPACITES) {
+      expect(VERDICTS, c.id).toContain(c.verdict);
+      expect(familles.has(c.famille), c.id).toBe(true);
+    }
   });
 
   it("date, commit et nombres de tests viennent du relevé", () => {
-    expect(DOC.split("\n")[2]).toContain(SHA);
     // Repères du relevé du 23/09/2026 sur 8a5f3d1 (P**.10) : ils ne changent qu'avec un nouveau relevé.
     expect(RELEVE).toBe("23/09/2026");
     expect(SHA).toBe("8a5f3d1");
@@ -161,7 +75,7 @@ function lignesDe(chemin: string): number | null {
   }
   return null;
 }
-const CTX: ContexteControle = { capacites: CAPACITES, lignesDocument: DOC.split("\n").length, lignesDe };
+const CTX: ContexteControle = { capacites: CAPACITES, lignesDe };
 
 // Cartes de fixture sur les VRAIES lignes du document : la répartition du § 8.2
 // (K1–K14), réduite à ses identifiants ; les cartes réelles (P**.4) passent le même
@@ -223,18 +137,15 @@ describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le doc
     expect(erreurs).toContain("K11 : source D7 (« non_commence ») — une réserve d'un autre verdict va en « Ce qui reste »");
   });
 
-  it("3b — un passage qui tombe sur une ligne de capacité est traité comme cette ligne", () => {
-    const d7 = CAPACITES.find((c) => c.id === "D7")!;
+  it("3b — un fichier absent, ou cité hors de ses bornes, est nommé", () => {
     const cartes = cartesFixture();
-    carte(cartes, "K11").sources.push({ passage: d7.ligne }, { passage: 99_999 }, { fichier: "fichier/absent.ts:3" }, { fichier: "README.md:999999" });
+    carte(cartes, "K11").sources.push({ fichier: "fichier/absent.ts:3" }, { fichier: "README.md:999999" });
     const erreurs = verifierCartes(cartes, RESTE, CTX);
-    expect(erreurs).toContain(`K11 : passage :${d7.ligne} est la ligne D7 (« non_commence »)`);
-    expect(erreurs.some((e) => e.startsWith("K11 : passage :99999 hors du document"))).toBe(true);
     expect(erreurs).toContain("K11 : fichier introuvable : fichier/absent.ts");
     expect(erreurs.some((e) => e.startsWith("K11 : README.md:999999 : le fichier n'a que"))).toBe(true);
-    // Un passage hors table et un fichier réel, cité dans ses bornes, passent.
+    // Un fichier réel, cité dans ses bornes, passe.
     const ok = cartesFixture();
-    carte(ok, "K2").sources.push({ passage: 1 }, { fichier: "components/presentation/Specs.tsx:1-3" });
+    carte(ok, "K2").sources.push({ fichier: "components/presentation/Specs.tsx:1-3" });
     expect(verifierCartes(ok, RESTE, CTX)).toEqual([]);
   });
 
@@ -254,10 +165,9 @@ describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le doc
     expect(verifierCartes(cartes, RESTE, CTX)).toContain("K11 : D12 est « non_retenu », pas « deploye_non_eprouve »");
   });
 
-  it("3c — un passage qui tombe sur une ligne de capacité exige sa puce", () => {
-    const b2 = CAPACITES.find((c) => c.id === "B2")!;
+  it("3c — une source { ligne } sans sa puce est nommée", () => {
     const cartes = cartesFixture();
-    carte(cartes, "K8").sources.push({ passage: b2.ligne }); // B2 est dans K6, pas dans K8
+    carte(cartes, "K8").sources.push({ ligne: "B2" }); // B2 est dans K6, pas dans K8
     expect(verifierCartes(cartes, RESTE, CTX)).toContain("K8 : source sans puce de limite : B2");
   });
 
@@ -288,22 +198,22 @@ describe("4 — chaque point de « Ce qui reste » cite une source qui existe", 
   it("identifiant du document ou fichier du dépôt, dans ses bornes", () => {
     const points: PointReste[] = [
       { ...RESTE[0] },
-      { id: "R2", titre: "t", manque: "m", debloque: "d", decide: "x", sources: ["D7", "docs/CONFORMITE.md:1"] },
+      { id: "R2", titre: "t", manque: "m", debloque: "d", decide: "x", sources: ["D7", "README.md:1"] },
     ];
     expect(verifierReste(points, CTX)).toEqual([]);
     const fautifs: PointReste[] = [
       { id: "R3", titre: "t", manque: "m", debloque: "d", decide: "x", sources: [] },
-      { id: "R4", titre: "t", manque: "m", debloque: "d", decide: "x", sources: ["Z9", "docs/absent.md:3"] },
+      { id: "R4", titre: "t", manque: "m", debloque: "d", decide: "x", sources: ["Z9", "absent/absent.md:3"] },
     ];
     expect(verifierReste(fautifs, CTX)).toEqual([
       "R3 : aucune source",
       "R4 : Z9 n'est pas une ligne du document",
-      "R4 : fichier introuvable : docs/absent.md",
+      "R4 : fichier introuvable : absent/absent.md",
     ]);
     // Un chemin sans numéro de ligne ne désigne rien de relisible.
-    const sansLigne: PointReste[] = [{ id: "R5", titre: "t", manque: "m", debloque: "d", decide: "x", sources: ["docs/CONFORMITE.md"] }];
+    const sansLigne: PointReste[] = [{ id: "R5", titre: "t", manque: "m", debloque: "d", decide: "x", sources: ["README.md"] }];
     expect(verifierReste(sansLigne, CTX)).toEqual([
-      "R5 : docs/CONFORMITE.md : une source fichier s'écrit « chemin:ligne » ou « chemin:début-fin »",
+      "R5 : README.md : une source fichier s'écrit « chemin:ligne » ou « chemin:début-fin »",
     ]);
   });
 
@@ -374,7 +284,7 @@ const PHRASE_ADMISE = "Ce POC n'est pas une offre souveraine.";
 // « anonyme » ne l'est que dans la puce D3 de K11, qui le dit comme une LIMITE de sa
 // ligne : un événement totalement anonyme n'est rattachable à personne. Ailleurs, le
 // mot promettait ce que le document refuse : le `visitor_id` est « un pseudonyme, pas
-// une donnée anonyme » (RUM_PARITY_STATUS.md:266). Revue de fin de vague 7 : les Specs
+// une donnée anonyme » (relevé de couverture, ligne D3). Revue de fin de vague 7 : les Specs
 // disaient « Sessions anonymes » et comptaient l'anonymat parmi les critères tenus.
 const LIMITE_ANONYME_D3 = "un événement totalement anonyme n'est rattachable à personne.";
 const INTERDITS: RegExp[] = [
@@ -472,7 +382,7 @@ const DECOMPTES_GARDES = [...new Set([CAPACITES.length, ...VERDICTS.map((v) => c
 const DECOMPTE_TAPE = new RegExp(`(?<![\\w.-])(?:${DECOMPTES_GARDES.join("|")})(?!\\w|\\.\\d)`);
 
 describe("6 — aucun décompte de couverture tapé en dur", () => {
-  it("le motif vient du document : le total et le décompte de chaque verdict, lus dans lib/couverture.ts", () => {
+  it("le motif vient du relevé : le total et le décompte de chaque verdict, lus dans lib/couverture.ts", () => {
     expect(DECOMPTES_GARDES).toContain(CAPACITES.length);
     expect(DECOMPTES_GARDES).toContain(compte("deploye_non_eprouve"));
     // Il attrape un décompte écrit en toutes lettres, en fin de phrase comprise…

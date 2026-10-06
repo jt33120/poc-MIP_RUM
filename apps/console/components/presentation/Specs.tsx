@@ -131,7 +131,7 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Hébergement",
     cible: "Donnée ET traitement en UE, chez un hébergeur de droit européen",
-    // Chaque moitié est vérifiée séparément. La base : docs/NEON_MIGRATION.md et
+    // Chaque moitié est vérifiée séparément. La base : la note de migration Neon et
     // lib/legal.ts. La console : l'en-tête `x-vercel-id` d'une réponse NON mise en
     // cache, qui valait `iad1:iad1::iad1::…` (Washington) et vaut désormais
     // `iad1:iad1::fra1::…` — le troisième segment est la région d'exécution ; la
@@ -139,8 +139,8 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
     // Le backend : projet Railway `mip-rum-backend`, services `ingest`,
     // `scheduler` et `mcp`, région `europe-west4-drams3a` (Amsterdam) — relevée
     // le 09/09/2026 dans `multiRegionConfig` des trois services, après leur
-    // déplacement depuis `us-west2`. Cf. DEPLOY.md § 1 bis. `ingest` a été
-    // supprimé le 21/09/2026 (docs/TOPOLOGIE_BACKEND.md) : restent `scheduler` et `mcp`.
+    // déplacement depuis `us-west2`. Cf. la procédure de déploiement d'origine § 1 bis. `ingest` a été
+    // supprimé le 21/09/2026 (le relevé de topologie) : restent `scheduler` et `mcp`.
     //
     // « Traitement en UE » est donc désormais VRAI ; « chez un hébergeur de
     // droit européen » reste faux. La ligne dit les deux, parce que ne dire que

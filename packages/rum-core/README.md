@@ -10,8 +10,7 @@ runtimes** et dont le résultat **ne dépend d'aucun environnement**.
 | `encodeAttributes`, `toAnyValue`, `hrToNanos`, `msToHr`, `msToNanos`, `buildResourceSpans`, `kindPour`, `statutPour`, `SPAN_KIND`, `STATUS_CODE` | web, React Native |
 
 L'agent Node maison (`@mip/agent-node`), troisième consommateur jusqu'au
-29/09/2026, est archivé : un service Node pose l'agent OpenTelemetry officiel
-(voir [`docs/archive/capteurs-serveur-maison.md`](../../docs/archive/capteurs-serveur-maison.md)).
+29/09/2026, est archivé : un service Node pose l'agent OpenTelemetry officiel.
 
 ## Ce qui n'y entre pas, et pourquoi
 

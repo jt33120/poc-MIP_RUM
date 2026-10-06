@@ -68,7 +68,7 @@ export interface SummaryAiOperation {
   // peuvent pas l'être en l'état : ils se calculent depuis `rum_event`, côté
   // mip-rum, alors que c'est xSOM qui sert cette section depuis l'ADR-0001 —
   // xSOM n'a aucun moyen d'observer ces événements. Ils restent présents et
-  // nullables (contrat non cassé, cf. docs/RUM_READ_API.md § Signaux qualité),
+  // nullables (contrat non cassé, cf. la référence de lecture RUM § Signaux qualité),
   // mais un consommateur doit les traiter comme ABSENTS, pas comme « 0 ».
   /** Part de régénérations (event `ai_regenerate`). NON ALIMENTÉ — donnée côté MIP. */
   regen_rate: number | null;
@@ -216,7 +216,7 @@ export async function rumSummary(
       // estimation de cardinalité (HyperLogLog ou équivalent), pas une somme de
       // poids — un visiteur revenu dans deux sessions de poids différents n'a pas
       // de poids unique. Cette limite reste DÉCLARÉE, dans `sampling_notice`
-      // ci-dessous et dans docs/API_CONSOLE.md, plutôt que laissée à deviner.
+      // ci-dessous et dans la référence de l'API v1, plutôt que laissée à deviner.
       //
       // LES PERCENTILES, EUX, NE SONT PLUS ICI. Ils l'étaient — deux
       // `percentile_cont` sur les lignes brutes, non pondérés faute d'équivalent

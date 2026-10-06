@@ -235,7 +235,7 @@ describe("PS9 — où se situe ce POC", () => {
 
   it("chaque source existe dans le dépôt, avec les lignes citées", () => {
     for (const l of POSITIONNEMENT) {
-      for (const s of [l.sources.ekara, ...l.sources.poc]) {
+      for (const s of l.sources.poc) {
         const cite = lireFichierCite(s);
         expect(cite, s).not.toBeNull();
         const chemin = join(RACINE, cite!.chemin);

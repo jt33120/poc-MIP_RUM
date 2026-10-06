@@ -8,7 +8,6 @@
 // rapport sont remplacés. Ce qui est vérifié « en base » repasse par l'encodeur,
 // flattenOtlp puis writeRows : c'est ce que l'ingestion écrirait réellement.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
 import { boundedWireLabel } from "../../packages/rum-sdk/src/breadcrumbs";
 import { CONSOLE_MESSAGE_MAX, CONSOLE_PROFONDEUR_MAX } from "../../packages/rum-sdk/src/error-capture";
 import { PLAFONDS_PAR_VOIE } from "../../packages/rum-sdk/src/errors";
@@ -763,13 +762,6 @@ describe("plafonds par voie et métriques de drops", () => {
     expect(stats.uncaught).toEqual({ enabled: true, unsupported: [], emitted: 1, capped: 0, rejected: 0 });
     expect(exceptions().filter((a) => a["mip.error_kind"] === "console")).toHaveLength(21);
     expect(exceptions().some((a) => a["exception.message"] === "vraie exception")).toBe(true);
-  });
-
-  it("les plafonds sont ceux que documente le guide d'intégration", () => {
-    const doc = readFileSync("docs/INTEGRATION.md", "utf8");
-    for (const [voie, plafond] of Object.entries(PLAFONDS_PAR_VOIE) as Array<[ErrorCategory, number]>) {
-      expect(doc, voie).toMatch(new RegExp(`\\| \`${voie}\` \\|[^\\n]*\\| ${plafond} \\|`));
-    }
   });
 });
 

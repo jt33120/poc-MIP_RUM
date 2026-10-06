@@ -268,7 +268,7 @@ export interface ErrorGroupDetailResult {
 
 // ════════════ Les compteurs d'un groupe d'erreurs, BORNÉS PAR LA FENÊTRE ═══════
 //
-// CE QUI ÉTAIT FAUX (finding 1.1 de docs/AUDIT_RUM_EXTERNE.md). La liste lisait
+// CE QUI ÉTAIT FAUX (finding 1.1 de l'audit RUM externe). La liste lisait
 // `v_error_group_ext`, une vue SANS AUCUNE BORNE TEMPORELLE. La tuile de l'écran
 // annonçait « Occurrences · 1 h » et affichait le total depuis la première
 // ingestion. Un exploitant qui basculait 7 j → 24 h → 1 h voyait LE MÊME NOMBRE

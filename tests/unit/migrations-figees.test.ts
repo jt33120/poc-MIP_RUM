@@ -30,7 +30,7 @@ describe("migrations figées — la règle", () => {
     expect(estFige("apps/ingest/sql/migration-v02.sql")).toBe(true);
     expect(estFige("packages/db/sql/predeploy-v82-indexes.sql")).toBe(false);
     expect(estFige("packages/db/sql/pending/migration-v44-drop-deprecated-ai.sql")).toBe(false);
-    expect(estFige("labs/clickhouse/schema.sql")).toBe(false);
+    expect(estFige("exemples/clickhouse/schema.sql")).toBe(false);
     expect(estFige("packages/db/sql/migration-v86.sql.bak")).toBe(false);
   });
 

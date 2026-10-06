@@ -1,7 +1,7 @@
 // Statuts, bases de regroupement et libellés des issues d'erreurs, SANS la base.
 //
 // Séparé de `error-issues.ts` le 24/09/2026 (cliquet de la piste C,
-// docs/architecture/console-api/README.md) : un badge de statut, la liste et le
+// le cadrage de console-api) : un badge de statut, la liste et le
 // formulaire de triage n'ont besoin que de ces taxonomies. Tant qu'ils les lisaient
 // dans `error-issues.ts`, leur graphe d'import atteignait `lib/db.ts`.
 

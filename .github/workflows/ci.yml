@@ -4,17 +4,10 @@
 # :4318, démo :8080, console :3000 via webServer).
 name: CI
 
-# PLUS DE FILTRE PAR CHEMIN, ET C'EST DÉLIBÉRÉ. Le `paths-ignore` d'avant sautait
-# la CI sur `docs/**`, `**.md` et l'outillage de planification, pour économiser
-# ~3 min par commit de documentation. Deux choses l'ont rendu dangereux :
-#   - `_bmad-output/**`, `_bmad/**` et `.claude/**` ne sont plus dans le dépôt ;
-#   - `docs/RUM_PARITY_STATUS.md` n'est plus un document inerte : il est analysé
-#     par `scripts/couverture-extraire.mjs`, figé dans
-#     `apps/console/lib/couverture.generated.json`, gardé par
-#     `tests/unit/couverture-site.test.ts` et AFFICHÉ par `/presentation`.
-# Une PR « de documentation seule » pouvait donc casser la vitrine publique sans
-# qu'aucun test ne tourne. Le miroir Vercel ("ignoreCommand") est retiré pour la
-# même raison : ce commit de doc-là doit redéployer.
+# PAS DE FILTRE PAR CHEMIN, ET C'EST DÉLIBÉRÉ : la vitrine publique (`/presentation`)
+# lit des données versionnées (`apps/console/lib/couverture.json`,
+# gardée par `tests/unit/couverture-site.test.ts`) ; un commit qui ne toucherait
+# « que du texte » peut donc la casser, et doit faire tourner les tests.
 on:
   push:
     branches: [master]
@@ -75,7 +68,7 @@ jobs:
       # seul un lancement manuel l'a révélé. Un type faux ne casse pas le bundle
       # esbuild, qui efface les types — il casse l'application cliente qui l'importe.
       #
-      # P1 — l'extension y entre (R9, `F2` de docs/RUM_PARITY_STATUS.md) : écrite en
+      # P1 — l'extension y entre (R9, ligne `F2` de la couverture) : écrite en
       # TypeScript, elle n'était typée par AUCUN workflow — verte à la main le
       # 23/09, rien ne le garantissait à sa modification suivante.
       # Reste HORS typage, et c'est connu : le JavaScript du backend
@@ -117,8 +110,8 @@ jobs:
   # `pnpm -r build` (le script racine `build`) échouait sur un dépôt fraîchement
   # installé : `apps/extension` copie `packages/rum-sdk/dist/mip-rum.js` sans
   # déclarer de dépendance vers `@mip/rum-sdk`, donc pnpm n'avait aucune raison
-  # de construire le SDK d'abord (`ENOENT … rum-sdk/dist/mip-rum.js`, § 8.3 de
-  # docs/RUM_PARITY_STATUS.md). Le job `unit` ne pouvait pas le voir : il appelle
+  # de construire le SDK d'abord (`ENOENT … rum-sdk/dist/mip-rum.js`, relevé du
+  # 23/09/2026). Le job `unit` ne pouvait pas le voir : il appelle
   # `pnpm build:sdk` AVANT tout le reste, et masquait ainsi l'ordre manquant.
   # La dépendance est désormais déclarée (`apps/extension/package.json`) ; ce
   # job garde la correction en jouant la séquence d'un clone neuf, SANS
@@ -501,7 +494,7 @@ jobs:
   # R9 — LES BANCS DE MESURE, ENFIN JOUÉS. `explorer-bench-p66` et
   # `rum-mobile-bench-p75` lisent une base préparée à part, gouvernée par
   # BENCH_DATABASE_URL : absente de ci.yml, elle les faisait IGNORER en silence à
-  # chaque passage de `test:sql` (`F3` de docs/RUM_PARITY_STATUS.md). Les temps
+  # chaque passage de `test:sql` (ligne `F3` de la couverture). Les temps
   # publiés dans les en-têtes de migration-v80 et v82 n'étaient donc jamais
   # revérifiés, et l'index de v82 pouvait cesser d'être choisi sans que rien ne
   # rougisse.

@@ -107,7 +107,7 @@ export const INFRA: GroupeInfra[] = [
   },
   {
     titre: "Services — six services à part de la console, en trois groupes",
-    // La date est celle du dernier relevé que porte docs/TOPOLOGIE_BACKEND.md (« Relevé
+    // La date est celle du dernier relevé que porte le relevé de topologie (« Relevé
     // du 28/09/2026 », API Railway), lue dans la même constante que la légende du chemin
     // de la mesure : tests/unit/presentation-topologie.test.ts vérifie qu'elle s'y lit.
     // Les six services de `.railway/railway.ts` (groupes 1 · Collecte, 2 · Restitution,
@@ -119,7 +119,7 @@ export const INFRA: GroupeInfra[] = [
       {
         k: "Collecteur",
         // Le receveur autonome (l'ancien `ingest`, supprimé faute de domaine public, voir
-        // docs/TOPOLOGIE_BACKEND.md) revenu comme service `collector`. La console lui
+        // le relevé de topologie) revenu comme service `collector`. La console lui
         // relaie une part de la collecte depuis le 27/09/2026 (lib/ingest-relay.ts,
         // drapeau `ingest_relay_pct` : 10 %, puis 50 % le même soir). Pas de pourcentage
         // ici : il change sans toucher au code, et une page publique le figerait.
@@ -216,7 +216,7 @@ export const INFRA: GroupeInfra[] = [
         // est prêt, la marche restante n'est pas technique.
         v: "Pas encore ouvert. Le dossier de soumission au Chrome Web Store est prêt (paquet, visuels, textes, justification de chaque permission, page de confidentialité publique), mais l'extension n'y est pas publiée : elle s'installe par politique d'entreprise ou manuellement, pas pour le grand public.",
         s: "manque",
-        preuve: "docs/CHROME_WEB_STORE.md",
+        preuve: "apps/extension/pack.mjs",
       },
       {
         k: "Mobile",
@@ -245,7 +245,7 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "Conteneurisation",
-        // Lot C12b (docs/architecture/console-api/README.md) : l'image de la console
+        // Lot C12b (le cadrage de console-api) : l'image de la console
         // vient après le retrait de son accès à la base (C12), qui n'est pas fait.
         v: "Le backend a ses images, pas la console. L'argument « déployable chez vous » n'est donc pas livrable de bout en bout. Une image de la console suppose d'abord de lui retirer son accès direct à la base : ni l'un ni l'autre n'est fait.",
         s: "manque",

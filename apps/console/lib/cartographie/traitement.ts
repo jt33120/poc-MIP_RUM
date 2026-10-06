@@ -1,7 +1,7 @@
 // La colonne Railway de la carte, côté réception et traitement : le collector, le
 // scheduler et le notifier, le canari, les protections qu'ils portent, et les tiers
 // avec qui ils parlent. Relevé du 30/09/2026 dans packages/backend, packages/service-kit
-// et services/* ; les répliques et l'exposition viennent de docs/TOPOLOGIE_BACKEND.md.
+// et services/* ; les répliques viennent de l'IaC (.railway/railway.ts).
 //
 // Une source sans numéro de ligne désigne un fichier entier : c'est le cas des
 // fichiers que le relevé n'a pas relus ligne à ligne (l'IaC, le receveur).
@@ -29,7 +29,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
       { texte: "Sondes /health et /live ; /ready et /metrics sous jeton, sinon 404.", sources: [`${KIT}/http.mjs:29-39`] },
       { texte: "Son journal d'accès n'écrit jamais d'adresse IP.", sources: [`${KIT}/http.mjs:54-60`] },
       { texte: "Une image par service, lancée sans les droits root.", sources: ["services/collector/Dockerfile:152-165"] },
-      { texte: "Deux répliques, un domaine public.", sources: ["docs/TOPOLOGIE_BACKEND.md:23"] },
+      { texte: "Deux répliques.", sources: [".railway/railway.ts:205"] },
     ],
     x: 50,
     y: 1420,
@@ -97,9 +97,9 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
       "Les six services Node du backend, construits depuis la branche master par leur Dockerfile et décrits dans un seul fichier d'infrastructure, appliqué par un workflow relu.",
     etiquettes: ["IaC", "europe-west4", "Node 24"],
     faits: [
-      { texte: "Toute l'infrastructure tient dans un fichier TypeScript, appliqué seulement par le workflow.", sources: [".railway/railway.ts", "AGENTS.md:119-120"] },
+      { texte: "Toute l'infrastructure tient dans un fichier TypeScript, appliqué seulement par le workflow.", sources: [".railway/railway.ts", "AGENTS.md:117-118"] },
       { texte: "Railway Corp., à Amsterdam : déclaré dans les pages légales, comme Neon et Vercel.", sources: ["apps/console/lib/legal.ts:124-133"] },
-      { texte: "Un push sur les chemins du scheduler le redéploie, et son pré-déploiement migre la base.", sources: ["AGENTS.md:121-128"] },
+      { texte: "Un push sur les chemins du scheduler le redéploie, et son pré-déploiement migre la base.", sources: ["AGENTS.md:120-126"] },
     ],
     x: 50,
     y: 1600,
@@ -163,7 +163,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
       },
       { texte: "Il ne livre plus rien : la livraison est passée au notifier.", sources: [".railway/railway.ts:384", `${BACK}/jobs/planifie.mjs:373`, `${BACK}/jobs/planifie.mjs:390`] },
       { texte: "Ses sondes HTTP refusent le réseau privé et les métadonnées du cloud.", sources: [`${BACK}/jobs/planifie.mjs:194-222`] },
-      { texte: "Une réplique, aucun domaine public.", sources: ["docs/TOPOLOGIE_BACKEND.md:27"] },
+      { texte: "Une réplique.", sources: [".railway/railway.ts:365"] },
     ],
     liste: {
       titre: "Travaux",
@@ -200,7 +200,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
     faits: [
       {
         texte: "Une passe toutes les 15 minutes, 45 s après le tick ; pas de LISTEN/NOTIFY, qui ne traverse pas le pooler de Neon.",
-        sources: [`${BACK}/jobs/livreur.mjs:76-89`, "docs/architecture/adr/0014-base-gratuite.md:38"],
+        sources: [`${BACK}/jobs/livreur.mjs:76-89`],
       },
       { texte: "Réservation en SKIP LOCKED : un même envoi ne part jamais deux fois.", sources: [`${BACK}/lib/dispatch-alerts.mjs:176-197`] },
       { texte: "Cinq tentatives au plus, avec un recul qui double à chaque fois.", sources: [`${BACK}/lib/dispatch-alerts.mjs:146-148`, `${BACK}/lib/dispatch-alerts.mjs:190-193`] },
@@ -260,7 +260,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
       "Le serveur MCP joint le service api par le réseau privé de Railway, et refuse de démarrer si l'hôte n'est pas privé. Sur ce réseau, le trafic circule en HTTP simple.",
     etiquettes: ["*.railway.internal", "HTTP simple"],
     faits: [
-      { texte: "mcp lit l'API v1 par le service api, sur le réseau privé, sans toucher la base.", sources: ["docs/TOPOLOGIE_BACKEND.md:26"] },
+      { texte: "mcp lit l'API v1 par le service api, sur le réseau privé, sans toucher la base.", sources: [".railway/railway.ts:342-346"] },
       { texte: "Un hôte qui n'est pas privé empêche le démarrage.", sources: ["packages/mcp-tools/lib/client.mjs"] },
     ],
     x: 50,

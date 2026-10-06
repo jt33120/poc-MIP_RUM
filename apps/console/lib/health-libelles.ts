@@ -2,7 +2,7 @@
 // SANS la base.
 //
 // Séparé de `health.ts` le 24/09/2026 (cliquet de la piste C,
-// docs/architecture/console-api/README.md) : le bandeau de santé reçoit un score
+// le cadrage de console-api) : le bandeau de santé reçoit un score
 // déjà calculé ; il n'a pas à importer le pool de la console pour le colorer. Le
 // CALCUL (`healthScore`, ses requêtes) reste dans `health.ts`.
 

@@ -5,11 +5,10 @@
 //     chacune au verdict « déployé, non éprouvé » LU dans le document (verdictCarte), un
 //     texte pour chaque champ, K15 (F2) avec ses deux réserves, et, depuis la journée du
 //     28/09/2026, la puce A4 et la carte K16 (D14) qui suivent leurs lignes ;
-//   - les passages du document que citent les cartes et le bloc « Méthode » disent
-//     encore ce qu'on leur fait dire : un relevé qui renumérote le document fait
-//     échouer ce test au lieu de laisser une source pointer ailleurs ;
+//   - les fichiers que citent les cartes et le bloc « Méthode » existent, et ont les
+//     lignes citées ;
 //   - la barre de couverture : une répartition COMPTÉE, égale aux décomptes du
-//     document, dans l'ordre de sa phrase de répartition, accordée au nombre ;
+//     relevé, du plus au moins nombreux, accordée au nombre ;
 //   - le bloc « Méthode » : quatre énoncés, chacun sourcé, jamais dans une ligne d'un
 //     autre verdict.
 // La provenance des cartes (identifiants, sources, une puce par identifiant) est le
@@ -24,9 +23,6 @@ import { CARTES, METHODE, repartitionCouverture, verdictCarte } from "../../apps
 import { MAX_WIDGETS, layoutPlein, normalizeLayout } from "../../apps/console/lib/dashboards";
 
 const RACINE = join(__dirname, "..", "..");
-const DOC = readFileSync(join(RACINE, "docs/RUM_PARITY_STATUS.md"), "utf8");
-const DOC_LIGNES = DOC.split("\n");
-const ligneDoc = (n: number) => DOC_LIGNES[n - 1] ?? "";
 
 describe("PS7 — les cartes", () => {
   it("K1 à K16, dans l'ordre des familles du document : K16 (famille D) après K13", () => {
@@ -89,41 +85,7 @@ describe("PS7 — les cartes", () => {
   });
 });
 
-// Ce que chaque passage cité doit encore contenir. Le relevé du 23/09 a gardé la
-// numérotation des §§ 1 à 11 ; un relevé qui la changerait ferait pointer ces
-// sources ailleurs — ce test le dit au lieu de le laisser passer.
-const PASSAGES: Record<number, string> = {
-  43: "Une table vide n'est pas un zéro.",
-  44: "« Non collecté »",
-  253: "somme des répétitions **effectivement reçues**",
-  254: "Aucun multiplicateur automatique",
-  255: "pas sur le taux de session",
-  312: "Les populations ne s'additionnent pas",
-  313: "Une métrique sans dénominateur rend `null`, pas `0`.",
-  317: "fuseau horaire du terminal",
-  318: "l'en-tête pays posé par celui-ci",
-  319: "« Pays estimé » partout",
-  320: "Ce n'est **pas** une géolocalisation.",
-  326: "Aucune adresse IP n'est stockée",
-  340: "un seul saut de tracing éprouvé",
-  341: "données.",
-  390: "attendre le verdict de la CI **du commit de fusion**",
-  503: "quatre paquets et la console",
-  504: "seule l'extension, verte à la main, n'est typée par aucun workflow",
-};
-
-describe("sources — les passages cités disent encore ce qu'on leur fait dire", () => {
-  const cites = [...CARTES.flatMap((c) => c.sources), ...METHODE.flatMap((e) => e.sources)].flatMap((s) =>
-    "passage" in s ? [s.passage] : [],
-  );
-
-  it("chaque passage cité a son repère, et le document le contient à cette ligne", () => {
-    for (const n of new Set(cites)) {
-      expect(PASSAGES[n], `:${n} est cité sans repère dans ce test`).toBeDefined();
-      expect(ligneDoc(n), `docs/RUM_PARITY_STATUS.md:${n}`).toContain(PASSAGES[n]);
-    }
-  });
-
+describe("sources — les fichiers cités existent", () => {
   it("chaque fichier cité existe et a les lignes citées", () => {
     const fichiers = [...CARTES.flatMap((c) => c.sources), ...METHODE.flatMap((e) => e.sources)].flatMap((s) =>
       "fichier" in s ? [s.fichier] : [],
@@ -142,7 +104,6 @@ describe("sources — les passages cités disent encore ce qu'on leur fait dire"
     const lignes = (chemin: string, debut: number, fin: number) =>
       readFileSync(join(RACINE, chemin), "utf8").split("\n").slice(debut - 1, fin).join("\n");
     expect(lignes("apps/console/lib/error-view.ts", 90, 93)).toContain('"Inconnu"');
-    expect(lignes("DEPLOY.md", 272, 278)).toContain("`neondb_owner`, PAS `console_ro`");
     expect(lignes("apps/console/components/presentation/Specs.tsx", 172, 176)).toContain("rôle propriétaire");
   });
 });
@@ -153,13 +114,6 @@ describe("V-E — la répartition de la barre de couverture", () => {
     for (const p of parts) expect(p.nombre, p.verdict).toBe(compte(p.verdict));
     expect(parts.reduce((n, p) => n + p.nombre, 0)).toBe(CAPACITES.length);
     expect(parts.map((p) => p.verdict).sort()).toEqual(VERDICTS.filter((v) => compte(v) > 0).sort());
-  });
-
-  it("dans l'ordre de la phrase de répartition du document", () => {
-    const section4 = DOC.slice(DOC.indexOf("## 4."));
-    const phrase = section4.slice(section4.indexOf("Répartition des verdicts"), section4.indexOf("Le verdict `en_revue`"));
-    const ordre = [...phrase.matchAll(/`(\w+)` \*\*(\d+)\*\*/g)].map((m) => m[1]);
-    expect(repartitionCouverture().map((p) => p.verdict)).toEqual(ordre);
   });
 
   it("du plus au moins nombreux, à égalité dans l'ordre du vocabulaire, accordé au nombre", () => {
@@ -189,17 +143,12 @@ describe("PS8 — une façon de compter", () => {
     ]);
   });
 
-  it("chaque énoncé est sourcé dans le document, jamais dans une ligne d'un autre verdict", () => {
+  it("chaque énoncé est sourcé, jamais dans une ligne d'un autre verdict", () => {
     const parId = new Map(CAPACITES.map((c) => [c.id, c]));
-    const parLigne = new Map(CAPACITES.map((c) => [c.ligne, c]));
     for (const e of METHODE) {
-      expect(e.sources.some((s) => "passage" in s || "ligne" in s), e.titre).toBe(true);
+      expect(e.sources.length, e.titre).toBeGreaterThan(0);
       for (const s of e.sources) {
         if ("ligne" in s) expect(parId.get(s.ligne)?.verdict, `${e.titre} ${s.ligne}`).toBe(VERDICT_MONTRABLE);
-        if ("passage" in s) {
-          const cap = parLigne.get(s.passage);
-          if (cap) expect(cap.verdict, `${e.titre} :${s.passage}`).toBe(VERDICT_MONTRABLE);
-        }
       }
     }
   });

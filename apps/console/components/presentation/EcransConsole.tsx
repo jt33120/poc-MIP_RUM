@@ -106,7 +106,7 @@ export function EcransConsole({ user, demoOuverte = false }: { user: SessionUser
           concordance ; paquet @mip/stats). Un compte exact vieillirait au prochain lot :
           « notamment ». Sources : lib/glossary.ts (health, anomaly, forecast),
           components/health/HealthBanner.tsx (FORMULE_SANTE, la pondération affichée) ;
-          le relevé ne couvre que P5 à P8 (RUM_PARITY_STATUS.md:1). */}
+          le relevé de couverture ne couvre que P5 à P8. */}
       <p className="mt-6 max-w-3xl text-sm leading-relaxed text-ink-soft" data-testid="methodes-analyse">
         Les analyses automatiques sont des méthodes statistiques lisibles, sans modèle entraîné :
         notamment un score de santé dont la pondération est affichée, une détection d&apos;anomalies par

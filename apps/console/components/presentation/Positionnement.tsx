@@ -1,14 +1,14 @@
 // PS9 — Où se situe ce POC, face à un outil du marché (plan § 8.2, partie 2 ; lot P**.4).
 //
 // UNE TABLE FACTUELLE, SANS SUPERLATIF. La colonne « IP-Label Ekara » n'admet que
-// des éléments étiquetés « documenté » dans les notes de lecture
-// (docs/product/notes-lecture-ekara.md), jamais un
+// des éléments étiquetés « documenté » dans les notes de lecture de ses pages
+// publiques (tenues hors du dépôt), jamais un
 // élément « rapporté (prudence) » : ceux-là viennent d'un résumé d'outil non recoupé.
 // Le SDK mobile natif n'y figure donc pas (sa seule source est de cette sorte), et
 // rien sur Datadog : les comparaisons Datadog appartiennent aux écrans de la
 // console, pas à la vitrine.
 //
-// La colonne « Ce POC » ne dit que ce que le document de couverture ou le dépôt
+// La colonne « Ce POC » ne dit que ce que le relevé de couverture ou le dépôt
 // établit. Chaque ligne garde ses sources (`sources`), que tests/unit/SaitFaire.test.tsx
 // résout dans le dépôt ; le contenu, lui, se relit à la main (P**.8, relecture n° 3).
 //
@@ -23,10 +23,8 @@ export interface LignePositionnement {
   critere: string;
   ekara: string;
   poc: string;
-  sources: { ekara: string; poc: string[] };
+  sources: { poc: string[] };
 }
-
-const NOTES_IPLABEL = "docs/product/notes-lecture-ekara.md";
 
 /** En-tête de la colonne Ekara, texte exact du plan : ce qui a été lu, et quand. */
 export const EN_TETE_EKARA = "IP-Label Ekara, d'après ses pages publiques consultées en septembre 2026";
@@ -40,9 +38,7 @@ export const POSITIONNEMENT: readonly LignePositionnement[] = [
     // ne compte ni l'opérateur ni le type de réseau.
     poc: "Non : aucun navigateur n'expose l'opérateur, et le type de réseau n'est pas un axe de découpage",
     sources: {
-      ekara: `${NOTES_IPLABEL}:69-79`,
       poc: [
-        "docs/RUM_PARITY_STATUS.md:156",
         "apps/console/lib/dashboard-blocs.ts:76-80",
         "packages/db/sql/migration-v53.sql:14-21",
       ],
@@ -53,8 +49,7 @@ export const POSITIONNEMENT: readonly LignePositionnement[] = [
     ekara: "Documenté comme principe",
     poc: "Un écran de corrélation existe, hors du relevé de couverture",
     sources: {
-      ekara: `${NOTES_IPLABEL}:125-154`,
-      poc: ["apps/console/app/correlation/page.tsx:1", "docs/RUM_PARITY_STATUS.md:1"],
+      poc: ["apps/console/app/correlation/page.tsx:1"],
     },
   },
   {
@@ -62,8 +57,7 @@ export const POSITIONNEMENT: readonly LignePositionnement[] = [
     ekara: "Documenté (Chrome/Edge, déploiement GPO/Intune)",
     poc: "Extension MV3, non publiée au Chrome Web Store",
     sources: {
-      ekara: `${NOTES_IPLABEL}:168-185`,
-      poc: ["apps/extension/manifest.json:2", "docs/CADRAGE_EXTENSION.md:19", "docs/CHROME_WEB_STORE.md:111"],
+      poc: ["apps/extension/manifest.json:2"],
     },
   },
   {
@@ -71,7 +65,6 @@ export const POSITIONNEMENT: readonly LignePositionnement[] = [
     ekara: "Documenté comme option",
     poc: "Données en UE, hébergeurs de droit américain",
     sources: {
-      ekara: `${NOTES_IPLABEL}:219-229`,
       poc: ["apps/console/lib/specs.ts:98-101"],
     },
   },

@@ -1,5 +1,5 @@
 // QA-fix #1 — prouve sur Postgres réel que la console (rôle restreint console_ro,
-// SANS BYPASSRLS, cf. DEPLOY.md) lit/écrit bien les tables v0.8 SOUS RLS :
+// SANS BYPASSRLS, cf. la procédure de déploiement d'origine) lit/écrit bien les tables v0.8 SOUS RLS :
 // rum_rollup_hourly (v12), sourcemap (v13), tenant_usage_daily (v15). Sans les blocs
 // cro_* ajoutés à ces migrations, ces accès échoueraient (0 ligne en lecture,
 // permission denied à l'upload) une fois déployés — alors que CI/local (connexion

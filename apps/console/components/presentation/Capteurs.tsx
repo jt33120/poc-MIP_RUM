@@ -8,10 +8,10 @@
 // `h4` et ses rubriques un `h5`. Texte de moins de 18 px en `ink-soft`, jamais
 // `ink-faint` (§ 3.9 : ≈ 2,8:1 en clair).
 //
-// Le contenu n'est pas du marketing : il vient de docs/CADRAGE_EXTENSION.md
+// Le contenu n'est pas du marketing : il vient du cadrage de l'extension
 // (registre domaine→app, MV3, cible poste géré, non publié au store),
-// docs/LIMITES.md (ce qui manque, assumé) et docs/OFFRE.md (positionnement — document
-// commercial hors dépôt, cf. docs/DOCUMENTS-HORS-DEPOT.md).
+// la liste des limites (ce qui manque, assumé) et l'offre (positionnement — document
+// commercial hors dépôt, cf. la liste des documents hors dépôt).
 // Les versions sont celles des paquets (tests/unit/specs.test.ts les compare au
 // manifeste de l'extension et au package.json de React Native) ; les réserves
 // viennent du document de couverture (C1, C10 ; C5, C6 pour le côté serveur).
@@ -79,7 +79,7 @@ const CAPTEURS: Capteur[] = [
     ],
     fort: "Atteint tout le trafic public, bien au-delà du parc interne — moins les visiteurs qui refusent la mesure (DNT et GPC honorés par défaut) et ceux qu'un bloqueur arrête.",
     // Texte exact du plan (PS2). « ni un simulateur » : C1 (« Aucun appareil, aucun
-    // simulateur, aucun bundle Metro »), RUM_PARITY_STATUS.md:169.
+    // simulateur, aucun bundle Metro »), le relevé de couverture.
     limite: `Demande une mise en production côté client. Web ; React Native en paquet privé (v${RN_VERSION}), jamais exécuté sur un appareil ni un simulateur ; pas de SDK iOS ou Android natif.`,
   },
 ];
@@ -225,8 +225,8 @@ export function Capteurs() {
 
       {/* Texte du plan (PS2), sans les chemins du code depuis la recette du 26/09/2026 ;
           les agents officiels depuis le 29/09/2026 (l'agent Node et le middleware FastAPI
-          maison sont archivés). Sources : C5, C6 (RUM_PARITY_STATUS.md:173-174) et
-          docs/capteurs-serveur.md § 2 — Flask, Java et .NET le 28/09, FastAPI et Node
+          maison sont archivés). Sources : C5, C6 (relevé de couverture) et la fiche
+          des capteurs serveur § 2 — Flask, Java et .NET le 28/09, FastAPI et Node
           (traces) le 29/09 ; un seul saut de trace, ni propagation d'un service à l'autre. */}
       <p className="mt-3 text-sm leading-relaxed text-ink-soft" data-testid="capteurs-serveur">
         Côté serveur : l&apos;agent OpenTelemetry officiel du langage relie un appel du navigateur à

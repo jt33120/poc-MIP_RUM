@@ -1,4 +1,4 @@
-// L'identité du visiteur — finding 1.3 de docs/AUDIT_RUM_EXTERNE.md, le seul dont
+// L'identité du visiteur — finding 1.3 de l'audit RUM externe, le seul dont
 // la conséquence soit juridique et pas seulement cosmétique.
 //
 // CE QUI ÉTAIT FAUX. `user_hash` valait `fnv1a(userAgent | langue | résolution |
@@ -155,7 +155,6 @@ describe("les quatre comptages de personnes ont changé de clé", () => {
     // contre-poids, et le contrat OpenAPI doit le porter.
     expect(SUMMARY).toContain("unidentified_sessions");
     expect(SUMMARY).toContain("s.visitor_id is null) as unidentified_sessions");
-    expect(lire("docs/RUM_READ_API.md")).toContain("unidentified_sessions");
   });
 
   it("nouveaux vs revenants (visitStats)", () => {
@@ -200,17 +199,9 @@ describe("plus aucune affirmation d'exactitude que le chiffre ne tient", () => {
     // Le mot « anonymisé » portait la garantie exactement à l'envers : la valeur
     // était irréversible (vrai) ET réidentifiante par recoupement, puisque
     // entièrement dérivée du terminal.
-    // `docs/archive/` est exclu VOLONTAIREMENT : c'est un fonds d'archive, il
-    // décrit le produit tel qu'il était. Le réécrire pour verdir un test
-    // reviendrait à effacer la trace de l'erreur — l'inverse de ce que ce
-    // fichier défend.
-    const trouve = chercher("fingerprint anonymisé", "apps/console", "docs")
+    const trouve = chercher("fingerprint anonymisé", "apps/console")
       .split("\n")
-      // `/archive/` n'importe où dans la ligne, pas un PRÉFIXE : la sortie de
-      // grep n'est relative que parce qu'on lui fixe un répertoire courant.
-      // Faire dépendre le filtre de cette relativité, c'est laisser le test
-      // rougir sur du contenu d'archive le jour où elle change.
-      .filter((l) => l && !l.includes("/archive/"))
+      .filter(Boolean)
       .join("\n");
     expect(trouve, `« fingerprint anonymisé » subsiste :\n${trouve}`).toBe("");
     // Anti-tautologie : la sonde fonctionne sur une chaîne réellement présente.
@@ -313,18 +304,6 @@ describe("le refus est STRUCTUREL, pas seulement affiché", () => {
     const commandes = lire("apps/console/lib/commandes/vie-privee.ts");
     expect(commandes).toContain("instanceof DsarRefus");
     expect(commandes).toContain("auditer(c, `refus=${e.verdict}");
-  });
-
-  it("la déclaration de conformité annonce le refus, et le bon identifiant", () => {
-    // Sans cela, le code refuserait pendant que le document promet l'inverse —
-    // et c'est le document qu'un DPO lit.
-    const c = lire("docs/CONFORMITE.md");
-    expect(c).toContain("visitor_id");
-    expect(c).toContain("id_kind = 'device_class'");
-    expect(c).toContain("privacy.visitor_erase");
-    expect(c).toContain("refus=");
-    // La ligne héritée reste décrite pour ce qu'elle est, pas effacée du tableau.
-    expect(c).toContain("user_hash");
   });
 
   it("le document d'export change de version, parce que sa clé change de sens", () => {

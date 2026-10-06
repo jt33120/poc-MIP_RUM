@@ -27,10 +27,10 @@ describe("le schéma d'installation", () => {
     for (const a of recettes.autres) expect(a.etat, a.langage).toMatch(/^éprouvé en local le 01\/10\/2026, pas en production$/);
   });
 
-  it("l'extension : Chrome et Edge, Firefox hors périmètre, comme le cadrage", () => {
-    const cadrage = readFileSync(join(__dirname, "../../docs/CADRAGE_EXTENSION.md"), "utf8");
-    expect(cadrage).toMatch(/Chrome\/Edge \*\*Manifest V3 uniquement\*\*/);
-    expect(cadrage).toMatch(/Firefox = hors périmètre/);
+  it("l'extension : Chrome et Edge, Firefox hors périmètre, comme le manifeste MV3", () => {
+    const manifeste = JSON.parse(readFileSync(join(__dirname, "../../apps/extension/manifest.json"), "utf8"));
+    expect(manifeste.manifest_version).toBe(3);
+    expect(manifeste.browser_specific_settings).toBeUndefined();
     expect(NAVIGATEURS_EXTENSION.filter((n) => n.ouvert).map((n) => n.nom)).toEqual(["Chrome", "Edge"]);
     expect(NAVIGATEURS_EXTENSION.filter((n) => !n.ouvert).map((n) => n.nom)).toEqual(["Firefox"]);
   });
