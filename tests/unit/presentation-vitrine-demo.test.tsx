@@ -16,7 +16,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Landing } from "@/components/presentation/Landing";
 import type { SessionUser } from "@/lib/auth";
-import { ETAPES_APERCU, FILM_ACCUEIL, FILM_PRESENTATION } from "@/lib/vitrine";
+import { ETAPES_APERCU, FILM_ACCUEIL, FILM_PRESENTATION, FILM_TECHNIQUE } from "@/lib/vitrine";
 
 const RACINE = join(__dirname, "../..");
 const ADMIN: SessionUser = { email: "a@mip.test", role: "admin", apps: null };
@@ -71,6 +71,28 @@ describe("le film d'accueil", () => {
     expect(video).toContain("muted");
     expect(video).toContain(`poster="${FILM_ACCUEIL.affiche}"`);
     // La lecture part du script, et jamais pour qui a demandé moins de mouvement.
+    expect(video).not.toContain("autoplay");
+  });
+});
+
+describe("« Comment ça marche ? »", () => {
+  it("le deuxième écran : après le film d'accueil, avant les entrées, titré « Comment ça marche ? »", () => {
+    const section = VISITEUR.indexOf('data-testid="vitrine-comment"');
+    expect(section).toBeGreaterThan(VISITEUR.indexOf('data-testid="vitrine-film"'));
+    expect(section).toBeLessThan(VISITEUR.indexOf('data-testid="vitrine-demo"'));
+    expect(VISITEUR).toContain("Comment ça marche ?</h2>");
+  });
+
+  it("une vidéo du dépôt sous /vitrine/, sous 15 Mo, avec son affiche ; rien de téléchargé ni de lancé avant un geste", () => {
+    for (const f of [FILM_TECHNIQUE.mp4, FILM_TECHNIQUE.affiche]) {
+      expect(f.startsWith("/vitrine/"), f).toBe(true);
+      expect(existsSync(join(RACINE, "apps/console/public", f)), f).toBe(true);
+    }
+    expect(statSync(join(RACINE, "apps/console/public", FILM_TECHNIQUE.mp4)).size).toBeLessThanOrEqual(15_000_000);
+    const video = /<video [^>]*data-testid="vitrine-comment-video"[^>]*>/.exec(VISITEUR)?.[0] ?? "";
+    expect(video).toContain('preload="none"');
+    expect(video).toContain("controls");
+    expect(video).toContain(`poster="${FILM_TECHNIQUE.affiche}"`);
     expect(video).not.toContain("autoplay");
   });
 });
