@@ -35,6 +35,14 @@
 // sont comptées à part, horodatées : elles coûtent un aller-retour à la
 // requête HTTP mais ne prolongent pas la tenue du verrou.
 //
+// L'ÉCRITURE EN UN ALLER-RETOUR (migration-v109). `select mip_ingerer_lot_v1(…)`
+// (ou `mip_ecrire_rejeu_v1`) est à elle seule la transaction : pas de BEGIN, et
+// le verrou est pris ET rendu dans le serveur. La sonde en fait un lot d'UNE
+// requête (`unAR`), et lit la tenue que la fonction rend (`mesure.travail_ms` :
+// du verrou accordé à la fin du travail, COMMIT non compris) : `verrouFin` vaut
+// alors la réponse moins cette tenue. L'échantillonneur `pg_locks` reste la
+// contre-épreuve côté serveur.
+//
 // CE QU'ELLE NE FAIT PAS : elle ne modifie ni les requêtes, ni leurs
 // résultats, ni leurs erreurs. Elle ajoute une lecture d'horloge et une
 // écriture en mémoire par requête, hors du chemin réseau.
@@ -70,6 +78,9 @@ export function etiquette(texte) {
   return s.slice(0, 32);
 }
 
+/** Les fonctions SQL qui forment, seules, la transaction d'un lot (v109). */
+const FONCTIONS_UN_AR = new Set(["select mip_ingerer_lot_v1()", "select mip_ecrire_rejeu_v1()"]);
+
 const texteDe = (config) => (typeof config === "string" ? config : config?.text ?? "");
 
 /**
@@ -99,6 +110,17 @@ export function installerSonde(pg, opts = {}) {
     if (genre === "begin") {
       tx = { debut, verrouDebut: null, verrouFin: null, fin: null, requetes: 0, genres: garderGenres ? [] : null, app: null, issue: null };
       enCours.set(client, tx);
+    }
+    if (!tx && FONCTIONS_UN_AR.has(genre)) {
+      const lot = { debut, verrouDebut: debut, verrouFin: null, fin: null, requetes: 1, genres: garderGenres ? [genre] : null, app: null, issue: null, unAR: true };
+      return (erreur, resultat) => {
+        const t = maintenant();
+        lot.fin = t;
+        lot.issue = erreur ? "erreur" : "commit";
+        const travail = Number(resultat?.rows?.[0]?.r?.mesure?.travail_ms);
+        lot.verrouFin = erreur ? null : t - (Number.isFinite(travail) ? travail : 0);
+        lots.push(lot);
+      };
     }
     if (!tx) {
       horsTransaction.push({ t: debut, genre });
@@ -136,16 +158,16 @@ export function installerSonde(pg, opts = {}) {
     // Forme rappel (celle de pg-pool pour `pool.query`) : on enveloppe le rappel.
     if (typeof values === "function") {
       const cb = values;
-      return original.call(this, config, (err, res) => { clore(err); cb(err, res); });
+      return original.call(this, config, (err, res) => { clore(err, res); cb(err, res); });
     }
     if (typeof callback === "function") {
       const cb = callback;
-      return original.call(this, config, values, (err, res) => { clore(err); cb(err, res); });
+      return original.call(this, config, values, (err, res) => { clore(err, res); cb(err, res); });
     }
     const sortie = original.call(this, config, values, callback);
     // Branche LATÉRALE : la promesse rendue à l'appelant reste l'originale,
     // rejet compris ; celle-ci ne fait que chronométrer (et ne rejette jamais).
-    if (sortie && typeof sortie.then === "function") sortie.then(() => clore(null), (e) => clore(e ?? true));
+    if (sortie && typeof sortie.then === "function") sortie.then((res) => clore(null, res), (e) => clore(e ?? true));
     else clore(null);
     return sortie;
   };
@@ -198,7 +220,8 @@ export function analyser(releve, { depuis, jusqua, rttMs = 0 }) {
   const duree = Math.max(1e-9, jusqua - depuis);
   const dans = (t) => t >= depuis && t <= jusqua;
   const tous = (releve.lots ?? []).filter((l) => dans(l.debut));
-  const ecritures = tous.filter((l) => l.requetes > 4 && l.issue === "commit" && l.verrouFin != null);
+  // Un lot en un aller-retour (`unAR`, v109) n'a qu'UNE requête : il compte quand même.
+  const ecritures = tous.filter((l) => (l.requetes > 4 || l.unAR) && l.issue === "commit" && l.verrouFin != null);
   const refus = tous.filter((l) => l.issue !== "commit").length;
   const tenues = ecritures.map((l) => l.fin - l.verrouFin);
   const occupation = ecritures.reduce(

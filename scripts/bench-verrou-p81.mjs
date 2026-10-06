@@ -84,6 +84,8 @@ const PAUSE_SONDE_MS = Number(process.env.BENCH_SONDE_PAUSE_MS ?? 0);
 const BUDGET = process.env.BENCH_BUDGET === "collector" ? "collector" : "console";
 /** Stratégie d'attente passée à `writeRows` et à la sonde : `{}` = défaut du module. */
 const VERROU = BUDGET === "collector" ? BUDGET_REQUETE.verrou : {};
+/** Chemin d'écriture imposé (`historique` | `un_ar`, migration-v109) ; absent : le drapeau de la base. */
+const CHEMIN = process.env.BENCH_CHEMIN || null;
 const DELAI_MS = VERROU.delaiVerrouMs ?? STRATEGIE_VERROU.delaiMs;
 const TENTATIVES = VERROU.tentatives ?? STRATEGIE_VERROU.tentatives;
 
@@ -151,7 +153,7 @@ async function passe(writers, apps) {
     while (prochain()) {
       const t0 = performance.now();
       try {
-        await writeRows(pool, lot(app), { verrou: VERROU });
+        await writeRows(pool, lot(app), { verrou: VERROU, chemin: CHEMIN });
         latences.push(performance.now() - t0);
       } catch (err) {
         if (err?.name === "ErreurVerrouIngestion") refus++;

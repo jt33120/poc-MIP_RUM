@@ -38,6 +38,7 @@
 | Un service Railway | Railway → service → Deployments → Rollback, puis `git revert` de la cause | immédiat ; le revert empêche le prochain push de le redéployer |
 | Une modification d'infrastructure | `git revert` de la PR → nouveau plan → apply approuvé | quelques minutes |
 | Le relais d'ingestion | `update platform_flag set value = '0' where key = 'ingest_relay_pct';` | 30 s (cache des instances) ; toute la collecte revient à la console |
+| L'écriture d'un lot en un aller-retour (v109) | `update platform_flag set value = '0' where key = 'ingest_un_aller_retour_pct';` | 30 s (cache par processus du collector) ; tous les lots reprennent le chemin historique ([§ 11](#11-la-collecte-en-un-aller-retour-v109)) |
 | Les écrans ou les écritures par console-api (la bascule) | `update platform_flag set value = '0' where key in ('console_api_ecrans_pct', 'console_api_commandes_pct');` — en mode strict : retirer `CONSOLE_API_STRICT` de Vercel et redéployer | 30 s ; la console sert elle-même ([mode d'emploi](bascule-console-api.md)) |
 | La livraison par le notifier | `SCHEDULER_DELIVERY=on` sur le scheduler (IaC) et notifier à 0 réplique | au déploiement suivant du scheduler |
 | Une migration | pas de retour : **la migration suivante corrige** | — |
@@ -232,3 +233,21 @@ Le notifier lit, à chaque passe, le dernier tick **abouti** du scheduler (`sche
 **Rétablir.** Selon la cause : redéployer le scheduler (`railway redeploy --service scheduler --from-source` s'il faut rejouer le pré-déploiement), ou rejouer un tick à la main (§ 4). Au premier tick abouti, la passe suivante du notifier ferme la fenêtre, datée de ce tick ; aucune alerte de retour ne part.
 
 **Ce qu'elle ne voit pas.** La panne du notifier lui-même (plus rien n'est livré, ni l'alerte de la veille), celle de la base ou de tout Railway : la sonde externe (§ 1) et l'astreinte de MIP restent nécessaires. Sans canal global (`notify_channel` sans application), l'alerte n'est lue que dans `/alerts`.
+
+## 11. La collecte en un aller-retour (v109)
+
+Depuis migration-v109, le collector peut écrire un lot (traces, logs, chunk de rejeu) par **une seule requête SQL** : `mip_ingerer_lot_v1` (ou `mip_ecrire_rejeu_v1`) prend le verrou d'application, lit les barrières d'effacement, filtre, écrit toutes les tables et rend la main ; le COMMIT implicite suit. Le verrou n'est plus tenu pendant aucun aller-retour réseau : c'est le remède chiffré par le [banc du 24/09/2026](banc-collecteur-2026-09-24.md#suite--lécriture-en-un-aller-retour-06102026). La sémantique est celle du chemin historique, lignes et refus compris (`tests/integration/ingest-un-ar-sql.test.ts`).
+
+**Le drapeau.** `platform_flag.ingest_un_aller_retour_pct` (entier de 0 à 100, contrainte en base) : la part des lots tirés vers le nouveau chemin. Il naît à `0` ; **absent, illisible ou à 0, tout passe par le chemin historique**, celui qui tourne depuis P8.1. Le collector le relit au plus toutes les 30 s, à l'arrivée d'un lot (aucune boucle qui réveille la base).
+
+| Étape | Geste | Ce qu'on regarde |
+|---|---|---|
+| Avant la fusion | répéter v109 sur la branche Neon `repetition-p0` (§ 5) : `node services/scheduler/migrate.mjs` avec la chaîne de cette branche | `migrations à jour` ; `select mip_ingerer_lot_v1('{}', '{}'::jsonb);` rend un bilan vide |
+| Fusion | le scheduler redéploie et applique v109 ; le collector redéploie (le drapeau est à 0 : rien ne change) | journal du scheduler : `appliquees=1` |
+| Montée | `update platform_flag set value = '10', updated_by = '<prénom>' where key = 'ingest_un_aller_retour_pct';` puis 50, puis 100 | journal du collector : aucun `internal error`, aucun `deadline: commit outcome unknown` ; `releve-p0.mjs` : le dernier événement par application avance |
+| Retour arrière | `update platform_flag set value = '0' … where key = 'ingest_un_aller_retour_pct';` | effet en 30 s ; les fonctions peuvent rester en base, rien ne les appelle |
+
+**Replis automatiques, sans geste.** Le nouveau chemin rend la main au chemin historique, avant toute écriture, quand la fonction est absente ou non exécutable (repli pendant 60 s), quand une application du lot a le **regroupement d'erreurs v2 actif** (issues, alias et régression restent écrits par le chemin historique) ou quand sa configuration a changé depuis sa lecture (`MIP02`), et pour le drain de la file différée, qui tient déjà sa transaction.
+
+**Mesurer.** Le banc local sait mesurer ce chemin : `BANC_CHEMIN=un_ar node scripts/bench/banc-collecteur-local.mjs` (≈ 13 min, Docker, port 55452). Sur staging, l'échantillonneur `pg_locks` du banc reste la mesure (§ « Rejouer la vraie porte sur staging » du document du banc), après avoir posé le drapeau à 100 sur la base de staging, **jamais sur la production**.
+

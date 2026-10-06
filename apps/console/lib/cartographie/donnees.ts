@@ -17,7 +17,7 @@ import type { Cartographie, Lien, Zone } from "./types";
 
 export const CHIFFRES = {
   tables: 71,
-  derniereMigration: 108,
+  derniereMigration: 109,
   outilsMcp: 23,
   ecrans: 54,
   routesApiV1: 32,

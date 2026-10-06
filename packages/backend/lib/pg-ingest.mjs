@@ -14,6 +14,17 @@ import { isNativeSpanId } from "../shared/otlp.mjs";
 import { finaliserIssues, regrouperErreurs } from "./error-grouping.mjs";
 import { symbolicateurIngestion } from "./error-symbolication.mjs";
 import {
+  appelerUnAR,
+  choisirChemin,
+  CHEMINS,
+  encoderLot,
+  oublierConfig,
+  preparerErreurs,
+  RepliHistorique,
+  SQL_LOT,
+  SQL_REJEU,
+} from "./ingest-un-ar.mjs";
+import {
   appsDuLot,
   barriereActivee,
   ErreurEcheance,
@@ -382,7 +393,7 @@ async function ecrireCapacites(client, capabilities) {
   await batchInsert(
     client,
     "mobile_capabilities",
-    ["app_id", "runtime", "release", "capability", "declared"],
+    COLONNES_CAPACITE,
     capabilities,
     `on conflict (app_id, runtime, release, capability) do update
        set declared = excluded.declared, last_declared_at = now()`,
@@ -392,6 +403,74 @@ async function ecrireCapacites(client, capabilities) {
 const COLONNES_METRIQUE = [
   "span_id", "session_id", "app_id", "route", "name", "value", "rating", "attribution", "ts",
 ];
+
+// ─── Colonnes écrites, table par table ───────────────────────────────────────
+//
+// Chacune prend les colonnes RÉELLEMENT présentes (`colonnesDe`) et rend la liste
+// de l'INSERT. Exportées pour une raison : l'écriture en un aller-retour
+// (`ingest-un-ar.mjs`, migration-v109) écrit les MÊMES colonnes, et
+// `tests/unit/ingest-un-ar.test.ts` compare ces listes, prises au schéma complet,
+// à celles de `mip_ingerer_lot_v1`. Une colonne ajoutée ici sans nouvelle version
+// de la fonction SQL fait échouer ce test, au lieu de se perdre en silence.
+
+/** Colonnes de l'INSERT rum_pageview. */
+export function colonnesPageview(dispo) {
+  return ["span_id", "session_id", "app_id", "route", "url", "referrer", "nav_type", ...colonnesDimensions(dispo), "started_at"];
+}
+
+/** Colonnes de l'INSERT rum_metric. */
+export function colonnesMetrique(dispo) {
+  return [...COLONNES_METRIQUE, ...(dispo.has("metric_uid") ? ["metric_uid"] : []), ...colonnesDimensions(dispo)];
+}
+
+/** Colonnes de l'INSERT rum_action (la table n'est écrite que si `action_id` existe). */
+export function colonnesAction(dispo) {
+  return ["action_id", "span_id", "session_id", "app_id", "type", "name", "route", "context", ...colonnesDimensions(dispo), "ts"];
+}
+
+/** Colonnes de l'INSERT rum_resource. */
+export function colonnesResource(dispo) {
+  return ["span_id", "session_id", "app_id", "route", "url", "type", "duration_ms", "transfer_size", "render_blocking",
+    ...(dispo.has("action_id") ? ["action_id"] : []), ...colonnesDimensions(dispo), "ts"];
+}
+
+/** Colonnes de l'INSERT rum_breadcrumb. */
+export function colonnesBreadcrumb(dispo) {
+  return ["span_id", "session_id", "app_id", ...(dispo.has("route") ? ["route"] : []), "type", "label", "seq",
+    ...(dispo.has("action_id") ? ["action_id"] : []), "ts"];
+}
+
+/** Colonnes optionnelles communes à rum_event et rum_event_index. */
+const OPTIONNELLES_EVENEMENT = [
+  "event_type", "context", "user_id_hash", "account_id_hash", "view_id", "view_name",
+  "action_id", "timing_ms", "feature_flag_value",
+];
+
+/** Colonnes de l'INSERT rum_event. */
+export function colonnesEvenement(dispo) {
+  const optionnelles = OPTIONNELLES_EVENEMENT.filter((col) => dispo.has(col)).concat(colonnesDimensions(dispo));
+  return ["span_id", "session_id", "app_id", "route", "name", "props", ...optionnelles, "ts"];
+}
+
+/** Colonnes de l'INSERT rum_span. */
+export function colonnesSpan(dispo) {
+  return ["span_id", "trace_id", "parent_span_id", "tier", "session_id", "app_id", "route", "url", "method", "status_code", "duration_ms", "name", "kind",
+    ...(dispo.has("action_id") ? ["action_id"] : []), ...colonnesDimensions(dispo, { service: true }), "ts"];
+}
+
+/** Colonnes de l'INSERT rum_event_index. */
+export function colonnesIndex(dispo) {
+  const optionnelles = OPTIONNELLES_EVENEMENT.filter((col) => dispo.has(col)).concat(colonnesDimensions(dispo, { service: true }));
+  return ["app_id", "session_id", "ts", "route", "kind", "source_name", "source_span_id", ...optionnelles];
+}
+
+/** Colonnes de l'INSERT rum_log (aucune n'est optionnelle). */
+export const COLONNES_LOG = Object.freeze([
+  "app_id", "ts", "severity_num", "severity_text", "body", "source", "trace_id", "span_id", "session_id", "route", "attributes",
+]);
+
+/** Colonnes de l'INSERT mobile_capabilities. */
+export const COLONNES_CAPACITE = Object.freeze(["app_id", "runtime", "release", "capability", "declared"]);
 
 /** Une seule ligne par vital consolidé dans un même lot (CLS/INP inclus). */
 function consoliderMetriques(metrics) {
@@ -445,7 +524,7 @@ async function ecrireMetriques(client, metrics) {
   const avecUid = dispo.has("metric_uid");
   // Les dimensions (v75) restent celles du premier rapport : tous les rapports
   // d'une même métrique viennent du même chargement de page, donc de la même release.
-  const cols = [...COLONNES_METRIQUE, ...(avecUid ? ["metric_uid"] : []), ...colonnesDimensions(dispo)];
+  const cols = colonnesMetrique(dispo);
   const prep = (m) => ({ ...m, attribution: m.attribution ? JSON.stringify(m.attribution) : null });
 
   if (!avecUid) {
@@ -636,8 +715,7 @@ export async function writeRowsWithClient(client, {
     await batchInsert(
       client,
       "rum_pageview",
-      ["span_id", "session_id", "app_id", "route", "url", "referrer", "nav_type",
-       ...colonnesDimensions(await colonnesDe(client, "rum_pageview")), "started_at"],
+      colonnesPageview(await colonnesDe(client, "rum_pageview")),
       pageviews.map((p) => ({ ...p, started_at: p.ts })),
       "on conflict (span_id) do nothing",
     );
@@ -649,8 +727,7 @@ export async function writeRowsWithClient(client, {
       await batchInsert(
         client,
         "rum_action",
-        ["action_id", "span_id", "session_id", "app_id", "type", "name", "route", "context",
-         ...colonnesDimensions(actionDispo), "ts"],
+        colonnesAction(actionDispo),
         actions.map((action) => ({
           ...action,
           context: action.context ? JSON.stringify(action.context) : "{}",
@@ -667,8 +744,7 @@ export async function writeRowsWithClient(client, {
     await batchInsert(
       client,
       "rum_resource",
-      ["span_id", "session_id", "app_id", "route", "url", "type", "duration_ms", "transfer_size", "render_blocking",
-       ...(resourceDispo.has("action_id") ? ["action_id"] : []), ...colonnesDimensions(resourceDispo), "ts"],
+      colonnesResource(resourceDispo),
       resources,
       "on conflict (span_id) do nothing",
     );
@@ -683,20 +759,15 @@ export async function writeRowsWithClient(client, {
     await batchInsert(
       client,
       "rum_breadcrumb",
-      ["span_id", "session_id", "app_id", ...(breadcrumbDispo.has("route") ? ["route"] : []), "type", "label", "seq",
-       ...(breadcrumbDispo.has("action_id") ? ["action_id"] : []), "ts"],
+      colonnesBreadcrumb(breadcrumbDispo),
       breadcrumbs,
       "on conflict (span_id) do nothing",
     );
     const eventDispo = await colonnesDe(client, "rum_event");
-    const eventOptionnelles = [
-      "event_type", "context", "user_id_hash", "account_id_hash", "view_id", "view_name",
-      "action_id", "timing_ms", "feature_flag_value",
-    ].filter((col) => eventDispo.has(col)).concat(colonnesDimensions(eventDispo));
     await batchInsert(
       client,
       "rum_event",
-      ["span_id", "session_id", "app_id", "route", "name", "props", ...eventOptionnelles, "ts"],
+      colonnesEvenement(eventDispo),
       events.map((e) => ({
         ...e,
         props: e.props ? JSON.stringify(e.props) : null,
@@ -708,8 +779,7 @@ export async function writeRowsWithClient(client, {
     await batchInsert(
       client,
       "rum_span",
-      ["span_id", "trace_id", "parent_span_id", "tier", "session_id", "app_id", "route", "url", "method", "status_code", "duration_ms", "name", "kind",
-       ...(spanDispo.has("action_id") ? ["action_id"] : []), ...colonnesDimensions(spanDispo, { service: true }), "ts"],
+      colonnesSpan(spanDispo),
       spans ?? [],
       "on conflict (span_id) do nothing",
     );
@@ -727,14 +797,10 @@ export async function writeRowsWithClient(client, {
           : event);
       }
       const indexDispo = await colonnesDe(client, "rum_event_index");
-      const indexOptionnelles = [
-        "event_type", "context", "user_id_hash", "account_id_hash", "view_id", "view_name",
-        "action_id", "timing_ms", "feature_flag_value",
-      ].filter((col) => indexDispo.has(col)).concat(colonnesDimensions(indexDispo, { service: true }));
       await batchInsert(
         client,
         "rum_event_index",
-        ["app_id", "session_id", "ts", "route", "kind", "source_name", "source_span_id", ...indexOptionnelles],
+        colonnesIndex(indexDispo),
         projection.map((event) => ({
           ...event,
           context: event.context ? JSON.stringify(event.context) : "{}",
@@ -787,7 +853,17 @@ export async function writeRowsWithClient(client, {
  * `withAppIngestTransaction`.
  * @returns {Promise<{erreurs: {recues: number, inserees: number, ignorees: number}, refuses?: object}>}
  */
-export async function writeRows(pool, rows, { symbolicateur = symbolicateurIngestion, client: fourni = null, verrou = {} } = {}) {
+export async function writeRows(pool, rows, { symbolicateur = symbolicateurIngestion, client: fourni = null, verrou = {}, chemin = null } = {}) {
+  // Migration-v109 : le lot part en UN aller-retour si le drapeau le tire (ou si
+  // `chemin` l'impose : tests, banc). Jamais avec un client fourni — le drain
+  // tient déjà sa transaction. Un repli rend la main ICI, rien n'ayant été écrit,
+  // avec les erreurs déjà symbolisées.
+  if (!fourni && (await choisirChemin(pool, { force: chemin, echeance: verrou?.echeance ?? null })) === CHEMINS.unAR) {
+    const sortie = await writeRowsUnAR(pool, rows, { symbolicateur, verrou });
+    if (sortie.repli == null) return sortie.bilan;
+    rows = sortie.repli;
+    symbolicateur = null;
+  }
   // `verrou.echeance` (collector, P2) : la connexion et la symbolication, qui
   // précèdent la transaction, courent AUSSI contre l'échéance — sinon un
   // `pool.connect()` lent consommerait le budget hors de toute borne.
@@ -839,7 +915,7 @@ export async function writeLogsWithClient(client, logs, errors = []) {
   await batchInsert(
     client,
     "rum_log",
-    ["app_id", "ts", "severity_num", "severity_text", "body", "source", "trace_id", "span_id", "session_id", "route", "attributes"],
+    COLONNES_LOG,
     logs.map((l) => ({ ...l, attributes: l.attributes ? JSON.stringify(l.attributes) : null })),
     "",
   );
@@ -849,8 +925,12 @@ export async function writeLogsWithClient(client, logs, errors = []) {
 }
 
 /** Wrapper compatible de `writeLogsWithClient` : transaction, verrou, barrières. */
-export async function writeLogs(pool, logs, errors = [], { client: fourni = null, verrou = {} } = {}) {
+export async function writeLogs(pool, logs, errors = [], { client: fourni = null, verrou = {}, chemin = null } = {}) {
   if (!logs.length && !errors.length) return { logs: 0, erreurs: { recues: 0, inserees: 0, ignorees: 0 } };
+  if (!fourni && (await choisirChemin(pool, { force: chemin, echeance: verrou?.echeance ?? null })) === CHEMINS.unAR) {
+    const sortie = await writeLogsUnAR(pool, logs, errors, verrou);
+    if (sortie !== REPLI) return sortie;
+  }
   const travail = async (c) => {
     // Un log et une exception portent app_id, session_id et, pour l'exception,
     // les HMAC d'identité : ils passent par la MÊME barrière que les traces.
@@ -914,9 +994,130 @@ export async function writeReplayChunkWithClient(client, { sessionId, appId, seq
 }
 
 /** Wrapper compatible : transaction, verrou d'application, puis délégation. */
-export function writeReplayChunk(pool, chunk, { client: fourni = null, verrou = {} } = {}) {
+export async function writeReplayChunk(pool, chunk, { client: fourni = null, verrou = {}, chemin = null } = {}) {
   if (fourni) return writeReplayChunkWithClient(fourni, chunk);
+  if ((await choisirChemin(pool, { force: chemin, echeance: verrou?.echeance ?? null })) === CHEMINS.unAR) {
+    const sortie = await writeReplayUnAR(pool, chunk, verrou);
+    if (sortie !== REPLI) return sortie;
+  }
   return withAppIngestTransaction(pool, chunk.appId, (c) => writeReplayChunkWithClient(c, chunk), verrou);
+}
+
+// ─────────────────── L'écriture en UN aller-retour (v109) ───────────────────
+//
+// Le détail et ses raisons : `ingest-un-ar.mjs` et migration-v109. Ici, seulement
+// le câblage : connexion sous échéance, préparation hors verrou, un appel.
+
+/** Marque de repli : le chemin historique reprend le lot, rien n'a été écrit. */
+const REPLI = Symbol("repli-historique");
+
+/** Le schéma complet : les colonnes que `mip_ingerer_lot_v1` écrit. */
+const TOUT = Object.freeze({ has: () => true });
+let colonnesV109 = null;
+/** Les listes de colonnes, au schéma complet — celles de la fonction v109. */
+export function colonnesUnAR() {
+  colonnesV109 ??= Object.freeze({
+    session: colonnesInsert(TOUT),
+    pageview: colonnesPageview(TOUT),
+    metrique: colonnesMetrique(TOUT),
+    action: colonnesAction(TOUT),
+    erreur: colonnesErreur(TOUT),
+    resource: colonnesResource(TOUT),
+    longtask: colonnesLongtask(TOUT),
+    breadcrumb: colonnesBreadcrumb(TOUT),
+    evenement: colonnesEvenement(TOUT),
+    span: colonnesSpan(TOUT),
+    index: colonnesIndex(TOUT),
+    log: COLONNES_LOG,
+    capacite: COLONNES_CAPACITE,
+  });
+  return colonnesV109;
+}
+
+/**
+ * Une connexion sous l'échéance, rendue — ou DÉTRUITE si une requête est restée
+ * en vol (`connexionCompromise`), exactement comme `writeRows`.
+ */
+async function avecConnexion(pool, verrou, travail) {
+  const echeance = verrou?.echeance ?? null;
+  if (echeance != null && !(echeance > Date.now())) throw new ErreurEcheance();
+  const client = await (echeance == null ? pool.connect() : sousEcheance(pool.connect(), echeance, (c) => c.release()));
+  const borne = (p) => (echeance == null ? p : sousEcheance(p, echeance)).catch((err) => {
+    if (err instanceof ErreurEcheance) err.connexionCompromise = true;
+    throw err;
+  });
+  let compromise;
+  try {
+    return await travail(client, borne);
+  } catch (err) {
+    if (err?.connexionCompromise) compromise = err;
+    throw err;
+  } finally {
+    client.release(compromise);
+  }
+}
+
+/** Un repli demandé par la fonction : la configuration en cache est oubliée. */
+function repliOuErreur(pool, err) {
+  if (!(err instanceof RepliHistorique)) throw err;
+  oublierConfig(pool);
+  return REPLI;
+}
+
+/**
+ * Traces en un aller-retour. Rend `{ bilan }`, ou `{ repli }` : le lot, erreurs
+ * DÉJÀ symbolisées, que le chemin historique reprend.
+ */
+async function writeRowsUnAR(pool, rows, { symbolicateur, verrou }) {
+  return avecConnexion(pool, verrou, async (client, borne) => {
+    // Hors verrou, comme avant : la symbolication, puis la clé en ombre.
+    const errors = await borne(appliquerSymbolication(client, rows.errors ?? [], symbolicateur));
+    const symbolisees = { ...rows, errors };
+    const prep = await borne(preparerErreurs(client, pool, errors));
+    if (!prep) return { repli: symbolisees };
+    const apps = appsDuLot(symbolisees);
+    const lot = JSON.stringify(encoderLot({ ...rows, errors: prep.errors }, colonnesUnAR()));
+    try {
+      const r = await appelerUnAR(client, pool, SQL_LOT,
+        (o) => [apps, lot, JSON.stringify({ ...o, regroupement: prep.regroupement })], apps, verrou);
+      const bilan = { erreurs: r.erreurs };
+      return { bilan: r.refuses ? { ...bilan, refuses: r.refuses } : bilan };
+    } catch (err) {
+      repliOuErreur(pool, err);
+      return { repli: symbolisees };
+    }
+  });
+}
+
+/** Logs (et leurs exceptions) en un aller-retour ; `REPLI` sinon. */
+async function writeLogsUnAR(pool, logs, errors, verrou) {
+  return avecConnexion(pool, verrou, async (client, borne) => {
+    const prep = await borne(preparerErreurs(client, pool, errors));
+    if (!prep) return REPLI;
+    const apps = appsDuLot({ logs, errors });
+    const lot = JSON.stringify(encoderLot({ logs, errors: prep.errors }, colonnesUnAR()));
+    try {
+      const r = await appelerUnAR(client, pool, SQL_LOT,
+        (o) => [apps, lot, JSON.stringify({ ...o, regroupement: prep.regroupement })], apps, verrou);
+      const bilan = { logs: r.logs, erreurs: r.erreurs };
+      return r.refuses ? { ...bilan, refuses: r.refuses } : bilan;
+    } catch (err) {
+      return repliOuErreur(pool, err);
+    }
+  });
+}
+
+/** Chunk de rejeu en un aller-retour ; `REPLI` sinon. */
+async function writeReplayUnAR(pool, { sessionId, appId, seq, body, eventsCount }, verrou) {
+  const apps = typeof appId === "string" && appId ? [appId] : [];
+  return avecConnexion(pool, verrou, async (client) => {
+    try {
+      return await appelerUnAR(client, pool, SQL_REJEU,
+        (o) => [appId, sessionId, seq, eventsCount, body, JSON.stringify(o)], apps, verrou);
+    } catch (err) {
+      return repliOuErreur(pool, err);
+    }
+  });
 }
 
 // ───────────────────────── Auth / registre / débit ─────────────────────────
