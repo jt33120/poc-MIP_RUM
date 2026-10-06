@@ -23,6 +23,17 @@ export const FILM_ACCUEIL: { mp4: string; affiche: string } | null = {
  */
 export const FILM_PRESENTATION: { mp4: string; affiche: string; duree: string } | null = null;
 
+/**
+ * La vidéo « Comment ça marche ? » (06/10/2026), deuxième écran de la vitrine
+ * (components/presentation/vitrine/CommentCaMarche.tsx) : la technique, chapitre par
+ * chapitre. Encodée pour le web depuis un projet Remotion hors dépôt.
+ */
+export const FILM_TECHNIQUE: { mp4: string; affiche: string; duree: string } = {
+  mp4: "/vitrine/comment-ca-marche.mp4",
+  affiche: "/vitrine/comment-ca-marche.jpg",
+  duree: "6 min",
+};
+
 /** Les écrans de la scène animée de l'aperçu (components/presentation/vitrine/SceneConsole.tsx). */
 export type VueScene = "sante" | "pages" | "erreurs" | "session" | "tracing" | "assistant";
 

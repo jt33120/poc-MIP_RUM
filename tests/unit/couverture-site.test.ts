@@ -345,6 +345,7 @@ function fichiersVitrine(): string[] {
     "apps/console/lib/installation-faits.ts",
     "apps/console/components/presentation/vitrine/NavVitrine.tsx",
     "apps/console/components/presentation/vitrine/PageVitrine.tsx",
+    "apps/console/components/presentation/vitrine/CommentCaMarche.tsx",
     "apps/console/lib/specs.ts",
     // La cartographie du graphe technique (30/09/2026) : ses textes et ses données.
     ...["base", "capteurs", "donnees", "lecture", "neon", "parcours", "qualite", "traitement", "types"].map(
