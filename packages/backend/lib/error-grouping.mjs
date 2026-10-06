@@ -56,23 +56,9 @@ const instant = (ts) => new Date(ts).getTime();
  */
 export async function regrouperErreurs(client, erreurs) {
   if (!erreurs.length) return { lignes: erreurs, plan: null };
-  const { rows: configs } = await client.query(
-    "select app_id, active_version, vendor_paths from error_grouping_config where app_id = any($1::text[])",
-    [[...new Set(erreurs.map((e) => e.app_id))]],
-  );
+  const { rows: configs } = await client.query(SQL_CONFIG_REGROUPEMENT, [[...new Set(erreurs.map((e) => e.app_id))]]);
   const config = new Map(configs.map((c) => [c.app_id, c]));
-  const lignes = erreurs.map((e) => {
-    const g = errorGrouping({
-      appId: e.app_id,
-      errorType: e.error_type,
-      message: e.message,
-      stack: e.stack,
-      overrideHash: e.fingerprint_override_hash ?? null,
-      symbolicatedFrames: e.symbolicated_frames ?? null,
-      vendorPaths: config.get(e.app_id)?.vendor_paths ?? [],
-    });
-    return { ...e, grouping_version: g.version, grouping_key: g.key, grouping_basis: g.basis, issue_id: null };
-  });
+  const lignes = lignesEnOmbre(erreurs, config);
 
   const actives = lignes.filter((e) => config.get(e.app_id)?.active_version === GROUPING_VERSION);
   if (!actives.length) return { lignes, plan: null };
@@ -175,6 +161,32 @@ export async function regrouperErreurs(client, erreurs) {
     apps.set(e.issue_id, e.app_id);
   }
   return { lignes, plan: { apps, divergences, bornes } };
+}
+
+/** La configuration de regroupement des applications d'un lot (`$1` : leurs `app_id`). */
+export const SQL_CONFIG_REGROUPEMENT =
+  "select app_id, active_version, vendor_paths from error_grouping_config where app_id = any($1::text[])";
+
+/**
+ * La clé v2 EN OMBRE de chaque erreur, sans issue. PURE : ne lit que la ligne et
+ * la configuration de son application (`Map(app_id → { vendor_paths })`).
+ *
+ * Partagée avec l'écriture en un aller-retour (`ingest-un-ar.mjs`), qui la calcule
+ * AVANT d'appeler la fonction SQL : une seule définition de la clé, jamais deux.
+ */
+export function lignesEnOmbre(erreurs, config) {
+  return erreurs.map((e) => {
+    const g = errorGrouping({
+      appId: e.app_id,
+      errorType: e.error_type,
+      message: e.message,
+      stack: e.stack,
+      overrideHash: e.fingerprint_override_hash ?? null,
+      symbolicatedFrames: e.symbolicated_frames ?? null,
+      vendorPaths: config.get(e.app_id)?.vendor_paths ?? [],
+    });
+    return { ...e, grouping_version: g.version, grouping_key: g.key, grouping_basis: g.basis, issue_id: null };
+  });
 }
 
 /** Identifiants des issues déjà présentes pour ces clés : Map(app + clé → id). */

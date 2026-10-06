@@ -295,7 +295,7 @@ poissonniennes coûtent en revanche 150–400 ms au p95. Vers 90 %, le p95 appro
 requête du collector répondra 503 + `retry-after`. C'est voulu, mais non mesuré ici :
 aucune marche n'a dépassé la saturation assez longtemps.
 
-## Si le critère échoue : le repli du plan, chiffré (non écrit)
+## Si le critère échoue : le repli du plan, chiffré (écrit le 06/10/2026 : voir « Suite »)
 
 Le plan prévoit de « réduire les allers-retours de `writeRowsWithClient` (une fonction SQL
 prenant un `jsonb`) ». Voici ce que les mesures en disent.
@@ -333,6 +333,66 @@ prenant un `jsonb`) ». Voici ce que les mesures en disent.
 - **L'autre repli du plan, garder les écritures sur Vercel fra1**, n'a pas été mesuré.
   Modèle : 15 × ~1,5 ms + ~5 ms ≈ 27 ms de tenue, soit 30 % vers ≈ 11 lots/s. La courbe
   « sans latence » (A/R 0,5 ms, 30 % vers 24 lots/s) en est la borne optimiste.
+
+## Suite : l'écriture en un aller-retour (06/10/2026)
+
+Le repli chiffré ci-dessus est écrit : migration-v109 et `packages/backend/lib/ingest-un-ar.mjs`.
+Il n'est **pas encore mesuré** sous latence (banc complet non relancé au 06/10/2026 : des
+robots de trafic occupaient le poste).
+
+- **Ce qui part en un aller-retour.**
+  - Traces et logs : `select mip_ingerer_lot_v1(apps, lot, options)`. La fonction prend le
+    verrou (`mip_verrouiller_apps`), lit les barrières et filtre le lot (les deux passes de
+    `filtrerLot`), contrôle la portée des sessions, écrit toutes les tables et recompte
+    `page_count`.
+  - Rejeu : `select mip_ecrire_rejeu_v1(…)`.
+  - Appelée hors transaction explicite, la requête **est** la transaction : ni BEGIN, ni
+    `set local`, ni COMMIT séparé.
+- **Allers-retours d'un lot**, comptés par `tests/integration/ingest-un-ar-sql.test.ts` sur un
+  lot riche (page vue, vitals, ressource, tâches longues, fil d'Ariane, appel HTTP, événement,
+  action, exception), caches chauds :
+
+  | | chemin historique | `mip_ingerer_lot_v1` |
+  |---|---|---|
+  | A/R par lot | 23, dont 20 sous le verrou | **1**, dont 0 sous le verrou |
+  | hors du lot | `rate_check` (1) | `rate_check` (1) ; drapeau toutes les 30 s ; configuration de regroupement toutes les 30 s si le lot porte une erreur |
+
+  Le lot du banc du 24/09 (18 A/R, dont 15 sous le verrou) tombe de même à 1.
+- **Contrôle sans latence, à titre indicatif.** `bench-verrou-p81` en processus, 20 lots,
+  un écrivain, Postgres 15 local : tenue du verrou p50 de 5,2 ms à 1,0 ms ; 12 A/R à 1 A/R
+  par lot. Ce n'est pas la porte de P2 : seul le banc sous latence la juge.
+- **Équivalence prouvée en CI.** Chaque scénario est joué par les deux chemins sur une base
+  remise à zéro. Les bilans, les refus et les lignes de toutes les tables doivent être
+  identiques. Scénarios :
+  - lot riche, CLS qui grandit, rejeu d'un lot déjà écrit ;
+  - logs avec exception, capacités mobiles, chunks de rejeu ;
+  - barrière d'identité dans un lot mixte, barrière de session ;
+  - ancre manquante sous `enforce`, portée d'application ;
+  - exceptions qui revendiquent une session ;
+  - regroupement v2 actif (repli).
+
+  Sur le nouveau chemin seul :
+  - un effacement qui tient le verrou fait attendre l'écriture, qui voit ensuite la barrière ;
+  - un verrou indisponible rend `ErreurVerrouIngestion` sans rien écrire ;
+  - l'échéance de P2 refuse sans écrire.
+- **Ce qui reste au chemin historique** :
+  - le regroupement d'erreurs v2 **actif** (issues, alias, régression) : la fonction lève
+    `MIP02`, et le lot est rejoué par l'ancien chemin ;
+  - le drain de la file différée.
+- **La bascule** se fait par le drapeau `platform_flag.ingest_un_aller_retour_pct`, à 0
+  par défaut. Mode d'emploi et retour arrière : [runbook § 11](runbook.md#11-la-collecte-en-un-aller-retour-v109).
+- **Mesurer** (à faire, poste libre) :
+  ```bash
+  BANC_CHEMIN=un_ar node scripts/bench/banc-collecteur-local.mjs   # ≈ 13 min, Docker, port 55452
+  # passage court :
+  BANC_CHEMIN=un_ar BANC_DEBITS_SANS=5,20,40 BANC_DEBITS_AVEC=1,3,6,20 BANC_CONCURRENCES=4 \
+    BANC_VERROU_WRITERS=1,4 BANC_VERROU_LOTS=60 node scripts/bench/banc-collecteur-local.mjs
+  ```
+  Le pilote pose le drapeau à 100 dans **sa** base. La sonde du collector compte alors un lot
+  d'une requête ; sa tenue est celle que rend la fonction (`mesure.travail_ms`, COMMIT non
+  compris). L'échantillonneur `pg_locks` reste la contre-épreuve. Attendu : une tenue de
+  3 à 10 ms quelle que soit la latence, et un débit à 30 % d'utilisation de 30 à 100 lots/s
+  par application, contre ≈ 1,75 aujourd'hui.
 
 ## Limites de l'approximation locale
 
