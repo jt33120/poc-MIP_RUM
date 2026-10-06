@@ -96,10 +96,18 @@ export function socleOtel({
 export const nomDeService = (appId: string) => `${appId}-api`;
 
 const DOC = "https://opentelemetry.io/docs/zero-code";
-const EPROUVE = "éprouvé en production le 28/09/2026";
+// Depuis le 06/10/2026, Java, .NET et Python (Flask) ont aussi leur preuve en CI : l'agent,
+// à la version figée ci-dessous, tourne sous ce socle même (`socleOtel`) et ce qu'il envoie
+// passe par la collecte et une vraie base (.github/workflows/agents-otlp.yml,
+// tests/integration/otlp-agents-java-dotnet-python-sql.test.ts).
+const EN_CI = "prouvé en CI";
+const EPROUVE = `éprouvé en production le 28/09/2026, ${EN_CI}`;
+/** Les versions que la CI fait tourner (Dockerfile de tests/fixtures/otlp-agents/applications/). */
+export const VERSIONS_EPROUVEES = { javaagent: "2.31.1", dotnetAuto: "1.17.0", pythonDistro: "0.66b0", pythonSdk: "1.45.0" } as const;
+const V = VERSIONS_EPROUVEES;
 // Preuves du 29/09/2026 (même protocole que #342) : FastAPI sous opentelemetry-instrument,
 // et Node sous auto-instrumentations-node — les traces seulement, faute de journaux (piège ci-dessous).
-const EPROUVE_PYTHON = "éprouvé en production (Flask le 28/09/2026, FastAPI le 29/09/2026)";
+const EPROUVE_PYTHON = `éprouvé en production (Flask le 28/09/2026, FastAPI le 29/09/2026), Flask ${EN_CI}`;
 const EPROUVE_NODE = "éprouvé en production le 29/09/2026 (traces)";
 
 /** Les recettes serveur, préremplies pour une application. */
@@ -122,7 +130,7 @@ export function recettesAgentsOtel({
       etat: EPROUVE_PYTHON,
       code: recette(
         "# 2. Installer l'agent, puis les instrumentations des bibliothèques présentes",
-        "pip install opentelemetry-distro opentelemetry-exporter-otlp-proto-http",
+        `pip install "opentelemetry-distro==${V.pythonDistro}" "opentelemetry-exporter-otlp-proto-http==${V.pythonSdk}"`,
         "opentelemetry-bootstrap -a install",
         "",
         "# 3. Lancer l'application sous l'agent (FastAPI avec uvicorn ;",
@@ -134,6 +142,8 @@ export function recettesAgentsOtel({
         "opentelemetry-bootstrap s'exécute après l'installation des dépendances de l'application : il n'instrumente que ce qu'il trouve.",
         "Avant OpenTelemetry Python 1.40, les journaux du module logging ne partent qu'avec OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true.",
         "Un export refusé ne s'affiche que si l'application pose son propre gestionnaire sur le journal « opentelemetry ».",
+        "Les journaux INFO de l'application ne partent que si le journal racine est au niveau INFO (logging.getLogger().setLevel(logging.INFO)) : par défaut, seuls WARNING et au-delà partent.",
+        "Une exception non rattrapée (Flask) compte une fois dans Erreurs, par le journal ERROR du framework : sans session ni route, que porte en revanche le span serveur (500).",
       ],
       documentation: `${DOC}/python/`,
     },
@@ -164,7 +174,7 @@ export function recettesAgentsOtel({
       etat: EPROUVE,
       code: recette(
         "# 2. Télécharger l'agent (un seul fichier .jar)",
-        "curl -sSfLO https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar",
+        `curl -sSfLO https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v${V.javaagent}/opentelemetry-javaagent.jar`,
         "",
         "# 3. Lancer l'application sous l'agent",
         "java -javaagent:opentelemetry-javaagent.jar -jar app.jar",
@@ -173,6 +183,9 @@ export function recettesAgentsOtel({
         "L'option -javaagent se place avant -jar ; dans un serveur d'applications, elle va dans les options de la JVM (JAVA_OPTS, CATALINA_OPTS…).",
         "Lancer un jar ou une classe compilée : sous le lanceur de fichier source (java Serveur.java), l'agent ne démarre pas.",
         "GitHub publie l'empreinte SHA-256 du jar avec la release : la comparer à celle du fichier téléchargé (shasum -a 256).",
+        "Spring Boot range une 404 sous la route /** (son gestionnaire de fichiers statiques) : le Tracing la montre sous /**, pas sous « (non trouvée) ».",
+        "Une exception sortie d'un contrôleur compte une fois dans Erreurs, par le journal ERROR de Tomcat : sans session ni route, que porte en revanche le span serveur (500).",
+        "Les journaux de démarrage de Spring Boot (Logback) partent aussi : quelques lignes par démarrage dans Journaux.",
       ],
       documentation: `${DOC}/java/agent/`,
     },
@@ -186,7 +199,7 @@ export function recettesAgentsOtel({
         `export OTEL_DOTNET_AUTO_LOG_DIRECTORY="/var/tmp/otel-dotnet"`,
         "",
         "# 2. Installer l'instrumentation automatique (Linux, macOS)",
-        "curl -sSfLO https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/releases/latest/download/otel-dotnet-auto-install.sh",
+        `curl -sSfLO https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/releases/download/v${V.dotnetAuto}/otel-dotnet-auto-install.sh`,
         "sh ./otel-dotnet-auto-install.sh",
         "",
         "# 3. Dans le shell qui lance l'application",
@@ -194,9 +207,10 @@ export function recettesAgentsOtel({
         "dotnet MonApplication.dll",
       ),
       pieges: [
-        "Le script d'installation vérifie la release avec la CLI GitHub (gh) : sans elle, il s'arrête, sauf SKIP_RELEASE_VERIFICATION=true.",
+        "Le script d'installation vérifie la release avec la CLI GitHub (gh) : sans elle, il s'arrête, sauf SKIP_RELEASE_VERIFICATION=true. Dans une image sans gh : vérifier soi-même l'archive par l'empreinte SHA-256 que publie GitHub, puis la remettre au script (LOCAL_PATH=… SKIP_RELEASE_VERIFICATION=true).",
         "instrument.sh se source (le point en tête) dans le shell qui lance l'application : exécuté à part, il ne règle rien. Sous macOS, il demande greadlink (paquet coreutils).",
         "Sans dossier de journaux accessible en écriture, le processus s'arrête au démarrage (Permission denied).",
+        "L'exception non rattrapée n'est pas enregistrée sur le span : elle compte une fois dans Erreurs, par le journal ERROR de Kestrel, sans session ni route.",
         "Sous Windows, le module PowerShell du même projet : Register-OpenTelemetryForCurrentSession, après les mêmes variables en $env:….",
       ],
       documentation: `${DOC}/dotnet/`,

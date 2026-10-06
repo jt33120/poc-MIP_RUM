@@ -1,4 +1,4 @@
-# Corps OTLP des agents Go, PHP et Ruby
+# Corps OTLP des agents Go, PHP, Ruby, Java, .NET et Python
 
 Ce que les exportateurs OpenTelemetry officiels de Go, de PHP et de Ruby ont **réellement
 envoyé** le 01/10/2026, octet pour octet (protobuf compressé en gzip), avec les en-têtes de
@@ -47,7 +47,46 @@ les versions de chaque langage.
 Aucune donnée personnelle ni secret : applications, clés (`r11-<langage>-cle`) et
 sessions de test ; adresses `127.0.0.1` ; un nom de conteneur (`host.name`, PHP).
 
-## Les refaire
+## Java, .NET et Python : capturés par la CI
+
+Les corps `java-*`, `dotnet-*` et `python-*` ne viennent pas d'une capture à la main :
+`capturer.mjs` les produit, en CI (`.github/workflows/agents-otlp.yml`, à chaque PR qui
+touche ce dossier, le script, le test de rejeu, les recettes ou la collecte) comme sur un
+poste qui a Docker. `tests/integration/otlp-agents-java-dotnet-python-sql.test.ts` les
+rejoue ensuite dans `test:sql`, comme ceux de Go, de PHP et de Ruby.
+
+- **Applications** : `applications/java` (Spring Boot 4 sous
+  `java -javaagent:opentelemetry-javaagent.jar -jar app.jar`), `applications/dotnet`
+  (ASP.NET Core, API minimale, sous `instrument.sh` de l'instrumentation automatique),
+  `applications/python` (Flask sous `opentelemetry-instrument flask --app app run`). Aucune
+  ligne OpenTelemetry dans leur code. Chacune a son `Dockerfile`, qui fige la version de
+  l'agent et vérifie l'empreinte SHA-256 publiée par GitHub (Java, .NET) ; `pom.xml` et
+  `Factures.csproj` ne servent qu'à construire l'image, aucun service du dépôt ne les lit.
+- **Configuration** : le socle de la page Installer, tel que l'écrit `socleOtel`
+  (`apps/console/lib/recettes-agents-otel.ts`), la clé factice `r11-<langage>-cle` à la
+  place du repère, comme le ferait le client ; pour .NET, en plus,
+  `OTEL_DOTNET_AUTO_LOG_DIRECTORY`, que la recette pose aussi.
+- **Appels, relais, collecte** : les mêmes qu'au 01/10/2026 (`traceparent`, `tracestate`,
+  trois requêtes, collecteur de développement à clé exigée) ; identifiants de trace de
+  rang 4 (Java), 5 (.NET), 6 (Python) dans le manifeste. Le script attend que les trois
+  traces soient exportées, puis un délai d'export de plus, avant d'arrêter l'application.
+- **Provenance** : `langages.<langage>.capture` du manifeste (date, run du workflow),
+  `versions` (arguments du Dockerfile ; pour Python, ce que pip a résolu) et `ressource`
+  (ce que l'agent dit de lui-même). L'artefact `capture-agents-otlp` de chaque run garde
+  aussi les journaux des applications.
+
+Refaire la capture (Docker requis, base locale migrée) :
+
+```sh
+DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum \
+  node tests/fixtures/otlp-agents/capturer.mjs java dotnet python
+```
+
+Le script réécrit les corps des langages demandés et leurs entrées du manifeste, sans
+toucher aux autres. Une montée de version d'agent se fait dans le `Dockerfile`, puis par
+une nouvelle capture, versionnée telle que le workflow l'a produite.
+
+## Les refaire (Go, PHP, Ruby)
 
 Reprendre le code de `applications/` dans les mêmes images, installer les paquets aux
 versions de `manifeste.json` (`go get`, `composer require`, `Gemfile`), relancer les trois

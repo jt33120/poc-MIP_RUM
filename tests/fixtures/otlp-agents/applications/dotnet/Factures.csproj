@@ -1,0 +1,9 @@
+<!-- Application d'essai .NET : ASP.NET Core, sans aucun paquet OpenTelemetry.
+     L'instrumentation automatique se greffe au lancement (Dockerfile). -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>
