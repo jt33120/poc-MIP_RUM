@@ -10,7 +10,7 @@
  * qu'il n'est pas monté : la vitrine montre alors son titre en texte, sur un fond animé.
  */
 // Depuis le 01/10/2026, c'est le film de présentation (1 min 29, Remotion : le produit,
-// ce qui le distingue, sa stack ; docs/product/film-presentation.md) qui tourne en fond,
+// ce qui le distingue, sa stack ; scénario hors dépôt) qui tourne en fond,
 // muet, en boucle : l'utilisateur a retiré le premier clip de 15 s, jugé trop court.
 export const FILM_ACCUEIL: { mp4: string; affiche: string } | null = {
   mp4: "/vitrine/film-presentation.mp4",

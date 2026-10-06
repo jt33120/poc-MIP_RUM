@@ -246,7 +246,7 @@ export const config = {
   // `vendor` = assets tiers auto-hébergés (Swagger UI) ; `downloads` = artefacts
   // téléchargeables (le .zip de l'extension) ; `portail` = captures de la console
   // affichées par la vitrine publique, `vitrine/` = le film d'accueil de la vitrine
-  // (scripts/monter-film-accueil.mjs) — sans cette exclusion le visiteur anonyme
+  // (monté hors du dépôt) — sans cette exclusion le visiteur anonyme
   // reçoit un 302 vers /login à la place de l'image, et l'optimiseur next/image,
   // qui refetch l'URL à travers le middleware, ne voit qu'une redirection.
   // Servis depuis public/, exclus de la porte d'auth comme _next et le SDK public

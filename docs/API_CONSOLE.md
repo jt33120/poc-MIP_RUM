@@ -2,7 +2,7 @@
 
 > **But** : exposer les agrégats RUM via une **API REST stable**, consommable par le
 > front **Angular de MIP** (ou tout autre client) **sans réécrire la console**. C'est
-> l'option B du cadrage (`docs/CADRAGE_LOT_C.md`) : découplage, console livrable seule,
+> l'option B du cadrage du lot C (17/06/2026, hors dépôt) : découplage, console livrable seule,
 > migration incrémentale. L'API réutilise la couche data existante (`lib/queries*.ts`,
 > `lib/health.ts`) — **aucune logique SQL dupliquée**.
 
@@ -886,7 +886,7 @@ complet) et `query`, l'**AST canonique** rejouable qu'un tableau de bord enregis
 > Trois endpoints figuraient ici : `GET /api/v1/ai`, `GET /api/v1/ai/costs` et
 > `GET /api/v1/ai/credits`. **Ils n'existent plus** — la supervision IA a été extraite
 > vers le service **xSOM AI Guard**, qui en est désormais la source de vérité unique
-> (ADR-0001, `docs/EXTRACTION_XSOM_AI_GUARD.md`). Aucun fichier de route ne leur
+> ([ADR-0001](ADR-0001-supervision-ia-xsom.md)). Aucun fichier de route ne leur
 > correspond dans `apps/console/app/api/v1/` : un client qui les appelle reçoit un **404**.
 >
 > Ils sont restés documentés ici après leur suppression. Le descripteur

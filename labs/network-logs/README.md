@@ -6,7 +6,7 @@ OpenSearch** sur les mêmes logs (coût disque, compression, latence de requête
 
 **Expérience locale, jamais déployée, sans lien avec le produit** (état au 26/09/2026).
 Le signal logs du produit est ailleurs : la table `rum_log`, alimentée par la route
-`/api/ingest/v1/logs` de la console ([docs/context/produit-logs.md](../../docs/context/produit-logs.md)).
+`/api/ingest/v1/logs` de la console.
 Rien de ce qui suit n'y est relié.
 
 ```

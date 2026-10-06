@@ -2,7 +2,7 @@
 
 Liste honnête, demandée par Julian, commencée le 10/06/2026 (v0.1) et complétée par des mises à jour **datées**, la plus récente en tête. Chaque section dit l'état à sa date : quand une section plus récente contredit une plus ancienne, c'est la plus récente qui vaut. Le bilan capacité par capacité est dans [`RUM_PARITY_STATUS.md`](RUM_PARITY_STATUS.md), ce qui tourne en production dans [`TOPOLOGIE_BACKEND.md`](TOPOLOGIE_BACKEND.md).
 
-Tableaux d'origine (fin du document) : colonne « v0.2 » = traité dans le sprint nuit du 10→11/06 (cf. archive/ROADMAP_V02.md) ; « v0.3 » = sprint nuit 2 (cf. archive/ROADMAP_V03.md et la section v0.3) ; « Phase 1+ » = nécessite un vrai chantier produit MIP.
+Tableaux d'origine (fin du document) : colonne « v0.2 » = traité dans le sprint nuit du 10→11/06 (feuille de route v0.2, retirée du dépôt le 06/10/2026) ; « v0.3 » = sprint nuit 2 (feuille de route v0.3, retirée du dépôt, et la section v0.3) ; « Phase 1+ » = nécessite un vrai chantier produit MIP.
 
 ## Mise à jour du 26/09/2026 (ce que la CI et la production ont changé depuis P8.8)
 
