@@ -25,7 +25,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
         texte: "Traces et journaux en JSON ou en protobuf, compressés en gzip, en deflate ou pas ; tout autre format reçoit 415.",
         sources: [`${BACK}/shared/otlp-corps.mjs:10-21`],
       },
-      { texte: "Rejouer un même lot ne crée aucune ligne de plus, sauf pour les journaux.", sources: [`${BACK}/lib/pg-ingest.mjs:636-715`] },
+      { texte: "Rejouer un même lot ne crée aucune ligne de plus, sauf pour les journaux.", sources: [`${BACK}/lib/pg-ingest.mjs:715-785`] },
       { texte: "Sondes /health et /live ; /ready et /metrics sous jeton, sinon 404.", sources: [`${KIT}/http.mjs:29-39`] },
       { texte: "Son journal d'accès n'écrit jamais d'adresse IP.", sources: [`${KIT}/http.mjs:54-60`] },
       { texte: "Une image par service, lancée sans les droits root.", sources: ["services/collector/Dockerfile:152-165"] },
@@ -48,14 +48,14 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
         texte: "Une clé mip_ suivie de 32 caractères hexadécimaux, stockée en SHA-256, montrée une seule fois.",
         sources: ["apps/console/lib/commandes/applications.ts:10-21"],
       },
-      { texte: "Refus dans l'ordre : application suspendue, inactive, sans clé, clé fausse.", sources: [`${BACK}/lib/pg-ingest.mjs:1061-1100`] },
+      { texte: "Refus dans l'ordre : application suspendue, inactive, sans clé, clé fausse.", sources: [`${BACK}/lib/pg-ingest.mjs:1262-1301`] },
       {
         texte: "La clé est lisible dans la page : elle identifie l'application sans rien protéger, et le débit reste la borne.",
         sources: [`${BACK}/shared/limits.mjs:22-23`],
       },
       {
         texte: "Si le registre des applications n'a jamais pu se charger, le lot passe, par choix, et /ready le signale.",
-        sources: [`${BACK}/lib/pg-ingest.mjs:1063-1066`],
+        sources: [`${BACK}/lib/pg-ingest.mjs:1264-1267`],
       },
       { texte: "Seules les origines des applications actives reçoivent l'autorisation CORS.", sources: [`${BACK}/shared/cors.mjs:20-23`] },
     ],
@@ -74,11 +74,11 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
     faits: [
       {
         texte: "600 lots par minute et par application ; base injoignable, le repli refuse au-delà de 150.",
-        sources: [`${BACK}/lib/pg-ingest.mjs:1003-1010`, `${BACK}/lib/pg-ingest.mjs:1156-1177`],
+        sources: [`${BACK}/lib/pg-ingest.mjs:1204-1211`, `${BACK}/lib/pg-ingest.mjs:1357-1378`],
       },
       {
         texte: "Un site inscrit en libre-service a son propre plafond, plus bas que celui de la plateforme.",
-        sources: [`${BACK}/lib/pg-ingest.mjs:1146-1155`, "packages/db/sql/migration-v107.sql:38"],
+        sources: [`${BACK}/lib/pg-ingest.mjs:1347-1356`, "packages/db/sql/migration-v107.sql:38"],
       },
       { texte: "Un corps de 2 Mo au plus, lu en flux borné, même sans longueur annoncée.", sources: [`${BACK}/shared/limits.mjs:10`, `${BACK}/shared/limits.mjs:109-119`] },
       { texte: "La décompression est bornée au même plafond : pas de bombe gzip.", sources: [`${BACK}/shared/otlp-corps.mjs:23-28`] },
@@ -132,7 +132,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
     etiquettes: ["HMAC-SHA256", "0 IP stockée", "nettoyage"],
     faits: [
       { texte: "L'identifiant d'utilisateur devient un HMAC par application ; l'attribut brut est retiré.", sources: ["packages/db/sql/migration-v66.sql:64", `${BACK}/lib/identity-hash.mjs`] },
-      { texte: "Aucune colonne d'adresse IP dans les sessions.", sources: [`${BACK}/lib/pg-ingest.mjs:279-286`] },
+      { texte: "Aucune colonne d'adresse IP dans les sessions.", sources: [`${BACK}/lib/pg-ingest.mjs:290-297`] },
       {
         texte: "GeoIP en mémoire (DB-IP Lite) pour le seul trafic direct ; une requête relayée n'y passe pas.",
         sources: [`${BACK}/shared/geoip.mjs:18-26`, "tests/unit/collecte-directe.test.ts:214-223"],

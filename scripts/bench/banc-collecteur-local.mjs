@@ -42,6 +42,9 @@
 //   BANC_ALLER_RETOUR_CIBLE_MS [9]
 //   BANC_VERROU_WRITERS [1,4,16]  BANC_VERROU_LOTS [200]  BANC_SORTIE [<tmp>/banc-collecteur-<t>.json]
 //   BANC_GARDER=1 : laisser les conteneurs en place (débogage).
+//   BANC_CHEMIN [historique] : `un_ar` mesure l'écriture en UN aller-retour
+//     (migration-v109) — le drapeau `ingest_un_aller_retour_pct` passe à 100 dans
+//     la base du banc, et `bench-verrou-p81` reçoit BENCH_CHEMIN=un_ar.
 //
 // LA LATENCE SE CALE SUR L'ALLER-RETOUR MESURÉ, PAS SUR LE RÉGLAGE NOMINAL.
 // toxiproxy n'accepte que des millisecondes entières, et sous Docker Desktop
@@ -87,6 +90,7 @@ const CONDITIONS = [
     cible: CIBLE_AR_MS,
   },
 ];
+const CHEMIN = process.env.BANC_CHEMIN === "un_ar" ? "un_ar" : "historique";
 const SORTIE = process.env.BANC_SORTIE ?? join(tmpdir(), `banc-collecteur-${Date.now()}.json`);
 const TRAVAIL = `${SORTIE}.d`;
 
@@ -142,6 +146,9 @@ async function monter() {
   const cle = `mip_${randomBytes(16).toString("hex")}`;
   const empreinte = createHash("sha256").update(cle).digest("hex");
   psql(`insert into app_registry (app_id, name, active, api_key_hash) values ('${APP}', 'Banc P2', true, '${empreinte}')`);
+  // Le chemin mesuré : le collector le lit dans ce drapeau (cache de 30 s, rempli
+  // pendant la chauffe), comme en production.
+  psql(`update platform_flag set value = '${CHEMIN === "un_ar" ? "100" : "0"}' where key = 'ingest_un_aller_retour_pct'`);
   return cle;
 }
 
@@ -339,6 +346,7 @@ async function benchVerrou() {
     BENCH_WRITERS: process.env.BANC_VERROU_WRITERS ?? "1,4,16",
     BENCH_LOTS: process.env.BANC_VERROU_LOTS ?? "200",
     BENCH_BUDGET: "collector",
+    BENCH_CHEMIN: CHEMIN,
     BENCH_SONDE_PAUSE_MS: "100",
     BENCH_POOL_MAX: "24",
     BENCH_JSON: "1",
@@ -351,12 +359,12 @@ async function benchVerrou() {
 
 async function main() {
   execFileSync("mkdir", ["-p", TRAVAIL]);
-  const releve = { date: new Date().toISOString(), port: PORT, app: APP, dureeS: DUREE_S, dureeFermeeS: DUREE_FERMEE_S, conditions: [] };
+  const releve = { date: new Date().toISOString(), chemin: CHEMIN, port: PORT, app: APP, dureeS: DUREE_S, dureeFermeeS: DUREE_FERMEE_S, conditions: [] };
   let collector = null;
   const arret = () => { try { collector?.proc.kill("SIGKILL"); } catch { /* */ } demonter(); process.exit(130); };
   process.once("SIGINT", arret);
   try {
-    journal(`montage : Postgres 17 derrière toxiproxy sur 127.0.0.1:${PORT}`);
+    journal(`montage : Postgres 17 derrière toxiproxy sur 127.0.0.1:${PORT} — chemin d'écriture : ${CHEMIN}`);
     const cle = await monter();
     releve.postgres = psql("show server_version");
     for (const cond of CONDITIONS) {
