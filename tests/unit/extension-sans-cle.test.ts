@@ -10,17 +10,14 @@
 // active et non suspendue. Tout le reste est inchangé.
 //
 // Ce fichier la vérifie à trois étages : la règle pure, le contrôle adossé au
-// registre (cache compris), puis les DEUX ports d'ingestion — la console (chemin
-// local, celui du repli) et le collector, en direct comme relayé (l'origine
-// traverse alors le relais sous sa signature, `x-mip-edge-origin`).
+// registre (cache compris), puis le collector, seul port qui écrit depuis C12
+// (06/10/2026), en direct comme relayé par la console (l'origine traverse alors
+// le relais sous sa signature, `x-mip-edge-origin`).
 import { createServer } from "node:http";
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { requetes, poolDeTest } = await vi.hoisted(async () => {
-  // `lib/ingest.ts` lit REQUIRE_API_KEY au chargement : le réglage du collector
-  // en production depuis le 29/09/2026.
-  process.env.REQUIRE_API_KEY = "true";
   const { createHash } = await import("node:crypto");
   const empreinte = (s: string) => createHash("sha256").update(s).digest("hex");
   const ligne = (app_id: string, domaines: string[], extra: Record<string, unknown> = {}) => ({
@@ -53,12 +50,6 @@ const { requetes, poolDeTest } = await vi.hoisted(async () => {
   return { requetes, poolDeTest: { query, connect: async () => ({ query, release() {} }) } };
 });
 
-vi.mock("@/lib/db", () => ({ pool: poolDeTest }));
-// Relais éteint : c'est le chemin local de la console — celui du repli — qui est jugé ici.
-vi.mock("@/lib/ingest-relay", () => ({ relayer: async () => null }));
-
-import { POST as POST_LOGS } from "../../apps/console/app/api/ingest/v1/logs/route";
-import { POST as POST_TRACES } from "../../apps/console/app/api/ingest/v1/traces/route";
 // @ts-expect-error module ESM partagé, sans déclarations
 import { autoriseParDomaine, createPgAuth, hoteDOrigine } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module ESM partagé, sans déclarations
@@ -211,7 +202,7 @@ describe("createPgAuth.checkApiKey — sous REQUIRE_API_KEY", () => {
   });
 });
 
-// ─────────────────────── 3. Les deux ports d'ingestion ────────────────────────
+// ─────────────────────── 3. Le collector ──────────────────────────────────────
 
 async function servirCollector() {
   const { handler } = creerReceveur(poolDeTest, { requireApiKey: true, log: silencieux, env: {}, edgeSecrets: [EDGE] });
@@ -236,24 +227,7 @@ async function auCollector(corps: string, entetes: Record<string, string>, chemi
   }
 }
 
-async function aLaConsole(corps: string, entetes: Record<string, string>, route = POST_TRACES) {
-  const res = await route(new Request("https://mip-rum-console.vercel.app/api/ingest/v1/traces", {
-    method: "POST",
-    headers: { "content-type": "application/json", ...entetes },
-    body: corps,
-  }));
-  return { statut: res.status, corps: await res.json().catch(() => null) };
-}
-
-/** Le même lot aux deux ports, en DIRECT (le navigateur présente son `Origin`). */
-async function auxDeuxPorts(corps: string, origine: string) {
-  return {
-    console: await aLaConsole(corps, { origin: origine }),
-    collector: await auCollector(corps, { origin: origine }),
-  };
-}
-
-describe("les deux ports, en direct : même règle, même verdict", () => {
+describe("collector, en direct : la règle et son verdict", () => {
   const cas: Array<{ nom: string; corps: () => string; origine: string; statut: number; erreur?: string | RegExp }> = [
     { nom: "extension, domaine enregistré → 200", corps: () => lot("app-ext"), origine: "https://app.client.fr", statut: 200 },
     { nom: "extension, domaine non enregistré → 403", corps: () => lot("app-ext"), origine: "https://ailleurs.fr", statut: 403, erreur: "extension origin not registered for app: app-ext" },
@@ -267,11 +241,10 @@ describe("les deux ports, en direct : même règle, même verdict", () => {
   ];
   for (const c of cas) {
     it(c.nom, async () => {
-      const { console: cons, collector } = await auxDeuxPorts(c.corps(), c.origine);
-      expect(cons.statut, "console").toBe(c.statut);
-      expect(collector.statut, "collector").toBe(c.statut);
-      expect(collector.corps).toEqual(cons.corps);
-      if (c.erreur) expect((cons.corps as { error: string }).error).toMatch(c.erreur);
+      // En DIRECT : le navigateur présente son `Origin`.
+      const collector = await auCollector(c.corps(), { origin: c.origine });
+      expect(collector.statut).toBe(c.statut);
+      if (c.erreur) expect((collector.corps as { error: string }).error).toMatch(c.erreur);
     });
   }
 
@@ -282,7 +255,6 @@ describe("les deux ports, en direct : même règle, même verdict", () => {
         scopeLogs: [{ logRecords: [{ timeUnixNano: (BigInt(Date.now()) * 1_000_000n).toString(), severityText: "INFO", body: { stringValue: "x" } }] }],
       }],
     });
-    expect((await aLaConsole(logs, { origin: "https://app.client.fr" }, POST_LOGS)).statut).toBe(403);
     expect((await auCollector(logs, { origin: "https://app.client.fr" }, "/v1/logs")).statut).toBe(403);
     const c = await servirCollector();
     try {

@@ -1,19 +1,16 @@
-// Désactiver une application coupe sa collecte, aux DEUX ports d'ingestion
-// (recette du 26/09/2026).
+// Désactiver une application coupe sa collecte (recette du 26/09/2026).
 //
 // La production tourne en `REQUIRE_API_KEY=false` (console sur Vercel comme
 // collector sur Railway), et le bouton « Désactiver » de l'administration promet
 // que la collecte s'arrête. Le contrôle de `active` vivait derrière le
 // court-circuit de `requireApiKey` dans `createPgAuth.checkApiKey` : une
-// application désactivée continuait d'écrire, par l'un comme par l'autre port.
-// Les deux partagent ce code ; ce fichier envoie le même lot aux deux et exige
-// le même 403, sans une ligne écrite.
+// application désactivée continuait d'écrire. Depuis C12 (06/10/2026), le
+// collector est le SEUL port qui écrit (la console relaie) : ce fichier lui
+// envoie le lot et exige le 403, sans une ligne écrite.
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { requetes, poolDeTest } = vi.hoisted(() => {
-  // `lib/ingest.ts` lit REQUIRE_API_KEY au chargement : le réglage de la production.
-  process.env.REQUIRE_API_KEY = "false";
   const requetes: string[] = [];
   const REGISTRE = [
     { app_id: "app-coupee", api_key_hash: null, active: false, allowed_origins: [], ingestion_suspended_at: null },
@@ -28,11 +25,6 @@ const { requetes, poolDeTest } = vi.hoisted(() => {
   return { requetes, poolDeTest: { query, connect: async () => ({ query, release() {} }) } };
 });
 
-vi.mock("@/lib/db", () => ({ pool: poolDeTest }));
-// Relais éteint : c'est le chemin local de la console qui est jugé ici.
-vi.mock("@/lib/ingest-relay", () => ({ relayer: async () => null }));
-
-import { POST } from "../../apps/console/app/api/ingest/v1/traces/route";
 // @ts-expect-error module ESM partagé, sans déclarations
 import { creerReceveur } from "../../packages/backend/lib/receiver.mjs";
 
@@ -73,25 +65,11 @@ async function posterAuCollector(corps: string): Promise<Response> {
   }
 }
 
-const posterALaConsole = (corps: string) =>
-  POST(new Request("https://console.test/api/ingest/v1/traces", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: corps,
-  }));
-
 afterEach(() => {
   requetes.length = 0;
 });
 
 describe("application désactivée, REQUIRE_API_KEY=false : la collecte est coupée", () => {
-  it("console : 403, rien d'écrit", async () => {
-    const res = await posterALaConsole(lot("app-coupee"));
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "inactive app: app-coupee" });
-    expect(ecritures()).toEqual([]);
-  });
-
   it("collector : 403, rien d'écrit", async () => {
     const res = await posterAuCollector(lot("app-coupee"));
     expect(res.status).toBe(403);
@@ -99,8 +77,7 @@ describe("application désactivée, REQUIRE_API_KEY=false : la collecte est coup
     expect(ecritures()).toEqual([]);
   });
 
-  it("une application active passe toujours, aux deux ports", async () => {
-    expect((await posterALaConsole(lot("app-ouverte"))).status).toBe(200);
+  it("une application active passe toujours", async () => {
     expect((await posterAuCollector(lot("app-ouverte"))).status).toBe(200);
     expect(ecritures().length).toBeGreaterThan(0);
   });

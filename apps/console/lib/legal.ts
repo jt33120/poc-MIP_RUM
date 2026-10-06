@@ -84,8 +84,8 @@ export const ORG = {
 
 /**
  * Hébergement — factuel. Sociétés et régions vérifiées le 08/09/2026 contre
- * docs/NEON_MIGRATION.md et DEPLOY.md ; RÔLES réécrits pour l'état « relais
- * actif » de P3 (`platform_flag.ingest_relay_pct` > 0).
+ * docs/NEON_MIGRATION.md et DEPLOY.md ; RÔLES réécrits pour le relais de P3, puis
+ * pour le relais seul de C12 (06/10/2026 : la console n'écrit plus de mesure).
  *
  * POURQUOI LES RÔLES ONT CHANGÉ. Avant la bascule, la route de la console
  * (Vercel) recevait ET écrivait les mesures ; Railway ne faisait que LIRE la
@@ -214,16 +214,16 @@ export const SUBPROCESSORS: SousTraitant[] = [
     region: "aws-eu-central-1",
     garanties: CCT,
   },
-  // RELAIS ACTIF (P3). Vercel REÇOIT toujours tout — SDK, extension et CI visent
-  // la console, aucune URL n'a changé chez les clients — et relaie au collector la
-  // part tirée au sort : corps octet pour octet, code pays seul, AUCUNE adresse
-  // (ni `x-forwarded-for`, ni `x-real-ip` : `lib/ingest-relay.ts`).
-  // POURQUOI LE REPLI EST NOMMÉ (dans la note). Le chemin d'écriture local n'est
-  // PAS retiré (il le sera en C11/C12) : la part non tirée pendant la montée
-  // (10 % → 50 % → 100 %) et le repli (collector injoignable, 502/504, disjoncteur
-  // ouvert…) sont encore écrits en base par la console, identité RETIRÉE puisqu'aucun
-  // secret d'identité n'est posé sur Vercel. Le taire ferait de « relais » une
-  // demi-vérité : un DPO en conclurait qu'aucune fonction Vercel n'écrit en base.
+  // RELAIS SEUL (C12, 06/10/2026). Vercel reçoit ce qui vise encore la console —
+  // anciens codes de suivi, domaines de l'extension gardés sur la console, CI — et
+  // le relaie en entier au collector : corps octet pour octet, code pays seul,
+  // AUCUNE adresse (ni `x-forwarded-for`, ni `x-real-ip` : `lib/ingest-relay.ts`).
+  // POURQUOI LA NOTE DIT « NE LES ÉCRIT PAS ». Jusqu'à C12, la console écrivait
+  // elle-même en repli (collector injoignable), identité retirée, et la note le
+  // déclarait. Ce chemin n'existe plus : collector injoignable, la console répond
+  // 503 et le capteur rejoue. Garder l'ancienne phrase déclarerait un traitement
+  // qui n'a plus lieu ; la retirer sans le dire laisserait le registre (§ 7) en
+  // désaccord avec ce fichier.
   {
     name: "Vercel Inc.",
     role: "Hébergement de la console et réception des mesures envoyées par les navigateurs.",
@@ -232,9 +232,9 @@ export const SUBPROCESSORS: SousTraitant[] = [
     region: "fra1",
     garanties: CCT,
     note:
-      "La console relaie les mesures au collecteur avec le seul code pays : elle ne conserve ni ne transmet l'adresse IP. " +
-      "La part qui n'est pas relayée, et toutes les mesures quand le collecteur est indisponible, est écrite directement " +
-      "en base par la console, l'identifiant d'utilisateur retiré.",
+      "La console relaie les mesures au collecteur avec le seul code pays : elle ne conserve ni ne transmet l'adresse IP, " +
+      "et ne les écrit pas en base ; quand le collecteur est indisponible, elle refuse l'envoi, " +
+      "que le navigateur renouvelle.",
   },
   // Ajouté le 08/09/2026, dans la MÊME modification que l'extraction du backend
   // vers des services autonomes. Le premier receveur Railway (`ingest`) n'a

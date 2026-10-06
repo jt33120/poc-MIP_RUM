@@ -1,13 +1,15 @@
 // Drapeaux de plateforme (`platform_flag`, migration-v87), lus par la console.
 //
 // SERVEUR SEULEMENT : ce module lit la base par le pool de la console. Il n'est
-// importé que par `lib/ingest-relay.ts`, lui-même importé par des route
-// handlers — jamais par un composant client.
+// importé que par le relais de l'API v1 (`lib/api-relay.ts`) et l'aiguillage
+// vers console-api (`lib/ecran.ts`) — jamais par un composant client. (Le
+// drapeau de la collecte, `ingest_relay_pct`, n'est plus lu depuis C12 : la
+// console relaie toute la collecte.)
 //
-// POURQUOI UN CACHE DE 30 S. Le drapeau `ingest_relay_pct` est consulté à
-// CHAQUE beacon relayable. Une requête SQL de plus par beacon doublerait les
-// allers-retours de l'ingestion pour lire une valeur qui change quelques fois
-// par semaine. 30 s, c'est le délai promis au coupe-circuit : un `update …
+// POURQUOI UN CACHE DE 30 S. Un drapeau est consulté à CHAQUE requête
+// relayable. Une requête SQL de plus par requête doublerait les allers-retours
+// pour lire une valeur qui change quelques fois par semaine. 30 s, c'est le
+// délai promis au coupe-circuit : un `update …
 // set value = '0'` est vu par toutes les instances en moins de 30 s (chaque
 // instance serverless tient son propre cache ; aucune ne le garde plus longtemps).
 //
@@ -16,8 +18,7 @@
 // n'existe pas (`42P01`). Et la base peut être injoignable, suspendue
 // (incident Neon du 24/09) ou lente. Dans TOUS ces cas la lecture rend `null`
 // et l'appelant retombe sur son défaut d'environnement. Un drapeau illisible ne
-// doit jamais faire tomber une route d'ingestion : il la ramène au
-// comportement par défaut, celui d'avant P3.
+// doit jamais faire tomber une route : il la ramène au comportement par défaut.
 //
 // L'échec lui aussi est mis en cache 30 s : une base coupée ne doit pas être
 // relancée à chaque beacon (ni rallonger chaque beacon du délai de connexion).
@@ -25,10 +26,9 @@
 import { pool } from "./db";
 import { createLogger } from "./journal";
 
-// Son propre journal, pas celui de `lib/ingest.ts` : depuis P4, l'API de lecture
-// lit aussi ce module (relais de l'API v1), et importer l'ingestion de la console
-// pour une ligne de journal ferait entrer tout son module — et son pool
-// d'authentification — dans le service `api`, qui compile ces routes.
+// Son propre journal : l'API de lecture lit aussi ce module (relais de l'API v1),
+// et le service `api`, qui compile ces routes, n'a pas à tirer le journal de la
+// collecte.
 const log = createLogger("platform-flag");
 
 /** Durée de vie d'une valeur lue (ou d'un échec de lecture). */
@@ -36,8 +36,6 @@ export const TTL_DRAPEAU_MS = 30_000;
 /** Au-delà, la lecture est abandonnée et le défaut s'applique. */
 export const DELAI_LECTURE_MS = 1_500;
 
-/** Clé du pourcentage de relais d'ingestion (P3). */
-export const CLE_RELAIS = "ingest_relay_pct";
 /** Clé du pourcentage de relais de l'API de lecture v1 vers le service `api` (P4). */
 export const CLE_RELAIS_API = "api_relay_pct";
 /**
@@ -141,42 +139,15 @@ export function lirePourcentage(brut: string | null | undefined): number | null 
   return Number(v);
 }
 
-/**
- * Défaut d'environnement du pourcentage de relais (`INGEST_RELAY_PCT`), 0 s'il
- * est absent ou invalide. C'est ce qui s'applique quand la base ne répond pas :
- * le laisser à 0 en production garantit qu'une base illisible ne relaie rien.
- */
-export function pourcentageParDefaut(env: Record<string, string | undefined> = process.env): number {
-  return lirePourcentage(env.INGEST_RELAY_PCT) ?? 0;
-}
-
 // Un lecteur par instance. Pas sur `globalThis` : ce n'est qu'un cache, le
 // perdre au rechargement à chaud de `next dev` coûte une requête.
 const lecteur = creerLecteurDrapeaux({
   requete: (sql, params) => pool.query(sql, params),
 });
-let valeurInvalideSignalee = false;
-
-/**
- * Pourcentage de relais en vigueur : la base si elle répond avec une valeur
- * valide, sinon le défaut d'environnement. Ne lève jamais.
- */
-export async function pourcentageRelais(): Promise<number> {
-  const brut = await lecteur.lire(CLE_RELAIS);
-  const pct = lirePourcentage(brut);
-  if (brut !== null && pct === null && !valeurInvalideSignalee) {
-    valeurInvalideSignalee = true;
-    // Impossible en base migrée (contrainte v87), sauf à l'avoir retirée : on
-    // le dit, et on s'en tient au défaut.
-    log.warn("platform_flag : valeur de pourcentage invalide, défaut d'environnement", { key: CLE_RELAIS });
-  }
-  return pct ?? pourcentageParDefaut();
-}
 
 /**
  * Pourcentage de relais de l'API v1 (P4) : la base si elle répond avec une valeur
- * valide, sinon `API_RELAY_PCT`, sinon 0. Ne lève jamais. Même lecteur, même
- * cache de 30 s que la collecte : un coupe-circuit par signal, un geste chacun.
+ * valide, sinon `API_RELAY_PCT`, sinon 0. Ne lève jamais.
  */
 export async function pourcentageRelaisApi(): Promise<number> {
   const pct = lirePourcentage(await lecteur.lire(CLE_RELAIS_API));

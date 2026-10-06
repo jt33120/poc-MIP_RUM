@@ -312,9 +312,8 @@ async function Integration({
   const recetteChoisie = recettesChoisies?.agents[0] ?? null;
   const marqueServeur = SERVEURS.find((x) => x.value === serveur)?.marque ?? null;
 
-  // La clé n'est exigée que si la collecte ferme l'accès sans clé ; lu ici plutôt
-  // qu'importé de lib/ingest.ts, qui tirerait la base dans cet écran (cliquet de la
-  // piste C). Même variable, même règle.
+  // La clé n'est exigée que si la collecte ferme l'accès sans clé : la même
+  // variable que le collector (`receiver.mjs`), lue ici sans tirer la base.
   const cleExigee = process.env.REQUIRE_API_KEY === "true";
 
   return (

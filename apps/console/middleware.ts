@@ -80,9 +80,9 @@ export async function middleware(req: NextRequest) {
   if (req.nextUrl.pathname.startsWith("/api/extension")) return NextResponse.next();
   // /api/ingest/* : beacons OTLP des sites clients (navigateurs anonymes, aucun
   // cookie de session — par construction, ce sont des visiteurs du site du
-  // client, pas des utilisateurs de la console). L'auth d'ingestion est la clé
-  // d'API vérifiée DANS le handler (REQUIRE_API_KEY), plus le rate limit et la
-  // whitelist CORS. Sans ce bypass, chaque beacon reçoit un 302 vers /login et
+  // client, pas des utilisateurs de la console). Le handler les relaie au
+  // collector (C12), qui vérifie la clé d'API (REQUIRE_API_KEY), le débit et les
+  // origines CORS. Sans ce bypass, chaque beacon reçoit un 302 vers /login et
   // TOUTE l'ingestion tombe en silence — le SDK ne suit pas les redirections.
   if (req.nextUrl.pathname.startsWith("/api/ingest")) return NextResponse.next();
   // /demo : ouvre elle-même la session démo, donc s'exécute sans cookie.

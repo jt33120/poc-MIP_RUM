@@ -1,5 +1,5 @@
 {
-  "releve": "2026-10-04",
+  "releve": "2026-10-06",
   "ecrans": [
     "/",
     "/acquisition",
@@ -73,11 +73,6 @@
     "/admin/privacy/export",
     "/api/auth/oidc/callback",
     "/api/dashboards/[id]/export",
-    "/api/extension/heartbeat",
-    "/api/extension/resolve",
-    "/api/ingest/v1/logs",
-    "/api/ingest/v1/replay",
-    "/api/ingest/v1/traces",
     "/api/metrics",
     "/api/releases",
     "/api/replay/[sessionId]",

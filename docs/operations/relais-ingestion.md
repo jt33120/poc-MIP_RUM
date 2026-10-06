@@ -1,243 +1,154 @@
-# Relais d'ingestion : de la console Vercel au collector Railway (P3)
+# Relais de collecte : de la console Vercel au collector Railway (P3 → C12)
 
-La console relaie une part des beacons vers le collector Railway au lieu de les écrire
-elle-même. C'est la bascule de la collecte, **sans changer une seule URL chez les
-clients** : le SDK, l'extension et la CI continuent de viser `mip-rum-console.vercel.app`.
-Le pourcentage se règle en base, se coupe en moins de 30 s, et le chemin local reste en
-place comme repli.
+La console **relaie** au collector Railway tout ce que les capteurs lui envoient encore
+(traces, logs, rejeux, source maps par jeton, battements et résolutions de l'extension,
+marqueurs de déploiement par jeton de CI). Depuis C12 (06/10/2026), elle **n'écrit plus
+rien elle-même** : ni tirage au pourcentage, ni chemin local, ni repli. Collector
+injoignable : **503 + `retry-after`**, et le client rejoue.
 
-Code : `apps/console/lib/ingest-relay.ts` (relais), `apps/console/lib/platform-flag.ts`
-(drapeau), `packages/db/sql/migration-v87.sql` (table `platform_flag`). Tests :
-`tests/unit/ingest-relay.test.ts`, `tests/contract/relais-ingestion.test.ts`.
+Code : `apps/console/lib/ingest-relay.ts` (relais) et les routes `app/api/ingest/v1/*`,
+`app/api/sourcemaps`, `app/api/extension/{resolve,heartbeat}`, `app/api/v1/deploys`.
+Tests : `tests/unit/ingest-relay.test.ts`, `tests/contract/relais-ingestion.test.ts`,
+`tests/contract/ingest-parity.test.ts` (le relais est transparent : même réponse, mêmes
+lignes qu'un envoi direct au collector).
 
-## État au 29/09/2026 : 100 %
+## État au 06/10/2026 : relais seul (C12)
 
-Le drapeau `ingest_relay_pct` vaut **100 depuis le 28/09/2026, 07:10 UTC**. Il est monté à 10 %
-puis à 50 % le 27/09 au soir, après l'apply qui a créé le collector (#332). Au 29/09, le
-collector a répondu à 4 208 requêtes en 48 h (99,3 % en 2xx, 3 en 5xx, relevé Railway).
+- Depuis le 06/10/2026, 10:12, la collecte des clients va **en direct** au collector
+  (`NEXT_PUBLIC_DIRECT_COLLECTOR_URL` posée sur Vercel ; « Collecte directe des clients »,
+  plus bas). La console ne reçoit plus que ce qui la vise encore : codes de suivi anciens,
+  domaines de l'extension gardés sur la console, CI.
+- Ce qu'elle reçoit, elle le relaie. Le comportement de l'ancien mode strict
+  (`CONSOLE_INGEST_RELAY_STRICT=1`, C11) est devenu le seul : la variable n'est plus lue
+  et peut être retirée de Vercel.
+- Le drapeau `platform_flag.ingest_relay_pct` et la variable `INGEST_RELAY_PCT` ne sont
+  plus lus. La ligne reste en base (aucune migration dans C12) ; elle est inerte.
+- Ce qui reste écrit par la console, hors collecte : l'envoi de source maps **depuis
+  l'écran** (session admin), et le marqueur de déploiement au jeton historique
+  `CONSOLE_API_TOKENS` (jusqu'au 31/12/2026, annoncé par `Sunset`).
 
-Ce que 100 % ne veut pas dire : la console reste le point d'arrivée des capteurs, et elle
-**écrit elle-même en repli** quand le collector ne répond pas (voir « Ce que fait le relais,
-requête par requête »). Le collector ne sera la seule porte d'entrée qu'avec la collecte
-directe (P6b.G, plus bas) puis le retrait de la base de la console (C12).
+### Historique : de P3 au relais seul
 
-### Historique : l'état inerte du 26/09/2026
+- 24/09/2026 (#286) : relais fusionné, inerte (variable absente, migration v87 non appliquée).
+- 27/09/2026 : collector créé ; drapeau à 10 %, puis 50 %.
+- 28/09/2026, 07:10 UTC : drapeau à 100 %. La console écrivait encore elle-même en
+  **repli** (erreur de connexion, réponse non signée du routeur, disjoncteur ouvert).
+- C11 : `CONSOLE_INGEST_RELAY_STRICT=1` supprimait le repli sans retirer le code.
+- 06/10/2026 : collecte directe des clients ouverte, puis **C12** : le chemin d'écriture local
+  de la collecte quitte la console (ADR 0005, point 5).
 
-Fusionné le 24/09 (#286), le relais ne faisait rien en production : `CONSOLE_INGEST_RELAY_URL`
-n'était pas posée sur Vercel, la migration v87 (table `platform_flag`) n'était pas appliquée
-(base Neon suspendue), et la ligne qu'elle sème vaut `'0'`. Sans la table, la lecture du
-drapeau échoue en `42P01` et la console retombe sur `INGEST_RELAY_PCT` (défaut 0).
+Ce que P2 avait aligné sur le collector (contrat de parité) reste vrai, puisque c'est
+désormais le collector qui répond : base injoignable → 503 + `retry-after: 2` ; corps sans
+longueur annoncée au-delà de 2 Mo → 413 ; JSON précédé d'une BOM → 400 ; rejeu sans
+`x-mip-seq` décimal → 400.
 
-Ce qui a changé quand même à la fusion (la console est déployée à chaque fusion), et vient de **P2** (voulu : la console répond comme
-le collector, contrat de parité `tests/contract/ingest-parity.test.ts`) :
+## Configuration
 
-- une base injoignable rend **503 + `retry-after: 2`** au lieu de 500. Le SDK rejoue les
-  deux de la même façon ;
-- un corps **sans longueur annoncée** (transfert par morceaux) de plus de 2 Mo rend **413**,
-  là où `req.json()` lisait jusqu'au plafond Vercel. `fetch` et `sendBeacon` annoncent une
-  longueur : le SDK n'est pas concerné ;
-- un JSON précédé d'une **BOM UTF-8** rend **400** (`req.json()` la retirait). Le SDK n'en
-  envoie pas ; la tolérer serait à faire sur les DEUX ports à la fois (cas de parité dédié) ;
-- un **rejeu** sans en-tête `x-mip-seq`, ou avec une valeur qui n'est pas un entier décimal,
-  rend **400**. Il était accepté comme séquence 0 (`Number(null) === 0`) et pouvait écraser
-  en silence le vrai premier morceau. Le SDK envoie toujours `x-mip-seq`.
+| Variable | Où | Valeur |
+|---|---|---|
+| `EDGE_PROXY_SECRET` | collector (variable partagée Railway) **et** Vercel | la même valeur, ≥ 32 caractères. Côté Vercel, **une seule** valeur. Le collector en accepte deux pendant une rotation. |
+| `CONSOLE_INGEST_RELAY_URL` | Vercel | l'URL du collector, par ex. `https://collector-production-d769.up.railway.app` (sans chemin). **`https:` obligatoire** (`http:` seulement pour `localhost`, `127.0.0.1`, `::1`). |
+| `IDENTITY_HASH_SECRET` + `IDENTITY_HASH_FINGERPRINT` | collector seulement | le collector hache l'identité. **Rien sur Vercel.** |
 
-## Avant de monter le pourcentage
+**Sans URL ni secret valides, chaque route de collecte répond 503 + `retry-after`** et
+journalise une fois `relay not configured` : rien n'est écrit, nulle part. Relayer sans
+secret ferait prendre au collector le trafic pour du trafic direct, et il géolocaliserait
+l'adresse de Vercel ; on ne relaie pas.
 
-Chaque point ci-dessous est bloquant.
+Avant de transmettre, la console vérifie le collector (`GET /health`, cache 60 s, réussi ou
+non) : 200, en-tête `x-mip-collector: 1`, `edge_protocol = "mip-edge/1"`,
+`edge_trust = true`. Sinon : 503 + `retry-after` (journal `relay: collector unhealthy`).
 
-1. **La base répond** (Neon rétabli) et `migration-v87.sql` figure dans `schema_migration` :
-
-   ```sql
-   select filename, applied_at from schema_migration where filename = 'migration-v87.sql';
-   select * from platform_flag;
-   ```
-
-2. **Le collector est créé et déployé** (code P2, IaC #284 ; pas encore créé au 26/09/2026), avec 2 répliques, et son `/health` affiche le bord de
-   confiance **et porte la signature** `x-mip-collector: 1` :
-
-   ```sh
-   curl -si https://<collector>.up.railway.app/health
-   # attendu : en-tête "x-mip-collector: 1" ;
-   #           "service":"collector", "edge_protocol":"mip-edge/1", "edge_trust":true
-   ```
-
-   La console fait la même vérification, en cache 60 s. Si la signature manque, ou si
-   `edge_protocol` ou `edge_trust` ne correspond pas, elle ne relaie rien (journal
-   `relay bypass: collector health`). La signature est ce qui distingue un 404 **métier**
-   du collector d'un 404 du routeur Railway (voir la matrice de repli).
-   `id_fp` n'est **pas** comparé : depuis le 23/09, Vercel ne hache plus rien, et seul le
-   collector hache.
-
-3. **Les secrets sont posés.**
-
-   | Variable | Où | Valeur |
-   |---|---|---|
-   | `EDGE_PROXY_SECRET` | collector (variable partagée Railway) **et** Vercel | la même valeur, ≥ 32 caractères. Côté Vercel, **une seule** valeur. Le collector en accepte deux pendant une rotation. |
-   | `CONSOLE_INGEST_RELAY_URL` | Vercel | l'URL du collector, par ex. `https://collector-production.up.railway.app` (sans chemin). **`https:` obligatoire** : en `http:`, le secret de bord, les clés d'API et le jeton d'upload partiraient en clair ; la console éteint alors le relais (journal `relay disabled`). `http:` n'est accepté que pour `localhost`, `127.0.0.1` et `::1` (tests). |
-   | `INGEST_RELAY_PCT` | Vercel, **à ne pas poser** | défaut du pourcentage quand la base est illisible. Laissé absent, il vaut 0 : une base en panne ne relaie rien. |
-   | `IDENTITY_HASH_SECRET` + `IDENTITY_HASH_FINGERPRINT` | collector seulement | le collector hache l'identité. **Rien sur Vercel.** |
-
-   Sans `EDGE_PROXY_SECRET` valide côté Vercel, le relais reste éteint (journal
-   `relay disabled`). Relayer sans secret ferait prendre au collector le trafic pour du
-   trafic direct, et il géolocaliserait alors l'adresse de Vercel.
-
-4. **Les clés d'ingestion sont provisionnées** (R8a), ou `REQUIRE_API_KEY=false` est posé
-   sur le collector. Un 403 du collector est rendu tel quel au client : **le relais ne se
-   replie pas sur un 403**.
-
-5. **Fumée de preview** : traces, logs et replay pour l'app `mip-probe`. Dans les journaux
-   Vercel, on doit voir la requête partir vers le collector, et dans ceux du collector la
-   ligne `ingested`.
-
-6. **La conformité (PR #296, `p4/conformite-api`, ouverte au 26/09/2026 ; elle remplace
-   #285, `p3/conformite-bascule`, fermée) fusionnée ET déployée sur Vercel AVANT le premier
-   `update … set value = '<n>'` avec n > 0.** Vérifier le texte en ligne de
-   `/legal/confidentialite` : il doit désigner le collector Railway comme celui qui reçoit,
-   hache et écrit les mesures relayées. Sinon, dès 10 %, la page publique et
-   `docs/CONFORMITE.md` §7 affirment que Railway ne fait que lire alors qu'il écrit.
-
-   **Aucun test ne tient ce prérequis.** `tests/unit/conformite.test.ts` compare les textes
-   au code, pas à la valeur du drapeau en base : il est vert AVANT la bascule (sur `master`)
-   et vert APRÈS (sur la branche de #296). Il ne rougit **pas** le jour de la
-   bascule. La montée est un `update` en base, pas un commit : rien dans la CI ne la voit.
-   La garde est **humaine** — c'est ce point de la liste.
-
-## Monter le pourcentage
-
-```sql
-update platform_flag set value = '10', updated_by = '<prénom>' where key = 'ingest_relay_pct';
+```sh
+curl -si https://<collector>.up.railway.app/health
+# attendu : en-tête "x-mip-collector: 1" ;
+#           "service":"collector", "edge_protocol":"mip-edge/1", "edge_trust":true
 ```
-
-- Montée prévue : **0 → 10 % (2 h) → 50 % (une nuit) → 100 %**, puis au moins 3 jours à
-  100 % (le soak).
-- L'effet est visible en moins de 30 s : chaque instance Vercel relit la valeur toutes les
-  30 s.
-- Le tirage se fait **par requête**. À 10 %, une même session a des lots des deux côtés.
-  C'est sans conséquence : les deux chemins écrivent les mêmes lignes (contrat de parité,
-  `tests/contract/ingest-parity.test.ts`).
-- La valeur est contrainte en base : un entier de 0 à 100, sans « % » ni zéro de tête. Une
-  faute de frappe fait échouer l'`update`, au lieu de laisser croire que la bascule a monté.
-- `updated_at` se met à jour tout seul. Renseigner `updated_by` : tout le monde se connecte
-  avec le même rôle, et c'est la seule trace de qui a changé la valeur.
-
-## Couper
-
-```sql
-update platform_flag set value = '0', updated_by = '<prénom>' where key = 'ingest_relay_pct';
-```
-
-- **Effet en moins de 30 s**, sans redéploiement. C'est le coupe-circuit, et le geste à
-  faire en premier.
-- En second recours : Instant Rollback Vercel vers le déploiement d'avant P3, ou retrait de
-  `CONSOLE_INGEST_RELAY_URL` (qui demande un redéploiement).
-- Le collector, lui, peut rester en place : sans trafic relayé, il ne fait rien.
 
 ## Ce que fait le relais, requête par requête
 
-- Le corps est lu **une seule fois**, avec une lecture bornée. Les mêmes octets servent au
-  relais et, en cas de repli, au chemin local. Un corps trop gros est refusé localement
-  (413), sans appel réseau.
+- Le corps est lu **une seule fois**, borné. Un corps trop gros est refusé par la console
+  (413), sans appel réseau : traces et logs au-delà de 2 Mo, rejeu au-delà de 2 Mio, source
+  maps au-delà de 4 Mio (plafond Vercel ; le port direct `/v1/sourcemaps` du collector en
+  accepte plus), battement et marqueur au-delà de leur plafond. Tout le reste — clé, débit,
+  format, écriture — est jugé par le collector.
 - **En-têtes transmis, liste exacte :** `content-type`, `content-encoding`,
-  `x-mip-session`, `x-mip-app`, `x-mip-seq`, `x-mip-key`, plus `authorization` pour les
-  source maps par jeton. S'y ajoutent `x-mip-edge-auth` (le secret), `x-mip-edge-country` (le pays
-  de Vercel, s'il vaut `^[A-Z]{2}$`) et, pour traces et logs, `x-mip-edge-origin` (l'`Origin` de la page, 30/09/2026).
+  `x-mip-session`, `x-mip-app`, `x-mip-seq`, `x-mip-key` et `origin` (traces, logs, rejeu :
+  le collector en tire les en-têtes CORS) ; `content-type`, `content-encoding` et
+  `authorization` pour les source maps. S'y ajoutent `x-mip-edge-auth` (le secret),
+  `x-mip-edge-country` (le pays de Vercel, s'il vaut `^[A-Z]{2}$`) et, pour traces et logs,
+  `x-mip-edge-origin` (l'`Origin` de la page, qui autorise un lot de l'extension sans clé).
 - **Jamais d'adresse IP** : ni `x-forwarded-for`, ni `x-real-ip`, ni
   `x-vercel-forwarded-for`, ni `forwarded`. La phrase « aucune adresse IP n'est transmise
   ni stockée » reste vraie.
 - La réponse du collector est **reconstruite** : statut, corps et `retry-after` du
-  collector ; `content-type: application/json` **imposé** et `x-content-type-options:
-  nosniff` (un hôte qui répondrait `text/html` ne fait pas rendre de HTML sous l'origine de
-  la console, où vit le cookie admin) ; en-têtes CORS de la console.
-- **C11 — les routes machine** passent par le même relais, sous le même drapeau
-  (`ingest_relay_pct`) et le même disjoncteur :
-  - `GET /api/extension/resolve` → `/v1/extension/resolve` (le SEUL `GET` relayé : une
-    lecture, sa requête transmise, aucun en-tête ; `cache-control` du collector rendu) ;
+  collector ; `content-type: application/json` **imposé** (sauf `application/x-protobuf`
+  signé) et `x-content-type-options: nosniff` — un hôte qui répondrait `text/html` ne fait
+  pas rendre de HTML sous l'origine de la console, où vit le cookie admin.
+- **CORS** : ceux du collector sur ses réponses signées aux navigateurs (traces, logs, rejeu ;
+  il lit le registre des origines) ; sur les réponses que la console rend elle-même (413,
+  503), le socle statique seulement — la console ne lit plus la base. Le préflight
+  `OPTIONS` et le `GET` de diagnostic de ces trois routes sont relayés aussi.
+- **Les routes machine** :
+  - `GET /api/extension/resolve` → `/v1/extension/resolve` (sa requête transmise, aucun
+    en-tête ; `cache-control` du collector rendu ; `endpoint` vide complété par l'adresse
+    directe si la collecte directe est ouverte) ;
   - `POST /api/extension/heartbeat` → `/v1/extension/heartbeat` (`content-type` et
-    `user-agent`, que la route inscrit à l'inventaire) ;
+    `user-agent`, que le collector inscrit à l'inventaire) ;
   - `POST /api/v1/deploys` → `/v1/deploys`, pour un **jeton de CI** `deploys:write`
-    seulement (`content-type`, `authorization`). NON idempotent : un 502/504 non signé
-    ou une connexion perdue après l'envoi rendent 503 + `retry-after`, jamais un repli
-    qui poserait deux marqueurs. Un jeton `CONSOLE_API_TOKENS` n'est jamais relayé (le
-    collector ne le lit pas) : la console le traite elle-même jusqu'au 31/12/2026.
-- **Ce qui n'est jamais relayé :**
-  - `OPTIONS` (préflight local) ;
-  - la branche admin des source maps (cookie de session) ;
-  - tout autre `GET`.
+    (`content-type`, `authorization`). Un jeton `CONSOLE_API_TOKENS` n'est jamais relayé
+    (le collector ne le lit pas) : la console le traite elle-même jusqu'au 31/12/2026.
+- **Jamais relayé :** la branche admin des source maps (cookie de session) et leur lecture
+  (`GET /api/sourcemaps`) ; le préflight des routes de l'extension (CORS fixe, `*`).
 - `NEXT_PUBLIC_RUM_ENDPOINT` n'est pas touché : il alimente aussi `log-forward`.
 
 ### Chaîne des délais
 
-**collector 4 s < relais 8 s < fonction 30 s.**
+**collector 4 s < sonde `/health` 2 s + relais 8 s < fonction 30 s.**
 
 - Le collector a un budget **dur** de 4 s par requête : au-delà, il rend 503, et presque
   toujours **rien n'est commité**. Une exception, irréductible : un COMMIT déjà arrivé au
-  serveur dont la réponse se perd en route. Personne ne sait alors s'il a validé ; le
-  collector rend 503 `ingestion outcome unknown` et journalise en erreur
-  `deadline: commit outcome unknown, replay may duplicate`. C'est la **seule** source
-  possible de doublons de logs, et elle se compte dans les journaux (1 à 2 cas sur 42 au
-  banc, sous 10 s de latence injectée : `scripts/bench/preuve-echeance-collecteur.mjs`).
+  serveur dont la réponse se perd en route ; le collector rend 503 `ingestion outcome
+  unknown` et journalise `deadline: commit outcome unknown, replay may duplicate`.
 - Le relais attend 8 s (`DELAIS.relaisMs`) : le collector répond donc toujours avant, 503
   compris. Au-delà, 503 + `retry-after: 5`.
-- Les quatre routes d'ingestion déclarent `export const maxDuration = 30`. Au pire, une
-  requête enchaîne la lecture du drapeau (1,5 s), la sonde `/health` (2 s), le relais (8 s)
-  puis, sur un repli tardif, l'écriture locale (reprises et verrou) : environ 27 s. Sans ce
-  plafond explicite, le défaut du projet Vercel (10 s en Hobby, 15 s en Pro hors Fluid)
-  couperait la fonction **avant** le 503 du relais : un 504 `FUNCTION_INVOCATION_TIMEOUT`
-  sans aucune ligne `relay timeout` au journal.
+- Les routes de collecte déclarent `export const maxDuration = 30` : sans ce plafond, le
+  défaut du projet Vercel couperait la fonction **avant** le 503 du relais (un 504
+  `FUNCTION_INVOCATION_TIMEOUT` sans ligne `relay timeout` au journal).
 
-### Matrice de repli
+### Matrice des réponses
 
 Le collector **signe toutes ses réponses** (`x-mip-collector: 1`, posé par le kit, jusque
-sur ses 404, 413 et 500). Le routeur Railway ne signe rien. Une réponse signée est celle du
-collector : elle est rendue telle quelle, **sans repli et sans échec compté**. Seules les
-réponses **non signées** peuvent déclencher un repli.
+sur ses 404, 413 et 500). Le routeur Railway ne signe rien.
 
-| Issue du relais | traces | replay | sourcemaps | **logs** |
-|---|---|---|---|---|
-| réponse **signée**, quel que soit le statut (2xx, 400, 401, 403, **404 métier**, 409, 413, 425, 429, 500, 503…) | réponse du collector | idem | idem | idem |
-| erreur de connexion (DNS, refus, TLS, délai de connexion) | **repli local** | repli | repli | repli |
-| connexion perdue **après** l'envoi | repli | repli | repli | **503 + retry-after** |
-| 404, 405 **non signés** (service absent, mal routé) | repli | repli | repli | repli |
-| 502, 504 **non signés** (routeur Railway) | repli | repli | repli | **503 + retry-after** |
-| autre statut non signé | rendu tel quel | idem | idem | idem |
-| délai de 8 s dépassé | **503 + retry-after: 5** | idem | idem | idem |
+| Issue du relais | Réponse au client |
+|---|---|
+| réponse **signée**, quel que soit le statut (2xx, 400, 401, 403, **404 métier**, 409, 413, 425, 429, 500, 503…) | celle du collector |
+| 404, 405 **non signés** (service absent, mal routé) | **503 + `retry-after: 5`** |
+| 502, 504 **non signés** (routeur Railway) | **503 + `retry-after: 5`** |
+| autre statut non signé | rendu tel quel |
+| erreur réseau, avant ou après l'envoi | **503 + `retry-after: 5`** |
+| délai de 8 s dépassé | **503 + `retry-after: 5`** |
+| `/health` en échec (cache 60 s), ou configuration absente | **503 + `retry-after: 5`**, sans envoi |
 
-Le 404 **métier** qui a motivé la signature : `POST /v1/sourcemaps` pour une app inconnue
-rend 404. Sans signature, il était pris pour un routage raté : repli local, et un échec
-compté. Cinq envois d'une CI en 30 s ouvraient le disjoncteur de l'instance, pour **tous**
-les clients.
+Dans aucun cas la console n'écrit. Les logs ne sont pas idempotents (`rum_log`, clé
+`bigserial`) : un 502/504 du routeur ou une connexion perdue après l'envoi peuvent cacher un
+lot déjà écrit, et le rejeu du SDK le doublerait. C'est le même risque qu'en envoi direct au
+collector ; l'ancien repli local, lui, l'aggravait.
 
-Un 502/504 du routeur ne prouve pas que rien n'est écrit : une réplique a pu committer puis
-tomber avant de répondre. D'où le 503 pour les logs, et le repli pour les signaux
-idempotents seulement.
+Le cache de santé tient lieu de disjoncteur : un collector tombé coûte une sonde de 2 s par
+minute et par instance Vercel, puis des 503 immédiats.
 
-Pourquoi les logs sont à part : ce sont les **seuls** à ne pas être idempotents.
+## Retour arrière
 
-- `writeLogsWithClient` insère dans `rum_log`, dont la clé est un `bigserial`, avec une
-  clause de conflit vide. Le même lot écrit deux fois donne deux fois chaque log.
-- Les traces sont idempotentes : partout `on conflict (span_id | action_id | …) do nothing`,
-  et `greatest` sur la session.
-- Le replay aussi : `on conflict (session_id, seq) do nothing`.
-- Les source maps aussi : un contenu identique rend `unchanged`, un contenu différent rend
-  409 pour tout le lot.
+Il n'y a plus de coupe-circuit en base : la collecte ne peut aller qu'au collector.
 
-Seul effet d'un repli sur un signal idempotent : le compteur de débit (`rate_counter`)
-compte le beacon deux fois.
-
-### Disjoncteur
-
-- 5 échecs en 30 s font contourner le relais pendant 60 s. Comptent comme échecs : délai
-  dépassé, erreur réseau, réponse **non signée** 404, 405 ou ≥ 500.
-- Une réponse **signée** du collector (400, 403, 404, 429, 500, 503…) n'est **pas** un
-  échec : il a répondu, et le disjoncteur ne protège que de l'attente. Conséquence à
-  connaître : si la **base** du collector tombe, le disjoncteur ne s'ouvre jamais —
-  chaque beacon attend le 503 signé du collector (au plus ≈ 4,75 s, budget + grâce du
-  COMMIT). Le geste, dans ce cas, c'est `platform_flag` à `0`.
-- L'état vit **en mémoire d'instance**. Chaque instance serverless Vercel a le sien, qui
-  naît fermé et meurt avec elle. Il protège une instance contre 8 s d'attente par beacon.
-  **Ce n'est pas un coupe-circuit global** : le coupe-circuit global, c'est
-  `platform_flag`.
+- Collector en panne : le réparer (runbook) ; en attendant, les SDK gardent leurs lots et les
+  rejouent, comme en collecte directe.
+- Revenir au code d'avant C12 : Instant Rollback Vercel vers un déploiement antérieur. Ce
+  code relit `CONSOLE_INGEST_RELAY_STRICT` : tant qu'elle vaut `1` sur Vercel, il reste en
+  relais pur ; la retirer et redéployer rend le repli local (et `ingest_relay_pct` de
+  nouveau lu).
 
 ## Ce qu'on surveille
 
@@ -245,13 +156,11 @@ compte le beacon deux fois.
 
 | Message | Sens | Réaction |
 |---|---|---|
-| `relay fallback` (`raison`, `statut` ou `code`) | repli local : le beacon est écrit, par la console | Viser ≈ 0. Une rafale = collector en difficulté. |
+| `relay not configured` | URL absente, invalide ou `http:` hors localhost, ou secret invalide sur Vercel : **toute** la collecte reçue par la console répond 503 | Corriger la variable, redéployer. |
+| `relay: collector unhealthy` | `/health` refusé, non conforme ou non signé : 503 pendant 60 s | Vérifier le déploiement du collector et son `EDGE_PROXY_SECRET`. |
 | `relay timeout` | 8 s dépassées, 503 rendu au client | Toute occurrence mérite un regard : le collector dépasse son budget. |
-| `relay failed, outcome unknown` | logs : connexion perdue après l'envoi, ou 502/504 non signé | Rare. Doublons de logs possibles si le SDK rejoue. |
-| `relay circuit open` | une instance contourne le relais 60 s | Si elle se répète : couper (`value = '0'`). |
-| `relay bypass: collector health` | `/health` refusé, non conforme ou non signé | Vérifier le déploiement (collector à jour, `x-mip-collector`) et `EDGE_PROXY_SECRET` du collector. |
-| `relay disabled` | URL (invalide, ou `http:` hors localhost) ou secret invalide sur Vercel | Corriger la variable. |
-| `platform_flag illisible : défaut d'environnement` | table absente (`42P01`) ou base en erreur | Normal avant v87, anormal ensuite. |
+| `relay failed` | erreur réseau vers le collector, 503 rendu | Une rafale = collector injoignable. |
+| `relay: collector unreachable` | 404, 405, 502 ou 504 du routeur Railway, 503 rendu | Vérifier le routage et les répliques. |
 
 **Journaux du collector** :
 
@@ -259,59 +168,30 @@ compte le beacon deux fois.
 - `en-têtes de bord non authentifiés retirés` : c'est le symptôme d'un `EDGE_PROXY_SECRET`
   désaccordé entre Vercel et Railway.
 
-**Lignes par app** (à comparer avant et après chaque palier ; attendu : ±10 % du trafic
-`mip-probe` mesuré en P0.T) :
-
-```sql
--- Métriques et logs par app et par heure, sur 24 h.
-select app_id, date_trunc('hour', ts) as heure, count(*) as metriques
-  from rum_metric where ts > now() - interval '24 hours'
- group by 1, 2 order by 2 desc, 1;
-select app_id, date_trunc('hour', ts) as heure, count(*) as logs
-  from rum_log where ts > now() - interval '24 hours'
- group by 1, 2 order by 2 desc, 1;
-select app_id, date_trunc('hour', created_at) as heure, count(*) as chunks
-  from replay_chunk where created_at > now() - interval '24 hours'
- group by 1, 2 order by 2 desc, 1;
-```
-
 **Pays et identité** :
 
 ```sql
 -- Pas de pic DE/NL/US : ce serait un GeoIP sur l'adresse d'un relais.
 select geo_country, geo_source, count(*) from rum_session
  where last_seen_at > now() - interval '24 hours' group by 1, 2 order by 3 desc;
--- Identités hachées : non nulles seulement sur ce que le collector a écrit.
-select app_id, count(*) filter (where user_id_hash is not null) as hachees, count(*)
-  from rum_session where last_seen_at > now() - interval '24 hours' group by 1;
 ```
 
-Tant qu'une part passe par le chemin local, les sessions qu'il écrit n'ont pas d'identité :
-Vercel n'a pas de secret, c'est voulu. Une donnée manquante, jamais incohérente. Le
-recouvrement de `user_id_hash` d'un jour sur l'autre se vérifie une fois à 100 %.
+Depuis le relais pur, toute session est écrite par le collector : l'identité y est hachée.
 
 ## Ce qui reste à faire
 
-- **Conformité, fusionnée et déployée AVANT le premier `update platform_flag` au-dessus
-  de 0** (prérequis n° 6). La montée est un `update` en base, pas un commit : la
-  conformité ne peut pas « partir avec » elle. La PR #296 porte les
-  textes. Sur `master`, `lib/legal.ts` et `docs/CONFORMITE.md` §7 disent encore que Vercel collecte
-  et que Railway lit, et ne sont **pas** modifiés. `tests/unit/conformite.test.ts` reste
-  vert avant comme après : il ne signalera pas un oubli.
-- **Soak** : au moins 3 jours à 100 %, environ 0 `relay fallback`.
+- **Conformité.** Fait avant la montée (PR #296) : `lib/legal.ts` et `docs/CONFORMITE.md`
+  désignent le collector Railway comme celui qui reçoit, hache et écrit les mesures, la
+  console comme un relais qui ne garde ni ne transmet l'adresse IP. C12 n'y change rien.
+- **Soak** : le relais a porté 100 % du trafic de la console du 28/09 au 06/10/2026.
 - **P6b.G — collecte directe pour le GeoIP.** Le relais transmet le pays, jamais l'IP, et
-  saute donc la résolution. Premier périmètre, le 28/09/2026 : le capteur de la console
-  elle-même (« Collecte directe du dogfooding », plus bas). Pour les clients, le code est
-  prêt et inerte depuis le 30/09/2026 ; sa mise en service, pas avant le 05/10/2026, suit
-  « Collecte directe des clients », plus bas. Les apps à CSP figée restent en relais.
-- **P6b — exercices sur staging** : retour arrière par le drapeau, sous charge, chronométré.
-  Il sert à prouver le « < 30 s ».
-- **Relais pur (C11)** : après ≥ 7 jours à 100 % sans repli, `CONSOLE_INGEST_RELAY_STRICT=1`
-  sur Vercel. Le pourcentage est ignoré ; ce qui déclenchait un repli (connexion, réponse non
-  signée, disjoncteur, santé du collector) rend **503 + `retry-after`** et le SDK rejoue. Retour
-  arrière : retirer la variable, redéployer.
-- **Au-delà (C12)** : retirer le chemin d'écriture local de la console, une fois que le
-  relais pur a tenu. La console n'aura alors plus besoin de `DATABASE_URL` pour l'ingestion.
+  saute donc la résolution. Dogfooding direct le 28/09/2026, clients le 06/10/2026 (sections
+  suivantes). Les apps à CSP figée restent en relais.
+- **P6b — exercices sur staging** : panne du collector sous charge, chronométrée.
+- **Relais pur (C11)** : fait, puis rendu définitif par C12.
+- **C12 — fait le 06/10/2026** : le chemin d'écriture local de la collecte a quitté la console.
+  Restent à retirer, sans urgence : la variable `CONSOLE_INGEST_RELAY_STRICT` sur Vercel, la
+  ligne `ingest_relay_pct` en base (par une migration), et le chemin historique des marqueurs.
 
 ## Collecte directe du dogfooding (P6b.G, premier périmètre, 28/09/2026)
 
@@ -446,9 +326,9 @@ clé, rejeu, `geo_source = 'geoip'`), `tests/unit/ingest-endpoint.test.ts`,
 
 ### Ce que la voie directe change pour un client, et ce qu'elle ne change pas
 
-- **Pas de repli** : par la console, un collector injoignable laisse la console écrire elle-même ; en
-  direct, le SDK garde ses lots dans le stockage local et les rejoue au chargement suivant, et un
-  morceau de rejeu est perdu (le SDK ne rejoue pas un rejeu). D'où le critère des 7 jours.
+- **Pas de repli** : en direct, un collector injoignable fait garder ses lots au SDK, qui les rejoue
+  au chargement suivant, et un morceau de rejeu est perdu (le SDK ne rejoue pas un rejeu). Depuis
+  C12 (06/10/2026), c'est vrai aussi par la console, qui rend alors 503. D'où le critère des 7 jours.
 - **Même clé, même CORS** : le collector exige la clé (`REQUIRE_API_KEY: "true"`) — c'est déjà lui
   qui la vérifie pour les lots relayés — et lit les mêmes `app_registry.allowed_origins`. Le préflight annonce les en-têtes
   `x-mip-*` du rejeu et, depuis le 30/09/2026, `access-control-expose-headers: retry-after` (le SDK lit

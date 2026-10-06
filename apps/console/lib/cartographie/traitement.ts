@@ -116,7 +116,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
     faits: [
       { texte: "Sans signature : mode direct, et les en-têtes forgés sont ignorés et comptés.", sources: ["tests/unit/bord-de-confiance.test.ts:34-58"] },
       { texte: "Deux secrets acceptés pendant une rotation ; une signature fausse coupe le pays et le GeoIP.", sources: ["tests/unit/bord-de-confiance.test.ts:78-93"] },
-      { texte: "La console transmet le pays, jamais l'adresse.", sources: ["apps/console/lib/ingest-relay.ts:42-45"] },
+      { texte: "La console transmet le pays, jamais l'adresse.", sources: ["apps/console/lib/ingest-relay.ts:42-46"] },
     ],
     x: 370,
     y: 1600,
@@ -138,7 +138,7 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
         sources: [`${BACK}/shared/geoip.mjs:18-26`, "tests/unit/collecte-directe.test.ts:214-223"],
       },
       { texte: "Côté serveur, secrets, jetons, e-mails, IPv4 et longues suites de chiffres sont masqués.", sources: [`${BACK}/shared/scrub.mjs`] },
-      { texte: "Sur Vercel, sans le secret d'identité, l'identité est retirée plutôt que hachée.", sources: ["apps/console/lib/ingest-relay.ts:37-40"] },
+      { texte: "La console ne lit pas l'identité : elle relaie les octets, le collector seul la hache.", sources: ["apps/console/lib/ingest-relay.ts:30-31"] },
     ],
     x: 690,
     y: 1600,

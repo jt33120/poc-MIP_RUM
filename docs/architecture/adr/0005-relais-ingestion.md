@@ -1,6 +1,6 @@
 # ADR-0005 — La console relaie la collecte au collector, pour une durée datée
 
-- **Statut** : acceptée ; relais livré éteint (P3), montée à venir
+- **Statut** : acceptée ; relais livré éteint (P3), à 100 % le 28/09/2026 ; point 5 accompli le 06/10/2026 (C12)
 - **Date** : 2026-09-24
 - **Portée** : routes d'ingestion de la console, service `collector`, `platform_flag`
 
@@ -26,3 +26,7 @@ Un client réel et une extension publiée envoient leurs mesures à `mip-rum-con
 
 - **Basculer les clients directement** sur le domaine du collector : des semaines de coordination, et impossible pour les sites à CSP figée.
 - **Un rewrite Vercel** vers le collector : pas de repli, pas de coupe-circuit, et l'adresse du visiteur partirait avec la requête.
+
+## Suivi
+
+- **06/10/2026 — C12 fait.** Collecte directe des clients ouverte le même jour ; le chemin d'écriture local de la collecte a quitté la console. Ses routes ne font plus que relayer : sans collector joignable (configuration absente, santé en échec, erreur réseau, réponse non signée du routeur, délai dépassé), 503 + `retry-after`, rien d'écrit. `CONSOLE_INGEST_RELAY_STRICT` et `platform_flag.ingest_relay_pct` ne sont plus lus ; la ligne reste en base, inerte. Restent écrits par la console, hors collecte : l'envoi de source maps depuis l'écran (session admin) et le marqueur de déploiement au jeton historique, jusqu'au 31/12/2026.

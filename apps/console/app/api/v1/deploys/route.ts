@@ -6,12 +6,12 @@
 // C11 — DEUX JETONS, UNE FENÊTRE.
 //   · Le jeton de CI `deploys:write` (migration-v92), créé dans /admin/sourcemaps
 //     pour UNE application : le chemin du collector, qui sert la même route
-//     (`/v1/deploys`). Le relais d'ingestion la lui transmet quand il est allumé ;
-//     sinon la console l'écrit elle-même, par le même code et avec les mêmes
-//     refus (`@mip/backend/lib/deploiements.mjs`, contrat de parité).
+//     (`/v1/deploys`). Depuis C12 (06/10/2026), la console la lui RELAIE, sans
+//     chemin local : il vérifie le jeton et écrit.
 //   · Un jeton d'API de CONSOLE_API_TOKENS : l'ancien chemin, accepté jusqu'à
 //     `FIN_JETONS_HISTORIQUES` et annoncé comme tel (`Deprecation`, `Sunset`,
-//     RFC 8594). Le collector ne le lit pas.
+//     RFC 8594). Le collector ne le lit pas : la console l'écrit encore
+//     elle-même, et ce chemin disparaît à la fin annoncée.
 // Une session n'a rien à faire ici — y compris la démo, distribuée à quiconque
 // ouvre /demo : un marqueur fabriqué décale la lecture des régressions.
 import { NextResponse } from "next/server";
@@ -19,14 +19,12 @@ import {
   CORPS_DEPLOIEMENT_MAX,
   FIN_JETONS_HISTORIQUES,
   lireDeploiement,
-  PRIVILEGE_DEPLOIEMENT,
   REFUS_DEPLOIEMENT,
 } from "@mip/backend/lib/deploiements.mjs";
-import { lireJetonUpload, verifierJetonUpload } from "@mip/backend/lib/sourcemap-upload.mjs";
+import { lireJetonUpload } from "@mip/backend/lib/sourcemap-upload.mjs";
 import { lireCorpsBorne } from "@mip/backend/shared/limits.mjs";
 import { authenticateApi } from "@/lib/api/auth";
 import { SESSION_COOKIE } from "@/lib/auth";
-import { pool } from "@/lib/db";
 import { relayer } from "@/lib/ingest-relay";
 import { recordDeploy } from "@/lib/queries-deploys";
 import { authorizedAppsOf } from "@/lib/query-contract";
@@ -54,22 +52,13 @@ function cookieDeSession(entete: string | null): string | null {
 
 export async function POST(req: Request): Promise<Response> {
   const authorization = req.headers.get("authorization");
-  // Lu une fois, borné : il sert au relais ET au chemin local.
+  // Lu une fois, borné : un corps trop gros ne part pas au collector.
   const corps = await lireCorpsBorne(req.body as AsyncIterable<Uint8Array> | null, CORPS_DEPLOIEMENT_MAX);
 
-  // ── Le jeton de CI `deploys:write` : le chemin du collector ──
+  // ── Le jeton de CI `deploys:write` : relayé au collector, jamais écrit ici ──
   if (lireJetonUpload(authorization)) {
     if (!corps) return refus(413, REFUS_DEPLOIEMENT.tropGros);
-    const relayee = await relayer("deploys", req, corps, {});
-    if (relayee) return relayee;
-    // Dans l'ordre du collector : le jeton, puis le corps.
-    const jeton = await verifierJetonUpload(pool, authorization, PRIVILEGE_DEPLOIEMENT);
-    if (!jeton) return refus(401, REFUS_DEPLOIEMENT.jetonInvalide);
-    const lu = lireCorpsJson(corps);
-    if ("erreur" in lu) return refus(400, lu.erreur);
-    if (lu.appId !== jeton.app_id) return refus(403, REFUS_DEPLOIEMENT.horsPerimetre(lu.appId));
-    await recordDeploy(lu.appId, lu.version, lu.env, "ci", lu.ts ?? undefined);
-    return NextResponse.json({ ok: true, app_id: lu.appId, version: lu.version, env: lu.env }, { status: 201 });
+    return relayer("deploys", req, corps, {});
   }
 
   // ── L'ancien chemin : un jeton de CONSOLE_API_TOKENS, jusqu'à la fin annoncée ──

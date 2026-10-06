@@ -1,7 +1,8 @@
 // P5.4 — routes console des source maps : QUI peut écrire, et par quel port.
 //
-// POST /api/sourcemaps accepte un jeton dédié OU une session admin avec l'Origin
-// de la console ; jamais un jeton d'accès, jamais une session viewer ou démo.
+// POST /api/sourcemaps : la branche JETON est relayée au collector, qui seul la
+// juge et l'écrit (C12, 06/10/2026) ; la session admin avec l'Origin de la
+// console écrit ici ; jamais une session viewer ou démo.
 // Les lectures et écritures en base sont simulées ; le contrat d'upload RÉEL
 // (bornes, validation) s'exécute, et l'écriture est prouvée sur PostgreSQL
 // ailleurs. Les jetons de CI s'administrent depuis C9 par leurs commandes
@@ -10,7 +11,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const simul = vi.hoisted(() => ({
-  verifierJetonUpload: vi.fn(),
   enregistrerMaps: vi.fn(),
   listSourcemapReleases: vi.fn(),
   releaseManifest: vi.fn(),
@@ -22,7 +22,6 @@ const simul = vi.hoisted(() => ({
 vi.mock("@/lib/db", () => ({ pool: { simule: true }, q: vi.fn(), tx: vi.fn() }));
 vi.mock("../../packages/backend/lib/sourcemap-upload.mjs", async (original) => ({
   ...(await original<object>()),
-  verifierJetonUpload: simul.verifierJetonUpload,
   enregistrerMaps: simul.enregistrerMaps,
 }));
 vi.mock("@/lib/queries-sourcemap", async (original) => ({
@@ -110,20 +109,12 @@ describe("garde admin des routes API", () => {
 describe("POST /api/sourcemaps — port console", () => {
   const corps = { appId: "app-a", release: "2.3.1", maps: [{ filename: "main.js", content: MAP }] };
 
-  it("un jeton d'accès CONSOLE_API_TOKENS n'écrit jamais : 401, sans toucher la base", async () => {
-    // Vérificateur RÉEL : c'est lui qui doit refuser le format, pas la simulation.
-    const reel = await vi.importActual<typeof import("../../packages/backend/lib/sourcemap-upload.mjs")>(
-      "../../packages/backend/lib/sourcemap-upload.mjs",
-    );
-    const db = { query: vi.fn() };
-    simul.verifierJetonUpload.mockImplementation((_pool: unknown, authorization: string | null) =>
-      reel.verifierJetonUpload(db, authorization),
-    );
-    for (const bearer of ["tok", "scope"]) {
-      const reponse = await upload({ bearer }, corps);
-      expect(reponse.status).toBe(401);
+  it("tout envoi avec Authorization part au collector, jamais écrit ici : sans relais configuré, 503", async () => {
+    for (const bearer of ["tok", JETON]) {
+      const reponse = await upload({ bearer, origin: null }, corps);
+      expect(reponse.status).toBe(503);
+      expect(reponse.headers.get("retry-after")).toBeTruthy();
     }
-    expect(db.query).not.toHaveBeenCalled();
     expect(simul.enregistrerMaps).not.toHaveBeenCalled();
   });
 
@@ -145,29 +136,6 @@ describe("POST /api/sourcemaps — port console", () => {
       { simule: true },
       expect.objectContaining({ appId: "app-a", release: "2.3.1", remplacer: true, par: "admin@mip", jetonId: null }),
     );
-  });
-
-  it("jeton dédié : limité à son app et sans droit de remplacement", async () => {
-    simul.verifierJetonUpload.mockResolvedValue({ id: "11111111-1111-1111-1111-111111111111", app_id: "app-a" });
-    expect((await upload({ bearer: JETON, origin: null }, { ...corps, appId: "app-b" })).status).toBe(403);
-    expect((await upload({ bearer: JETON, origin: null }, { ...corps, replace: true })).status).toBe(403);
-    expect(simul.enregistrerMaps).not.toHaveBeenCalled();
-
-    const reponse = await upload({ bearer: JETON, origin: null }, corps);
-    expect(reponse.status).toBe(200);
-    expect(simul.enregistrerMaps).toHaveBeenCalledWith(
-      { simule: true },
-      expect.objectContaining({
-        par: "jeton:11111111-1111-1111-1111-111111111111",
-        jetonId: "11111111-1111-1111-1111-111111111111",
-        remplacer: false,
-      }),
-    );
-  });
-
-  it("jeton inconnu, révoqué ou expiré : 401", async () => {
-    simul.verifierJetonUpload.mockResolvedValue(null);
-    expect((await upload({ bearer: JETON }, corps)).status).toBe(401);
   });
 
   it("au-delà de 4 Mio : 413 qui indique le backend direct, annoncé ou mesuré", async () => {

@@ -1,23 +1,21 @@
-// P3 — RELAIS D'INGESTION, de bout en bout : route handler de la console →
-// collector RÉEL (`services/collector/server.mjs`, processus à part) → ligne
-// en base. Sur Postgres Docker, jamais la production (le test refuse un hôte
-// non local).
+// C12 — LA CONSOLE RELAIE, LE COLLECTOR ÉCRIT, de bout en bout : route handler
+// de la console → collector RÉEL (`services/collector/server.mjs`, processus à
+// part) → ligne en base. Sur Postgres Docker, jamais la production (le test
+// refuse un hôte non local).
 //
 // Ce que ce fichier prouve, et que les tests unitaires ne peuvent pas prouver :
-//   · le drapeau semé par v87 (`ingest_relay_pct = '0'`) COUPE le relais même
-//     quand l'environnement dit 100 : appliquer la migration ne relaie rien ;
-//   · ligne de drapeau absente + `INGEST_RELAY_PCT=100` : les QUATRE signaux
-//     (traces, logs, replay, source maps par jeton) passent par le vrai
-//     collector et y sont écrits — c'est lui qui hache l'identité (la console,
-//     comme Vercel aujourd'hui, n'a pas de secret) et qui prend le pays du
-//     relais signé (`geo_source = 'cdn'`, pays « FR ») ;
+//   · les QUATRE signaux (traces, logs, replay, source maps par jeton) passent
+//     par le vrai collector et y sont écrits — c'est lui qui hache l'identité (la
+//     console, comme Vercel, n'a pas de secret) et qui prend le pays du relais
+//     signé (`geo_source = 'cdn'`, pays « FR ») ;
 //   · AUCUNE adresse n'arrive au collector : l'en-tête `x-forwarded-for` du
 //     client n'est pas transmis (le collector, qui en ferait sinon du GeoIP en
 //     `GEOIP_IP_SOURCE=xff:1`, ne voit que l'adresse de la console) ;
-//   · collector ARRÊTÉ : erreur de connexion → repli local, la ligne est écrite
-//     par la console, sans identité (secret vide), la réponse reste 200 ;
+//   · la console n'interroge JAMAIS sa base sur ces routes (espion sur son pool) ;
+//   · relais non configuré, ou collector ARRÊTÉ : 503 + retry-after, et rien
+//     n'est écrit — il n'y a plus de chemin local (C12, 06/10/2026) ;
 //   · le collector SIGNE ses réponses (`x-mip-collector: 1`), /health et 404
-//     compris : c'est ce que le relais exige pour s'allumer et pour ne pas
+//     compris : c'est ce que le relais exige pour transmettre, et pour ne pas
 //     prendre un 404 du collector pour un routage raté.
 //
 // LANCEMENT :
@@ -51,7 +49,8 @@ const ENV = vi.hoisted(() => {
   process.env.RATE_LIMIT_PER_MIN = "600";
   // La console telle que Vercel aujourd'hui : AUCUN secret d'identité.
   process.env.IDENTITY_HASH_SECRET = "";
-  process.env.INGEST_RELAY_PCT = "100";
+  // Posée au démarrage du collector (`beforeAll`) : absente jusque-là.
+  delete process.env.CONSOLE_INGEST_RELAY_URL;
   process.env.EDGE_PROXY_SECRET = "relais-secret-de-bord-".padEnd(48, "x");
   return { url, bord: process.env.EDGE_PROXY_SECRET };
 });
@@ -62,7 +61,6 @@ import { POST as POST_TRACES } from "../../apps/console/app/api/ingest/v1/traces
 import { POST as POST_SOURCEMAPS } from "../../apps/console/app/api/sourcemaps/route";
 import { pool as poolConsole } from "../../apps/console/lib/db";
 import { _resetRelais } from "../../apps/console/lib/ingest-relay";
-import { _resetPlatformFlagCache } from "../../apps/console/lib/platform-flag";
 // @ts-expect-error module ESM partagé, sans déclarations
 import { empreinteIdentite } from "../../packages/backend/lib/identity-hash.mjs";
 // @ts-expect-error module ESM partagé, sans déclarations
@@ -190,6 +188,11 @@ suite("relais d'ingestion : console → collector réel → Postgres (Docker)", 
   const journalCollector: string[] = [];
   const appelsCollector = () => fetchEspion.mock.calls.filter(([u]) => String(u).startsWith(base) && !String(u).endsWith("/health"));
   const fetchEspion = vi.spyOn(globalThis, "fetch");
+  // La console ne lit ni n'écrit la base sur ses routes de collecte.
+  const baseConsole = vi.spyOn(poolConsole, "query");
+  const connexionsConsole = vi.spyOn(poolConsole, "connect");
+  const rienEcrit = async (session: string) =>
+    expect((await db.query("select 1 from rum_session where session_id = $1", [session])).rows).toEqual([]);
 
   async function arreterCollector() {
     if (!collector || collector.exitCode !== null) return;
@@ -222,11 +225,6 @@ suite("relais d'ingestion : console → collector réel → Postgres (Docker)", 
        values ($1, $2, 'CI relais', $3, 'relais@test', now() + interval '1 day')`,
       [JETON.id, APP.id, JETON.empreinte],
     );
-    // L'état que v87 laisse : la ligne à '0'.
-    await db.query(
-      "insert into platform_flag (key, value, updated_by) values ('ingest_relay_pct', '0', 'test') on conflict (key) do update set value = '0'",
-    );
-
     const port = await portLibre();
     base = `http://127.0.0.1:${port}`;
     collector = spawn(process.execPath, [join(RACINE, "services", "collector", "server.mjs")], {
@@ -260,7 +258,6 @@ suite("relais d'ingestion : console → collector réel → Postgres (Docker)", 
       }
       await new Promise((r) => setTimeout(r, 150));
     }
-    process.env.CONSOLE_INGEST_RELAY_URL = base;
     fetchEspion.mockClear();
   }, 30_000);
 
@@ -268,6 +265,10 @@ suite("relais d'ingestion : console → collector réel → Postgres (Docker)", 
     await arreterCollector();
     delete process.env.CONSOLE_INGEST_RELAY_URL;
     fetchEspion.mockRestore();
+    expect(baseConsole).not.toHaveBeenCalled();
+    expect(connexionsConsole).not.toHaveBeenCalled();
+    baseConsole.mockRestore();
+    connexionsConsole.mockRestore();
     await db.end();
     await poolConsole.end();
   });
@@ -283,21 +284,18 @@ suite("relais d'ingestion : console → collector réel → Postgres (Docker)", 
     fetchEspion.mockClear();
   });
 
-  it("drapeau semé par v87 ('0') : AUCUN relais, même avec INGEST_RELAY_PCT=100 — la console écrit elle-même", async () => {
-    _resetPlatformFlagCache();
+  it("relais NON configuré (URL absente) : 503 + retry-after, aucun appel, rien d'écrit", async () => {
     _resetRelais();
     const rep = await POST_TRACES(requete("/api/ingest/v1/traces", traces("relais-s0", 1)));
-    expect(rep.status).toBe(200);
+    expect(rep.status).toBe(503);
+    expect(rep.headers.get("retry-after")).toBeTruthy();
     expect(fetchEspion).not.toHaveBeenCalled();
-    const { rows } = await db.query("select user_id_hash from rum_session where session_id = 'relais-s0'");
-    // Écrit par la console, sans secret : identité RETIRÉE.
-    expect(rows).toEqual([{ user_id_hash: null }]);
+    await rienEcrit("relais-s0");
   });
 
-  describe("ligne de drapeau absente, INGEST_RELAY_PCT=100 : relais", () => {
+  describe("relais configuré : tout part au collector", () => {
     beforeAll(async () => {
-      await db.query("delete from platform_flag where key = 'ingest_relay_pct'");
-      _resetPlatformFlagCache();
+      process.env.CONSOLE_INGEST_RELAY_URL = base;
       _resetRelais();
       fetchEspion.mockClear();
     });
@@ -388,14 +386,14 @@ suite("relais d'ingestion : console → collector réel → Postgres (Docker)", 
       expect(appelsCollector().map(([u]) => String(u))).toContain(`${base}/v1/sourcemaps`);
     });
 
-    it("extension sans clé : l'origine de la page traverse le relais signé — 200 écrit par le collector ; hors registre, son 403, sans repli", async () => {
+    it("extension sans clé : l'origine de la page traverse le relais signé — 200 écrit par le collector ; hors registre, son 403, ", async () => {
       fetchEspion.mockClear();
       const ok = await POST_TRACES(requete("/api/ingest/v1/traces", tracesExtension("relais-s3", 4), { origin: `https://${DOMAINE}` }));
       expect(ok.status).toBe(200);
-      // L'origine part sous le préfixe du bord (le collector ne la lit que signée).
+      // L'origine part sous le préfixe du bord (le collector ne la lit que signée
+      // pour autoriser) ; l'`Origin` brut ne lui sert qu'aux en-têtes CORS.
       const envoyes = new Headers((appelsCollector()[0][1] as RequestInit).headers);
       expect(envoyes.get("x-mip-edge-origin")).toBe(`https://${DOMAINE}`);
-      expect(envoyes.has("origin")).toBe(false);
       const { rows } = await db.query("select collection_source, user_id_hash from rum_session where session_id = 'relais-s3'");
       // Écrit PAR LE COLLECTOR (identité hachée : la console n'a pas de secret).
       expect(rows).toHaveLength(1);
@@ -409,15 +407,16 @@ suite("relais d'ingestion : console → collector réel → Postgres (Docker)", 
       expect(aucune).toEqual([]);
     });
 
-    it("collector ARRÊTÉ : erreur de connexion → repli local, 200, ligne écrite par la console (sans identité)", async () => {
+    it("collector ARRÊTÉ : 503 + retry-after, rien d'écrit — plus de repli local", async () => {
       await arreterCollector();
+      _resetRelais();
       fetchEspion.mockClear();
       const rep = await POST_TRACES(requete("/api/ingest/v1/traces", traces("relais-s2", 3)));
-      expect(rep.status).toBe(200);
-      // Le relais a bien été TENTÉ (santé encore en cache), puis a rendu la main.
-      expect(appelsCollector().map(([u]) => String(u))).toEqual([`${base}/v1/traces`]);
-      const { rows } = await db.query("select user_id_hash, geo_country from rum_session where session_id = 'relais-s2'");
-      expect(rows).toEqual([{ user_id_hash: null, geo_country: "FR" }]);
+      expect(rep.status).toBe(503);
+      expect(rep.headers.get("retry-after")).toBeTruthy();
+      // La sonde de santé a échoué : la requête n'est même pas partie.
+      expect(appelsCollector()).toEqual([]);
+      await rienEcrit("relais-s2");
     });
   });
 });

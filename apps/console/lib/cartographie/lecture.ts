@@ -66,19 +66,19 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
     titre: "Réception des mesures",
     sousTitre: "/api/ingest/v1/* · relais pur, pour l'ancienne adresse",
     resume:
-      "L'adresse que visent encore les sites qui n'ont pas changé la leur, une CSP figée par exemple : la console relaie tout au collector et, depuis le 06/10/2026, n'écrit plus rien elle-même. Les nouveaux sites, et UTI, envoient au collector en direct.",
-    etiquettes: ["relais pur", "06/10/2026", "8 s", "503 sans repli"],
+      "L'adresse que visent encore les sites qui n'ont pas changé la leur, une CSP figée par exemple : la console relaie tout au collector, qui seul écrit ; collector injoignable, elle répond 503. Les nouveaux sites, et UTI, envoient au collector en direct.",
+    etiquettes: ["relais pur", "aucune écriture", "8 s", "503 + retry-after"],
     faits: [
       { texte: "Relais allumé pour tout le trafic depuis le 28/09/2026, 07:10 UTC.", sources: ["docs/architecture/overview.md:13"] },
       {
         texte: "Corps transmis octet pour octet, en-têtes par liste exacte ; aucune adresse transmise.",
-        sources: [`${CONSOLE}/lib/ingest-relay.ts:35-59`],
+        sources: [`${CONSOLE}/lib/ingest-relay.ts:28-46`],
       },
       {
-        texte: "Relais pur depuis le 06/10/2026 : plus d'écriture locale ; un collector injoignable rend 503, que le SDK rejoue.",
-        sources: [`${CONSOLE}/lib/ingest-relay.ts:567-572`, "docs/architecture/overview.md:12"],
+        texte: "8 s de délai ; collector injoignable ou en mauvaise santé : 503 + retry-after, rien d'écrit depuis le 06/10/2026.",
+        sources: [`${CONSOLE}/lib/ingest-relay.ts:13-21`, `${CONSOLE}/lib/ingest-relay.ts:152-159`],
       },
-      { texte: "Un corps trop gros est refusé avant d'être lu, puis pendant la lecture.", sources: [`${CONSOLE}/app/api/ingest/v1/traces/route.ts:58-80`] },
+      { texte: "Un corps trop gros est refusé avant d'être lu, puis pendant la lecture.", sources: [`${CONSOLE}/app/api/ingest/v1/traces/route.ts:43-61`] },
       {
         texte: "Envoi direct des sites au collector en service depuis le 06/10/2026 ; UTI y envoie navigateur et serveur.",
         sources: ["docs/architecture/overview.md:14", `${CONSOLE}/lib/ingest-endpoint.ts:93-99`],
@@ -125,7 +125,7 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
         sources: [`${CONSOLE}/lib/aiguillage-console-api.ts:6-18`],
       },
       { texte: "Tirage stable par session ; 5 échecs en 30 s coupent le service pendant 60 s.", sources: [`${CONSOLE}/lib/aiguillage-console-api.ts:40-46`] },
-      { texte: "Drapeaux lus en base, gardés 30 s ; zéro par défaut.", sources: [`${CONSOLE}/lib/platform-flag.ts:48-50`] },
+      { texte: "Drapeaux lus en base, gardés 30 s ; zéro par défaut.", sources: [`${CONSOLE}/lib/platform-flag.ts:46-48`] },
       { texte: "Écrans et écritures non basculés au 29/09/2026 ; la connexion, elle, passe par console-api.", sources: ["docs/architecture/overview.md:92"] },
     ],
     x: 2650,
