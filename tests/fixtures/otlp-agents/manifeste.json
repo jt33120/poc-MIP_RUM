@@ -29,6 +29,21 @@
         "e11c0000000000000000000000030001": "GET /factures/42 → 200 (sous-appel HTTP GET /stock/42)",
         "e11c0000000000000000000000030002": "POST /factures/42/payer → 500 (exception)",
         "e11c0000000000000000000000030003": "GET /inconnue → 404"
+      },
+      "java": {
+        "e11c0000000000000000000000040001": "GET /factures/42 → 200 (sous-appel HTTP GET /stock/42)",
+        "e11c0000000000000000000000040002": "POST /factures/42/payer → 500 (exception)",
+        "e11c0000000000000000000000040003": "GET /inconnue → 404"
+      },
+      "dotnet": {
+        "e11c0000000000000000000000050001": "GET /factures/42 → 200 (sous-appel HTTP GET /stock/42)",
+        "e11c0000000000000000000000050002": "POST /factures/42/payer → 500 (exception)",
+        "e11c0000000000000000000000050003": "GET /inconnue → 404"
+      },
+      "python": {
+        "e11c0000000000000000000000060001": "GET /factures/42 → 200 (sous-appel HTTP GET /stock/42)",
+        "e11c0000000000000000000000060002": "POST /factures/42/payer → 500 (exception)",
+        "e11c0000000000000000000000060003": "GET /inconnue → 404"
       }
     }
   },
@@ -76,6 +91,104 @@
       },
       "application": "Sinatra 4 sous rackup + WEBrick, sous-appel Net::HTTP ; l'initialiseur de la doc officielle et at_exit { OpenTelemetry.tracer_provider.shutdown }",
       "source": "applications/ruby/config.ru"
+    },
+    "java": {
+      "capture": "06/10/2026, GitHub Actions (Agents OpenTelemetry (Java, .NET, Python), run 37478431735), par capturer.mjs",
+      "images": [
+        "maven:3.9-eclipse-temurin-21",
+        "eclipse-temurin:21-jre"
+      ],
+      "versions": {
+        "OTEL_JAVAAGENT_VERSION": "2.31.1",
+        "OTEL_JAVAAGENT_SHA256": "bbf83c151b6400709e2f225bdd07a04f839d9d13b8b93464241333fd25d3e3ba"
+      },
+      "ressource": {
+        "process.runtime.name": "OpenJDK Runtime Environment",
+        "process.runtime.version": "21.0.12.1+1-LTS",
+        "telemetry.distro.name": "opentelemetry-java-instrumentation",
+        "telemetry.distro.version": "2.31.1",
+        "telemetry.sdk.language": "java",
+        "telemetry.sdk.name": "opentelemetry",
+        "telemetry.sdk.version": "1.65.0"
+      },
+      "socle": "le socle de la page Installer (socleOtel, apps/console/lib/recettes-agents-otel.ts), clé factice à la place du repère",
+      "environnement": {},
+      "application": "Spring Boot 4 (Spring MVC, Tomcat) sous java -javaagent:opentelemetry-javaagent.jar -jar app.jar ; sous-appel par java.net.http.HttpClient ; journal SLF4J (Logback) ; l'exception sort du contrôleur",
+      "source": "applications/java/src/main/java/fr/mip/factures/Factures.java"
+    },
+    "dotnet": {
+      "capture": "06/10/2026, GitHub Actions (Agents OpenTelemetry (Java, .NET, Python), run 37478431735), par capturer.mjs",
+      "images": [
+        "mcr.microsoft.com/dotnet/sdk:10.0",
+        "mcr.microsoft.com/dotnet/aspnet:10.0"
+      ],
+      "versions": {
+        "OTEL_DOTNET_AUTO_VERSION": "1.17.0",
+        "OTEL_DOTNET_AUTO_INSTALL_SHA256": "93f4b1b12deb4c58ff4deee02c10280ee45fbb015f6fb012ef06343c797d1672",
+        "OTEL_DOTNET_AUTO_ZIP_X64_SHA256": "cc56878f0155e28b6554924fbd420fcb8bec7108cd9d41836dc530764ac923f8",
+        "OTEL_DOTNET_AUTO_ZIP_ARM64_SHA256": "d7dc0d8f6562eb12108eaf896c277e536133259d49545e3e2545be3ea7a14144"
+      },
+      "ressource": {
+        "telemetry.distro.name": "opentelemetry-dotnet-instrumentation",
+        "telemetry.distro.version": "1.17.0",
+        "telemetry.sdk.name": "opentelemetry",
+        "telemetry.sdk.language": "dotnet",
+        "telemetry.sdk.version": "1.19.1",
+        "process.runtime.name": ".NET",
+        "process.runtime.version": "10.0.12"
+      },
+      "socle": "le socle de la page Installer (socleOtel, apps/console/lib/recettes-agents-otel.ts), clé factice à la place du repère",
+      "environnement": {
+        "OTEL_DOTNET_AUTO_LOG_DIRECTORY": "/var/tmp/otel-dotnet"
+      },
+      "application": "ASP.NET Core (API minimale) sous instrument.sh de l'instrumentation automatique ; sous-appel par HttpClient (IHttpClientFactory) ; journal ILogger ; l'exception sort du gestionnaire",
+      "source": "applications/dotnet/Program.cs"
+    },
+    "python": {
+      "capture": "06/10/2026, GitHub Actions (Agents OpenTelemetry (Java, .NET, Python), run 37478431735), par capturer.mjs",
+      "images": [
+        "python:3.13-slim"
+      ],
+      "versions": {
+        "FLASK_VERSION": "3.1.3",
+        "OTEL_DISTRO_VERSION": "0.66b0",
+        "OTEL_SDK_VERSION": "1.45.0",
+        "flask": "3.1.3",
+        "opentelemetry-api": "1.45.0",
+        "opentelemetry-distro": "0.66b0",
+        "opentelemetry-exporter-http-transport": "0.66b0",
+        "opentelemetry-exporter-otlp-common": "0.66b0",
+        "opentelemetry-exporter-otlp-proto-common": "1.45.0",
+        "opentelemetry-exporter-otlp-proto-http": "1.45.0",
+        "opentelemetry-instrumentation": "0.66b0",
+        "opentelemetry-instrumentation-asyncio": "0.66b0",
+        "opentelemetry-instrumentation-click": "0.66b0",
+        "opentelemetry-instrumentation-dbapi": "0.66b0",
+        "opentelemetry-instrumentation-exceptions": "0.66b0",
+        "opentelemetry-instrumentation-flask": "0.66b0",
+        "opentelemetry-instrumentation-jinja2": "0.66b0",
+        "opentelemetry-instrumentation-logging": "0.66b0",
+        "opentelemetry-instrumentation-sqlite3": "0.66b0",
+        "opentelemetry-instrumentation-threading": "0.66b0",
+        "opentelemetry-instrumentation-urllib": "0.66b0",
+        "opentelemetry-instrumentation-urllib3": "0.66b0",
+        "opentelemetry-instrumentation-wsgi": "0.66b0",
+        "opentelemetry-proto": "1.45.0",
+        "opentelemetry-sdk": "1.45.0",
+        "opentelemetry-semantic-conventions": "0.66b0",
+        "opentelemetry-util-http": "0.66b0",
+        "werkzeug": "3.1.9"
+      },
+      "ressource": {
+        "telemetry.sdk.language": "python",
+        "telemetry.sdk.name": "opentelemetry",
+        "telemetry.sdk.version": "1.45.0",
+        "telemetry.auto.version": "0.66b0"
+      },
+      "socle": "le socle de la page Installer (socleOtel, apps/console/lib/recettes-agents-otel.ts), clé factice à la place du repère",
+      "environnement": {},
+      "application": "Flask sous opentelemetry-instrument flask --app app run ; sous-appel par urllib.request ; journal logging ; l'exception sort de la vue",
+      "source": "applications/python/app.py"
     }
   },
   "corps": [
@@ -154,6 +267,127 @@
       "userAgent": "Ruby, OTel-OTLP-Exporter-Ruby/0.37.0 Ruby/3.4.11 (aarch64-linux; ruby/3.4.11)",
       "octets": 1793,
       "sha256": "656887beab72bcc7831e2504017539974b4deb5b5946f68f0a016e9da7915684",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "java-1-logs.pb.gz",
+      "langage": "java",
+      "signal": "logs",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel-OTLP-Exporter-Java/1.65.0",
+      "octets": 828,
+      "sha256": "dd86c75849bac227e08172dd13e3b0256b85d40ad22f7c31c69f7c980f27fccb",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "java-2-logs.pb.gz",
+      "langage": "java",
+      "signal": "logs",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel-OTLP-Exporter-Java/1.65.0",
+      "octets": 968,
+      "sha256": "4306ed5baf13350922084b18870a85cd92f3fdea8a1f823c31def41be3c1243c",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "java-3-logs.pb.gz",
+      "langage": "java",
+      "signal": "logs",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel-OTLP-Exporter-Java/1.65.0",
+      "octets": 848,
+      "sha256": "8dba6e29cd50bca8e561a8bab3641d3657fca5c6da949a5307452267ef78306c",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "java-4-logs.pb.gz",
+      "langage": "java",
+      "signal": "logs",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel-OTLP-Exporter-Java/1.65.0",
+      "octets": 2033,
+      "sha256": "049f99c91bce39d68ebb83f3d11bdd7283c02588ad697ec1d2dd4035ab58c0a4",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "java-5-traces.pb.gz",
+      "langage": "java",
+      "signal": "traces",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel-OTLP-Exporter-Java/1.65.0",
+      "octets": 2584,
+      "sha256": "e1fb578b533f358c97ba736b8600ce3790b88aa57d8102a1da563f2922f28eac",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "dotnet-1-traces.pb.gz",
+      "langage": "dotnet",
+      "signal": "traces",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel-OTLP-Exporter-Dotnet/1.19.1",
+      "octets": 1472,
+      "sha256": "1baefa71258565ff459f173089f9acce14dd5ddbf004542fe2abcd9ac88e10cd",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "dotnet-2-logs.pb.gz",
+      "langage": "dotnet",
+      "signal": "logs",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel-OTLP-Exporter-Dotnet/1.19.1",
+      "octets": 3278,
+      "sha256": "be05100fd963efc3a46d1f3e7e1ef4cee2808e193439e0fd18fe4d49a1be7b4e",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "dotnet-3-logs.pb.gz",
+      "langage": "dotnet",
+      "signal": "logs",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel-OTLP-Exporter-Dotnet/1.19.1",
+      "octets": 833,
+      "sha256": "38c15f7306181578d34e91f653d60426f54becd5efd8df5dd04e8ecacd15a5ce",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "python-1-logs.pb.gz",
+      "langage": "python",
+      "signal": "logs",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel-OTLP-Exporter-Python/1.45.0",
+      "octets": 493,
+      "sha256": "efd8aa83c103250b3a67c5cfa42dc3decc8a8dfb05d0b938aec7b5cf3d2436d8",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "python-2-logs.pb.gz",
+      "langage": "python",
+      "signal": "logs",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel-OTLP-Exporter-Python/1.45.0",
+      "octets": 963,
+      "sha256": "10b0c697a732d9e74a3d1bcf13b3ccfda7dcb09c89756185bae20f9174f7146d",
+      "statutALaCapture": 200
+    },
+    {
+      "fichier": "python-3-traces.pb.gz",
+      "langage": "python",
+      "signal": "traces",
+      "contentType": "application/x-protobuf",
+      "contentEncoding": "gzip",
+      "userAgent": "OTel-OTLP-Exporter-Python/1.45.0",
+      "octets": 1402,
+      "sha256": "9f65f6eb030de77e3021ff960ef1ab7c5fc54bc876836a5e4f4642a10415ff58",
       "statutALaCapture": 200
     }
   ]
