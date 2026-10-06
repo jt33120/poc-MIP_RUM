@@ -19,14 +19,14 @@ export const PARCOURS: readonly Parcours[] = [
         elements: ["sdk-web", "m-pages", "m-vitals", "m-erreurs", "m-reseau"],
       },
       {
-        titre: "Le lot part vers la console",
-        texte: "Toutes les 3 secondes, ou quand la page passe en arrière-plan, le lot part en OTLP/HTTP JSON vers la réception de la console.",
-        elements: ["m-vitals", "m-pages", "reception"],
+        titre: "Le lot part vers le collector",
+        texte: "Toutes les 3 secondes, ou quand la page passe en arrière-plan, le lot part en OTLP/HTTP JSON, en direct vers le collector.",
+        elements: ["m-vitals", "m-pages", "collector"],
       },
       {
-        titre: "La console le relaie au collector",
-        texte: "Le corps part tel quel, signé du secret partagé ; seul le pays accompagne le lot, jamais l'adresse IP.",
-        elements: ["reception", "collector", "s-relais-signe"],
+        titre: "Le collector en déduit le pays",
+        texte: "Il lit l'adresse IP le temps de la requête, pour en déduire le pays, sans l'écrire nulle part. Un site resté sur l'ancienne adresse passe par la console, qui relaie le lot signé avec le pays seul.",
+        elements: ["collector", "s-pii", "reception", "s-relais-signe"],
       },
       {
         titre: "Le collector contrôle",
@@ -67,8 +67,8 @@ export const PARCOURS: readonly Parcours[] = [
       },
       {
         titre: "Les deux moitiés arrivent séparément",
-        texte: "Le navigateur et le serveur envoient chacun leur part à la réception, qui les relaie au collector.",
-        elements: ["m-reseau", "m-traces-serveur", "reception", "collector"],
+        texte: "Le navigateur et le serveur envoient chacun leur part au collector, en direct.",
+        elements: ["m-reseau", "m-traces-serveur", "collector"],
       },
       {
         titre: "Elles se rejoignent en base",
