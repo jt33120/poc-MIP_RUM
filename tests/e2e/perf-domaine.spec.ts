@@ -1136,7 +1136,23 @@ test.describe("F15 — Pages : distributions, percentiles, TTFB, type de navigat
     await login(page);
     await page.goto(PAGES_F15, { waitUntil: "domcontentloaded" });
     const liens = page.getByTestId("sommaire-pages").getByRole("link");
-    await expect(liens).toHaveCount(6);
+    // Dix ancres depuis le SDK web 0.6.0 (04/10/2026) : les quatre sections des
+    // signaux de vue (engagement, changements d'écran, poids des vues, repères)
+    // s'ajoutent aux six d'origine. La liste exacte, dans l'ordre : un lien perdu
+    // ou ajouté sans section se voit ici.
+    await expect(liens).toHaveCount(10);
+    expect(await liens.evaluateAll((els) => els.map((el) => el.getAttribute("href")))).toEqual([
+      "#distribution",
+      "#percentiles",
+      "#navigation",
+      "#reseau",
+      "#fil-principal",
+      "#ressources",
+      "#engagement",
+      "#changements-ecran",
+      "#poids-vues",
+      "#reperes",
+    ]);
     for (const href of await liens.evaluateAll((els) => els.map((el) => el.getAttribute("href") ?? ""))) {
       await expect(page.locator(href)).toHaveCount(1);
     }
