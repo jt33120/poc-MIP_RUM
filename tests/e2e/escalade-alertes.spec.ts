@@ -86,20 +86,17 @@ async function connexion(page: Page): Promise<void> {
   await page.goto(`${consoleUrl}/login`);
   await page.fill('input[name="email"]', EMAIL);
   await page.fill('input[name="password"]', motDePasse);
-  // DIAGNOSTIC TEMPORAIRE : ce que `networkidle` attendait en CI.
-  const enVol = new Map<object, string>();
-  const t0 = Date.now();
-  page.on("request", (r) => enVol.set(r, `${r.method()} ${r.resourceType()} ${r.url()} @${Date.now() - t0}`));
-  page.on("requestfinished", (r) => enVol.delete(r));
-  page.on("requestfailed", (r) => enVol.delete(r));
   await page.click('button[type="submit"]');
   // La redirection d'après connexion doit être finie : un `goto` lancé pendant
   // qu'elle court est annulé (ERR_ABORTED). Un admin sans projet choisi (contexte
   // neuf, aucun cookie `mip-project`) atterrit sur `/` puis, par la porte projet
   // du middleware, sur `/select` : c'est la fin de la redirection, on l'attend.
+  // Surtout pas `networkidle` : la console s'auto-instrumente, et un morceau de
+  // rejeu part en `fetch` keepalive au moment où l'on quitte /login (pour survivre
+  // à la page) ; Playwright le compte en vol sans jamais en voir la fin, et
+  // l'attente expirait à 90 s (CI du 07/10/2026 : seule requête en vol après la
+  // connexion, `POST /api/ingest/v1/replay` lancé 0,4 s après le clic, 15 s plus tard).
   await page.waitForURL((u) => u.pathname === "/select", { timeout: 15_000 });
-  const idle = await page.waitForLoadState("networkidle", { timeout: 15_000 }).then(() => "idle", () => "PAS IDLE");
-  console.log("DIAG-ESCALADE", idle, Date.now() - t0, page.url(), JSON.stringify([...enVol.values()]));
 }
 
 const tuile = (page: Page, libelle: string) =>
