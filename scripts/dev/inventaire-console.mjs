@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // C-R — L'INVENTAIRE DE LA CONSOLE, CALCULÉ DEPUIS SON CODE.
 //
-//   node scripts/dev/inventaire-console.mjs             relevé : réécrit
-//        docs/architecture/console-api/inventaire.md et cliquet.json
+//   node scripts/dev/inventaire-console.mjs             relevé : réécrit le cliquet
+//        (scripts/dev/cliquet-console.json)
 //   node scripts/dev/inventaire-console.mjs --verifier  le cliquet seul : échoue si
 //        un écran, une action, une route ou un composant NOUVEAU atteint la base,
 //        ou si l'un d'eux a cessé de l'atteindre sans que le cliquet ait été resserré
@@ -29,14 +29,13 @@
 //     base pour toutes les pages (projets, fuseau), et C2 le remplace par
 //     `GET /v1/shell`. Il est relevé à part.
 //   · Les imports dynamiques (`import("…")`) comptent : ils s'exécutent.
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const RACINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CONSOLE = path.join(RACINE, "apps", "console");
-const SORTIE = path.join(RACINE, "docs", "architecture", "console-api");
 const DB = path.join(CONSOLE, "lib", "db.ts");
 // TypeScript est une dépendance de la console : le script n'en ajoute aucune.
 const ts = createRequire(path.join(CONSOLE, "package.json"))("typescript");
@@ -437,91 +436,9 @@ export function comparerCliquet(enregistre, courant) {
   return { nouveaux, liberes };
 }
 
-// ─── 6. Le document ───────────────────────────────────────────────────────────
+// ─── 6. Ligne de commande ─────────────────────────────────────────────────────
 
-const oui = (b) => (b ? "**oui**" : "non");
-const liste = (l) => (l.length ? l.join(", ") : "—");
-
-export function rendre(r, { date, commit }) {
-  const c = cliquetDe(r);
-  const L = [];
-  L.push("# Inventaire de la console, pour la piste C");
-  L.push("");
-  L.push(`> **Généré** par \`node scripts/dev/inventaire-console.mjs\` le ${date}, sur \`${commit}\`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).`);
-  L.push("");
-  L.push("## En chiffres");
-  L.push("");
-  L.push("| | Nombre | Atteignent la base |");
-  L.push("|---|---|---|");
-  L.push(`| Écrans (\`page.tsx\`) | ${r.ecrans.length} | **${c.ecrans.length}** |`);
-  L.push(`| Fichiers d'actions serveur (\`"use server"\`) | ${r.actions.length} (${r.actions.reduce((n, a) => n + a.actions.length, 0)} actions) | **${c.actions.length}** |`);
-  L.push(`| Actions déclarées dans un écran | ${r.actionsEnLigne.length} | — |`);
-  L.push(`| Routes (\`route.ts\`) | ${r.routes.length} | **${c.routes.length}** |`);
-  L.push(`| Composants serveur qui atteignent la base eux-mêmes | — | **${c.composants.length}** |`);
-  L.push(`| Layout racine | 1 | ${oui(r.layoutBase)} |`);
-  L.push(`| Modules \`lib/queries*.ts\` | ${r.lectures.length} (${r.lectures.reduce((n, l) => n + l.fonctions, 0)} fonctions exportées) | — |`);
-  L.push(`| Sections \`lire()\` (appels) | ${r.sectionsTotal} | — |`);
-  L.push(`| \`error.tsx\` / \`not-found.tsx\` / \`loading.tsx\` | ${r.frontieres.error} / ${r.frontieres.notFound} / ${r.frontieres.loading} | — |`);
-  L.push(`| Écrans rafraîchis toutes les 5 s (\`AutoRefresh\`) | ${r.ecrans.filter((e) => e.rafraichi).length} | — |`);
-  L.push(`| Écrans servis par un chargeur (\`lib/chargeurs/\`, C3 → C6) | ${r.ecrans.filter((e) => e.chargeurs.length).length} | **${r.ecrans.filter((e) => e.base && e.chargeurs.length).length}** / ${c.ecrans.length} |`);
-  L.push(`| Fichiers d'actions passés par une commande (\`lib/commandes/\`, C6 → C9) | ${r.actions.filter((a) => a.commandes.length).length} (${r.actions.reduce((n, a) => n + a.commandes.length, 0)} commandes) | **${r.actions.filter((a) => a.base && a.commandes.length).length}** / ${c.actions.length} |`);
-  L.push("");
-  L.push("**Le cliquet** (`cliquet.json`) liste nominativement ce qui atteint la base. `tests/unit/inventaire-console.test.ts` refuse toute entrée nouvelle, et demande de le resserrer quand une entrée disparaît.");
-  L.push("");
-  L.push("## Écrans");
-  L.push("");
-  L.push("« Chargeur » : le module de `lib/chargeurs/` qui lit pour l'écran — la console l'exécute aujourd'hui, console-api le sert tel quel ; l'écran quitte le cliquet à la bascule. « Sections » : appels `lire()` / `section()` de l'écran et de son chargeur — chacune tombe seule. « Panneaux » : types de `panel=` que l'écran ouvre — chacun est une opération à part. « 5 s » : rejoué par `AutoRefresh` toutes les 5 s.");
-  L.push("");
-  L.push("| Écran | Lot | Base | Chargeur | Modules de requêtes | Sections | Panneaux | 5 s |");
-  L.push("|---|---|---|---|---|---|---|---|");
-  for (const e of r.ecrans) {
-    L.push(`| \`${e.chemin}\` | ${e.lot} | ${oui(e.base)} | ${liste(e.chargeurs)} | ${e.requetes.length ? e.requetes.map((q) => q.replace(/^queries-?/, "") || "queries").join(", ") : "—"} | ${e.sections || "—"} | ${liste(e.panneaux)} | ${e.rafraichi ? "oui" : "non"} |`);
-  }
-  L.push("");
-  L.push("## Actions serveur");
-  L.push("");
-  L.push("« Commandes » : les écritures que le fichier appelle par leur clé (`executerCommande`, C6 → C9) — la console les exécute aujourd'hui, console-api les sert telles quelles ; le fichier quitte le cliquet à la bascule. « Auditée » : le graphe de l'action contient une écriture d'`audit_log` ; pour une action passée par ses commandes, c'est la RÈGLE de chacune qui déclare son action d'audit ou son exemption motivée, vérifiée au démarrage de `console-api` (`verifierTable`).");
-  L.push("");
-  L.push("| Fichier | Actions | Base | Commandes | Auditée |");
-  L.push("|---|---|---|---|---|");
-  for (const a of r.actions) L.push(`| \`${a.fichier.replace("apps/console/", "")}\` | ${a.actions.join(", ")} | ${oui(a.base)} | ${liste(a.commandes)} | ${a.commandes.length ? "par règle" : a.audite ? "oui" : "non"} |`);
-  if (r.actionsEnLigne.length) {
-    L.push("");
-    L.push(`Actions déclarées dans un écran : ${r.actionsEnLigne.map((x) => `\`${x}\``).join(", ")}.`);
-  }
-  L.push("");
-  L.push("## Routes");
-  L.push("");
-  L.push("« Authentification » : ce que la route importe des modules d'authentification. Vide : publique, ou gardée autrement (secret, signature, clé d'ingestion) — voir la route.");
-  L.push("");
-  L.push("| Route | Méthodes | Authentification | Base | Destination |");
-  L.push("|---|---|---|---|---|");
-  for (const x of r.routes) L.push(`| \`${x.chemin}\` | ${x.methodes.join(", ")} | ${liste(x.auth)} | ${oui(x.base)} | ${x.cible} |`);
-  L.push("");
-  L.push("## Composants serveur qui atteignent la base");
-  L.push("");
-  if (r.composants.length) {
-    L.push("« Chemin » : la chaîne d'import la plus courte jusqu'à `lib/db.ts` — le maillon à couper pour libérer le composant.");
-    L.push("");
-    L.push("| Composant | Chemin vers la base |");
-    L.push("|---|---|");
-    for (const k of r.composants) L.push(`| \`${k.fichier.replace("apps/console/", "")}\` | ${k.chaine.slice(1).map((x) => `\`${x}\``).join(" → ")} |`);
-  } else {
-    L.push("Aucun.");
-  }
-  L.push("");
-  L.push("## Modules de lecture");
-  L.push("");
-  L.push("| Module | Fonctions exportées | Écrans qui l'atteignent |");
-  L.push("|---|---|---|");
-  for (const l of r.lectures) L.push(`| \`lib/${l.module}.ts\` | ${l.fonctions} | ${l.ecrans} |`);
-  L.push("");
-  return L.join("\n");
-}
-
-// ─── 7. Ligne de commande ─────────────────────────────────────────────────────
-
-export const FICHIER_CLIQUET = path.join(SORTIE, "cliquet.json");
+export const FICHIER_CLIQUET = path.join(RACINE, "scripts", "dev", "cliquet-console.json");
 
 function main(argv) {
   const r = relever();
@@ -539,11 +456,8 @@ function main(argv) {
     return;
   }
   const date = new Date().toISOString().slice(0, 10);
-  const commit = argv.find((a) => a.startsWith("--commit="))?.slice(9) ?? "HEAD";
-  mkdirSync(SORTIE, { recursive: true });
-  writeFileSync(path.join(SORTIE, "inventaire.md"), rendre(r, { date, commit }));
   writeFileSync(FICHIER_CLIQUET, `${JSON.stringify({ releve: date, ...courant }, null, 2)}\n`);
-  console.log(`inventaire écrit : ${r.ecrans.length} écrans (${courant.ecrans.length} atteignent la base), ${r.routes.length} routes, ${r.actions.length} fichiers d'actions`);
+  console.log(`cliquet écrit : ${r.ecrans.length} écrans (${courant.ecrans.length} atteignent la base), ${r.routes.length} routes, ${r.actions.length} fichiers d'actions`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) main(process.argv.slice(2));

@@ -1,9 +1,13 @@
 # AGENTS.md — MIP RUM
 
 Consignes pour les agents de code (Codex, Claude Code…) et pour les humains qui
-relisent leur travail. Ce fichier dit ce qui casse si on l'ignore ; le reste est
-dans `docs/`. Tenu à jour au 29/09/2026 ; `tests/unit/agents-md.test.ts` vérifie que
-chaque chemin qu'il cite existe.
+relisent leur travail. Ce fichier dit ce qui casse si on l'ignore. Tenu à jour au
+06/10/2026 ; `tests/unit/agents-md.test.ts` vérifie que chaque chemin qu'il cite existe.
+
+Le dépôt ne porte que ce qui sert à construire, tester, déployer et faire tourner le
+produit. La documentation (architecture, ADR, exploitation, intégration, API) vit hors
+du dépôt, sur le poste de l'équipe ; ce qui fait foi ici, c'est le code, ses tests et
+les `README.md` des services.
 
 ## Le dépôt en bref
 
@@ -11,22 +15,18 @@ MIP RUM est un outil de Real User Monitoring natif OpenTelemetry : des capteurs
 (SDK web, extension, mobile ; côté serveur, l'agent OpenTelemetry officiel du
 langage du client) envoient traces, logs et rejeux ; une base Postgres (Neon) les
 garde ; une console Next.js les montre. Plus aucun capteur serveur maison : l'agent
-Node et le middleware FastAPI sont archivés (`docs/archive/capteurs-serveur-maison.md`).
+Node et le middleware FastAPI sont archivés depuis le 29/09/2026.
 
-Deux états coexistent, et la doc doit toujours dire lequel elle décrit :
+Deux états coexistent, et un commentaire doit toujours dire lequel il décrit :
 
 - **En service** (depuis l'apply du 27/09/2026) : la console sur Vercel (UI, API v1,
   ingestion, accès direct à la base ; connexion par `console-api`) ; sur Railway, les
   six services — `collector`, `api`, `console-api`, `mcp`, `scheduler` (travaux
-  planifiés, seul migrateur), `notifier`. Deux relais sont à 100 % depuis le
-  28/09/2026 : la collecte vers `collector` (`ingest_relay_pct`) et les lectures au
-  jeton de l'API v1 vers `api` (`api_relay_pct`). La console garde son écriture
-  locale en repli.
+  planifiés, seul migrateur), `notifier`. La collecte reçue par la console est
+  relayée au `collector` ; les lectures au jeton de l'API v1, au service `api`.
 - **En service, éteint par un drapeau** (`platform_flag`) : la bascule des écrans
   et des écritures vers `console-api` (drapeaux absents, donc à 0) ; le GeoIP du
-  `collector`.
-
-L'état détaillé et la suite : `docs/architecture/overview.md`.
+  `collector` hors collecte directe.
 
 ## Carte
 
@@ -41,8 +41,9 @@ L'état détaillé et la suite : `docs/architecture/overview.md`.
 | `packages/stats` | Statistique pure (`@mip/stats`) : un seul calcul pour la console, l'API v1 et `console-api` |
 | `packages/rum-*` | Capteurs publiés (web, mobile) et leur cœur commun |
 | `.railway/railway.ts` | L'infrastructure Railway (IaC) |
+| `infra/docker` | Les mêmes images en auto-hébergement (compose) |
+| `scripts/` | Outils appelés par la CI, les tests ou l'exploitation |
 | `tests/{unit,integration,contract,e2e}` | Vitest, SQL, contrats de parité, Playwright |
-| `docs/` | Architecture, ADR, exploitation, API, intégration |
 
 ## Commandes
 
@@ -67,25 +68,22 @@ ordre et sur quelles bases.
   Additives et rejouables. Une migration fusionnée ne se modifie plus jamais
   (`scripts/ci/migrations-figees.mjs`). Seul le `scheduler` migre, à son
   pré-déploiement.
-- **Documents lus par du code** : certains documents sont analysés ou cités par
-  des tests (`README.md`, `DEPLOY.md`, `docs/RUM_PARITY_STATUS.md`,
-  `docs/TOPOLOGIE_BACKEND.md`, `docs/API_CONSOLE.md`, `docs/INTEGRATION.md`,
-  `docs/AUDIT_RUM_EXTERNE.md`, `docs/CONFORMITE.md`…). Avant de déplacer ou de
-  réécrire un document : `git grep -n "<nom du fichier>"`.
-- **Fichiers générés** : zones du `README.md` (`node scripts/readme-sections.mjs`)
-  et `apps/console/lib/couverture.generated.json` (`node scripts/couverture-extraire.mjs`),
-  chacun avec un mode `--verifier` ; `docs/api/console-api.md`
-  (`MAJ_DOC_CONSOLE_API=1 pnpm vitest run tests/unit/console-api-doc.test.ts`) ;
-  `apps/console/lib/composants-open-source.generated.json`
+- **Citations « fichier:ligne »** : la vitrine (`apps/console/lib/presentation-*.ts`,
+  `apps/console/lib/cartographie/`) cite ses preuves à la ligne, et des tests vérifient
+  que chaque fichier et chaque ligne cités existent. Ajouter ou retirer des lignes dans
+  un fichier cité (dont ce fichier-ci) oblige à recaler ses citations.
+- **Relevé de couverture** : `apps/console/lib/couverture.json` porte, capacité par
+  capacité, le verdict, la preuve et la limite que la vitrine affiche ;
+  `tests/unit/couverture-site.test.ts` refuse une carte qui en dit plus.
+- **Fichiers générés** : `apps/console/lib/composants-open-source.generated.json`
   (`node scripts/composants-open-source.mjs`, liste tenue à la main :
   `scripts/composants-open-source.externes.json`), à refaire après tout changement
-  de dépendance, de Dockerfile ou de workflow. Un test échoue si l'un des quatre
-  dérive. `docs/architecture/console-api/inventaire.md`
-  et `cliquet.json` se réécrivent par `node scripts/dev/inventaire-console.mjs` ;
-  seul le cliquet est gardé par un test (voir « Console sans base »).
+  de dépendance, de Dockerfile ou de workflow ; un test échoue s'il dérive. Le cliquet
+  `scripts/dev/cliquet-console.json` se réécrit par `node scripts/dev/inventaire-console.mjs`
+  (voir « Console sans base »).
 - **Conformité** : toute nouvelle sortie de données vers un tiers, ou tout
-  changement d'hébergeur, met à jour `apps/console/lib/legal.ts` et
-  `docs/CONFORMITE.md` dans la même modification (`tests/unit/conformite.test.ts`).
+  changement d'hébergeur, met à jour `apps/console/lib/legal.ts` dans la même
+  modification (`tests/unit/conformite.test.ts`).
 - **Console sans base** : le cliquet (`tests/unit/inventaire-console.test.ts`)
   refuse qu'une page ou un composant de plus atteigne la base. Une nouvelle lecture
   passe par un chargeur (`apps/console/lib/chargeurs/`), une nouvelle écriture par
@@ -107,8 +105,8 @@ ordre et sur quelles bases.
 ## Sécurité et exploitation
 
 - **Le dépôt est public.** Aucun secret, aucune donnée client, aucune adresse
-  e-mail personnelle. Les documents commerciaux restent hors dépôt
-  (`docs/DOCUMENTS-HORS-DEPOT.md`).
+  e-mail personnelle, aucun document de travail ni document commercial : la
+  documentation reste sur le poste (les dossiers docs et local sont ignorés par git).
 - Ne jamais lancer `vercel env pull` dans le dépôt, ni sourcer `.env` (il peut
   contenir l'URL de la base de production).
 - Les scripts qui écrivent hors exploitation (`scripts/verify-*`, `seed-*`,
@@ -125,28 +123,25 @@ ordre et sur quelles bases.
   `infra/docker/**`, `pnpm-lock.yaml` : liste exacte dans `.railway/railway.ts`)
   le redéploie, et son pré-déploiement applique les migrations en attente — même
   pour un commentaire. Des migrations non encore appliquées en production se
-  répètent d'abord sur la branche Neon `repetition-p0` (runbook § 5).
+  répètent d'abord sur la branche Neon `repetition-p0`.
 - Neon est sur une offre payante à l'usage depuis le 27/09/2026, en attendant la
-  base que choisira la DSI de MIP (ADR 0014, remplacée) : chaque réveil se paie,
-  pas de boucle qui interroge la base à vide.
+  base que choisira la DSI de MIP : chaque réveil se paie, pas de boucle qui
+  interroge la base à vide.
 
 ## Conventions
 
-- **Français** partout : code, commentaires, docs, messages de commit, PR.
+- **Français** partout : code, commentaires, messages de commit, PR.
 - Un commentaire dit **pourquoi**, pas ce que fait la ligne suivante.
-- Dates au format JJ/MM/AAAA dans les documents.
+- Dates au format JJ/MM/AAAA.
 - Commits : `<phase ou sujet> — <ce que ça change>` (voir `git log`).
 - Toute PR vise `master`, jamais une autre branche. Pas de PR empilées.
-- Une affirmation dans la doc se vérifie dans le code avant d'être écrite.
+- Une affirmation dans un commentaire ou sur la vitrine se vérifie dans le code avant
+  d'être écrite.
 
 ## Où lire
 
-- `docs/architecture/overview.md` et `data-flow.md` : l'architecture et son état.
-- `docs/architecture/adr/` : les décisions et leurs raisons.
-- `docs/operations/runbook.md` : exploitation, incidents, retours arrière.
-- `docs/operations/bascule-console-api.md`, `relais-ingestion.md`, `relais-api.md` :
-  les bascules et leurs drapeaux.
-- `services/README.md` et le `README.md` de chaque service (`mcp` : `docs/MCP.md`).
-- `docs/api/console-api.md` : les opérations de `console-api` (généré).
-- `docs/README.md` : l'index de la documentation, une ligne par document. La doc de
-  chantier (plans, cadrages, rapports) n'entre pas dans le dépôt.
+- `README.md` : installer, lancer, tester, déployer.
+- `services/README.md` et le `README.md` de chaque service ; pour `mcp`, le
+  catalogue `packages/mcp-tools/lib/catalogue.mjs`.
+- `packages/console-api/src/table.ts` : les opérations de `console-api` et leurs politiques.
+- `apps/console/lib/api/openapi.ts` : la spec de l'API v1 (servie sur `/api/v1/docs`).

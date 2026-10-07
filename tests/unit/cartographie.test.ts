@@ -214,12 +214,7 @@ describe("les chiffres affichés se recomptent", () => {
     expect(fichiers("apps/console/app/api/v1", (n) => n === "route.ts").length).toBe(CHIFFRES.routesApiV1);
   });
 
-  it("les opérations de console-api : une ligne chacune dans sa documentation générée", () => {
-    const lignes = lire("docs/api/console-api.md")
-      .split("\n")
-      .filter((l) => /^\| `[a-zA-Z]+\.[a-zA-Z]+` \|/.test(l));
-    expect(lignes.length).toBe(CHIFFRES.operationsConsoleApi);
-  });
+  // Les opérations de console-api se recomptent depuis sa table : tests/unit/console-api-table.test.ts.
 
   // Le poids du SDK est écrit à la main dans la carte : sans ce garde, un rebuild
   // qui fait bouger lib/sdk-poids.ts (remesuré par specs.test.ts) le laissait faux.

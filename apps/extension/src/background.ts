@@ -3,7 +3,7 @@
 // GET /api/extension/resolve), et injecte le SDK RUM (vendor/mip-rum.js) SEULEMENT
 // si le domaine est enregistré + la permission déjà accordée + le site n'a pas
 // déjà son propre SDK (anti double-comptage). Aucun secret embarqué : le
-// registre est public en lecture (zéro PII, cf. docs/CADRAGE_EXTENSION.md §5).
+// registre est public en lecture (zéro PII, cf. le cadrage de l'extension §5).
 /// <reference types="chrome" />
 import { decideInjection, isFresh, normalizeHost, type CacheEntry, type ScopeEntry } from "../lib/scope";
 import {

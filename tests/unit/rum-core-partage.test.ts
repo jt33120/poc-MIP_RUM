@@ -20,7 +20,7 @@ import * as sdkOtlp from "../../packages/rum-sdk/src/otlp-encode";
 import * as mobile from "../../packages/rum-mobile/src/core";
 
 // L'agent Node maison, troisième runtime jusqu'au 29/09/2026, est archivé
-// (docs/archive/capteurs-serveur-maison.md) : un service Node pose l'agent
+// (l'archive des capteurs maison) : un service Node pose l'agent
 // OpenTelemetry officiel, qui a son propre encodeur.
 describe("rum-core — une seule implémentation pour les deux runtimes MIP", () => {
   it("le web et React Native partagent la MÊME classe de contexte et les mêmes limites", () => {

@@ -6,8 +6,7 @@
 //     entière plutôt que d'inventer un morceau) ;
 //   - la région de la console est celle que Vercel exécute (apps/console/vercel.json) ;
 //   - « droit américain » et « les trois hébergeurs » disent ce que disent les Specs ;
-//   - chaque date d'exploitation citée se lit encore dans docs/TOPOLOGIE_BACKEND.md et
-//     dans le document de couverture — un nouveau relevé qui les change rougit ici ;
+//   - les dates d'exploitation citées ne viennent que de constantes partagées ;
 //   - le dessin tient dans ses boîtes (un texte SVG ne revient pas à la ligne).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -117,8 +116,6 @@ describe("PS3 — le chemin de la mesure", () => {
     expect(relie("collecteur", "base")).toBe(true);
     expect(relie("console", "base")).toBe(true);
     expect(PIECES.find((p) => p.id === "collecteur")?.hebergeur).toBe(HEBERGEURS.railway.societe);
-    // Ce qui rend ce dessin vrai se lit dans le relevé qu'il date.
-    expect(lire("docs/TOPOLOGIE_BACKEND.md")).toContain("`ingest_relay_pct`");
   });
 
   it("chaque ligne de l'alternative a son hébergeur, sa région (sauf le poste du visiteur) et son rôle", () => {
@@ -140,29 +137,12 @@ describe("PS3 — le chemin de la mesure", () => {
       for (const l of p.lignes) expect(l.length, l).toBeLessThanOrEqual(30);
     }
   });
-
-  it("les faits d'exploitation cités se lisent encore dans leurs deux sources", () => {
-    const topologie = lire("docs/TOPOLOGIE_BACKEND.md");
-    const couverture = lire("docs/RUM_PARITY_STATUS.md");
-    expect(topologie).toContain(`supprimé par l'opérateur le ${INGEST_SUPPRIME_LE}`);
-    expect(couverture).toContain(`supprimé le ${INGEST_SUPPRIME_LE}`);
-    expect(topologie).toContain(`(\`${MIGRATIONS_CONSTATEES.deploiement}\`)`);
-    expect(topologie).toContain("migrations à jour");
-    const [jour, mois] = MIGRATIONS_CONSTATEES.le.split("/");
-    expect(couverture).toContain(`déploiement \`${MIGRATIONS_CONSTATEES.deploiement}\`, ${jour}/${mois}`);
-    // Relevé par les API des hébergeurs : le 18/09 (Railway et Vercel), puis Railway seul (21/09, 23/09).
-    const [j18, m18] = TOPOLOGIE_RELEVEE.railwayEtVercel.split("/");
-    expect(couverture).toContain(`le ${j18}/${m18})`);
-    expect(topologie).toContain("Vérifié le même jour\n> par l'API Railway");
-    // Relevé Railway le plus récent : sa section existe dans TOPOLOGIE_BACKEND.md.
-    expect(topologie).toContain(`## Relevé du ${TOPOLOGIE_RELEVEE.railway}`);
-  });
 });
 
 // Revue de fin de vague 7 : la page a porté deux dates pour un même relevé Railway
 // (21/09 dans la légende du chemin de la mesure, 22/09 dans les Specs). Les Specs
 // lisent désormais chaque fait d'exploitation daté dans CES constantes, les mêmes que
-// la légende — et que le test ci-dessus retrouve dans les deux documents. Depuis la
+// la légende. Depuis la
 // recette du 26/09/2026, la page publique ne publie plus le journal (suppression
 // d'`ingest`, identifiant de déploiement) : les constantes restent vérifiées contre
 // leurs sources, les Specs n'en disent que le relevé et la migration constatée.

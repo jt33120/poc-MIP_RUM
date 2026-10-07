@@ -8,7 +8,7 @@
 // à chaque lancement mesurerait surtout sa propre construction. Mais la recette de
 // cette base n'existait qu'en PROSE, dans les en-têtes de `migration-v80.sql` et
 // de `migration-v82.sql`. Personne ne pouvait donc rejouer les chiffres publiés,
-// et la CI ne les jouait jamais (R9 ; `F3` de docs/RUM_PARITY_STATUS.md :
+// et la CI ne les jouait jamais (R9 ; `F3` du relevé de couverture :
 // `BENCH_DATABASE_URL` absente de ci.yml). Ce script fait de la prose un
 // programme, et le job « Bancs de mesure » de ci.yml l'enchaîne avec les bancs.
 //

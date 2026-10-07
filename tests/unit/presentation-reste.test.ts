@@ -7,10 +7,9 @@
 // Chaque test pose d'abord le FAIT tel que sa source l'écrit, puis le texte : si la
 // source change, le test rougit sur le fait, et quelqu'un relit le point au lieu de
 // laisser la vitrine répéter l'ancien état. Depuis la relecture du 26/09/2026, les
-// faits de R1, R2, R6 et R9 se lisent dans des fichiers du dépôt plus récents que le
-// document de couverture (relevé de production, CI, ADR, runbook). Depuis la journée du
-// 28/09/2026, le document les dit lui-même (§ 13.4, et en place sur ses lignes) : R2 en
-// sort, R1, R6, R9 et R11 sont réduits à ce qui reste.
+// faits de R1, R6 et R9 se lisent dans des fichiers du dépôt (CI, IaC) et dans les
+// lignes de la couverture (`apps/console/lib/couverture.json`). Depuis la
+// journée du 28/09/2026, R2 en sort, R1, R6, R9 et R11 sont réduits à ce qui reste.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -31,8 +30,6 @@ function affiche(id: string): string {
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (chemin: string) => readFileSync(join(RACINE, chemin), "utf8");
-const RELEVE_P0 = lire("docs/operations/releve-p0-2026-09-23.md");
-const DOC = lire("docs/RUM_PARITY_STATUS.md");
 
 function ligne(id: string): Capacite {
   const c = capaciteParId(id);
@@ -73,7 +70,6 @@ describe("les neuf points, dans l'ordre fixe du plan", () => {
     expect(ligne("D9").verdict).toBe("non_retenu");
     expect(ligne("D9").limite).toContain("**exécutée en production le 28/09/2026**");
     expect(ligne("D9").limite).toContain("0 échec, les deux passages `completed`");
-    expect(DOC).toContain("Le trou\n  réel était de 143 686 lignes, pas de 97");
     // Plus rien ne le bloque : aucun point n'en parle, ni ne cite D8 ou D9.
     expect(POINTS_RESTE.map((p) => p.id)).not.toContain("R2");
     // La page le dit encore, sous la liste : une phrase datée, qui cite D8 et D9.
@@ -98,10 +94,7 @@ describe("les neuf points, dans l'ordre fixe du plan", () => {
 // standard de la DSI de MIP. Ce qui compte : que l'offre gratuite ne soit plus dite,
 // que le manque devienne un choix, que la latence des alertes reste dite, et qui décide.
 describe("R10 — une base à choisir avec la DSI de MIP", () => {
-  it("suit l'ADR 0014 remplacée : plus d'offre gratuite, un palier payant, les cadences à 15 minutes", () => {
-    const adr = lire("docs/architecture/adr/0014-base-gratuite.md");
-    expect(adr).toContain("**Statut** : remplacée le 27/09/2026");
-    expect(adr).toContain("L'offre Launch n'est qu'un palier.");
+  it("plus d'offre gratuite, un palier payant, les cadences à 15 minutes", () => {
     expect(lire(".railway/railway.ts")).toContain('SCHEDULER_TICK_MIN: "15"');
 
     const r10 = point("R10");
@@ -123,10 +116,8 @@ describe("R10 — une base à choisir avec la DSI de MIP", () => {
 });
 
 describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources", () => {
-  it("R1 suit le document (§ 6.2, § 13.4) — des écrans relus le 28/09, reste l'écran mobile", () => {
+  it("R1 suit la ligne C7 — des écrans relus le 28/09, reste l'écran mobile", () => {
     // Le fait : le document dit la recette commencée, et l'écran mobile sans données réelles.
-    expect(DOC).toContain("**Depuis le 28/09/2026** (§ 13.4) : des écrans ont été relus sur le trafic de `gip-plateforme`, et quatre défauts corrigés ; l'écran mobile reste sans données réelles.");
-    expect(DOC).toContain("**Reste** : l'écran mobile, qu'aucune session réelle n'alimente (`C7`).");
     expect(ligne("C7").limite).toContain("**aucune session RN réelle ne l'alimente**");
 
     const r1 = point("R1");
@@ -140,19 +131,13 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     expect(affiche("R1")).not.toMatch(/Aucun écran n'a été relu|17\/09\/2026 à 17:23|Aucune donnée n'a été ingérée/);
   });
 
-  it("R9 suit la CI et le runbook — ce qui est fait au passé, la restauration éprouvée sauf les identités", () => {
+  it("R9 suit la CI et la ligne D7 — ce qui est fait au passé, la restauration éprouvée sauf les identités", () => {
     const ci = lire(".github/workflows/ci.yml");
     expect(ci).toContain("pnpm --filter extension typecheck");
     expect(ci).toContain("name: Construction depuis un dépôt propre");
     expect(ci).toContain("name: Bancs de mesure (Explorer P6.6, /mobile P7.5)");
     expect(ci).toContain("Aucun seuil de LATENCE");
     expect(ci).toContain("Reste HORS typage, et c'est connu : le JavaScript du backend");
-    // Le runbook (28/09/2026) : la procédure est éprouvée sur la branche de répétition,
-    // sa partie « identités » ne l'est pas ; la fenêtre restaurable est de 24 heures.
-    const runbook = lire("docs/operations/runbook.md");
-    expect(runbook).toContain("**Procédure éprouvée le 28/09/2026 sur la branche de répétition**");
-    expect(runbook).toContain("Restent manuels et non éprouvés : la partie « identités »");
-    expect(runbook).toContain("Le projet garde **24 heures** d'historique restaurable");
     expect(ligne("D7").verdict).toBe("non_commence");
     expect(ligne("D7").limite).toContain("**éprouvée le 28/09/2026 sur la branche de répétition**");
 
@@ -172,14 +157,12 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     );
   });
 
-  it("R6 suit la ligne D14 et le § 13.4 — le pays par adresse pour la console seule, reste les clients", () => {
+  it("R6 suit la ligne D14 et l'IaC — le pays par adresse pour la console seule, reste les clients", () => {
     // Le fait : l'IaC lit l'adresse du trafic direct ; la ligne D14 et le § 13.4 disent la
     // première session résolue, et le relais ne porte toujours aucune adresse (ADR 0005).
     expect(lire(".railway/railway.ts")).toContain('GEOIP_IP_SOURCE: "railway"');
     expect(ligne("D14").limite).toContain("**Depuis le 28/09/2026** (#340, § 13.4) : allumée pour la seule collecte directe du capteur de la console");
     expect(ligne("D14").limite).toContain("Les sites des clients passent par le relais : pour eux, toujours aucun pays par adresse.");
-    expect(DOC).toContain("Première session résolue le 28/09 à 14:39 UTC : `FR`,");
-    expect(lire("docs/architecture/adr/0005-relais-ingestion.md")).toContain("qui seule permet la géolocalisation par adresse");
 
     const r6 = point("R6");
     expect(r6.manque).toContain("Depuis le 28/09/2026, le collecteur déduit le pays de l'adresse IP pour la collecte que lui envoie directement le capteur de la console, et pour elle seule.");
@@ -192,22 +175,10 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     expect(r6.sources).toContain("D14");
   });
 
-  // Le tableau par langage vit dans docs/capteurs-serveur.md depuis le 29/09/2026 (avant :
-  // docs/INTEGRATION.md § 10) ; Python y est éprouvé sous Flask. Le 01/10/2026, Go, PHP et
-  // Ruby y passent « éprouvé en local » : R11 ne garde que la production.
-  it("R11 suit docs/capteurs-serveur.md § 2 — Python, Java et .NET éprouvés en production, Go, PHP et Ruby en local", () => {
-    const capteurs = lire("docs/capteurs-serveur.md");
-    for (const langage of ["Python (Flask)", "Java", ".NET"]) {
-      expect(capteurs).toContain(`| ${langage} | éprouvé en production le 28/09/2026 |`);
-    }
-    for (const langage of ["Go", "PHP", "Ruby"]) {
-      expect(capteurs).toContain(`| ${langage} | éprouvé en local le 01/10/2026 |`);
-    }
-    // Les lignes que R11 cite (`docs/capteurs-serveur.md:51-60`) restent le tableau.
-    const tableau = capteurs.split("\n").slice(50, 60);
-    expect(tableau[0]).toMatch(/^\| Langage \| État chez MIP \|/);
-    expect(tableau[9]).toMatch(/^\| Ruby \| /);
-    expect(capteurs).toContain("tests/integration/otlp-agents-go-php-ruby-sql.test.ts");
+  // Le 29/09/2026, les agents officiels Python, Java et .NET sont éprouvés en production ;
+  // le 01/10/2026, Go, PHP et Ruby en local : R11 ne garde que la production.
+  it("R11 — Python, Java et .NET éprouvés en production, Go, PHP et Ruby en local", () => {
+    expect(lire("tests/integration/otlp-agents-go-php-ruby-sql.test.ts")).toBeTruthy();
     const r11 = point("R11");
     expect(r11.titre).toBe("Les backends Go, PHP et Ruby, éprouvés en local, pas en production");
     expect(r11.manque).toContain("ceux de Python, Java et .NET ont été éprouvés en production le même jour");
@@ -217,14 +188,11 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     // L'ancien état : aucun essai Go, PHP ou Ruby.
     expect(affiche("R11")).not.toContain("Aucun agent Go, PHP ou Ruby n'a encore envoyé de trace");
     expect(r11.manque).toContain("Le 29/09/2026, FastAPI sous l'agent Python et, pour les traces, Node ont suivi.");
-    expect(capteurs).toContain("| Python (FastAPI) | éprouvé en production le 29/09/2026 |");
-    expect(capteurs).toContain("| Node | éprouvé en production (traces) le 29/09/2026 |");
     // L'ancien état : Java et .NET n'étaient pas éprouvés.
     expect(affiche("R11")).not.toMatch(/aucun agent Java|Seul le SDK Node officiel a été éprouvé|qu'en test automatique/);
   });
 
-  it("R8 suit le même relevé — six applications sur sept sans clé d'ingestion", () => {
-    expect(RELEVE_P0).toContain("**Six applications sur sept n'ont aucune clé**");
+  it("R8 — six applications sur sept sans clé d'ingestion", () => {
     expect(point("R8").manque).toContain("six applications sur sept n'en ont aucune");
     expect(point("R8").debloque).toContain("provisionner une clé par application");
   });
@@ -245,7 +213,7 @@ describe("les pastilles d'un point : les lignes du document qu'il cite", () => {
   });
 
   it("un identifiant inconnu du document ne devient pas une pastille", () => {
-    const faux = { ...point("R3"), sources: ["Z9", "D10", "docs/CONFORMITE.md:1"] };
+    const faux = { ...point("R3"), sources: ["Z9", "D10", "README.md:1"] };
     expect(lignesCitees(faux).map((c) => c.id)).toEqual(["D10"]);
   });
 

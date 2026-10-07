@@ -1,7 +1,7 @@
 // Les sources d'erreurs et leurs libellés, SANS la base.
 //
 // Séparé de `queries-errors.ts` le 24/09/2026 (cliquet de la piste C,
-// docs/architecture/console-api/README.md) : un badge qui écrit « JavaScript
+// le cadrage de console-api) : un badge qui écrit « JavaScript
 // navigateur » n'a pas à importer le pool de la console. Tant qu'il passait par
 // `queries-errors.ts`, son graphe d'import atteignait `lib/db.ts`, et il comptait
 // parmi ce que la console doit encore sortir de la base.

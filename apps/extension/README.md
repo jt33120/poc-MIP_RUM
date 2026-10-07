@@ -1,8 +1,7 @@
 # MIP RUM — extension navigateur
 
 2ᵉ capteur RUM du catalogue MIP : instrumente un site **sans toucher à son code**, en
-injectant le SDK par domaine explicitement enregistré côté MIP. Cf.
-`docs/CADRAGE_EXTENSION.md` (cadrage) et `docs/DEPLOY_EXTENSION.md` (déploiement).
+injectant le SDK par domaine explicitement enregistré côté MIP.
 
 ## Ce que fait l'extension
 
@@ -21,14 +20,14 @@ utilisateur (le clic sur l'icône). Le popup affiche toujours l'état courant, u
 transparence** (ce qui est mesuré : Core Web Vitals + erreurs ; aucune frappe clavier, aucun
 contenu de formulaire). La note dit aussi « anonyme » : c'est inexact, le SDK injecté émet
 l'identifiant de visiteur `mip.visitor_id`, un pseudonyme tiré au hasard et gardé dans le
-stockage local de la page (`docs/CONFORMITE.md` §2).
+stockage local de la page (`IDENTIFIANTS_PSEUDONYMES`, `apps/console/lib/legal.ts`).
 
 ## Périmètre — ce que le mode extension couvre (et pas)
 
 L'extension n'instrumente **que les navigateurs où elle est installée** : c'est l'outil
 d'un **pilote** (poste géré, panel, équipe) ou d'un site dont on n'a pas le code — pas
 une couverture 100 % des visiteurs. Pour du RUM exhaustif, c'est le **snippet** dans le
-HTML du site (`docs/INTEGRATION.md`). Les deux écrivent dans les mêmes tables ;
+HTML du site (page « Installer » de la console). Les deux écrivent dans les mêmes tables ;
 `collection_source` distingue `extension` de `sdk`.
 
 ## Build & synchro
@@ -55,7 +54,7 @@ worker MV3 exécuté, manifest + icônes parsés, et le bundle expédié inject�
 expose `window.MIPRum`, s'initialise **sans erreur** et **émet réellement de l'OTLP** vers
 l'endpoint. Sans binaire Chromium complet : SKIP (c'est un outil local, pas une garde CI).
 Le chemin permission/popup (geste utilisateur) reste couvert par les tests unitaires de
-`decideInjection` + la checklist de `docs/DEPLOY_EXTENSION.md`.
+`decideInjection`.
 
 ## Charger en local (sideload)
 
@@ -137,15 +136,14 @@ Conséquences pratiques :
 
 Pourquoi ce n'est pas un affaiblissement : la clé d'un snippet se lit dans le code source
 de toute page qui le porte ; un domaine enregistré, qu'un en-tête `Origin` forgé suffit à
-usurper hors d'un navigateur, ne protège ni plus ni moins. Détails :
-`docs/INTEGRATION.md`, § 2.
+usurper hors d'un navigateur, ne protège ni plus ni moins (`createPgAuth`).
 
 ## Publication (Chrome Web Store) — 🔑 compte externe requis
 
 Le déploiement large passe soit par le **Chrome Web Store** (compte développeur payant,
-non fourni), soit par **sideload/`.crx` + policy entreprise** (cf.
-`docs/DEPLOY_EXTENSION.md`). L'extension est **prête à publier** (manifest complet,
-icônes, packaging, kit de soumission : `docs/CHROME_WEB_STORE.md`) ; il ne manque que le
+non fourni), soit par **sideload/`.crx` + policy entreprise** (stratégies prêtes à
+coller : page « Installer » de la console). L'extension est **prête à publier** (manifest
+complet, icônes, packaging `pnpm pack:store`, visuels `store-assets/`) ; il ne manque que le
 compte Store pour la première voie, la clé privée de signature (hors dépôt) pour empaqueter
 un `.crx` dans la seconde. Tant que ce n'est pas fourni, on reste en sideload/policy — sans
 faire croire à une publication.

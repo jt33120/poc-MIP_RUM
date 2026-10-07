@@ -6,7 +6,7 @@
 // Chaque chiffre se vérifie : les poids sont ceux des fichiers servis par la console
 // (tests/unit/installation-faits.test.ts les remesure), le budget du SDK est celui que
 // `packages/rum-sdk/build.mjs` fait respecter, les langages sont ceux des recettes
-// (lib/recettes-agents-otel.ts), le reste suit docs/INTEGRATION.md (§ 2, § 3, annexe H).
+// (lib/recettes-agents-otel.ts), le reste suit le guide d'intégration (§ 2, § 3, annexe H).
 import type { Parcours } from "./installer";
 import { recettesAgentsOtel } from "./recettes-agents-otel";
 

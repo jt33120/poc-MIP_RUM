@@ -5,7 +5,7 @@
 // Pourquoi des corps capturés et pas des agents lancés ici : Go et PHP ne sont pas
 // sur les postes ni en CI, et leurs dépendances (modules Go, Composer, gems) seraient
 // celles du dépôt. Les trois applications d'essai ont tourné une fois, dans des
-// conteneurs jetables, configurées par le seul socle de docs/capteurs-serveur.md
+// conteneurs jetables, configurées par le seul socle de la fiche des capteurs serveur
 // (§ 1) ; ce que leurs exportateurs ont envoyé est figé ici, avec ses en-têtes
 // (`content-type`, `content-encoding`). Provenance et versions :
 // tests/fixtures/otlp-agents/README.md et manifeste.json.

@@ -1,7 +1,7 @@
 // LA TABLE DES OPÉRATIONS SERVIES : ce qu'une DSI relit.
 //
 // Une ligne par opération, avec sa politique (qui, quelle portée, la démo,
-// l'audit). La doc `docs/api/console-api.md` et la matrice d'autorisations en
+// l'audit). La doc la table des opérations de console-api et la matrice d'autorisations en
 // sont générées. Elle grandit lot par lot : C0 l'exploitation et la vitrine
 // publique, C1 l'identité ; les écrans en C3–C5 ; les écritures en C6–C9.
 import { lignesDuContrat } from "@mip/console-contract";

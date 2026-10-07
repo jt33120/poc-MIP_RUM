@@ -85,15 +85,9 @@ _bmad/
 _bmad-output/
 .mcp.json
 
-# DOCUMENTS COMMERCIAUX ET CLIENT — présents sur le poste, absents du dépôt.
-# Voir docs/DOCUMENTS-HORS-DEPOT.md, qui dit lesquels et pourquoi.
-docs/OFFRE.md
-docs/MARKET_SCAN_BMAD.md
-docs/PRODUCT_REVIEW_BMAD.md
-docs/RAPPORT_CLIENT.md
-docs/DEMO_SCRIPT.md
-docs/*_UTI.md
-
-# Documents de travail (textes de présentation, notes) : restent sur le poste,
-# jamais sur GitHub. Le dépôt public ne porte que le nécessaire.
+# LA DOCUMENTATION VIT SUR LE POSTE (06/10/2026) : architecture, ADR, exploitation,
+# intégration, documents commerciaux et documents de travail. Le dépôt public ne
+# porte que ce qui sert à construire, tester, déployer et faire tourner le produit.
+/docs/
+/labs/
 /local/

@@ -12,7 +12,7 @@
 | Réplicas | 2 (sans état ; le débit par principal est compté par réplique) |
 | Image | `services/console-api/Dockerfile` : `dist/server.mjs` et `pg`. Le bundle embarque la couche de données de la console (`apps/console/lib`), jamais un écran, un composant ou ce qui tient une session de la console (garde du build) |
 
-État au 26/09/2026 : **pas encore créé** sur Railway — déclaré dans `.railway/railway.ts`, il attend ses variables partagées (`CONSOLE_API_CLIENT_SECRETS`, `SESSION_SIGNING_KEYS`…) et un apply approuvé. Le code livré : poignée de main, identité et sessions (C1), coquille et écrans (C2 → C5), écritures, administration et RGPD (C6 → C10), rôles de moindre privilège (C13) ; la table complète est dans [docs/api/console-api.md](../../docs/api/console-api.md). La console sait l'appeler (`apps/console/lib/backend.ts`, C0b) **dès que ses trois variables sont posées sur Vercel**, puis, pour une part des sessions, selon les drapeaux de la bascule (#325) ; sans elles, elle lit la base comme avant. L'E2E l'exerce déjà, en mode strict (`playwright.config.ts`).
+État au 26/09/2026 : **pas encore créé** sur Railway — déclaré dans `.railway/railway.ts`, il attend ses variables partagées (`CONSOLE_API_CLIENT_SECRETS`, `SESSION_SIGNING_KEYS`…) et un apply approuvé. Le code livré : poignée de main, identité et sessions (C1), coquille et écrans (C2 → C5), écritures, administration et RGPD (C6 → C10), rôles de moindre privilège (C13) ; la table complète est dans `packages/console-api/src/table.ts`. La console sait l'appeler (`apps/console/lib/backend.ts`, C0b) **dès que ses trois variables sont posées sur Vercel**, puis, pour une part des sessions, selon les drapeaux de la bascule (#325) ; sans elles, elle lit la base comme avant. L'E2E l'exerce déjà, en mode strict (`playwright.config.ts`).
 
 ## Un seul client, et comment il s'annonce
 
@@ -27,7 +27,7 @@
 
 **Les sessions** (`packages/console-api/src/session.ts`). Le jeton ne porte que `{ iss, aud, sid, iat, exp }`, plus `demo: true` pour une démo : ni rôle, ni périmètre, ni e-mail. Le drapeau de démo est la seule exception, parce qu'il ne change jamais. Le middleware de la console le lit pour refuser toute écriture à une démo sans appeler le service, et le service exige qu'il concorde avec la ligne. Ce qu'un jeton porte, il le porte jusqu'à son expiration, même quand la base a changé d'avis. Le service vérifie d'abord la signature, puis relit la ligne de session et le compte, avec un cache de **30 s** par réplique. C'est le délai maximal d'une révocation, d'un compte désactivé ou d'un rôle retiré. Un en-tête qui désigne une clé ailleurs (`jku`, `jwk`, `x5u`) est refusé, comme tout algorithme autre qu'ES256. La matrice d'autorisations (`tests/contract/console-api-authz.test.ts`) appelle chaque opération avec 8 profils réels, sur PostgreSQL.
 
-La table des opérations, leurs politiques et les codes d'erreur sont dans **[docs/api/console-api.md](../../docs/api/console-api.md)**. Ce fichier est généré depuis la table : il ne peut pas diverger du code.
+La table des opérations et leurs politiques sont dans **`packages/console-api/src/table.ts`** et `src/politique.ts` ; les codes d'erreur, dans `@mip/console-contract`.
 
 ## Sondes
 
@@ -50,7 +50,7 @@ La table des opérations, leurs politiques et les codes d'erreur sont dans **[do
 | `INSCRIPTIONS_PAR_JOUR` | non | inscriptions en libre-service admises par 24 h, pour toute la plateforme. `0` (défaut) : **inscription fermée** (`POST /v1/auth/accounts` → 404) |
 | `INSCRIPTION_DEBIT_MAX_MIN` | non | débit de collecte du site d'un compte inscrit, en événements par minute (défaut 120) |
 | `IDENTITY_HASH_SECRET` | requise pour la recherche, l'export et l'effacement par identité métier (secret) | clé HMAC des identités, **la même** que le collector : les commandes RGPD de C10 (`apps/console/lib/commandes/vie-privee.ts`) hachent la saisie avec elle ; absente, le hachage ne rend rien. Lue hors du schéma de démarrage, et pas encore déclarée pour ce service dans `.railway/railway.ts` (26/09/2026) |
-| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (secret), `OIDC_REDIRECT_URI`, `OIDC_TX_KEY` (secret, 32 octets base64url) | non, **tous ou aucun** | le SSO (C1c) ; une configuration partielle refuse le démarrage. Options : `OIDC_SCOPES`, `OIDC_ROLE_CLAIM`, `OIDC_ADMIN_VALUES`, `OIDC_APPS_CLAIM`, `OIDC_ALLOWED_DOMAINS`. Modèle et règles de lien : [docs/SSO.md](../../docs/SSO.md) |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (secret), `OIDC_REDIRECT_URI`, `OIDC_TX_KEY` (secret, 32 octets base64url) | non, **tous ou aucun** | le SSO (C1c) ; une configuration partielle refuse le démarrage. Options : `OIDC_SCOPES`, `OIDC_ROLE_CLAIM`, `OIDC_ADMIN_VALUES`, `OIDC_APPS_CLAIM`, `OIDC_ALLOWED_DOMAINS`. Modèle et règles de lien : `packages/console-api/src/oidc.ts` |
 | `PGPOOL_MAX`, `PORT`, `LOG_LEVEL`, `METRICS_TOKEN`, `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non | voir le kit |
 
 Côté Vercel (C0b) : `CONSOLE_API_URL` (le domaine généré, en https), `CONSOLE_API_CLIENT_SECRET` (une valeur) et `SESSION_PUBLIC_JWKS`, qui n'est pas secrète (`--publique`). Les trois vont ensemble : une configuration partielle, ou une clé PRIVÉE posée sur Vercel, est refusée et journalisée, et la console reste sur la base. Avant d'envoyer son secret à un hôte, la console vérifie la poignée de main (valable 10 minutes par instance) ; un hôte qui ne la prouve pas ne reçoit jamais le secret.
@@ -72,7 +72,7 @@ Côté Vercel (C0b) : `CONSOLE_API_URL` (le domaine généré, en https), `CONSO
 | `DELETE /v1/auth/sessions/current` | déconnexion : la session est **révoquée** en base, le jeton ne vaut plus rien, tout de suite sur cette réplique, en 30 s sur l'autre |
 | `GET /v1/me` | le principal, relu en base : rôle et périmètre du compte, jamais du jeton |
 | `GET /v1/auth/methods` | les moyens de connexion offerts (SSO, démo) : la console montre ses boutons sans détenir la configuration |
-| `GET /v1/auth/oidc/authorization`, `POST /v1/auth/oidc-sessions` | le SSO : l'adresse de l'IdP et une transaction scellée (JWE) ; puis l'échange du code, la vérification de l'ID token et le lien par (émetteur, sujet) — [docs/SSO.md](../../docs/SSO.md) |
+| `GET /v1/auth/oidc/authorization`, `POST /v1/auth/oidc-sessions` | le SSO : l'adresse de l'IdP et une transaction scellée (JWE) ; puis l'échange du code, la vérification de l'ID token et le lien par (émetteur, sujet) — `packages/console-api/src/oidc.ts` |
 
 **Le débit d'authentification** vit en base (`auth_throttle`, migration-v90), pour toutes les répliques, et se vérifie **avant bcrypt** :
 - IP + e-mail : 8 échecs par 10 min ;
@@ -93,7 +93,7 @@ Une lecture en échec devient une **section** `{ ok: false, code: "lecture_en_ec
 
 La garde du build n'accepte de la console que sa couche de données : ni écran (`app/`), ni composant, ni `lib/auth.ts`, `lib/session-console.ts` ou `lib/backend.ts`, ni Next ou React réels. L'image ne copie que `apps/console/lib`.
 
-**La bascule** (après P6b) : la console appelle ce service pour ses écrans, sa coquille et ses écritures, **session par session**, pour une part réglée en base (`platform_flag.console_api_ecrans_pct`, puis `console_api_commandes_pct`), avec un repli sur sa propre lecture tant que le mode strict n'est pas posé. Les sessions HS256 restent servies par la console. Mode d'emploi : [docs/operations/bascule-console-api.md](../../docs/operations/bascule-console-api.md). La décommission (C12) retirera ensuite la lecture directe de la console.
+**La bascule** (après P6b) : la console appelle ce service pour ses écrans, sa coquille et ses écritures, **session par session**, pour une part réglée en base (`platform_flag.console_api_ecrans_pct`, puis `console_api_commandes_pct`), avec un repli sur sa propre lecture tant que le mode strict n'est pas posé. Les sessions HS256 restent servies par la console. Aiguillage : `apps/console/lib/aiguillage-console-api.ts`. La décommission (C12) retirera ensuite la lecture directe de la console.
 
 ## Sûreté multi-réplique
 

@@ -73,7 +73,7 @@ export const ORG = {
 // ⚠ CES CONSTANTES SONT SERVIES PUBLIQUEMENT (/legal/*, /extension-privacy, les Specs
 // et le pied de page de la vitrine — exemptés d'auth par middleware.ts). Les mentions
 // légales et le DPA en ligne ont été retirés le 22/09/2026 : pour un POC interne,
-// c'était surdimensionné ; le modèle de DPA reste dans docs/DPA.md, et les pages y
+// c'était surdimensionné ; le modèle de DPA reste hors du dépôt, et les pages y
 // renvoient comme à un document FOURNI SUR DEMANDE (`DPA`), jamais par un lien mort.
 // Une valeur périmée ici n'est pas une coquille : c'est une déclaration RGPD inexacte
 // et opposable. Elles ont déclaré Supabase / eu-west-3 Paris pendant douze jours après
@@ -84,7 +84,7 @@ export const ORG = {
 
 /**
  * Hébergement — factuel. Sociétés et régions vérifiées le 08/09/2026 contre
- * docs/NEON_MIGRATION.md et DEPLOY.md ; RÔLES réécrits pour le relais de P3, puis
+ * la note de migration Neon et la procédure de déploiement d'origine ; RÔLES réécrits pour le relais de P3, puis
  * pour le relais seul de C12 (06/10/2026 : la console n'écrit plus de mesure).
  *
  * POURQUOI LES RÔLES ONT CHANGÉ. Avant la bascule, la route de la console
@@ -118,8 +118,8 @@ export const ORG = {
  * avant la première parenthèse, puis « région <id> — Ville, Pays) » ou
  * « région <id>, Ville, Pays) » EN FIN de phrase. Le mot « région » n'y paraît
  * donc qu'une fois, là ; tests/unit/presentation-topologie.test.ts rougit sinon.
- * Elles alimentent aussi une zone générée du README (scripts/readme-sections.mjs) :
- * les changer impose de la régénérer.
+ * Elles alimentent aussi le dessin du chemin de la mesure, sur la vitrine : les
+ * changer impose de le relire.
  */
 export const HOSTS = {
   data: "Neon (base de données PostgreSQL sur infrastructure AWS, région aws-eu-central-1 — Francfort, Allemagne)",
@@ -133,7 +133,7 @@ export const HOSTS = {
 
 /** Un sous-traitant ultérieur, tel que le déclarent les politiques de confidentialité. */
 export interface SousTraitant {
-  /** La société, telle que la nomment ses contrats (clé du registre de docs/CONFORMITE.md § 7). */
+  /** La société, telle que la nomment ses contrats (clé du registre du dossier de conformité § 7). */
   name: string;
   /** Ce qu'elle fait pour le service, en une phrase. */
   role: string;
@@ -165,7 +165,7 @@ const CCT = "Clauses contractuelles types de la Commission européenne";
  * l'UE : aucun transfert hors UE à encadrer, mais l'accord de traitement reste À
  * VÉRIFIER lors de la relecture juridique, comme les CCT des autres fournisseurs.
  *
- * Déclaré dans `SUBPROCESSORS` et au registre de docs/CONFORMITE.md § 7 le
+ * Déclaré dans `SUBPROCESSORS` et au registre du dossier de conformité § 7 le
  * 01/10/2026, dans la même modification (voir l'en-tête de `SUBPROCESSORS`). Déclarée
  * AVANT la liste, qui la reprend : une constante lue avant sa définition lèverait.
  */
@@ -187,7 +187,7 @@ export const SOUS_TRAITANT_ASSISTANT: SousTraitant = {
  * DÉCLARATIF, PAS UN JOURNAL. Le tableau public dit société, rôle, lieu de
  * traitement et garanties. Les notes d'exploitation (« relevé le 09/09 »,
  * « domaine de test ») vivent dans les commentaires ci-dessous et dans
- * docs/CONFORMITE.md, jamais dans une phrase servie au public.
+ * le dossier de conformité, jamais dans une phrase servie au public.
  *
  * ANTHROPIC EN EST SORTI le 09/09/2026, dans la même modification que la
  * suppression de l'assistant IA interne, et Mistral AI avec lui : ils y figuraient
@@ -201,7 +201,7 @@ export const SOUS_TRAITANT_ASSISTANT: SousTraitant = {
  * utilisateur l'interroge, le condensé des chiffres de la Vue d'ensemble part vers
  * le modèle — une nouvelle sortie de données vers un tiers. Sa déclaration est
  * `SOUS_TRAITANT_ASSISTANT`, ci-dessus, reprise dans la liste avec sa ligne du
- * registre de docs/CONFORMITE.md § 7 (le test de conformité compare les deux). Retirée
+ * registre du dossier de conformité § 7 (tenu hors du dépôt). Retirée
  * de la liste, l'assistant n'appellerait plus le modèle, même clé posée
  * (`fournisseurDeclare`, `lib/assistant/mistral.ts`) : il répondrait par règles.
  */
@@ -279,7 +279,7 @@ export const SUBPROCESSORS: SousTraitant[] = [
   // elle reste vraie variable posée ou non, et la coupure (retirer la variable)
   // ne la rend pas fausse. Les journaux HTTP de la plateforme Railway consignent
   // l'adresse source, comme ceux de Vercel : cela relève de son contrat, et
-  // docs/CONFORMITE.md § 3.2 le dit.
+  // le dossier de conformité § 3.2 le dit.
   {
     name: "Railway Corp.",
     role: "Hébergement des services du backend : collecteur des mesures, travaux planifiés, API de lecture, backend de la console et serveur MCP.",
@@ -305,7 +305,7 @@ export const SUBPROCESSORS: SousTraitant[] = [
   // POURQUOI « ÉTATS-UNIS » ET NON UNE RÉGION UE. La région d'envoi se choisit PAR
   // DOMAINE chez Resend ; tant que l'expéditeur est le domaine de test `resend.dev`,
   // MIP ne la choisit pas (eu-west-1, Irlande, sera à retenir en vérifiant le
-  // domaine d'expédition — docs/CONFORMITE.md § 7). Déclarer un transfert qui
+  // domaine d'expédition — le dossier de conformité § 7). Déclarer un transfert qui
   // n'aurait pas lieu est le moindre des deux défauts ; promettre une résidence UE
   // qui n'existe pas encore serait une déclaration inexacte.
   {
@@ -338,7 +338,7 @@ export const PAYS_ESTIME =
 
 /**
  * Les identifiants de la mesure : des PSEUDONYMES, jamais « anonymes » — une
- * donnée pseudonyme reste une donnée personnelle au sens du RGPD (docs/CONFORMITE.md § 2).
+ * donnée pseudonyme reste une donnée personnelle au sens du RGPD (le dossier de conformité § 2).
  */
 export const IDENTIFIANTS_PSEUDONYMES =
   "un identifiant de session et un identifiant de visiteur, tirés au hasard et gardés dans le stockage local du navigateur, sans lien avec l'identité de la personne ni avec son poste. Ce sont des pseudonymes, pas des données anonymes : vider le stockage local du site les efface";

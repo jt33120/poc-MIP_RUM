@@ -13,8 +13,8 @@
 // 390, 768, 1440).
 //
 // CE QUE CE SPEC EXISTE POUR EMPÊCHER. Que la vitrine dise plus que le document de
-// couverture (docs/RUM_PARITY_STATUS.md) : ses chiffres sont lus dans
-// apps/console/lib/couverture.generated.json, l'extraction que lit
+// couverture (le relevé de couverture) : ses chiffres sont lus dans
+// apps/console/lib/couverture.json, l'extraction que lit
 // lib/couverture.ts — jamais recopiés ici.
 //
 // UN BLOC PAR LOT. P**.2 pose l'ossature et ses tests ; chaque lot suivant ajoute
@@ -39,7 +39,7 @@ const RENVOI_RESTE = "/presentation/a-faire#reste-";
 /** Ce que la page doit afficher, relu dans l'extraction du document de couverture. */
 function couverture() {
   const brut = JSON.parse(
-    readFileSync(join(process.cwd(), "apps/console/lib/couverture.generated.json"), "utf8"),
+    readFileSync(join(process.cwd(), "apps/console/lib/couverture.json"), "utf8"),
   ) as { releve: string; sha: string; capacites: { id: string; verdict: string }[] };
   return {
     releve: brut.releve,
@@ -339,7 +339,7 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
   /** Les capacités du document, relues dans son extraction versionnée. */
   function capacitesDuDocument(): { id: string; verdict: string }[] {
     const brut = JSON.parse(
-      readFileSync(join(process.cwd(), "apps/console/lib/couverture.generated.json"), "utf8"),
+      readFileSync(join(process.cwd(), "apps/console/lib/couverture.json"), "utf8"),
     ) as { capacites: { id: string; verdict: string }[] };
     return brut.capacites;
   }
@@ -443,7 +443,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM (page
   /** Verdict de chaque ligne de capacité, relu dans l'extraction du document de couverture. */
   const verdictsDuDocument = (): Map<string, string> => {
     const brut = JSON.parse(
-      readFileSync(join(process.cwd(), "apps/console/lib/couverture.generated.json"), "utf8"),
+      readFileSync(join(process.cwd(), "apps/console/lib/couverture.json"), "utf8"),
     ) as { capacites: { id: string; verdict: string }[] };
     return new Map(brut.capacites.map((c) => [c.id, c.verdict]));
   };
@@ -508,7 +508,7 @@ test.describe("P**.6 — annexe et Specs", () => {
    * les change sans toucher à ce test.
    */
   const extraction = () =>
-    JSON.parse(readFileSync(join(process.cwd(), "apps/console/lib/couverture.generated.json"), "utf8")) as {
+    JSON.parse(readFileSync(join(process.cwd(), "apps/console/lib/couverture.json"), "utf8")) as {
       releve: string;
       familles: string[];
       capacites: { id: string; famille: string; verdict: string }[];

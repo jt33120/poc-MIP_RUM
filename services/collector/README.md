@@ -12,7 +12,7 @@
 | Réplicas | 2 (voir « Sûreté multi-réplique ») |
 | Image | `services/collector/Dockerfile` — seule image à embarquer la base GeoIP |
 
-État au 29/09/2026 : **en service** depuis l'apply du 27/09 (PR #332), deux réplicas, domaine `collector-production-d769.up.railway.app`. Les capteurs visent toujours la console (`/api/ingest/v1/*`), qui relaie **100 %** des beacons ici depuis le 28/09/2026, 07:10 UTC (`platform_flag.ingest_relay_pct`, relais `apps/console/lib/ingest-relay.ts`). Depuis le 06/10/2026, ce service est la seule porte d'entrée en écriture : collecte directe des clients ouverte, et la console n'a plus d'écriture locale (C12) — collector injoignable, elle rend 503. Relevé Railway au 29/09 : 4 208 requêtes en 48 h, 99,3 % en 2xx, 3 en 5xx ([mode d'emploi](../../docs/operations/relais-ingestion.md)).
+État au 29/09/2026 : **en service** depuis l'apply du 27/09 (PR #332), deux réplicas, domaine `collector-production-d769.up.railway.app`. Les capteurs visent toujours la console (`/api/ingest/v1/*`), qui relaie **100 %** des beacons ici depuis le 28/09/2026, 07:10 UTC (`platform_flag.ingest_relay_pct`, relais `apps/console/lib/ingest-relay.ts`). Depuis le 06/10/2026, ce service est la seule porte d'entrée en écriture : collecte directe des clients ouverte, et la console n'a plus d'écriture locale (C12) — collector injoignable, elle rend 503. Relevé Railway au 29/09 : 4 208 requêtes en 48 h, 99,3 % en 2xx, 3 en 5xx (`apps/console/lib/ingest-relay.ts`).
 
 ## Routes
 
@@ -57,12 +57,12 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `LOG_LEVEL` | non | `info` | |
 | `METRICS_TOKEN` | non (secret, ≥ 32 car.) | — | jeton de `/ready` et `/metrics` ; absent : 404 |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non, **à poser** | 10 pour le kit (qui avertit sur Railway) ; Railway, lui, draine 0 s par défaut | délai SIGTERM → SIGKILL ; 15 visé, posé par l'IaC |
-| `REQUIRE_API_KEY` | non | `false` | `true` : toute app inconnue ou **sans clé** prend 403 — sauf le lot de l'extension, sans clé, dont la page est un domaine actif de l'app (30/09/2026, `docs/INTEGRATION.md` § 2). Une app **inactive** prend 403 quel que soit ce réglage. **Provisionner d'abord** (ci-dessous). Booléen strict : `ture` refuse le démarrage. |
+| `REQUIRE_API_KEY` | non | `false` | `true` : toute app inconnue ou **sans clé** prend 403 — sauf le lot de l'extension, sans clé, dont la page est un domaine actif de l'app (30/09/2026, `createPgAuth`). Une app **inactive** prend 403 quel que soit ce réglage. **Provisionner d'abord** (ci-dessous). Booléen strict : `ture` refuse le démarrage. |
 | `RATE_LIMIT_PER_MIN` | non | 600 | plafond par app et par minute (compteur durable en base) |
 | `IDENTITY_HASH_SECRET` | non (secret, ≥ 32 car.) | — | clé HMAC de `mip.identity.*`. Absente : l'identité est **retirée**, jamais stockée brute (`identity: "absente"`). |
 | `IDENTITY_HASH_FINGERPRINT` | **oui dès que le secret est posé** | — | empreinte du secret (12 hex). Absente avec le secret : refus de démarrer. Discordante : l'identité est retirée, `/ready` refusé, erreur au journal. |
 | `EDGE_PROXY_SECRET` | non (secret, ≥ 32 car.) | — | secret du relais de la console (`x-mip-edge-auth`). **Deux valeurs** séparées par une virgule pendant une rotation. |
-| `GEOIP_IP_SOURCE` | non | `none` | d'où lire l'adresse du trafic **direct** : `none`, `socket`, `railway`, `xff:<n>`. L'IaC pose `railway` depuis le 28/09/2026 : seul le capteur de la console vient en direct ([mode d'emploi](../../docs/operations/relais-ingestion.md), « Collecte directe du dogfooding ») |
+| `GEOIP_IP_SOURCE` | non | `none` | d'où lire l'adresse du trafic **direct** : `none`, `socket`, `railway`, `xff:<n>`. L'IaC pose `railway` depuis le 28/09/2026 : seul le capteur de la console vient en direct |
 | `INGEST_DEFERRED` | non | `false` | acquitte **avant** d'écrire (table UNLOGGED, vidée par un arrêt brutal de Postgres) |
 | `INGEST_DRAIN_MS` | non | 250 | intervalle du drain de la file différée |
 | `GEOIP_DB_PATH`, `GEOIP_MAX_AGE_DAYS` | non | —, 180 | lues hors schéma par `packages/backend/lib/geoip-db.mjs`, seulement si `GEOIP_IP_SOURCE` n'est pas `none` : chemin explicite d'une livraison, âge maximal ([`packages/backend/data/README.md`](../../packages/backend/data/README.md)) |
@@ -116,7 +116,7 @@ Prouvé sur Docker : verrou de `gip-plateforme` tenu par une autre session → `
 
 **Limite irréductible**, dite et journalisée : si la latence frappe *la réponse* d'un COMMIT déjà parvenu au serveur, personne ne sait s'il a validé. Le collector répond alors `503 {"error":"ingestion outcome unknown, retry"}` et journalise en **erreur** `deadline: commit outcome unknown, replay may duplicate` (2 cas sur 42 dans la preuve, tous deux commis). Seule une clé d'idempotence côté logs fermerait ce cas.
 
-**Capacité par app (banc local du 24/09, [`docs/operations/banc-collecteur-2026-09-24.md`](../../docs/operations/banc-collecteur-2026-09-24.md)).** Un lot tient le verrou de son app pendant 15 allers-retours SQL : ≈ 150–170 ms à ~10 ms par aller-retour (Amsterdam ↔ Francfort). Une app atteint 30 % d'utilisation vers 1,75 lot/s et sature vers 6,5 lots/s, sans aucun 503 jusque-là. Le plafond est par app, pas global. Le repli chiffré est une fonction SQL en un aller-retour. Sur staging, l'utilisation se lit sans toucher au service, par `scripts/bench/echantillonner-verrou.mjs` (`pg_locks`).
+**Capacité par app (banc local du 24/09, `scripts/bench/banc-collecteur-local.mjs`).** Un lot tient le verrou de son app pendant 15 allers-retours SQL : ≈ 150–170 ms à ~10 ms par aller-retour (Amsterdam ↔ Francfort). Une app atteint 30 % d'utilisation vers 1,75 lot/s et sature vers 6,5 lots/s, sans aucun 503 jusque-là. Le plafond est par app, pas global. Le repli chiffré est une fonction SQL en un aller-retour. Sur staging, l'utilisation se lit sans toucher au service, par `scripts/bench/echantillonner-verrou.mjs` (`pg_locks`).
 
 ## Sûreté multi-réplique
 

@@ -7,7 +7,7 @@
 
 /**
  * L'identifiant de l'extension, dérivé de la clé publique de son manifeste
- * (`docs/DEPLOY_EXTENSION.md`, « Identité de l'extension ») : stable d'un build à
+ * (champ `key` de apps/extension/manifest.json) : stable d'un build à
  * l'autre, c'est lui que la stratégie d'entreprise référence.
  */
 export const EXTENSION_ID = "gglpcalhlkfhgipfmemfiedjomifefba";
@@ -15,8 +15,8 @@ export const EXTENSION_ID = "gglpcalhlkfhgipfmemfiedjomifefba";
 /** Le paquet à charger « non empaqueté », servi par la console (refait par `pnpm --filter ./apps/extension pack`). */
 export const ZIP_EXTENSION = "/downloads/mip-rum-extension.zip";
 
-/** La référence de l'empaquetage avancé (.crx signé, update.xml), pour le service informatique. */
-export const DOC_DEPLOIEMENT_EXTENSION = "https://github.com/jt33120/poc-MIP_RUM/blob/master/docs/DEPLOY_EXTENSION.md";
+/** La référence de l'empaquetage (sideload, .crx et stratégie d'entreprise), pour le service informatique. */
+export const DOC_DEPLOIEMENT_EXTENSION = "https://github.com/jt33120/poc-MIP_RUM/blob/master/apps/extension/README.md";
 
 /** L'adresse du manifeste de mise à jour quand elle n'est pas configurée : un gabarit à remplacer. */
 export const UPDATE_URL_GABARIT = "https://<votre-hebergement>/update.xml";

@@ -1,6 +1,6 @@
 // BANC DE CHARGE DU CHEMIN D'INGESTION.
 //
-// POURQUOI IL EXISTE. Le finding 2.9 de docs/AUDIT_RUM_EXTERNE.md propose de
+// POURQUOI IL EXISTE. Le finding 2.9 de l'audit RUM externe propose de
 // découpler l'ingestion : le receveur écrirait le lot dans une table de
 // débarquement UNLOGGED et rendrait la main, un travailleur ferait le reste.
 // C'est une bonne idée SI l'écriture est bien ce qui coûte. Ce chantier avait

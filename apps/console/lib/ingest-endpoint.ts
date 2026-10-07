@@ -83,7 +83,7 @@ function origineSure(brut: string | undefined): string | null {
  * Les confondre aurait lié deux paliers que le plan sépare : le dogfooding
  * d'abord, pour prouver que `geo_source = 'geoip'` s'écrit, PUIS les clients.
  * Même valeur que la variable du dogfooding une fois celui-ci prouvé (l'origine
- * du collector) ; posée plus tard, et à part (docs/operations/relais-ingestion.md).
+ * du collector) ; posée plus tard, et à part (le mode d'emploi du relais d'ingestion).
  *
  * Pas de refus d'hôte ici, contrairement au dogfooding : la page qui enverra
  * n'est pas la console mais le site du client, dont l'origine est au registre
@@ -158,7 +158,7 @@ export function ingestEndpoint(signal: IngestSignal, host?: string | null, voie:
 
 /**
  * L'origine du collector que le dogfooding vise EN DIRECT, ou `null` : alors il
- * passe par la console, comme avant (P6b.G, `docs/operations/relais-ingestion.md`).
+ * passe par la console, comme avant (P6b.G, le mode d'emploi du relais d'ingestion).
  *
  * POURQUOI UNE VARIABLE À PART, `NEXT_PUBLIC_DOGFOOD_COLLECTOR_URL`. Le relais de la
  * console ne transmet que le pays, jamais l'adresse (ADR 0005) : seul un envoi du

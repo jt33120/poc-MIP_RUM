@@ -76,7 +76,7 @@ export const CATALOGUES: readonly Catalogue[] = [
       {
         // Relu le 02/10/2026 : l'ancienne raison (« résoudre l'adresse IP à l'ingestion,
         // ce que l'engagement interdit ») était fausse — le pays se résout déjà ainsi,
-        // sans rien stocker (docs/CONFORMITE.md § 3.2). Ce qui manque est une base et
+        // sans rien stocker (le dossier de conformité § 3.2). Ce qui manque est une base et
         // une décision, et l'adresse elle-même pour les mesures relayées.
         label: "Opérateur réseau",
         raison:

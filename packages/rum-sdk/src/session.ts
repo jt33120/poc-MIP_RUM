@@ -6,7 +6,7 @@ const INACTIVITY_TTL_MS = 30 * 60 * 1000;
 
 // Une session dure au plus 4 heures, même active : sans borne, un écran mural
 // garderait la même session des semaines, hors des lectures et de la purge de
-// rétention (finding 2.12 b, docs/AUDIT_RUM_EXTERNE.md).
+// rétention (finding 2.12 b, l'audit RUM externe).
 const SESSION_MAX_MS = 4 * 60 * 60 * 1000;
 
 // Le visiteur est un tirage aléatoire persisté, jamais dérivé du terminal : sur

@@ -5,7 +5,7 @@
 //
 // AUCUN CHIFFRE N'EST TAPÉ ICI. Date, total et nombre de capacités
 // déployées sont CALCULÉS par lib/couverture.ts depuis le document de couverture
-// (docs/RUM_PARITY_STATUS.md) : un nouveau relevé change cette ligne au build
+// (le relevé de couverture) : un nouveau relevé change cette ligne au build
 // suivant, et tests/unit/couverture-site.test.ts refuse un décompte écrit en dur
 // dans un composant de la vitrine.
 //

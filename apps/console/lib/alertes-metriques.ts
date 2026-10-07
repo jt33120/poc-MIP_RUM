@@ -1,7 +1,7 @@
 // Les métriques d'alerte et de SLO, leurs comparateurs et leurs libellés, SANS la base.
 //
 // Séparé de `queries-v2.ts` le 24/09/2026 (cliquet de la piste C,
-// docs/architecture/console-api/README.md) : les champs d'une règle d'alerte n'ont
+// le cadrage de console-api) : les champs d'une règle d'alerte n'ont
 // besoin que de ces listes. Tant qu'ils les lisaient dans `queries-v2.ts`, leur
 // graphe d'import atteignait `lib/db.ts`.
 import { texteSeuils, THRESHOLDS } from "./rating";

@@ -1,5 +1,5 @@
 // Lots 5 et 6 — les fenêtres de temps et la cardinalité des routes.
-// Findings 2.8, 2.10 et 2.6 de docs/AUDIT_RUM_EXTERNE.md.
+// Findings 2.8, 2.10 et 2.6 de l'audit RUM externe.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";

@@ -1,4 +1,4 @@
-// Finding 2.13 de docs/AUDIT_RUM_EXTERNE.md — les tablettes, et la dernière qui
+// Finding 2.13 de l'audit RUM externe — les tablettes, et la dernière qui
 // échappait : l'iPad sous iPadOS 13+.
 //
 // L'ingestion classait déjà iPad et tablettes Android d'après l'user-agent

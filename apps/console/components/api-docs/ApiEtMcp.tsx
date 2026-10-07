@@ -36,7 +36,8 @@ import {
 } from "@/lib/api-docs";
 import { DEPOT_GITHUB } from "@/lib/vitrine-navigation";
 
-const DOC = (fichier: string) => `${DEPOT_GITHUB}/blob/master/docs/${fichier}`;
+/** Le catalogue des outils MCP, dans le dépôt public : ce qui fait foi. */
+const CATALOGUE_MCP = `${DEPOT_GITHUB}/blob/master/packages/mcp-tools/lib/catalogue.mjs`;
 
 const SURTITRE = "text-[11px] font-semibold uppercase tracking-wider text-ink-faint";
 const PUCE = "inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-line bg-panel2 px-1.5 py-0.5 text-[11px] text-ink-soft";
@@ -194,8 +195,8 @@ export function ApiEtMcp({
               1 h · 24 h · 7 j
             </li>
             <li className="ml-auto">
-              <LienExterne href={DOC("MCP.md")} className="text-xs font-medium text-perf hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-                Documentation
+              <LienExterne href={CATALOGUE_MCP} className="text-xs font-medium text-perf hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
+                Catalogue des outils
               </LienExterne>
             </li>
           </ul>
@@ -235,11 +236,6 @@ export function ApiEtMcp({
               <span className="font-semibold tabular-nums text-ink">{ecritures}</span> écriture
             </li>
             <li className={PUCE}>JSON</li>
-            <li className="ml-auto">
-              <LienExterne href={DOC("API_CONSOLE.md")} className="text-xs font-medium text-perf hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-                Documentation
-              </LienExterne>
-            </li>
           </ul>
         </section>
       </div>

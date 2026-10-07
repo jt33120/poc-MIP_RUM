@@ -32,7 +32,7 @@ export function normalizeHost(hostname: string | null | undefined): string {
  *  - `scope` : l'entrée du registre pour ce domaine (null = domaine non enregistré) ;
  *  - `hasPermission` : la permission host_permissions est-elle déjà accordée ;
  *  - `sdkAlreadyPresent` : `window.MIPRum` existe déjà sur la page (site déjà
- *    instrumenté par son propre SDK) — anti double-comptage (cf. CADRAGE_EXTENSION §2.4).
+ *    instrumenté par son propre SDK) — anti double-comptage (cf. le cadrage de l'extension, §2.4).
  *
  * Ordre des vérifications volontaire : un domaine non enregistré ne doit JAMAIS
  * déclencher de collecte, quelle que soit la permission — c'est l'invariant de

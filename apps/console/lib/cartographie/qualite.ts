@@ -4,7 +4,7 @@
 import type { Element, Lien } from "./types";
 
 /** Les fichiers de chaque suite, recomptés par le test : une suite qui grandit le fait échouer. */
-export const FICHIERS_DE_TESTS = { unit: 447, integration: 75, contract: 5, e2e: 58 } as const;
+export const FICHIERS_DE_TESTS = { unit: 445, integration: 75, contract: 5, e2e: 58 } as const;
 
 const WF = ".github/workflows";
 
@@ -47,9 +47,9 @@ export const ELEMENTS_GITHUB: readonly Element[] = [
       "Tout le code est dans un dépôt public : console, services, capteurs, migrations, tests et infrastructure. Aucun secret, aucune donnée client.",
     etiquettes: ["public", "Node 24", "pnpm 9.15"],
     faits: [
-      { texte: "Le dépôt est public : ni secret, ni donnée client, ni adresse e-mail personnelle.", sources: ["AGENTS.md:109-111"] },
+      { texte: "Le dépôt est public : ni secret, ni donnée client, ni adresse e-mail personnelle.", sources: ["AGENTS.md:107-109"] },
       { texte: "Node 24 et pnpm 9.15.9, épinglés.", sources: [".nvmrc", "package.json:16"] },
-      { texte: "Toute PR vise master ; une migration fusionnée ne se modifie plus.", sources: ["AGENTS.md:139", "AGENTS.md:67"] },
+      { texte: "Toute PR vise master ; une migration fusionnée ne se modifie plus.", sources: ["AGENTS.md:137", "AGENTS.md:68"] },
     ],
     x: X(0),
     y: 3080,
@@ -216,7 +216,7 @@ export const ELEMENTS_GITHUB: readonly Element[] = [
     etiquettes: [".gitignore", "preserve()", "cible locale"],
     faits: [
       { texte: "Fichiers d'environnement, clés et certificats ignorés par git.", sources: [".gitignore:22-33"] },
-      { texte: "Jamais vercel env pull dans le dépôt, jamais .env sourcé.", sources: ["AGENTS.md:112-113"] },
+      { texte: "Jamais vercel env pull dans le dépôt, jamais .env sourcé.", sources: ["AGENTS.md:110-111"] },
       { texte: "Un script qui écrit refuse une base distante, sauf dérogation qui nomme l'hôte.", sources: ["scripts/lib/cible-locale.mjs:1-23"] },
     ],
     x: 2420,
@@ -227,14 +227,13 @@ export const ELEMENTS_GITHUB: readonly Element[] = [
     famille: "securite",
     zone: "github",
     titre: "Conformité",
-    sousTitre: "pages légales ↔ dossier",
+    sousTitre: "pages légales ↔ code",
     resume:
-      "Hébergeurs et sous-traitants sont déclarés dans le code des pages légales, et le dossier de conformité doit dire exactement la même chose : un test refuse toute divergence.",
+      "Hébergeurs et sous-traitants sont déclarés dans le code des pages légales, et doivent suivre ce que le code fait : un test refuse un sous-traitant appelé sans être déclaré, ou une région qui n'est pas la bonne.",
     etiquettes: ["RGPD", "sous-traitants", "régions"],
     faits: [
       { texte: "Les hébergeurs et leurs régions, dans le code des pages légales.", sources: ["apps/console/lib/legal.ts:124-133"] },
-      { texte: "Le dossier de conformité se déclare le reflet de ce code.", sources: ["docs/CONFORMITE.md:10-16"] },
-      { texte: "Un test confronte sous-traitants, régions et affirmations.", sources: ["tests/unit/conformite.test.ts:48-66"] },
+      { texte: "Un test confronte sous-traitants, régions et lecture de l'adresse IP au code et à l'IaC.", sources: ["tests/unit/conformite.test.ts:16-79"] },
     ],
     x: 3000,
     y: 3270,

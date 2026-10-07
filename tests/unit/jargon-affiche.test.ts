@@ -2,7 +2,7 @@
 //
 // La recette a relevé, à l'écran : des codes de lot (« (parité C3) », « B30 absent »,
 // « S6 », « (B5) »), « seau » (le « bucket » de la conception), des chemins du dépôt
-// (« lib/impact.ts », « docs/INTEGRATION.md »), des noms de tables (« rum_span ») et de
+// (« lib/impact.ts », « le guide d'intégration »), des noms de tables (« rum_span ») et de
 // migrations. Ils restent permis dans les COMMENTAIRES, où ils servent : cette garde ne
 // lit que ce qu'un utilisateur peut voir.
 //

@@ -9,7 +9,7 @@
 // Ici, la défense de l'INGESTION, qui vaut pour tout émetteur : un span serveur
 // en 404/405 sans `http.route` n'a pas de route, il prend `(non trouvée)`. Le
 // middleware FastAPI maison est archivé depuis le 29/09/2026
-// (docs/archive/capteurs-serveur-maison.md) : ses copies déjà déployées
+// (l'archive des capteurs maison) : ses copies déjà déployées
 // continuent d'émettre la forme `ancienMiddleware` ci-dessous, d'où ces cas. Le
 // registre lui-même, sur PostgreSQL, dans tests/integration/route-cardinalite-sql.test.ts.
 import { describe, expect, it } from "vitest";
@@ -116,7 +116,7 @@ describe("ingestion — une requête qu'aucune route n'a servie n'invente pas de
     expect(flattenOtlp(lot([ancien]), { now: NOW }).spans[0].route).toBe(ROUTE_NON_TROUVEE);
   });
 
-  // docs/capteurs-serveur.md § 3 (Go) et § 4 : `otelhttp` 0.71.0 n'écrit jamais
+  // la fiche des capteurs serveur § 3 (Go) et § 4 : `otelhttp` 0.71.0 n'écrit jamais
   // `http.route`, sa route n'est que dans le nom du span (motif du ServeMux de Go 1.22).
   // Un motif à paramètre `{…}` vaut route résolue, même en 404/405 : un 404 métier
   // garde sa route. Un chemin brut dans le nom, lui, n'est toujours pas cru (cas ci-dessus).

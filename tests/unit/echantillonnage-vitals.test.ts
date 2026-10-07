@@ -198,10 +198,4 @@ describe("la déclaration d'échantillonnage", () => {
     // lentes — les percentiles penchent du côté pessimiste.
     expect(noticeEchantillonnage(0.1)!.message).toContain("sur-représente");
   });
-
-  it("la documentation d'intégration ne recommande plus l'échantillonnage sans réserve", () => {
-    const doc = lire("docs/INTEGRATION.md");
-    expect(doc).toContain("sampling_notice");
-    expect(doc).toContain("estimation de cardinalité");
-  });
 });

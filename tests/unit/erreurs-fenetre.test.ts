@@ -1,4 +1,4 @@
-// Les compteurs de l'écran Erreurs — finding 1.1 de docs/AUDIT_RUM_EXTERNE.md.
+// Les compteurs de l'écran Erreurs — finding 1.1 de l'audit RUM externe.
 //
 // CE QUI ÉTAIT FAUX. La tuile affichait « Occurrences · 1 h » et la valeur venait
 // de `v_error_group_ext`, une vue SANS AUCUNE BORNE TEMPORELLE. Basculer

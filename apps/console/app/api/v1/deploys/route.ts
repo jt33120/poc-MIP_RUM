@@ -38,7 +38,7 @@ const refus = (status: number, error: string, entetes: Record<string, string> = 
 const HISTORIQUE = {
   deprecation: "true",
   sunset: new Date(FIN_JETONS_HISTORIQUES).toUTCString(),
-  link: '</docs/integration/sourcemaps-ci.md>; rel="deprecation"',
+  link: '</api-docs>; rel="deprecation"',
 };
 
 /** Le cookie de session, lu dans l'en-tête de la requête (une session est refusée ici). */

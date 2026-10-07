@@ -26,8 +26,8 @@ describe("AGENTS.md", () => {
       if (existsSync(c)) return false;
       // `.env` est cité comme fichier LOCAL, jamais versionné : absent d'un clone neuf (CI).
       if (c === ".env") return false;
-      // Un nom de fichier seul (`mip-rum-replay.js`, `cliquet.json`) : cherché dans les dossiers qu'AGENTS.md nomme.
-      if (!c.includes("/")) return !racine.some((d) => existsSync(d + c)) && !existsSync(`docs/architecture/console-api/${c}`) && !existsSync(`docs/architecture/${c}`) && !existsSync(`docs/operations/${c}`);
+      // Un nom de fichier seul (`mip-rum-replay.js`) : cherché dans les dossiers qu'AGENTS.md nomme.
+      if (!c.includes("/")) return !racine.some((d) => existsSync(d + c));
       return true;
     });
     expect(absents).toEqual([]);

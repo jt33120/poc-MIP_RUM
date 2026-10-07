@@ -1,5 +1,5 @@
 // Les traces du SDK web au standard OpenTelemetry (01/10/2026) — findings 1.4
-// et 2.13 de docs/AUDIT_RUM_EXTERNE.md, angle mort « Conventions sémantiques »
+// et 2.13 de l'audit RUM externe, angle mort « Conventions sémantiques »
 // de apps/console/lib/specs.ts.
 //
 // CE QUI ÉTAIT FAUX. `realEmit` refermait chaque span à son instant d'ouverture :

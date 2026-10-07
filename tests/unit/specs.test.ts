@@ -124,9 +124,9 @@ describe("onglet infrastructure — chaque ligne porte sa preuve", () => {
   it("dit que le compte développeur Chrome n'existe pas", () => {
     const compte = LIGNES.find((l) => l.k === "Compte développeur Chrome");
     expect(compte?.s).toBe("manque");
-    // Le kit de soumission est prêt : la ligne doit renvoyer au document qui le
-    // décrit, sinon « il ne reste qu'à ouvrir un compte » n'est pas vérifiable.
-    expect(compte?.preuve).toBe("docs/CHROME_WEB_STORE.md");
+    // Le kit de soumission est prêt : la ligne renvoie au paquet du store
+    // (`pack.mjs --store`), sinon « il ne reste qu'à ouvrir un compte » n'est pas vérifiable.
+    expect(compte?.preuve).toBe("apps/extension/pack.mjs");
   });
 });
 

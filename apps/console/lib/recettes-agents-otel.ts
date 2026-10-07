@@ -9,7 +9,7 @@
 // que plus personne ne maintient (`tests/unit/recettes-agents-otel.test.tsx`
 // l'interdit).
 //
-// Le socle et les pièges suivent `docs/INTEGRATION.md` § 10, où sont dits l'état
+// Le socle et les pièges suivent le guide d'intégration § 10, où sont dits l'état
 // de chaque langage et ce qui a été éprouvé en production.
 //
 // Module pur, sans base : le socle est prérempli avec l'identifiant de
@@ -32,7 +32,7 @@ export interface RecetteAgent {
   titre: string;
   /** L'agent officiel, nommé. */
   precision: string;
-  /** Éprouvé en production ou non (docs/INTEGRATION.md § 10, « Par langage »). */
+  /** Éprouvé en production ou non (le guide d'intégration § 10, « Par langage »). */
   etat: string;
   /** Le socle, l'installation de l'agent, puis la commande de lancement : un seul bloc à copier. */
   code: string;
@@ -48,7 +48,7 @@ export interface RecettesAgents {
   agents: RecetteAgent[];
   /**
    * Langages renvoyés à la documentation OpenTelemetry, avec le même socle : éprouvés
-   * en local le 01/10/2026, pas en production (docs/capteurs-serveur.md § 2), d'où
+   * en local le 01/10/2026, pas en production (la fiche des capteurs serveur § 2), d'où
    * pas de recette dédiée. `piege` : celui qui casse la trace ou la perd (§ 3).
    */
   autres: { langage: string; documentation: string; etat: string; piege: string }[];
@@ -219,7 +219,7 @@ export function recettesAgentsOtel({
 
   // Éprouvés en local le 01/10/2026 : conteneurs jetables, collecteur de développement,
   // corps rejoués par tests/integration/otlp-agents-go-php-ruby-sql.test.ts. Les pièges
-  // sont ceux que l'essai a constatés (docs/capteurs-serveur.md § 3).
+  // sont ceux que l'essai a constatés (la fiche des capteurs serveur § 3).
   const EN_LOCAL = "éprouvé en local le 01/10/2026, pas en production";
   const autres = [
     {

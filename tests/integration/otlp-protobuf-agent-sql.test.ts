@@ -4,7 +4,7 @@
 // processus à part), et les lignes attendues dans un vrai PostgreSQL.
 //
 // Ce que ce fichier prouve, et que les tests unitaires ne peuvent pas prouver :
-//   · la configuration documentée dans `docs/capteurs-serveur.md` (§ 1, « Le socle
+//   · la configuration documentée dans la fiche des capteurs serveur (§ 1, « Le socle
 //     commun ») marche telle quelle : endpoint par signal,
 //     compression gzip, `mip.app_id` et `mip.api_key` en attributs de ressource ;
 //   · l'exportateur officiel lit notre réponse (corps protobuf vide) comme un

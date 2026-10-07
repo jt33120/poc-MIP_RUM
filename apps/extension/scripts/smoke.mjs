@@ -8,7 +8,7 @@
 //
 // Le chemin permission/webNavigation (geste popup) n'est pas automatisable ici ;
 // il est couvert par les tests unitaires de decideInjection + la checklist manuelle
-// de docs/DEPLOY_EXTENSION.md.
+// de la procédure de déploiement de l'extension.
 //
 // Lancement : PW_CHROME=/chemin/chrome xvfb-run -a node apps/extension/scripts/smoke.mjs
 // Sans binaire Chromium complet : SKIP (exit 0) — c'est un outil de validation

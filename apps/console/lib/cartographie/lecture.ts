@@ -1,8 +1,8 @@
 // Le côté lecture de la carte : la console (Vercel), l'API v1, et les services qui
 // servent les données (api, console-api, mcp sur Railway), avec ceux qui les lisent.
 // Relevé du 30/09/2026 dans le code (apps/console, services/api, services/mcp,
-// packages/console-api, packages/mcp-tools) ; l'état des drapeaux vient des documents
-// d'exploitation datés (docs/operations/relais-*.md, docs/architecture/overview.md).
+// packages/console-api, packages/mcp-tools) ; les répliques et le réseau privé, de
+// l'IaC (.railway/railway.ts).
 import type { Element, Lien } from "./types";
 
 const CONSOLE = "apps/console";
@@ -69,7 +69,6 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
       "L'adresse que visent encore les sites qui n'ont pas changé la leur, une CSP figée par exemple : la console relaie tout au collector, qui seul écrit ; collector injoignable, elle répond 503. Les nouveaux sites, et UTI, envoient au collector en direct.",
     etiquettes: ["relais pur", "aucune écriture", "8 s", "503 + retry-after"],
     faits: [
-      { texte: "Relais allumé pour tout le trafic depuis le 28/09/2026, 07:10 UTC.", sources: ["docs/architecture/overview.md:13"] },
       {
         texte: "Corps transmis octet pour octet, en-têtes par liste exacte ; aucune adresse transmise.",
         sources: [`${CONSOLE}/lib/ingest-relay.ts:28-46`],
@@ -81,7 +80,7 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
       { texte: "Un corps trop gros est refusé avant d'être lu, puis pendant la lecture.", sources: [`${CONSOLE}/app/api/ingest/v1/traces/route.ts:43-61`] },
       {
         texte: "Envoi direct des sites au collector en service depuis le 06/10/2026 ; UTI y envoie navigateur et serveur.",
-        sources: ["docs/architecture/overview.md:14", `${CONSOLE}/lib/ingest-endpoint.ts:93-99`],
+        sources: [`${CONSOLE}/lib/ingest-endpoint.ts:93-99`],
       },
     ],
     x: 2650,
@@ -126,7 +125,6 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
       },
       { texte: "Tirage stable par session ; 5 échecs en 30 s coupent le service pendant 60 s.", sources: [`${CONSOLE}/lib/aiguillage-console-api.ts:40-46`] },
       { texte: "Drapeaux lus en base, gardés 30 s ; zéro par défaut.", sources: [`${CONSOLE}/lib/platform-flag.ts:46-48`] },
-      { texte: "Écrans et écritures non basculés au 29/09/2026 ; la connexion, elle, passe par console-api.", sources: ["docs/architecture/overview.md:92"] },
     ],
     x: 2650,
     y: 1800,
@@ -256,7 +254,6 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
       "L'API REST de lecture des mesures, pour les machines : scripts, CI, partenaires, et le serveur MCP. Les lectures au jeton sont relayées au service api.",
     etiquettes: ["OpenAPI 3.0", "Swagger", "CORS en liste"],
     faits: [
-      { texte: "Relais des lectures au jeton vers le service api : tout le trafic depuis le 28/09/2026.", sources: ["docs/operations/relais-api.md:5"] },
       { texte: "Un appel avec cookie n'est jamais relayé ; ni cookie ni IP ne sont transmis.", sources: [`${CONSOLE}/lib/api-relay.ts:9-15`, `${CONSOLE}/lib/api-relay-commun.ts:11-18`] },
       { texte: "Spécification OpenAPI construite dans le code, Swagger UI servi sans CDN.", sources: [`${CONSOLE}/lib/api/openapi.ts`, `${CONSOLE}/app/api/v1/docs/route.ts:1-6`] },
       { texte: "Une seule écriture : les marqueurs de déploiement, avec un jeton de CI.", sources: [`${CONSOLE}/app/api/v1/route.ts:75`] },
@@ -280,7 +277,7 @@ export const ELEMENTS_RAILWAY_LECTURE: readonly Element[] = [
       { texte: "Chaque outil se déclare en lecture seule et non destructif.", sources: ["packages/mcp-tools/serveur.mjs:181-186"] },
       { texte: "En HTTP, le client se construit à chaque appel avec le jeton de l'appelant.", sources: ["packages/mcp-tools/serveur.mjs:161-170"] },
       { texte: "L'écriture des déploiements n'est volontairement pas exposée.", sources: ["packages/mcp-tools/lib/catalogue.mjs:90-95"] },
-      { texte: "Il lit l'API v1 par le service api, sur le réseau privé de Railway, et ne touche pas la base.", sources: ["docs/TOPOLOGIE_BACKEND.md:26"] },
+      { texte: "Il lit l'API v1 par le service api, sur le réseau privé de Railway, et ne touche pas la base.", sources: [".railway/railway.ts:342-346"] },
     ],
     liste: { titre: "Outils", entrees: OUTILS_MCP },
     x: 50,
@@ -296,7 +293,7 @@ export const ELEMENTS_RAILWAY_LECTURE: readonly Element[] = [
       "Les routes de l'API v1 compilées sans Next.js ni session, servies sous un rôle de base en lecture seule. Il sert le serveur MCP et les lectures au jeton relayées par la console.",
     etiquettes: ["rôle mip_api", "2 répliques"],
     faits: [
-      { texte: "Deux répliques ; son client principal est le serveur MCP.", sources: ["docs/TOPOLOGIE_BACKEND.md:24"] },
+      { texte: "Deux répliques ; son client principal est le serveur MCP.", sources: [".railway/railway.ts:271"] },
       { texte: "GET, HEAD et OPTIONS, plus la requête de l'Explorer ; toute autre écriture répond 405.", sources: ["services/api/routeur.mjs:10-19"] },
       { texte: "Aucune session : seul le jeton ouvre une lecture.", sources: ["services/api/shims/auth.mjs:1-27"] },
       { texte: "Le build refuse d'embarquer la session de la console ou un module Next.js.", sources: ["services/api/build.mjs:98-119"] },
@@ -315,7 +312,7 @@ export const ELEMENTS_RAILWAY_LECTURE: readonly Element[] = [
       "Le service que seul le serveur de la console appelle : identité, sessions, inscription, et à terme tous les écrans et toutes les écritures. Il sert déjà la connexion.",
     etiquettes: ["118 opérations", "sessions révocables"],
     faits: [
-      { texte: "118 opérations : exploitation, identité (dont l'inscription), 48 écrans et 58 commandes.", sources: ["packages/console-api/src/table.ts", "docs/api/console-api.md"] },
+      { texte: "118 opérations : exploitation, identité (dont l'inscription), 48 écrans et 58 commandes.", sources: ["packages/console-api/src/table.ts"] },
       {
         texte: "Chaque opération déclare son accès, sa portée, la démo et l'audit ; une écriture sans audit empêche le démarrage.",
         sources: ["packages/console-api/src/politique.ts:15-77", "packages/console-api/src/politique.ts:110-154"],
@@ -323,7 +320,7 @@ export const ELEMENTS_RAILWAY_LECTURE: readonly Element[] = [
       { texte: "Connexion : bcrypt toujours calculé, refus générique, débit compté en base.", sources: ["packages/console-api/src/operations/identite.ts:11-14", "packages/console-api/src/debit-auth.ts:38-44"] },
       {
         texte: "Appelé par le seul serveur de la console : sans son secret client, un 404 nu ; un en-tête Origin, 403.",
-        sources: ["docs/api/console-api.md:9-21"],
+        sources: ["packages/console-api/src/pipeline.ts:4-9"],
       },
     ],
     x: 690,

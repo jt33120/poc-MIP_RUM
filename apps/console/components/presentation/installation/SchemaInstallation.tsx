@@ -15,7 +15,7 @@
 // lib/recettes-agents-otel.ts (recettes dédiées, `etat` « éprouvé en production ») et
 // ses `autres` (Go, PHP, Ruby : point R11 de « Ce qui reste ») ; les navigateurs, le
 // périmètre de l'extension (Chrome et Edge en Manifest V3, Firefox hors périmètre :
-// docs/CADRAGE_EXTENSION.md). tests/unit/schema-installation.test.tsx les confronte.
+// le cadrage de l'extension). tests/unit/schema-installation.test.tsx les confronte.
 import { useRef, useState, type FocusEvent, type ReactNode } from "react";
 import { LOGOS, type Marque } from "@/lib/logos-marques";
 

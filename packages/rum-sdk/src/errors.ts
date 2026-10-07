@@ -6,7 +6,7 @@ export type AttrValue = string | number | boolean;
 /** ts optionnel : timestamp d'origine (epoch ms) pour les rejeux consent/retry. */
 export type Emit = (name: string, attrs: Record<string, AttrValue>, ts?: number) => void;
 
-// Plafond et déduplication des erreurs (finding 2.1, docs/AUDIT_RUM_EXTERNE.md).
+// Plafond et déduplication des erreurs (finding 2.1, l'audit RUM externe).
 // Une erreur en boucle (rAF, rendu qui reboucle) passe toujours l'échantillonnage,
 // sature la limite de débit de l'ingestion puis se rejoue à chaque page. Une même
 // erreur répétée est donc COMPTÉE (`mip.error_count`, que l'ingestion somme pour

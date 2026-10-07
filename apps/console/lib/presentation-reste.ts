@@ -5,8 +5,8 @@
 // encore. Elle doit être exacte dans les deux sens : ne pas minimiser une limite,
 // ne pas en maintenir une que le document de couverture dit levée.
 //
-// RÈGLE : chaque point ne dit que ce que dit docs/RUM_PARITY_STATUS.md, ou un
-// fichier du dépôt, et le cite dans `sources` — un identifiant de ligne de
+// RÈGLE : chaque point ne dit que ce que dit une ligne de la couverture
+// (couverture.json), ou un fichier du dépôt, et le cite dans `sources` — un identifiant de ligne de
 // capacité (« D12 ») ou « chemin:ligne » depuis la racine du dépôt. Le contrôle
 // n° 4 de tests/unit/couverture-site.test.ts vérifie que chaque source existe et
 // que chaque citation tombe dans son fichier. Il ne vérifie pas que la phrase dit
@@ -25,18 +25,18 @@
 // 23/09 ; des fichiers du dépôt plus récents que lui ont rendu cinq points faux.
 // Ils sont réécrits depuis ces fichiers, qu'ils citent :
 //   - R1 et R2 suivent le relevé de production du 23/09/2026, LU EN BASE
-//     (docs/operations/releve-p0-2026-09-23.md) : la chaîne reçoit du trafic (le
+//     (le relevé P0 du 23/09/2026) : la chaîne reçoit du trafic (le
 //     dernier événement ne date pas du 17/09), et v83 est inscrite au registre
 //     `schema_migration` — le document ne l'avait que déduite des journaux ;
 //   - R6 : le chemin est choisi (ADR 0005). Le relais de la console transmet le pays
 //     seul et saute la résolution ; seule une collecte directe (P6b.G) s'en servira.
 //     Les deux passages du document qui disaient « rien n'est tranché » (§ 11,
-//     étape 2 ; TOPOLOGIE_BACKEND.md, section GeoIP) ne sont plus cités ;
+//     étape 2 ; le relevé de topologie, section GeoIP) ne sont plus cités ;
 //   - R8 : six applications sur sept n'ont aucune clé d'ingestion (même relevé) ;
 //   - R9 : la construction depuis un dépôt propre, le typage de l'extension et les
 //     deux bancs de mesure sont joués par la CI depuis le 24/09 (PR #281,
 //     .github/workflows/ci.yml), et la procédure de restauration est écrite
-//     (docs/operations/runbook.md § 8), jamais éprouvée. F1 à F3 ne sont plus ses
+//     (le runbook § 8), jamais éprouvée. F1 à F3 ne sont plus ses
 //     pastilles : ce que leurs lignes disent manquer est fait.
 // Les autres points ont été relus contre le code le même jour et gardent le texte
 // du plan. Les numéros de ligne cités hors du document ont été relevés à nouveau.
@@ -46,7 +46,7 @@
 // et R10 dit le mécanisme du quota (ce qu'un lecteur doit savoir pour décider) sans
 // le journal de la coupure en cours ni le montant d'une offre.
 //
-// ÉTAT DU 28/09/2026. La production a changé les 27 et 28/09 (docs/TOPOLOGIE_BACKEND.md,
+// ÉTAT DU 28/09/2026. La production a changé les 27 et 28/09 (le relevé de topologie,
 // « Relevé du 28/09/2026 ») ; trois points disaient le contraire et sont réécrits :
 //   - R10 : la base n'est plus sur l'offre gratuite (offre payante à l'usage depuis le
 //     27/09, ADR 0014 remplacée). Ce qui manque n'est plus un budget mais un CHOIX : la
@@ -76,8 +76,8 @@
 //   - R9 : la restauration est éprouvée sur la branche de répétition ; restent sa partie
 //     « identités », les bancs sans seuil et le JavaScript du backend ;
 //   - R11 ne dit plus que Go, PHP et Ruby : les agents Python, Java et .NET sont
-//     éprouvés en production (docs/capteurs-serveur.md § 2, depuis le 29/09/2026 ;
-//     avant, docs/INTEGRATION.md § 10).
+//     éprouvés en production (la fiche des capteurs serveur § 2, depuis le 29/09/2026 ;
+//     avant, le guide d'intégration § 10).
 //   - R7 (les tickets) SORT le 29/09/2026 : la fonctionnalité est retirée par décision du
 //     propriétaire du produit (lignes D12, D13, passées « non retenu »). Plus rien à
 //     débloquer : il passe dans POINTS_FAITS, pour que D12 et D13 gardent un endroit de
@@ -85,9 +85,6 @@
 // R3, R4, R5, R8 et R10 dépendent de tiers et n'ont pas bougé.
 import { capaciteParId, type Capacite } from "./couverture";
 import type { PointFait, PointReste } from "./couverture-controle";
-
-/** Le document de couverture, tel que les sources le citent. */
-const DOC = "docs/RUM_PARITY_STATUS.md";
 
 /**
  * Les neuf points, dans l'ordre fixe du plan (R10 ajouté le 24/09/2026, R11 le 27/09/2026 ;
@@ -107,10 +104,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // d'ensemble qui disait « jamais rien reçu » ; la fin du § 13.4 (aucun verdict ne
     // porte encore la recette). C7 : l'écran mobile, qu'aucune session réelle n'alimente.
     sources: [
-      `${DOC}:297-304`,
-      `${DOC}:743-756`,
       "apps/console/lib/vue-ensemble.ts:59-62",
-      `${DOC}:780-781`,
       "C7",
     ],
   },
@@ -158,13 +152,8 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // conformité à relire (mode d'emploi du relais).
     sources: [
       "D14",
-      `${DOC}:763-769`,
-      "docs/CONFORMITE.md:152-160",
       "apps/console/lib/ingest-relay.ts:102-110",
-      "docs/architecture/adr/0005-relais-ingestion.md:21",
       ".railway/railway.ts:232-241",
-      "docs/operations/relais-ingestion.md:183-186",
-      "docs/operations/relais-ingestion.md:293-296",
     ],
   },
   {
@@ -185,13 +174,9 @@ export const POINTS_RESTE: readonly PointReste[] = [
       "apps/console/lib/specs.ts:247-253",
       "apps/console/components/presentation/Specs.tsx:167-171",
       "apps/console/components/presentation/Specs.tsx:192-201",
-      "docs/architecture/console-api/README.md:221",
       "packages/backend/lib/receiver.mjs:198",
-      "docs/operations/releve-p0-2026-09-23.md:14",
       ".railway/railway.ts:221-228",
       "scripts/ops/provisionner-cles.mjs:1-7",
-      "docs/CONFORMITE.md:24-26",
-      "docs/CONFORMITE.md:215-218",
     ],
   },
   {
@@ -209,14 +194,9 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // `.mjs`, construction depuis un dépôt propre, bancs de mesure sans seuil de latence.
     sources: [
       "D7",
-      `${DOC}:770-773`,
-      "docs/operations/runbook.md:115",
-      "docs/operations/runbook.md:119",
-      "docs/operations/runbook.md:177",
-      "docs/operations/runbook.md:206-212",
-      ".github/workflows/ci.yml:78-93",
-      ".github/workflows/ci.yml:102-131",
-      ".github/workflows/ci.yml:462-481",
+      ".github/workflows/ci.yml:71-86",
+      ".github/workflows/ci.yml:95-124",
+      ".github/workflows/ci.yml:455-474",
     ],
   },
   {
@@ -240,7 +220,6 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // cadences posées par l'IaC ; le mécanisme de la veille et le réglage (README du
     // scheduler, cadence.mjs) ; la vitrine lit la cadence effective (etat-latence).
     sources: [
-      "docs/architecture/adr/0014-base-gratuite.md:40-54",
       ".railway/railway.ts:365",
       ".railway/railway.ts:402",
       "services/scheduler/README.md:50-63",
@@ -251,7 +230,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
   {
     // AJOUTÉ LE 27/09/2026 ; RÉÉCRIT LE 28/09/2026 après la PR #338 (la collecte accepte
     // OTLP en protobuf) ; RÉDUIT LE MÊME JOUR après la PR #342 : les agents officiels
-    // Python, Java et .NET sont éprouvés en production (docs/capteurs-serveur.md § 2,
+    // Python, Java et .NET sont éprouvés en production (la fiche des capteurs serveur § 2,
     // tableau par langage, depuis le 29/09/2026). RÉDUIT LE 29/09/2026 : FastAPI et Node
     // (traces) éprouvés en production sous leur agent officiel (C5, C6). Ce qui reste :
     // Go, PHP et Ruby. RÉDUIT LE 01/10/2026 : les trois sont éprouvés EN LOCAL (conteneurs
@@ -269,10 +248,8 @@ export const POINTS_RESTE: readonly PointReste[] = [
       "C5",
       "C6",
       "packages/backend/shared/otlp-corps.mjs:10-21",
-      "docs/capteurs-serveur.md:51-60",
       "tests/integration/otlp-protobuf-agent-sql.test.ts:1-12",
       "tests/integration/otlp-agents-go-php-ruby-sql.test.ts:1-20",
-      `${DOC}:774-778`,
     ],
   },
 ];
@@ -290,7 +267,7 @@ export const POINTS_FAITS: readonly PointFait[] = [
     titre: "Reprise de l'historique des erreurs",
     fait:
       "Exécutée en production le 28/09/2026 sur les données du 30/08 au 28/09, après une répétition : 143 686 lignes manquaient à l'index des signaux, surtout des appels serveur, et non environ 97 comme estimé le 18/09. Aucun échec. L'outil reste une ligne de commande, lancée depuis un poste, sans écran.",
-    sources: ["D8", "D9", `${DOC}:191-192`, `${DOC}:757-762`],
+    sources: ["D8", "D9"],
   },
   {
     // SORTI LE 29/09/2026. Les lignes D12 et D13, passées « non retenu » : la décision du
@@ -299,7 +276,7 @@ export const POINTS_FAITS: readonly PointFait[] = [
     titre: "Tickets depuis une issue",
     fait:
       "Retirés le 29/09/2026 par décision du propriétaire du produit : le connecteur GitHub Issues, sa file d'envoi, son webhook entrant et le lien de ticket manuel ont quitté la console, les services et la base. Aucune intégration n'avait été configurée.",
-    sources: ["D12", "D13", `${DOC}:195-196`],
+    sources: ["D12", "D13"],
   },
 ];
 

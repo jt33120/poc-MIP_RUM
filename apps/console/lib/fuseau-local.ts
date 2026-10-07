@@ -5,7 +5,7 @@
 // un libellé de plage — n'a pas à importer le pool de la console. Tant qu'il
 // passait par `fuseau.ts`, son graphe d'import atteignait `lib/db.ts`, et il
 // comptait parmi ce que la console doit encore sortir de la base
-// (docs/architecture/console-api/cliquet.json). La lecture du fuseau d'une
+// (scripts/dev/cliquet-console.json). La lecture du fuseau d'une
 // application, elle, reste dans `fuseau.ts` (`fuseauDe`).
 
 /** Fuseau retenu quand l'application est inconnue, ou quand on regarde « toutes ». */

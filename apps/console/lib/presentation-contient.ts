@@ -1,5 +1,5 @@
-// Partie 1 de la vitrine, « Ce qu'il contient » : ce qui se LIT dans le document de
-// couverture (docs/RUM_PARITY_STATUS.md, via lib/couverture.ts) au lieu de s'écrire
+// Partie 1 de la vitrine, « Ce qu'il contient » : ce qui se LIT dans le relevé de
+// couverture (couverture.json, via lib/couverture.ts) au lieu de s'écrire
 // à la main — PUR, sans accès base.
 //
 // POURQUOI CE FICHIER. Le plan (§ 8.2, PS6) écrivait « la CI ne vérifie pas les
@@ -85,8 +85,8 @@ export function reservesPerimees(
 }
 
 /**
- * Banc ClickHouse (plan § 8.2, PS6) : labs/clickhouse/NOTES.md:7 (date, local),
- * :14-15 (égalité des p75 à 1 ms près), :25-26 (×15 à données identiques). Mesuré
- * avant la migration vers Neon, jamais rejoué depuis.
+ * Banc ClickHouse (plan § 8.2, PS6) : mesuré en local (égalité des p75 à 1 ms près,
+ * ×15 à données identiques), avant la migration vers Neon, jamais rejoué depuis. Le
+ * banc et ses notes ne sont plus dans le dépôt.
  */
 export const BANC_CLICKHOUSE = { le: "11/06/2026", compacite: 15 } as const;

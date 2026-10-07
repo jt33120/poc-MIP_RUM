@@ -8,7 +8,7 @@
 // pas retapés. La légende dit le chemin en français courant et date la topologie ;
 // le journal d'exploitation (service supprimé tel jour, identifiant de déploiement)
 // n'est plus sur une page publique (recette du 26/09/2026) : il est dans
-// docs/TOPOLOGIE_BACKEND.md. L'hébergement et son droit renvoient au tableau de la
+// le relevé de topologie. L'hébergement et son droit renvoient au tableau de la
 // présentation, leur seule place.
 //
 // UNE COLONNE, À TOUTES LES LARGEURS. Un texte SVG rétrécit avec son dessin : sept

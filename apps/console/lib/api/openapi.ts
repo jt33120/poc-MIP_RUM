@@ -195,7 +195,7 @@ export function buildOpenApi(): Record<string, unknown> {
       title: "MIP RUM — API console v1",
       version: "1.0.0",
       // `POST /deploys` (l'unique écriture, jeton de CI) n'est pas dans cette spec : le
-      // descripteur `GET /api/v1` la liste à part (`write`), et docs/API_CONSOLE.md la décrit.
+      // descripteur `GET /api/v1` la liste à part (`write`), et la référence de l'API v1 la décrit.
       // Cette description est PUBLIQUE (Swagger, /api-docs) : ni nom de variable
       // d'environnement, ni chemin du dépôt, ni code de lot (recette du 26/09/2026).
       description:

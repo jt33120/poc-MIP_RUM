@@ -136,7 +136,7 @@ describe("PS11 — la conclusion suit la lecture du planificateur", () => {
 
   it("revue de fin de vague 7 : l'écart au marché ne dit rien que le document de couverture refuse", async () => {
     const t = texte(await rendre(ILLISIBLE));
-    // Le pays est estimé (RUM_PARITY_STATUS.md:319-320), et le visiteur est un
+    // Le pays est estimé (le relevé de couverture), et le visiteur est un
     // pseudonyme, « pas une donnée anonyme » (:266).
     expect(t).toContain("Pays estimé, données personnelles nettoyées côté client et côté serveur");
     expect(t).not.toMatch(/géolocalisation|anonym/i);

@@ -73,7 +73,7 @@ export interface MIPRumConfig {
   /**
    * Voies d'erreur en plus des exceptions et rejets non interceptés : console,
    * ressources, CSP et réseau sur option ; workers et WebSockets actifs par défaut,
-   * coupables (docs/INTEGRATION.md).
+   * coupables (le guide d'intégration).
    */
   captureErrors?: CaptureErrorsConfig;
   /** Signaux de frustration (rage clicks, dead clicks) : true (défaut) ou false. */

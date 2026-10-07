@@ -455,7 +455,7 @@ export const ROUTES_MAX = 200;
  *
  * ─────────────────────── CE QUI ÉTAIT EN PLACE ───────────────────────────────
  *
- * Finding 2.6 de docs/AUDIT_RUM_EXTERNE.md. Un `group by m.route` SANS `LIMIT`,
+ * Finding 2.6 de l'audit RUM externe. Un `group by m.route` SANS `LIMIT`,
  * et chaque ligne déclenchait DEUX sous-requêtes corrélées — l'une comptant les
  * pages vues, l'autre les tâches longues. Sur un catalogue de 20 000 URL
  * distinctes, cela fait 40 000 sous-requêtes et 20 000 lignes rendues en HTML.

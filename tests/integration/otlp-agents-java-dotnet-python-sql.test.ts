@@ -298,7 +298,7 @@ suite("R11 — corps des agents Java, .NET et Python → dev-server du collector
     // Spring Boot sert les ressources statiques sous le motif `/**` : un chemin inconnu y
     // tombe, et le javaagent écrit `http.route=/**` sur la 404. La route est donc
     // déclarée, et la 404 reste rangée sous `/**`, pas sous « (non trouvée) » — constaté
-    // à la capture, dit dans docs/INTEGRATION.md, annexe K. Jamais le chemin brut.
+    // à la capture, dit dans le guide d'intégration, annexe K. Jamais le chemin brut.
     const route404 = l === "java" ? "/**" : "(non trouvée)";
     it(`${l} — 404 → « ${route404} », jamais le chemin brut`, async () => {
       const serveurs = (await spans(l, 3)).filter((s) => s.tier === "back");

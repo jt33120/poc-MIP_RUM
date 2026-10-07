@@ -1,6 +1,6 @@
 // C-R — LE CLIQUET DE LA PISTE C : ce qui, dans la console, atteint la base.
 //
-// `docs/architecture/console-api/cliquet.json` liste nominativement les écrans,
+// `scripts/dev/cliquet-console.json` liste nominativement les écrans,
 // fichiers d'actions, routes et composants dont le graphe d'import à l'exécution
 // atteint `lib/db.ts` (ou `pg`). La piste C vide cette liste jusqu'au jalon M4.
 // Ce test la tient dans un seul sens :
@@ -10,7 +10,7 @@
 //   · une entrée LIBÉRÉE doit sortir du cliquet dans la PR qui la libère — sinon
 //     la place resterait ouverte, et un retour en arrière passerait inaperçu.
 //
-// Resserrer : `node scripts/dev/inventaire-console.mjs` (réécrit aussi l'inventaire).
+// Resserrer : `node scripts/dev/inventaire-console.mjs` (réécrit le cliquet).
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {

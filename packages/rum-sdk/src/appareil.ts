@@ -1,4 +1,4 @@
-// Classe d'appareil (`mip.device_type`, finding 2.13 de docs/AUDIT_RUM_EXTERNE.md).
+// Classe d'appareil (`mip.device_type`, finding 2.13 de l'audit RUM externe).
 // Pour l'iPad sous iPadOS 13+, dont Safari se dit « Macintosh » : seul le
 // navigateur sait qu'il est tactile (aucun Mac ne l'est), et l'ingestion fait
 // primer cet indice. `maxTouchPoints` réduit à trois classes : pas d'empreinte.

@@ -10,7 +10,7 @@
 // propres encodeurs (`@opentelemetry/otlp-transformer`), comme le ferait un
 // service qui pose l'agent officiel de son langage puis émet son événement par
 // l'API OpenTelemetry. Jusqu'au 29/09/2026, ces octets venaient de l'agent Node
-// maison (archivé : docs/archive/capteurs-serveur-maison.md) ; l'événement garde
+// maison (archivé : l'archive des capteurs maison) ; l'événement garde
 // les attributs qu'il posait (`mip.event_type`, `mip.event_name`, `mip.props`,
 // `mip.route`), qui sont le contrat de l'ingestion, pas celui d'un capteur.
 import { readFileSync, readdirSync } from "node:fs";

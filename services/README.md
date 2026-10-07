@@ -15,7 +15,7 @@ packages/    ce que les deux importent      @mip/backend (le noyau), @mip/db (sc
                                             @mip/service-kit, @mip/console-api et son contrat
 ```
 
-Un service, une ligne. `.railway/railway.ts` les déclare tous les six, et les six tournent sur Railway depuis l'apply du 27/09/2026 (PR #332 ; relevé de l'API Railway du 28/09/2026, [TOPOLOGIE_BACKEND.md](../docs/TOPOLOGIE_BACKEND.md)). Ce qui reste éteint l'est par un drapeau ([runbook](../docs/operations/runbook.md)) :
+Un service, une ligne. `.railway/railway.ts` les déclare tous les six, et les six tournent sur Railway depuis l'apply du 27/09/2026 (PR #332 ; relevé de l'API Railway du 28/09/2026). Ce qui reste éteint l'est par un drapeau (table `platform_flag`) :
 
 | Service | Rôle | Écoute | Commande | Déployé |
 |---|---|---|---|---|
@@ -23,7 +23,7 @@ Un service, une ligne. `.railway/railway.ts` les déclare tous les six, et les s
 | `scheduler` | déclenche les travaux planifiés sous bail, et **seul** applique les migrations (pré-déploiement) — détail : [`scheduler/README.md`](scheduler/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/scheduler/worker.mjs` · pré-déploiement `node services/scheduler/migrate.mjs` | **Railway** ; redéployé le 27/09/2026, son pré-déploiement a appliqué v87 → v96 ; tick à 15 minutes, ne livre plus (`SCHEDULER_DELIVERY` = `off`) |
 | `notifier` | livre ce que la plateforme a décidé de dire — webhooks signés, e-mails Resend — et seul détient les secrets sortants ; alerte quand les travaux planifiés se taisent — détail : [`notifier/README.md`](notifier/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/live`, `/ready` et `/metrics` (jeton) | `node services/notifier/worker.mjs` | **Railway** depuis le 27/09/2026 — livre à la place du scheduler, passes toutes les 15 minutes |
 | `api` | l'API de lecture v1 pour les machines, **en lecture seule** : les routes de la console compilées en un bundle, sans Next ni session — détail : [`api/README.md`](api/README.md) | oui (`PORT`) : `/api/v1/*`, `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/api/dist/server.mjs` (construit par `build.mjs`) | **Railway**, deux répliques, domaine généré — sert le `mcp` ; les autres porteurs de jeton passent encore par la console (`api_relay_pct` = 0) |
-| `mcp` | expose l'API v1 à un agent IA, sans accès à la base ; n'utilise pas le kit (pas de README propre : ce fichier et [docs/MCP.md](../docs/MCP.md)) | oui (`PORT`, défaut 8080) : `/mcp` (jeton porteur de l'appelant), `/health` | `node services/mcp/http.mjs` | **Railway** (domaine `mcp-production-201c.up.railway.app`) ; appelle `api` sur le réseau privé (`MIP_API_HOST`, posée par l'apply du 27/09) |
+| `mcp` | expose l'API v1 à un agent IA, sans accès à la base ; n'utilise pas le kit (pas de README propre : ce fichier et le catalogue `packages/mcp-tools/lib/catalogue.mjs`) | oui (`PORT`, défaut 8080) : `/mcp` (jeton porteur de l'appelant), `/health` | `node services/mcp/http.mjs` | **Railway** (domaine `mcp-production-201c.up.railway.app`) ; appelle `api` sur le réseau privé (`MIP_API_HOST`, posée par l'apply du 27/09) |
 | `console-api` | le backend de la console (piste C) : seul client, le serveur Vercel, gardé par un secret client ; poignée de main signée ES256 — détail : [`console-api/README.md`](console-api/README.md) | oui (`PORT`) : `/v1/*` sous secret client, `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/console-api/dist/server.mjs` (construit par `build.mjs`) | **Railway**, deux répliques, domaine généré — la console l'appelle pour la connexion depuis le 27/09/2026 ; écrans et écritures pas encore basculés (`console_api_*_pct` = 0) |
 
 `services/collector/` porte aussi les deux serveurs de **développement** que
@@ -72,7 +72,7 @@ pilotable par un modèle de langage, donc par le texte que ce modèle a lu ; la
 seule protection qui tienne contre une injection de prompt réussie, c'est qu'il
 n'y ait rien à atteindre. Son image ne contient que la fermeture des
 dépendances de `@mip/service-mcp` : tout passe par l'API v1, qui applique déjà
-le cloisonnement par jeton. Cf. `docs/MCP.md`.
+le cloisonnement par jeton.
 
 ## Pourquoi le scheduler existe
 
@@ -93,7 +93,7 @@ aucune de ces limites. La base en impose une autre : le tick tourne à 15 minute
 par défaut, pour la laisser en veille entre deux passages — sur l'offre gratuite de Neon
 d'abord, puis sur l'offre payante à l'usage depuis le 27/09/2026, en attendant la base
 que choisira la DSI de MIP ([README du scheduler](scheduler/README.md#base-gratuite--la-cadence-ralentie),
-[ADR-0014](../docs/architecture/adr/0014-base-gratuite.md), remplacée).
+ADR 0014, remplacée).
 
 ## Configuration
 
@@ -119,7 +119,7 @@ relevées depuis. Au relevé du 26/09/2026, avant l'apply, `scheduler` n'avait q
 | `RESEND_API_KEY`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TEST_RECIPIENTS` | `notifier` | non (la clé est un secret) | e-mail des alertes ; `@resend.dev` exige la liste de test ; sans clé, e-mails soldés `skipped` avec la raison |
 | `WEBHOOK_SIGNING_SECRET` | `notifier` | non (secret, ≥ 32 caractères, deux valeurs pendant une rotation) | signe les webhooks (`x-mip-signature`) |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `collector`, `scheduler`, `notifier`, `api`, `console-api` | **à poser** (15 à 30) | délai SIGTERM → SIGKILL ; défaut Railway 0, soit aucun arrêt propre. Le scheduler de production ne l'a pas en variable (son drainage Railway est réglé à 20 s ; le kit, sans la variable, compte 10 s et avertit au démarrage) |
-| `REQUIRE_API_KEY` | `collector` | non | `true` = rejeter toute app inconnue ou sans clé — provisionner d'abord : `scripts/ops/provisionner-cles.mjs`. Une app inactive est refusée quel que soit ce réglage. Exception (30/09/2026) : un lot de l'extension sans clé passe depuis un domaine actif de l'app (`createPgAuth`, `docs/INTEGRATION.md` § 2) |
+| `REQUIRE_API_KEY` | `collector` | non | `true` = rejeter toute app inconnue ou sans clé — provisionner d'abord : `scripts/ops/provisionner-cles.mjs`. Une app inactive est refusée quel que soit ce réglage. Exception (30/09/2026) : un lot de l'extension sans clé passe depuis un domaine actif de l'app (`createPgAuth`) |
 | `IDENTITY_HASH_SECRET` + `IDENTITY_HASH_FINGERPRINT` | `collector` | non ; l'empreinte **oui** dès que le secret est posé | HMAC des identités ; empreinte par `scripts/ops/empreinte-identite.mjs` (écart : identité retirée, `/ready` refusé) |
 | `IDENTITY_HASH_SECRET` | `console-api` | pour le RGPD par identité | la **même** valeur que le collector : sans elle, la recherche, l'export et l'effacement par identité métier (C10) ne peuvent pas hacher la saisie. Déclarée dans l'IaC depuis #327 (26/09/2026) |
 | `EDGE_PROXY_SECRET` | `collector` | non (secret, 1 ou 2 valeurs) | secret du relais de la console (bord de confiance `mip-edge/1`) |

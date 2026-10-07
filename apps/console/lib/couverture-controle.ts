@@ -1,8 +1,8 @@
-// Contrôles de provenance de la vitrine contre le document de couverture — PURS.
+// Contrôles de provenance de la vitrine contre le relevé de couverture — PURS.
 //
 // La partie « Ce qu'il sait faire » de la vitrine (lib/presentation-sait-faire.ts)
 // et la partie « Ce qui reste » (lib/presentation-reste.ts) n'ont le droit de
-// dire que ce que le document dit. Ces fonctions rendent la LISTE des écarts
+// dire que ce que le relevé dit (couverture.json). Ces fonctions rendent la LISTE des écarts
 // (vide = conforme), chaque message nommant la carte et l'identifiant fautifs :
 // un test qui échoue doit dire quoi corriger, pas seulement qu'il y a un problème.
 //
@@ -13,10 +13,8 @@ import type { Capacite } from "./couverture";
 
 /** D'où vient le texte d'une carte. */
 export type Source =
-  /** Une ligne de capacité du document, par identifiant. */
+  /** Une ligne de capacité du relevé, par identifiant. */
   | { ligne: string }
-  /** Une ligne du document qui n'est PAS une ligne de capacité (§ 6.3, § 6.4…). */
-  | { passage: number }
   /** Un fichier du dépôt, « chemin:ligne » ou « chemin:début-fin ». */
   | { fichier: string };
 
@@ -56,8 +54,6 @@ export interface PointFait {
 
 export interface ContexteControle {
   capacites: readonly Capacite[];
-  /** Nombre de lignes du document de couverture. */
-  lignesDocument: number;
   /** Nombre de lignes d'un fichier du dépôt, ou null s'il n'existe pas. */
   lignesDe: (chemin: string) => number | null;
 }
@@ -113,7 +109,6 @@ export function verifierCartes(
 ): string[] {
   const erreurs: string[] = [];
   const parId = new Map(ctx.capacites.map((c) => [c.id, c]));
-  const parLigne = new Map(ctx.capacites.map((c) => [c.ligne, c]));
 
   // 3a — identifiants
   const vuDans = new Map<string, string>();
@@ -152,36 +147,15 @@ export function verifierCartes(
         else if (cap.verdict !== VERDICT_MONTRABLE) {
           erreurs.push(`${carte.id} : source ${cap.id} (« ${cap.verdict} ») — une réserve d'un autre verdict va en « Ce qui reste »`);
         }
-      } else if ("passage" in source) {
-        const cap = parLigne.get(source.passage);
-        if (cap) {
-          // Un « passage » qui tombe sur une ligne de capacité EST cette ligne.
-          if (cap.verdict !== VERDICT_MONTRABLE) {
-            erreurs.push(`${carte.id} : passage :${source.passage} est la ligne ${cap.id} (« ${cap.verdict} »)`);
-          }
-        } else if (source.passage < 1 || source.passage > ctx.lignesDocument) {
-          erreurs.push(`${carte.id} : passage :${source.passage} hors du document (${ctx.lignesDocument} lignes)`);
-        }
       } else {
         const faute = verifierFichier(source.fichier, ctx);
         if (faute) erreurs.push(`${carte.id} : ${faute}`);
       }
     }
 
-    // 3c — une puce par identifiant. Un passage qui tombe sur une ligne de
-    // capacité compte comme cette ligne : il ne peut pas servir à citer une
-    // capacité sans lui donner sa puce.
+    // 3c — une puce par identifiant.
     const puces = new Set(carte.limites.map((l) => l.id));
-    const cites = new Set(
-      carte.sources.flatMap((s) => {
-        if ("ligne" in s) return [s.ligne];
-        if ("passage" in s) {
-          const cap = parLigne.get(s.passage);
-          return cap ? [cap.id] : [];
-        }
-        return [];
-      }),
-    );
+    const cites = new Set(carte.sources.flatMap((s) => ("ligne" in s ? [s.ligne] : [])));
     const sansSource = [...puces].filter((id) => !cites.has(id));
     const sansPuce = [...cites].filter((id) => !puces.has(id));
     if (sansSource.length) erreurs.push(`${carte.id} : puce sans source { ligne } : ${sansSource.join(", ")}`);

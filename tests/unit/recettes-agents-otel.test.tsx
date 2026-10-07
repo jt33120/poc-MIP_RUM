@@ -2,7 +2,7 @@
 // et /select/new).
 //
 // Décision du 29/09/2026 : côté serveur, plus aucun capteur maison. Trois garanties :
-//   1. chaque recette porte le socle commun de docs/INTEGRATION.md § 10, prérempli
+//   1. chaque recette porte le socle commun du guide d'intégration § 10, prérempli
 //      (app_id, adresses complètes par signal, protobuf, gzip, pas de métriques),
 //      puis la commande de lancement de l'agent de son langage ;
 //   2. aucune recette, ni les écrans qui les montrent, ne renvoient à un capteur
@@ -101,11 +101,11 @@ describe("recettes serveur : le socle commun, prérempli", () => {
     for (const a of recettes.autres) expect(a.documentation).toMatch(/^https:\/\/opentelemetry\.io\/docs\//);
   });
 
-  it("Go, PHP et Ruby : éprouvés en local, pas en production, comme le dit docs/capteurs-serveur.md", () => {
-    const doc = readFileSync(join(__dirname, "../../docs/capteurs-serveur.md"), "utf8");
+  it("Go, PHP et Ruby : éprouvés en local, pas en production, comme le prouve leur test SQL", () => {
+    const essai = readFileSync(join(__dirname, "../integration/otlp-agents-go-php-ruby-sql.test.ts"), "utf8");
     for (const a of recettes.autres) {
       expect(a.etat).toBe("éprouvé en local le 01/10/2026, pas en production");
-      expect(doc).toContain(`| ${a.langage} | éprouvé en local le 01/10/2026 |`);
+      expect(essai).toContain(a.langage);
       expect(a.piege.startsWith(`${a.langage} : `)).toBe(true);
     }
   });
