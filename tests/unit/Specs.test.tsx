@@ -11,6 +11,8 @@
 //   - aucun chemin du code, aucune table, aucune adresse d'infrastructure à l'écran ;
 //   - la conclusion ne parle des tâches planifiées que si la LECTURE dit qu'elles
 //     sont à relancer ; une lecture en échec n'affirme rien.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LecturePlanifie } from "@/lib/etat-planifie";
@@ -125,13 +127,19 @@ describe("PS11 — la conclusion suit la lecture du planificateur", () => {
     expect(t).not.toContain("Tâches planifiées à relancer");
     expect(t).not.toContain("relancer les tâches planifiées");
     expect(t).not.toContain("brancher le déclencheur");
-    expect(t).toContain("il faut au moins fermer l'ingestion par défaut");
+    expect(t).toContain("il faut au moins activer le filet d'isolation en base");
   });
 
   it("lu, jamais exécuté : la liste et la conclusion disent toutes deux qu'il faut les relancer", async () => {
     const t = texte(await rendre({ etat: "lu", date: null }));
     expect(t).toContain("Tâches planifiées à relancer");
-    expect(t).toContain("il faut au moins relancer les tâches planifiées, fermer l'ingestion par défaut");
+    expect(t).toContain("il faut au moins relancer les tâches planifiées, activer le filet d'isolation en base");
+  });
+
+  it("07/10/2026 : la clé d'ingestion, exigée depuis le 29/09/2026, n'est plus un manque", async () => {
+    expect(readFileSync(join(__dirname, "..", "..", ".railway/railway.ts"), "utf8")).toContain('REQUIRE_API_KEY: "true"');
+    const t = texte(await rendre(ILLISIBLE));
+    expect(t).not.toMatch(/Clé d'ingestion à rendre obligatoire|fermer l'ingestion par défaut|six applications sur sept/);
   });
 
   it("revue de fin de vague 7 : l'écart au marché ne dit rien que le document de couverture refuse", async () => {
@@ -152,6 +160,6 @@ describe("PS11 — la conclusion suit la lecture du planificateur", () => {
     expect(t).not.toContain("Tâches planifiées à relancer");
     expect(t).not.toContain("relancer les tâches planifiées");
     expect(t).not.toContain("brancher le déclencheur");
-    expect(t).toContain("il faut au moins fermer l'ingestion par défaut");
+    expect(t).toContain("il faut au moins activer le filet d'isolation en base");
   });
 });

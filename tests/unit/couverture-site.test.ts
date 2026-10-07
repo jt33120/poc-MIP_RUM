@@ -217,8 +217,8 @@ describe("4 — chaque point de « Ce qui reste » cite une source qui existe", 
     ]);
   });
 
-  it("sur les vrais points de lib/presentation-reste.ts (P**.5) : R1 à R11 sans R2 (fait le 28/09/2026) ni R7 (tickets retirés le 29/09/2026), et chaque source existe", () => {
-    expect(POINTS_RESTE.map((p) => p.id)).toEqual(["R1", "R3", "R4", "R5", "R6", "R8", "R9", "R10", "R11"]);
+  it("sur les vrais points de lib/presentation-reste.ts (P**.5) : R1 à R11 sans R2 (fait le 28/09/2026), R7 (tickets retirés le 29/09/2026) ni R6 (fait le 07/10/2026), et chaque source existe", () => {
+    expect(POINTS_RESTE.map((p) => p.id)).toEqual(["R1", "R3", "R4", "R5", "R8", "R9", "R10", "R11"]);
     expect(verifierReste(POINTS_RESTE, CTX)).toEqual([]);
     // Les points sortis de la liste (R2, 28/09/2026) passent le même contrôle.
     expect(verifierReste(POINTS_FAITS, CTX)).toEqual([]);

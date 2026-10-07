@@ -37,14 +37,13 @@ function ligne(id: string): Capacite {
   return c;
 }
 
-describe("les neuf points, dans l'ordre fixe du plan", () => {
-  it("titres exacts, R1 à R11 sans R2 (fait le 28/09/2026) ni R7 (tickets retirés le 29/09/2026) : les identifiants ne sont pas renumérotés", () => {
+describe("les huit points, dans l'ordre fixe du plan", () => {
+  it("titres exacts, R1 à R11 sans R2 (fait le 28/09/2026), R7 (tickets retirés le 29/09/2026) ni R6 (fait le 07/10/2026) : les identifiants ne sont pas renumérotés", () => {
     expect(POINTS_RESTE.map((p) => [p.id, p.titre])).toEqual([
       ["R1", "Une recette de l'écran mobile sur une vraie application"],
       ["R3", "Source maps dans l'intégration continue du client"],
       ["R4", "Crashes natifs iOS et Android"],
       ["R5", "React Native : une matrice de compatibilité vide"],
-      ["R6", "Le pays par adresse IP sur les sites des clients"],
       ["R8", "Souveraineté et mise en service chez un client"],
       ["R9", "Une chaîne de livraison qui dit vrai"],
       ["R10", "Une base choisie pour un vrai produit"],
@@ -157,22 +156,32 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     );
   });
 
-  it("R6 suit la ligne D14 et l'IaC — le pays par adresse pour la console seule, reste les clients", () => {
-    // Le fait : l'IaC lit l'adresse du trafic direct ; la ligne D14 et le § 13.4 disent la
-    // première session résolue, et le relais ne porte toujours aucune adresse (ADR 0005).
+  it("R6 sort le 07/10/2026 : la collecte directe des clients est en service, le collecteur y déduit le pays (D14, IaC)", () => {
+    // Le fait : l'IaC lit l'adresse du trafic direct ; le code de suivi proposé vise le
+    // collector dès que la collecte directe est ouverte ; la ligne D14 le dit en place.
     expect(lire(".railway/railway.ts")).toContain('GEOIP_IP_SOURCE: "railway"');
-    expect(ligne("D14").limite).toContain("**Depuis le 28/09/2026** (#340, § 13.4) : allumée pour la seule collecte directe du capteur de la console");
-    expect(ligne("D14").limite).toContain("Les sites des clients passent par le relais : pour eux, toujours aucun pays par adresse.");
+    expect(lire("apps/console/lib/ingest-endpoint.ts")).toContain('return origineCollecteDirecte() ? "directe" : "console";');
+    expect(ligne("D14").limite).toContain("**Depuis le 06/10/2026** : la collecte directe des sites des clients est ouverte");
+    expect(ligne("D14").limite).not.toContain("pour eux, toujours aucun pays par adresse");
 
-    const r6 = point("R6");
-    expect(r6.manque).toContain("Depuis le 28/09/2026, le collecteur déduit le pays de l'adresse IP pour la collecte que lui envoie directement le capteur de la console, et pour elle seule.");
-    expect(r6.manque).toContain("qui ne transmet que le pays posé par Vercel, jamais l'adresse");
-    expect(r6.manque).toContain("pour eux, la résolution ne donne aucun pays.");
-    // L'ancien état : ni « éteint », ni « aucun pays aujourd'hui », ni une preuve à faire.
-    expect(affiche("R6")).not.toMatch(/éteint|ne donne donc aucun pays aujourd'hui|prouver sur un environnement de recette|n'est pas livrée/);
-    expect(affiche("R6")).not.toMatch(/n'est tranché|reste à déposer/);
-    // D14 n'est plus inerte : sa pastille reste en R6, pour ce qui reste aux clients.
+    expect(POINTS_RESTE.map((p) => p.id)).not.toContain("R6");
+    const r6 = POINTS_FAITS.find((p) => p.id === "R6")!;
+    expect(r6.titre).toBe("Le pays par adresse IP sur les sites des clients");
+    expect(r6.fait).toContain("Depuis le 06/10/2026, le code de suivi proposé aux sites des clients envoie les mesures en direct au collecteur");
+    expect(r6.fait).toContain("qui ne transmet que le pays posé par Vercel");
+    expect(r6.fait).not.toMatch(/aucun pays|éteint/);
     expect(r6.sources).toContain("D14");
+  });
+
+  it("R5 nuancé le 07/10/2026 : le visiteur mobile est persisté si l'application branche un stockage", () => {
+    // Le fait : le SDK lit puis écrit l'identité dans le stockage fourni, et retombe en mémoire sans lui.
+    const mobile = lire("packages/rum-mobile/src/index.ts");
+    expect(mobile).toContain("const record = await persist.chargerIdentite(appId);");
+    expect(mobile).toContain('origine = ecrit ? "storage" : "memory";');
+    const r5 = point("R5");
+    expect(r5.manque).toContain("le visiteur mobile n'est gardé d'un lancement à l'autre que si l'application branche un stockage");
+    expect(r5.manque).toContain("sans lui, il est recompté à chaque lancement");
+    expect(affiche("R5")).not.toContain("persister l'identifiant du visiteur");
   });
 
   // Le 29/09/2026, les agents officiels Python, Java et .NET sont éprouvés en production ;
@@ -192,9 +201,11 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     expect(affiche("R11")).not.toMatch(/aucun agent Java|Seul le SDK Node officiel a été éprouvé|qu'en test automatique/);
   });
 
-  it("R8 — six applications sur sept sans clé d'ingestion", () => {
-    expect(point("R8").manque).toContain("six applications sur sept n'en ont aucune");
-    expect(point("R8").debloque).toContain("provisionner une clé par application");
+  it("R8 — la clé d'ingestion n'est plus un manque : exigée depuis le 29/09/2026", () => {
+    expect(lire(".railway/railway.ts")).toContain('REQUIRE_API_KEY: "true"');
+    expect(point("R8").manque).toContain("La clé d'ingestion, elle, est exigée depuis le 29/09/2026");
+    // L'ancien état : la clé facultative, six applications sur sept sans clé.
+    expect(affiche("R8")).not.toMatch(/six applications sur sept|n'est pas exigée|provisionner une clé/);
   });
 });
 
@@ -202,7 +213,6 @@ describe("les pastilles d'un point : les lignes du document qu'il cite", () => {
   it("dans l'ordre des sources ; une source « chemin:ligne » n'en est pas une", () => {
     const ids = (id: string) => lignesCitees(point(id)).map((c) => c.id);
     expect(ids("R5")).toEqual(["C1", "C2", "C3", "C4", "C9", "C10"]);
-    expect(ids("R6")).toEqual(["D14"]);
     // R9 : F1 à F3 ne sont plus citées depuis la relecture du 26/09 (ce qu'elles
     // disaient manquer est fait) ; reste D7, la restauration.
     expect(ids("R9")).toEqual(["D7"]);
@@ -217,11 +227,11 @@ describe("les pastilles d'un point : les lignes du document qu'il cite", () => {
     expect(lignesCitees(faux).map((c) => c.id)).toEqual(["D10"]);
   });
 
-  it("D14 est une pastille de « Ce qui reste », pour les sites des clients ; D12 et D13, retirées, sortent de la liste", () => {
-    // D14 n'est plus inerte depuis le 28/09/2026 (elle a sa carte, K16) ; R6 la cite
-    // encore, pour les sites des clients.
+  it("D14 n'est plus une pastille de « Ce qui reste » (R6 fait le 07/10/2026) ; D12 et D13, retirées, sortent de la liste", () => {
+    // D14 n'est plus inerte depuis le 28/09/2026 (elle a sa carte, K16) ; R6, qui la
+    // citait pour les sites des clients, est sorti de la liste.
     expect(ligne("D14").verdict).toBe("deploye_non_eprouve");
-    expect(lignesCitees(point("R6")).map((c) => c.id)).toContain("D14");
+    for (const p of POINTS_RESTE) expect(lignesCitees(p).map((c) => c.id), p.id).not.toContain("D14");
     // Les tickets sont retirés le 29/09/2026 (décision du propriétaire du produit) : D12
     // et D13 passent « non retenu », R7 sort de la liste et dit le retrait, daté.
     for (const id of ["D12", "D13"]) {

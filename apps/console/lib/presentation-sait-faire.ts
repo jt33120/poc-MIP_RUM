@@ -39,7 +39,9 @@
 //     les deux cas comptés double que la ligne nomme ;
 //   - K16 (D14) : le GeoIP n'est plus inerte — il résout le pays de la collecte directe du
 //     capteur de la console. D14 quitte la liste des inertes (couverture-controle.ts) et
-//     prend sa carte ; les sites des clients restent en « Ce qui reste » (R6).
+//     prend sa carte ; les sites des clients restent en « Ce qui reste » (R6). Le
+//     07/10/2026, R6 en sort : la collecte directe des clients est en service depuis
+//     le 06/10/2026, et la puce D14 le dit, sans renvoi.
 //
 // RETRAIT DU MODULE SVI (29/09/2026). Les lignes B1 et D5 du document le disent ; les
 // puces B1 (K6) et D5 (K12) suivent : plus de lecture SVI, et la réserve de D5 — des
@@ -358,7 +360,7 @@ export const CARTES: readonly CarteCapacite[] = [
       {
         id: "D14",
         texte:
-          "Allumé le 28/09/2026 pour le seul capteur de la console : les sites des clients passent encore par le relais, qui ne transmet que le pays (voir R6). Le pays seulement, et rien de rétrospectif : l'adresse des visites passées n'a jamais été gardée.",
+          "Allumé le 28/09/2026 pour le capteur de la console, le 06/10/2026 pour les sites des clients qui envoient en direct ; un site resté sur l'adresse de la console passe par son relais, qui ne transmet que le pays posé par Vercel. Le pays seulement, et rien de rétrospectif : l'adresse des visites passées n'a jamais été gardée.",
       },
     ],
     // La ligne D14 ; le seul périmètre allumé, dans l'IaC du collecteur ; ce que les pages

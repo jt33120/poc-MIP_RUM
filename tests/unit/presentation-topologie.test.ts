@@ -86,7 +86,7 @@ describe("PS4 — l'hébergement est lu dans lib/legal.ts, jamais retapé", () =
   it("la table : une ligne par hébergeur, dans l'ordre de lib/legal.ts", () => {
     expect(HEBERGEMENT).toEqual([
       { piece: "Base de données", hebergeur: "Neon (sur AWS)", lieu: "Francfort, Allemagne", droit: "américain" },
-      { piece: "Console et réception des mesures", hebergeur: "Vercel Inc.", lieu: "Francfort, Allemagne", droit: "américain" },
+      { piece: "Console et relais de collecte", hebergeur: "Vercel Inc.", lieu: "Francfort, Allemagne", droit: "américain" },
       { piece: "Collecteur et services du backend", hebergeur: "Railway Corp.", lieu: "Amsterdam, Pays-Bas", droit: "américain" },
     ]);
   });
@@ -95,26 +95,28 @@ describe("PS4 — l'hébergement est lu dans lib/legal.ts, jamais retapé", () =
 describe("PS3 — le chemin de la mesure", () => {
   it("le libellé accessible est celui du plan, composé depuis les mêmes hébergeurs", () => {
     expect(ARIA_TOPOLOGIE).toBe(
-      "Chemin de la mesure : du navigateur à la console sur Vercel, qui en relaie une part au collecteur sur Railway et écrit le reste dans la base Neon à Francfort ; travaux planifiés, API de lecture et serveur MCP sur Railway à Amsterdam.",
+      "Chemin de la mesure : du navigateur au collecteur sur Railway, qui l'écrit dans la base Neon à Francfort ; un site resté sur l'ancienne adresse passe par la console sur Vercel, qui relaie sans rien écrire ; travaux planifiés, API de lecture et serveur MCP sur Railway à Amsterdam.",
     );
   });
 
   it("sept pièces, reliées sans flèche du serveur MCP vers la base", () => {
-    expect(PIECES.map((p) => p.id)).toEqual(["navigateur", "console", "collecteur", "base", "travaux", "api", "mcp"]);
+    expect(PIECES.map((p) => p.id)).toEqual(["navigateur", "collecteur", "base", "console", "travaux", "api", "mcp"]);
     const ids = new Set(PIECES.map((p) => p.id));
     for (const l of LIAISONS) {
       expect(ids.has(l.de), l.de).toBe(true);
       expect(ids.has(l.vers), l.vers).toBe(true);
     }
     expect(LIAISONS.some((l) => l.de === "mcp" && l.vers === "base")).toBe(false);
-    expect(LIAISONS.find((l) => l.de === "navigateur")).toMatchObject({ vers: "console", libelle: "OTLP/HTTP JSON" });
+    expect(LIAISONS.find((l) => l.de === "navigateur")).toMatchObject({ vers: "collecteur", libelle: "OTLP/HTTP JSON" });
   });
 
-  it("relevé du 28/09/2026 : la console relaie une part au collecteur Railway, et écrit le reste", () => {
+  it("06/10/2026 : collecte directe au collecteur, seul à écrire ; la console relaie l'ancienne adresse sans écrire", () => {
     const relie = (de: string, vers: string) => LIAISONS.some((l) => l.de === de && l.vers === vers);
+    expect(relie("navigateur", "collecteur")).toBe(true);
+    expect(relie("navigateur", "console")).toBe(true);
     expect(relie("console", "collecteur")).toBe(true);
     expect(relie("collecteur", "base")).toBe(true);
-    expect(relie("console", "base")).toBe(true);
+    expect(relie("console", "base")).toBe(false);
     expect(PIECES.find((p) => p.id === "collecteur")?.hebergeur).toBe(HEBERGEURS.railway.societe);
   });
 

@@ -183,8 +183,16 @@ export const DOMAINES: readonly Domaine[] = [
     faits: [
       { texte: "Le verrou est une ligne, pas un verrou de session : le pooler de Neon les annule.", sources: [`${SQL}/migration-v54.sql:31`] },
       {
-        texte: "Quatre drapeaux : ingest_relay_pct, api_relay_pct, console_api_ecrans_pct, scheduler_tick_min.",
-        sources: [`${SQL}/migration-v87.sql:91`],
+        // Relu le 07/10/2026 (`git grep platform_flag`) : ingest_relay_pct n'est plus lu
+        // depuis que la console relaie toute la collecte (#397).
+        texte:
+          "Cinq drapeaux lus par le code : api_relay_pct, console_api_ecrans_pct, console_api_commandes_pct, ingest_un_aller_retour_pct, et scheduler_tick_min, que le scheduler publie.",
+        sources: [
+          `${SQL}/migration-v87.sql:91`,
+          "apps/console/lib/platform-flag.ts:40-46",
+          "packages/backend/lib/ingest-un-ar.mjs:48",
+          "packages/backend/jobs/ordonnanceur.mjs:203",
+        ],
       },
     ],
     tables: [

@@ -24,9 +24,9 @@ Deux états coexistent, et un commentaire doit toujours dire lequel il décrit :
   six services — `collector`, `api`, `console-api`, `mcp`, `scheduler` (travaux
   planifiés, seul migrateur), `notifier`. La collecte reçue par la console est
   relayée au `collector` ; les lectures au jeton de l'API v1, au service `api`.
-- **En service, éteint par un drapeau** (`platform_flag`) : la bascule des écrans
-  et des écritures vers `console-api` (drapeaux absents, donc à 0) ; le GeoIP du
-  `collector` hors collecte directe.
+- **En service depuis le 06/10/2026** (`platform_flag`) : la bascule des écrans et
+  des écritures vers `console-api` (drapeaux à 100, sans mode strict : la console garde
+  la base en repli) ; la collecte directe au `collector`, avec son GeoIP.
 
 ## Carte
 

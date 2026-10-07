@@ -2,7 +2,8 @@
 // servent les données (api, console-api, mcp sur Railway), avec ceux qui les lisent.
 // Relevé du 30/09/2026 dans le code (apps/console, services/api, services/mcp,
 // packages/console-api, packages/mcp-tools) ; les répliques et le réseau privé, de
-// l'IaC (.railway/railway.ts).
+// l'IaC (.railway/railway.ts). Le 07/10/2026, la bascule vers console-api : ses deux
+// drapeaux sont à 100 en production depuis le 06/10/2026 (relevé de l'exploitation).
 import type { Element, Lien } from "./types";
 
 const CONSOLE = "apps/console";
@@ -115,13 +116,16 @@ export const ELEMENTS_VERCEL: readonly Element[] = [
     titre: "Bascule vers console-api",
     sousTitre: "écrans et écritures, session par session",
     resume:
-      "Un aiguillage décide, session par session, si c'est console-api ou la console elle-même qui lit et écrit ; à zéro aujourd'hui, la console lit la base directement.",
-    statut: "drapeau",
-    etiquettes: ["console_api_ecrans_pct", "disjoncteur"],
+      "Un aiguillage décide, session par session, si c'est console-api ou la console elle-même qui lit et écrit. Depuis le 06/10/2026, ses deux drapeaux sont au maximum : console-api sert toute session qu'il a signée, et la console ne lit la base elle-même qu'en repli, faute de mode strict.",
+    etiquettes: ["console_api_ecrans_pct", "console_api_commandes_pct", "depuis le 06/10/2026", "disjoncteur"],
     faits: [
       {
         texte: "Cinq conditions dans l'ordre ; la première qui manque garde la console.",
         sources: [`${CONSOLE}/lib/aiguillage-console-api.ts:6-18`],
+      },
+      {
+        texte: "Le mode strict, pas encore posé, supprimerait le repli sur la base.",
+        sources: [`${CONSOLE}/lib/aiguillage-console-api.ts:20-24`],
       },
       { texte: "Tirage stable par session ; 5 échecs en 30 s coupent le service pendant 60 s.", sources: [`${CONSOLE}/lib/aiguillage-console-api.ts:40-46`] },
       { texte: "Drapeaux lus en base, gardés 30 s ; zéro par défaut.", sources: [`${CONSOLE}/lib/platform-flag.ts:46-48`] },
@@ -309,7 +313,7 @@ export const ELEMENTS_RAILWAY_LECTURE: readonly Element[] = [
     titre: "console-api",
     sousTitre: "le backend de la console · 118 opérations",
     resume:
-      "Le service que seul le serveur de la console appelle : identité, sessions, inscription, et à terme tous les écrans et toutes les écritures. Il sert déjà la connexion.",
+      "Le service que seul le serveur de la console appelle : identité, sessions, inscription, et, depuis le 06/10/2026, les écrans et les écritures des sessions qu'il a signées.",
     etiquettes: ["118 opérations", "sessions révocables"],
     faits: [
       { texte: "118 opérations : exploitation, identité (dont l'inscription), 48 écrans et 58 commandes.", sources: ["packages/console-api/src/table.ts"] },
@@ -387,7 +391,7 @@ export const LIENS_LECTURE: readonly Lien[] = [
   { de: "equipes", vers: "console-auth", nature: "appel", libelle: "se connectent" },
   { de: "console-auth", vers: "console-api", nature: "appel", libelle: "connexion, /v1/me, déconnexion" },
   { de: "console-ecrans", vers: "console-bascule", nature: "appel", libelle: "chargerEcran" },
-  { de: "console-bascule", vers: "console-api", nature: "appel", libelle: "si le drapeau l'accorde" },
+  { de: "console-bascule", vers: "console-api", nature: "appel", libelle: "toute session qu'il a signée" },
   { de: "console-ecrans", vers: "console-commandes", nature: "appel", libelle: "server actions" },
   { de: "console-ecrans", vers: "stats", nature: "embarque" },
   { de: "api", vers: "stats", nature: "embarque" },

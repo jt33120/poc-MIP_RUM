@@ -111,39 +111,39 @@ export const INFRA: GroupeInfra[] = [
     // du 28/09/2026 », API Railway), lue dans la même constante que la légende du chemin
     // de la mesure : tests/unit/presentation-topologie.test.ts vérifie qu'elle s'y lit.
     // Les six services de `.railway/railway.ts` (groupes 1 · Collecte, 2 · Restitution,
-    // 3 · Traitements) tournent depuis l'apply du 27/09/2026 (PR #332). Ce qui reste
-    // éteint, ce sont des DRAPEAUX (`api_relay_pct`, `console_api_ecrans_pct`,
-    // `console_api_commandes_pct` à 0) : les lignes le disent service par service.
-    sous: `Les capteurs visent la console. Six services tournent à part en production, en trois groupes — collecte, restitution, traitements (relevé le ${TOPOLOGIE_RELEVEE.railway}). Ni framework, ni fonction à la demande : du Node et du PostgreSQL, dans des images construites depuis le code source.`,
+    // 3 · Traitements) tournent depuis l'apply du 27/09/2026 (PR #332). État du
+    // 07/10/2026 : relais de l'API v1 à 100 depuis le 28/09, collecte directe et
+    // bascule vers console-api à 100 depuis le 06/10/2026 ; le mode strict manque.
+    sous: `Les capteurs envoient au collecteur, en direct. Six services tournent à part en production, en trois groupes — collecte, restitution, traitements (relevé le ${TOPOLOGIE_RELEVEE.railway}). Ni framework, ni fonction à la demande : du Node et du PostgreSQL, dans des images construites depuis le code source.`,
     lignes: [
       {
         k: "Collecteur",
         // Le receveur autonome (l'ancien `ingest`, supprimé faute de domaine public, voir
-        // le relevé de topologie) revenu comme service `collector`. La console lui
-        // relaie une part de la collecte depuis le 27/09/2026 (lib/ingest-relay.ts,
-        // drapeau `ingest_relay_pct` : 10 %, puis 50 % le même soir). Pas de pourcentage
-        // ici : il change sans toucher au code, et une page publique le figerait.
+        // le relevé de topologie) revenu comme service `collector`. Depuis le 06/10/2026, le
+        // code de suivi proposé le vise en direct (lib/ingest-endpoint.ts) ; la console ne
+        // fait plus que relayer l'ancienne adresse, sans écrire (#397, lib/ingest-relay.ts),
+        // et un lot s'écrit en un aller-retour (#400, migration-v109, drapeau à 100).
         // La SEULE place où le dossier raconte ce service (contre-recette du 26/09/2026 :
-        // quatre fois) ; « Le chemin de la mesure » et le point R6 y renvoient.
-        v: "Un receveur OpenTelemetry autonome, en service depuis le 27/09/2026 : la console lui relaie une part des mesures, qui monte par paliers, et il les pseudonymise avant de les écrire en base. Le reste est encore écrit par la console. La résolution du pays par adresse IP y reste éteinte (voir « Ce qui reste »).",
-        s: "partiel",
+        // quatre fois) ; « Le chemin de la mesure » y renvoie.
+        v: "Un receveur OpenTelemetry autonome, seul à écrire les mesures depuis le 06/10/2026 : les sites lui envoient en direct, et la console ne fait plus que relayer ceux restés sur son adresse. Il exige la clé de l'application, déduit le pays de l'adresse IP sans la garder, pseudonymise l'identité et écrit chaque lot en un seul aller-retour vers la base.",
+        s: "atteint",
         preuve: "services/collector/server.mjs",
       },
       {
         k: "API de lecture",
         // Service `api` : le serveur MCP l'appelle sur le réseau privé (MIP_API_HOST,
-        // .railway/railway.ts). Le relais des lectures de la console vers lui
-        // (`api_relay_pct`) est à 0 : les porteurs de jeton passent encore par la console.
-        v: "L'API de lecture v1, servie sous un rôle de base en lecture seule. En service depuis le 27/09/2026 pour le serveur MCP ; les autres porteurs de jeton passent encore par la console, le relais vers elle n'étant pas allumé.",
-        s: "partiel",
+        // .railway/railway.ts). Le relais des lectures au jeton de la console vers lui
+        // (`api_relay_pct`, lib/api-relay.ts) est à 100 depuis le 28/09/2026.
+        v: "L'API de lecture v1, servie sous un rôle de base en lecture seule. En service depuis le 27/09/2026 pour le serveur MCP, et depuis le 28/09/2026 pour tous les porteurs de jeton : la console lui relaie leurs lectures.",
+        s: "atteint",
         preuve: "services/api/server.mjs",
       },
       {
         k: "Backend de la console",
         // Service `console-api` : Vercel y est branché depuis le 27/09/2026 (CONSOLE_API_URL,
-        // lib/backend.ts) ; la connexion l'emprunte (auth.demo, auth.logout, me en 200
-        // dans ses journaux). Écrans et écritures : drapeaux à 0 (lib/aiguillage-console-api.ts).
-        v: "Comptes, sessions, écrans et écritures de la console, hors de Vercel. Depuis le 27/09/2026, la connexion passe par lui ; les écrans et les écritures lisent et écrivent encore la base depuis la console, en attendant leur bascule.",
+        // lib/backend.ts) ; la connexion l'emprunte. Écrans et écritures : drapeaux à 100
+        // depuis le 06/10/2026 ; sans mode strict, la console garde le repli sur la base.
+        v: "Comptes, sessions, écrans et écritures de la console, hors de Vercel. La connexion passe par lui depuis le 27/09/2026, les écrans et les écritures depuis le 06/10/2026 ; la console garde encore son accès à la base, en repli.",
         s: "partiel",
         preuve: "services/console-api/server.mjs",
       },
