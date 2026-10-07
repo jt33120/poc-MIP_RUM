@@ -12,7 +12,7 @@
 | Réplicas | 1 (deux seraient sûrs : voir « Sûreté multi-réplique ») |
 | Image | `services/notifier/Dockerfile` — ni `@mip/db`, ni base GeoIP |
 
-État au 26/09/2026 : **pas encore créé** sur Railway — déclaré dans `.railway/railway.ts`, il attend ses variables partagées (`RESEND_API_KEY`, `ALERT_EMAIL_TEST_RECIPIENTS`, `WEBHOOK_SIGNING_SECRET`…) et un apply approuvé. En production, le scheduler livre à chaque tick (`SCHEDULER_DELIVERY` n'y est pas posée), et aucun e-mail d'alerte n'est jamais parti : `route_alert` les solde `skipped` tant que migration-v88 n'est pas appliquée (la production est à v86), et le scheduler n'a pas de clé Resend.
+État au 07/10/2026 : **en service** depuis l'apply du 27/09/2026 (PR #332), une réplique. Il livre à la place du scheduler, qui ne fait plus que décider (`SCHEDULER_DELIVERY: "off"` dans `.railway/railway.ts`), et passe toutes les 15 minutes (`NOTIFIER_INTERVAL_MS: "900000"`, offre payante de Neon : chaque réveil se paie).
 
 ## Ce qu'il fait
 

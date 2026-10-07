@@ -12,7 +12,7 @@
 | Réplicas | 2 (sans état : le débit par principal est compté par réplique) |
 | Image | `services/api/Dockerfile` — `dist/server.mjs` et `pg`, rien d'autre |
 
-État au 26/09/2026 : **pas encore créé** sur Railway — déclaré dans `.railway/railway.ts`, il attend ses variables partagées (dont `API_DATABASE_URL`) et un apply approuvé. Le rôle `mip_api` arrive avec migration-v89, pas encore appliquée en production. L'API v1 est servie par la console Vercel ; le relais de la console vers ce service est livré (`apps/console/lib/api-relay.ts`, #292) et éteint : `CONSOLE_API_RELAY_URL` non posée sur Vercel, drapeau `platform_flag.api_relay_pct` à 0 (`apps/console/lib/api-relay.ts`).
+État au 07/10/2026 : **en service** depuis l'apply du 27/09/2026 (PR #332), deux réplicas, sous le rôle `mip_api` (migration-v89). Il sert le serveur MCP par le réseau privé, et les lectures au jeton de l'API v1 que la console lui relaie : drapeau `platform_flag.api_relay_pct` à **100 %** depuis le 28/09/2026, 16:33 UTC (`apps/console/lib/api-relay.ts`). Un appel avec cookie n'est jamais relayé : la console le sert elle-même.
 
 ## Pourquoi un bundle des routes de la console
 
