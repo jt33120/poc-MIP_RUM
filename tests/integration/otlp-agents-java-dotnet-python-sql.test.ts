@@ -20,8 +20,8 @@
 //   · ses spans sont dans la trace du navigateur (`traceparent`) et rattachés à sa
 //     session (`tracestate`) ;
 //   · l'exception de la route en échec est comptée UNE fois — par le journal ERROR du
-//     framework, donc SANS session ni route (ce que ce fichier fige, à corriger côté
-//     collecte) ;
+//     framework, qui arrive avant le span —, et prend pourtant la session et la route
+//     de son span serveur (migration-v110) ;
 //   · ses journaux sont écrits et reliés à leur trace.
 //
 //   SQL_TEST_DATABASE_URL=<base jetable> pnpm vitest run tests/integration/otlp-agents-java-dotnet-python-sql.test.ts
@@ -307,23 +307,25 @@ suite("R11 — corps des agents Java, .NET et Python → dev-server du collector
       ]);
     });
 
-    // L'exception est comptée UNE fois, mais par le JOURNAL ERROR que le framework écrit
+    // L'exception est comptée UNE fois, par le JOURNAL ERROR que le framework écrit
     // (Tomcat, Kestrel, Flask), porteur d'`exception.type` : les trois agents exportent
     // leurs journaux avant leurs spans, et un journal ne porte ni session ni route. Le
-    // span serveur (500) garde, lui, sa route et la session ; l'erreur ne les reprend pas.
+    // span serveur (500), arrivé ensuite, les lui donne (migration-v110) : l'erreur est
+    // dans la session du navigateur et sous la route de sa requête. Elle reste
+    // `origin_signal = 'log'` : c'est le journal qui l'a comptée.
     // .NET n'enregistre même pas l'exception sur le span (constaté avec 1.17.0).
     const TYPE: Record<Langage, string> = {
       java: "java.lang.IllegalStateException",
       dotnet: "InvalidOperationException",
       python: "RuntimeError",
     };
-    it(`${l} — l'exception de POST /factures/:id/payer comptée une fois, par le journal, sans session ni route`, async () => {
+    it(`${l} — l'exception de POST /factures/:id/payer comptée une fois, par le journal, avec la session et la route de son span`, async () => {
       const lignes = await erreurs(l);
       expect(lignes).toHaveLength(1);
       expect(lignes[0]).toMatchObject({
         trace_id: trace(l, 2),
-        session_id: null,
-        route: null,
+        session_id: session(l),
+        route: "/factures/:id/payer",
         error_type: TYPE[l],
         message: "paiement refusé : facture déjà soldée",
         service: service(l),
@@ -349,6 +351,10 @@ suite("R11 — corps des agents Java, .NET et Python → dev-server du collector
 
   it("rejouer les mêmes corps n'ajoute aucune exception", async () => {
     for (const c of CORPS) expect((await rejouer(c)).status).toBe(200);
-    for (const l of LANGAGES) expect(await erreurs(l), l).toHaveLength(1);
+    for (const l of LANGAGES) {
+      expect(await erreurs(l), l).toEqual([
+        expect.objectContaining({ session_id: session(l), route: "/factures/:id/payer", origin_signal: "log" }),
+      ]);
+    }
   }, 30_000);
 });
