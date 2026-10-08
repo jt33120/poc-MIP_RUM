@@ -244,7 +244,9 @@ export async function chargerEcran<R>(operation: OperationEcran, chargeur: Charg
   const l = await ecrans.lireEcran(operation, chargeur, sp, chemin);
   if (l.ok) return l.data;
   if (l.refus.code === "session_requise" || l.refus.code === "session_invalide") redirect("/login");
-  if (l.refus.code === "role_insuffisant") redirect("/");
+  // `demo_refusee` : un écran en POST (`/admin/privacy`) refuse la démo AVANT le rôle ;
+  // pour la page, c'est le même refus qu'un rôle insuffisant.
+  if (l.refus.code === "role_insuffisant" || l.refus.code === "demo_refusee") redirect("/");
   if (l.refus.code === "hors_perimetre") redirect("/select");
   throw new ErreurConsoleApi(l.refus.code, l.refus.requestId, l.refus.message);
 }
