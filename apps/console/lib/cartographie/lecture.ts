@@ -281,7 +281,7 @@ export const ELEMENTS_RAILWAY_LECTURE: readonly Element[] = [
       { texte: "Chaque outil se déclare en lecture seule et non destructif.", sources: ["packages/mcp-tools/serveur.mjs:181-186"] },
       { texte: "En HTTP, le client se construit à chaque appel avec le jeton de l'appelant.", sources: ["packages/mcp-tools/serveur.mjs:161-170"] },
       { texte: "L'écriture des déploiements n'est volontairement pas exposée.", sources: ["packages/mcp-tools/lib/catalogue.mjs:90-95"] },
-      { texte: "Il lit l'API v1 par le service api, sur le réseau privé de Railway, et ne touche pas la base.", sources: [".railway/railway.ts:342-346"] },
+      { texte: "Il lit l'API v1 par le service api, sur le réseau privé de Railway, et ne touche pas la base.", sources: [".railway/railway.ts:357-361"] },
     ],
     liste: { titre: "Outils", entrees: OUTILS_MCP },
     x: 50,
@@ -297,7 +297,7 @@ export const ELEMENTS_RAILWAY_LECTURE: readonly Element[] = [
       "Les routes de l'API v1 compilées sans Next.js ni session, servies sous un rôle de base en lecture seule. Il sert le serveur MCP et les lectures au jeton relayées par la console.",
     etiquettes: ["rôle mip_api", "2 répliques"],
     faits: [
-      { texte: "Deux répliques ; son client principal est le serveur MCP.", sources: [".railway/railway.ts:271"] },
+      { texte: "Deux répliques ; son client principal est le serveur MCP.", sources: [".railway/railway.ts:286"] },
       { texte: "GET, HEAD et OPTIONS, plus la requête de l'Explorer ; toute autre écriture répond 405.", sources: ["services/api/routeur.mjs:10-19"] },
       { texte: "Aucune session : seul le jeton ouvre une lecture.", sources: ["services/api/shims/auth.mjs:1-27"] },
       { texte: "Le build refuse d'embarquer la session de la console ou un module Next.js.", sources: ["services/api/build.mjs:98-119"] },

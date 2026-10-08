@@ -367,7 +367,7 @@ export const CARTES: readonly CarteCapacite[] = [
     // légales déclarent de l'adresse lue et jamais écrite.
     sources: [
       { ligne: "D14" },
-      { fichier: ".railway/railway.ts:247" },
+      { fichier: ".railway/railway.ts:262" },
       { fichier: "lib/legal.ts:323-336" },
     ],
   },
