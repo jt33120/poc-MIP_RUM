@@ -4,8 +4,8 @@
 // carte par point de lib/presentation-reste.ts, dans l'ordre ; les trois lignes
 // étiquetées du plan ; les pastilles des lignes du document que le point cite,
 // avec le nom de la capacité et son verdict LUS dans lib/couverture.ts. La
-// présence de D14 (inerte jusqu'au 28/09/2026, citée par R6 pour les sites des clients)
-// dans #reste sur la vraie page — et l'absence de D12, retirée le 29/09/2026 — est la recette e2e TP4
+// sortie de R6 (07/10/2026 : D14 n'a plus de pastille dans #reste) sur la vraie page — et
+// l'absence de D12, retirée le 29/09/2026 — est la recette e2e TP4
 // (tests/e2e/presentation.spec.ts).
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -62,7 +62,7 @@ describe("Partie 3 — une carte par point, dans l'ordre", () => {
   });
 
   it("les cartes sont les éléments d'une liste ordonnée", () => {
-    expect(HTML).toMatch(/<ol class="[^"]*grid[^"]*">(<li class="min-w-0"><article [^]*?<\/article><\/li>){9}<\/ol>/);
+    expect(HTML).toMatch(/<ol class="[^"]*grid[^"]*">(<li class="min-w-0"><article [^]*?<\/article><\/li>){8}<\/ol>/);
   });
 });
 
@@ -70,7 +70,7 @@ describe("Partie 3 — les points sortis de la liste, faits (28/09/2026)", () =>
   const bloc = HTML.slice(HTML.indexOf('data-testid="reste-faits"'));
 
   it("sous la liste, hors de ses cartes : un titre, puis une phrase datée par point, son titre portant l'ancre d'un point", () => {
-    expect(POINTS_FAITS.map((p) => p.id)).toEqual(["R2", "R7"]);
+    expect(POINTS_FAITS.map((p) => p.id)).toEqual(["R2", "R7", "R6"]);
     expect(HTML.indexOf('data-testid="reste-faits"')).toBeGreaterThan(HTML.indexOf("</ol>"));
     expect(texte(/<h3 id="reste-faits-titre"[^>]*>(.*?)<\/h3>/.exec(bloc)![1])).toBe("Sortis de la liste");
     for (const p of POINTS_FAITS) {
@@ -118,9 +118,7 @@ describe("Partie 3 — les pastilles des lignes du document", () => {
     });
   });
 
-  it("D14 (pour les sites des clients) a sa pastille dans la partie 3 ; D12 et D13, retirées le 29/09/2026, n'en ont plus", () => {
-    const trouvees = [...HTML.matchAll(/data-testid="reste-pastille" data-id="D14" data-verdict="deploye_non_eprouve"/g)];
-    expect(trouvees).toHaveLength(1);
-    for (const id of ["D12", "D13"]) expect(HTML, id).not.toContain(`data-testid="reste-pastille" data-id="${id}"`);
+  it("D14 (R6, fait le 07/10/2026), D12 et D13 (retirées le 29/09/2026) n'ont plus de pastille dans la partie 3", () => {
+    for (const id of ["D14", "D12", "D13"]) expect(HTML, id).not.toContain(`data-testid="reste-pastille" data-id="${id}"`);
   });
 });

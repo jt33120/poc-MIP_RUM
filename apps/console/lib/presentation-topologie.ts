@@ -86,12 +86,12 @@ export interface LigneHebergement {
   droit: string;
 }
 
-// Relevé du 28/09/2026 : la console reçoit toujours toutes les mesures (les capteurs la
-// visent), mais le collecteur qui écrit la part relayée tourne sur Railway, avec l'API,
-// le backend de la console, le notifier, les travaux planifiés et le MCP.
+// État du 07/10/2026 : depuis le 06/10, les capteurs envoient au collecteur, sur Railway
+// avec l'API, le backend de la console, le notifier, les travaux planifiés et le MCP ; la
+// console ne reçoit plus que les mesures des sites restés sur son adresse, et les relaie.
 export const HEBERGEMENT: readonly LigneHebergement[] = [
   { piece: "Base de données", h: HEBERGEURS.base },
-  { piece: "Console et réception des mesures", h: HEBERGEURS.console },
+  { piece: "Console et relais de collecte", h: HEBERGEURS.console },
   { piece: "Collecteur et services du backend", h: HEBERGEURS.railway },
 ].map(({ piece, h }) => ({ piece, hebergeur: hebergeurTexte(h), lieu: lieuTexte(h), droit: DROIT_HEBERGEURS }));
 
@@ -112,7 +112,9 @@ export const MIGRATIONS_CONSTATEES = { le: "18/09/2026", deploiement: "03850b30"
  * suppression d'`ingest`, le 23/09 après la vague 8 (deux services), puis le 28/09
  * (le relevé de topologie, « Relevé du 28/09/2026 ») : six services en ligne depuis
  * l'apply du 27/09, et la console qui relaie une part de la collecte au `collector`.
- * Vercel n'a pas été relevé par son API depuis le 18/09 : d'où les deux dates.
+ * Vercel n'a pas été relevé par son API depuis le 18/09 : d'où les deux dates. Le
+ * chemin de la mesure a changé le 06/10/2026 sans changer les services : la légende
+ * date ce changement à part.
  */
 export const TOPOLOGIE_RELEVEE = { railwayEtVercel: "18/09/2026", railway: "28/09/2026" } as const;
 
@@ -139,12 +141,14 @@ const regionAlt = (h: Hebergeur): string => (h.lieu ? `${h.lieu.region} — ${h.
 // Rôles : le relevé de topologie, « Les trois hébergeurs » et « Les services Railway
 // en production » (relevé du 28/09/2026) ; E1 (API /api/v1) ; le relais : ce que la
 // console transmet au collector, sans adresse (apps/console/lib/ingest-relay.ts,
-// ENTETES_TRANSMIS) ; le MCP passe par le service `api` sur le réseau privé
-// (.railway/railway.ts, MIP_API_HOST ; packages/mcp-tools/lib/client.mjs) ; travaux
-// planifiés : services/scheduler/worker.mjs:8-10 ; D5 (purge de rétention).
-// L'ordre est celui du dessin : le collecteur entre la console et la base, l'API
-// au-dessus du MCP qu'elle sert. Le backend de la console (`console-api`) et le
-// notifier ne sont pas sur le chemin de la mesure : les spécifications les décrivent.
+// ENTETES_TRANSMIS) ; la collecte directe, en service depuis le 06/10/2026
+// (apps/console/lib/ingest-endpoint.ts) ; le MCP passe par le service `api` sur le
+// réseau privé (.railway/railway.ts, MIP_API_HOST ; packages/mcp-tools/lib/client.mjs) ;
+// travaux planifiés : services/scheduler/worker.mjs:8-10 ; D5 (purge de rétention).
+// L'ordre est celui du chemin : la mesure va du navigateur au collecteur, puis à la base ;
+// la console vient après, parce qu'elle n'écrit plus rien (#397). Le backend de la
+// console (`console-api`) et le notifier ne sont pas sur le chemin de la mesure : les
+// spécifications les décrivent.
 export const PIECES: readonly Piece[] = [
   {
     id: "navigateur",
@@ -152,23 +156,15 @@ export const PIECES: readonly Piece[] = [
     lignes: ["SDK web ou extension"],
     hebergeur: "poste du visiteur",
     region: null,
-    role: "mesure et envoie en OTLP/HTTP JSON",
-  },
-  {
-    id: "console",
-    titre: `Console — ${HEBERGEURS.console.marque}`,
-    lignes: [...lieuCourt(HEBERGEURS.console), "reçoit les mesures, en relaie", "une part, écrit le reste", "API de lecture /api/v1"],
-    hebergeur: HEBERGEURS.console.societe,
-    region: regionAlt(HEBERGEURS.console),
-    role: "reçoit les mesures, en relaie une part au collecteur et écrit le reste ; sert la console et l'API",
+    role: "mesure et envoie en OTLP/HTTP JSON, en direct au collecteur",
   },
   {
     id: "collecteur",
     titre: `Collecteur — ${HEBERGEURS.railway.marque}`,
-    lignes: [...lieuCourt(HEBERGEURS.railway), "pseudonymise, écrit en base"],
+    lignes: [...lieuCourt(HEBERGEURS.railway), "reçoit les mesures en direct", "pseudonymise, écrit en base"],
     hebergeur: HEBERGEURS.railway.societe,
     region: regionAlt(HEBERGEURS.railway),
-    role: "reçoit la part relayée par la console, pseudonymise l'identité et l'écrit en base",
+    role: "reçoit les mesures, en direct ou relayées par la console, pseudonymise l'identité et les écrit en base",
   },
   {
     id: "base",
@@ -177,6 +173,14 @@ export const PIECES: readonly Piece[] = [
     hebergeur: hebergeurTexte(HEBERGEURS.base),
     region: regionAlt(HEBERGEURS.base),
     role: "stocke les mesures",
+  },
+  {
+    id: "console",
+    titre: `Console — ${HEBERGEURS.console.marque}`,
+    lignes: [...lieuCourt(HEBERGEURS.console), "écrans, API de lecture /api/v1", "relais de l'ancienne adresse"],
+    hebergeur: HEBERGEURS.console.societe,
+    region: regionAlt(HEBERGEURS.console),
+    role: "sert les écrans et l'API ; relaie au collecteur, sans rien écrire, les mesures des sites restés sur son adresse",
   },
   {
     id: "travaux",
@@ -192,7 +196,7 @@ export const PIECES: readonly Piece[] = [
     lignes: [...lieuCourt(HEBERGEURS.railway), "lecture seule, sur jeton"],
     hebergeur: HEBERGEURS.railway.societe,
     region: regionAlt(HEBERGEURS.railway),
-    role: "sert l'API de lecture v1 au serveur MCP, sous un rôle de base en lecture seule",
+    role: "sert l'API de lecture v1 au serveur MCP et aux lectures au jeton que relaie la console, sous un rôle de base en lecture seule",
   },
   {
     id: "mcp",
@@ -212,15 +216,17 @@ export interface Liaison {
   libelle: string | null;
 }
 
-// Pas de flèche du serveur MCP vers la base : il n'y touche pas (ADR 0006). Les deux
-// écritures de la mesure sont dessinées : la part relayée passe par le collecteur, le
-// reste va de la console à la base, le long d'un rail sans place pour un libellé (la
-// boîte de la console le dit). L'API de lecture rejoint la base par un second rail.
+// Pas de flèche du serveur MCP vers la base : il n'y touche pas (ADR 0006). Depuis le
+// 06/10/2026, la mesure a deux trajets, tous deux vers le collecteur, seul à écrire : en
+// direct, ou par la console pour un site resté sur son adresse (relais pur, #397). Le
+// relais longe un rail sans place pour un libellé (la boîte de la console le dit). La
+// console ne lit plus la base qu'en repli (écrans par console-api, lectures au jeton par
+// l'API) : pas de flèche pour un repli. L'API de lecture rejoint la base par un rail.
 export const LIAISONS: readonly Liaison[] = [
-  { de: "navigateur", vers: "console", libelle: "OTLP/HTTP JSON" },
-  { de: "console", vers: "collecteur", libelle: "relais d'une part" },
+  { de: "navigateur", vers: "collecteur", libelle: "OTLP/HTTP JSON" },
+  { de: "navigateur", vers: "console", libelle: "ancienne adresse" },
+  { de: "console", vers: "collecteur", libelle: null },
   { de: "collecteur", vers: "base", libelle: "écrit" },
-  { de: "console", vers: "base", libelle: null },
   { de: "travaux", vers: "base", libelle: null },
   { de: "api", vers: "base", libelle: null },
   { de: "mcp", vers: "api", libelle: "réseau privé" },
@@ -230,7 +236,7 @@ const aVille = (h: Hebergeur) => (h.lieu ? ` à ${h.lieu.ville}` : "");
 
 /** `aria-label` du dessin (texte du plan § 8.2, PS3), composé depuis les mêmes hébergeurs. */
 export const ARIA_TOPOLOGIE =
-  `Chemin de la mesure : du navigateur à la console sur ${HEBERGEURS.console.marque}, ` +
-  `qui en relaie une part au collecteur sur ${HEBERGEURS.railway.marque} et écrit le reste ` +
-  `dans la base ${HEBERGEURS.base.marque}${aVille(HEBERGEURS.base)} ; ` +
+  `Chemin de la mesure : du navigateur au collecteur sur ${HEBERGEURS.railway.marque}, ` +
+  `qui l'écrit dans la base ${HEBERGEURS.base.marque}${aVille(HEBERGEURS.base)} ; ` +
+  `un site resté sur l'ancienne adresse passe par la console sur ${HEBERGEURS.console.marque}, qui relaie sans rien écrire ; ` +
   `travaux planifiés, API de lecture et serveur MCP sur ${HEBERGEURS.railway.marque}${aVille(HEBERGEURS.railway)}.`;

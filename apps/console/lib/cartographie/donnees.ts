@@ -59,7 +59,7 @@ const LIENS_CROISES: readonly Lien[] = [
   { de: "s-porte-console", vers: "console-auth", nature: "protege" },
   { de: "s-jetons", vers: "api-v1", nature: "protege" },
   { de: "s-jetons", vers: "api", nature: "protege" },
-  { de: "console-ecrans", vers: "base", nature: "lit", libelle: "chargeurs : accès direct" },
+  { de: "console-ecrans", vers: "base", nature: "lit", libelle: "chargeurs, en repli seulement" },
   { de: "api-v1", vers: "base", nature: "lit", libelle: "lectures à la session, et repli" },
   { de: "console-commandes", vers: "base-espace", nature: "ecrit", libelle: "tableaux, vues, objectifs" },
   { de: "console-commandes", vers: "base-alertes", nature: "ecrit", libelle: "règles, canaux, SLO" },

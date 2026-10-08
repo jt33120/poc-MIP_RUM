@@ -167,9 +167,10 @@ describe("PS3 — le chemin de la mesure (TP7, côté SSR)", () => {
   });
 
   it("la légende dit où passe le trafic, datée, sans journal d'exploitation ni chemin du code", () => {
-    // Relevé du 28/09/2026 : le relais est allumé, la console n'est plus le seul collecteur.
-    expect(texte).toContain("Les capteurs visent la console. Elle relaie une part des mesures au collecteur");
-    expect(texte).toContain("et écrit elle-même le reste");
+    // 06/10/2026 : collecte directe au collecteur ; la console ne fait plus que relayer.
+    expect(texte).toContain("Depuis le 06/10/2026, les capteurs envoient leurs mesures au collecteur");
+    expect(texte).toContain("elle relaie au collecteur, sans rien écrire");
+    expect(texte).not.toMatch(/Les capteurs visent la console|écrit elle-même le reste/);
     expect(texte).not.toContain("Le collecteur est une route de la console");
     // Les autres services ne sont racontés qu'une fois, dans les spécifications : ici, un renvoi.
     expect(texte).toContain("Les autres services, et leur état, sont décrits dans les spécifications.");

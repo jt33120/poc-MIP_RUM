@@ -198,10 +198,11 @@ describe("revue de fin de vague 7 — les cartes suivent leurs lignes corrigées
     expect(carte("K9").limites.map((l) => l.id)).toEqual(["A4", "C5", "C6"]);
   });
 
-  it("K16 suit D14 (28/09/2026) : le pays par adresse pour la seule collecte directe de la console", () => {
+  it("K16 suit D14 : le pays par adresse pour la console (28/09/2026), puis pour la collecte directe des clients (06/10/2026)", () => {
     const d14 = ligneDe("D14");
     expect(d14.verdict).toBe(VERDICT_MONTRABLE);
     expect(d14.limite).toContain("**Depuis le 28/09/2026** (#340, § 13.4) : allumée pour la seule collecte directe du capteur de la console");
+    expect(d14.limite).toContain("**Depuis le 06/10/2026** : la collecte directe des sites des clients est ouverte");
     expect(d14.limite).toContain("**Aucun enrichissement rétrospectif n'est possible**");
     // Le fait, dans l'IaC du collecteur.
     expect(readFileSync(join(RACINE, ".railway/railway.ts"), "utf8")).toContain('GEOIP_IP_SOURCE: "railway"');
@@ -210,11 +211,12 @@ describe("revue de fin de vague 7 — les cartes suivent leurs lignes corrigées
     const k16 = carte("K16");
     expect(k16.limites.map((l) => l.id)).toEqual(["D14"]);
     expect(k16.faitQuoi).toContain("MIP ne l'écrit nulle part");
-    expect(puce("D14").texte).toContain("Allumé le 28/09/2026 pour le seul capteur de la console");
-    expect(puce("D14").texte).toContain("les sites des clients passent encore par le relais");
+    expect(puce("D14").texte).toContain("Allumé le 28/09/2026 pour le capteur de la console, le 06/10/2026 pour les sites des clients qui envoient en direct");
+    expect(puce("D14").texte).toContain("un site resté sur l'adresse de la console passe par son relais");
     expect(puce("D14").texte).toContain("rien de rétrospectif");
-    // Le renvoi vise le point qui dit ce qui reste pour les clients.
-    expect(puce("D14").texte).toContain("(voir R6)");
+    // R6 est sorti de « Ce qui reste » le 07/10/2026 : plus de renvoi vers lui.
+    expect(puce("D14").texte).not.toContain("(voir R6)");
+    expect(puce("D14").texte).not.toContain("passent encore par le relais");
   });
 
   it("la puce B6 de K7 suit B6 : 24 éléments par tableau, sections comprises, depuis F37", () => {

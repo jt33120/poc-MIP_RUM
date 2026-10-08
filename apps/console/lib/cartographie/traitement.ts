@@ -26,6 +26,12 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
         sources: [`${BACK}/shared/otlp-corps.mjs:10-21`],
       },
       { texte: "Rejouer un même lot ne crée aucune ligne de plus, sauf pour les journaux.", sources: [`${BACK}/lib/pg-ingest.mjs:715-785`] },
+      {
+        // Le drapeau est à 100 en production depuis le 06/10/2026, 18:25 UTC (relevé de
+        // l'exploitation, 07/10/2026) ; le code n'en connaît que la règle.
+        texte: "Depuis le 06/10/2026, un lot s'écrit en un seul aller-retour SQL ; l'ancien chemin reste le repli, avant toute écriture.",
+        sources: [`${BACK}/lib/ingest-un-ar.mjs:22-32`, "packages/db/sql/migration-v109.sql:13-27"],
+      },
       { texte: "Sondes /health et /live ; /ready et /metrics sous jeton, sinon 404.", sources: [`${KIT}/http.mjs:29-39`] },
       { texte: "Son journal d'accès n'écrit jamais d'adresse IP.", sources: [`${KIT}/http.mjs:54-60`] },
       { texte: "Une image par service, lancée sans les droits root.", sources: ["services/collector/Dockerfile:152-165"] },

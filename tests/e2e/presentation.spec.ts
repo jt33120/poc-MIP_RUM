@@ -448,39 +448,37 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM (page
     return new Map(brut.capacites.map((c) => [c.id, c.verdict]));
   };
 
-  test("TP4 — D14 (pour les sites des clients) a sa pastille dans « Ce qui reste » ; D12, retirée, n'en a plus", async ({ page }) => {
-    const verdicts = verdictsDuDocument();
+  test("TP4 — D14 (R6, fait le 07/10/2026) et D12 (retirée) n'ont plus de pastille dans « Ce qui reste »", async ({ page }) => {
     await page.goto(aFaireUrl);
     const reste = page.locator("section#reste");
-    const pastille = reste.locator('[data-testid="reste-pastille"][data-id="D14"]');
-    await expect(pastille).toHaveCount(1);
-    await expect(pastille).toBeVisible();
-    await expect(pastille).toHaveText("D14");
-    await expect(pastille).toHaveAttribute("data-verdict", verdicts.get("D14") ?? "absente du document");
-    // Les tickets sont retirés le 29/09/2026 : R7 est sorti de la liste, sans pastille.
+    // La collecte directe des clients est en service depuis le 06/10/2026 : R6 est dit
+    // sous la liste, sans pastille. Les tickets sont retirés le 29/09/2026 : R7 de même.
+    await expect(reste.locator('[data-testid="reste-pastille"][data-id="D14"]')).toHaveCount(0);
     await expect(reste.locator('[data-testid="reste-pastille"][data-id="D12"]')).toHaveCount(0);
   });
 
-  test("neuf points dans l'ordre du plan, chacun avec ce qui manque, ce qui le débloque et qui décide", async ({ page }) => {
+  test("huit points dans l'ordre du plan, chacun avec ce qui manque, ce qui le débloque et qui décide", async ({ page }) => {
     await page.goto(aFaireUrl);
     const points = page.locator('section#reste [data-testid="reste-point"]');
-    await expect(points).toHaveCount(9);
+    await expect(points).toHaveCount(8);
     // R2 (la reprise de l'historique) est sorti le 28/09/2026 : fait ; R7 (les tickets)
-    // le 29/09/2026 : retirés. Les identifiants ne sont pas renumérotés, la page affiche le rang.
+    // le 29/09/2026 : retirés ; R6 (le pays des sites des clients) le 07/10/2026 : fait.
+    // Les identifiants ne sont pas renumérotés, la page affiche le rang.
     expect(await points.evaluateAll((els) => els.map((e) => e.getAttribute("data-id")))).toEqual([
-      "R1", "R3", "R4", "R5", "R6", "R8", "R9", "R10", "R11",
+      "R1", "R3", "R4", "R5", "R8", "R9", "R10", "R11",
     ]);
     for (const point of await points.all()) {
       await expect(point.getByRole("heading", { level: 3 })).toHaveCount(1);
       await expect(point.locator("dt")).toHaveText(["Ce qui manque", "Ce qui le débloque", "Qui décide"]);
       for (const valeur of await point.locator("dd").all()) await expect(valeur).not.toBeEmpty();
     }
-    // R2 et R7 sont dits sous la liste, avec l'ancre que vise l'annexe (D8, D9 ; D12, D13).
+    // R2, R7 et R6 sont dits sous la liste, avec l'ancre que vise l'annexe (D8, D9 ; D12, D13).
     const faits = page.locator('section#reste [data-testid="reste-fait"]');
-    await expect(faits).toHaveCount(2);
-    expect(await faits.evaluateAll((els) => els.map((e) => e.getAttribute("data-id")))).toEqual(["R2", "R7"]);
+    await expect(faits).toHaveCount(3);
+    expect(await faits.evaluateAll((els) => els.map((e) => e.getAttribute("data-id")))).toEqual(["R2", "R7", "R6"]);
     await expect(faits.locator("#reste-R2-titre")).toHaveText("Reprise de l'historique des erreurs");
     await expect(faits.locator("#reste-R7-titre")).toHaveText("Tickets depuis une issue");
+    await expect(faits.locator("#reste-R6-titre")).toHaveText("Le pays par adresse IP sur les sites des clients");
     // R1 (28/09/2026) : la recette est datée, et il ne reste que l'écran mobile.
     await expect(points.nth(0)).toContainText("Le 28/09/2026, des écrans ont été relus");
     await expect(points.nth(0)).toContainText("L'écran mobile, lui, n'a encore reçu aucune donnée réelle");

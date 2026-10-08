@@ -19,6 +19,15 @@
 //
 // Relevé du 05/10/2026 au soir : le kit d'installation et l'attestation du rejeu
 // livrés ; X10 et X11 ne gardent, fondus en un, que ce qui reste.
+//
+// Relevé du 07/10/2026. X2 sort : la console ne fait plus que relayer la collecte,
+// sans écriture de secours (#397, 06/10/2026). X4 sort : un lot s'écrit en un
+// aller-retour (#400, migration-v109 ; drapeau `ingest_un_aller_retour_pct` à 100 en
+// production depuis le 06/10/2026, 18:25 UTC). H4 dit ce qui est mesuré, et ce qui ne
+// l'est pas. X1 ne garde que ce qui reste : les deux drapeaux de la bascule vers
+// console-api sont à 100 depuis le 06/10/2026 (09:34 et 09:56 UTC), mais la console
+// garde son accès à la base en repli, sans mode strict. X9 sort : le backend d'UTI
+// tourne sous l'agent OpenTelemetry officiel depuis le 05/10/2026 (client-uti-platform#229).
 
 export interface Hypothese {
   id: string;
@@ -32,7 +41,7 @@ export interface Hypothese {
   sources: readonly string[];
 }
 
-export const RELEVE_HYPOTHESES = "05/10/2026";
+export const RELEVE_HYPOTHESES = "07/10/2026";
 
 export const HYPOTHESES: readonly Hypothese[] = [
   {
@@ -65,13 +74,17 @@ export const HYPOTHESES: readonly Hypothese[] = [
   },
   {
     id: "H4",
-    titre: "Une collecte dimensionnée pour quelques visiteurs à la fois",
+    titre: "Un débit de collecte mesuré en local, pas sous charge réelle",
     aujourdhui:
-      "Environ 0,58 lot de mesures par seconde et par application au plus, soit quelques visiteurs actifs en même temps, et 600 requêtes par application et par minute.",
-    pourquoi: "L'objectif de trafic du POC, 500 événements par jour, en est très loin.",
+      "Depuis le 06/10/2026, un lot de mesures s'écrit en un seul aller-retour vers la base, au lieu de 18 à 23, dont 15 à 20 sous le verrou de l'application. Mesuré en local, sans latence réseau : le verrou est tenu 1,0 ms au lieu de 5,2 ms (médiane sur 20 lots). Le gain sous la latence réelle entre Railway et Neon n'est mesuré ni en production ni sur un banc : l'ancien chemin plafonnait vers 0,58 lot par seconde et par application (banc du 24/09/2026) ; le nouveau devrait tenir plusieurs dizaines de fois plus, sans preuve. Le plafond de 600 requêtes par application et par minute reste.",
+    pourquoi: "L'objectif de trafic du POC, 500 événements par jour, est très loin de l'un comme de l'autre.",
     production:
-      "Une écriture en un seul aller-retour vers la base, obligatoire avant qu'un client dépasse quelques visiteurs simultanés, et des plafonds réglés par client.",
-    sources: ["services/collector/server.mjs:42"],
+      "Un banc de charge sous latence réelle, sur une préproduction, avant qu'un client dépasse quelques visiteurs simultanés ; des plafonds réglés par client.",
+    sources: [
+      "services/collector/server.mjs:42",
+      "packages/backend/lib/ingest-un-ar.mjs:1-10",
+      "packages/db/sql/migration-v109.sql:1-12",
+    ],
   },
   {
     id: "H5",
@@ -201,29 +214,16 @@ export interface Chantier {
 export const CHANTIERS: readonly Chantier[] = [
   {
     id: "X1",
-    titre: "Faire passer les écrans par le backend",
+    titre: "Retirer à la console son accès à la base",
     texte:
-      "La console lit encore la base directement. Le backend qui doit la remplacer est en service mais éteint : l'ouvrir par paliers (10 %, 50 %, puis tout), puis retirer à la console son accès à la base.",
-    sources: ["apps/console/lib/aiguillage-console-api.ts:6-18", "scripts/ci/console-sans-base.mjs"],
-  },
-  {
-    id: "X2",
-    titre: "Une collecte qui ne passe plus que par le collecteur",
-    texte:
-      "Le relais vers le collecteur est à plein depuis le 28/09/2026 ; après sept jours sans repli, retirer l'écriture de secours de la console.",
-    sources: ["apps/console/lib/ingest-relay.ts:13-21"],
+      "Depuis le 06/10/2026, les écrans et les écritures passent par le backend de la console pour toute session qu'il a signée : les deux drapeaux de la bascule sont au maximum. La console garde pourtant son accès à la base, et s'en sert en repli quand le backend échoue : poser le mode strict, qui supprime ce repli, puis lui retirer cet accès.",
+    sources: ["apps/console/lib/aiguillage-console-api.ts:6-24", "scripts/ci/console-sans-base.mjs"],
   },
   {
     id: "X3",
     titre: "Brancher les rôles restreints de la base",
     texte: "Donner au backend de la console ses deux rôles limités, et lui retirer l'accès propriétaire (voir l'hypothèse sur le cloisonnement).",
     sources: ["packages/db/roles/console-api.mjs:1-10"],
-  },
-  {
-    id: "X4",
-    titre: "Accélérer l'écriture des mesures",
-    texte: "Une fonction de la base qui écrit un lot en un seul aller-retour, pour lever le plafond de la collecte.",
-    sources: ["services/collector/server.mjs:42"],
   },
   {
     id: "X5",
@@ -249,13 +249,6 @@ export const CHANTIERS: readonly Chantier[] = [
     titre: "Mettre à jour la base de géolocalisation",
     texte: "La livraison actuelle de la base qui situe les adresses IP devra être remplacée avant fin février 2027.",
     sources: ["packages/backend/data/dbip-country-lite.manifest.json", "scripts/fetch-geoip-db.mjs:6-10"],
-  },
-  {
-    id: "X9",
-    titre: "Passer le backend d'UTI à l'agent officiel",
-    texte:
-      "Le serveur d'UTI garde une copie de l'ancien capteur maison. Le remplacer par l'agent OpenTelemetry officiel pour Python, éprouvé en production sous FastAPI le 29/09/2026.",
-    sources: ["apps/console/lib/recettes-agents-otel.ts:127-148"],
   },
   {
     id: "X10",

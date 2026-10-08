@@ -83,12 +83,22 @@
 //     débloquer : il passe dans POINTS_FAITS, pour que D12 et D13 gardent un endroit de
 //     la page qui dise leur état.
 // R3, R4, R5, R8 et R10 dépendent de tiers et n'ont pas bougé.
+//
+// ÉTAT DU 07/10/2026. Trois points relus contre le code :
+//   - R6 SORT : la collecte directe des sites des clients est en service depuis le
+//     06/10/2026, et le collecteur y déduit le pays de l'adresse. Il passe dans
+//     POINTS_FAITS ; D14 garde sa carte (K16) ;
+//   - R8 ne dit plus que la clé d'ingestion manque : le collector l'exige depuis le
+//     29/09/2026, et toute la collecte passe par lui depuis le 06/10/2026 ;
+//   - R5 est nuancé : le visiteur mobile est persisté quand l'application branche un
+//     stockage, recompté à chaque lancement sinon.
 import { capaciteParId, type Capacite } from "./couverture";
 import type { PointFait, PointReste } from "./couverture-controle";
 
 /**
- * Les neuf points, dans l'ordre fixe du plan (R10 ajouté le 24/09/2026, R11 le 27/09/2026 ;
- * R2 retiré le 28/09/2026, fait ; R7 le 29/09/2026, fonctionnalité retirée).
+ * Les huit points, dans l'ordre fixe du plan (R10 ajouté le 24/09/2026, R11 le 27/09/2026 ;
+ * R2 retiré le 28/09/2026, fait ; R7 le 29/09/2026, fonctionnalité retirée ; R6 le
+ * 07/10/2026, fait).
  */
 export const POINTS_RESTE: readonly PointReste[] = [
   {
@@ -131,52 +141,35 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R5",
     titre: "React Native : une matrice de compatibilité vide",
     manque:
-      "Le paquet n'est pas publié et n'a tourné sur aucune version de React Native, Hermes, iOS ou Android ; un visiteur mobile est recompté à chaque lancement de l'application ; la file hors ligne durable est désactivée par défaut.",
+      "Le paquet n'est pas publié et n'a tourné sur aucune version de React Native, Hermes, iOS ou Android ; le visiteur mobile n'est gardé d'un lancement à l'autre que si l'application branche un stockage, AsyncStorage par exemple : sans lui, il est recompté à chaque lancement, et la persistance n'a jamais été vérifiée sur un appareil ; la file hors ligne durable est désactivée par défaut.",
     debloque:
-      "Choisir le registre, le compte, le nom et la politique de versions ; exécuter le paquet sur une matrice réelle ; persister l'identifiant du visiteur.",
+      "Choisir le registre, le compte, le nom et la politique de versions ; exécuter le paquet sur une matrice réelle ; vérifier sur un appareil que le visiteur survit au redémarrage de l'application.",
     decide: "L'équipe MIP.",
-    sources: ["C1", "C2", "C3", "C4", "C9", "C10"],
-  },
-  {
-    id: "R6",
-    titre: "Le pays par adresse IP sur les sites des clients",
-    manque:
-      "Depuis le 28/09/2026, le collecteur déduit le pays de l'adresse IP pour la collecte que lui envoie directement le capteur de la console, et pour elle seule. Les sites des clients passent encore par le relais de la console, qui ne transmet que le pays posé par Vercel, jamais l'adresse : pour eux, la résolution ne donne aucun pays.",
-    debloque:
-      "Ouvrir la collecte directe aux sites dont la politique de sécurité du contenu (CSP) le permet, une fois que le relais porte tout le trafic depuis 7 jours sans repli ; relire la conformité avant d'élargir le périmètre.",
-    decide: "L'équipe MIP.",
-    // RÉDUIT LE 28/09/2026 aux sites des clients. D14 n'est plus inerte (elle a sa carte,
-    // K16) ; R6 la cite pour ce qui reste. Le périmètre allumé et sa preuve (§ 13.4 ; la
-    // conformité) ; ce que le relais transmet (liste exacte d'en-têtes, sans adresse) ; la
-    // décision (ADR 0005) ; l'IaC du collecteur ; la suite pour les clients et la
-    // conformité à relire (mode d'emploi du relais).
-    sources: [
-      "D14",
-      "apps/console/lib/ingest-relay.ts:102-110",
-      ".railway/railway.ts:232-241",
-    ],
+    // NUANCÉ LE 07/10/2026 : le visiteur est persisté par le stockage que fournit
+    // l'application (`adapters.storage`), en mémoire seulement sans lui ; le README du
+    // paquet le dit. C3 garde le constat du relevé (identité en mémoire, sans stockage).
+    sources: ["C1", "C2", "C3", "C4", "C9", "C10", "packages/rum-mobile/src/index.ts:748-778", "packages/rum-mobile/README.md:296-301"],
   },
   {
     id: "R8",
     titre: "Souveraineté et mise en service chez un client",
     manque:
-      "Les trois hébergeurs relèvent du droit américain ; la console n'a pas d'image conteneur, donc « déployable chez vous » n'est pas livrable de bout en bout ; la clé d'ingestion n'est pas exigée par défaut, et six applications sur sept n'en ont aucune, dont celle du client (relevé du 23/09/2026) : l'exiger aujourd'hui couperait leur collecte ; aucune certification.",
+      "Les trois hébergeurs relèvent du droit américain ; la console n'a pas d'image conteneur, donc « déployable chez vous » n'est pas livrable de bout en bout ; aucune certification. La clé d'ingestion, elle, est exigée depuis le 29/09/2026 : un lot sans la clé de son application est refusé, sauf celui de l'extension, admis depuis un domaine enregistré.",
     debloque:
-      "Choisir un hébergeur relevant du droit européen ; retirer à la console son accès direct à la base, puis la conteneuriser ; provisionner une clé par application (l'outil est livré), la poser dans chaque intégration, puis exiger la clé ; lancer une démarche de certification si un appel d'offres l'exige.",
+      "Choisir un hébergeur relevant du droit européen ; retirer à la console son accès direct à la base, puis la conteneuriser ; lancer une démarche de certification si un appel d'offres l'exige.",
     decide: "Le responsable du produit et le client.",
     // Hors du document de couverture (qui ne couvre que P5 à P8) : les fichiers du
     // dépôt qui le disent. Droit des hébergeurs ; console sans image, et pourquoi
-    // elle attend le retrait de la base (lot C12b) ; clé exigée seulement si
-    // REQUIRE_API_KEY vaut « true », six apps sur sept sans clé (relevé du 23/09,
-    // R8a), l'outil de provisionnement ; aucune certification acquise.
+    // elle attend le retrait de la base (lot C12b) ; aucune certification acquise.
+    // RÉDUIT LE 07/10/2026 : la clé d'ingestion n'est plus un manque. Le collector
+    // l'exige (`REQUIRE_API_KEY: "true"` depuis le 29/09/2026, avec l'exception de
+    // l'extension), et depuis le 06/10/2026 toute la collecte passe par lui.
     sources: [
       "apps/console/lib/specs.ts:101-105",
       "apps/console/lib/specs.ts:247-253",
-      "apps/console/components/presentation/Specs.tsx:167-171",
       "apps/console/components/presentation/Specs.tsx:192-201",
       "packages/backend/lib/receiver.mjs:198",
-      ".railway/railway.ts:221-228",
-      "scripts/ops/provisionner-cles.mjs:1-7",
+      ".railway/railway.ts:221-234",
     ],
   },
   {
@@ -277,6 +270,22 @@ export const POINTS_FAITS: readonly PointFait[] = [
     fait:
       "Retirés le 29/09/2026 par décision du propriétaire du produit : le connecteur GitHub Issues, sa file d'envoi, son webhook entrant et le lien de ticket manuel ont quitté la console, les services et la base. Aucune intégration n'avait été configurée.",
     sources: ["D12", "D13"],
+  },
+  {
+    // SORTI LE 07/10/2026. La collecte directe des sites des clients est en service depuis
+    // le 06/10/2026 : le code de suivi proposé vise le collector (`ingest-endpoint.ts`),
+    // dont l'IaC lit l'adresse du trafic direct pour en déduire le pays. La ligne D14 le
+    // dit en place ; elle garde sa carte (K16). Un site resté sur l'adresse de la console
+    // passe par le relais, qui transmet le pays posé par Vercel, jamais l'adresse.
+    id: "R6",
+    titre: "Le pays par adresse IP sur les sites des clients",
+    fait:
+      "Depuis le 06/10/2026, le code de suivi proposé aux sites des clients envoie les mesures en direct au collecteur, qui déduit le pays de l'adresse IP sans la garder ; l'application du client y envoie depuis ce jour. Un site resté sur l'adresse de la console passe par son relais, qui ne transmet que le pays posé par Vercel.",
+    sources: [
+      "D14",
+      "apps/console/lib/ingest-endpoint.ts:93-99",
+      ".railway/railway.ts:238-247",
+    ],
   },
 ];
 

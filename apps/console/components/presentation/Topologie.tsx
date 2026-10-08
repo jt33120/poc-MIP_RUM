@@ -1,6 +1,6 @@
-// PS3 — Le chemin de la mesure (plan § 8.2) : du navigateur à la console, qui en
-// relaie une part au collecteur Railway et écrit le reste, puis à la base ; autour,
-// les travaux planifiés, l'API de lecture et le serveur MCP.
+// PS3 — Le chemin de la mesure (plan § 8.2) : du navigateur au collecteur Railway, en
+// direct depuis le 06/10/2026, ou par la console qui relaie l'ancienne adresse sans rien
+// écrire ; puis à la base ; autour, les travaux planifiés, l'API de lecture et le MCP.
 // SVG rendu serveur, sans animation (§ 3.9) : aucun JavaScript envoyé.
 //
 // Le dessin et son alternative lisent la MÊME liste (lib/presentation-topologie.ts) :
@@ -13,12 +13,11 @@
 //
 // UNE COLONNE, À TOUTES LES LARGEURS. Un texte SVG rétrécit avec son dessin : sept
 // boîtes côte à côte, ramenées aux 358 px d'un téléphone, s'écriraient en 7 px. Les
-// boîtes s'empilent donc dans l'ordre du chemin. Depuis le relevé du 28/09/2026, la
-// mesure a deux trajets : la part relayée descend par le collecteur, le reste va de
-// la console à la base par un rail à droite. L'API de lecture rejoint la base par un
-// second rail, plus à l'extérieur ; les points d'attache des deux rails sont décalés
-// pour qu'ils ne se croisent pas. Le serveur MCP ne touche pas la base : aucune
-// flèche vers elle.
+// boîtes s'empilent donc dans l'ordre du chemin. Depuis le 06/10/2026, la mesure
+// descend du navigateur au collecteur, puis à la base. La console est posée AU-DESSUS
+// du navigateur : un site resté sur son adresse y monte, et le relais redescend au
+// collecteur par un rail à droite, sans croiser celui de l'API de lecture, qui rejoint
+// la base plus bas. Le serveur MCP ne touche pas la base : aucune flèche vers elle.
 import { TableAlternative } from "@/components/charts/Figure";
 import { SousPartie } from "@/components/presentation/SousPartie";
 import Link from "next/link";
@@ -44,8 +43,8 @@ const ECART_SERRE = 16; // entre deux boîtes que rien ne relie
 
 /** Écart AVANT chaque boîte, dans l'ordre du chemin. */
 const ORDRE: { id: PieceId; ecart: number }[] = [
-  { id: "navigateur", ecart: 0 },
-  { id: "console", ecart: ECART_RELIE },
+  { id: "console", ecart: 0 },
+  { id: "navigateur", ecart: ECART_RELIE },
   { id: "collecteur", ecart: ECART_RELIE },
   { id: "base", ecart: ECART_RELIE },
   { id: "travaux", ecart: ECART_RELIE },
@@ -55,12 +54,12 @@ const ORDRE: { id: PieceId; ecart: number }[] = [
 
 /**
  * Rails des liaisons entre boîtes non voisines : abscisse, et hauteur d'attache au
- * départ et à l'arrivée (fraction de la boîte). Le rail console → base, intérieur,
- * arrive dans le haut de la base ; celui de l'API, extérieur, dans le bas : ainsi le
- * second ne coupe jamais le premier.
+ * départ et à l'arrivée (fraction de la boîte). Le relais console → collecteur tient
+ * le haut du dessin, celui de l'API → base le bas : leurs étendues ne se chevauchent
+ * pas, et aucun ne coupe l'autre.
  */
 const RAILS: Partial<Record<string, { x: number; depart: number; arrivee: number }>> = {
-  "console-base": { x: 274, depart: 0.7, arrivee: 0.3 },
+  "console-collecteur": { x: 274, depart: 0.5, arrivee: 0.3 },
   "api-base": { x: 290, depart: 0.5, arrivee: 0.7 },
 };
 
@@ -101,7 +100,7 @@ function trace(de: Place, vers: Place, voisines: boolean, cle: string): { d: str
 }
 
 /** Les trajets de la mesure elle-même, en couleur : du navigateur jusqu'à la base. */
-const MESURE = new Set(["navigateur-console", "console-collecteur", "collecteur-base", "console-base"]);
+const MESURE = new Set(["navigateur-collecteur", "navigateur-console", "console-collecteur", "collecteur-base"]);
 
 function Dessin() {
   const { places, hauteur } = placer();
@@ -155,8 +154,8 @@ function Dessin() {
             width={LARGEUR_BOITE - 2 * BORD}
             height={h}
             rx={10}
-            strokeWidth={piece.id === "console" ? 1.5 : 1}
-            className={`fill-panel ${piece.id === "console" ? "stroke-perf" : "stroke-line"}`}
+            strokeWidth={piece.id === "collecteur" ? 1.5 : 1}
+            className={`fill-panel ${piece.id === "collecteur" ? "stroke-perf" : "stroke-line"}`}
           />
           <text x={MARGE_X} y={y + TITRE_Y} fontSize={13} fontWeight={600} className="fill-ink">
             {piece.titre}
@@ -180,13 +179,14 @@ export function Topologie() {
           <Dessin />
         </div>
         <div className="min-w-0 space-y-3 text-sm leading-relaxed text-ink-soft">
-          {/* Relevé du 28/09/2026 : le relais de la collecte est allumé depuis le 27/09
-              (`ingest_relay_pct`). La console reçoit tout, en relaie une part au collecteur
-              et écrit elle-même le reste ; ses écrans lisent encore la base. */}
+          {/* État du 06/10/2026 : collecte directe des clients ouverte, et la console n'est
+              plus qu'un relais pur pour l'ancienne adresse (#397). Ses écrans passent par
+              console-api, ses lectures au jeton par l'API de lecture. */}
           <p>
-            Les capteurs visent la console. Elle relaie une part des mesures au collecteur, qui les
-            pseudonymise et les écrit dans la base, et écrit elle-même le reste ; ses écrans et son API
-            relisent ensuite la base.
+            Depuis le 06/10/2026, les capteurs envoient leurs mesures au collecteur, qui les
+            pseudonymise et les écrit dans la base. Un site resté sur l&apos;adresse de la console passe
+            par elle : elle relaie au collecteur, sans rien écrire. Ses écrans et son API relisent
+            ensuite la base, par le backend de la console et l&apos;API de lecture.
           </p>
           {/* Les autres services (backend de la console, notifier) ne sont racontés qu'une
               fois, dans les spécifications (contre-recette du 26/09/2026 : quatre fois dans

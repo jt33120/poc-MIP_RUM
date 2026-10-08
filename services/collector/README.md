@@ -12,7 +12,7 @@
 | Réplicas | 2 (voir « Sûreté multi-réplique ») |
 | Image | `services/collector/Dockerfile` — seule image à embarquer la base GeoIP |
 
-État au 29/09/2026 : **en service** depuis l'apply du 27/09 (PR #332), deux réplicas, domaine `collector-production-d769.up.railway.app`. Les capteurs visent toujours la console (`/api/ingest/v1/*`), qui relaie **100 %** des beacons ici depuis le 28/09/2026, 07:10 UTC (`platform_flag.ingest_relay_pct`, relais `apps/console/lib/ingest-relay.ts`). Depuis le 06/10/2026, ce service est la seule porte d'entrée en écriture : collecte directe des clients ouverte, et la console n'a plus d'écriture locale (C12) — collector injoignable, elle rend 503. Relevé Railway au 29/09 : 4 208 requêtes en 48 h, 99,3 % en 2xx, 3 en 5xx (`apps/console/lib/ingest-relay.ts`).
+État au 07/10/2026 : **en service** depuis l'apply du 27/09 (PR #332), deux réplicas, domaine `collector-production-d769.up.railway.app`. Depuis le 06/10/2026, le code de suivi proposé aux sites le vise en direct (`apps/console/lib/ingest-endpoint.ts`) ; la console relaie ici, en entier, ce que reçoit encore son adresse (`/api/ingest/v1/*`, relais `apps/console/lib/ingest-relay.ts` ; tout le trafic depuis le 28/09/2026, 07:10 UTC). Ce service est la seule porte d'entrée en écriture : collecte directe des clients ouverte, et la console n'a plus d'écriture locale (C12) — collector injoignable, elle rend 503. Relevé Railway au 29/09 : 4 208 requêtes en 48 h, 99,3 % en 2xx, 3 en 5xx (`apps/console/lib/ingest-relay.ts`).
 
 ## Routes
 

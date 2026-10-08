@@ -164,11 +164,11 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
 
 /** Ce qui manque, en liste simple. */
 const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
-  {
-    t: "Clé d'ingestion à rendre obligatoire",
-    g: "bloquant",
-    d: "L'authentification par clé d'API existe application par application, mais le refus n'est pas encore le comportement par défaut. Au relevé du 23/09/2026, six applications sur sept n'avaient aucune clé : il faut d'abord en provisionner une par application (l'outil est livré), sans quoi le refus couperait leur collecte. Le passage en fermé-par-défaut précède toute mise en service client.",
-  },
+  // « Clé d'ingestion à rendre obligatoire » est sortie le 07/10/2026 : le collector
+  // l'exige depuis le 29/09/2026 (`REQUIRE_API_KEY: "true"`, .railway/railway.ts), et
+  // toute la collecte passe par lui depuis le 06/10/2026 (la console ne fait plus que
+  // relayer). Ces cinq lignes gardent la place de l'entrée retirée : les citations
+  // « Specs.tsx:ligne » de la vitrine (lib/presentation-*.ts) ne bougent pas.
   {
     t: "Filet d'isolation en base à activer",
     g: "bloquant",
@@ -521,8 +521,8 @@ export async function Specs() {
             <span className="font-semibold text-ink">Ce que ça veut dire.</span> La chaîne de
             mesure — collecte, ingestion, restitution — tient les critères de fond : poids,
             seuils, percentile. Pour la mettre en service, il faut au moins{" "}
-            {planif ? "relancer les tâches planifiées, " : ""}fermer l&apos;ingestion
-            par défaut, activer le filet d&apos;isolation en base, rapatrier l&apos;hébergement
+            {planif ? "relancer les tâches planifiées, " : ""}activer le filet
+            d&apos;isolation en base, rapatrier l&apos;hébergement
             chez un fournisseur de droit européen — le backend, désormais autonome, est prêt à
             être déplacé — et changer de moteur de stockage avant la montée en volume. Ce
             n&apos;est pas tout : « Ce qui reste » reprend, point par point, ce qui manque encore,
