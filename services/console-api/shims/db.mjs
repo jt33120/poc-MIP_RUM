@@ -8,6 +8,8 @@
 // évaluer ce module ne se connecte à rien, et une `DATABASE_URL` absente est
 // refusée par la configuration du service, en clair, avant toute requête.
 
+import { debutDeTransaction, estEnLectureSeule } from "@/lib/lecture-seule";
+
 /** @type {import("pg").Pool | null} */
 let courant = null;
 
@@ -36,6 +38,9 @@ export const pool = {
  * @returns {Promise<T[]>}
  */
 export async function q(text, params) {
+  // Une session de démo (`lib/lecture-seule.ts`) : la requête dans une transaction
+  // READ ONLY, que Postgres garde. Deux allers-retours de plus, pour la démo seule.
+  if (estEnLectureSeule()) return (await tx((c) => c.query(text, params))).rows;
   const { rows } = await obtenir().query(text, params);
   return rows;
 }
@@ -44,7 +49,8 @@ export async function q(text, params) {
 export async function tx(fn) {
   const client = await obtenir().connect();
   try {
-    await client.query("begin");
+    // `read only` pour une session de démo (`lib/lecture-seule.ts`) : Postgres refuse toute écriture.
+    await client.query(debutDeTransaction());
     const out = await fn(client);
     await client.query("commit");
     return out;

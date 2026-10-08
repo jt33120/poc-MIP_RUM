@@ -26,6 +26,7 @@ import {
   type Operation,
   type ParametresEcran,
   type Section,
+  type Validateur,
 } from "@mip/console-contract";
 import type { Journal } from "../contexte";
 import { ErreurContrat } from "../erreurs";
@@ -90,6 +91,21 @@ const POLITIQUE_ECRAN = { auth: "session", portee: "app", demo: "lecture", entre
  * périmètre du principal relu en base.
  */
 const POLITIQUE_ECRAN_ADMIN = { auth: "admin", portee: "globale", demo: "lecture", entree: { requete: PARAMETRES_ECRAN } } as const;
+/**
+ * Un écran d'administration dont les paramètres désignent une personne
+ * (`/admin/privacy`) : POST, paramètres dans le CORPS, jamais dans l'URL. Une
+ * lecture : la table range toute méthode autre que GET parmi les écritures, d'où
+ * la démo refusée (elle l'est déjà par le rôle) et l'exemption d'audit motivée.
+ * Un corps absent vaut « aucun paramètre », comme une URL sans requête.
+ */
+const PARAMETRES_ECRAN_PAR_CORPS: Validateur<ParametresEcran> = (brut, champ) => (brut === undefined ? { ok: true, value: {} } : PARAMETRES_ECRAN(brut, champ));
+const POLITIQUE_ECRAN_ADMIN_PAR_CORPS = {
+  auth: "admin",
+  portee: "globale",
+  demo: "refus",
+  audit: { exempt: "lecture d'écran : POST pour que l'identifiant d'une personne ne passe pas par une URL" },
+  entree: { corps: PARAMETRES_ECRAN_PAR_CORPS },
+} as const;
 /** La politique des écrans de session sans portée : toute session, le chargeur ne lit que son périmètre. */
 const POLITIQUE_ECRAN_SESSION = { auth: "session", portee: "globale", demo: "lecture", entree: { requete: PARAMETRES_ECRAN } } as const;
 
@@ -131,17 +147,19 @@ export function operationsEcrans(c: ChargeursEcrans): Enregistrement[] {
         }
       }),
     ),
-    ...(Object.keys(ECRANS_ADMIN) as CleEcranAdmin[]).map((cle) =>
-      servir(
-        ECRANS_ADMIN[cle] as Operation<Readonly<Record<string, string>>, ParametresEcran, never, unknown>,
-        POLITIQUE_ECRAN_ADMIN,
-        async ({ principal, requete, params, requestId }) => {
+    ...(Object.keys(ECRANS_ADMIN) as CleEcranAdmin[]).map((cle) => {
+      const parCorps = ECRANS_ADMIN[cle].methode === "POST";
+      return servir(
+        ECRANS_ADMIN[cle] as Operation<Readonly<Record<string, string>>, ParametresEcran, ParametresEcran, unknown>,
+        parCorps ? POLITIQUE_ECRAN_ADMIN_PAR_CORPS : POLITIQUE_ECRAN_ADMIN,
+        async ({ principal, requete, corps, params, requestId }) => {
           if (principal.kind !== "session") throw new ErreurContrat("session_requise", "session requise");
           const qui: PrincipalChargeur = { email: principal.email, role: principal.role, apps: principal.apps, demo: principal.demo };
-          return c.administration[cle](qui, { ...(requete as ParametresEcran) }, (params ?? {}) as Readonly<Record<string, string>>, requestId);
+          const parametres = parCorps ? corps : requete;
+          return c.administration[cle](qui, { ...(parametres as ParametresEcran) }, (params ?? {}) as Readonly<Record<string, string>>, requestId);
         },
-      ),
-    ),
+      );
+    }),
     ...(Object.keys(ECRANS_SESSION) as CleEcranSession[]).map((cle) =>
       servir(
         ECRANS_SESSION[cle] as Operation<Readonly<Record<string, string>>, ParametresEcran, never, unknown>,

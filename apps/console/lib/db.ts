@@ -1,5 +1,6 @@
 import { Pool, type PoolClient } from "pg";
 import { optionsSsl } from "@mip/backend/lib/serveur.mjs";
+import { debutDeTransaction, estEnLectureSeule } from "./lecture-seule";
 import { recordDbSpan } from "./server-trace-core";
 
 // pool unique survivant au hot-reload de next dev
@@ -97,6 +98,9 @@ export async function q<T = Record<string, unknown>>(
   // withServerTrace), on chronomètre la requête -> span DB. No-op sinon.
   const start = Date.now();
   try {
+    // Une session de démo (`lib/lecture-seule.ts`) : la requête dans une transaction
+    // READ ONLY, que Postgres garde. Deux allers-retours de plus, pour la démo seule.
+    if (estEnLectureSeule()) return (await tx((c) => c.query(text, params))).rows as T[];
     const { rows } = await pool.query(text, params);
     return rows as T[];
   } finally {
@@ -152,7 +156,8 @@ export async function withTenant<T>(
 export async function tx<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    // `read only` pour une session de démo (`lib/lecture-seule.ts`) : Postgres refuse toute écriture.
+    await client.query(debutDeTransaction());
     const out = await fn(client);
     await client.query("commit");
     return out;

@@ -5,11 +5,14 @@
 //     un HMAC cloisonné par application. La valeur brute n'entre que dans le
 //     CORPS d'une recherche ou d'une confirmation, n'est hachée qu'ici et n'en
 //     ressort jamais — ni dans une URL, ni dans l'audit, ni dans une décision.
+//     Son HMAC n'entre pas non plus dans une URL (`lib/demande-rgpd.ts`), et
+//     l'audit n'en garde que le préfixe.
 //     Portée `app` : la même valeur dans une autre application est une autre
 //     personne. La clé de hachage est celle du processus qui exécute : la console
 //     aujourd'hui, console-api à la bascule (et `IDENTITY_HASH_SECRET` quitte
 //     alors Vercel) ;
-//   · son identifiant de VISITEUR (historique) : une application, ou toutes. Ce
+//   · son identifiant de VISITEUR (historique) — l'audit n'en garde qu'une
+//     empreinte tronquée (`refVisiteur`) : une application, ou toutes. Ce
 //     « toutes » est à l'administrateur de la PLATEFORME : pour un administrateur
 //     d'une liste, il couvrirait des applications hors de son périmètre.
 //
@@ -19,6 +22,7 @@
 // refus s'écrit seul, rien d'autre ne s'écrivant. L'export est une lecture, mais
 // une commande : divulguer un document de données personnelles s'inscrit au
 // journal comme une écriture, et la démonstration ne le fait pas.
+import { createHash } from "node:crypto";
 import { chaine, MOTIF_APP, objet, parmi } from "@mip/console-contract";
 import { hashIdentity } from "@mip/backend/lib/identity-hash.mjs";
 import { tx } from "../db";
@@ -37,6 +41,17 @@ const APP_OU_TOUTES = chaine({ max: 128 });
 const secret = () => process.env.IDENTITY_HASH_SECRET;
 const empreinte = (app: string, kind: DsarIdentityKind, hash: string) => `kind=${kind} app=${app} hash_prefix=${hash.slice(0, 12)}`;
 const lignes = (supprime: { deleted: number }[]) => supprime.reduce((n, d) => n + d.deleted, 0);
+
+/**
+ * Ce que le journal garde d'un visiteur : une EMPREINTE TRONQUÉE (12 caractères
+ * hexadécimaux de son SHA-256), jamais l'identifiant (audit du 07/10/2026). Le
+ * journal est lu par d'autres que l'administrateur qui a instruit la demande, et
+ * survit aux données effacées. L'empreinte suffit à rapprocher les lignes d'une
+ * même demande ; qui détient l'identifiant la recalcule.
+ */
+export function refVisiteur(visiteur: string): string {
+  return createHash("sha256").update(visiteur, "utf8").digest("hex").slice(0, 12);
+}
 
 /** Le périmètre d'une demande par visiteur : `all` à la plateforme, une application à qui l'administre. */
 function horsPerimetre(principal: PrincipalCommande, app: string): { etat: "interdit" } | { etat: "invalide" } | null {
@@ -113,11 +128,11 @@ export const exporterVisiteur = commande(
     const genereLe = new Date().toISOString();
     try {
       const document = await dsarExport(corps.app, visiteur, genereLe);
-      await tx((c) => auditer(c, `app=${corps.app} visitor_id=${visiteur}`, ligneApp));
+      await tx((c) => auditer(c, `app=${corps.app} visitor_ref=${refVisiteur(visiteur)}`, ligneApp));
       return { etat: "ok", fichier: dsarExportFilename(visiteur, genereLe), document } as const;
     } catch (e) {
       if (!(e instanceof DsarRefus)) throw e;
-      await tx((c) => auditer(c, `refus=${e.verdict} app=${corps.app} visitor_id=${visiteur}`, ligneApp));
+      await tx((c) => auditer(c, `refus=${e.verdict} app=${corps.app} visitor_ref=${refVisiteur(visiteur)}`, ligneApp));
       return { etat: "refus", motif: e.verdict, message: e.message } as const;
     }
   },
@@ -138,12 +153,12 @@ export const effacerVisiteur = commande(
     const ligneApp = corps.app === "all" ? null : corps.app;
     try {
       const supprime = await dsarErase(corps.app, visiteur, principal.email, (c, s) =>
-        auditer(c, `app=${corps.app} visitor_id=${visiteur} rows=${lignes(s)} (${s.map((d) => `${d.table}:${d.deleted}`).join(",")})`, ligneApp),
+        auditer(c, `app=${corps.app} visitor_ref=${refVisiteur(visiteur)} rows=${lignes(s)} (${s.map((d) => `${d.table}:${d.deleted}`).join(",")})`, ligneApp),
       );
       return { etat: "efface", lignes: lignes(supprime) } as const;
     } catch (e) {
       if (!(e instanceof DsarRefus)) throw e;
-      await tx((c) => auditer(c, `refus=${e.verdict} app=${corps.app} visitor_id=${visiteur}`, ligneApp));
+      await tx((c) => auditer(c, `refus=${e.verdict} app=${corps.app} visitor_ref=${refVisiteur(visiteur)}`, ligneApp));
       return { etat: "refus", motif: e.verdict } as const;
     }
   },

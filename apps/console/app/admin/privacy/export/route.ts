@@ -3,7 +3,13 @@
 // (`exporterIdentite`, `exporterVisiteur`) : l'administrateur de l'application
 // (« toutes » : la plateforme), la divulgation inscrite au journal, refus compris.
 // Pas de redirection ici (endpoint de téléchargement) : les statuts disent le refus.
+//
+// La personne visée vient de la DEMANDE SCELLÉE (cookie `SameSite=Strict`,
+// `lib/demande-rgpd.ts`), jamais de l'URL (audit du 07/10/2026) : le lien
+// `/admin/privacy/export` ne porte aucun identifiant, un lien venu d'un autre site
+// n'emporte pas le cookie, et des paramètres d'URL sont ignorés.
 import { executerCommande } from "@/lib/commande";
+import { lireDemande } from "../demande";
 
 export const dynamic = "force-dynamic";
 
@@ -13,19 +19,13 @@ const texte = (message: string, status: number) =>
 /** Le statut HTTP d'un refus d'accès ou d'entrée, avant la commande. */
 const STATUT: Record<string, number> = { session_requise: 401, entree_invalide: 400 };
 
-export async function GET(req: Request): Promise<Response> {
-  const url = new URL(req.url);
-  const identityHash = (url.searchParams.get("identity_hash") ?? "").trim();
-  const kind = url.searchParams.get("kind");
-  const app = (url.searchParams.get("app") ?? "all").trim() || "all";
-  if (identityHash && app === "all") return texte("invalid identity scope", 400);
-  if (identityHash && kind !== "user" && kind !== "account") return texte("invalid identity scope", 400);
-  const visitorId = (url.searchParams.get("user") ?? "").trim();
-  if (!identityHash && !visitorId) return texte("missing identity", 400);
-
-  const r = identityHash
-    ? await executerCommande("exporterIdentite", { app, corps: { kind: kind as "user" | "account", identity_hash: identityHash } })
-    : await executerCommande("exporterVisiteur", { corps: { app, visitor_id: visitorId } });
+export async function GET(): Promise<Response> {
+  const demande = await lireDemande();
+  if (!demande) return texte("missing identity", 400);
+  const r =
+    demande.type === "identite"
+      ? await executerCommande("exporterIdentite", { app: demande.app, corps: { kind: demande.kind, identity_hash: demande.hash } })
+      : await executerCommande("exporterVisiteur", { corps: { app: demande.app, visitor_id: demande.visitorId } });
   if (!r.ok) return texte(r.code, STATUT[r.code] ?? 403);
   const d = r.data;
   if (d.etat === "vide") return texte("missing identity", 400);
