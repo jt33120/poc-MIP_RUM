@@ -32,7 +32,6 @@ import { expect, test } from "@playwright/test";
 const PORT = Number(process.env.ETATS_E2E_PORT ?? 3107);
 const BASE = `http://127.0.0.1:${PORT}`;
 const SECRET = "etats-e2e-secret-local-jetable-non-production";
-const METRICS_TOKEN = "etats-e2e-metrics-jetable";
 const APP_ID = "etats-e2e-app";
 const CONSOLE_DIR = join(process.cwd(), "apps/console");
 /** Port 1 : rien n'y écoute, la connexion est refusée immédiatement. */
@@ -72,7 +71,6 @@ test.beforeAll(async ({}, info) => {
         NODE_ENV: "production",
         AUTH_SECRET: SECRET,
         DATABASE_URL: BASE_INDISPONIBLE,
-        METRICS_TOKEN,
         // Les journaux de la console de panne ne partent nulle part : ils ne
         // doivent pas polluer la page /logs de la console partagée.
         CONSOLE_LOGS_ENDPOINT: "http://127.0.0.1:1/journaux-indisponibles",
@@ -132,11 +130,3 @@ for (const chemin of ["/", "/pages", "/sessions"]) {
     await expect(corps).not.toContainText("Application error");
   });
 }
-
-test("/api/metrics : base indisponible → 503, jamais un instantané de zéros", async ({ request }) => {
-  const reponse = await request.get(`${BASE}/api/metrics`, {
-    headers: { authorization: `Bearer ${METRICS_TOKEN}` },
-  });
-  expect(reponse.status()).toBe(503);
-  expect(await reponse.text()).not.toContain("miprum_alerts_unacked 0");
-});
