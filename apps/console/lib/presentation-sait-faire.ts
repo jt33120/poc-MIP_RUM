@@ -367,7 +367,7 @@ export const CARTES: readonly CarteCapacite[] = [
     // légales déclarent de l'adresse lue et jamais écrite.
     sources: [
       { ligne: "D14" },
-      { fichier: ".railway/railway.ts:247" },
+      { fichier: ".railway/railway.ts:262" },
       { fichier: "lib/legal.ts:323-336" },
     ],
   },
@@ -418,7 +418,7 @@ export const CARTES: readonly CarteCapacite[] = [
     ],
     // L'étape « Typage des paquets publiés et de l'extension » de la CI, et ce
     // qu'elle laisse hors typage.
-    sources: [{ ligne: "F2" }, { fichier: ".github/workflows/ci.yml:71-86" }],
+    sources: [{ ligne: "F2" }, { fichier: ".github/workflows/ci.yml:77-92" }],
   },
 ];
 

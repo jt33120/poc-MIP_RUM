@@ -61,7 +61,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     pourquoi: "Chaque passage réveille la base, et chaque réveil se paie : au quart d'heure, elle dort environ 63 % du temps.",
     production:
       "Un passage toutes les 5 minutes et des notifications toutes les 15 secondes : deux réglages, sans changement de code.",
-    sources: [".railway/railway.ts:366-372", ".railway/railway.ts:406-409", "packages/backend/jobs/cadence.mjs:27-38", "services/scheduler/README.md:20,63"],
+    sources: [".railway/railway.ts:384-390", ".railway/railway.ts:438-441", "packages/backend/jobs/cadence.mjs:27-38", "services/scheduler/README.md:20,63"],
   },
   {
     id: "H3",
@@ -70,7 +70,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
       "Tous les services du backend sont à Amsterdam, en deux exemplaires pour la collecte et les API, en un seul pour l'assistant IA, les travaux planifiés et les notifications.",
     pourquoi: "Un second exemplaire des notifications n'apporterait rien au volume d'un POC.",
     production: "Une reprise après sinistre dans une autre région, et plus d'exemplaires pour les travaux de fond.",
-    sources: [".railway/railway.ts:65", ".railway/railway.ts:205,271,303,334,359,394"],
+    sources: [".railway/railway.ts:65", ".railway/railway.ts:220,286,318,349,377,426"],
   },
   {
     id: "H4",
@@ -119,7 +119,7 @@ export const HYPOTHESES: readonly Hypothese[] = [
     pourquoi: "Une seule équipe reçoit les alertes pendant le POC.",
     production: "Un domaine d'envoi vérifié, une signature propre à chaque canal, et le branchement sur l'astreinte de MIP.",
     sources: [
-      ".railway/railway.ts:399-405",
+      ".railway/railway.ts:431-437",
       "services/notifier/README.md:34,61",
       "packages/db/sql/migration-v108.sql:34,109,197",
     ],

@@ -169,7 +169,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
       "apps/console/lib/specs.ts:247-253",
       "apps/console/components/presentation/Specs.tsx:192-201",
       "packages/backend/lib/receiver.mjs:198",
-      ".railway/railway.ts:221-234",
+      ".railway/railway.ts:236-249",
     ],
   },
   {
@@ -187,9 +187,9 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // `.mjs`, construction depuis un dépôt propre, bancs de mesure sans seuil de latence.
     sources: [
       "D7",
-      ".github/workflows/ci.yml:71-86",
-      ".github/workflows/ci.yml:95-124",
-      ".github/workflows/ci.yml:455-474",
+      ".github/workflows/ci.yml:77-92",
+      ".github/workflows/ci.yml:101-130",
+      ".github/workflows/ci.yml:461-480",
     ],
   },
   {
@@ -213,8 +213,8 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // cadences posées par l'IaC ; le mécanisme de la veille et le réglage (README du
     // scheduler, cadence.mjs) ; la vitrine lit la cadence effective (etat-latence).
     sources: [
-      ".railway/railway.ts:365",
-      ".railway/railway.ts:402",
+      ".railway/railway.ts:383",
+      ".railway/railway.ts:434",
       "services/scheduler/README.md:50-63",
       "packages/backend/jobs/cadence.mjs:6-26",
       "apps/console/lib/etat-latence.ts:20-29",
@@ -284,7 +284,7 @@ export const POINTS_FAITS: readonly PointFait[] = [
     sources: [
       "D14",
       "apps/console/lib/ingest-endpoint.ts:93-99",
-      ".railway/railway.ts:238-247",
+      ".railway/railway.ts:253-262",
     ],
   },
 ];
