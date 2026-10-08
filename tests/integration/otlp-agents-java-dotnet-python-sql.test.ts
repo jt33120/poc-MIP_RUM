@@ -84,6 +84,35 @@ const valeur = (a: { value?: Record<string, unknown> }) => (a.value ? Object.val
 const attributs = (l: { key: string; value?: Record<string, unknown> }[] | undefined) =>
   Object.fromEntries((l ?? []).map((a) => [a.key, valeur(a)]));
 
+/**
+ * Le signal qui a porté l'exception de POST /factures/:id/payer EN PREMIER, dans
+ * l'ordre d'arrivée de la capture : c'est lui qui la compte (même identité, `on
+ * conflict do nothing`). Les agents exportent journaux et spans sur deux minuteries
+ * indépendantes : d'une capture fraîche à l'autre, le span de Java arrive parfois
+ * avant le journal (relevé du 08/10/2026). L'ordre se lit donc dans la capture, il ne
+ * se suppose pas.
+ */
+function premierPorteur(l: Langage): "log" | "span_event" {
+  const cible = trace(l, 2).toLowerCase();
+  type Noeud = Record<string, unknown> & { attributes?: { key: string; value?: Record<string, unknown> }[] };
+  const liste = (v: unknown) => (Array.isArray(v) ? (v as Noeud[]) : []);
+  for (const c of corpsDe(l)) {
+    const lot = decoder(c) as Noeud;
+    if (c.signal === "logs") {
+      for (const rl of liste(lot.resourceLogs)) for (const sl of liste(rl.scopeLogs)) for (const r of liste(sl.logRecords)) {
+        if (String(r.traceId ?? "").toLowerCase() === cible && "exception.type" in attributs(r.attributes)) return "log";
+      }
+    } else {
+      for (const rs of liste(lot.resourceSpans)) for (const ss of liste(rs.scopeSpans)) for (const sp of liste(ss.spans)) {
+        if (String(sp.traceId ?? "").toLowerCase() === cible && liste(sp.events).some((e) => e.name === "exception")) {
+          return "span_event";
+        }
+      }
+    }
+  }
+  throw new Error(`${l} : aucun corps de la capture ne porte l'exception de ${trace(l, 2)}`);
+}
+
 describe("R11 — fixtures des agents Java, .NET et Python", () => {
   it("chaque langage a ses corps, tailles et empreintes conformes au manifeste", () => {
     const fichiers = new Set(readdirSync(FIXTURES));
@@ -307,19 +336,20 @@ suite("R11 — corps des agents Java, .NET et Python → dev-server du collector
       ]);
     });
 
-    // L'exception est comptée UNE fois, par le JOURNAL ERROR que le framework écrit
-    // (Tomcat, Kestrel, Flask), porteur d'`exception.type` : les trois agents exportent
-    // leurs journaux avant leurs spans, et un journal ne porte ni session ni route. Le
-    // span serveur (500), arrivé ensuite, les lui donne (migration-v110) : l'erreur est
-    // dans la session du navigateur et sous la route de sa requête. Elle reste
-    // `origin_signal = 'log'` : c'est le journal qui l'a comptée.
+    // L'exception est comptée UNE fois, par le premier signal qui la porte. Le plus
+    // souvent le JOURNAL ERROR que le framework écrit (Tomcat, Kestrel, Flask), porteur
+    // d'`exception.type`, qui ne porte ni session ni route : le span serveur (500),
+    // arrivé ensuite, les lui donne (migration-v110), et l'erreur reste
+    // `origin_signal = 'log'`. Quand le span de Java arrive le premier (minuteries
+    // indépendantes), c'est son événement `exception` qui la compte : `span_event`,
+    // avec la même session et la même route. Jamais deux lignes.
     // .NET n'enregistre même pas l'exception sur le span (constaté avec 1.17.0).
     const TYPE: Record<Langage, string> = {
       java: "java.lang.IllegalStateException",
       dotnet: "InvalidOperationException",
       python: "RuntimeError",
     };
-    it(`${l} — l'exception de POST /factures/:id/payer comptée une fois, par le journal, avec la session et la route de son span`, async () => {
+    it(`${l} — l'exception de POST /factures/:id/payer comptée une fois, par son premier porteur, avec la session et la route de son span`, async () => {
       const lignes = await erreurs(l);
       expect(lignes).toHaveLength(1);
       expect(lignes[0]).toMatchObject({
@@ -330,7 +360,7 @@ suite("R11 — corps des agents Java, .NET et Python → dev-server du collector
         message: "paiement refusé : facture déjà soldée",
         service: service(l),
         env: ENV,
-        origin_signal: "log",
+        origin_signal: premierPorteur(l),
       });
       const serveurs = (await spans(l, 2)).filter((s) => s.tier === "back");
       expect(serveurs).toEqual([
@@ -353,7 +383,7 @@ suite("R11 — corps des agents Java, .NET et Python → dev-server du collector
     for (const c of CORPS) expect((await rejouer(c)).status).toBe(200);
     for (const l of LANGAGES) {
       expect(await erreurs(l), l).toEqual([
-        expect.objectContaining({ session_id: session(l), route: "/factures/:id/payer", origin_signal: "log" }),
+        expect.objectContaining({ session_id: session(l), route: "/factures/:id/payer", origin_signal: premierPorteur(l) }),
       ]);
     }
   }, 30_000);
