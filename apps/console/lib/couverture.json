@@ -147,7 +147,7 @@
       "famille": "Analyse et exploration",
       "capacite": "Construire un tableau de bord graphique et en être propriétaire",
       "verdict": "deploye_non_eprouve",
-      "preuve": "migration v79, `dashboard.owner_id`, `DASHBOARD_ACTIONS` ; `tests/integration/saved-views-v79-sql.test.ts`, `tests/e2e/dashboards-analytics.spec.ts` ; PR #195 ; borne : `MAX_WIDGETS` et `layoutPlein` (`apps/console/lib/dashboards.ts:525-532`), `tests/unit/dashboards.test.ts:316-333`",
+      "preuve": "migration v79, `dashboard.owner_id`, `DASHBOARD_ACTIONS` ; `tests/integration/saved-views-v79-sql.test.ts`, `tests/e2e/dashboards-analytics.spec.ts` ; PR #195 ; borne : `MAX_WIDGETS` et `layoutPlein` (`apps/console/lib/dashboards.ts:524-531`), `tests/unit/dashboards.test.ts:316-333`",
       "limite": "24 éléments par tableau, **sections comprises** : depuis F37 (vague 7, après ce relevé), un titre de section compte dans `MAX_WIDGETS` comme une carte, et un tableau plein refuse le 25e élément en le disant (`layoutPlein`, `tests/unit/dashboard-actions-access.test.ts:376-392`). 4 lectures simultanées, aucun rafraîchissement automatique. Une carte invalide reste **visible** avec son diagnostic ; elle n'est pas supprimée pour faire de la place."
     },
     {
@@ -404,7 +404,7 @@
       "capacite": "Vérifier les types",
       "verdict": "deploye_non_eprouve",
       "preuve": "étape « Typage des paquets publiés » de `.github/workflows/ci.yml` (PR #213, 18/09) : `tsc --noEmit` de `@mip/rum-core`, `@mip/rum-sdk`, `@mip/rum-mobile` et `@mip/agent-node`, puis `pnpm --filter console typecheck` (script posé par F00, #217) ; les cinq verts sur ce poste le 23/09, et l'étape verte dans le passage CI `35833662207` sur `8a5f3d1` (§ 12.3). L'échec de `replay.ts:242` est corrigé (§ 8.4)",
-      "limite": "L'extension navigateur (`apps/extension`, en TypeScript) n'est **pas** typée par la CI : verte à la main le 23/09, rien ne le garantit à sa prochaine modification. La vérification n'arrête une fusion que si l'on attend le verdict de la CI du commit de fusion (§ 7). **Levé depuis le relevé** (#281, 24/09/2026) : l'étape « Typage des paquets publiés et de l'extension » joue aussi `pnpm --filter extension typecheck`, `@mip/console-contract` et `@mip/console-api`. Reste hors de tout typage le JavaScript du backend (`packages/backend`, `packages/db`, `packages/mcp-tools`, `services/*`), en `.mjs` sans `checkJs` (§ 13)."
+      "limite": "L'extension navigateur (`apps/extension`, en TypeScript) n'est **pas** typée par la CI : verte à la main le 23/09, rien ne le garantit à sa prochaine modification. La vérification n'arrête une fusion que si l'on attend le verdict de la CI du commit de fusion (§ 7). **Levé depuis le relevé** (#281, 24/09/2026) : l'étape « Typage des paquets publiés et de l'extension » joue aussi `pnpm --filter extension typecheck`, `@mip/console-contract` et `@mip/console-api`. Le JavaScript du backend (`packages/backend`, `packages/db`, `packages/mcp-tools`, services du kit), en `.mjs`, est lu par `checkJs` depuis le 08/10/2026 (`tsconfig.backend.json`), sous un cliquet : les erreurs relevées ce jour-là restent, seules les nouvelles sont refusées (§ 13)."
     },
     {
       "id": "F3",

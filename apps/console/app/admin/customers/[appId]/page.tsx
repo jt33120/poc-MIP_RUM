@@ -4,7 +4,6 @@ import { headers } from "next/headers";
 import { ECRANS_ADMIN } from "@mip/console-contract";
 import { ConfirmationDanger } from "@/components/ConfirmationDanger";
 import { CopyBlock } from "@/components/CopyBlock";
-import { InfoTip } from "@/components/InfoTip";
 import { entreGuillemets } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
 import { FormulaireSecret, SecretAffiche, SecretFourni } from "@/components/secret/SecretUnique";

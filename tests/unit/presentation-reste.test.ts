@@ -136,7 +136,7 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     expect(ci).toContain("name: Construction depuis un dépôt propre");
     expect(ci).toContain("name: Bancs de mesure (Explorer P6.6, /mobile P7.5)");
     expect(ci).toContain("Aucun seuil de LATENCE");
-    expect(ci).toContain("Reste HORS typage, et c'est connu : le JavaScript du backend");
+    expect(ci).toContain("`checkJs` le lit à l'étape");
     expect(ligne("D7").verdict).toBe("non_commence");
     expect(ligne("D7").limite).toContain("**éprouvée le 28/09/2026 sur la branche de répétition**");
 
@@ -149,7 +149,7 @@ describe("relecture du 26/09/2026 : les points réécrits suivent leurs sources"
     expect(r9.manque).toContain("Restent sa partie « identités », manuelle et jamais éprouvée");
     expect(affiche("R9")).not.toMatch(/n'a jamais été éprouvée|Répéter la procédure de restauration/);
     expect(r9.manque).toContain("sans seuil");
-    expect(r9.manque).toContain("le JavaScript du backend n'est typé par rien");
+    expect(r9.manque).toContain("le JavaScript du backend n'est vérifié que sous un cliquet");
     // Les phrases que la CI du 24/09 a rendues fausses.
     expect(affiche("R9")).not.toMatch(
       /ne vérifie pas les types|rouge|échoue sur un dépôt|ne tournent jamais en CI|n'est ni écrite|pas ceux de l'extension/i,

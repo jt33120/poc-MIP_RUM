@@ -50,7 +50,7 @@ export interface ReserveChaine {
 // (PR #281) : la CI joue les deux bancs dans un job à part, type l'extension, et
 // construit le dépôt depuis un clone propre. Ce que ces chiffres ne disent toujours
 // pas se lit dans .github/workflows/ci.yml : les bancs impriment leurs temps sans
-// seuil de latence, et le JavaScript du backend n'est typé par rien. F1 n'a plus de
+// seuil de latence, et le JavaScript du backend n'est vérifié que sous un cliquet. F1 n'a plus de
 // réserve. Les verdicts gardés sont ceux du document au 23/09, qui n'a pas été
 // relevé depuis : un relevé qui les change fait rougir le test, et la phrase se relit.
 export const RESERVES_CHAINE: readonly ReserveChaine[] = [
@@ -62,7 +62,7 @@ export const RESERVES_CHAINE: readonly ReserveChaine[] = [
   {
     source: "F2",
     verdict: "deploye_non_eprouve",
-    texte: "le JavaScript du backend n'est typé par rien",
+    texte: "le JavaScript du backend n'est vérifié que sous un cliquet",
   },
 ];
 

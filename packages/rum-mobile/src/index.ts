@@ -92,8 +92,8 @@ import {
 import { classerReponse, delaiProchainEssai, envoyer } from "./transport";
 import { FenetreCausale, type TypeAction } from "./causal";
 import { SuiviNavigation, navigationDepuisRouteur } from "./navigation";
-import { creerInstrumentation, type Instrumentation, type PropsPressable } from "./interactions";
-import { installerRejets, rejetsDepuisTracker, type EtatCapacite, type InstallationRejets } from "./rejets";
+import { creerInstrumentation, type Instrumentation } from "./interactions";
+import { installerRejets, rejetsDepuisTracker, type EtatCapacite } from "./rejets";
 import {
   CAPACITES_MOBILES,
   RAISON_CAPACITES_NATIVES,
@@ -383,7 +383,6 @@ let demarrageA = 0;
 let retourPremierPlanA: number | null = null;
 let demarrageFroidEmis = false;
 let capacites: JsCapabilities | null = null;
-let rejets: InstallationRejets | null = null;
 let originesRefusees: string[] = [];
 /**
  * Contexte local de la racine en cours d'ouverture. La fenêtre causale appelle
@@ -440,11 +439,6 @@ function now(): number {
 /** Bruit de dispersion du retrait exponentiel, tiré de la même source d'aléa. */
 function alea(): number {
   return (random.bytes(1)[0] ?? 0) / 256;
-}
-
-function originOf(url: string): string | null {
-  const m = /^[a-z]+:\/\/[^/]+/i.exec(url);
-  return m ? m[0].toLowerCase() : null;
 }
 
 function avertirUneFois(deja: boolean, message: string): boolean {
@@ -874,7 +868,6 @@ function installRejets(adapters: Adapters): EtatCapacite {
       /* ignore */
     }
   });
-  rejets = installation;
   if (installation.etat === "active") {
     teardown.push(() => installation.desinstaller());
   }
@@ -1357,7 +1350,6 @@ export async function shutdown(): Promise<void> {
   suiviNav.reinitialise();
   racinesRefusees.clear();
   capacites = null;
-  rejets = null;
   originesRefusees = [];
   demarrageA = 0;
   retourPremierPlanA = null;

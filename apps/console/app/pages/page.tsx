@@ -203,7 +203,6 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
     new Map((l?.ok ? l.data : []).map((v) => [v.name, v] as const));
   const ensemble = parNom(vitaux);
   const ensemblePrev = parNom(vitauxPrev);
-  const fmtVital = formatDuVital(vital);
   const totalVues = vues.ok ? vues.data.reduce((s, p) => s + p.chargements + p.spa + p.inconnu, 0) : null;
   const totalVuesPrev = vuesPrev.ok && prev ? vuesPrev.data.reduce((s, p) => s + p.chargements + p.spa + p.inconnu, 0) : null;
   const reference = referencePrecedentePages(ecran.query.range);

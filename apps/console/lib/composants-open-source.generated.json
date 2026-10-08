@@ -1,7 +1,7 @@
 {
   "generePar": "node scripts/composants-open-source.mjs",
   "releveLe": "06/10/2026",
-  "paquetsDuLockfile": 430,
+  "paquetsDuLockfile": 450,
   "espaces": [
     {
       "chemin": ".",
@@ -636,10 +636,15 @@
         {
           "nom": "console",
           "dev": true
+        },
+        {
+          "nom": "racine",
+          "dev": true
         }
       ],
       "sources": [
-        "apps/console/package.json"
+        "apps/console/package.json",
+        "package.json"
       ]
     },
     {
@@ -1128,6 +1133,24 @@
     },
     {
       "categorie": "outils",
+      "type": "npm",
+      "nom": "oxlint",
+      "version": "1.87.0",
+      "licence": "MIT",
+      "depot": "https://github.com/oxc-project/oxc/tree/HEAD/npm/oxlint",
+      "portee": "developpement",
+      "utilisePar": [
+        {
+          "nom": "racine",
+          "dev": true
+        }
+      ],
+      "sources": [
+        "package.json"
+      ]
+    },
+    {
+      "categorie": "outils",
       "type": "python",
       "nom": "packaging",
       "version": "26.3",
@@ -1317,11 +1340,16 @@
         {
           "nom": "extension",
           "dev": true
+        },
+        {
+          "nom": "racine",
+          "dev": true
         }
       ],
       "sources": [
         "apps/console/package.json",
         "apps/extension/package.json",
+        "package.json",
         "packages/console-api/package.json",
         "packages/console-contract/package.json",
         "packages/rum-core/package.json",

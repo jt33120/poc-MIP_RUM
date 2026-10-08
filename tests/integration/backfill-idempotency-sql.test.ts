@@ -29,7 +29,7 @@ import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 // @ts-expect-error module JS sans déclarations
 import { VERROU_INGESTION_NS, _resetPresenceBarrieres } from "../../packages/backend/lib/privacy-barriere.mjs";
 // @ts-expect-error module JS sans déclarations
-import { ErreurPlan, KINDS, empreinteCode, planifier } from "../../packages/backend/lib/backfills/planner.mjs";
+import { KINDS, empreinteCode, planifier } from "../../packages/backend/lib/backfills/planner.mjs";
 // @ts-expect-error module JS sans déclarations
 import { etat, executer, inscrirePlan, mettreEnPause, verifier } from "../../packages/backend/lib/backfills/runner.mjs";
 // @ts-expect-error module JS sans déclarations
@@ -128,36 +128,6 @@ function lot(
     }],
   }, SECRET).payload);
 }
-
-/** Couture DSAR branchée sur la BASE JETABLE : sinon, la console viserait DATABASE_URL. */
-const ioSur = (client: pg.PoolClient | pg.Pool): IdentityDsarIo => ({
-  query: async <T,>(text: string, params?: unknown[]) => (await client.query(text, params)).rows as T[],
-  transaction: async <T,>(fn: (c: never) => Promise<T>) => {
-    if ("connect" in client && typeof (client as pg.Pool).connect === "function" && !("release" in client)) {
-      const c = await (client as pg.Pool).connect();
-      try {
-        await c.query("begin");
-        const out = await fn(c as never);
-        await c.query("commit");
-        return out;
-      } catch (err) {
-        await c.query("rollback").catch(() => {});
-        throw err;
-      } finally {
-        c.release();
-      }
-    }
-    await (client as pg.PoolClient).query("begin");
-    try {
-      const out = await fn(client as never);
-      await (client as pg.PoolClient).query("commit");
-      return out;
-    } catch (err) {
-      await (client as pg.PoolClient).query("rollback").catch(() => {});
-      throw err;
-    }
-  },
-});
 
 /** Attente sur CONDITION, jamais sur durée. Échoue franchement. */
 async function attendre(predicat: () => Promise<boolean>, quoi: string, limiteMs = 15_000): Promise<void> {

@@ -71,9 +71,9 @@ jobs:
       # P1 — l'extension y entre (R9, ligne `F2` de la couverture) : écrite en
       # TypeScript, elle n'était typée par AUCUN workflow — verte à la main le
       # 23/09, rien ne le garantissait à sa modification suivante.
-      # Reste HORS typage, et c'est connu : le JavaScript du backend
-      # (`packages/backend`, `packages/db`, `packages/mcp-tools`, `services/*`),
-      # en `.mjs` sans tsconfig ni `checkJs`. Ses JSDoc ne sont vérifiés par rien.
+      # Le JavaScript du backend (`packages/backend`, `packages/db`, `packages/mcp-tools`,
+      # services du kit), en `.mjs`, n'est pas ici : `checkJs` le lit à l'étape
+      # suivante, sous un cliquet (08/10/2026), et ses erreurs relevées restent.
       - name: Typage des paquets publiés et de l'extension
         run: |
           pnpm --filter @mip/rum-core exec tsc --noEmit
@@ -84,6 +84,19 @@ jobs:
           pnpm --filter @mip/stats exec tsc --noEmit
           pnpm --filter console typecheck
           pnpm --filter extension typecheck
+
+      # R4 (revue du 29/09/2026) — le JavaScript du backend, lu par TypeScript
+      # (`tsconfig.backend.json`, `checkJs`, mode non strict). Une centaine
+      # d'erreurs au premier passage : le cliquet refuse qu'un fichier en gagne,
+      # et demande de réécrire le relevé quand il en perd.
+      - name: Typage du JavaScript du backend (checkJs, cliquet)
+        run: node scripts/ci/cliquet-checkjs.mjs
+
+      # R3 — un linter minimal (oxlint, `.oxlintrc.json`) : des erreurs réelles
+      # seulement (nom non défini, import ou variable inutilisés, code
+      # inatteignable…), aucune règle de style. Bloquant.
+      - name: Linter (oxlint)
+        run: pnpm lint
 
       - name: Tests unitaires (vitest)
         run: pnpm test:unit

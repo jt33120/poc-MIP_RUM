@@ -11,7 +11,9 @@
     "test:sql": "vitest run tests/integration --no-file-parallelism",
     "test:contract": "vitest run tests/contract --no-file-parallelism",
     "test:isolation": "node scripts/verify-tenant-isolation.mjs",
-    "test:alerting": "node scripts/verify-alerting.mjs"
+    "test:alerting": "node scripts/verify-alerting.mjs",
+    "lint": "oxlint",
+    "typecheck:backend": "node scripts/ci/cliquet-checkjs.mjs"
   },
   "packageManager": "pnpm@9.15.9",
   "engines": {
@@ -29,8 +31,11 @@
     "@opentelemetry/sdk-logs": "0.222.0",
     "@opentelemetry/sdk-trace-base": "2.11.0",
     "@playwright/test": "1.60.0",
+    "@types/node": "22.19.20",
+    "oxlint": "1.87.0",
     "pg": "8.21.0",
     "railway": "^3.11.0",
+    "typescript": "5.9.3",
     "vitest": "4.1.8"
   }
 }

@@ -148,7 +148,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // NUANCÉ LE 07/10/2026 : le visiteur est persisté par le stockage que fournit
     // l'application (`adapters.storage`), en mémoire seulement sans lui ; le README du
     // paquet le dit. C3 garde le constat du relevé (identité en mémoire, sans stockage).
-    sources: ["C1", "C2", "C3", "C4", "C9", "C10", "packages/rum-mobile/src/index.ts:748-778", "packages/rum-mobile/README.md:296-301"],
+    sources: ["C1", "C2", "C3", "C4", "C9", "C10", "packages/rum-mobile/src/index.ts:742-772", "packages/rum-mobile/README.md:296-301"],
   },
   {
     id: "R8",
@@ -176,7 +176,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R9",
     titre: "Une chaîne de livraison qui dit vrai",
     manque:
-      "Depuis le 24/09/2026, la CI construit le dépôt depuis un clone propre, vérifie les types de l'extension navigateur et joue les deux bancs de mesure ; depuis le 28/09/2026, la restauration d'une sauvegarde sans ressusciter des données effacées est éprouvée sur une branche de répétition, avec 24 heures d'historique restaurable. Restent sa partie « identités », manuelle et jamais éprouvée ; des bancs qui impriment leurs temps sans seuil, si bien que les temps publiés sont remesurés, pas garantis ; et le JavaScript du backend n'est typé par rien.",
+      "Depuis le 24/09/2026, la CI construit le dépôt depuis un clone propre, vérifie les types de l'extension navigateur et joue les deux bancs de mesure ; depuis le 28/09/2026, la restauration d'une sauvegarde sans ressusciter des données effacées est éprouvée sur une branche de répétition, avec 24 heures d'historique restaurable. Restent sa partie « identités », manuelle et jamais éprouvée ; des bancs qui impriment leurs temps sans seuil, si bien que les temps publiés sont remesurés, pas garantis ; et le JavaScript du backend n'est vérifié que sous un cliquet.",
     debloque:
       "Éprouver la partie « identités » sur la branche de répétition, avec une identité effacée ; donner un seuil aux bancs de mesure ; étendre le typage au JavaScript du backend.",
     decide: "L'équipe MIP.",
@@ -188,8 +188,8 @@ export const POINTS_RESTE: readonly PointReste[] = [
     sources: [
       "D7",
       ".github/workflows/ci.yml:71-86",
-      ".github/workflows/ci.yml:95-124",
-      ".github/workflows/ci.yml:455-474",
+      ".github/workflows/ci.yml:108-137",
+      ".github/workflows/ci.yml:468-487",
     ],
   },
   {

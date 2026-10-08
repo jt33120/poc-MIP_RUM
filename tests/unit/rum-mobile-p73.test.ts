@@ -1088,7 +1088,7 @@ describe("P7.3 — patch fetch", () => {
   });
 
   it("une erreur réseau est mesurée (status 0) et l'exception remonte", async () => {
-    const { sdk, reseau } = await sdkFrais({ traceOrigins: [API] });
+    const { reseau } = await sdkFrais({ traceOrigins: [API] });
     reseau.echoue(new Error("network request failed"));
     await expect((globalThis as any).fetch(`${API}/x`)).rejects.toThrow("network request failed");
   });

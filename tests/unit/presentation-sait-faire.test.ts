@@ -69,9 +69,9 @@ describe("PS7 — les cartes", () => {
     // Le fait, dans la CI (relecture du 26/09/2026 ; la ligne F2 du document date du 23/09).
     const ci = readFileSync(join(RACINE, ".github/workflows/ci.yml"), "utf8");
     expect(ci).toContain("pnpm --filter extension typecheck");
-    expect(ci).toContain("Reste HORS typage, et c'est connu : le JavaScript du backend");
+    expect(ci).toContain("`checkJs` le lit à l'étape");
     expect(k15.faitQuoi).toContain("et de l'extension navigateur");
-    expect(k15.limites[0].texte).toContain("Le JavaScript du backend (paquets et services en .mjs) n'est typé par rien");
+    expect(k15.limites[0].texte).toContain("Le JavaScript du backend (paquets et services en .mjs) n'est lu par TypeScript que sous un cliquet");
     expect(k15.limites[0].texte).not.toContain("L'extension navigateur n'est pas typée");
     expect(k15.limites[0].texte).toContain("n'arrête une fusion que si l'on attend son verdict");
     // Le paquet React Native n'est pas publié (C9) : l'intitulé de l'étape de CI ne se reprend pas tel quel.

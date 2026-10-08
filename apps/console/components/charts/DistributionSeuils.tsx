@@ -32,7 +32,7 @@ import { formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
 import { pluriel } from "@/lib/format";
 import { etiquettesGraduations } from "@/lib/graduations";
 import { RATING_JETON, SERIE } from "@/lib/palette";
-import { RATING_LABEL, THRESHOLDS, rating2026, texteSeuils, type Rating } from "@/lib/rating";
+import { RATING_LABEL, THRESHOLDS, texteSeuils, type Rating } from "@/lib/rating";
 
 export interface Bac {
   debut: number;
