@@ -6,15 +6,15 @@
 // autorisée ne reçoit AUCUN en-tête Access-Control-Allow-Origin — plutôt que
 // de refléter une origine tierce du socle, comportement surprenant et inutile.
 
-// Socle statique (toujours accepté). Les origines des clients enregistrés via
-// la console (app_registry.allowed_origins) s'y ajoutent dynamiquement, passées
-// par l'appelant en `extraOrigins`.
-export const STATIC_ALLOWED_ORIGINS = [
-  "https://plateforme.groupement-it.com",
-  "http://localhost:8080",
-  "http://127.0.0.1:8080",
-  "http://localhost:3000",
-];
+// Socle : le développement local, plus `MIP_CORS_ORIGINES` (liste séparée par des
+// virgules, vide par défaut). Une origine CLIENTE n'a rien à faire ici : elle vit
+// dans app_registry.allowed_origins, lue à chaud et passée en `extraOrigins`.
+export const STATIC_ALLOWED_ORIGINS = Object.freeze(["http://localhost:8080", "http://127.0.0.1:8080",
+  "http://localhost:3000", ...originesEnvironnement(globalThis.process?.env?.MIP_CORS_ORIGINES)]);
+/** `MIP_CORS_ORIGINES` → origines non vides, sans espaces. */
+function originesEnvironnement(v) {
+  return typeof v === "string" ? v.split(",").map((o) => o.trim()).filter(Boolean) : [];
+}
 
 /** L'origine est-elle autorisée ? (socle statique ∪ origines d'apps actives). */
 export function isAllowedOrigin(origin, extraOrigins = []) {

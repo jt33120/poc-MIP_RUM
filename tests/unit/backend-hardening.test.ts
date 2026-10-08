@@ -166,11 +166,36 @@ describe("flattenOtlp — plafond de spans (maxSpans)", () => {
 
 // --- cors.mjs : règles partagées edge/dev-server (R6) + ACAO strict (R7) ------
 describe("corsHeaders — origine autorisée reflétée, sinon AUCUN ACAO", () => {
-  const GIT = "https://plateforme.groupement-it.com";
+  // Une origine du socle de développement : aucun domaine client n'y figure.
+  const GIT = "http://localhost:8080";
 
   it("origine du socle statique -> ACAO = origine", () => {
     expect(corsHeaders(GIT)["Access-Control-Allow-Origin"]).toBe(GIT);
     expect(STATIC_ALLOWED_ORIGINS).toContain(GIT);
+  });
+
+  it("le socle ne porte que le développement local : une origine cliente vient du registre", () => {
+    // Le dépôt est public : un domaine de client écrit ici serait publié, et
+    // ouvert à toutes les applications. Le registre (`allowed_origins`) le porte.
+    for (const o of STATIC_ALLOWED_ORIGINS) expect(o).toMatch(/^http:\/\/(localhost|127\.0\.0\.1):\d+$/);
+    expect(isAllowedOrigin("https://plateforme.client-recette.example")).toBe(false);
+    expect(isAllowedOrigin("https://plateforme.client-recette.example", ["https://plateforme.client-recette.example"])).toBe(true);
+  });
+
+  it("`MIP_CORS_ORIGINES` ajoute des origines au socle, lues au chargement du module", async () => {
+    const avant = process.env.MIP_CORS_ORIGINES;
+    process.env.MIP_CORS_ORIGINES = " https://a.example , ,https://b.example";
+    try {
+      vi.resetModules();
+      const frais = await import("../../packages/backend/shared/cors.mjs");
+      expect(frais.isAllowedOrigin("https://a.example")).toBe(true);
+      expect(frais.isAllowedOrigin("https://b.example")).toBe(true);
+      expect(frais.STATIC_ALLOWED_ORIGINS).toHaveLength(5);
+    } finally {
+      if (avant === undefined) delete process.env.MIP_CORS_ORIGINES;
+      else process.env.MIP_CORS_ORIGINES = avant;
+      vi.resetModules();
+    }
   });
 
   it("origine d'une app active (extra) -> ACAO = origine", () => {

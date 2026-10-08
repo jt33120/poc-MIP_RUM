@@ -134,13 +134,13 @@ describe("flattenOtlp — aplatissement du payload fixture", () => {
   });
 
   it("scrub PII : query string retirée de la source d'erreur", () => {
-    expect(rows.errors[0].source).toBe("https://plateforme.groupement-it.com/app.js");
+    expect(rows.errors[0].source).toBe("https://plateforme.client-recette.example/app.js");
   });
 
   it("session : app_id/client_id depuis la resource, page_count incrémenté", () => {
     const s = rows.sessions[0];
     expect(s.app_id).toBe("gip-plateforme");
-    expect(s.client_id).toBe("groupement-it");
+    expect(s.client_id).toBe("client-recette");
     expect(s.page_count_inc).toBe(1);
   });
 

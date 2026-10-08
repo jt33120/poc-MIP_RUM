@@ -5,7 +5,7 @@ export interface MIPRumConfig {
   endpoint: string;
   /** Identifiant de l'application, ex. 'gip-plateforme' */
   appId: string;
-  /** Identifiant du client, ex. 'groupement-it' */
+  /** Identifiant du client, ex. 'client-recette' */
   clientId?: string;
   env?: string;
   /** Version de l'app (SHA git, "1.4.2"), envoyée en mip.release pour retrouver la source map des erreurs. */
