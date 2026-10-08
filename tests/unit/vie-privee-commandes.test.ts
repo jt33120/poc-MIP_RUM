@@ -3,6 +3,7 @@
 // décision, ni dans l'audit. « Toutes les applications » est à la plateforme.
 // Chaque demande laisse sa ligne au journal, refus compris ; celle d'un
 // effacement entre dans SA transaction.
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 // @ts-expect-error module JS partagé sans déclarations
 import { hashIdentity } from "../../packages/backend/lib/identity-hash.mjs";
@@ -105,6 +106,24 @@ describe("C10 — commandes du RGPD", () => {
     dsar.dsarExport.mockRejectedValueOnce(new DsarRefus("inconnu"));
     expect(await C.exporterVisiteur.executer(demande(LISTE, { app: APP, visitor_id: "v-1" }, null))).toMatchObject({ etat: "refus", motif: "inconnu" });
     expect(audit.at(-1)).toMatchObject({ action: "privacy.visitor_export", detail: expect.stringMatching(/^refus=inconnu /) });
+  });
+
+  it("visiteur : l'audit ne garde qu'une empreinte tronquée, jamais l'identifiant (audit du 07/10/2026)", async () => {
+    const visiteur = "visiteur-brut-4f2a91c7";
+    const ref = createHash("sha256").update(visiteur).digest("hex").slice(0, 12);
+    dsar.dsarExport.mockResolvedValueOnce({ kind: "mip-rum-dsar-export" });
+    await C.exporterVisiteur.executer(demande(LISTE, { app: APP, visitor_id: visiteur }, null));
+    await C.effacerVisiteur.executer(demande(LISTE, { app: APP, visitor_id: visiteur, confirm: visiteur }, null));
+    dsar.dsarErase.mockRejectedValueOnce(new DsarRefus("refus_empreinte"));
+    await C.effacerVisiteur.executer(demande(LISTE, { app: APP, visitor_id: visiteur, confirm: visiteur }, null));
+    dsar.dsarExport.mockRejectedValueOnce(new DsarRefus("inconnu"));
+    await C.exporterVisiteur.executer(demande(LISTE, { app: APP, visitor_id: visiteur }, null));
+    expect(audit.map((l) => l.action)).toEqual(["privacy.visitor_export", "privacy.visitor_erase", "privacy.visitor_erase", "privacy.visitor_export"]);
+    for (const ligne of audit) {
+      expect(ligne.detail).toContain(`visitor_ref=${ref}`);
+      expect(ligne.detail).not.toContain(visiteur);
+      expect(ligne.detail).not.toContain("visitor_id=");
+    }
   });
 
   it("export : le document n'est rendu qu'une fois sa divulgation inscrite", async () => {

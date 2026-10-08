@@ -169,7 +169,22 @@ const DRAINAGE_NOTIFIER_S = 20;
 // dépôt, marquées OBSOLÈTE, jusqu'à l'apply de ce fichier : d'ici là, c'est
 // elles que le tableau de bord construit à chaque push sur `master`.
 export default defineRailway((ctx) => {
-  const pocMIP_RUM = github("jt33120/poc-MIP_RUM", { branch: "master", checkSuites: false });
+  // ATTENDRE LA CI AVANT DE DÉPLOYER (`checkSuites`, « Wait for CI » du tableau
+  // de bord ; audit du 07/10/2026). Sans lui, un commit de `master` partait en
+  // production pendant que sa CI tournait encore, ou après qu'elle eut échoué.
+  // Avec lui, chaque déploiement reste en `WAITING` jusqu'à la fin de TOUS les
+  // workflows GitHub Actions du commit (documentation Railway, « Wait for CI ») :
+  //   - un workflow en échec SAUTE le déploiement de ce commit ;
+  //   - un workflow annulé ne bloque que si aucun autre n'a réussi sur le même
+  //     commit — d'où `cancel-in-progress` réservé aux PR dans `ci.yml` ;
+  //   - au-delà de deux heures sans conclusion, le déploiement est sauté.
+  // Ce que ça coûte : la CI complète, E2E compris (11 à 24 min sur `master`,
+  // relevé du 08/10/2026), avant toute mise en service. Un commit qui touche
+  // aussi `.railway/**`, `package.json` ou `pnpm-lock.yaml` lance de plus l'apply
+  // IaC, qui attend l'approbation de `railway-production` : le déploiement des
+  // services attend alors CETTE approbation (deux heures au plus, sinon sauté).
+  // Retour arrière : `false` ici, en PR.
+  const pocMIP_RUM = github("jt33120/poc-MIP_RUM", { branch: "master", checkSuites: true });
 
   // ─── 1 · Collecte ──────────────────────────────────────────────────────────
   // P2 : LANCEMENT À BLANC. Le service se déploie, répond, et ne reçoit rien :
@@ -346,6 +361,9 @@ export default defineRailway((ctx) => {
       MIP_API_HOST: api.env.RAILWAY_PRIVATE_DOMAIN,
       MIP_API_PORT: String(PORT_API),
       // Le repli, et le chemin d'avant P4 : sans MIP_API_HOST, `mcp` appelle la console.
+      // GARDÉ (vérifié le 08/10/2026) : `origineApi` (packages/mcp-tools/lib/client.mjs)
+      // le lit encore quand MIP_API_HOST manque. Le retirer d'ici le SUPPRIMERAIT sur
+      // Railway (plan destructif) : retirer d'abord le repli du code, puis cette ligne.
       MIP_CONSOLE_URL: preserve(),
       NODE_ENV: preserve(),
       PORT: preserve(),
@@ -382,6 +400,20 @@ export default defineRailway((ctx) => {
       // les deux démarrages, les livraisons attendent `queued` ; rien ne se perd.
       // Retour arrière : « on » ici, et le notifier à 0 réplique.
       SCHEDULER_DELIVERY: "off",
+      // Jeton de /ready et /metrics (kit, ≥ 32 caractères) : sans lui, les deux
+      // répondent 404 et la supervision ne voit ni la fraîcheur des cadences ni
+      // l'arriéré des livraisons. La MÊME variable partagée que les cinq autres
+      // services : elle existe déjà sur l'environnement.
+      METRICS_TOKEN: ctx.shared.METRICS_TOKEN,
+      // DEAD-MAN'S SWITCH EXTERNE, FACULTATIF (`packages/backend/jobs/ordonnanceur.mjs`) :
+      // un GET après chaque tick abouti vers un service de battement hors Railway.
+      // ABSENTE, AUCUN SIGNAL : c'est l'état tant qu'aucune URL n'est posée.
+      // `preserve()` plutôt qu'une variable partagée : l'URL (secrète, `https:`) se
+      // pose À LA MAIN sur le service `scheduler`, et `preserve()` la garde d'un
+      // apply à l'autre ; sans cette ligne, l'apply suivant l'effacerait (règle 1).
+      // Une référence partagée vers une variable absente arriverait, elle, sous une
+      // forme que la documentation Railway ne précise pas.
+      DEADMAN_URL: preserve(),
     },
   });
 

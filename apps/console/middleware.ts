@@ -61,9 +61,6 @@ export async function middleware(req: NextRequest) {
   // redirection /login en boucle). L'auth se fait dans le handler de callback.
   if (req.nextUrl.pathname.startsWith("/api/auth/")) return NextResponse.next();
 
-  // /api/metrics : scrape Prometheus (sans cookie de session) — auth par token dans
-  // le handler. Bypass de la redirection /login (sinon 302 au lieu des métriques).
-  if (req.nextUrl.pathname === "/api/metrics") return NextResponse.next();
   // /api/live : sonde de la supervision externe, sans cookie. Elle ne dit que
   // « la console répond » et ne touche pas la base ; redirigée vers /login, elle
   // répondrait 302 et la sonde ne prouverait plus rien.

@@ -144,6 +144,16 @@ describe("un écran servi par console-api", () => {
     expect(chargeur).not.toHaveBeenCalled();
   });
 
+  it("l'écran des demandes RGPD : ses paramètres (la personne visée) partent dans le CORPS, jamais dans l'URL du service", async () => {
+    const { e, appeler, chargeur } = ecrans(DISTANTE);
+    const hash = "a".repeat(64);
+    expect(ECRANS_ADMIN.viePrivee.methode).toBe("POST");
+    await e.lireEcran(ECRANS_ADMIN.viePrivee, chargeur, { app: "demo", kind: "user", identity_hash: hash });
+    expect(appeler).toHaveBeenCalledWith(ECRANS_ADMIN.viePrivee, { params: {}, corps: { app: "demo", kind: "user", identity_hash: hash } }, expect.anything());
+    const [, entree] = appeler.mock.calls[0] as unknown as [unknown, Record<string, unknown>];
+    expect(entree).not.toHaveProperty("requete");
+  });
+
   it("servi par la console : le chargeur, sa sortie passée par JSON (la forme du fil)", async () => {
     const { e, appeler, chargeur } = ecrans({ distante: false, raison: "tirage", strict: false });
     const l = await e.lireEcran(ECRANS_ADMIN.comptes, chargeur, { vue: "x" });

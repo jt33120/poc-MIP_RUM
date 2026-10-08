@@ -299,6 +299,17 @@ function ecranAdmin<P = Aucun>(id: string, chemin: Chemin) {
   return operation<P, ParametresEcran, never, unknown>(id, "GET", chemin);
 }
 
+/**
+ * Un écran d'administration dont les paramètres désignent UNE PERSONNE (audit du
+ * 07/10/2026) : ils voyagent dans le CORPS d'un POST, jamais dans l'URL — une URL
+ * finit dans les journaux d'accès, ceux du routeur Railway compris. Une LECTURE
+ * malgré la méthode : rien n'est écrit, la démo est refusée comme pour tout écran
+ * d'administration, et l'exemption d'audit le dit côté service.
+ */
+function ecranAdminParCorps<P = Aucun>(id: string, chemin: Chemin) {
+  return operation<P, Aucun, ParametresEcran, unknown>(id, "POST", chemin);
+}
+
 export const ECRANS_ADMIN = Object.freeze({
   // C8 — les sondes de disponibilité.
   sondes: ecranAdmin("screens.uptime", "/v1/screens/admin/uptime"),
@@ -316,7 +327,9 @@ export const ECRANS_ADMIN = Object.freeze({
   domaines: ecranAdmin("screens.adminExtensionScopes", "/v1/screens/admin/extension-scopes"),
   sourcemaps: ecranAdmin("screens.adminSourcemaps", "/v1/screens/admin/sourcemaps"),
   // C10 — les demandes RGPD d'une personne (`/admin/privacy`) : ce qu'elles couvriraient, avant d'agir.
-  viePrivee: ecranAdmin("screens.adminPrivacy", "/v1/screens/admin/privacy"),
+  // L'identifiant de la personne (HMAC d'identité, identifiant de visiteur) part
+  // dans le corps : `ecranAdminParCorps`.
+  viePrivee: ecranAdminParCorps("screens.adminPrivacy", "/v1/screens/admin/privacy"),
 });
 export type CleEcranAdmin = keyof typeof ECRANS_ADMIN;
 

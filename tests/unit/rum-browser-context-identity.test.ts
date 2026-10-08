@@ -251,12 +251,17 @@ describe("DSAR identité", () => {
     const actions = readFileSync("apps/console/app/admin/privacy/actions.ts", "utf8");
     expect(page).toContain("action={searchIdentityAction}");
     expect(page).toContain('data-testid="dsar-visitor-search-form"');
-    expect(page).toContain('method="GET"');
+    // Audit du 07/10/2026 : la recherche par visiteur est une action serveur (POST),
+    // plus un formulaire GET qui mettait l'identifiant dans l'URL.
+    expect(page).toContain("action={searchVisitorAction}");
+    expect(page).not.toContain('method="GET"');
     expect(page).toContain("action={eraseUserAction}");
-    // C10 — l'identité brute part dans le CORPS de la commande, qui la hache ; l'URL
-    // ne reçoit que le HMAC rendu par la décision.
+    // C10 — l'identité brute part dans le CORPS de la commande, qui la hache ; son
+    // HMAC est scellé dans le cookie de la demande, et aucune URL ne le porte.
     expect(actions).toContain('executerCommande("rechercherIdentite"');
-    expect(actions).toContain("identity_hash=${r.data.hash}");
+    expect(actions).toContain('poserDemande({ type: "identite"');
+    expect(actions).not.toContain("identity_hash=");
+    expect(page).not.toContain("identity_hash=");
     expect(actions).not.toMatch(/redirect\([^)]*identity"\)/);
     const commandes = readFileSync("apps/console/lib/commandes/vie-privee.ts", "utf8");
     expect(commandes).toContain("hashIdentity(secret(), app!, corps.kind, brute)");

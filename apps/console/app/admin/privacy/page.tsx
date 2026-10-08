@@ -5,12 +5,14 @@ import { InfoTip } from "@/components/InfoTip";
 import { PageHeader } from "@/components/PageHeader";
 import { TableDefilante } from "@/components/TableDefilante";
 import { chargerViePrivee } from "@/lib/chargeurs/vie-privee";
+import { parametresEcranRgpd } from "@/lib/demande-rgpd";
 import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { DSAR_BARRIERE_MESSAGES, DSAR_LIMITES, DSAR_MESSAGES, libelleTableDsar, phraseBarriere } from "@/lib/dsar";
 import { accord, pluriel } from "@/lib/format";
 import { ARRONDI_BAS, Barre, Erreur, LIBELLE_CHAMP, LIGNE, LigneVide, Panneau, Pastille, TD, TD_NUM, TH, TH_NUM, type TonPastille } from "../_ui/kit";
-import { eraseIdentityAction, eraseUserAction, searchIdentityAction } from "./actions";
+import { eraseIdentityAction, eraseUserAction, searchIdentityAction, searchVisitorAction } from "./actions";
+import { lireDemande } from "./demande";
 
 export const dynamic = "force-dynamic";
 
@@ -54,16 +56,21 @@ export default async function AdminPrivacy({
   // Le chargeur (`lib/chargeurs/vie-privee.ts`, C10) : les applications du périmètre,
   // ce que couvrirait la demande, l'état réel de la protection. On INSTRUIT avant de
   // compter : sur une ancienne empreinte de terminal, ni volume ni bouton (lib/dsar.ts).
-  const ecran = accesAdmin(await chargerEcran(ECRANS_ADMIN.viePrivee, chargerViePrivee, sp));
+  // La personne visée vient de la demande SCELLÉE (cookie, `lib/demande-rgpd.ts`),
+  // jamais de l'URL : un `identity_hash` ou un `user` qui y traînerait est écarté.
+  const parametres = parametresEcranRgpd(sp, await lireDemande());
+  const ecran = accesAdmin(await chargerEcran(ECRANS_ADMIN.viePrivee, chargerViePrivee, parametres));
   const { apps, app, kind, identityHash, visitorId, visitorApp, toutes } = ecran;
   const { sante: identityHealth, protection: etatProtection, identite: identityCounts, cible: visitorTarget, visiteur: visitorCounts } = ecran;
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : null;
   const erased = typeof sp.erased === "string" ? sp.erased : null;
   const total = (counts: { rows: number }[]) => counts.reduce((n, c) => n + c.rows, 0);
   const identityTotal = identityCounts ? total(identityCounts) : 0;
-  const identityExportHref = `/admin/privacy/export?app=${encodeURIComponent(app)}&kind=${kind}&identity_hash=${identityHash}`;
   const visitorTotal = visitorCounts ? total(visitorCounts) : 0;
-  const visitorExportHref = `/admin/privacy/export?app=${encodeURIComponent(visitorApp)}&user=${encodeURIComponent(visitorId)}`;
+  // L'export relit la demande scellée : son lien ne porte aucun identifiant. Un `<a
+  // download>` et pas un `<Link>` : le routeur client prenait la pièce jointe pour une
+  // navigation et restait en attente, ce qui bloquait l'effacement qui suit (E2E).
+  const exportHref = "/admin/privacy/export";
   const nomApp = (id: string) => apps.find((a) => a.app_id === id)?.name ?? id;
   const effacees = erased != null && /^\d+$/.test(erased) ? Number(erased) : null;
   const barriere = BARRIERE[etatProtection];
@@ -186,7 +193,7 @@ export default async function AdminPrivacy({
           }
           className="h-full"
         >
-          <form method="GET" className="flex min-w-0 flex-wrap items-end gap-2 px-3 py-2.5" data-testid="dsar-visitor-search-form">
+          <form action={searchVisitorAction} className="flex min-w-0 flex-wrap items-end gap-2 px-3 py-2.5" data-testid="dsar-visitor-search-form">
             <label className={LIBELLE_CHAMP}>
               Application
               <select name="visitor_app" defaultValue={visitorApp} className="field block w-full max-w-full py-1 text-xs sm:max-w-[14rem]">
@@ -230,9 +237,9 @@ export default async function AdminPrivacy({
           vide="Aucune donnée pour cette identité dans cette application."
           gestes={
             <>
-              <Link href={identityExportHref} prefetch={false} className="btn-accent py-1.5 text-xs" data-testid="dsar-export" title="Export JSON complet des données liées à cette identité, regroupées par type de donnée.">
+              <a href={exportHref} download className="btn-accent py-1.5 text-xs" data-testid="dsar-export" title="Export JSON complet des données liées à cette identité, regroupées par type de donnée.">
                 Exporter en JSON
-              </Link>
+              </a>
               <form action={eraseIdentityAction} className="flex min-w-0 flex-wrap items-center gap-2" data-testid="dsar-erase-form">
                 <input type="hidden" name="app" value={app} />
                 <input type="hidden" name="kind" value={kind} />
@@ -292,9 +299,9 @@ export default async function AdminPrivacy({
           vide={DSAR_MESSAGES.inconnu}
           gestes={
             <>
-              <Link href={visitorExportHref} prefetch={false} className="btn-accent py-1.5 text-xs" data-testid="dsar-visitor-export">
+              <a href={exportHref} download className="btn-accent py-1.5 text-xs" data-testid="dsar-visitor-export">
                 Exporter en JSON
-              </Link>
+              </a>
               <form action={eraseUserAction} className="flex min-w-0 flex-wrap items-center gap-2" data-testid="dsar-visitor-erase-form">
                 <input type="hidden" name="app" value={visitorApp} />
                 <input type="hidden" name="user" value={visitorId} />
