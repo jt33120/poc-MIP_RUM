@@ -87,10 +87,16 @@ async function connexion(page: Page): Promise<void> {
   await page.fill('input[name="email"]', EMAIL);
   await page.fill('input[name="password"]', motDePasse);
   await page.click('button[type="submit"]');
-  await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
   // La redirection d'après connexion doit être finie : un `goto` lancé pendant
-  // qu'elle court est annulé (ERR_ABORTED).
-  await page.waitForLoadState("networkidle");
+  // qu'elle court est annulé (ERR_ABORTED). Un admin sans projet choisi (contexte
+  // neuf, aucun cookie `mip-project`) atterrit sur `/` puis, par la porte projet
+  // du middleware, sur `/select` : c'est la fin de la redirection, on l'attend.
+  // Surtout pas `networkidle` : la console s'auto-instrumente, et un morceau de
+  // rejeu part en `fetch` keepalive au moment où l'on quitte /login (pour survivre
+  // à la page) ; Playwright le compte en vol sans jamais en voir la fin, et
+  // l'attente expirait à 90 s (CI du 07/10/2026 : seule requête en vol après la
+  // connexion, `POST /api/ingest/v1/replay` lancé 0,4 s après le clic, 15 s plus tard).
+  await page.waitForURL((u) => u.pathname === "/select", { timeout: 15_000 });
 }
 
 const tuile = (page: Page, libelle: string) =>
