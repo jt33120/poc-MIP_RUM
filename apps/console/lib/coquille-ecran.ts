@@ -4,7 +4,9 @@
 import type { PrincipalEcran } from "./chargeurs/commun";
 import { chargerCoquille } from "./chargeurs/coquille";
 import { lireCoquille, type CoquilleEcran } from "./ecran";
+import { lectureSeuleSiDemo } from "./lecture-seule";
 
 export function chargerCoquilleEcran(user: PrincipalEcran): Promise<CoquilleEcran> {
-  return lireCoquille(() => chargerCoquille(user));
+  // Le repli local d'une session de démo lit en transaction READ ONLY, comme console-api.
+  return lireCoquille(() => lectureSeuleSiDemo(user?.demo, () => chargerCoquille(user)));
 }

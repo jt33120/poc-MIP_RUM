@@ -4,8 +4,7 @@
 // Une lecture en échec LÈVE (F02). Elle rendait autrefois un instantané à ZÉROS :
 // « 0 alerte non acquittée, 0 lot en attente, 0 livraison abandonnée » — le tableau
 // d'un système en parfaite santé, affiché précisément quand la base ne répond plus.
-// La page /admin/health rend désormais « Lecture en échec » (`lire()`), et
-// /api/metrics répond 503 : le scrape échoue, et Prometheus le voit (`up == 0`).
+// La page /admin/health rend désormais « Lecture en échec » (`lire()`).
 import { q } from "./db";
 import type { HealthSnapshot } from "./metrics-format";
 

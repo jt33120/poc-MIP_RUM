@@ -37,6 +37,7 @@ import type { CoquilleChargee } from "./chargeurs/coquille";
 import { catalogueDe } from "./dashboard-blocs";
 import { createLogger } from "./journal";
 import type { Lecture } from "./lecture";
+import { lectureSeuleSiDemo } from "./lecture-seule";
 import { pourcentageConsoleApi } from "./platform-flag";
 import type { AppItem } from "./queries";
 import { UnsupportedFilterError } from "./query-compiler";
@@ -45,7 +46,7 @@ import { algorithmeDuJeton, verifierJetonConsoleApi } from "./session-console";
 
 /** L'opération d'un écran, quelle que soit sa famille (`ECRANS`, `ECRANS_ADMIN`, `ECRANS_SESSION`). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type OperationEcran = Operation<any, any, never, unknown>;
+export type OperationEcran = Operation<any, any, any, unknown>;
 
 /** Les échecs de TRANSPORT : le service n'a pas parlé (ou a failli), rien à voir avec la demande. */
 export const ECHECS_DE_TRANSPORT: ReadonlySet<string> = new Set([
@@ -113,7 +114,7 @@ export function creerChargementEcrans(deps: {
   aiguillage: Pick<Aiguillage, "voie" | "echec">;
   appeler: (
     operation: OperationEcran,
-    entree: { params?: CheminEcran; requete?: ParametresEcran },
+    entree: { params?: CheminEcran; requete?: ParametresEcran; corps?: ParametresEcran },
     options: { jeton: string; requestId?: string; signal?: AbortSignal },
   ) => Promise<Resultat<unknown>>;
   jeton: () => Promise<string | null>;
@@ -144,14 +145,21 @@ export function creerChargementEcrans(deps: {
     chemin: CheminEcran = {},
     options: { signal?: AbortSignal } = {},
   ): Promise<LectureEcran<R>> {
-    const local = async (): Promise<LectureEcran<R>> => ({ ok: true, data: versLeFil(await chargeur(await deps.principal(), sp, chemin)) });
+    // Le repli local d'une session de démo lit en transaction READ ONLY, comme console-api.
+    const local = async (): Promise<LectureEcran<R>> => {
+      const principal = await deps.principal();
+      return { ok: true, data: versLeFil(await lectureSeuleSiDemo(principal?.demo, () => chargeur(principal, sp, chemin))) };
+    };
     const voie = await aiguillage.voie("ecrans", await deps.jeton());
     if (!voie.distante) {
       // Strict, sans session valable : ce que dirait le service, sans l'appeler.
       if (voie.strict && voie.raison === "sans_session") return { ok: false, refus: { code: "session_requise", message: "session requise", requestId: null } };
       return local();
     }
-    const r = await deps.appeler(operation, { params: chemin, requete: sp }, { jeton: voie.jeton, requestId: await deps.requestId(), signal: options.signal });
+    // Un écran en POST (`/admin/privacy`) : ses paramètres désignent une personne,
+    // ils partent dans le CORPS — jamais dans l'URL de console-api.
+    const entree = operation.methode === "GET" ? { params: chemin, requete: sp } : { params: chemin, corps: sp };
+    const r = await deps.appeler(operation, entree, { jeton: voie.jeton, requestId: await deps.requestId(), signal: options.signal });
     if (r.ok) return { ok: true, data: r.data as Fil<R> };
     if (r.code === "filtre_non_supporte") {
       // Le refus que le chargeur a levé côté service : relevé ici, à l'identique.
@@ -236,7 +244,9 @@ export async function chargerEcran<R>(operation: OperationEcran, chargeur: Charg
   const l = await ecrans.lireEcran(operation, chargeur, sp, chemin);
   if (l.ok) return l.data;
   if (l.refus.code === "session_requise" || l.refus.code === "session_invalide") redirect("/login");
-  if (l.refus.code === "role_insuffisant") redirect("/");
+  // `demo_refusee` : un écran en POST (`/admin/privacy`) refuse la démo AVANT le rôle ;
+  // pour la page, c'est le même refus qu'un rôle insuffisant.
+  if (l.refus.code === "role_insuffisant" || l.refus.code === "demo_refusee") redirect("/");
   if (l.refus.code === "hors_perimetre") redirect("/select");
   throw new ErreurConsoleApi(l.refus.code, l.refus.requestId, l.refus.message);
 }

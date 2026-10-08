@@ -17,10 +17,11 @@ import { Panneau, Pastille, Repli, TD, TH, type TonPastille } from "../_ui/kit";
 export const dynamic = "force-dynamic";
 
 const HEURE_MS = 3_600_000;
-const SOURCE = "Instantané de santé interne de la console — les mêmes indicateurs que ceux publiés pour Prometheus (jeton requis)";
+const SOURCE = "Instantané de santé interne de la console";
 
 /**
- * Santé interne de MIP RUM (auto-observabilité, P1) — admin. Mêmes chiffres que /api/metrics.
+ * Santé interne de MIP RUM (auto-observabilité, P1) — admin. Le scrape Prometheus, lui,
+ * vise le `/metrics` de chaque service Railway : la console n'en expose plus (08/10/2026).
  *
  * Refonte du 01/10/2026 : le verdict sur une ligne (ses raisons en puces qui mènent à
  * l'indicateur), les indicateurs en cases rangées par étage, la chaîne de mesure, puis
