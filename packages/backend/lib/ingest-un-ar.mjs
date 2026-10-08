@@ -4,7 +4,7 @@
 // compte 18 allers-retours SQL par lot de traces, dont 15 SOUS le verrou
 // d'application (v81). À ~10 ms l'aller-retour, le verrou est tenu ≈ 150 ms par
 // lot, et une application plafonne à ≈ 0,58 lot/s pour tenir le critère de P2.
-// Ici, le lot part en UNE requête, `select mip_ingerer_lot_v1(…)`, hors
+// Ici, le lot part en UNE requête, `select mip_ingerer_lot_v2(…)` (v111), hors
 // transaction explicite : la fonction prend le verrou, lit les barrières, écrit,
 // et le COMMIT implicite suit sans attente réseau. Plus aucun aller-retour sous
 // le verrou.
@@ -58,7 +58,7 @@ const TTL_CONFIG_MS = 30_000;
 const etats = new WeakMap();
 const etatDe = (pool) => {
   let e = etats.get(pool);
-  if (!e) etats.set(pool, (e = { drapeau: null, absentJusqua: 0, config: new Map() }));
+  if (!e) etats.set(pool, (e = { drapeau: null, absentJusqua: 0, v2AbsenteJusqua: 0, config: new Map() }));
   return e;
 };
 
@@ -137,7 +137,7 @@ function valeurComparee(v) {
 }
 
 /**
- * Le lot de traces, encodé pour `mip_ingerer_lot_v1`. PUR (testable sans base).
+ * Le lot de traces, encodé pour `mip_ingerer_lot_v2` (et `_v1`, qui ignore `log_uid`). PUR (testable sans base).
  * `colonnes` : les listes de `pg-ingest.mjs`, prises au schéma complet.
  * `errors` porte DÉJÀ sa symbolication et sa clé en ombre.
  */
@@ -216,6 +216,9 @@ const SQLSTATE_ECHEANCE = new Set(["57014", "25P03", "25P04"]);
  * @returns {Promise<any>} la valeur `jsonb` rendue par la fonction
  */
 export async function appelerUnAR(client, pool, sql, valeurs, apps, verrou = {}) {
+  // v111 : le lot part par `mip_ingerer_lot_v2` ; tant qu'elle manque (code
+  // déployé avant la migration), par `mip_ingerer_lot_v1`, sans repli historique.
+  if (sql === SQL_LOT && Date.now() < etatDe(pool).v2AbsenteJusqua) sql = SQL_LOT_V1;
   const delaiMs = Math.max(0, Math.round(Number(verrou.delaiVerrouMs ?? STRATEGIE_VERROU.delaiMs)) || 0);
   const tentatives = verrou.tentatives ?? STRATEGIE_VERROU.tentatives;
   const echeance = verrou.echeance != null ? Number(verrou.echeance) : null;
@@ -247,6 +250,13 @@ export async function appelerUnAR(client, pool, sql, valeurs, apps, verrou = {})
       }
       if (err?.code === "MIP01") throw new ErreurPorteeApp(String(err.message));
       if (err?.code === "MIP02") throw new RepliHistorique("regroupement v2 actif ou configuration changée");
+      if (err?.code === "42883" && sql === SQL_LOT) {
+        // Rien n'a été écrit (l'appel n'a pas commencé) : même essai, par v1.
+        etatDe(pool).v2AbsenteJusqua = Date.now() + TTL_ABSENCE_MS;
+        sql = SQL_LOT_V1;
+        essai--;
+        continue;
+      }
       if (err?.code === "42883" || err?.code === "42501") {
         etatDe(pool).absentJusqua = Date.now() + TTL_ABSENCE_MS;
         throw new RepliHistorique(err.code === "42883" ? "fonction absente (migration-v109)" : "droit d'exécution manquant");
@@ -300,7 +310,12 @@ export async function preparerErreurs(client, pool, errors) {
   return { errors: lignesEnOmbre(errors, config), regroupement };
 }
 
-export const SQL_LOT = "select mip_ingerer_lot_v1($1::text[], $2::jsonb, $3::jsonb) as r";
+/**
+ * Le lot de traces ou de logs : `mip_ingerer_lot_v2` (migration-v111, logs
+ * idempotents), et `mip_ingerer_lot_v1` (v109) en repli si v2 manque.
+ */
+export const SQL_LOT = "select mip_ingerer_lot_v2($1::text[], $2::jsonb, $3::jsonb) as r";
+export const SQL_LOT_V1 = "select mip_ingerer_lot_v1($1::text[], $2::jsonb, $3::jsonb) as r";
 export const SQL_REJEU = "select mip_ecrire_rejeu_v1($1, $2, $3::int4, $4::int4, $5::bytea, $6::jsonb) as r";
 
 /** Les apps d'un lot, comme le verrou historique les prend. */

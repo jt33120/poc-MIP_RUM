@@ -28,13 +28,14 @@ export const GRID_DAYS = 14;
 const useRollups = () => process.env.RUM_USE_ROLLUPS === "1";
 
 /**
- * Le pré-agrégat ne connaît que l'app et l'appareil, et compte AUSSI les bots : il
- * ne répond que si la requête ne demande rien d'autre. Un rollup sans navigateur
- * ne répond jamais à navigateur=Firefox.
+ * Le pré-agrégat ne connaît que l'app et l'appareil, et EXCLUT les robots depuis
+ * migration-v111 (il les comptait avant) : il ne répond que si la requête ne
+ * demande rien d'autre. Un rollup sans navigateur ne répond jamais à
+ * navigateur=Firefox, ni à une requête qui inclut les robots.
  */
 export function rollupCompatible(query: AnalyticsQuery): boolean {
   return (
-    query.filters.includeBots &&
+    !query.filters.includeBots &&
     conditionsOf(query.filters).every((c) => c.dimension === "device" && c.operator === "eq")
   );
 }

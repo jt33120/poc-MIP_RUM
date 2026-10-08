@@ -2017,6 +2017,31 @@ function severityText(n) {
 }
 
 /**
+ * Clé naturelle d'un log (migration-v111) : un log OTLP n'a pas d'identifiant, et
+ * `rum_log` n'avait donc aucune unicité — un lot rejoué (reprise du SDK, drain de
+ * la file différée) dupliquait ses logs. L'empreinte porte ce qui identifie CE
+ * record de CETTE charge :
+ *   · les horodatages BRUTS du record, pas `ts` : sans `timeUnixNano`, `ts` vaut
+ *     l'heure de réception, qui change d'une reprise à l'autre ;
+ *   · son contenu tel qu'il est écrit (sévérité, corps et attributs nettoyés,
+ *     corrélation, session, route, source) ;
+ *   · sa POSITION dans la charge (`seen`, comme l'identité d'une exception
+ *     dérivée) : deux logs identiques émis dans la même milliseconde restent deux
+ *     lignes, et la reprise de la même charge retrouve les mêmes positions.
+ * Une même charge redécoupée autrement (positions différentes) n'est pas
+ * reconnue : c'est la limite assumée, et elle ne crée pas plus de doublons
+ * qu'avant. 128 bits de SHA-256, comme `rum_error.span_id`.
+ */
+function logUid(log, rec, position) {
+  const brut = (v) => (v == null ? null : String(v));
+  return sha256Hex(JSON.stringify([
+    "log-v1", log.app_id, brut(rec.timeUnixNano), brut(rec.observedTimeUnixNano), log.severity_num,
+    log.severity_text, log.body, log.source, log.trace_id, log.span_id, log.session_id, log.route,
+    log.attributes ?? null, position,
+  ])).slice(0, 32);
+}
+
+/**
  * Aplatit un payload OTLP/HTTP JSON du signal LOGS (resourceLogs) en lignes rum_log
  * — miroir de flattenOtlp() pour les traces. Rejette (compte) les resourceLogs sans
  * mip.app_id. Corrélation aux spans via traceId/spanId. PII scrubbée (body + attrs).
@@ -2072,7 +2097,7 @@ export function flattenOtlpLogs(payload, opts = {}) {
             : typeof rec.severityNumber === "string"
               ? Number(rec.severityNumber) || null
               : null;
-        logs.push({
+        const log = {
           app_id: appId,
           ts: nanosToDate(rec.timeUnixNano ?? rec.observedTimeUnixNano, now),
           severity_num: sevNum,
@@ -2084,7 +2109,9 @@ export function flattenOtlpLogs(payload, opts = {}) {
           session_id: a["mip.session_id"] ?? null,
           route: a["mip.route"] ?? null,
           attributes: scrubProps(a),
-        });
+        };
+        log.log_uid = logUid(log, rec, seen);
+        logs.push(log);
         // `seen` est la position du log dans CE lot : stable au rejeu du lot.
         const exception = logRecordException(rec, a, {
           appId, resource: res, scopeName, severityNumber: sevNum, position: seen, now,

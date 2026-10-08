@@ -206,7 +206,7 @@ function parserUserAgent(ua) {
  * « Chrome / Linux » gonflerait ces familles dès que les robots sont inclus dans
  * une analyse. Son user-agent n'est donc pas lu ; seule la classe déclarée par le
  * SDK reste, comme avant P6.1, pour ne pas déplacer le trafic robot entre les
- * classes des agrégats existants (rum_rollup_hourly ne filtre pas les robots).
+ * classes d'appareil des analyses qui incluent les robots.
  * Aucun user-agent n'est exigé : une session sans lui ni indice reste inconnue.
  *
  * @param {unknown} userAgent `mip.user_agent` de la resource.

@@ -19,8 +19,8 @@ const RAW_GRID = `
   select date_trunc('day', m.ts) as day, extract(hour from m.ts)::int as hour,
          sum(case when m.rating='good' then (case when m.name='LCP' then 2 else 1 end) else 0 end)::float as good_w,
          sum(case when m.name='LCP' then 2 else 1 end)::float as total_w
-  from rum_metric m left join rum_session s using (session_id)
-  where m.ts >= date_trunc('hour', now()) - interval '14 days' and ($1::text is null or m.app_id=$1) and ($2::text is null or s.device_type=$2)
+  from rum_metric m left join rum_session s on s.app_id = m.app_id and s.session_id = m.session_id
+  where not coalesce(s.is_bot, false) and m.ts >= date_trunc('hour', now()) - interval '14 days' and ($1::text is null or m.app_id=$1) and ($2::text is null or s.device_type=$2)
   group by 1,2 order by 1,2`;
 const ROLLUP_GRID = `
   select date_trunc('day', hour) as day, extract(hour from hour)::int as hour,
@@ -32,10 +32,10 @@ const ROLLUP_GRID = `
 const RAW_TRAFFIC = `
   select gs.day::date as day, coalesce(pv.n,0)::int as pageviews, coalesce(er.n,0)::int as errors
   from generate_series(date_trunc('day', now()) - interval '13 days', date_trunc('day', now()), interval '1 day') gs(day)
-  left join (select date_trunc('day', p.started_at) d, count(*)::int n from rum_pageview p left join rum_session s using (session_id)
-             where p.started_at >= date_trunc('hour', now()) - interval '14 days' and ($1::text is null or p.app_id=$1) and ($2::text is null or s.device_type=$2) group by 1) pv on pv.d=gs.day
-  left join (select date_trunc('day', e.ts) d, count(*)::int n from rum_error e left join rum_session s using (session_id)
-             where e.ts >= date_trunc('hour', now()) - interval '14 days' and ($1::text is null or e.app_id=$1) and ($2::text is null or s.device_type=$2) group by 1) er on er.d=gs.day
+  left join (select date_trunc('day', p.started_at) d, count(*)::int n from rum_pageview p left join rum_session s on s.app_id = p.app_id and s.session_id = p.session_id
+             where not coalesce(s.is_bot, false) and p.started_at >= date_trunc('hour', now()) - interval '14 days' and ($1::text is null or p.app_id=$1) and ($2::text is null or s.device_type=$2) group by 1) pv on pv.d=gs.day
+  left join (select date_trunc('day', e.ts) d, count(*)::int n from rum_error e left join rum_session s on s.app_id = e.app_id and s.session_id = e.session_id
+             where not coalesce(s.is_bot, false) and e.ts >= date_trunc('hour', now()) - interval '14 days' and ($1::text is null or e.app_id=$1) and ($2::text is null or s.device_type=$2) group by 1) er on er.d=gs.day
   order by 1`;
 const ROLLUP_TRAFFIC = `
   select gs.day::date as day, coalesce(pv.n,0)::int as pageviews, coalesce(er.n,0)::int as errors

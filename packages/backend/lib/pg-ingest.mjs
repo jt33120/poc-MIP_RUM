@@ -410,7 +410,7 @@ const COLONNES_METRIQUE = [
 // de l'INSERT. Exportées pour une raison : l'écriture en un aller-retour
 // (`ingest-un-ar.mjs`, migration-v109) écrit les MÊMES colonnes, et
 // `tests/unit/ingest-un-ar.test.ts` compare ces listes, prises au schéma complet,
-// à celles de `mip_ingerer_lot_v1`. Une colonne ajoutée ici sans nouvelle version
+// à celles de `mip_ingerer_lot_v2` (v111). Une colonne ajoutée ici sans nouvelle version
 // de la fonction SQL fait échouer ce test, au lieu de se perdre en silence.
 
 /** Colonnes de l'INSERT rum_pageview. */
@@ -464,10 +464,29 @@ export function colonnesIndex(dispo) {
   return ["app_id", "session_id", "ts", "route", "kind", "source_name", "source_span_id", ...optionnelles];
 }
 
-/** Colonnes de l'INSERT rum_log (aucune n'est optionnelle). */
+/** Colonnes de l'INSERT rum_log présentes depuis v29. */
 export const COLONNES_LOG = Object.freeze([
   "app_id", "ts", "severity_num", "severity_text", "body", "source", "trace_id", "span_id", "session_id", "route", "attributes",
 ]);
+
+/**
+ * Colonnes de l'INSERT rum_log : celles de v29, plus la clé naturelle `log_uid`
+ * (migration-v111) une fois la colonne en place — avant, le lot s'écrit comme
+ * avant, sans idempotence.
+ */
+export function colonnesLog(dispo) {
+  return [...COLONNES_LOG, ...(dispo.has("log_uid") ? ["log_uid"] : [])];
+}
+
+/**
+ * Conflit de rum_log : `(app_id, log_uid)` est unique là où la clé est posée
+ * (index partiel de v111), et un rejeu n'écrit donc rien de plus. SANS cible, à
+ * dessein : l'index se construit en ligne avant la migration (predeploy-v111),
+ * et une cible qui le nomme échouerait — tout le lot avec elle — dans l'intervalle
+ * où la colonne existe et l'index pas encore. `rum_log` n'a pas d'autre unicité
+ * que son identifiant séquentiel, qui n'entre jamais en conflit.
+ */
+export const CONFLIT_LOG = "on conflict do nothing";
 
 /** Colonnes de l'INSERT mobile_capabilities. */
 export const COLONNES_CAPACITE = Object.freeze(["app_id", "runtime", "release", "capability", "declared"]);
@@ -912,12 +931,13 @@ export async function writeRows(pool, rows, { symbolicateur = symbolicateurInges
  * @returns {Promise<{logs: number, erreurs: {recues: number, inserees: number, ignorees: number}}>}
  */
 export async function writeLogsWithClient(client, logs, errors = []) {
+  const dispo = await colonnesDe(client, "rum_log");
   await batchInsert(
     client,
     "rum_log",
-    COLONNES_LOG,
+    colonnesLog(dispo),
     logs.map((l) => ({ ...l, attributes: l.attributes ? JSON.stringify(l.attributes) : null })),
-    "",
+    CONFLIT_LOG,
   );
   const erreurs = await ecrireErreurs(client, errors);
   await erreurs.finaliser();
@@ -1011,10 +1031,14 @@ export async function writeReplayChunk(pool, chunk, { client: fourni = null, ver
 /** Marque de repli : le chemin historique reprend le lot, rien n'a été écrit. */
 const REPLI = Symbol("repli-historique");
 
-/** Le schéma complet : les colonnes que `mip_ingerer_lot_v1` écrit. */
+/** Le schéma complet : les colonnes que `mip_ingerer_lot_v2` écrit (v111). */
 const TOUT = Object.freeze({ has: () => true });
 let colonnesV109 = null;
-/** Les listes de colonnes, au schéma complet — celles de la fonction v109. */
+/**
+ * Les listes de colonnes, au schéma complet — celles de `mip_ingerer_lot_v2`
+ * (v111). `mip_ingerer_lot_v1` (v109), le repli, écrit les mêmes sauf `log_uid`,
+ * qu'il ignore dans la ligne encodée.
+ */
 export function colonnesUnAR() {
   colonnesV109 ??= Object.freeze({
     session: colonnesInsert(TOUT),
@@ -1028,7 +1052,7 @@ export function colonnesUnAR() {
     evenement: colonnesEvenement(TOUT),
     span: colonnesSpan(TOUT),
     index: colonnesIndex(TOUT),
-    log: COLONNES_LOG,
+    log: colonnesLog(TOUT),
     capacite: COLONNES_CAPACITE,
   });
   return colonnesV109;

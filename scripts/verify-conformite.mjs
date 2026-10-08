@@ -24,11 +24,12 @@ async function seedApp(c, app, ages) {
   for (const d of ages) {
     const sid = `${app}-${d}d`;
     await c.query(`insert into rum_session (session_id, app_id, last_seen_at) values ($1,$2, now() - make_interval(days=>$3))`, [sid, app, d]);
-    const { rows: [{ id }] } = await c.query(
-      `insert into rum_pageview (session_id, app_id, route, started_at) values ($1,$2,'/x', now() - make_interval(days=>$3)) returning id`, [sid, app, d]);
     await c.query(
-      `insert into rum_metric (session_id, pageview_id, app_id, route, name, value, rating, ts)
-       values ($1,$2,$3,'/x','LCP',2000,'good', now() - make_interval(days=>$4))`, [sid, id, app, d]);
+      `insert into rum_pageview (session_id, app_id, route, started_at) values ($1,$2,'/x', now() - make_interval(days=>$3))`, [sid, app, d]);
+    // Sans `pageview_id` : aucune écriture de l'ingestion ne le renseigne (migration-v111).
+    await c.query(
+      `insert into rum_metric (session_id, app_id, route, name, value, rating, ts)
+       values ($1,$2,'/x','LCP',2000,'good', now() - make_interval(days=>$3))`, [sid, app, d]);
   }
 }
 

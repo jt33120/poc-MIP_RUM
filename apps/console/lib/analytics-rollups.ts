@@ -13,11 +13,10 @@
 // ─────────────────── POURQUOI SI PEU D'AGRÉGATS SONT ÉLIGIBLES ───────────────
 //
 // `rum_rollup_hourly` (v12/v64) agrège les vues et les occurrences d'erreurs par
-// (app, appareil, heure). DEUX faits, déclarés ci-dessous, l'écartent :
+// (app, appareil, heure). Depuis v111, il EXCLUT les robots, comme l'Explorer par
+// défaut (avant, sa population les incluait). Un fait, déclaré ci-dessous,
+// l'écarte encore :
 //
-//   · son rafraîchissement ne filtre pas `is_bot` : sa population inclut les
-//     robots, que l'Explorer exclut par défaut. Aucune arithmétique ne rapproche
-//     deux populations différentes ;
 //   · il ne tient AUCUN filigrane de rafraîchissement — ni instant, ni
 //     identifiant. Sans lui, rien ne dit quelles heures sont consolidées ni où
 //     reprendre les lignes brutes : la partition ne peut pas être PROUVÉE, et
@@ -145,10 +144,10 @@ export const ROLLUP_SOURCES = {
     grainSeconds: GRAIN_SECONDS,
     dimensions: ["device"],
     columns: { device: "device_type" },
-    // Son rafraîchissement ne filtre pas `is_bot` : la population inclut les
-    // robots. Déclaré ici, ce fait suffit à interdire l'agrégat partout où la
-    // requête les exclut — c'est-à-dire par défaut.
-    includesBots: true,
+    // Depuis migration-v111, son rafraîchissement exclut `is_bot` (et joint la
+    // session dans son application) : la population est celle de l'Explorer
+    // par défaut. Il reste écarté faute de filigrane d'identifiant (`state`).
+    includesBots: false,
     shape: "additive",
     approximate: false,
     answers: [
