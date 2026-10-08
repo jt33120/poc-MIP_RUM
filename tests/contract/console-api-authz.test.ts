@@ -645,7 +645,8 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
     const verifier = async (nom: string, e: Enregistrement, profil: Profil, attendu: string, variante = "") => {
       const base = requete(e, profil, { nom: "" });
       const url = variante ? `${base.url}${base.url.includes("?") ? "&" : "?"}${variante}` : base.url;
-      const res = await servirRequete(new Request(url, { headers: base.headers }));
+      // La méthode de l'opération est gardée : l'écran des demandes RGPD est en POST.
+      const res = await servirRequete(variante ? new Request(url, { method: base.method, headers: base.headers }) : base);
       if (res.status !== 200) return void ecarts.push(`${nom} · ${profil} : ${res.status} ${await res.text()}`);
       const { data } = (await res.json()) as { data: { etat?: string } };
       if (data.etat !== attendu) ecarts.push(`${nom} · ${profil} : état ${data.etat}, attendu ${attendu}`);
@@ -660,6 +661,25 @@ if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourn
     const res = await servirRequete(new Request(horsPerimetre.url.replace(`/customers/${A}`, `/customers/${B}`), { headers: horsPerimetre.headers }));
     expect(((await res.json()) as { data: { etat: string } }).data.etat).toBe("introuvable");
     expect(ecarts).toEqual([]);
+  });
+
+  it("l'écran des demandes RGPD (audit du 07/10/2026) : la personne dans le CORPS d'un POST ; en GET, aucun paramètre n'est lu", async () => {
+    const e = table.find((x) => x.operation.id === ECRANS_ADMIN.viePrivee.id)!;
+    const base = requete(e, "plateforme", { nom: "" });
+    const entetes = new Headers(base.headers);
+    entetes.set("content-type", "application/json");
+    const visiteur = "authz-visiteur-inconnu";
+    const res = await servirRequete(
+      new Request(base.url, { method: "POST", headers: entetes, body: JSON.stringify({ visitor_app: A, user: visiteur }) }),
+    );
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as { data: { etat: string; visitorId: string; visitorApp: string; cible: { verdict: string } | null } };
+    expect(data).toMatchObject({ etat: "ok", visitorId: visiteur, visitorApp: A, cible: { verdict: "inconnu" } });
+    // L'ancienne forme (paramètres dans l'URL) n'est plus servie.
+    const get = await servirRequete(new Request(`${base.url}?user=${visiteur}`, { method: "GET", headers: base.headers }));
+    expect(get.status).toBe(405);
+    // La démo est refusée avant le chargeur, comme sur tout écran d'administration.
+    expect((await servirRequete(requete(e, "demo", { nom: "" }))).status).toBe(403);
   });
 
   it("les écrans de session sans portée (C9) : toute session, et chacune ne voit que son périmètre", async () => {

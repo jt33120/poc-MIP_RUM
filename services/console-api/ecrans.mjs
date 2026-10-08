@@ -60,6 +60,7 @@ import { chargerTracing } from "@/lib/chargeurs/tracing";
 import { chargerUx } from "@/lib/chargeurs/ux";
 import { chargerViePrivee } from "@/lib/chargeurs/vie-privee";
 import { chargerVues } from "@/lib/chargeurs/vues";
+import { lectureSeuleSiDemo } from "@/lib/lecture-seule";
 import { UnsupportedFilterError } from "@/lib/query-compiler";
 import { avecRequete } from "./shims/log-forward.mjs";
 
@@ -70,11 +71,14 @@ const principal = (p) => ({ email: p.email, role: p.role, apps: p.apps === null 
  * @param {(p: ReturnType<typeof principal>, sp: Record<string, string>, chemin: Record<string, string>) => Promise<unknown>} chargeur
  * @returns {import("@mip/console-api").ChargeurEcran}
  */
-const page = (chargeur) => (p, sp, chemin, requestId) => avecRequete(requestId, () => chargeur(principal(p), { ...sp }, { ...chemin }));
+// Une session de démo lit en transaction READ ONLY (`lib/lecture-seule.ts`) : Postgres
+// refuse lui-même ce qu'un chargeur écrirait pour elle.
+const page = (chargeur) => (p, sp, chemin, requestId) =>
+  avecRequete(requestId, () => lectureSeuleSiDemo(p.demo, () => chargeur(principal(p), { ...sp }, { ...chemin })));
 
 /** @type {import("@mip/console-api").ChargeursEcrans} */
 export const ecrans = {
-  coquille: (p) => chargerCoquille(principal(p)),
+  coquille: (p) => lectureSeuleSiDemo(p.demo, () => chargerCoquille(principal(p))),
   pages: {
     // C3
     actions: page(chargerActions),
