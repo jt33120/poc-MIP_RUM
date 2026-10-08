@@ -418,7 +418,7 @@ export const CARTES: readonly CarteCapacite[] = [
     ],
     // L'étape « Typage des paquets publiés et de l'extension » de la CI, et ce
     // qu'elle laisse hors typage.
-    sources: [{ ligne: "F2" }, { fichier: ".github/workflows/ci.yml:77-92" }],
+    sources: [{ ligne: "F2" }, { fichier: ".github/workflows/ci.yml:71-86" }],
   },
 ];
 

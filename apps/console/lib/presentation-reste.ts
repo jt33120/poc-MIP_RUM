@@ -187,9 +187,9 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // `.mjs`, construction depuis un dépôt propre, bancs de mesure sans seuil de latence.
     sources: [
       "D7",
-      ".github/workflows/ci.yml:77-92",
-      ".github/workflows/ci.yml:101-130",
-      ".github/workflows/ci.yml:461-480",
+      ".github/workflows/ci.yml:71-86",
+      ".github/workflows/ci.yml:95-124",
+      ".github/workflows/ci.yml:455-474",
     ],
   },
   {

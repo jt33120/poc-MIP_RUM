@@ -16,15 +16,9 @@ on:
 permissions:
   contents: read
 
-# ANNULER UN RUN DÉPASSÉ : SUR UNE PR SEULEMENT. Railway attend la CI avant de
-# déployer (`checkSuites: true`, `.railway/railway.ts`) et SAUTE le déploiement
-# d'un commit dont la CI est annulée, si aucun autre workflow n'y a réussi. Sur
-# `master`, deux fusions rapprochées annulaient la CI de la première : son
-# déploiement sautait, et la seconde, si elle ne touchait pas les chemins
-# surveillés du même service, ne le rattrapait pas.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }} # sur master, chaque CI va au bout : Railway saute le déploiement d'un commit dont la CI est annulée (checkSuites, .railway/railway.ts)
 
 jobs:
   unit:
