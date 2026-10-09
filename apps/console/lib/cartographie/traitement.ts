@@ -25,7 +25,10 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
         texte: "Traces et journaux en JSON ou en protobuf, compressés en gzip, en deflate ou pas ; tout autre format reçoit 415.",
         sources: [`${BACK}/shared/otlp-corps.mjs:10-21`],
       },
-      { texte: "Rejouer un même lot ne crée aucune ligne de plus, sauf pour les journaux.", sources: [`${BACK}/lib/pg-ingest.mjs:715-785`] },
+      {
+        texte: "Rejouer un même lot ne crée aucune ligne de plus, journaux compris depuis la migration v111.",
+        sources: [`${BACK}/lib/pg-ingest.mjs:734-804`, `${BACK}/lib/pg-ingest.mjs:481-489`, "packages/db/sql/migration-v111.sql:9-23"],
+      },
       {
         // Le drapeau est à 100 en production depuis le 06/10/2026, 18:25 UTC (relevé de
         // l'exploitation, 07/10/2026) ; le code n'en connaît que la règle.
@@ -54,14 +57,14 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
         texte: "Une clé mip_ suivie de 32 caractères hexadécimaux, stockée en SHA-256, montrée une seule fois.",
         sources: ["apps/console/lib/commandes/applications.ts:10-21"],
       },
-      { texte: "Refus dans l'ordre : application suspendue, inactive, sans clé, clé fausse.", sources: [`${BACK}/lib/pg-ingest.mjs:1262-1301`] },
+      { texte: "Refus dans l'ordre : application suspendue, inactive, sans clé, clé fausse.", sources: [`${BACK}/lib/pg-ingest.mjs:1286-1325`] },
       {
         texte: "La clé est lisible dans la page : elle identifie l'application sans rien protéger, et le débit reste la borne.",
         sources: [`${BACK}/shared/limits.mjs:22-23`],
       },
       {
         texte: "Si le registre des applications n'a jamais pu se charger, le lot passe, par choix, et /ready le signale.",
-        sources: [`${BACK}/lib/pg-ingest.mjs:1264-1267`],
+        sources: [`${BACK}/lib/pg-ingest.mjs:1288-1291`],
       },
       { texte: "Seules les origines des applications actives reçoivent l'autorisation CORS.", sources: [`${BACK}/shared/cors.mjs:20-23`] },
     ],
@@ -80,11 +83,11 @@ export const ELEMENTS_RAILWAY_TRAITEMENT: readonly Element[] = [
     faits: [
       {
         texte: "600 lots par minute et par application ; base injoignable, le repli refuse au-delà de 150.",
-        sources: [`${BACK}/lib/pg-ingest.mjs:1204-1211`, `${BACK}/lib/pg-ingest.mjs:1357-1378`],
+        sources: [`${BACK}/lib/pg-ingest.mjs:1228-1235`, `${BACK}/lib/pg-ingest.mjs:1381-1402`],
       },
       {
         texte: "Un site inscrit en libre-service a son propre plafond, plus bas que celui de la plateforme.",
-        sources: [`${BACK}/lib/pg-ingest.mjs:1347-1356`, "packages/db/sql/migration-v107.sql:38"],
+        sources: [`${BACK}/lib/pg-ingest.mjs:1371-1380`, "packages/db/sql/migration-v107.sql:38"],
       },
       { texte: "Un corps de 2 Mo au plus, lu en flux borné, même sans longueur annoncée.", sources: [`${BACK}/shared/limits.mjs:10`, `${BACK}/shared/limits.mjs:109-119`] },
       { texte: "La décompression est bornée au même plafond : pas de bombe gzip.", sources: [`${BACK}/shared/otlp-corps.mjs:23-28`] },

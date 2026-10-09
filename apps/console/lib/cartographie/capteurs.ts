@@ -245,7 +245,7 @@ export const ELEMENTS_CAPTEURS: readonly Element[] = [
       { texte: "Permissions : scripting, webNavigation, storage, activeTab ; les hôtes sur accord seulement.", sources: [`${EXT}/manifest.json:7-15`] },
       {
         texte: "Sans clé : la collecte s'ouvre si l'origine est un domaine enregistré pour l'application.",
-        sources: ["packages/backend/lib/pg-ingest.mjs:1186-1190", "packages/backend/lib/pg-ingest.mjs:1293-1295"],
+        sources: ["packages/backend/lib/pg-ingest.mjs:1210-1214", "packages/backend/lib/pg-ingest.mjs:1317-1319"],
       },
       {
         texte: "À chaque page, elle demande à la console si le domaine est suivi : le nom d'hôte part, même hors périmètre.",
@@ -304,7 +304,7 @@ export const ELEMENTS_MESURES: readonly Element[] = [
     etiquettes: ["/v1/logs", "serveur seulement"],
     faits: [
       { texte: "Un journal ERROR qui porte une exception devient une erreur.", sources: ["packages/backend/shared/otlp.mjs"] },
-      { texte: "Journaux et erreurs qu'ils portent s'écrivent dans une seule transaction.", sources: ["packages/backend/lib/pg-ingest.mjs:905-943"] },
+      { texte: "Journaux et erreurs qu'ils portent s'écrivent dans une seule transaction.", sources: ["packages/backend/lib/pg-ingest.mjs:924-963"] },
     ],
     ...mesure(1),
   },

@@ -15,13 +15,16 @@ import { colonnesUnAR } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS sans déclarations
 import { encoderLot, lirePourcentage } from "../../packages/backend/lib/ingest-un-ar.mjs";
 
-const SQL = readFileSync(join(__dirname, "..", "..", "packages", "db", "sql", "migration-v109.sql"), "utf8");
-const corps = SQL.slice(SQL.indexOf("create or replace function mip_ingerer_lot_v1"), SQL.indexOf("comment on function mip_ingerer_lot_v1"));
+const lire = (f: string) => readFileSync(join(__dirname, "..", "..", "packages", "db", "sql", f), "utf8");
+const corpsDe = (sql: string, fn: string) => sql.slice(sql.indexOf(`create or replace function ${fn}`), sql.indexOf(`comment on function ${fn}`));
+// La fonction EN SERVICE (v111) ; v1 (v109) reste le repli quand v2 manque.
+const corps = corpsDe(lire("migration-v111.sql"), "mip_ingerer_lot_v2");
+const corpsV1 = corpsDe(lire("migration-v109.sql"), "mip_ingerer_lot_v1");
 
 /** Colonnes de chaque `insert into <table> (…)` de la fonction. */
-function insertsDeLaFonction(): Map<string, string[][]> {
+function insertsDeLaFonction(texte = corps): Map<string, string[][]> {
   const parTable = new Map<string, string[][]>();
-  for (const m of corps.matchAll(/insert into (\w+)\s*\(([^)]*)\)/g)) {
+  for (const m of texte.matchAll(/insert into (\w+)\s*\(([^)]*)\)/g)) {
     const cols = m[2].split(",").map((c) => c.trim()).filter(Boolean);
     parTable.set(m[1], [...(parTable.get(m[1]) ?? []), cols]);
   }
@@ -61,6 +64,35 @@ describe("migration-v109 — la fonction écrit les colonnes de l'ancien chemin"
       }
     });
   }
+});
+
+describe("migration-v111 — v2 ne diffère de v1 que par les logs", () => {
+  it("v1 écrit les mêmes colonnes, sauf `log_uid`, qu'il ignore dans la ligne encodée", () => {
+    const v1 = insertsDeLaFonction(corpsV1);
+    const v2 = insertsDeLaFonction();
+    expect([...v1.keys()].sort()).toEqual([...v2.keys()].sort());
+    for (const [table, insertions] of v2) {
+      const attendu = insertions.map((cols) => cols.filter((c) => c !== "log_uid"));
+      expect(v1.get(table), table).toEqual(attendu);
+    }
+  });
+
+  it("le corps de v2 est celui de v1, à l'étape des logs près", () => {
+    const sansLogs = (t: string) =>
+      t.replace(/-- 5\. Logs[\s\S]*?-- 6\. Sessions/, "").replace(/mip_ingerer_lot_v[12]/g, "mip_ingerer_lot");
+    expect(sansLogs(corps)).toBe(sansLogs(corpsV1));
+  });
+
+  it("les logs sont écrits sans doublon au rejeu : `on conflict do nothing`", () => {
+    const etape = corps.slice(corps.indexOf("-- 5. Logs"), corps.indexOf("-- 6. Sessions"));
+    expect(etape).toContain("on conflict do nothing");
+    expect(etape).toContain("r->>'log_uid'");
+  });
+
+  it("une ligne de log encodée porte sa clé naturelle", () => {
+    const lot = encoderLot({ logs: [{ app_id: "a", ts: new Date(0), body: "x", log_uid: "0123" }] }, colonnesUnAR());
+    expect(lot.logs[0].log_uid).toBe("0123");
+  });
 });
 
 describe("migration-v109 — encodage d'un lot", () => {

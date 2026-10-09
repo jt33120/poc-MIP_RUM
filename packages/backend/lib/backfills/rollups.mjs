@@ -22,16 +22,14 @@
 //      approchée. `fusionHistogrammesPossible` porte cette règle, et rien dans
 //      ce fichier ne la contourne.
 //
-// ════════════════════════ UN ÉCART ASSUMÉ, ET DIT ════════════════════════════
+// ═════════════════════ LA MÊME POPULATION QUE LE RAFRAÎCHISSEMENT ═══════════
 //
-// `refresh_rum_rollups` joint la session par `using (session_id)` — sans
-// `app_id`. Deux applications qui émettent le même identifiant de session s'y
-// échangent donc leur classe d'appareil. La règle dure du plan (§4) impose
-// `app_id` lié dans CHAQUE requête : ce module joint sur (app_id, session_id).
-// Sur les données où aucun identifiant de session n'est partagé entre deux
-// applications — le cas normal — les deux calculs coïncident exactement. Là où
-// ils divergent, c'est le rafraîchissement en place qui a tort, et le plan
-// signale la collision au lieu de la corriger en silence.
+// Jusqu'à v111, `refresh_rum_rollups` joignait la session par `using
+// (session_id)` — sans `app_id` — et comptait les robots ; ce module joignait
+// déjà sur (app_id, session_id), et les deux calculs divergeaient là où un
+// identifiant de session est partagé entre deux applications. Depuis v111, le
+// rafraîchissement joint dans l'application et exclut `is_bot` : ce module fait
+// exactement de même, pour `rum_rollup_hourly` comme pour l'histogramme.
 import { ISO_US } from "./commun.mjs";
 
 /** Les deux projections horaires, et la table qui les alimente. */
@@ -351,6 +349,7 @@ export const ROLLUPS = {
            left join rum_session s on s.app_id = m.app_id and s.session_id = m.session_id
           where m.app_id = $1 and date_trunc('hour', m.ts) = any($2::timestamptz[])
             and m.name = any(mip_core_vitals())
+            and not coalesce(s.is_bot, false)
           group by 1, 2, 3
          union all
          select p.app_id, coalesce(s.device_type, ''), date_trunc('hour', p.started_at),
@@ -358,6 +357,7 @@ export const ROLLUPS = {
            from rum_pageview p
            left join rum_session s on s.app_id = p.app_id and s.session_id = p.session_id
           where p.app_id = $1 and date_trunc('hour', p.started_at) = any($2::timestamptz[])
+            and not coalesce(s.is_bot, false)
           group by 1, 2, 3
          union all
          -- sum(occurrences), JAMAIS count(*) : c'est tout l'objet de ce kind.
@@ -366,6 +366,7 @@ export const ROLLUPS = {
            from rum_error e
            left join rum_session s on s.app_id = e.app_id and s.session_id = e.session_id
           where e.app_id = $1 and date_trunc('hour', e.ts) = any($2::timestamptz[])
+            and not coalesce(s.is_bot, false)
           group by 1, 2, 3
        )
        insert into rum_rollup_hourly (app_id, device_type, hour, good_w, total_w, pageviews, errors)

@@ -386,7 +386,7 @@ suite("migration-v109 — un seul aller-retour, et la barrière d'effacement tie
     expect(debut).toBeGreaterThanOrEqual(0);
     expect(fin - verrou).toBeGreaterThanOrEqual(15);
     expect(unAR).toHaveLength(1);
-    expect(unAR[0]).toContain("mip_ingerer_lot_v1");
+    expect(unAR[0]).toContain("mip_ingerer_lot_v2");
     console.info(`[v109] allers-retours d'un lot : historique ${historique.length} (dont ${fin - verrou} sous le verrou), un_ar ${unAR.length}`);
   });
 

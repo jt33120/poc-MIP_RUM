@@ -6,7 +6,7 @@
           { "key": "service.name", "value": { "stringValue": "mip-rum-web" } },
           { "key": "service.version", "value": { "stringValue": "0.1.0" } },
           { "key": "mip.app_id", "value": { "stringValue": "gip-plateforme" } },
-          { "key": "mip.client_id", "value": { "stringValue": "groupement-it" } },
+          { "key": "mip.client_id", "value": { "stringValue": "client-recette" } },
           { "key": "mip.user_agent", "value": { "stringValue": "Mozilla/5.0 (test fixture)" } },
           { "key": "deployment.environment.name", "value": { "stringValue": "prod" } }
         ]
@@ -27,7 +27,7 @@
                 { "key": "mip.user_hash", "value": { "stringValue": "deadbeef" } },
                 { "key": "mip.route", "value": { "stringValue": "/partners/:id" } },
                 { "key": "mip.device_type", "value": { "stringValue": "desktop" } },
-                { "key": "mip.url", "value": { "stringValue": "https://plateforme.groupement-it.com/partners/42" } },
+                { "key": "mip.url", "value": { "stringValue": "https://plateforme.client-recette.example/partners/42" } },
                 { "key": "mip.nav_type", "value": { "stringValue": "navigate" } }
               ]
             },
@@ -79,7 +79,7 @@
                 { "key": "exception.message", "value": { "stringValue": "Fixture error" } },
                 { "key": "exception.type", "value": { "stringValue": "TypeError" } },
                 { "key": "exception.stacktrace", "value": { "stringValue": "TypeError: Fixture error\n  at fixture.js:1:1" } },
-                { "key": "mip.error_source", "value": { "stringValue": "https://plateforme.groupement-it.com/app.js?v=123" } },
+                { "key": "mip.error_source", "value": { "stringValue": "https://plateforme.client-recette.example/app.js?v=123" } },
                 { "key": "mip.error_lineno", "value": { "intValue": 10 } },
                 { "key": "mip.error_colno", "value": { "intValue": 5 } }
               ]

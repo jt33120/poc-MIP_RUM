@@ -36,7 +36,7 @@
 // requête HTTP mais ne prolongent pas la tenue du verrou.
 //
 // L'ÉCRITURE EN UN ALLER-RETOUR (migration-v109). `select mip_ingerer_lot_v1(…)`
-// (ou `mip_ecrire_rejeu_v1`) est à elle seule la transaction : pas de BEGIN, et
+// (v2 depuis v111, ou `mip_ecrire_rejeu_v1`) est à elle seule la transaction : pas de BEGIN, et
 // le verrou est pris ET rendu dans le serveur. La sonde en fait un lot d'UNE
 // requête (`unAR`), et lit la tenue que la fonction rend (`mesure.travail_ms` :
 // du verrou accordé à la fin du travail, COMMIT non compris) : `verrouFin` vaut
@@ -78,8 +78,8 @@ export function etiquette(texte) {
   return s.slice(0, 32);
 }
 
-/** Les fonctions SQL qui forment, seules, la transaction d'un lot (v109). */
-const FONCTIONS_UN_AR = new Set(["select mip_ingerer_lot_v1()", "select mip_ecrire_rejeu_v1()"]);
+/** Les fonctions SQL qui forment, seules, la transaction d'un lot (v109, v111). */
+const FONCTIONS_UN_AR = new Set(["select mip_ingerer_lot_v1()", "select mip_ingerer_lot_v2()", "select mip_ecrire_rejeu_v1()"]);
 
 const texteDe = (config) => (typeof config === "string" ? config : config?.text ?? "");
 

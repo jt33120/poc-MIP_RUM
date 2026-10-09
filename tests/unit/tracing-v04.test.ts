@@ -12,8 +12,8 @@ import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 describe("resolveTarget — qui instrumente-t-on ?", () => {
   beforeEach(() => {
     vi.stubGlobal("location", {
-      href: "https://plateforme.groupement-it.com/dashboard",
-      origin: "https://plateforme.groupement-it.com",
+      href: "https://plateforme.client-recette.example/dashboard",
+      origin: "https://plateforme.client-recette.example",
     });
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -26,12 +26,12 @@ describe("resolveTarget — qui instrumente-t-on ?", () => {
 
   it("same-origin relatif (axios baseURL '/api') -> instrumenté", () => {
     expect(resolveTarget("/api/aos", opts)).toBe(
-      "https://plateforme.groupement-it.com/api/aos",
+      "https://plateforme.client-recette.example/api/aos",
     );
   });
   it("same-origin absolu -> instrumenté", () => {
     expect(
-      resolveTarget("https://plateforme.groupement-it.com/api/consultants?x=1", opts),
+      resolveTarget("https://plateforme.client-recette.example/api/consultants?x=1", opts),
     ).toContain("/api/consultants");
   });
   it("origin de la liste trace -> instrumenté", () => {

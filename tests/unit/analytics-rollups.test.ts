@@ -75,10 +75,11 @@ describe("règle d'emploi des agrégats", () => {
     expect(chooseRollup(filtre.plan, filtre.query).usable).toBe(true);
   });
 
-  it("un agrégat qui INCLUT les robots ne sert pas une mesure qui les exclut", () => {
-    // Le trafic horaire ne filtre pas is_bot à son rafraîchissement : il ne peut
-    // donc pas répondre à une requête qui les exclut, c'est-à-dire à celle par défaut.
-    const vues = requete({ dataset: "views", measure: { aggregation: "count", field: "rows" } });
+  it("un agrégat qui EXCLUT les robots ne sert pas une mesure qui les inclut", () => {
+    // Le trafic horaire exclut is_bot depuis v111 : il ne peut donc pas répondre
+    // à une requête qui les inclut.
+    expect(TRAFIC.includesBots).toBe(false);
+    const vues = requete({ dataset: "views", measure: { aggregation: "count", field: "rows" }, includeBots: true });
     const refus = rollupAnswers(TRAFIC, vues.plan, vues.query);
     expect(refus.usable).toBe(false);
     if (refus.usable) return;
@@ -93,12 +94,12 @@ describe("règle d'emploi des agrégats", () => {
   });
 
   it("une source sans filigrane n'est jamais lue, et le dit", () => {
-    // Même population (robots inclus), même dimension : il ne reste que le
-    // filigrane. `refresh_rum_rollups` n'en enregistre aucun, donc rien ne sépare
-    // les heures consolidées des lignes à relire — la partition serait un pari.
+    // Même population (robots exclus), même dimension : il ne reste que le
+    // filigrane. `refresh_rum_rollups` n'en enregistre aucun d'identifiant, donc rien
+    // ne sépare les heures consolidées des lignes à relire — la partition serait un pari.
     expect(TRAFIC.state).toBeNull();
-    const avecRobots = requete({ dataset: "views", measure: { aggregation: "count", field: "rows" }, includeBots: true });
-    const refus = rollupAnswers(TRAFIC, avecRobots.plan, avecRobots.query);
+    const parDefaut = requete({ dataset: "views", measure: { aggregation: "count", field: "rows" } });
+    const refus = rollupAnswers(TRAFIC, parDefaut.plan, parDefaut.query);
     expect(refus.usable).toBe(false);
     if (refus.usable) return;
     expect(refus.reason).toMatch(/filigrane/);
@@ -106,7 +107,7 @@ describe("règle d'emploi des agrégats", () => {
     expect(rollupCapability("views", "rows")).toBeNull();
     expect(rollupCapability("errors", "occurrences")).toBeNull();
     // Et l'Explorer ne route jamais vers elle, quelle que soit la requête.
-    expect(chooseRollup(avecRobots.plan, avecRobots.query).usable).toBe(false);
+    expect(chooseRollup(parDefaut.plan, parDefaut.query).usable).toBe(false);
   });
 
   it("un dénombrement de distincts n'est additionnable par AUCUN agrégat", () => {
@@ -148,7 +149,6 @@ describe("règle d'emploi des agrégats", () => {
     const heure = requete({
       dataset: "views",
       measure: { aggregation: "count", field: "rows" },
-      includeBots: true,
       visualization: "timeseries",
       range: { preset: "1h" },
     });
