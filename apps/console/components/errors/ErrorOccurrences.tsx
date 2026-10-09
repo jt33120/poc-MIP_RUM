@@ -17,7 +17,7 @@ import Link from "next/link";
 import { TableDefilante } from "@/components/TableDefilante";
 import { LignesParPaquets } from "@/components/errors/LignesParPaquets";
 import { occurrenceHrefs, type OccurrenceHrefs } from "@/lib/error-view";
-import { fmtDate, pluriel } from "@/lib/format";
+import { fmtDate } from "@/lib/format";
 import { libelleAction } from "@/lib/libelle-action";
 import { ERROR_SOURCE_LABELS } from "@/lib/erreurs-sources";
 import type { ErrorOccurrenceLinks, ErrorOccurrenceRow } from "@/lib/queries-errors";

@@ -38,7 +38,6 @@ import {
   type Dimension,
   type FilterCondition,
   type FilterOperator,
-  type Parsed,
   type ScopePrincipal,
   QUERY_VERSION,
 } from "./query-contract";

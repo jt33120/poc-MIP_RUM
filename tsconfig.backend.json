@@ -1,0 +1,37 @@
+{
+  // LE JAVASCRIPT DU BACKEND, VÉRIFIÉ PAR TYPESCRIPT (R4 de la revue du 29/09/2026).
+  // Les `.mjs` de `packages/backend`, `packages/db`, `packages/service-kit`,
+  // `packages/mcp-tools` et `services/*` n'étaient typés par rien : leurs JSDoc
+  // ne se vérifiaient nulle part. `checkJs` les lit tels quels, sans rien émettre.
+  // Mode NON STRICT : on cherche les fautes (propriété inconnue, appel avec le
+  // mauvais nombre d'arguments, JSDoc contredite par le code), pas à annoter tout
+  // le backend. Le compte des erreurs est tenu par un cliquet
+  // (`scripts/ci/cliquet-checkjs.mjs`) : il ne peut que baisser.
+  "compilerOptions": {
+    // Node 24 (`.nvmrc`) : `String.prototype.toWellFormed` (ES2024) et suivants.
+    "target": "ES2024",
+    "lib": ["ESNext"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "maxNodeModuleJsDepth": 0
+  },
+  "include": [
+    "scripts/ci/checkjs-globals.d.ts",
+    "packages/backend/**/*.mjs",
+    "packages/db/**/*.mjs",
+    "packages/service-kit/**/*.mjs",
+    "packages/mcp-tools/**/*.mjs",
+    "services/collector/*.mjs",
+    "services/notifier/*.mjs",
+    "services/scheduler/*.mjs",
+    "services/mcp/*.mjs"
+  ],
+  "exclude": ["**/node_modules/**", "**/dist/**"]
+}

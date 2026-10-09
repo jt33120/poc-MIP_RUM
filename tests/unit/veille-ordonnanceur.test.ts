@@ -187,7 +187,7 @@ describe("veille de l'ordonnanceur — sur un pool factice", () => {
     const [, ouvrir, alerter] = pool.requetes;
     expect(ouvrir.text).toContain(`'*', '${ETAGE_VEILLE}', 'interrompue'`);
     expect(ouvrir.text).toContain("on conflict (portee, etage) where fin is null do nothing");
-    expect((ouvrir.values?.[0] as Date).toISOString()).toBe("2026-10-01T08:00:20.000Z");
+    expect((ouvrir.values![0] as Date).toISOString()).toBe("2026-10-01T08:00:20.000Z");
     expect(SEVERITE_VEILLE).toBe("critical");
     expect(alerter.values?.[0]).toBe("41");
     expect(JSON.parse(String(alerter.values?.[2]))).toMatchObject({ kind: "ordonnanceur_muet", silence_min: 45, seuil_min: 35 });

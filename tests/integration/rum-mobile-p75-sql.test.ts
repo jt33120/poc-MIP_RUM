@@ -21,7 +21,6 @@ const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 const A = "p75-app-a";
 const B = "p75-app-b";
 const APPS = [A, B];
-const MIN = 60_000;
 
 function fichiersSql(): string[] {
   const migrations = readdirSync(SQL_DIR)

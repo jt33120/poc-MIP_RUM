@@ -56,7 +56,7 @@ describe("2 — « Ce que ces chiffres ne disent pas » suit le verdict de F2 et
     // Le relevé du 18/09 : F2 « livré avec un défaut connu », la CI ne typait rien.
     const au18 = avec("F2", { verdict: "livre_avec_defaut_connu" });
     expect(reservesPerimees(RESERVES_CHAINE, au18)).toEqual([
-      "F2 est passée de « deploye_non_eprouve » à « livre_avec_defaut_connu » : réécrire « le JavaScript du backend n'est typé par rien » depuis sa ligne",
+      "F2 est passée de « deploye_non_eprouve » à « livre_avec_defaut_connu » : réécrire « le JavaScript du backend n'est vérifié que sous un cliquet » depuis sa ligne",
     ]);
   });
 
@@ -65,7 +65,7 @@ describe("2 — « Ce que ces chiffres ne disent pas » suit le verdict de F2 et
     expect(reservesPerimees(RESERVES_CHAINE, bancsEnCi)[0]).toMatch(/^F3 est passée de « livre_avec_defaut_connu »/);
     const sansF2 = CAPACITES.filter((c) => c.id !== "F2");
     expect(reservesPerimees(RESERVES_CHAINE, sansF2)).toEqual([
-      "F2 n'est plus une ligne du document : réécrire « le JavaScript du backend n'est typé par rien »",
+      "F2 n'est plus une ligne du document : réécrire « le JavaScript du backend n'est vérifié que sous un cliquet »",
     ]);
   });
 
@@ -76,7 +76,7 @@ describe("2 — « Ce que ces chiffres ne disent pas » suit le verdict de F2 et
     expect(ci).toContain("name: Bancs de mesure (Explorer P6.6, /mobile P7.5)");
     expect(ci).toContain("Aucun seuil de LATENCE");
     expect(ci).toContain("pnpm --filter extension typecheck");
-    expect(ci).toContain("Reste HORS typage, et c'est connu : le JavaScript du backend");
+    expect(ci).toContain("`checkJs` le lit à l'étape");
     expect(ci).toContain("name: Construction depuis un dépôt propre");
     const textes = RESERVES_CHAINE.map((r) => r.texte).join(" ; ");
     // Les trois phrases que la CI du 24/09 a rendues fausses.

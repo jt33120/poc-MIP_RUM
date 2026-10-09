@@ -2,7 +2,7 @@
 // actionnable, sans mutation DOM, navigation ni scroll dans le délai).
 // Span 'frustration', stocké en rum_event sous 'frustration.<kind>' (shared/otlp.mjs).
 import { formatClickLabel, MIP_UI_ATTR } from "./breadcrumbs";
-import { makeCap, type PageCap } from "./caps";
+import { makeCap } from "./caps";
 import type { Emit } from "./errors";
 
 export const FRUSTRATION_CAP_PER_PAGE = 20;

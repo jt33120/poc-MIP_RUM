@@ -12,7 +12,7 @@ import { boundedWireLabel } from "../../packages/rum-sdk/src/breadcrumbs";
 import { CONSOLE_MESSAGE_MAX, CONSOLE_PROFONDEUR_MAX } from "../../packages/rum-sdk/src/error-capture";
 import { PLAFONDS_PAR_VOIE } from "../../packages/rum-sdk/src/errors";
 import { buildResourceSpans, type EmitSpan } from "../../packages/rum-sdk/src/otlp-encode";
-import type { ErrorCategory, MIPRumConfig } from "../../packages/rum-sdk/src/types";
+import type { MIPRumConfig } from "../../packages/rum-sdk/src/types";
 // @ts-expect-error module JS partagé sans déclarations
 import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS partagé sans déclarations

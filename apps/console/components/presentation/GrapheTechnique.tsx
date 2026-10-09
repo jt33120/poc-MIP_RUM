@@ -21,7 +21,7 @@ import { Preuves } from "@/components/presentation/Preuves";
 import { Releve } from "@/components/presentation/Releve";
 import { SaitFaire } from "@/components/presentation/SaitFaire";
 import { StatutPoc } from "@/components/presentation/StatutPoc";
-import { ICON_PATHS, Icon } from "@/components/icons";
+import { Icon } from "@/components/icons";
 import type { SessionUser } from "@/lib/auth";
 
 /** Coche des promesses (le jeu d'icônes partagé n'en a pas). */

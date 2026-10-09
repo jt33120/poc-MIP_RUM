@@ -34,7 +34,6 @@ import {
   parseAstFilters,
   parseExplorerPlan,
   type ExplorerPlan,
-  type Visualization,
 } from "./analytics-schema";
 import {
   DIMENSION_LABELS,

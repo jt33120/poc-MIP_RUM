@@ -413,7 +413,7 @@ export const CARTES: readonly CarteCapacite[] = [
       {
         id: "F2",
         texte:
-          "Le JavaScript du backend (paquets et services en .mjs) n'est typé par rien ; et la vérification n'arrête une fusion que si l'on attend son verdict sur le commit de fusion.",
+          "Le JavaScript du backend (paquets et services en .mjs) n'est lu par TypeScript que sous un cliquet : une centaine d'erreurs relevées le 08/10/2026 restent, seules les nouvelles sont refusées ; et la vérification n'arrête une fusion que si l'on attend son verdict sur le commit de fusion.",
       },
     ],
     // L'étape « Typage des paquets publiés et de l'extension » de la CI, et ce

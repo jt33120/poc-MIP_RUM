@@ -1,0 +1,108 @@
+{
+  // LINTER MINIMAL (R3 de la revue du 29/09/2026, audit du 07/10/2026) : des
+  // ERREURS réelles seulement — variable non définie, import ou variable
+  // inutilisés, code inatteignable, affectation impossible, comparaison
+  // toujours vraie ou fausse. Aucune règle de style : toutes les catégories
+  // d'oxlint sont coupées, et chaque règle utile est nommée ci-dessous.
+  // Lancé par la CI (`pnpm lint`) ; une règle qui lève une erreur bloque.
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "off",
+    "suspicious": "off",
+    "pedantic": "off",
+    "perf": "off",
+    "style": "off",
+    "restriction": "off",
+    "nursery": "off"
+  },
+  "env": {
+    "builtin": true,
+    "es2024": true,
+    "node": true,
+    "browser": true
+  },
+  "globals": {
+    // `limits.mjs` lit l'environnement sous Deno quand il existe (garde `typeof`).
+    "Deno": "readonly"
+  },
+  "rules": {
+    "no-unused-vars": [
+      "error",
+      {
+        "vars": "all",
+        // Un paramètre inutilisé n'est pas une faute : signature d'un rappel,
+        // d'un gestionnaire, d'une interface.
+        "args": "none",
+        "caughtErrors": "none",
+        "ignoreRestSiblings": true,
+        "varsIgnorePattern": "^_",
+        "argsIgnorePattern": "^_"
+      }
+    ],
+    "no-unreachable": "error",
+    "no-const-assign": "error",
+    "no-dupe-keys": "error",
+    "no-dupe-class-members": "error",
+    "no-dupe-else-if": "error",
+    "no-duplicate-case": "error",
+    "no-func-assign": "error",
+    "no-import-assign": "error",
+    "no-self-assign": "error",
+    "no-unsafe-finally": "error",
+    "no-unsafe-optional-chaining": "error",
+    "no-unsafe-negation": "error",
+    "no-this-before-super": "error",
+    "constructor-super": "error",
+    "getter-return": "error",
+    "no-setter-return": "error",
+    "valid-typeof": "error",
+    "use-isnan": "error",
+    "for-direction": "error",
+    "no-compare-neg-zero": "error",
+    "no-debugger": "error",
+    "no-obj-calls": "error",
+    "no-shadow-restricted-names": "error",
+    "no-loss-of-precision": "error",
+    "no-unassigned-vars": "error",
+    "oxc/const-comparisons": "error",
+    "oxc/bad-comparison-sequence": "error"
+  },
+  "overrides": [
+    {
+      // Le JavaScript n'a pas de compilateur pour voir un nom non défini ; le
+      // TypeScript, si (`tsc`), et `no-undef` y ignore les types.
+      "files": ["**/*.js", "**/*.mjs", "**/*.cjs"],
+      "rules": {
+        "no-undef": "error"
+      }
+    },
+    {
+      // Le rappel passé à `sw.evaluate` s'exécute DANS le service worker de
+      // l'extension, où `chrome` existe.
+      "files": ["apps/extension/scripts/**"],
+      "globals": { "chrome": "readonly" }
+    },
+    {
+      // Les coefficients de Lanczos sont recopiés de la référence publiée, à
+      // toutes leurs décimales : la perte au-delà de la double précision est voulue.
+      "files": ["tests/unit/stats-lois.test.ts"],
+      "rules": { "no-loss-of-precision": "off" }
+    },
+    {
+      // EXCEPTION À RETIRER : `TOUT` (ingest-un-ar.mjs) n'est plus lu depuis
+      // l'écriture en un aller-retour (migration-v109). Code mort, pas une faute ;
+      // retiré quand le chantier en cours sur `packages/backend` sera fusionné,
+      // pour ne pas le croiser.
+      "files": ["packages/backend/lib/ingest-un-ar.mjs"],
+      "rules": { "no-unused-vars": "off" }
+    }
+  ],
+  "ignorePatterns": [
+    // Artefacts construits ou versionnés tels quels (SDK, extension, Swagger).
+    "**/dist/**",
+    "**/.next/**",
+    "apps/console/public/**",
+    "apps/extension/vendor/**",
+    "**/*.generated.*"
+  ]
+}

@@ -22,7 +22,6 @@ import {
   GAMMA,
   VALEUR_MIN,
   borneHaute,
-  libelleSeau,
   percentileDepuisSeaux,
   seau,
   valeurDuSeau,
